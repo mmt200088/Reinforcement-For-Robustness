@@ -1,8 +1,10 @@
 """Helpers for tolerant CSV/header field lookup in report scripts."""
 from __future__ import annotations
 
+import csv
+from pathlib import Path
 import re
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 
 def normalize_field_name(fieldname: object) -> str:
@@ -70,3 +72,22 @@ def first_present_by_index(
         if idx is not None and 0 <= int(idx) < len(row):
             return row[int(idx)]
     return None
+
+
+def write_csv_rows(
+        path: str | Path,
+        rows: Sequence[Mapping[str, Any]],
+        fieldnames: Sequence[str],
+        *,
+        default: Any = "",
+        ) -> Path:
+    """Write a finite CSV artifact after projecting rows to ``fieldnames``."""
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fields = list(fieldnames)
+    with out_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, default) for field in fields})
+    return out_path

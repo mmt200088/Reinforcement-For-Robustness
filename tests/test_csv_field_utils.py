@@ -1,5 +1,6 @@
 import ast
 import pathlib
+import tempfile
 import unittest
 
 from csv_field_utils import (
@@ -10,6 +11,7 @@ from csv_field_utils import (
     normalized_field_index,
     normalized_field_lookup,
     normalized_row,
+    write_csv_rows,
 )
 
 
@@ -41,6 +43,20 @@ class CsvFieldUtilsTest(unittest.TestCase):
         self.assertEqual(first_present_by_index(row, lookup, ["gpu_index", "index"]), "0")
         self.assertEqual(first_present_by_index(row, lookup, ["memory_used"]), "4096")
         self.assertIsNone(first_present_by_index(row, lookup, ["missing"]))
+
+    def test_write_csv_rows_projects_fields_and_creates_parent(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "nested" / "rows.csv"
+
+            written = write_csv_rows(
+                path,
+                [{"b": 2, "a": 1, "extra": 3}, {"a": 4}],
+                ["a", "b"],
+            )
+            text = path.read_text(encoding="utf-8")
+
+        self.assertEqual(written, path)
+        self.assertEqual(text, "a,b\n1,2\n4,\n")
 
 
 class CsvFieldUtilsStaticGuardTest(unittest.TestCase):
@@ -78,6 +94,19 @@ class CsvFieldUtilsStaticGuardTest(unittest.TestCase):
                 text = (repo / rel_path).read_text(encoding="utf-8")
                 self.assertIn(needle, text)
                 self.assertFalse(forbidden & self._function_names(rel_path))
+
+    def test_simple_csv_artifact_scripts_use_shared_writer(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        expected = {
+            "scripts/blb_f0_scan_feasible_domain.py": "from csv_field_utils import write_csv_rows",
+            "scripts/bert_mrpc_layer_noise_experiment.py": "from csv_field_utils import write_csv_rows",
+        }
+        for rel_path, needle in expected.items():
+            with self.subTest(path=rel_path):
+                text = (repo / rel_path).read_text(encoding="utf-8")
+                self.assertIn(needle, text)
+                self.assertNotIn("def _write_csv(", text)
+                self.assertNotIn("def write_csv(", text)
 
 
 if __name__ == "__main__":

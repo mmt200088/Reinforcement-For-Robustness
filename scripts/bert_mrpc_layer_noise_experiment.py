@@ -9,7 +9,6 @@ figures.
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import math
 import os
@@ -32,6 +31,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from json_utils import to_jsonable  # noqa: E402
+from csv_field_utils import write_csv_rows  # noqa: E402
 
 
 def _nice_float(value: float) -> float:
@@ -317,15 +317,6 @@ def run_repeated_condition(
     return summary
 
 
-def write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequence[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row.get(field, "") for field in fieldnames})
-
-
 def save_results(output_dir: Path, results: Mapping[str, Any]) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     result_path = output_dir / "bert_mrpc_layer_noise_results.json"
@@ -333,13 +324,13 @@ def save_results(output_dir: Path, results: Mapping[str, Any]) -> Path:
         json.dump(to_jsonable(results, preserve_native=True), handle, indent=2, sort_keys=True)
 
     exp1_rows = results["experiment1"]
-    write_csv(
+    write_csv_rows(
         output_dir / "noise_magnitude_results.csv",
         exp1_rows,
         ["sigma", "acc_mean"],
     )
     exp2_rows = results["experiment2"]["rows"]
-    write_csv(
+    write_csv_rows(
         output_dir / "layer_position_results.csv",
         exp2_rows,
         ["layer", "sigma", "acc_mean"],

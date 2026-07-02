@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
-import csv
 import hashlib
 import heapq
 import json
@@ -20,6 +19,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_optional_int_list  # noqa: E402
+from csv_field_utils import write_csv_rows  # noqa: E402
 from json_utils import stable_json_hash, write_json_file  # noqa: E402
 from jsonl_utils import write_jsonl_rows  # noqa: E402
 from blb_stage2_rl.candidate_store import (  # noqa: E402
@@ -135,15 +135,6 @@ def _normalize_eval(raw: Mapping[str, Any], action: Sequence[int], source: str) 
         "fusion": fusion,
     }))
     return record
-
-
-def _write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequence[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(fieldnames))
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row.get(field, "") for field in fieldnames})
 
 
 def _safe_allowed_k_indices() -> List[int]:
@@ -571,7 +562,7 @@ def run_scan_core(
         "candidate_count", "valid_count", "valid_rate", "improving_valid_count",
         "best_delta_total_bits", "best_delta_fusion_count",
     ]
-    _write_csv(out / "per_slot_summary.csv", summary_rows, summary_fields)
+    write_csv_rows(out / "per_slot_summary.csv", summary_rows, summary_fields)
     md_lines = [
         "# Phase-1 F0 单槽位扫描摘要",
         "",
@@ -594,7 +585,7 @@ def run_scan_core(
         {"block": block, "kind": kind, "invalid_count": count}
         for (block, kind), count in sorted(invalid_counter.items())
     ]
-    _write_csv(out / "invalid_by_block_kind.csv", invalid_rows, ["block", "kind", "invalid_count"])
+    write_csv_rows(out / "invalid_by_block_kind.csv", invalid_rows, ["block", "kind", "invalid_count"])
 
     improving_mutations = [
         row for row in rows
