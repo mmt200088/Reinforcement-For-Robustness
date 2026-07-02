@@ -1656,6 +1656,36 @@ def _pack_recurrent_rollout_arrays(episodes):
     )
 
 
+def _rollout_tensor_to_numpy(value, dtype):
+    if hasattr(value, "detach"):
+        value = value.detach().cpu().numpy()
+    return np.asarray(value, dtype=dtype)
+
+
+def _rollout_scalar_to_float(value):
+    if hasattr(value, "detach"):
+        return float(value.detach().cpu().item())
+    return float(value)
+
+
+def _pack_recurrent_rollout_tensor_arrays(episodes):
+    if not episodes:
+        raise RuntimeError("RecurrentRolloutBuffer is empty")
+    cont_features_np = np.asarray([
+        [_rollout_tensor_to_numpy(t, np.float32) for t in ep['cont_features']]
+        for ep in episodes
+    ], dtype=np.float32)
+    logprobs_np = np.asarray([
+        [_rollout_scalar_to_float(t) for t in ep['logprobs']]
+        for ep in episodes
+    ], dtype=np.float32)
+    values_np = np.asarray([
+        [_rollout_scalar_to_float(t) for t in ep['values']]
+        for ep in episodes
+    ], dtype=np.float32)
+    return cont_features_np, logprobs_np, values_np
+
+
 class RecurrentRolloutBuffer:
     """
     循环网络专用Rollout Buffer（LSTM PDF 4.1）
@@ -1724,9 +1754,10 @@ class RecurrentRolloutBuffer:
             values: (N_eps, 12) float
             dones: (N_eps, 12) float
         """
-        cont_features = torch.stack([
-            torch.stack(ep['cont_features']) for ep in self.episodes
-        ]).to(device)
+        cont_features_np, logprobs_np, values_np = _pack_recurrent_rollout_tensor_arrays(
+            self.episodes,
+        )
+        cont_features = torch.from_numpy(cont_features_np).to(device)
 
         (
             layer_indices_np,
@@ -1743,15 +1774,11 @@ class RecurrentRolloutBuffer:
 
         actions_g = torch.from_numpy(actions_g_np).to(device)
 
-        logprobs = torch.stack([
-            torch.stack(ep['logprobs']) for ep in self.episodes
-        ]).to(device)
+        logprobs = torch.from_numpy(logprobs_np).to(device)
         
         rewards = torch.from_numpy(rewards_np).to(device)
         
-        values = torch.stack([
-            torch.stack(ep['values']) for ep in self.episodes
-        ]).to(device)
+        values = torch.from_numpy(values_np).to(device)
         
         dones = torch.from_numpy(dones_np).to(device)
         

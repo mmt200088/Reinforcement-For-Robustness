@@ -63,6 +63,19 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertNotIn("torch.tensor(ep['actions_g'], dtype=torch.long)", region)
         self.assertNotIn("torch.tensor([", region)
 
+    def test_recurrent_rollout_buffer_packs_tensor_fields_before_transfer(self):
+        source = _source(LAYER_EVALUATOR)
+        region = _method_region(source, "get_batch")
+
+        self.assertIn("def _pack_recurrent_rollout_tensor_arrays", source)
+        self.assertIn("cont_features_np, logprobs_np, values_np", region)
+        self.assertIn("torch.from_numpy(cont_features_np).to(device)", region)
+        self.assertIn("torch.from_numpy(logprobs_np).to(device)", region)
+        self.assertIn("torch.from_numpy(values_np).to(device)", region)
+        self.assertNotIn("cont_features = torch.stack([", region)
+        self.assertNotIn("logprobs = torch.stack([", region)
+        self.assertNotIn("values = torch.stack([", region)
+
     def test_stage1_rollout_reuses_action_scalar_and_builds_device_tensors_directly(self):
         source = _source(LAYER_EVALUATOR)
         worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
