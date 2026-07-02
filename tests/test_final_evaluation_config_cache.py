@@ -90,6 +90,29 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertIsNotNone(cfg2)
         self.assertEqual(wrapped.call_count, len(fem.BREAKDOWN_KEYS))
 
+    def test_stage2_equiv_sampling_uses_exact_cached_count_solutions(self):
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        runner.input_noise_allowed = [1, 2]
+        runner.weight_noise_allowed = [1, 2]
+        runner.wffn1_noise_allowed = [1, 2]
+        runner.evaluator = SimpleNamespace(
+            INPUT_NOISE_COST_MAP={1: 1.0 / 40.0, 2: 2.0 / 40.0},
+            WEIGHT_NOISE_COST_MAP={1: 1.0 / 40.0, 2: 2.0 / 40.0},
+            WFFN1_NOISE_COST_MAP={1: 1.0 / 40.0, 2: 2.0 / 40.0},
+        )
+        rng = np.random.default_rng(123)
+        breakdown = {short: 2.0 / 40.0 for short in fem.BREAKDOWN_KEYS}
+
+        with mock.patch.object(
+            runner,
+            "_stage2_cost_matched_array",
+            side_effect=AssertionError("should use cached exact count solutions"),
+        ):
+            cfg = runner._sample_stage2_equiv(rng, breakdown, total_layers=2)
+
+        self.assertIsNotNone(cfg)
+        self.assertEqual(runner._stage2_config_cost_key(cfg), len(fem.BREAKDOWN_KEYS) * 2)
+
 
 if __name__ == "__main__":
     unittest.main()

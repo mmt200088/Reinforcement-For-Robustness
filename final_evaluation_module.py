@@ -969,15 +969,21 @@ class UnifiedFinalEvaluationModule:
 
     def _sample_stage2_equiv(self, rng, breakdown, total_layers):
         cfg = {}
-        for short in BREAKDOWN_KEYS:
-            full = SHORT_KEY_TO_FULL[short]
+        specs, solution_maps = self._stage2_total_cost_solution_maps(total_layers)
+        for idx, (short, full, allowed) in enumerate(specs):
+            solution_map = solution_maps[idx]
             target = breakdown[short]
-            allowed = self._stage2_allowed(short)
-            cost_map = self._stage2_cost_map(short)
-            arr = self._stage2_cost_matched_array(rng, target, cost_map, allowed, total_layers)
-            if arr is None:
-                return None
-            cfg[full] = arr
+            target_key = self._stage2_cost_key(target)
+            candidates = solution_map.get(target_key)
+            if candidates:
+                counts = candidates[int(rng.integers(0, len(candidates)))]
+                cfg[full] = self._counts_to_shuffled_config(allowed, counts, rng)
+            else:
+                cost_map = self._stage2_cost_map(short)
+                arr = self._stage2_cost_matched_array(rng, target, cost_map, allowed, total_layers)
+                if arr is None:
+                    return None
+                cfg[full] = arr
         return cfg
 
     def _sample_stage2_total_cost(self, rng, target_total, total_layers):
@@ -2151,5 +2157,4 @@ class UnifiedFinalEvaluationModule:
 
     def _ensure_results_dir(self):
         os.makedirs(self.results_dir, exist_ok=True)
-
 

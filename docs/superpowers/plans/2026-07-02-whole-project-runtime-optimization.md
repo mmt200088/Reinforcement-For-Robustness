@@ -349,6 +349,11 @@ Stage2Budget/Budget sampling in one final-eval run reuses the same per-noise
 domain enumerations instead of rebuilding all seven maps for every sampled
 config.
 
+Progress 2026-07-02: Stage-2 Equiv random final-eval sampling now uses the
+same cached exact count-solution maps instead of running iterative random
+cost-matching searches for every noise type and trial. It still falls back to
+the old matcher if an exact target key is unavailable.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
