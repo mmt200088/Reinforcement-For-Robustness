@@ -884,6 +884,13 @@ and again for grep. A local synthetic 2400-file repo preserved all three report
 outputs and reduced Phase-0 report generation from `0.1505s` / `0.78MB` to
 `0.1234s` / `0.30MB`.
 
+Progress 2026-07-02: `scripts/blb_verify_noise_install.py` now caches the
+torch-free noise-variance table extracted from `function_handler.py` after the
+first AST parse in a process. Repeated verifier/test calls no longer reread and
+reparse the same `_NOISE_STD_RAW` literal while the variance lookup table shape
+and values remain unchanged. A real-source local benchmark over 80 repeated
+loads reduced table extraction from `3.228s` to `0.040s` (`80.43x`).
+
 Progress 2026-07-02: `scripts/project_optimization_audit.py` now walks
 artifact roots with a streaming sorted `os.walk()` iterator instead of
 `Path.rglob("*")`. A local synthetic 3400-file artifact tree preserved the same

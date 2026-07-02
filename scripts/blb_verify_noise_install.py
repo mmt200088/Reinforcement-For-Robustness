@@ -39,6 +39,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_NOISE_VARIANCE_TABLE_CACHE: Dict[int, Dict[int, Dict[str, float]]] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,9 @@ def _json_safe(value: Any) -> Any:
 # don't need torch at script load time.
 # ---------------------------------------------------------------------------
 def load_noise_variance_table() -> Dict[int, Dict[int, Dict[str, float]]]:
+    global _NOISE_VARIANCE_TABLE_CACHE
+    if _NOISE_VARIANCE_TABLE_CACHE is not None:
+        return _NOISE_VARIANCE_TABLE_CACHE
     src = (REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     raw: Optional[Dict[int, Dict[int, Tuple[float, float, float]]]] = None
@@ -96,6 +100,7 @@ def load_noise_variance_table() -> Dict[int, Dict[int, Dict[str, float]]]:
                 "rescale": float(stds[2]) ** 2,
                 "rotation": float(stds[2]) ** 2,
             }
+    _NOISE_VARIANCE_TABLE_CACHE = table
     return table
 
 
