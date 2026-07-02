@@ -633,6 +633,13 @@ fields each figure needs while loading run data: `episodes.jsonl` keeps only
 A local 100k-row synthetic episode log with 20 unused debug fields preserved
 row count and reduced traced peak memory from `368.41MB` to `25.19MB`.
 
+Progress 2026-07-02: `tools/paper_figures.py` now streams
+`top_candidates.jsonl` directly into the cost-vs-accuracy scatter's `xs`/`ys`
+lists instead of first building a list of projected row dictionaries and then
+splitting it into columns. A local 120k-row top-candidate benchmark preserved
+the plotted points and reduced this read path from `0.8249s` / `39.78MB` to
+`0.6445s` / `7.81MB`.
+
 Progress 2026-07-02: `tools/aggregate_seeds.py` now finds the latest Paean
 `blb_action_final_eval_results_*.json` by streaming `os.walk()` and retaining
 only the newest path, instead of recursive `glob` plus sorting a materialized

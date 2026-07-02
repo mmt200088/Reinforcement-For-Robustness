@@ -63,7 +63,7 @@ class PaperFiguresTest(unittest.TestCase):
 
         self.assertEqual(rc, 0)
 
-    def test_cost_vs_accuracy_reads_top_candidates_once_per_run(self):
+    def test_cost_vs_accuracy_streams_top_candidate_points_once_per_run(self):
         paper = _load_paper_figures_module()
         run = paper.RunData(
             run_dir="/tmp/run",
@@ -103,15 +103,20 @@ class PaperFiguresTest(unittest.TestCase):
             def subplots(self, **_kwargs):
                 return object(), FakeAxes()
 
-        def fake_read_jsonl(path, fields=None):
+        def fake_read_jsonl_xy(path, x_field, y_field):
             read_paths.append(path)
-            self.assertEqual(tuple(fields or ()), ("total_bits", "total_reward"))
-            return [{"total_bits": 10, "total_reward": 1.5}]
+            self.assertEqual((x_field, y_field), ("total_bits", "total_reward"))
+            return [10.0], [1.5]
 
         with mock.patch.object(paper, "_setup_matplotlib", return_value=FakePlt()):
             with mock.patch.object(paper, "_save_fig", return_value=[]):
-                with mock.patch.object(paper, "_read_jsonl", fake_read_jsonl):
-                    paper.fig_cost_vs_accuracy([run], out_path_no_ext="/tmp/out", formats=("png",))
+                with mock.patch.object(
+                    paper,
+                    "_read_jsonl",
+                    side_effect=AssertionError("cost_vs_accuracy should stream x/y points directly"),
+                ):
+                    with mock.patch.object(paper, "_read_jsonl_xy", fake_read_jsonl_xy, create=True):
+                        paper.fig_cost_vs_accuracy([run], out_path_no_ext="/tmp/out", formats=("png",))
 
         self.assertEqual(len(read_paths), 1)
 
@@ -153,6 +158,47 @@ class PaperFiguresTest(unittest.TestCase):
             run.ppo_updates,
             [{"policy_loss": 0.1, "value_loss": 0.2, "entropy": 0.3, "clip_fraction": 0.4}],
         )
+
+    def test_read_jsonl_passes_unstripped_lines_to_json_loader(self):
+        paper = _load_paper_figures_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "rows.jsonl"
+            path.write_text('{"total_reward": 1.25, "unused": "x"}\n', encoding="utf-8")
+            seen = []
+            original_loads = paper.json.loads
+
+            def recording_loads(value):
+                seen.append(value)
+                return original_loads(value)
+
+            with mock.patch.object(paper.json, "loads", recording_loads):
+                rows = paper._read_jsonl(str(path), fields=("total_reward",))
+
+        self.assertEqual(rows, [{"total_reward": 1.25}])
+        self.assertTrue(seen[0].endswith("\n"))
+
+    def test_read_jsonl_xy_projects_points_without_row_dicts(self):
+        paper = _load_paper_figures_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "top_candidates.jsonl"
+            path.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"total_bits": 10, "total_reward": 1.5, "large_debug": "x" * 128}),
+                        "{bad-json",
+                        json.dumps({"total_bits": 12, "total_reward": 1.75, "large_debug": "y" * 128}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            xs, ys = paper._read_jsonl_xy(str(path), "total_bits", "total_reward")
+
+        self.assertEqual(xs, [10.0, 12.0])
+        self.assertEqual(ys, [1.5, 1.75])
 
 
 if __name__ == "__main__":

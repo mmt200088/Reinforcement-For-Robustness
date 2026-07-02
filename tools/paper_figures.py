@@ -140,11 +140,10 @@ def _read_jsonl(path: str, fields: Sequence[str] | None = None) -> List[Dict[str
     wanted = tuple(fields or ())
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
-            t = line.strip()
-            if not t:
+            if not line:
                 continue
             try:
-                row = json.loads(t)
+                row = json.loads(line)
             except Exception:
                 pass
             else:
@@ -153,6 +152,24 @@ def _read_jsonl(path: str, fields: Sequence[str] | None = None) -> List[Dict[str
                 else:
                     out.append(row)
     return out
+
+
+def _read_jsonl_xy(path: str, x_field: str, y_field: str) -> Tuple[List[float], List[float]]:
+    if not os.path.isfile(path):
+        return [], []
+    xs: List[float] = []
+    ys: List[float] = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            xs.append(float(row.get(x_field, 0.0)))
+            ys.append(float(row.get(y_field, 0.0)))
+    return xs, ys
 
 
 def _read_json(path: str) -> Dict[str, Any]:
@@ -496,12 +513,10 @@ def fig_cost_vs_accuracy(
     has_points = False
     for i, run in enumerate(runs):
         top_path = os.path.join(run.progress_dir, "diagnostics", "top_candidates.jsonl")
-        rows = _read_jsonl(top_path, fields=("total_bits", "total_reward"))
-        if not rows:
+        xs, ys = _read_jsonl_xy(top_path, "total_bits", "total_reward")
+        if not xs:
             continue
         has_points = True
-        xs = [float(r.get("total_bits", 0.0)) for r in rows]
-        ys = [float(r.get("total_reward", 0.0)) for r in rows]
         ax.scatter(xs, ys, color=PALETTE[i % len(PALETTE)],
                     label=run.label, alpha=0.7, s=22, edgecolors="none")
     ax.set_xlabel("Total bits")
