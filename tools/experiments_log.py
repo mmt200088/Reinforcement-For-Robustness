@@ -265,7 +265,7 @@ def _best_by_dataset(records: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str
 
 
 def _rebuild_index(registry_path: str = REGISTRY_REL, index_path: str = INDEX_REL) -> str:
-    latest = _latest_per_run_id(_iter_records(registry_path))
+    latest = list(_latest_by_run_id(_iter_records(registry_path)).values())
     latest.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
 
     lines: List[str] = []

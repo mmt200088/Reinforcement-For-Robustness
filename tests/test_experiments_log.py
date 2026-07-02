@@ -197,6 +197,44 @@ class ExperimentsLogTest(unittest.TestCase):
 
         self.assertIn("run-a", text)
 
+    def test_rebuild_index_avoids_copying_all_latest_records(self):
+        rows = [
+            LazyMaterializationRecord(
+                {
+                    "run_id": "crashed-large-run",
+                    "registered_at": "2026-07-02T00:00:00",
+                    "dataset": "rte",
+                    "algorithm": "rl",
+                    "status": "crashed",
+                    "best_reward": 100.0,
+                    "artifact_paths": {"large": "x" * 1000},
+                },
+                materialize_ok=False,
+                message="index rebuild should not copy every latest record into dicts",
+            ),
+            LazyMaterializationRecord(
+                {
+                    "run_id": "complete-mrpc",
+                    "registered_at": "2026-07-02T00:01:00",
+                    "dataset": "mrpc",
+                    "algorithm": "rl",
+                    "status": "complete",
+                    "best_reward": 0.9,
+                },
+                materialize_ok=True,
+                message="best records may be materialized for summary output",
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            index = Path(td) / "index.md"
+            with mock.patch.object(experiments_log, "_iter_records", return_value=rows):
+                experiments_log._rebuild_index("unused.jsonl", str(index))
+
+            text = index.read_text(encoding="utf-8")
+
+        self.assertIn("crashed-large-run", text)
+        self.assertIn("complete-mrpc", text)
+
     def test_git_info_bounds_git_commands_with_timeout(self):
         calls = []
 
