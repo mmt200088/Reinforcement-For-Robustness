@@ -159,6 +159,7 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/blb_build_fusion_count_map.py": "from json_utils import write_json_file",
             "scripts/blb_orphan_slot_audit.py": "from json_utils import read_json_file, write_json_file",
             "scripts/stage1_plaintext_repeat_eval.py": "from json_utils import write_json_file",
+            "reports/generate_blb_mapping_html_reports.py": "from json_utils import read_json_file, write_json_file",
         }
         for rel, needle in checks.items():
             with self.subTest(path=rel):

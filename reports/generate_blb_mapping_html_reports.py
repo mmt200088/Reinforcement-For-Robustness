@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import html
+import json
 import re
 import sys
 from collections import Counter, defaultdict
@@ -13,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from json_utils import read_json_file  # noqa: E402
+from json_utils import read_json_file, write_json_file  # noqa: E402
+from report_format_utils import html_table  # noqa: E402
 
 REPORT_DIR = ROOT / "reports"
 ACTION_SPACE = ROOT / "blb_stage2_rl" / "action_space.py"
@@ -95,14 +97,6 @@ def esc(value: Any) -> str:
 def tag(name: str, content: str, **attrs: str) -> str:
     attr = "".join(f' {k.rstrip("_")}="{esc(v)}"' for k, v in attrs.items() if v is not None)
     return f"<{name}{attr}>{content}</{name}>"
-
-
-def table(headers: Sequence[str], rows: Iterable[Sequence[Any]], cls: str = "") -> str:
-    head = "".join(tag("th", esc(h)) for h in headers)
-    body_rows = []
-    for row in rows:
-        body_rows.append(tag("tr", "".join(tag("td", str(c)) for c in row)))
-    return f'<table class="{esc(cls)}"><thead><tr>{head}</tr></thead><tbody>{"".join(body_rows)}</tbody></table>'
 
 
 def page(title: str, lead: str, body: str) -> str:
@@ -393,7 +387,10 @@ def report_t_new(t_rows: List[dict], audit_errors: List[str], audit_warnings: Li
                 f'<code>{esc(row["rl_field"])}</code><br><span class="small">local offset {esc(row["local_offset"])}；{esc(row["note"])}</span>',
                 esc(row["layer_rule"]),
             ])
-        sections.append(f"<h2>{esc(graph_key)}：{esc(BLOCK_CN[block])}</h2>" + table(headers, table_rows))
+        sections.append(
+            f"<h2>{esc(graph_key)}：{esc(BLOCK_CN[block])}</h2>"
+            + html_table(headers, table_rows, allow_html_cells=True)
+        )
     return page(
         "Rescale_Optimizer 各 graph 的 t_new 语义",
         "这个文件只站在 Rescale_Optimizer 一侧说明：每个 graph 的 t_new[r] 到底对应哪一个 skeleton stage，以及 baseline archive 中该 stage 的实际 scaling factor。",
@@ -461,12 +458,12 @@ def report_actions(fields, node_map) -> str:
         metrics,
         formula,
         "<h2>按 block 统计</h2>",
-        table(["Block", "语义范围", "slot/层", "kind 统计"], summary_rows),
+        html_table(["Block", "语义范围", "slot/层", "kind 统计"], summary_rows, allow_html_cells=True),
         "<h2>单层 73 个动作位置全集</h2>",
         '<p class="small">表中 local offset 会按每层重复；bert-base 的 layer 取 0..11。</p>',
-        table(["local offset", "示例 global index", "Block", "RL 字段", "动作类型", "挡位数", "默认 max_sf", "代码节点名", "默认挡位含义", "有效性"], action_rows),
+        html_table(["local offset", "示例 global index", "Block", "RL 字段", "动作类型", "挡位数", "默认 max_sf", "代码节点名", "默认挡位含义", "有效性"], action_rows, allow_html_cells=True),
         "<h2>first_input 特殊位</h2>",
-        table(["global index", "字段", "状态", "说明"], [[876, "<code>first_input_sf</code>", "deprecated / ineffective", "首个 HE 配置视为无损；当前不再安装 first input fresh 噪声，也不送 RO"]]),
+        html_table(["global index", "字段", "状态", "说明"], [[876, "<code>first_input_sf</code>", "deprecated / ineffective", "首个 HE 配置视为无损；当前不再安装 first input fresh 噪声，也不送 RO"]], allow_html_cells=True),
     ])
     return page(
         "BLB Stage-2 RL 动作空间全集与位置",
@@ -507,7 +504,7 @@ def report_mapping(t_rows: List[dict], audit_errors: List[str], audit_warnings: 
         status,
         formula,
         "<h2>RL action 到 t_new 的逐项映射</h2>",
-        table(["RO graph", "适用层", "t_new", "RO 真实位置", "RL 动作实际位置", "global index 公式", "动作类型", "运行时 scaling factor 来源"], rows),
+        html_table(["RO graph", "适用层", "t_new", "RO 真实位置", "RL 动作实际位置", "global index 公式", "动作类型", "运行时 scaling factor 来源"], rows, allow_html_cells=True),
         '<div class="card warn"><h2>关于 rescale action=0</h2><p>RL 的 rescale index=0 表示“不安装该 BLB rescale 噪声点”，但 Rescale_Optimizer 仍按固定 baseline skeleton 计算模数链。因此当 t_new 绑定的 cfg 字段为 None 时，bridge 会用 baseline t_new 回填，而不是删除 skeleton stage。这与当前“固定 HE 操作，只让 RL 选择噪声/scale”的语义一致。</p></div>',
     ])
     return page(
@@ -541,11 +538,7 @@ def main() -> None:
         "audit_errors": audit_errors,
         "audit_warnings": sorted(set(audit_warnings)),
     }
-    (REPORT_DIR / "blb_mapping_report_audit.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_json_file(REPORT_DIR / "blb_mapping_report_audit.json", summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if audit_errors:
         raise SystemExit(1)

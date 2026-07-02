@@ -44,6 +44,7 @@ class ReportFormatStaticGuardTest(unittest.TestCase):
             "scripts/run_fusion_count_action_eval_rlpath.py": (
                 "from report_format_utils import format_float, html_table, metric_float"
             ),
+            "reports/generate_blb_mapping_html_reports.py": "from report_format_utils import html_table",
             "scripts/report_fusion_count_map.py": "from report_format_utils import html_table",
             "scripts/blb_fusion_ab_compare.py": "from report_format_utils import html_table",
             "scripts/stage2_reward_probe_scaling_report.py": "from report_format_utils import format_float",
