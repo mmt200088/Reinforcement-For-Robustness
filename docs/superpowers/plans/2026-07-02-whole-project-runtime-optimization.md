@@ -316,6 +316,7 @@ new default only when effect equality passes and wall-clock evidence improves.
 - Modify: `Rescale_optimizer/rescale_optimizer/replan_interface.py`
 - Modify: `Rescale_optimizer/rescale_optimizer/replan.py`
 - Modify: `scripts/blb_build_fusion_count_map.py`
+- Modify: `scripts/blb_f0_scan_feasible_domain.py`
 - Modify: `scripts/report_fusion_count_map.py`
 - Test: `tests/test_rescale_optimizer_bridge_cache.py`
 - Test: `tests/test_blb_fusion_count_map.py`
@@ -345,6 +346,14 @@ map candidates by block-map filename before opening JSON files, so post-build
 sidecars such as `map_summary.json` are not parsed as maps. This keeps fusion
 map reporting focused on real `block*.json` maps and avoids unnecessary
 sidecar reads after large server builds.
+
+Progress 2026-07-02: `scripts/blb_f0_scan_feasible_domain.py` now lazily
+imports its torch/optimizer-heavy execution dependencies and uses
+`heapq.nsmallest()` for the masked-random and multi-random best-cost summaries
+instead of sorting every valid sampled row. On a 300k-row local top-20
+benchmark, the summary selection stayed identical while median time dropped
+from `0.280s` to `0.069s` and traced peak memory dropped from `22.76MB` to
+near zero.
 
 - [ ] **Step 3: Verify**
 

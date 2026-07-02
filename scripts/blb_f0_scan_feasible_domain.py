@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import heapq
 import hashlib
 import json
 import os
@@ -18,40 +19,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from blb_stage2_rl.action_space import (  # noqa: E402
-    K_LEVELS,
-    action_vector_to_cfgs,
-    action_dims_for_config,
-    avg_truncation_k_in_action,
-    build_optimizer_requests,
-    describe_action_vector,
-    load_max_sfs,
-    make_all_max_action_vector,
-)
 from blb_stage2_rl.candidate_store import (  # noqa: E402
     action_hash,
     build_candidate_identity_context,
     candidate_key,
-    effective_action_hash,
     effective_action_vector,
     f0_sort_key,
     raw_action_hash,
 )
-from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost  # noqa: E402
-from rescale_optimizer_bridge import (  # noqa: E402
-    InProcessInvoker,
-    RescaleOptimizerBridge,
-    aggregate_optimizer_signals,
-)
-from scripts.blb_eval_action import (  # noqa: E402
-    _optimizer_debug_from_outputs,
-    _optimizer_outputs_summary,
-    build_f0_candidate_record,
-)
-from scripts.blb_make_run_manifest import (  # noqa: E402
-    _canonical_rescale_optimizer_hash,
-    _file_sha256,
-)
+
+_DEFAULT_K_LEVELS_LEGACY_COMPAT = (8, 9, 11, 13, 10, 12)
 
 
 def _stable_json(value: Any) -> str:
@@ -60,6 +37,16 @@ def _stable_json(value: Any) -> str:
 
 def _sha256_json(value: Any) -> str:
     return hashlib.sha256(_stable_json(value).encode("utf-8")).hexdigest()
+
+
+def _file_sha256(path: Path) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _parse_int_list(raw: str | None) -> List[int] | None:
@@ -106,6 +93,8 @@ def _load_stage1_vectors(
 
 
 def canonical_rescale_optimizer_hash(root: str | os.PathLike[str], profile: str) -> str:
+    from scripts.blb_make_run_manifest import _canonical_rescale_optimizer_hash
+
     return str(_canonical_rescale_optimizer_hash(str(root), str(profile)) or "")
 
 
@@ -178,7 +167,22 @@ def _write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequen
 
 def _safe_allowed_k_indices() -> List[int]:
     allowed_values = {13, 12, 11}
-    return [idx for idx, value in enumerate(K_LEVELS) if int(value) in allowed_values]
+    raw = str(os.environ.get("BLB_TRUNCATION_K_LEVELS", "") or "").strip()
+    if raw:
+        k_levels = tuple(int(x.strip()) for x in raw.replace(";", ",").split(",") if x.strip())
+    else:
+        k_levels = _DEFAULT_K_LEVELS_LEGACY_COMPAT
+    if not k_levels:
+        k_levels = _DEFAULT_K_LEVELS_LEGACY_COMPAT
+    return [idx for idx, value in enumerate(k_levels) if int(value) in allowed_values]
+
+
+def _smallest_cost_rows(rows: Iterable[Mapping[str, Any]], limit: int) -> List[Mapping[str, Any]]:
+    return heapq.nsmallest(
+        max(0, int(limit)),
+        rows,
+        key=lambda row: (int(row["total_bits_sum"]), int(row["fusion_count"])),
+    )
 
 
 def _build_mask(
@@ -354,7 +358,7 @@ def _masked_random_validity(
                 })
         bits = [int(row["total_bits_sum"]) for row in valid_costs]
         fusion = [int(row["fusion_count"]) for row in valid_costs]
-        best = sorted(valid_costs, key=lambda row: (int(row["total_bits_sum"]), int(row["fusion_count"])))[:5]
+        best = _smallest_cost_rows(valid_costs, 5)
         by_count[str(int(mutation_count))] = {
             "mutation_count": int(mutation_count),
             "attempted": attempted,
@@ -423,7 +427,7 @@ def _multi_random_scan(
                 "effective_action_hash": str(evaluated.get("effective_action_hash", evaluated["action_hash"])),
                 "action_hash": str(evaluated["action_hash"]),
             })
-    rows.sort(key=lambda row: (int(row["total_bits_sum"]), int(row["fusion_count"])))
+    best_rows = _smallest_cost_rows(rows, 20)
     return {
         "schema": "blb_multi_random_f0_scan_v1",
         "random_seed": int(random_seed),
@@ -431,7 +435,7 @@ def _multi_random_scan(
         "mutation_counts": counts,
         "mutable_slot_count": int(len(mutable_slots)),
         "valid_count": int(len(rows)),
-        "best_valid": rows[:20],
+        "best_valid": best_rows,
     }
 
 
@@ -684,6 +688,20 @@ def _real_evaluator(
         attn_degree: Sequence[int],
         identity_context: Mapping[str, Any],
         ) -> Callable[[Sequence[int], str], Mapping[str, Any]]:
+    from blb_stage2_rl.action_space import (
+        avg_truncation_k_in_action,
+        describe_action_vector,
+        load_max_sfs,
+        make_all_max_action_vector,
+    )
+    from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost
+    from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+    from scripts.blb_eval_action import (
+        _optimizer_debug_from_outputs,
+        _optimizer_outputs_summary,
+        build_f0_candidate_record,
+    )
+
     max_sfs = load_max_sfs(profile)
     bridge = RescaleOptimizerBridge(
         invoker=InProcessInvoker.from_profile(
@@ -750,6 +768,13 @@ def _real_evaluator(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from blb_stage2_rl.action_space import (
+        action_dims_for_config,
+        describe_action_vector,
+        load_max_sfs,
+        make_all_max_action_vector,
+    )
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default="mrpc")
     parser.add_argument("--model", default="bert-base")

@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -47,6 +48,21 @@ class BLBF0ScanTests(unittest.TestCase):
                 "action_values": [22, 24],
             },
         ]
+
+    def test_smallest_cost_rows_does_not_full_sort(self):
+        from scripts.blb_f0_scan_feasible_domain import _smallest_cost_rows
+
+        rows = [
+            {"total_bits_sum": 30, "fusion_count": 1, "action_hash": "c"},
+            {"total_bits_sum": 10, "fusion_count": 2, "action_hash": "b"},
+            {"total_bits_sum": 10, "fusion_count": 1, "action_hash": "a"},
+            {"total_bits_sum": 20, "fusion_count": 0, "action_hash": "d"},
+        ]
+
+        with mock.patch("builtins.sorted", side_effect=AssertionError("full sort")):
+            best = _smallest_cost_rows(rows, 3)
+
+        self.assertEqual([row["action_hash"] for row in best], ["a", "b", "d"])
 
     def test_scan_stops_when_baseline_is_invalid(self):
         from scripts.blb_f0_scan_feasible_domain import run_scan_core
