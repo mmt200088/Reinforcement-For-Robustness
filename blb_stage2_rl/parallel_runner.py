@@ -51,10 +51,9 @@ from function_handler import ReversibleLayerHandler
 # Reusable no-op context for the uncontended (1 worker/device) path.
 _NULL_LOCK = contextlib.nullcontext()
 
-from .action_space import K_LEVELS, _baseline_k_index_for_block
+from .action_space import _baseline_k_index_for_block
 from .env import BLBStage2Env
 from .fusion_curriculum import (
-    build_fusion_step_level_mask,
     fusion_block_curriculum,
     fusion_probe_target_block,
     select_mutable_step_indices,
@@ -71,8 +70,8 @@ from .seed_utils import (
 from .sequential_env import BLBStage2SequentialEnv
 from .sequential_runner import (
     EpisodeRecord,
+    _get_cached_fusion_action_level_mask,
     _get_cached_step_static_tensors,
-    _open_step_level_mask,
     _resolve_baseline_prior_scale,
 )
 
@@ -399,34 +398,29 @@ def collect_fusion_episode(
         levels_t = step_static.levels_t
         n_active = int(slot_mask_np.sum())
 
-        if fusion_curriculum_active and not fusion_curriculum_open:
-            action_level_mask_np = build_fusion_step_level_mask(
-                fusion_num_options=int(spec.fusion_num_options),
-                k_num_levels=int(spec.k_num_levels),
-                k_level_values=list(K_LEVELS),
-                mutable=(int(spec.step_idx) in fusion_mutable_steps),
-                radius=int(fusion_neighbor_radius),
-                baseline_k_index=int(_baseline_k_index_for_block(int(spec.block_idx))),
-                max_step_dim=policy.cfg.max_step_dim,
-                max_num_levels=policy.cfg.max_num_levels,
-            )
-        else:
-            action_level_mask_np = _open_step_level_mask(
-                spec=spec,
-                max_step_dim=policy.cfg.max_step_dim,
-                max_num_levels=policy.cfg.max_num_levels,
-            )
-        if (
-                fusion_probe_block is not None
-                and int(spec.block_idx) == int(fusion_probe_block)
-                and int(spec.fusion_num_options) > 1
-        ):
-            # ADR-012 probe: make the forced option level legal even when the
-            # curriculum pins this block to baseline.
-            action_level_mask_np[0, 1] = True
-        action_level_mask_t = (
-            torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
+        mask_mode = (
+            "curriculum"
+            if fusion_curriculum_active and not fusion_curriculum_open
+            else "open"
         )
+        force_option_one = (
+            fusion_probe_block is not None
+            and int(spec.block_idx) == int(fusion_probe_block)
+            and int(spec.fusion_num_options) > 1
+        )
+        cached_action_mask = _get_cached_fusion_action_level_mask(
+            env,
+            spec=spec,
+            mode=mask_mode,
+            mutable=(int(spec.step_idx) in fusion_mutable_steps),
+            radius=int(fusion_neighbor_radius),
+            force_option_one=bool(force_option_one),
+            max_step_dim=policy.cfg.max_step_dim,
+            max_num_levels=policy.cfg.max_num_levels,
+            device=device,
+        )
+        action_level_mask_np = cached_action_mask.mask_np
+        action_level_mask_t = cached_action_mask.mask_t
 
         chosen_action_np: Optional[np.ndarray] = None
         chosen_log_prob: Any = 0.0

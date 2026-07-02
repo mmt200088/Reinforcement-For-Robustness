@@ -936,6 +936,36 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
                     msg=f"{src_name} still rebuilds static step tensors per step: {old_pattern!r}",
                 )
 
+    def test_stage2_fusion_action_level_masks_are_cached_per_device(self):
+        runner_src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        parallel_src = (REPO_ROOT / "blb_stage2_rl/parallel_runner.py").read_text(
+            encoding="utf-8"
+        )
+
+        for needle in (
+            "class _CachedFusionActionLevelMask:",
+            "def _get_cached_fusion_action_level_mask(",
+            "_stage2_fusion_action_level_mask_cache",
+            "torch.as_tensor(mask_np, device=device).unsqueeze(0)",
+        ):
+            self.assertIn(needle, runner_src, msg=f"sequential_runner.py missing: {needle!r}")
+        for src_name, src in (
+            ("sequential_runner.py", runner_src),
+            ("parallel_runner.py", parallel_src),
+        ):
+            self.assertIn(
+                "_get_cached_fusion_action_level_mask(",
+                src,
+                msg=f"{src_name} does not use the cached fusion mask helper",
+            )
+        self.assertNotIn(
+            "torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)",
+            parallel_src,
+            msg="parallel fusion rollout still copies action-level masks to GPU each step",
+        )
+
     def test_stage2_parallel_rollout_batches_worker_scalar_sync_at_episode_end(self):
         parallel_src = (REPO_ROOT / "blb_stage2_rl/parallel_runner.py").read_text(
             encoding="utf-8"

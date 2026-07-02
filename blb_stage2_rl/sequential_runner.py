@@ -478,6 +478,12 @@ class _StepStaticTensors:
     levels_t: torch.Tensor
 
 
+@dataclass(frozen=True)
+class _CachedFusionActionLevelMask:
+    mask_np: np.ndarray
+    mask_t: torch.Tensor
+
+
 def _step_static_cache_key(
         *,
         schedule: Sequence[Any],
@@ -544,6 +550,85 @@ def _get_cached_step_static_tensors(
     step_static_tensors = [by_step[i] for i in range(len(schedule))]
     setattr(env, "_stage2_static_step_tensor_cache", (key, step_static_tensors))
     return step_static_tensors
+
+
+def _get_cached_fusion_action_level_mask(
+        env: BLBStage2SequentialEnv,
+        *,
+        spec: Any,
+        mode: str,
+        mutable: bool,
+        radius: int,
+        force_option_one: bool,
+        max_step_dim: int,
+        max_num_levels: int,
+        device: torch.device,
+        ) -> _CachedFusionActionLevelMask:
+    """Return cached numpy + device tensors for repeated fusion action masks."""
+    mode_key = str(mode)
+    if mode_key not in {"curriculum", "open"}:
+        raise ValueError(f"unknown fusion action-level mask mode: {mode!r}")
+    device = torch.device(device)
+    n_opts = int(spec.fusion_num_options)
+    n_k = int(spec.k_num_levels)
+    baseline_k_index = int(_baseline_k_index_for_block(int(spec.block_idx)))
+    effective_mutable = bool(mutable) if mode_key == "curriculum" else True
+    effective_radius = max(0, int(radius)) if mode_key == "curriculum" else 0
+    effective_force = bool(force_option_one and n_opts > 1)
+    key = (
+        str(device),
+        mode_key,
+        int(getattr(spec, "step_idx", 0)),
+        int(spec.block_idx),
+        int(n_opts),
+        int(n_k),
+        bool(effective_mutable),
+        int(effective_radius),
+        int(baseline_k_index),
+        bool(effective_force),
+        int(max_step_dim),
+        int(max_num_levels),
+        tuple(int(x) for x in K_LEVELS[:n_k]),
+    )
+    cache = getattr(env, "_stage2_fusion_action_level_mask_cache", None)
+    if isinstance(cache, dict):
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+    else:
+        cache = {}
+
+    if mode_key == "curriculum":
+        mask_np = build_fusion_step_level_mask(
+            fusion_num_options=n_opts,
+            k_num_levels=n_k,
+            k_level_values=list(K_LEVELS),
+            mutable=bool(effective_mutable),
+            radius=int(effective_radius),
+            baseline_k_index=int(baseline_k_index),
+            max_step_dim=int(max_step_dim),
+            max_num_levels=int(max_num_levels),
+        )
+    else:
+        mask_np = _open_step_level_mask(
+            spec=spec,
+            max_step_dim=int(max_step_dim),
+            max_num_levels=int(max_num_levels),
+        )
+    if effective_force:
+        mask_np = np.array(mask_np, dtype=bool, copy=True)
+        mask_np[0, 1] = True
+    else:
+        mask_np = np.asarray(mask_np, dtype=bool)
+    mask_t = torch.as_tensor(mask_np, device=device).unsqueeze(0)
+    mask_np.setflags(write=False)
+    cached = _CachedFusionActionLevelMask(
+        mask_np=mask_np,
+        mask_t=mask_t,
+    )
+    cache[key] = cached
+    setattr(env, "_stage2_fusion_action_level_mask_cache", cache)
+    return cached
 
 
 def _build_step_level_mask(
@@ -2258,32 +2343,29 @@ def train_sequential(
                 # active (and not yet fully open), most blocks are pinned to baseline
                 # and only the episode's selected blocks may move within a widening
                 # neighborhood; the curriculum dissolves to the open mask after ramp.
-                if fusion_curriculum_active and not fusion_curriculum_open:
-                    action_level_mask_np = build_fusion_step_level_mask(
-                        fusion_num_options=int(spec.fusion_num_options),
-                        k_num_levels=int(spec.k_num_levels),
-                        k_level_values=list(K_LEVELS),
-                        mutable=(int(spec.step_idx) in fusion_mutable_steps),
-                        radius=int(fusion_neighbor_radius),
-                        baseline_k_index=int(_baseline_k_index_for_block(int(spec.block_idx))),
-                        max_step_dim=policy.cfg.max_step_dim,
-                        max_num_levels=policy.cfg.max_num_levels,
-                    )
-                else:
-                    action_level_mask_np = _open_step_level_mask(
-                        spec=spec,
-                        max_step_dim=policy.cfg.max_step_dim,
-                        max_num_levels=policy.cfg.max_num_levels,
-                    )
-                if (
-                        fusion_probe_block is not None
-                        and int(spec.block_idx) == int(fusion_probe_block)
-                        and int(spec.fusion_num_options) > 1
-                        and action_level_mask_np is not None
-                ):
-                    # ADR-012 probe: make the forced option level legal even
-                    # when the curriculum pins this block to baseline.
-                    action_level_mask_np[0, 1] = True
+                mask_mode = (
+                    "curriculum"
+                    if fusion_curriculum_active and not fusion_curriculum_open
+                    else "open"
+                )
+                force_option_one = (
+                    fusion_probe_block is not None
+                    and int(spec.block_idx) == int(fusion_probe_block)
+                    and int(spec.fusion_num_options) > 1
+                )
+                cached_action_mask = _get_cached_fusion_action_level_mask(
+                    env,
+                    spec=spec,
+                    mode=mask_mode,
+                    mutable=(int(spec.step_idx) in fusion_mutable_steps),
+                    radius=int(fusion_neighbor_radius),
+                    force_option_one=bool(force_option_one),
+                    max_step_dim=policy.cfg.max_step_dim,
+                    max_num_levels=policy.cfg.max_num_levels,
+                    device=device,
+                )
+                action_level_mask_np = cached_action_mask.mask_np
+                action_level_mask_t = cached_action_mask.mask_t
             elif neighbor_mask_active and base_action_vec_for_mask is not None:
                 action_level_mask_np = _build_step_level_mask(
                     spec=spec,
@@ -2333,11 +2415,6 @@ def train_sequential(
                         action_level_mask_np,
                         protected_actions=protected_actions,
                     )
-                action_level_mask_t = (
-                    torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
-                )
-            elif action_level_mask_np is not None:
-                # fusion mode: open mask passes straight through (no pruning)
                 action_level_mask_t = (
                     torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
                 )
