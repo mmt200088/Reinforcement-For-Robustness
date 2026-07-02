@@ -47,6 +47,40 @@ def _load_eval_cache_module():
     return mod
 
 
+def _source_region(source: str, start_marker: str, end_marker: str) -> str:
+    start = source.index(start_marker)
+    end = source.index(end_marker, start + len(start_marker))
+    return source[start:end]
+
+
+class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
+    def test_gelu_piecewise_select_avoids_low_mask_zero_fill(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        regions = [
+            _source_region(
+                source,
+                "    def block5_gelu_forward(x: Tensor) -> Tensor:",
+                "    return block5_gelu_forward",
+            ),
+            _source_region(
+                source,
+                "class PolynomialGELU",
+                "# change BertsdpaAttention",
+            ),
+        ]
+
+        self.assertTrue(
+            "def _select_piecewise_gelu_output(" in source,
+            "function_handler must share the GELU piecewise select helper",
+        )
+        for region in regions:
+            self.assertIn("_select_piecewise_gelu_output(", region)
+            self.assertNotIn("mask_low", region)
+            self.assertNotIn("y0 = torch.zeros_like", region)
+            self.assertNotIn("torch.where(mask_low", region)
+            self.assertNotIn("torch.zeros_like(x))", region)
+
+
 class Stage1EvalCacheTest(unittest.TestCase):
     def test_make_key_normalizes_sequences(self):
         mod = _load_eval_cache_module()

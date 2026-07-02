@@ -1983,6 +1983,13 @@ def _make_block5_wffn1_forward(
     return block5_wffn1_forward
 
 
+def _select_piecewise_gelu_output(x: Tensor, y_neg: Tensor, y_pos: Tensor) -> Tensor:
+    """Select GELU approximation pieces with one zero fill for low/NaN values."""
+    out = torch.where((x >= -2.7) & (x < 0), y_neg, torch.zeros_like(x))
+    out = torch.where((x >= 0) & (x <= 2.7), y_pos, out)
+    return torch.where(x > 2.7, x, out)
+
+
 def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
     """构造 BLB Block 5 噪声版的 ``PolynomialGELU.forward``。
 
@@ -2062,20 +2069,9 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
     def block5_gelu_forward(x: Tensor) -> Tensor:
         powers = _compute_powers(x)
         # 两段多项式（共享 powers）：负段 sign=1，正段 sign=0
-        y0 = torch.zeros_like(x, dtype=x.dtype, device=x.device)
         y1 = _compute_polynomial(powers, coeff_dict[1], x)   # [-2.7, 0)
         y2 = _compute_polynomial(powers, coeff_dict[0], x)   # [0, 2.7]
-        y3 = x                                                # > 2.7（GELU 大正值近似 x）
-
-        mask_low = x < -2.7
-        mask_neg = (x >= -2.7) & (x < 0)
-        mask_pos = (x >= 0) & (x <= 2.7)
-        mask_high = x > 2.7
-
-        out = torch.where(mask_low, y0, torch.zeros_like(x))
-        out = torch.where(mask_neg, y1, out)
-        out = torch.where(mask_pos, y2, out)
-        out = torch.where(mask_high, y3, out)
+        out = _select_piecewise_gelu_output(x, y1, y2)
         # Block 5 末尾 truncation（GELU 输出之后）
         if cfg5.output_truncation_k is not None:
             out = _apply_truncation(out, cfg5.output_truncation_k, cfg5.output_truncation_mode)
@@ -2147,31 +2143,9 @@ class PolynomialGELU(nn.Module):
             # Degree 0: skip piecewise comparison, directly use [-2.7, 0] interval polynomial
             return self._poly(x, 1)
 
-        y0 = torch.zeros_like(x, dtype=x.dtype, device=x.device)
         y1 = self._poly(x, 1)
         y2 = self._poly(x, 0)
-        y3 = x
-        
-        # 创建与x相同设备和类型的输出张量
-        
-        if(self.degree == 1 or self.degree == 2):
-            # degree 1, use the Bumblebee piecewise
-            mask_low = x < -2.7
-            mask_neg = (x >= -2.7) & (x < 0)
-            mask_pos = (x >= 0) & (x <= 2.7)
-            mask_high = x > 2.7
-        else:
-            mask_low = x < -2.7
-            mask_neg = (x >= -2.7) & (x < 0)
-            mask_pos = (x >= 0) & (x <= 2.7)
-            mask_high = x > 2.7
-        
-        # 分段处理
-        # print(f"y0 : {y0}, y1 : {y1}, y2 : {y2}, y3 : {y3}")
-        out = torch.where(mask_low, y0, torch.zeros_like(x))
-        out = torch.where(mask_neg, y1, out)
-        out = torch.where(mask_pos, y2, out)
-        out = torch.where(mask_high, y3, out)
+        out = _select_piecewise_gelu_output(x, y1, y2)
 
         # print(f"X : {x}, Y : {out}, OriginGelu: {origin}")
         return out
