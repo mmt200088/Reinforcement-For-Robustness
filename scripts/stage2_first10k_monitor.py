@@ -44,6 +44,12 @@ def _is_nonfinite(value: Any) -> bool:
         return False
 
 
+def _mean_or_none(values: List[float]) -> float | None:
+    if not values:
+        return None
+    return float(math.fsum(values)) / float(len(values))
+
+
 def _window(values: List[float], size: int) -> Dict[str, float] | None:
     if len(values) < size:
         return None
@@ -296,6 +302,11 @@ def build_summary(
         for row in ppo_recent
         if "entropy_recovery_delta" in row
     ]
+    ppo_entropy_recent_mean = _mean_or_none(ppo_entropy_recent)
+    ppo_clip_recent_mean = _mean_or_none(ppo_clip_recent)
+    ppo_kl_recent_mean = _mean_or_none(ppo_kl_recent)
+    ppo_lr_scale_recent_mean = _mean_or_none(ppo_lr_scale_recent)
+    ppo_entropy_recovery_recent_mean = _mean_or_none(ppo_entropy_recovery_recent)
 
     hard_failures: List[str] = []
     warnings: List[str] = []
@@ -358,8 +369,8 @@ def build_summary(
         warnings.append("No new best for more than 2000 episodes.")
     if (
             completed > 1000
-            and ppo_entropy_recent
-            and statistics.mean(ppo_entropy_recent) < 1e-4
+            and ppo_entropy_recent_mean is not None
+            and ppo_entropy_recent_mean < 1e-4
             and episodes_since_best is not None
             and episodes_since_best > 1000
             ):
@@ -437,8 +448,8 @@ def build_summary(
             "best_reward": best_reward,
             "best_episode": best_episode,
             "episodes_since_best": episodes_since_best,
-            "mean": statistics.mean(returns) if returns else None,
-            "post_anchor_mean": statistics.mean(post_returns) if post_returns else None,
+            "mean": _mean_or_none(returns),
+            "post_anchor_mean": _mean_or_none(post_returns),
             "rolling": rolling,
         },
         "terminal_reward": {"rolling": terminal_rolling},
@@ -538,14 +549,11 @@ def build_summary(
         "ppo": {
             "updates_seen": len(ppo),
             "last_update": ppo[-1] if ppo else None,
-            "recent_entropy_mean": statistics.mean(ppo_entropy_recent) if ppo_entropy_recent else None,
-            "recent_clip_fraction_mean": statistics.mean(ppo_clip_recent) if ppo_clip_recent else None,
-            "recent_approx_kl_mean": statistics.mean(ppo_kl_recent) if ppo_kl_recent else None,
-            "recent_lr_scale_mean": statistics.mean(ppo_lr_scale_recent) if ppo_lr_scale_recent else None,
-            "recent_entropy_recovery_mean": (
-                statistics.mean(ppo_entropy_recovery_recent)
-                if ppo_entropy_recovery_recent else None
-            ),
+            "recent_entropy_mean": ppo_entropy_recent_mean,
+            "recent_clip_fraction_mean": ppo_clip_recent_mean,
+            "recent_approx_kl_mean": ppo_kl_recent_mean,
+            "recent_lr_scale_mean": ppo_lr_scale_recent_mean,
+            "recent_entropy_recovery_mean": ppo_entropy_recovery_recent_mean,
         },
         "gpu": gpu,
         "updated_at": time.time(),

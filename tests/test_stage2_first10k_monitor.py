@@ -1,3 +1,4 @@
+import argparse
 import csv
 import importlib.util
 from pathlib import Path
@@ -107,6 +108,64 @@ class Stage2First10kMonitorTest(unittest.TestCase):
                 "slope": -0.5,
             },
         )
+
+    def test_build_summary_uses_fast_mean_for_large_series(self):
+        monitor = _load_monitor_module()
+        episodes = [
+            {
+                "episode": idx,
+                "total_reward": float(idx + 1),
+                "terminal_reward": float(idx) + 0.5,
+                "terminal_priority": 3,
+                "valid_steps": 47,
+                "invalid_steps": 0,
+                "total_bits": 100 - idx,
+            }
+            for idx in range(3)
+        ]
+        ppo = [
+            {
+                "update": 1,
+                "n_samples": 1,
+                "policy_loss": 0.1,
+                "value_loss": 0.2,
+                "entropy": 0.2,
+                "clip_fraction": 0.4,
+                "approx_kl": 0.01,
+                "lr_scale": 0.5,
+                "entropy_recovery_delta": 0.03,
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(
+            monitor.statistics,
+            "mean",
+            side_effect=AssertionError("build_summary should avoid statistics.mean"),
+        ):
+            args = argparse.Namespace(
+                artifact_dir=str(Path(td) / "artifact"),
+                stage2_noise=str(Path(td) / "noise"),
+                nvidia_log=str(Path(td) / "nvidia.csv"),
+                phase="live",
+                planned=3,
+                anchor=1,
+                rollout=1,
+                horizon=1,
+                k_trials=5,
+                probe_size=256,
+                expected_reward_devices="",
+                max_post_anchor_p12_rate=0.30,
+                min_post_anchor_p12_rate_samples=100,
+            )
+            summary = monitor.build_summary(args, episodes=episodes, ppo=ppo)
+
+        self.assertEqual(summary["reward"]["mean"], 2.0)
+        self.assertEqual(summary["reward"]["post_anchor_mean"], 2.5)
+        self.assertEqual(summary["ppo"]["recent_entropy_mean"], 0.2)
+        self.assertEqual(summary["ppo"]["recent_clip_fraction_mean"], 0.4)
+        self.assertEqual(summary["ppo"]["recent_approx_kl_mean"], 0.01)
+        self.assertEqual(summary["ppo"]["recent_lr_scale_mean"], 0.5)
+        self.assertEqual(summary["ppo"]["recent_entropy_recovery_mean"], 0.03)
 
     def test_gpu_stats_ignores_directory_path(self):
         monitor = _load_monitor_module()

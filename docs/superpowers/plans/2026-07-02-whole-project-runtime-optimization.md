@@ -813,6 +813,12 @@ preserving the summary values. A local 1000-point window benchmark over 3000
 calls produced identical output and reduced time from `3.776341s` to
 `0.181783s` (`20.77x`).
 
+Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now computes
+full-run and recent PPO means in `build_summary()` with `math.fsum()/len`
+instead of Python's slower `statistics.mean()` exact-rational path. A local
+60k-value benchmark over 400 repeats produced the same mean and reduced time
+from `27.821296s` to `0.499612s` (`55.69x`).
+
 Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now aggregates
 nvidia-smi GPU samples while reading the CSV instead of retaining every parsed
 row and grouping in a second pass. A local 30k-row CSV comparison produced
