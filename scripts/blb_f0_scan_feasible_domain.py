@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from cli_parse_utils import parse_optional_int_list  # noqa: E402
 from json_utils import stable_json_hash, write_json_file  # noqa: E402
+from jsonl_utils import write_jsonl_rows  # noqa: E402
 from blb_stage2_rl.candidate_store import (  # noqa: E402
     action_hash,
     build_candidate_identity_context,
@@ -134,13 +135,6 @@ def _normalize_eval(raw: Mapping[str, Any], action: Sequence[int], source: str) 
         "fusion": fusion,
     }))
     return record
-
-
-def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def _write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequence[str]) -> None:
@@ -565,7 +559,7 @@ def run_scan_core(
                 "optimizer_cost_irrelevant": str(record.get("kind", "")) == "K",
             }
             rows.append(row)
-    _write_jsonl(out / "per_slot_scan.jsonl", rows)
+    write_jsonl_rows(out / "per_slot_scan.jsonl", rows, sort_keys=True)
 
     summary_rows = _build_per_slot_summary_rows(
         baseline_action=baseline_action,
@@ -618,7 +612,7 @@ def run_scan_core(
         beam_depths=beam_depths,
         mutation_limit=int(beam_mutation_limit),
     )
-    _write_jsonl(out / "beam_scan_results.jsonl", beam_rows)
+    write_jsonl_rows(out / "beam_scan_results.jsonl", beam_rows, sort_keys=True)
 
     mask = _build_mask(
         baseline_action=baseline_action,
@@ -676,7 +670,11 @@ def run_scan_core(
         "best_valid": [],
     }
     write_json_file(out / "multi_random_summary.json", multi_random_report)
-    _write_jsonl(out / "multi_random_best_valid.jsonl", multi_random_report.get("best_valid", []))
+    write_jsonl_rows(
+        out / "multi_random_best_valid.jsonl",
+        multi_random_report.get("best_valid", []),
+        sort_keys=True,
+    )
 
     manifest = {
         "schema": "blb_phase1_f0_scan_manifest_v1",

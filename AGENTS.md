@@ -144,7 +144,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `_count_jsonl`, `_count_jsonl_with_required_fields`, or raw
   `for line in handle: json.loads(line)` loops in report, registry, or
   diagnostics scripts; extend `jsonl_utils.py` and `tests/test_jsonl_utils.py`
-  if another JSONL convention is needed.
+  if another JSONL convention is needed. For finite report/diagnostic JSONL
+  artifacts, use `jsonl_utils.write_jsonl_rows()` instead of script-local
+  `_write_jsonl` helpers; keep high-throughput append-only RL training writers
+  local when they intentionally manage buffering, flush cadence, and reusable
+  open handles.
 - Shared numeric parser rule, added 2026-07-03: report scripts that need to
   pull a number out of a metric string must use
   `numeric_parse_utils.parse_first_float()`. Do not add local `FLOAT_RE`

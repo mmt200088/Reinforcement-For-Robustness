@@ -13,6 +13,7 @@ from jsonl_utils import (
     read_jsonl_xy,
     read_jsonl,
     resolve_jsonl_path,
+    write_jsonl_rows,
 )
 
 
@@ -149,6 +150,23 @@ class JsonlUtilsTest(unittest.TestCase):
         self.assertIn("rows:2 is not a JSON object", failures)
         self.assertIn("rows missing required fields in 1 rows (line 3: b)", failures)
 
+    def test_write_jsonl_rows_creates_parent_and_normalizes_rows(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "nested" / "rows.jsonl"
+
+            written = write_jsonl_rows(
+                path,
+                [{"b": 2, "a": pathlib.Path("x")}, {"c": 3}],
+                sort_keys=True,
+            )
+            text = path.read_text(encoding="utf-8")
+
+        self.assertEqual(written, path)
+        self.assertEqual(
+            text,
+            '{"a": "x", "b": 2}\n{"c": 3}\n',
+        )
+
 
 class JsonlUtilsStaticGuardTest(unittest.TestCase):
     def _function_names(self, rel_path: str) -> set[str]:
@@ -180,6 +198,14 @@ class JsonlUtilsStaticGuardTest(unittest.TestCase):
                 text = (repo / rel_path).read_text(encoding="utf-8")
                 self.assertIn(needle, text)
                 self.assertFalse(forbidden & self._function_names(rel_path))
+
+    def test_finite_jsonl_artifact_script_uses_shared_writer(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        rel_path = "scripts/blb_f0_scan_feasible_domain.py"
+        text = (repo / rel_path).read_text(encoding="utf-8")
+
+        self.assertIn("from jsonl_utils import write_jsonl_rows", text)
+        self.assertNotIn("def _write_jsonl(", text)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Literal, TextIO
 
+from json_utils import json_default, to_jsonable
+
 JsonlErrorMode = Literal["skip", "raise"]
 
 
@@ -84,6 +86,35 @@ def read_jsonl(
     if missing_ok and not jsonl_path.exists():
         return []
     return list(iter_jsonl(jsonl_path, errors=errors, dict_only=dict_only))
+
+
+def write_jsonl_rows(
+        path: str | Path,
+        rows: Iterable[Any],
+        *,
+        ensure_ascii: bool = False,
+        sort_keys: bool = False,
+        ) -> Path:
+    """Write a finite JSONL artifact using shared JSON normalization.
+
+    This helper is for report/diagnostic scripts that write bounded row sets.
+    High-throughput append-only training logs should keep using their buffered
+    writers so flush cadence and open file reuse remain explicit.
+    """
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(
+                json.dumps(
+                    to_jsonable(row, preserve_native=True),
+                    ensure_ascii=bool(ensure_ascii),
+                    sort_keys=bool(sort_keys),
+                    default=json_default,
+                )
+                + "\n"
+            )
+    return out_path
 
 
 def read_jsonl_fields(
