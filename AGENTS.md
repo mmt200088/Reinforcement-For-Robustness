@@ -97,6 +97,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   experiment scripts; keep legacy-named helpers only as thin wrappers around
   `json_utils` when compatibility requires them. Extend `json_utils.py` and its
   tests when a new serializable type is needed.
+- Shared report-format helper rule, added 2026-07-03: lightweight HTML/metrics
+  reports must use `report_format_utils.py` for common table and number
+  rendering. Use `html_table()` for small escaped tables, enabling
+  `allow_html_cells=True` only for cells that are already intentionally
+  rendered HTML; use `format_float()` for compact numeric cells and
+  `metric_float()` for tolerant metric extraction from JSON dictionaries. Do
+  not add new script-local `_html_table`, `_fmt`, or `_metric` helpers in
+  report/experiment scripts; extend `report_format_utils.py` and
+  `tests/test_report_format_utils.py` when a report needs a new shared
+  formatting convention.
 - Fusion-count fixed-action experiment helper rule, added 2026-07-03:
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and

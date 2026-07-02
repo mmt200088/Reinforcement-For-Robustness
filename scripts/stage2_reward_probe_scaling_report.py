@@ -17,6 +17,12 @@ import re
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from report_format_utils import format_float  # noqa: E402
+
 FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 
 
@@ -227,10 +233,6 @@ def build_summary(root: str | Path) -> dict[str, Any]:
     return {"runs": rows, "best": best}
 
 
-def _fmt(value: object) -> str:
-    return "" if value is None else f"{float(value):.4f}"
-
-
 def render_html(summary: Mapping[str, Any]) -> str:
     rows = summary.get("runs") or ()
     best = summary.get("best")
@@ -244,9 +246,9 @@ def render_html(summary: Mapping[str, Any]) -> str:
             f"<td>{html.escape(str(row.get('device_spec', '')))}</td>"
             f"<td>{row.get('rc', '')}</td>"
             f"<td>{row.get('probe_calls', '')}</td>"
-            f"<td>{_fmt(row.get('mean_wall'))}</td>"
-            f"<td>{_fmt(row.get('median_wall'))}</td>"
-            f"<td>{_fmt(row.get('mean_speedup'))}</td>"
+            f"<td>{format_float(row.get('mean_wall'), digits=4)}</td>"
+            f"<td>{format_float(row.get('median_wall'), digits=4)}</td>"
+            f"<td>{format_float(row.get('mean_speedup'), digits=4)}</td>"
             f"<td>{html.escape(str(row.get('devices_seen', [])))}</td>"
             f"<td>{html.escape(str(row.get('trial_splits', [])))}</td>"
             f"<td>{html.escape(str(row.get('max_gpu_util_pct', {})))}</td>"

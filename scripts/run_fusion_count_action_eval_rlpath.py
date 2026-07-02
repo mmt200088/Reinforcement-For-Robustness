@@ -29,6 +29,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from json_utils import to_jsonable
+from report_format_utils import format_float, html_table, metric_float
 from scripts.fusion_count_action_eval_common import (
     iter_action_config_paths,
     load_rlpath_action_configs,
@@ -449,37 +450,6 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     }
 
 
-def _metric(value: Mapping[str, Any], key: str) -> float:
-    try:
-        return float(value.get(key, float("nan")))
-    except Exception:
-        return float("nan")
-
-
-def _fmt(x: Any) -> str:
-    try:
-        f = float(x)
-    except Exception:
-        return "" if x is None else str(x)
-    if np.isnan(f):
-        return "nan"
-    return f"{f:.6f}"
-
-
-def _html_table(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
-    parts = ["<table><thead><tr>"]
-    for h in headers:
-        parts.append(f"<th>{html.escape(str(h))}</th>")
-    parts.append("</tr></thead><tbody>")
-    for row in rows:
-        parts.append("<tr>")
-        for cell in row:
-            parts.append(f"<td>{html.escape(str(cell))}</td>")
-        parts.append("</tr>")
-    parts.append("</tbody></table>")
-    return "\n".join(parts)
-
-
 def _render_html(combined: Mapping[str, Any]) -> str:
     rows = []
     for r in combined["group_results"]:
@@ -487,21 +457,21 @@ def _render_html(combined: Mapping[str, Any]) -> str:
         orig = r.get("original_metrics") or {}
         rows.append([
             r["name"],
-            _fmt(m.get("loss_mean")),
-            _fmt(m.get("loss_std")),
-            _fmt(m.get("metric1_mean")),
-            _fmt(m.get("metric1_std")),
-            _fmt(m.get("metric2_mean")),
-            _fmt(m.get("metric2_std")),
-            _fmt(orig.get("loss")),
-            _fmt(orig.get("loss_std")),
-            _fmt(orig.get("p")),
-            _fmt(orig.get("p_std")),
-            _fmt(orig.get("s")),
-            _fmt(orig.get("s_std")),
-            _fmt(r.get("delta_loss_mean_vs_original")),
-            _fmt(r.get("delta_metric1_mean_vs_original")),
-            _fmt(r.get("delta_metric2_mean_vs_original")),
+            format_float(m.get("loss_mean")),
+            format_float(m.get("loss_std")),
+            format_float(m.get("metric1_mean")),
+            format_float(m.get("metric1_std")),
+            format_float(m.get("metric2_mean")),
+            format_float(m.get("metric2_std")),
+            format_float(orig.get("loss")),
+            format_float(orig.get("loss_std")),
+            format_float(orig.get("p")),
+            format_float(orig.get("p_std")),
+            format_float(orig.get("s")),
+            format_float(orig.get("s_std")),
+            format_float(r.get("delta_loss_mean_vs_original")),
+            format_float(r.get("delta_metric1_mean_vs_original")),
+            format_float(r.get("delta_metric2_mean_vs_original")),
             r.get("fusion_total", ""),
             json.dumps(r.get("fusion_by_block", {}), ensure_ascii=False),
             json.dumps(r.get("k_distribution", {}), ensure_ascii=False),
@@ -519,10 +489,10 @@ def _render_html(combined: Mapping[str, Any]) -> str:
         f"<p>Generated: {html.escape(str(combined['generated_at_utc']))}</p>",
         "<div class='note'>RL-path = SequentialEnv.evaluate_step/commit_step + BLBStage2Env.step(boosted_overrides). Original = Paean final-eval action-config decoder.</div>",
         "<h2>Context</h2>",
-        _html_table(["Stage1 GELU", "Stage1 Softmax", "repeat/K trials", "probe size", "groups"],
+        html_table(["Stage1 GELU", "Stage1 Softmax", "repeat/K trials", "probe size", "groups"],
                     [[json.dumps(combined["stage1_gelu"]), json.dumps(combined["stage1_softmax"]), combined["repeat"], combined["probe_size"], len(combined["group_results"])]]),
         "<h2>RL Path vs Original Paean Path</h2>",
-        _html_table([
+        html_table([
             "group",
             "RL loss", "RL loss std", "RL m1", "RL m1 std", "RL m2", "RL m2 std",
             "orig loss", "orig loss std", "orig acc", "orig acc std", "orig f1", "orig f1 std",
@@ -596,9 +566,18 @@ def main() -> int:
             "s_std": orig.get("s_std"),
         }
         metrics = r.get("metrics") or {}
-        r["delta_loss_mean_vs_original"] = _metric(metrics, "loss_mean") - _metric(r["original_metrics"], "loss")
-        r["delta_metric1_mean_vs_original"] = _metric(metrics, "metric1_mean") - _metric(r["original_metrics"], "p")
-        r["delta_metric2_mean_vs_original"] = _metric(metrics, "metric2_mean") - _metric(r["original_metrics"], "s")
+        r["delta_loss_mean_vs_original"] = (
+            metric_float(metrics, "loss_mean", default=float("nan"))
+            - metric_float(r["original_metrics"], "loss", default=float("nan"))
+        )
+        r["delta_metric1_mean_vs_original"] = (
+            metric_float(metrics, "metric1_mean", default=float("nan"))
+            - metric_float(r["original_metrics"], "p", default=float("nan"))
+        )
+        r["delta_metric2_mean_vs_original"] = (
+            metric_float(metrics, "metric2_mean", default=float("nan"))
+            - metric_float(r["original_metrics"], "s", default=float("nan"))
+        )
         group_results.append(r)
 
     combined = {

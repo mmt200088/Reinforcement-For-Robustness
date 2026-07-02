@@ -28,6 +28,7 @@ from scripts.fusion_count_action_eval_common import (
     stable_json_hash,
     unique_configs_by_key,
 )
+from report_format_utils import html_table, metric_float
 
 DEFAULT_RUN_DIR = REPO_ROOT / "experiments" / "server_command_runs" / "fusion_count_map_action_eval_20260610"
 DEFAULT_ACTION_DIR = DEFAULT_RUN_DIR / "action_configs"
@@ -173,30 +174,6 @@ def _load_result(path: Path) -> dict:
     return payload
 
 
-def _metric(result: Mapping[str, Any], key: str, default: float = 0.0) -> float:
-    try:
-        return float(result.get(key, default))
-    except Exception:
-        return float(default)
-
-
-def _html_table(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
-    parts = ["<table><thead><tr>"]
-    for h in headers:
-        parts.append(f"<th>{html.escape(str(h))}</th>")
-    parts.append("</tr></thead><tbody>")
-    for row in rows:
-        parts.append("<tr>")
-        for cell in row:
-            if isinstance(cell, str) and cell.startswith("<"):
-                parts.append(f"<td>{cell}</td>")
-            else:
-                parts.append(f"<td>{html.escape(str(cell))}</td>")
-        parts.append("</tr>")
-    parts.append("</tbody></table>")
-    return "\n".join(parts)
-
-
 def _build_combined(
     *,
     configs: Sequence[Mapping[str, Any]],
@@ -226,9 +203,9 @@ def _build_combined(
         candidate["reused_from_canonical"] = canonical_by_hash[h] != str(cfg["name"])
         candidate["fusion_group"] = cfg["group"]
         candidate["action_config_path"] = str(cfg["path"])
-        candidate["loss_delta_vs_baseline"] = _metric(candidate, "loss") - _metric(baseline, "loss")
-        candidate["p_delta_vs_baseline"] = _metric(candidate, "p") - _metric(baseline, "p")
-        candidate["s_delta_vs_baseline"] = _metric(candidate, "s") - _metric(baseline, "s")
+        candidate["loss_delta_vs_baseline"] = metric_float(candidate, "loss") - metric_float(baseline, "loss")
+        candidate["p_delta_vs_baseline"] = metric_float(candidate, "p") - metric_float(baseline, "p")
+        candidate["s_delta_vs_baseline"] = metric_float(candidate, "s") - metric_float(baseline, "s")
         group_results.append(candidate)
 
     baseline_repeat_n = int(
@@ -271,12 +248,12 @@ def _render_html(combined: Mapping[str, Any]) -> str:
         "baseline_plaintext",
         "baseline",
         "",
-        f"{_metric(baseline, 'loss'):.6f}",
-        f"{_metric(baseline, 'loss_std'):.6f}",
-        f"{_metric(baseline, 'p'):.6f}",
-        f"{_metric(baseline, 'p_std'):.6f}",
-        f"{_metric(baseline, 's'):.6f}",
-        f"{_metric(baseline, 's_std'):.6f}",
+        f"{metric_float(baseline, 'loss'):.6f}",
+        f"{metric_float(baseline, 'loss_std'):.6f}",
+        f"{metric_float(baseline, 'p'):.6f}",
+        f"{metric_float(baseline, 'p_std'):.6f}",
+        f"{metric_float(baseline, 's'):.6f}",
+        f"{metric_float(baseline, 's_std'):.6f}",
         "",
         "",
         "",
@@ -293,15 +270,15 @@ def _render_html(combined: Mapping[str, Any]) -> str:
             result["name"],
             group.get("family", ""),
             no_op,
-            f"{_metric(result, 'loss'):.6f}",
-            f"{_metric(result, 'loss_std'):.6f}",
-            f"{_metric(result, 'p'):.6f}",
-            f"{_metric(result, 'p_std'):.6f}",
-            f"{_metric(result, 's'):.6f}",
-            f"{_metric(result, 's_std'):.6f}",
-            f"{_metric(result, 'loss_delta_vs_baseline'):+.6f}",
-            f"{_metric(result, 'p_delta_vs_baseline'):+.6f}",
-            f"{_metric(result, 's_delta_vs_baseline'):+.6f}",
+            f"{metric_float(result, 'loss'):.6f}",
+            f"{metric_float(result, 'loss_std'):.6f}",
+            f"{metric_float(result, 'p'):.6f}",
+            f"{metric_float(result, 'p_std'):.6f}",
+            f"{metric_float(result, 's'):.6f}",
+            f"{metric_float(result, 's_std'):.6f}",
+            f"{metric_float(result, 'loss_delta_vs_baseline'):+.6f}",
+            f"{metric_float(result, 'p_delta_vs_baseline'):+.6f}",
+            f"{metric_float(result, 's_delta_vs_baseline'):+.6f}",
             int(result.get("total_bits_sum", 0)),
             int(result.get("total_fusion_count", 0)),
             f"invalid={valid}; verified={verify}; reused={reused}; canonical={html.escape(str(result.get('canonical_run', '')))}",
@@ -334,7 +311,7 @@ def _render_html(combined: Mapping[str, Any]) -> str:
         "<div class='note'>baseline 是原明文模型：原始 GELU/Softmax、无 BLB noise、无函数替换。"
         "其它组固定最新 MRPC Stage-1 配置，只改变 fusion-count map option；K 全部固定在 baseline K=13。</div>",
         "<h2>Context</h2>",
-        _html_table(
+        html_table(
             ["profile", "Stage-1 GELU", "Stage-1 Softmax", "baseline K", "baseline repeat", "stage2 repeat", "unique action runs", "requested groups"],
             [[
                 ctx.get("profile"),
@@ -346,18 +323,24 @@ def _render_html(combined: Mapping[str, Any]) -> str:
                 combined["evaluation_protocol"]["unique_action_runs"],
                 combined["evaluation_protocol"]["requested_group_count"],
             ]],
+            allow_html_cells=True,
         ),
         "<h2>Metrics and Stability</h2>",
-        _html_table(
+        html_table(
             [
                 "group", "family", "no-op", "loss mean", "loss std", "Accuracy mean",
                 "Accuracy std", "F1 mean", "F1 std", "loss Δ", "Accuracy Δ", "F1 Δ",
                 "bits", "fusion", "diagnostics",
             ],
             rows,
+            allow_html_cells=True,
         ),
         "<h2>Action Mapping</h2>",
-        _html_table(["group", "action hash", "fusion count by graph", "option by graph", "action config"], detail_rows),
+        html_table(
+            ["group", "action hash", "fusion count by graph", "option by graph", "action config"],
+            detail_rows,
+            allow_html_cells=True,
+        ),
         "</body></html>",
     ]
     return "\n".join(parts)

@@ -24,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_json_int_list  # noqa: E402
+from report_format_utils import html_table  # noqa: E402
 
 ACTION_SPACE_PATH = REPO_ROOT / "blb_stage2_rl" / "action_space.py"
 DEFAULT_MAP_DIR = REPO_ROOT / "blb_stage2_rl" / "fusion_maps" / "mrpc"
@@ -738,23 +739,6 @@ def _fmt_layers(layers: Sequence[int]) -> str:
     return ", ".join(f"L{int(v)}" for v in layers)
 
 
-def _html_table(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
-    out = ["<table>", "<thead><tr>"]
-    for h in headers:
-        out.append(f"<th>{html.escape(str(h))}</th>")
-    out.append("</tr></thead><tbody>")
-    for row in rows:
-        out.append("<tr>")
-        for cell in row:
-            if isinstance(cell, str) and cell.startswith("<"):
-                out.append(f"<td>{cell}</td>")
-            else:
-                out.append(f"<td>{html.escape(str(cell))}</td>")
-        out.append("</tr>")
-    out.append("</tbody></table>")
-    return "\n".join(out)
-
-
 def _render_html(payload: Mapping[str, Any]) -> str:
     graph_rows = []
     for graph in payload["graphs"]:
@@ -804,7 +788,7 @@ def _render_html(payload: Mapping[str, Any]) -> str:
         "真正进入 replan 的 real slots，以及相对 fusion_count=0 的 real slot 变化。"
         "</div>",
         "<h2>Stage-1 / Schedule Context</h2>",
-        _html_table(
+        html_table(
             ["profile", "GELU", "Softmax", "K levels", "baseline K"],
             [[
                 payload["profile"],
@@ -813,14 +797,20 @@ def _render_html(payload: Mapping[str, Any]) -> str:
                 json.dumps(payload["k_levels"]),
                 payload["baseline_k_value"],
             ]],
+            allow_html_cells=True,
         ),
         "<h2>Block Fusion Count Summary</h2>",
-        _html_table(
+        html_table(
             ["graph/block", "block", "fusion counts", "slot count", "K slot", "occurrences", "layers"],
             graph_rows,
+            allow_html_cells=True,
         ),
         "<h2>Server Evaluation Groups Prepared</h2>",
-        _html_table(["group", "family", "no-op", "details", "fusion count by graph", "option by graph"], group_rows),
+        html_table(
+            ["group", "family", "no-op", "details", "fusion count by graph", "option by graph"],
+            group_rows,
+            allow_html_cells=True,
+        ),
     ]
 
     for graph in payload["graphs"]:
@@ -849,9 +839,10 @@ def _render_html(payload: Mapping[str, Any]) -> str:
                 f"<span class='changed'>{real_txt}</span>" if changed_real else real_txt,
                 f"<span class='changed'>{raw_txt}</span>" if changed_raw else raw_txt,
             ])
-        parts.append(_html_table(
+        parts.append(html_table(
             ["option", "fusion_count", "total_bits", "total_variance", "real slot changes vs fc0", "raw action changes vs fc0"],
             option_rows,
+            allow_html_cells=True,
         ))
         for option in graph["options"]:
             parts.append(f"<h3>Option {option['option_id']} / fusion_count {option['fusion_count']}</h3>")
@@ -866,9 +857,10 @@ def _render_html(payload: Mapping[str, Any]) -> str:
                     "yes" if row["changed_raw_vs_fusion0"] else "",
                     "yes" if row["changed_real_vs_fusion0"] else "",
                 ])
-            parts.append(_html_table(
+            parts.append(html_table(
                 ["slot", "true slot label", "action index", "real value/K", "status", "raw changed", "real changed"],
                 slot_rows,
+                allow_html_cells=True,
             ))
         parts.append("</div>")
 

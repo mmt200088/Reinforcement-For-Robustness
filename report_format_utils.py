@@ -1,0 +1,67 @@
+"""Shared helpers for lightweight HTML/metric report scripts."""
+from __future__ import annotations
+
+import html
+import math
+from typing import Any, Iterable, Mapping, Sequence
+
+
+def format_float(
+        value: Any,
+        *,
+        digits: int = 6,
+        none_text: str = "",
+        nan_text: str = "nan",
+        ) -> str:
+    """Format a numeric value for compact HTML tables.
+
+    Non-numeric non-``None`` values are returned as strings so callers can pass
+    already-rendered diagnostics without local try/except wrappers.
+    """
+    if value is None:
+        return str(none_text)
+    try:
+        numeric = float(value)
+    except Exception:
+        return str(value)
+    if math.isnan(numeric):
+        return str(nan_text)
+    return f"{numeric:.{int(digits)}f}"
+
+
+def metric_float(mapping: Mapping[str, Any], key: str, default: float = 0.0) -> float:
+    """Read ``key`` from a metric mapping as float, returning ``default`` on failure."""
+    try:
+        return float(mapping.get(key, default))
+    except Exception:
+        return float(default)
+
+
+def html_table(
+        headers: Sequence[Any],
+        rows: Iterable[Sequence[Any]],
+        *,
+        allow_html_cells: bool = False,
+        table_attrs: str = "",
+        ) -> str:
+    """Render a small escaped HTML table.
+
+    ``allow_html_cells`` preserves the existing report convention where a cell
+    starting with ``<`` is intentionally pre-rendered HTML. Keep it disabled for
+    untrusted rows.
+    """
+    attrs = f" {table_attrs.strip()}" if str(table_attrs or "").strip() else ""
+    parts = [f"<table{attrs}><thead><tr>"]
+    for header in headers:
+        parts.append(f"<th>{html.escape(str(header))}</th>")
+    parts.append("</tr></thead><tbody>")
+    for row in rows:
+        parts.append("<tr>")
+        for cell in row:
+            if allow_html_cells and isinstance(cell, str) and cell.startswith("<"):
+                parts.append(f"<td>{cell}</td>")
+            else:
+                parts.append(f"<td>{html.escape(str(cell))}</td>")
+        parts.append("</tr>")
+    parts.append("</tbody></table>")
+    return "\n".join(parts)
