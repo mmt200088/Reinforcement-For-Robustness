@@ -459,6 +459,14 @@ trial. A local 5000-sample synthetic benchmark kept valid samples while reducing
 key scans from `25000` to `478` and sampler wall time from `0.168s` to
 `0.047s`.
 
+Progress 2026-07-02: `scripts/run_fusion_count_action_eval.py` now folds
+duplicate/no-op fusion-count final-eval groups with a shallow top-level
+candidate copy instead of `copy.deepcopy()` for every alias. The combined JSON
+still carries the same nested candidate diagnostics, but repeated groups no
+longer clone large result payloads. A local 1200-alias synthetic combined-report
+benchmark reduced merge cost from `2.0259s` / `68.41MB` to `0.0048s` /
+`0.86MB`.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

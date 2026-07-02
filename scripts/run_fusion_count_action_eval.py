@@ -8,7 +8,6 @@ requested groups, including duplicate/no-op aliases, are folded into one report.
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import html
 import json
@@ -250,7 +249,7 @@ def _build_combined(
     for cfg in configs:
         h = str(cfg["action_hash"])
         source = result_by_hash[h]
-        candidate = copy.deepcopy(source["candidate_results"][0])
+        candidate = dict(source["candidate_results"][0])
         candidate["name"] = str(cfg["name"])
         candidate["action_hash"] = h
         candidate["canonical_run"] = canonical_by_hash[h]
