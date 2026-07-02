@@ -5404,14 +5404,12 @@ class LayerImportanceEvaluator(TrainerCallback):
         advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)
         
         self.return_normalizer.update(returns)
-        returns_normalized = torch.tensor(
-            self.return_normalizer.normalize(returns.cpu().numpy()),
-            dtype=torch.float32
-        ).to(device)
-        values_normalized = torch.tensor(
-            self.return_normalizer.normalize(values.cpu().numpy()),
-            dtype=torch.float32
-        ).to(device)
+        returns_normalized = self.return_normalizer.normalize(returns).to(
+            device=device, dtype=torch.float32
+        )
+        values_normalized = self.return_normalizer.normalize(values).to(
+            device=device, dtype=torch.float32
+        )
         
         last_policy_loss = 0.0
         last_value_loss = 0.0

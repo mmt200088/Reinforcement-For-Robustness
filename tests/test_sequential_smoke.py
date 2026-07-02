@@ -940,6 +940,17 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertNotIn("mb_idx = indices[start:end]", update_region)
         self.assertNotIn("torch.from_numpy(mb_idx).long().to(device)", update_region)
 
+    def test_stage1_ppo_return_normalization_stays_on_device(self):
+        evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(evaluator_src, "ppo_update_gtrxl")
+
+        self.assertIn("returns_normalized = self.return_normalizer.normalize(returns).to(", update_region)
+        self.assertIn("values_normalized = self.return_normalizer.normalize(values).to(", update_region)
+        self.assertNotIn("returns.cpu().numpy()", update_region)
+        self.assertNotIn("values.cpu().numpy()", update_region)
+        self.assertNotIn("returns_normalized = torch.tensor(", update_region)
+        self.assertNotIn("values_normalized = torch.tensor(", update_region)
+
     def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         mask_region = _method_region_from_source(policy_src, "_mask_logits_for_slot")
