@@ -35,9 +35,9 @@ import sys
 import tempfile
 import time
 import traceback
-from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from json_utils import to_jsonable as _to_jsonable
 from training_curve_plot import save_stage1_style_training_curve
 
 
@@ -240,32 +240,6 @@ def _render_live_summary_markdown(state: Mapping[str, Any]) -> str:
         "",
     ])
     return "\n".join(lines)
-
-
-def _to_jsonable(obj: Any) -> Any:
-    """尽量把复杂对象（dataclass / numpy / dict / list）转成 JSON-able 形式。"""
-    if obj is None or isinstance(obj, (bool, int, float, str)):
-        return obj
-    if is_dataclass(obj) and not isinstance(obj, type):
-        return _to_jsonable(asdict(obj))
-    if isinstance(obj, Mapping):
-        return {str(k): _to_jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_to_jsonable(v) for v in obj]
-    # numpy scalar / array
-    try:
-        import numpy as _np
-        if isinstance(obj, _np.ndarray):
-            return obj.tolist()
-        if isinstance(obj, _np.generic):
-            return obj.item()
-    except Exception:
-        pass
-    # 兜底：用 str
-    try:
-        return str(obj)
-    except Exception:
-        return None
 
 
 def _migrate_trace_schema_if_needed(path: str, *, log_fn=None) -> None:

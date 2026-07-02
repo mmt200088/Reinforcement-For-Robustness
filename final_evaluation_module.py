@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 
 from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
+from json_utils import to_jsonable
 
 NOISE_SCALING_FACTOR_KEYS = (
     "input_noise_scaling_factors",
@@ -2054,10 +2055,10 @@ class UnifiedFinalEvaluationModule:
                     "limit_secondary_metric": float(report_constraints["metric2"]),
                 },
             },
-            "baseline": self._json_ready(baseline_result),
-            "optimized": self._json_ready(optimized_result),
-            "stage1_fixed_max_scaling": self._json_ready(stage1_fixed_max_noise_result),
-            "random_results": [self._json_ready(r) for r in random_results],
+            "baseline": to_jsonable(baseline_result),
+            "optimized": to_jsonable(optimized_result),
+            "stage1_fixed_max_scaling": to_jsonable(stage1_fixed_max_noise_result),
+            "random_results": [to_jsonable(r) for r in random_results],
             "random_summary": summary,
             "evaluation_protocol": {
                 "version": 4,
@@ -2094,24 +2095,6 @@ class UnifiedFinalEvaluationModule:
             json.dump(output, fh, indent=2)
         self.evaluator.log(f"Unified final-eval summary saved to: {output_path}")
         return output_path
-
-    def _json_ready(self, result):
-        if result is None:
-            return None
-        out = {}
-        for k, v in result.items():
-            if isinstance(v, np.ndarray):
-                out[k] = v.tolist()
-            elif isinstance(v, np.bool_):
-                out[k] = bool(v)
-            elif isinstance(v, dict):
-                out[k] = {
-                    kk: (vv.tolist() if isinstance(vv, np.ndarray) else vv)
-                    for kk, vv in v.items()
-                }
-            else:
-                out[k] = v
-        return out
 
     # ------------------------------------------------------------------
     # Helpers

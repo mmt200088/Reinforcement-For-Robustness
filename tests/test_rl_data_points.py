@@ -3,11 +3,13 @@ import importlib.util
 import sys
 import tempfile
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 from unittest import mock
 
 import numpy as np
 
+from json_utils import to_jsonable as shared_to_jsonable
 from rl_data_points import RLDataPointWriter, make_unique_run_id, to_jsonable
 
 
@@ -52,6 +54,18 @@ class RLDataPointWriterTest(unittest.TestCase):
     def test_to_jsonable_handles_nested_numpy_values(self):
         value = {"a": np.int64(3), "b": [np.float32(1.5), np.array([2, 4])]}
         self.assertEqual(to_jsonable(value), {"a": 3, "b": [1.5, [2, 4]]})
+        self.assertIs(to_jsonable, shared_to_jsonable)
+
+    def test_to_jsonable_handles_paths_and_dataclasses(self):
+        @dataclass
+        class Payload:
+            path: Path
+            value: np.int64
+
+        self.assertEqual(
+            to_jsonable(Payload(Path("reports/out.html"), np.int64(7))),
+            {"path": "reports/out.html", "value": 7},
+        )
 
     def test_to_jsonable_does_not_import_torch_for_json_native_scalars(self):
         import builtins

@@ -79,6 +79,19 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertNotIn('"per_worker_trial_counts": [int(x) for x in diag.', env)
         self.assertNotIn('"per_worker_trial_counts": [int(x) for x in diag_obj.', env)
 
+    def test_report_json_normalization_uses_shared_helper(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
+        final_eval = (repo / "final_evaluation_module.py").read_text(encoding="utf-8")
+        persistence = (repo / "blb_stage2_rl" / "persistence.py").read_text(encoding="utf-8")
+
+        for text in (paean, final_eval):
+            self.assertIn("from json_utils import to_jsonable", text)
+            self.assertIn("to_jsonable(", text)
+            self.assertNotIn("def _json_ready", text)
+        self.assertIn("from json_utils import to_jsonable as _to_jsonable", persistence)
+        self.assertNotIn("def _to_jsonable", persistence)
+
 
 if __name__ == "__main__":
     unittest.main()

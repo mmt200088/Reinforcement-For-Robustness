@@ -85,6 +85,12 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   formatted probe-runner lines in env/runner/report code; extend
   `ProbeRunnerDiagnostics`, `format_diagnostics_line()`, and
   `diagnostics_payload()` together.
+- Shared JSON-normalization rule, added 2026-07-03: reports, final-eval
+  payloads, RL data-point writers, and experiment artifacts must use
+  `json_utils.to_jsonable()` for numpy scalars/arrays, dataclasses, paths, and
+  optional torch tensors. Do not add local `_json_ready`, `_jsonable`, or
+  `_json_safe` helpers in core RL/Paean/final-eval code; extend
+  `json_utils.py` and its tests when a new serializable type is needed.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper

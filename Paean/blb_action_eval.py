@@ -32,6 +32,7 @@ from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
 from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
 from blb_stage2_rl.optimizer_cost import apply_optimizer_outputs_to_cfgs
 from final_evaluation_module import UnifiedFinalEvaluationModule
+from json_utils import to_jsonable
 from rescale_optimizer_bridge import (
     InProcessInvoker,
     RescaleOptimizerBridge,
@@ -545,7 +546,7 @@ class BLBActionFinalEvaluationModule:
             "invalid_block_count": int(opt_signals.invalid_block_count),
             "valid_block_count": int(opt_signals.valid_block_count),
             "any_invalid": bool(opt_signals.any_invalid),
-            "action_metadata": self._json_ready(metadata),
+            "action_metadata": to_jsonable(metadata),
             "fusion_group_diagnostics": self._fusion_group_diagnostics(
                 metadata=metadata or {},
                 opt_signals=opt_signals,
@@ -1627,10 +1628,10 @@ class BLBActionFinalEvaluationModule:
                 "softmax": np.asarray(opt_softmax, dtype=int).tolist(),
             },
             "constraints": {"selection": selection_constraints},
-            "baseline": self._json_ready(baseline_result),
-            "candidate_results": [self._json_ready(r) for r in candidate_results],
-            "comparison_summary": self._json_ready(comparison_summary or {}),
-            "cost_match_diagnostics": self._json_ready(cost_match_diagnostics or {}),
+            "baseline": to_jsonable(baseline_result),
+            "candidate_results": [to_jsonable(r) for r in candidate_results],
+            "comparison_summary": to_jsonable(comparison_summary or {}),
+            "cost_match_diagnostics": to_jsonable(cost_match_diagnostics or {}),
             "evaluation_protocol": {
                 "version": 2,
                 "mode": "blb_action_grid_cost_matched",
@@ -2062,15 +2063,3 @@ class BLBActionFinalEvaluationModule:
             return int(default)
         vals, counts = np.unique(arr, return_counts=True)
         return int(vals[np.argmax(counts)])
-
-    @staticmethod
-    def _json_ready(obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        if isinstance(obj, np.generic):
-            return obj.item()
-        if isinstance(obj, dict):
-            return {str(k): BLBActionFinalEvaluationModule._json_ready(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):
-            return [BLBActionFinalEvaluationModule._json_ready(v) for v in obj]
-        return obj
