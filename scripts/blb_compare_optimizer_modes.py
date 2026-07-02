@@ -27,6 +27,7 @@ from blb_stage2_rl.candidate_store import (  # noqa: E402
     raw_action_hash,
 )
 from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost  # noqa: E402
+from json_utils import write_json_file  # noqa: E402
 from rescale_optimizer_bridge import (  # noqa: E402
     InProcessInvoker,
     RescaleOptimizerBridge,
@@ -38,11 +39,6 @@ from scripts.blb_f0_scan_feasible_domain import (  # noqa: E402
     _parse_int_list,
     canonical_rescale_optimizer_hash,
 )
-
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _mutate_record(action: np.ndarray, record: Mapping[str, Any]) -> np.ndarray:
@@ -344,7 +340,7 @@ def run_compare(argv: Sequence[str] | None = None) -> Dict[str, Any]:
         "all_invariants_pass": all(bool(v) for v in invariants.values()),
     }
     out = Path(args.output_dir)
-    _write_json(out / "optimizer_mode_comparison.json", payload)
+    write_json_file(out / "optimizer_mode_comparison.json", payload)
     _write_markdown(out / "optimizer_mode_comparison.md", payload)
     return payload
 

@@ -14,6 +14,7 @@ from json_utils import (
     stable_json_hash,
     stable_json_key,
     to_jsonable as shared_to_jsonable,
+    write_json_file,
 )
 from rl_data_points import RLDataPointWriter, make_unique_run_id, to_jsonable
 
@@ -106,6 +107,33 @@ class RLDataPointWriterTest(unittest.TestCase):
         b = {"a": "x", "b": 2}
         self.assertEqual(stable_json_key(a), stable_json_key(b))
         self.assertEqual(stable_json_hash(a), stable_json_hash(b))
+
+    def test_write_json_file_creates_parent_and_normalizes_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "nested" / "payload.json"
+            written = write_json_file(
+                path,
+                {"b": np.int64(2), "a": Path("x")},
+                sort_keys=True,
+            )
+
+            text = path.read_text(encoding="utf-8")
+
+        self.assertEqual(written, path)
+        self.assertTrue(text.endswith("\n"))
+        self.assertEqual(json.loads(text), {"a": "x", "b": 2})
+
+    def test_json_artifact_scripts_use_shared_writer(self):
+        checks = {
+            "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import stable_json_hash, write_json_file",
+            "scripts/blb_compare_optimizer_modes.py": "from json_utils import write_json_file",
+            "scripts/optimization_evidence_bundle.py": "from json_utils import write_json_file",
+        }
+        for rel, needle in checks.items():
+            with self.subTest(path=rel):
+                text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+                self.assertIn(needle, text)
+                self.assertNotIn("def _write_json(", text)
 
     def test_to_jsonable_does_not_import_torch_for_json_native_scalars(self):
         import builtins

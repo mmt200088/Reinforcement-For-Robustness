@@ -20,7 +20,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_optional_int_list  # noqa: E402
-from json_utils import stable_json_hash  # noqa: E402
+from json_utils import stable_json_hash, write_json_file  # noqa: E402
 from blb_stage2_rl.candidate_store import (  # noqa: E402
     action_hash,
     build_candidate_identity_context,
@@ -134,11 +134,6 @@ def _normalize_eval(raw: Mapping[str, Any], action: Sequence[int], source: str) 
         "fusion": fusion,
     }))
     return record
-
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
@@ -517,9 +512,9 @@ def run_scan_core(
     baseline_action = [int(x) for x in baseline_action]
     action_dims = [int(x) for x in action_dims]
     baseline = _normalize_eval(evaluate_action(baseline_action, "all_max_baseline"), baseline_action, "all_max_baseline")
-    _write_json(out / "baseline_f0.json", baseline)
+    write_json_file(out / "baseline_f0.json", baseline)
     if not bool(baseline["optimizer_valid"]):
-        _write_json(out / "error_report.json", {
+        write_json_file(out / "error_report.json", {
             "error": "baseline optimizer_valid is false",
             "baseline": baseline,
         })
@@ -641,7 +636,7 @@ def run_scan_core(
     })
     mask_hash = stable_json_hash(mask)
     mask["mask_hash"] = mask_hash
-    _write_json(out / "suggested_action_mask.json", mask)
+    write_json_file(out / "suggested_action_mask.json", mask)
     mask_md = [
         "# Phase-1 Suggested Action Mask",
         "",
@@ -666,7 +661,7 @@ def run_scan_core(
         random_samples=int(random_samples),
         random_seed=int(random_seed),
     )
-    _write_json(out / "masked_random_validity.json", random_report)
+    write_json_file(out / "masked_random_validity.json", random_report)
     multi_random_report = _multi_random_scan(
         mask=mask,
         evaluate_action=evaluate_action,
@@ -680,7 +675,7 @@ def run_scan_core(
         "valid_count": 0,
         "best_valid": [],
     }
-    _write_json(out / "multi_random_summary.json", multi_random_report)
+    write_json_file(out / "multi_random_summary.json", multi_random_report)
     _write_jsonl(out / "multi_random_best_valid.jsonl", multi_random_report.get("best_valid", []))
 
     manifest = {
@@ -702,7 +697,7 @@ def run_scan_core(
         "multi_mutation_counts": [int(x) for x in multi_mutation_counts],
         "mask_hash": mask_hash,
     }
-    _write_json(out / "manifest.json", manifest)
+    write_json_file(out / "manifest.json", manifest)
     return {
         "baseline": baseline,
         "per_slot_rows": rows,

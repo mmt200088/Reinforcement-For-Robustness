@@ -19,7 +19,6 @@ import contextlib
 from datetime import datetime, timezone
 import importlib.util
 import io
-import json
 import os
 from pathlib import Path
 import sys
@@ -27,6 +26,11 @@ import tarfile
 from typing import Any, Sequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from json_utils import write_json_file  # noqa: E402
 
 
 def _load_script_module(name: str, path: Path):
@@ -36,11 +40,6 @@ def _load_script_module(name: str, path: Path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _write_text(path: Path, text: str) -> None:
@@ -93,7 +92,7 @@ def _run_project_audit(root: Path, out_dir: Path, artifact_roots: Sequence[str])
     report = mod.build_project_audit(root, artifact_roots=artifact_roots)
     json_path = out_dir / "project_optimization_audit.json"
     md_path = out_dir / "project_optimization_audit.md"
-    _write_json(json_path, report)
+    write_json_file(json_path, report, sort_keys=True)
     _write_text(md_path, mod.render_markdown(report))
     return {
         "json": json_path.name,
@@ -111,7 +110,7 @@ def _run_server_snapshot(args: argparse.Namespace, root: Path, out_dir: Path) ->
     )
     json_path = out_dir / "server_resource_snapshot.json"
     md_path = out_dir / "server_resource_snapshot.md"
-    _write_json(json_path, report)
+    write_json_file(json_path, report, sort_keys=True)
     _write_text(md_path, mod.render_markdown(report))
     return {
         "json": json_path.name,
@@ -134,7 +133,7 @@ def _run_stage1_report(logs: Sequence[str], out_dir: Path) -> dict[str, Any] | N
     report = mod.parse_log_lines(_iter_log_lines(logs))
     json_path = out_dir / "stage1_parallel_report.json"
     md_path = out_dir / "stage1_parallel_report.md"
-    _write_json(json_path, report)
+    write_json_file(json_path, report, sort_keys=True)
     _write_text(md_path, mod.render_markdown(report))
     return {
         "json": json_path.name,
@@ -157,7 +156,7 @@ def _run_stage2_gpu_report(args: argparse.Namespace, out_dir: Path) -> dict[str,
     )
     json_path = out_dir / "stage2_gpu_utilization_report.json"
     md_path = out_dir / "stage2_gpu_utilization_report.md"
-    _write_json(json_path, report)
+    write_json_file(json_path, report, sort_keys=True)
     _write_text(md_path, mod.render_markdown(report))
     return {
         "json": json_path.name,
@@ -285,7 +284,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.tar_gz:
         manifest["tar_gz"] = str(Path(args.tar_gz).resolve())
 
-    _write_json(out_dir / "manifest.json", manifest)
+    write_json_file(out_dir / "manifest.json", manifest, sort_keys=True)
     _write_text(out_dir / "index.md", render_index(manifest))
     if args.tar_gz:
         _write_tar_gz(out_dir, Path(args.tar_gz).resolve())

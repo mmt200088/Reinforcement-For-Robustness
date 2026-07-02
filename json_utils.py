@@ -135,3 +135,34 @@ def stable_json_key(value: Any) -> str:
 
 def stable_json_hash(value: Any) -> str:
     return hashlib.sha256(stable_json_key(value).encode("utf-8")).hexdigest()
+
+
+def write_json_file(
+        path: str | Path,
+        payload: Any,
+        *,
+        ensure_ascii: bool = False,
+        indent: int | None = 2,
+        sort_keys: bool = False,
+        trailing_newline: bool = True,
+        ) -> Path:
+    """Write one JSON artifact using the repository's shared normalization.
+
+    This is for script/report artifacts that previously carried local
+    ``_write_json`` helpers. It creates the parent directory, normalizes numpy /
+    dataclass / Path / optional torch values through :func:`to_jsonable`, and
+    returns the written path for callers that want to record it.
+    """
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(
+        to_jsonable(payload, preserve_native=True),
+        ensure_ascii=bool(ensure_ascii),
+        indent=indent,
+        sort_keys=bool(sort_keys),
+        default=json_default,
+    )
+    if trailing_newline:
+        text += "\n"
+    out_path.write_text(text, encoding="utf-8")
+    return out_path
