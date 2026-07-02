@@ -371,6 +371,12 @@ unchanged (`rank % num_shards == shard_idx`) and a 1,000,000-combo / 64-shard
 local iterator benchmark produced identical assigned combos while reducing one
 worker's pure iteration time from `0.0646s` to `0.0253s` (`2.55x`).
 
+Progress 2026-07-02: `blb_stage2_rl/fusion_enum.py` degeneracy probes now reuse
+the already-computed all-min corner result and stream random probes, avoiding one
+duplicate real replan call and a temporary probe list on every over-budget
+degeneracy check. A local call-count check with `num_random=5` now performs the
+expected `7` evals (`baseline + corner + 5 random`) instead of the previous `8`.
+
 - [ ] **Step 3: Verify**
 
 Run:
