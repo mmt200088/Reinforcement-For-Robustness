@@ -4,6 +4,7 @@ import unittest
 from unittest import mock
 
 from Paean import config as paean_config
+from runtime_error_reporter import format_command as shared_format_command
 
 
 class PaeanConfigTest(unittest.TestCase):
@@ -58,6 +59,18 @@ class PaeanConfigTest(unittest.TestCase):
                 presets = paean_config.list_presets(preset_dir)
 
         self.assertEqual(presets, ["alpha", "zeta"])
+
+    def test_format_command_reuses_runtime_error_reporter_helper(self):
+        self.assertIs(paean_config.format_command, shared_format_command)
+        self.assertEqual(
+            paean_config.format_command(["python", "x y"]),
+            "python 'x y'",
+        )
+        source = (Path(__file__).resolve().parents[1] / "Paean" / "config.py").read_text(
+            encoding="utf-8",
+        )
+        self.assertIn("from runtime_error_reporter import format_command", source)
+        self.assertNotIn("def format_command(", source)
 
 
 if __name__ == "__main__":

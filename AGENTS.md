@@ -182,6 +182,12 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `parse_bool_flag`, or `parse_positive_int` only as compatibility wrappers
   around this seam; do not reimplement those parser bodies in new launchers or
   RL entrypoints.
+- Shared command-format helper rule, added 2026-07-03: command logging in
+  launchers, final-eval wrappers, and error summaries must use
+  `runtime_error_reporter.format_command()` for shell-escaped argv rendering.
+  Do not add new local `" ".join(shlex.quote(...))` / `format_command`
+  implementations; re-export or import the shared helper when a module needs to
+  preserve a historical function name.
 - Shared device-list parsing rule, added 2026-07-03: Stage-1 and Stage-2 GPU
   device flags must use `device_utils.parse_device_ids()` for int/list/tuple,
   comma-separated string, and Python Fire tuple-string forms. `stage1_rl` and

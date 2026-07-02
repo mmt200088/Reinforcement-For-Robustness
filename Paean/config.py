@@ -7,7 +7,9 @@ from pathlib import Path
 import re
 import shlex
 import time
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
+
+from runtime_error_reporter import format_command
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_DIR.parent
@@ -441,7 +443,3 @@ def final_eval_results_dir(
         source_run_dir=source_run_dir,
         timestamp_if_needed=timestamp_if_needed,
     ) / "final_eval"
-
-
-def format_command(command: Iterable[str]) -> str:
-    return " ".join(shlex.quote(str(part)) for part in command)
