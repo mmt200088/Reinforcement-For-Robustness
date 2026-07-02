@@ -377,6 +377,16 @@ def _run_group(seq_env: BLBStage2SequentialEnv, cfg: Mapping[str, Any], *, seed:
         g = str(x.get("graph_key", ""))
         if g.startswith("block5_"):
             block5_graphs[g.split("_L")[0]] = block5_graphs.get(g.split("_L")[0], 0) + 1
+    if not action_steps:
+        fusion_total = sum(int(x.get("fusion_count_replan", 0) or 0) for x in step_records)
+        for x in step_records:
+            bi = str(int(x.get("block_idx", -1)))
+            fusion_by_block[bi] = fusion_by_block.get(bi, 0) + int(x.get("fusion_count_replan", 0) or 0)
+            kv = str(int(x.get("k_value", -1)))
+            k_dist[kv] = k_dist.get(kv, 0) + 1
+            g = str(x.get("graph_key", ""))
+            if g.startswith("block5_"):
+                block5_graphs[g.split("_L")[0]] = block5_graphs.get(g.split("_L")[0], 0) + 1
     return {
         "name": str(cfg["name"]),
         "action_config_path": str(cfg["path"]),
