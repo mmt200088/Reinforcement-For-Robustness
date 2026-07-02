@@ -98,6 +98,28 @@ class Stage2First10kMonitorTest(unittest.TestCase):
         self.assertEqual(rows[1000]["rolling1000_min"], "1.00000000")
         self.assertEqual(rows[1000]["rolling1000_max"], "1000.00000000")
 
+    def test_write_window_csv_streams_rows_to_writer(self):
+        monitor = _load_monitor_module()
+        episodes = [
+            {"episode": idx, "total_reward": float(idx)}
+            for idx in range(65)
+        ]
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "reward_windows.csv"
+            with mock.patch.object(
+                csv.DictWriter,
+                "writerows",
+                side_effect=AssertionError("write_window_csv should not buffer all rows"),
+            ):
+                monitor.write_window_csv(path, episodes)
+
+            with path.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+
+        self.assertEqual(len(rows), 65)
+        self.assertEqual(rows[64]["rolling60_mean"], "34.50000000")
+
     def test_final_main_reuses_loaded_episode_rows_for_csv_outputs(self):
         monitor = _load_monitor_module()
 

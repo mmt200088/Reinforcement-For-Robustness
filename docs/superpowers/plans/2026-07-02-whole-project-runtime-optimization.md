@@ -440,6 +440,13 @@ episode and PPO JSONL rows once and reuses those rows for the summary,
 `reward_windows.csv`, and `episode_health_windows.csv`. This avoids rereading
 large Stage-2 episode logs during final monitor report generation.
 
+Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now streams
+`reward_windows.csv` rows directly to `csv.DictWriter.writerow()` after each
+rolling-window update instead of buffering the full row list before
+`writerows()`. A local 100k-row parity benchmark kept the CSV output identical
+and reduced write peak memory from `141.65MB` to `0.25MB` while slightly
+improving wall time from `2.460s` to `2.335s`.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
