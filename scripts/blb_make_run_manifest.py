@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import heapq
 import json
 import os
 from pathlib import Path
@@ -82,6 +83,21 @@ def _resolve_path(path_text: str | None) -> Path | None:
     return path if path.is_absolute() else (REPO_ROOT / path)
 
 
+def _iter_sorted_tree_paths(paths: Iterable[Path]) -> Iterable[Path]:
+    heap: list[tuple[str, Path]] = []
+    for path in paths:
+        heapq.heappush(heap, (path.as_posix(), path))
+    while heap:
+        _key, path = heapq.heappop(heap)
+        if path.is_dir():
+            children = list(path.iterdir())
+            children.sort(key=lambda child: child.as_posix())
+            for child in children:
+                heapq.heappush(heap, (child.as_posix(), child))
+        else:
+            yield path
+
+
 def _canonical_rescale_optimizer_hash(root_text: str | None, profile: str) -> str | None:
     root = _resolve_path(root_text)
     if root is None or not root.exists():
@@ -91,19 +107,12 @@ def _canonical_rescale_optimizer_hash(root_text: str | None, profile: str) -> st
         root / "configs" / str(profile),
         root / "replan_configs" / str(profile),
     ]
-    files = []
-    for candidate in relevant_roots:
-        if candidate.is_file() and candidate.suffix in {".py", ".json"}:
-            files.append(candidate)
-        elif candidate.is_dir():
-            files.extend(
-                p for p in candidate.rglob("*")
-                if p.is_file() and p.suffix in {".py", ".json"}
-            )
-    if not files:
-        return _path_hash(root_text)
+    saw_files = False
     h = hashlib.sha256()
-    for file_path in sorted(files):
+    for file_path in _iter_sorted_tree_paths(relevant_roots):
+        if not file_path.is_file() or file_path.suffix not in {".py", ".json"}:
+            continue
+        saw_files = True
         try:
             rel = file_path.relative_to(root).as_posix()
         except ValueError:
@@ -112,6 +121,8 @@ def _canonical_rescale_optimizer_hash(root_text: str | None, profile: str) -> st
         h.update(b"\0")
         _update_hash_from_file(h, file_path)
         h.update(b"\0")
+    if not saw_files:
+        return _path_hash(root_text)
     return h.hexdigest()
 
 

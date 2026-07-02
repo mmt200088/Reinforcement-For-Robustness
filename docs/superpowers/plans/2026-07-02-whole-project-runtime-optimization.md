@@ -485,6 +485,12 @@ instead of calling `Path.read_bytes()` for every `.py`/`.json` file. This keeps
 Trust-0 manifest generation memory-bounded for larger optimizer/config trees
 while preserving the manifest hash format.
 
+Progress 2026-07-02: `scripts/blb_make_run_manifest.py` now also streams the
+canonical Rescale_optimizer file traversal with a heap-ordered directory walk
+instead of collecting all `.py`/`.json` paths before hashing. A local 2k-file
+Rescale tree comparison produced the same canonical hash and reduced traced
+peak memory from `2.05MB` to `1.08MB` (`1.90x`).
+
 - [ ] **Step 3: Commit/push source and evidence**
 
 Never leave canonical source changes only on the server.

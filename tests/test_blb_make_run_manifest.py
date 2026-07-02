@@ -1,9 +1,11 @@
+import hashlib
 import importlib.util
 from pathlib import Path
 import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "scripts" / "blb_make_run_manifest.py"
@@ -57,6 +59,61 @@ class BlbMakeRunManifestTest(unittest.TestCase):
                 Path.read_bytes = original_read_bytes
 
         self.assertRegex(digest or "", r"^[0-9a-f]{64}$")
+
+    def test_canonical_rescale_optimizer_hash_streams_tree_without_global_sort(self):
+        manifest = _load_manifest_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "rescale_optimizer").mkdir()
+            (root / "rescale_optimizer" / "solver.py").write_text("print('solver')\n", encoding="utf-8")
+            (root / "configs" / "mrpc").mkdir(parents=True)
+            (root / "configs" / "mrpc" / "block1.json").write_text('{"graph": 1}\n', encoding="utf-8")
+
+            with mock.patch(
+                "builtins.sorted",
+                side_effect=AssertionError("canonical hash should stream tree traversal"),
+            ):
+                digest = manifest._canonical_rescale_optimizer_hash(str(root), "mrpc")
+
+        self.assertRegex(digest or "", r"^[0-9a-f]{64}$")
+
+    def test_canonical_rescale_optimizer_hash_preserves_global_path_order(self):
+        manifest = _load_manifest_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for rel, text in {
+                "rescale_optimizer/z.py": "z\n",
+                "rescale_optimizer/a.py": "a\n",
+                "rescale_optimizer/ignore.txt": "ignored\n",
+                "configs/mrpc/b.json": '{"b": 1}\n',
+                "configs/mrpc/nested/c.json": '{"c": 2}\n',
+                "replan_configs/mrpc/d.json": '{"d": 3}\n',
+            }.items():
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+
+            expected = hashlib.sha256()
+            for file_path in sorted(
+                [
+                    root / "configs" / "mrpc" / "b.json",
+                    root / "configs" / "mrpc" / "nested" / "c.json",
+                    root / "replan_configs" / "mrpc" / "d.json",
+                    root / "rescale_optimizer" / "a.py",
+                    root / "rescale_optimizer" / "z.py",
+                ]
+            ):
+                expected.update(file_path.relative_to(root).as_posix().encode("utf-8"))
+                expected.update(b"\0")
+                with file_path.open("rb") as handle:
+                    expected.update(handle.read())
+                expected.update(b"\0")
+
+            digest = manifest._canonical_rescale_optimizer_hash(str(root), "mrpc")
+
+        self.assertEqual(digest, expected.hexdigest())
 
 
 if __name__ == "__main__":
