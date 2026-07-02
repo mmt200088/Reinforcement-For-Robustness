@@ -36,6 +36,27 @@ class InstalledInferenceEvalSourceTest(unittest.TestCase):
         self.assertNotIn("loss_t.detach().item()", loop_region)
         self.assertNotIn("normalize_logits_for_metrics(\n                logits_t", loop_region)
 
+    def test_full_eval_concatenates_tensor_batches_before_cpu_transfer(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(
+            encoding="utf-8"
+        )
+        logits_region = _function_region_from_source(
+            source, "concatenate_logits_for_metrics"
+        )
+        labels_region = _function_region_from_source(
+            source, "concatenate_labels_for_metrics"
+        )
+
+        for region in (logits_region, labels_region):
+            self.assertIn("if all(isinstance(x, torch.Tensor) for x in", region)
+            self.assertIn("torch.cat", region)
+            self.assertIn(".detach().cpu().numpy()", region)
+            self.assertNotIn(
+                "np.asarray(x.detach().cpu().numpy()) if isinstance(x, torch.Tensor)",
+                region,
+            )
+
     def test_probe_trial_defers_per_batch_tensor_cpu_syncs(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(

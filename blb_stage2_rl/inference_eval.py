@@ -86,12 +86,26 @@ def output_loss_and_logits(outputs: Any) -> Tuple[Optional[torch.Tensor], torch.
 
 
 def concatenate_logits_for_metrics(batch_logits: Sequence[Any]) -> np.ndarray:
-    arrays = [
-        np.asarray(x.detach().cpu().numpy()) if isinstance(x, torch.Tensor) else np.asarray(x)
-        for x in batch_logits
-    ]
-    if not arrays:
+    if not batch_logits:
         return np.asarray([])
+    if all(isinstance(x, torch.Tensor) for x in batch_logits):
+        tensors = [x.detach() for x in batch_logits]
+        first_device = tensors[0].device
+        if all(t.device == first_device for t in tensors):
+            if all(t.dim() == 1 for t in tensors):
+                packed = torch.cat([t.reshape(-1) for t in tensors], dim=0)
+            else:
+                packed = torch.cat(
+                    [t.reshape(-1, 1) if t.dim() == 1 else t for t in tensors],
+                    dim=0,
+                )
+            return packed.detach().cpu().numpy()
+    arrays = []
+    for x in batch_logits:
+        if isinstance(x, torch.Tensor):
+            arrays.append(np.asarray(x.detach().cpu().numpy()))
+        else:
+            arrays.append(np.asarray(x))
     if all(arr.ndim == 1 for arr in arrays):
         return np.concatenate([arr.reshape(-1) for arr in arrays], axis=0)
     return np.concatenate(
@@ -101,14 +115,19 @@ def concatenate_logits_for_metrics(batch_logits: Sequence[Any]) -> np.ndarray:
 
 
 def concatenate_labels_for_metrics(batch_labels: Sequence[Any]) -> np.ndarray:
+    if not batch_labels:
+        return np.asarray([])
+    if all(isinstance(x, torch.Tensor) for x in batch_labels):
+        tensors = [x.detach().reshape(-1) for x in batch_labels]
+        first_device = tensors[0].device
+        if all(t.device == first_device for t in tensors):
+            return torch.cat(tensors, dim=0).detach().cpu().numpy()
     arrays = [
         np.asarray(x.detach().cpu().numpy()).reshape(-1)
         if isinstance(x, torch.Tensor)
         else np.asarray(x).reshape(-1)
         for x in batch_labels
     ]
-    if not arrays:
-        return np.asarray([])
     return np.concatenate(arrays, axis=0)
 
 
