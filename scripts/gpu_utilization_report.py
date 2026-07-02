@@ -225,6 +225,29 @@ def _first_present_by_lookup(
     return None
 
 
+def _normalized_index_lookup(fieldnames: Sequence[str | None] | None) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for idx, fieldname in enumerate(fieldnames or ()):
+        if fieldname is None:
+            continue
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(fieldname).strip().lower()).strip("_")
+        if normalized:
+            out.setdefault(normalized, idx)
+    return out
+
+
+def _first_present_by_index(
+        row: Sequence[str],
+        field_lookup: Mapping[str, int],
+        keys: Sequence[str],
+        ) -> str | None:
+    for key in keys:
+        index = field_lookup.get(key)
+        if index is not None and 0 <= index < len(row):
+            return row[index]
+    return None
+
+
 def _first_float(row: Mapping[str, Any], keys: Sequence[str]) -> float | None:
     for key in keys:
         value = _float_value(row.get(key))
@@ -249,15 +272,15 @@ def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float |
         }
     )
     with csv_path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        field_lookup = _normalized_field_lookup(reader.fieldnames)
+        reader = csv.reader(handle)
+        field_lookup = _normalized_index_lookup(next(reader, []))
         for raw_row in reader:
-            idx = _first_present_by_lookup(
+            idx = _first_present_by_index(
                 raw_row,
                 field_lookup,
                 ["index", "gpu_idx", "gpu_index", "gpu"],
             )
-            util = _first_present_by_lookup(
+            util = _first_present_by_index(
                 raw_row,
                 field_lookup,
                 [
@@ -268,7 +291,7 @@ def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float |
                     "gpu_util",
                 ],
             )
-            mem = _first_present_by_lookup(
+            mem = _first_present_by_index(
                 raw_row,
                 field_lookup,
                 [

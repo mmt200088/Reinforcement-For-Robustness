@@ -170,6 +170,31 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["cuda:0"]["mean_util_pct"], 30.0)
         self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
 
+    def test_nvidia_smi_csv_avoids_per_row_dict_reader(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "nvidia_smi.csv"
+            smi.write_text(
+                "timestamp,index,utilization.gpu,memory.used\n"
+                "2026/07/02 00:00:00.000,0,20 %,1000 MiB\n"
+                "2026/07/02 00:00:01.000,0,40 %,1500 MiB\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                report.csv,
+                "DictReader",
+                side_effect=AssertionError("nvidia-smi CSV parsing should avoid per-row dicts"),
+            ):
+                summary = report._load_nvidia_smi_csv(smi)
+
+        self.assertEqual(summary["cuda:0"]["samples"], 2)
+        self.assertEqual(summary["cuda:0"]["mean_util_pct"], 30.0)
+        self.assertEqual(summary["cuda:0"]["max_util_pct"], 40.0)
+        self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
+
     def test_summarizes_rows_uses_running_timing_stats(self):
         report = _load_report_module()
 

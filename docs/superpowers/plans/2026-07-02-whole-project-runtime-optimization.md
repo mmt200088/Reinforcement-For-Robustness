@@ -315,6 +315,13 @@ A local 200k-row sampled GPU CSV benchmark preserved the per-device summary
 and reduced CSV post-processing from `4.274366s` to `2.521548s` (`1.70x`),
 with traced peak allocation dropping from `62,023B` to `51,313B`.
 
+Progress 2026-07-02: `scripts/gpu_utilization_report.py` now parses sampled
+`nvidia-smi` CSV files with `csv.reader` and precomputed column indices instead
+of `csv.DictReader`, avoiding one per-row dictionary allocation in long server
+GPU sampling logs. A local 100k-row / 4-GPU sampled CSV benchmark preserved the
+per-device utilization summary and reduced post-processing from `1.216738s` /
+`0.05MiB` peak to `1.002973s` / `0.04MiB`.
+
 Progress 2026-07-02: the same report now aggregates Stage-2 episode timing
 fields (`terminal_probe_wall_seconds`, policy rollout, replan/optimizer,
 per-device probe walls, and optional hot-path write/render timings) with
