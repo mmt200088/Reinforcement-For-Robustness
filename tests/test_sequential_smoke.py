@@ -787,6 +787,24 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         ):
             self.assertIn(needle, src, msg=f"probe_runner.py missing: {needle!r}")
 
+    def test_probe_runner_caches_round_robin_trial_assignments(self):
+        src = open("blb_stage2_rl/probe_runner.py", encoding="utf-8").read()
+        for needle in (
+            "from functools import lru_cache",
+            "@lru_cache(maxsize=64)",
+            "def _split_round_robin_cached",
+            "assignments = _split_round_robin_cached(k, len(self.workers))",
+        ):
+            self.assertIn(needle, src, msg=f"probe_runner.py missing: {needle!r}")
+
+    def test_probe_runner_aggregates_trial_results_in_preallocated_lists(self):
+        src = open("blb_stage2_rl/probe_runner.py", encoding="utf-8").read()
+        self.assertIn(
+            "results_per_trial: List[Optional[Tuple[float, float, float]]] = [None] * k",
+            src,
+        )
+        self.assertNotIn("results_per_trial: dict = {}", src)
+
     def test_env_has_persistent_install_and_timing_diagnostics(self):
         src = open("blb_stage2_rl/env.py", encoding="utf-8").read()
         for needle in (
