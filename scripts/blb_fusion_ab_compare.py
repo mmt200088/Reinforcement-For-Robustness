@@ -62,20 +62,31 @@ def _iter_episode_rows(path: str):
                 yield row
 
 
-def _episode_scan(path: str, anchor: int) -> Dict[str, Any]:
+def _scan_and_window_ordered_path(path: str, anchor: int, window: int) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
     prev_episode: int | None = None
     ordered = True
     n_total = 0
     n_post = 0
+    windows: List[Dict[str, Any]] = []
+    chunk: List[Dict[str, Any]] = []
+    chunk_offset = 0
     for row in _iter_episode_rows(path):
         episode = int(row.get("episode", 0) or 0)
         if prev_episode is not None and episode < prev_episode:
             ordered = False
         prev_episode = episode
+        if not chunk:
+            chunk_offset = n_total
+        chunk.append(row)
         n_total += 1
         if episode >= anchor:
             n_post += 1
-    return {"ordered": ordered, "n_total": n_total, "n_post": n_post}
+        if len(chunk) >= window:
+            windows.append(_window_stats_chunk(chunk, chunk_offset))
+            chunk = []
+    if chunk:
+        windows.append(_window_stats_chunk(chunk, chunk_offset))
+    return {"ordered": ordered, "n_total": n_total, "n_post": n_post}, windows
 
 
 def _mean(xs: List[float]) -> float:
@@ -100,23 +111,27 @@ def window_stats(eps: List[Dict[str, Any]], window: int) -> List[Dict[str, Any]]
         chunk = eps[i:i + window]
         if not chunk:
             continue
-        pr = [int(r.get("terminal_priority", 0) or 0) for r in chunk]
-        rows.append({
-            "ep_lo": int(chunk[0].get("episode", i)),
-            "ep_hi": int(chunk[-1].get("episode", i + len(chunk) - 1)),
-            "n": len(chunk),
-            "reward": _mean([float(r.get("total_reward", 0.0) or 0.0) for r in chunk]),
-            "p1": _frac([p == 1 for p in pr]),
-            "p2": _frac([p == 2 for p in pr]),
-            "p3": _frac([p == 3 for p in pr]),
-            "fusion": _mean([float(r.get("fusion_count", 0) or 0) for r in chunk]),
-            "loss_cap": _frac([float(r.get("terminal_loss_mean", 0.0) or 0.0) >= LOSS_CAP for r in chunk]),
-            "m1": _mean([float(r.get("terminal_metric1_mean", 0.0) or 0.0) for r in chunk]),
-            "sn_active": _frac([bool(r.get("safe_neighbor_active", False)) for r in chunk]),
-            "sn_radius": _mean([float(r.get("safe_neighbor_radius", 0) or 0) for r in chunk]),
-            "invalid": _mean([float(r.get("invalid_steps", 0) or 0) for r in chunk]),
-        })
+        rows.append(_window_stats_chunk(chunk, i))
     return rows
+
+
+def _window_stats_chunk(chunk: List[Dict[str, Any]], fallback_offset: int) -> Dict[str, Any]:
+    pr = [int(r.get("terminal_priority", 0) or 0) for r in chunk]
+    return {
+        "ep_lo": int(chunk[0].get("episode", fallback_offset)),
+        "ep_hi": int(chunk[-1].get("episode", fallback_offset + len(chunk) - 1)),
+        "n": len(chunk),
+        "reward": _mean([float(r.get("total_reward", 0.0) or 0.0) for r in chunk]),
+        "p1": _frac([p == 1 for p in pr]),
+        "p2": _frac([p == 2 for p in pr]),
+        "p3": _frac([p == 3 for p in pr]),
+        "fusion": _mean([float(r.get("fusion_count", 0) or 0) for r in chunk]),
+        "loss_cap": _frac([float(r.get("terminal_loss_mean", 0.0) or 0.0) >= LOSS_CAP for r in chunk]),
+        "m1": _mean([float(r.get("terminal_metric1_mean", 0.0) or 0.0) for r in chunk]),
+        "sn_active": _frac([bool(r.get("safe_neighbor_active", False)) for r in chunk]),
+        "sn_radius": _mean([float(r.get("safe_neighbor_radius", 0) or 0) for r in chunk]),
+        "invalid": _mean([float(r.get("invalid_steps", 0) or 0) for r in chunk]),
+    }
 
 
 def summarize(eps: List[Dict[str, Any]], anchor: int) -> Dict[str, Any]:
@@ -240,30 +255,17 @@ def _summarize_ordered_path(path: str, anchor: int, n_post: int) -> Dict[str, An
     }
 
 
-def _window_stats_ordered_path(path: str, window: int) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    chunk: List[Dict[str, Any]] = []
-    for row in _iter_episode_rows(path):
-        chunk.append(row)
-        if len(chunk) >= window:
-            rows.extend(window_stats(chunk, window))
-            chunk = []
-    if chunk:
-        rows.extend(window_stats(chunk, window))
-    return rows
-
-
 def analyze_episodes(run_dir: str, anchor: int, window: int) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
     path = _find_episodes_jsonl(run_dir)
     if not path:
         raise FileNotFoundError(f"no episodes.jsonl under {run_dir}")
-    scan = _episode_scan(path, anchor)
+    scan, windows = _scan_and_window_ordered_path(path, anchor, window)
     if not scan["ordered"]:
         eps = load_episodes(run_dir)
         return summarize(eps, anchor), window_stats(eps, window)
     return (
         _summarize_ordered_path(path, anchor, int(scan["n_post"])),
-        _window_stats_ordered_path(path, window),
+        windows,
     )
 
 

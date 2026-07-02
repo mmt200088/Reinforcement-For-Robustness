@@ -250,6 +250,12 @@ bounded-window rows, avoiding materializing full 60k+ episode lists during A/B
 HTML generation. If an input file is out of episode order, it falls back to the
 legacy load-and-sort path to preserve report semantics.
 
+Progress 2026-07-02: the ordered Stage-2 A/B path now combines episode-order
+scanning and bounded-window aggregation in the first pass, then performs only
+one second pass for tail-aware summary statistics. This reduces ordered
+`episodes.jsonl` reads from three passes to two while preserving the legacy
+list-based summary/window output.
+
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.

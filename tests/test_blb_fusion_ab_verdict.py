@@ -157,6 +157,24 @@ class StreamingMainTest(unittest.TestCase):
         self.assertEqual(summary, abc_mod.summarize(rows, anchor=80))
         self.assertEqual(windows, abc_mod.window_stats(rows, window=50))
 
+    def test_ordered_analysis_reads_episode_file_twice(self):
+        rows = _make_on_arm(n=260, anchor=80)
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            run = self._write_run(root, "a", rows)
+            original_iter = abc_mod._iter_episode_rows
+            pass_count = 0
+
+            def counting_iter(path):
+                nonlocal pass_count
+                pass_count += 1
+                yield from original_iter(path)
+
+            with mock.patch.object(abc_mod, "_iter_episode_rows", counting_iter):
+                abc_mod.analyze_episodes(str(run), anchor=80, window=50)
+
+        self.assertEqual(pass_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
