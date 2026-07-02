@@ -79,33 +79,38 @@ def _max_consecutive(items: Iterable[bool]) -> int:
 
 
 def _gpu_stats(path: Path) -> Dict[str, Any]:
-    rows = []
+    by_gpu: Dict[str, Dict[str, Any]] = {}
+    sample_count = 0
     if path.is_file():
         with path.open(newline="", encoding="utf-8", errors="replace") as f:
             for row in csv.DictReader(f):
                 try:
-                    rows.append({
-                        "idx": str(row.get("gpu_idx", "")).strip(),
-                        "util": float(str(row.get("util_pct", "0")).strip()),
-                        "mem": float(str(row.get("mem_used_mib", "0")).strip()),
-                    })
+                    idx = str(row.get("gpu_idx", "")).strip()
+                    util = float(str(row.get("util_pct", "0")).strip())
+                    mem = float(str(row.get("mem_used_mib", "0")).strip())
                 except Exception:
                     continue
-    by_gpu: Dict[str, List[Dict[str, float]]] = {}
-    for row in rows:
-        by_gpu.setdefault(row["idx"], []).append(row)
-    summary: Dict[str, Any] = {"samples": len(rows), "by_gpu": {}}
-    for idx, gpu_rows in sorted(by_gpu.items()):
-        utils = [r["util"] for r in gpu_rows]
-        mems = [r["mem"] for r in gpu_rows]
+                bucket = by_gpu.setdefault(idx, {
+                    "utils": [],
+                    "max_mem_mib": 0.0,
+                    "active_count": 0,
+                })
+                bucket["utils"].append(util)
+                bucket["max_mem_mib"] = max(float(bucket["max_mem_mib"]), mem)
+                if util > 0.0:
+                    bucket["active_count"] += 1
+                sample_count += 1
+    summary: Dict[str, Any] = {"samples": sample_count, "by_gpu": {}}
+    for idx, bucket in sorted(by_gpu.items()):
+        utils = bucket["utils"]
         summary["by_gpu"][idx] = {
             "max_util": max(utils) if utils else 0.0,
             "p50_util": statistics.median(utils) if utils else 0.0,
             "active_sample_rate": (
-                sum(1 for value in utils if value > 0.0) / float(len(utils))
+                int(bucket["active_count"]) / float(len(utils))
                 if utils else 0.0
             ),
-            "max_mem_mib": max(mems) if mems else 0.0,
+            "max_mem_mib": float(bucket["max_mem_mib"]) if utils else 0.0,
         }
     return summary
 

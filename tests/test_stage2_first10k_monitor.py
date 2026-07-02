@@ -2,6 +2,7 @@ import csv
 import importlib.util
 from pathlib import Path
 import tempfile
+import tracemalloc
 import unittest
 from unittest import mock
 
@@ -44,6 +45,28 @@ class Stage2First10kMonitorTest(unittest.TestCase):
             summary = monitor._gpu_stats(Path(td))
 
         self.assertEqual(summary, {"samples": 0, "by_gpu": {}})
+
+    def test_gpu_stats_aggregates_large_csv_without_retaining_rows(self):
+        monitor = _load_monitor_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "nvidia.csv"
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["gpu_idx", "util_pct", "mem_used_mib"])
+                for idx in range(30000):
+                    writer.writerow([idx % 4, (idx * 7) % 100, 1000 + (idx % 17)])
+
+            tracemalloc.start()
+            try:
+                summary = monitor._gpu_stats(path)
+                _current, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
+
+        self.assertEqual(summary["samples"], 30000)
+        self.assertEqual(sorted(summary["by_gpu"]), ["0", "1", "2", "3"])
+        self.assertLess(peak, 6 * 1024 * 1024)
 
     def test_write_window_csv_uses_linear_rolling_stats(self):
         monitor = _load_monitor_module()

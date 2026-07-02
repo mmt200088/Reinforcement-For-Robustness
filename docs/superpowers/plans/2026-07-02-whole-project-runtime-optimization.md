@@ -410,6 +410,12 @@ This reduces final monitor CSV rendering CPU work for 10k/60k episode runs.
 Local 20k-row mixed-reward microbenchmark produced identical CSV output and
 reduced wall time from `9.580s` to `0.186s` (`51.50x`).
 
+Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now aggregates
+nvidia-smi GPU samples while reading the CSV instead of retaining every parsed
+row and grouping in a second pass. A local 30k-row CSV comparison produced
+identical GPU summaries and reduced traced peak memory from `9.15MB` to
+`1.08MB` (`8.48x`).
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
