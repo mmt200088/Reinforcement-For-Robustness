@@ -83,14 +83,14 @@ Design notes
 """
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass, field
 import heapq
 import json
 import os
 import sys
 import time
-from collections import Counter
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, TextIO
 
 import numpy as np
 
@@ -281,6 +281,10 @@ class RLDiagnosticsRecorder:
         self._slots_view_builder = slots_view_builder
         self.schema_version = str(schema_version)
         self._data_point_writer = data_point_writer
+        self._jsonl_buffer_size = 1024 * 1024
+        self._jsonl_flush_interval = 64
+        self._jsonl_files: Dict[str, TextIO] = {}
+        self._jsonl_line_counts: Dict[str, int] = {}
 
         self.episodes_path = os.path.join(self.output_dir, "episodes.jsonl")
         self.ppo_updates_path = os.path.join(self.output_dir, "ppo_updates.jsonl")
@@ -428,6 +432,33 @@ class RLDiagnosticsRecorder:
     # Recording APIs
     # ------------------------------------------------------------------
 
+    def _write_primary_jsonl(self, path: str, payload: Mapping[str, Any]) -> None:
+        fh = self._jsonl_files.get(path)
+        if fh is None:
+            fh = open(
+                path,
+                "a",
+                encoding="utf-8",
+                buffering=self._jsonl_buffer_size,
+            )
+            self._jsonl_files[path] = fh
+            self._jsonl_line_counts[path] = 0
+        fh.write(json.dumps(dict(payload), ensure_ascii=False, default=str) + "\n")
+        self._jsonl_line_counts[path] = self._jsonl_line_counts.get(path, 0) + 1
+        if self._jsonl_line_counts[path] % self._jsonl_flush_interval == 0:
+            fh.flush()
+
+    def _flush_primary_jsonl(self) -> None:
+        for fh in self._jsonl_files.values():
+            fh.flush()
+
+    def _close_primary_jsonl(self) -> None:
+        for fh in self._jsonl_files.values():
+            fh.flush()
+            fh.close()
+        self._jsonl_files.clear()
+        self._jsonl_line_counts.clear()
+
     def record_episode(
             self,
             *,
@@ -439,8 +470,7 @@ class RLDiagnosticsRecorder:
         """Append episode JSONL row and update in-memory accumulators."""
         # 1) append JSONL row
         try:
-            with open(self.episodes_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(episode_stats.__dict__, ensure_ascii=False, default=str) + "\n")
+            self._write_primary_jsonl(self.episodes_path, episode_stats.__dict__)
         except Exception as exc:
             self.log(f"  [diag][warning] episodes.jsonl write failed: {exc}")
         if self._data_point_writer is not None:
@@ -699,8 +729,7 @@ class RLDiagnosticsRecorder:
     def record_ppo_update(self, stats: PPOUpdateStats) -> None:
         """Append PPO update JSONL row."""
         try:
-            with open(self.ppo_updates_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(stats.__dict__, ensure_ascii=False, default=str) + "\n")
+            self._write_primary_jsonl(self.ppo_updates_path, stats.__dict__)
         except Exception as exc:
             self.log(f"  [diag][warning] ppo_updates.jsonl write failed: {exc}")
         if self._data_point_writer is not None:
@@ -714,6 +743,10 @@ class RLDiagnosticsRecorder:
         """Flush action histogram + first-invalid counts + top candidates +
         regenerate summary.md. Call at ``save_interval`` cadence (default 200
         episodes) — cheap enough but not free."""
+        try:
+            self._flush_primary_jsonl()
+        except Exception as exc:
+            self.log(f"  [diag][warning] primary JSONL flush failed: {exc}")
         try:
             np.savez(self.action_hist_path, counts=self._action_hist)
         except Exception as exc:
@@ -814,6 +847,10 @@ class RLDiagnosticsRecorder:
                 self._data_point_writer.close()
             except Exception as exc:
                 self.log(f"  [diag][warning] structured summary write failed: {exc}")
+        try:
+            self._close_primary_jsonl()
+        except Exception as exc:
+            self.log(f"  [diag][warning] primary JSONL close failed: {exc}")
 
     # ------------------------------------------------------------------
     # Summary.md writer
@@ -1181,7 +1218,6 @@ class RLDiagnosticsRecorder:
         lines.append("## 5. 动作分布概览（哪些 slot 已经在按 baseline 取最大档）")
         lines.append("")
         hist = self._action_hist
-        n_samples_per_slot = max(int(hist.sum(axis=1).max()), 1)
         collapsed_slots = []
         spread_slots = []
         for slot_idx in range(self.num_slots):

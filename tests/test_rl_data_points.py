@@ -220,6 +220,86 @@ class RLDataPointWriterTest(unittest.TestCase):
             update = json.loads((stage2_dir / "ppo_updates.jsonl").read_text().splitlines()[0])
             self.assertEqual(update["completed_episodes"], 1)
 
+    def test_stage2_diagnostics_reuses_primary_jsonl_handles(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_jsonl_reuse_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as td:
+            recorder = module.RLDiagnosticsRecorder(
+                output_dir=str(Path(td) / "progress"),
+                num_layers=12,
+                num_action_slots=3,
+            )
+            opened = {}
+
+            def fake_open(path, *args, **kwargs):
+                handle = mock.MagicMock()
+                handle.__enter__.return_value = handle
+                handle.__exit__.return_value = None
+                opened.setdefault(str(path), []).append((handle, args, kwargs))
+                return handle
+
+            episode_stats = module.EpisodeStats(
+                episode=0,
+                total_reward=1.0,
+                terminal_reward=0.5,
+                per_step_sum=0.5,
+                valid_steps=47,
+                invalid_steps=0,
+                steps_taken=47,
+                total_bits=123,
+                fusion_count=1,
+                first_invalid_step=None,
+                first_invalid_block=None,
+                first_invalid_layer=None,
+                early_terminated=False,
+            )
+            update_stats = module.PPOUpdateStats(
+                update=1,
+                completed_episodes=1,
+                policy_loss=0.1,
+                value_loss=0.2,
+                entropy=0.3,
+                clip_fraction=0.4,
+                n_samples=47,
+                window_mean_return=1.0,
+                window_max_return=1.0,
+                window_min_return=1.0,
+                window_mean_invalid=0.0,
+                best_reward_so_far=1.0,
+                elapsed_sec=2.0,
+            )
+
+            with mock.patch("builtins.open", side_effect=fake_open):
+                recorder.record_episode(
+                    episode_stats=episode_stats,
+                    full_action_vec=None,
+                    is_new_best=False,
+                    best_reward_so_far=1.0,
+                )
+                recorder.record_episode(
+                    episode_stats=episode_stats,
+                    full_action_vec=None,
+                    is_new_best=False,
+                    best_reward_so_far=1.0,
+                )
+                recorder.record_ppo_update(update_stats)
+                recorder.record_ppo_update(update_stats)
+
+            episode_handles = opened[recorder.episodes_path]
+            ppo_handles = opened[recorder.ppo_updates_path]
+            self.assertEqual(len(episode_handles), 1)
+            self.assertEqual(len(ppo_handles), 1)
+            self.assertEqual(episode_handles[0][2]["buffering"], 1024 * 1024)
+            self.assertEqual(ppo_handles[0][2]["buffering"], 1024 * 1024)
+            self.assertEqual(episode_handles[0][0].write.call_count, 2)
+            self.assertEqual(ppo_handles[0][0].write.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
