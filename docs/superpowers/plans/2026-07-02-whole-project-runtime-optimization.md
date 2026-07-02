@@ -244,6 +244,13 @@ optional `nvidia-smi` CSV samples with running per-device aggregates instead of
 keeping every utilization sample in memory before computing means and maxima.
 This keeps GPU evidence reports memory-bounded for long server sampling logs.
 
+Progress 2026-07-02: the same report now aggregates Stage-2 episode timing
+fields (`terminal_probe_wall_seconds`, policy rollout, replan/optimizer,
+per-device probe walls, and optional hot-path write/render timings) with
+running count/sum/min/max stats instead of retaining every float in lists. A
+local 100k-row parity benchmark kept the same stats and reduced timing-summary
+peak memory from `15.28MB` to `0.02MB`.
+
 Progress 2026-07-02: extracted the reward-probe scaling benchmark postprocessor
 from `scripts/stage2_reward_probe_scaling_benchmark.sh` into
 `scripts/stage2_reward_probe_scaling_report.py`. The new report script is

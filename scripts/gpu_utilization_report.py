@@ -13,7 +13,6 @@ import csv
 import json
 from pathlib import Path
 import re
-import statistics
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -125,6 +124,35 @@ def _int_list(value: object) -> list[int]:
     return out
 
 
+class _RunningStats:
+    __slots__ = ("count", "max_value", "min_value", "total")
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.total = 0.0
+        self.min_value: float | None = None
+        self.max_value: float | None = None
+
+    def add(self, value: float) -> None:
+        number = float(value)
+        self.count += 1
+        self.total += number
+        min_value = self.min_value
+        max_value = self.max_value
+        self.min_value = number if min_value is None or number < min_value else min_value
+        self.max_value = number if max_value is None or number > max_value else max_value
+
+    def as_dict(self) -> dict[str, float | int | None]:
+        if not self.count:
+            return {"count": 0, "mean": None, "min": None, "max": None}
+        return {
+            "count": self.count,
+            "mean": self.total / float(self.count),
+            "min": self.min_value,
+            "max": self.max_value,
+        }
+
+
 def _per_device_probe_walls(
     row: Mapping[str, Any],
     devices: Sequence[str],
@@ -154,17 +182,6 @@ def _per_device_probe_walls(
     if fallback_wall_seconds is None:
         return {}
     return {device: fallback_wall_seconds for device in devices}
-
-
-def _series_stats(values: Sequence[float]) -> dict[str, float | int | None]:
-    if not values:
-        return {"count": 0, "mean": None, "min": None, "max": None}
-    return {
-        "count": len(values),
-        "mean": float(statistics.mean(values)),
-        "min": float(min(values)),
-        "max": float(max(values)),
-    }
 
 
 def _normalized_fieldnames(row: Mapping[str, str]) -> dict[str, str]:
@@ -270,12 +287,12 @@ def summarize_rows(
     trial_counts: collections.Counter[str] = collections.Counter()
     warnings: list[str] = []
     recommendations: list[str] = []
-    terminal_probe_wall: list[float] = []
-    policy_rollout_wall: list[float] = []
-    replan_wall: list[float] = []
+    terminal_probe_wall = _RunningStats()
+    policy_rollout_wall = _RunningStats()
+    replan_wall = _RunningStats()
     probe_episode_counts: collections.Counter[str] = collections.Counter()
-    probe_wall_by_device: dict[str, list[float]] = collections.defaultdict(list)
-    hot_path_timings: dict[str, list[float]] = collections.defaultdict(list)
+    probe_wall_by_device: dict[str, _RunningStats] = collections.defaultdict(_RunningStats)
+    hot_path_timings: dict[str, _RunningStats] = collections.defaultdict(_RunningStats)
     mismatched_trial_rows = 0
     episode_count = 0
 
@@ -299,20 +316,20 @@ def summarize_rows(
 
         probe_s = _float_value(row.get("terminal_probe_wall_seconds"))
         if probe_s is not None:
-            terminal_probe_wall.append(probe_s)
+            terminal_probe_wall.add(probe_s)
         if devices:
             for device, wall_s in _per_device_probe_walls(row, devices, probe_s).items():
-                probe_wall_by_device[device].append(wall_s)
+                probe_wall_by_device[device].add(wall_s)
         policy_s = _float_value(row.get("policy_rollout_wall_seconds"))
         if policy_s is not None:
-            policy_rollout_wall.append(policy_s)
+            policy_rollout_wall.add(policy_s)
         replan_s = _first_float(row, REPLAN_TIMING_FIELDS)
         if replan_s is not None:
-            replan_wall.append(replan_s)
+            replan_wall.add(replan_s)
         for field in HOT_PATH_TIMING_FIELDS:
             value = _float_value(row.get(field))
             if value is not None:
-                hot_path_timings[field].append(value)
+                hot_path_timings[field].add(value)
 
     visible = parse_device_spec(visible_devices)
     if not visible:
@@ -347,16 +364,16 @@ def summarize_rows(
         "probe_episode_counts_by_device": dict(sorted(probe_episode_counts.items(), key=lambda item: _device_sort_key(item[0]))),
         "probe_trial_counts_by_device": dict(sorted(trial_counts.items(), key=lambda item: _device_sort_key(item[0]))),
         "probe_wall_seconds_by_device": {
-            device: _series_stats(values)
+            device: values.as_dict()
             for device, values in sorted(probe_wall_by_device.items(), key=lambda item: _device_sort_key(item[0]))
         },
         "probe_device_sets": [list(item) for item in sorted(device_sets, key=lambda item: (_device_sort_key(item[0]) if item else (9, ""), item))],
         "probe_trial_splits": [list(item) for item in sorted(trial_splits)],
-        "terminal_probe_wall_seconds": _series_stats(terminal_probe_wall),
-        "policy_rollout_wall_seconds": _series_stats(policy_rollout_wall),
-        "replan_wall_seconds": _series_stats(replan_wall),
+        "terminal_probe_wall_seconds": terminal_probe_wall.as_dict(),
+        "policy_rollout_wall_seconds": policy_rollout_wall.as_dict(),
+        "replan_wall_seconds": replan_wall.as_dict(),
         "hot_path_wall_seconds": {
-            field: _series_stats(values)
+            field: values.as_dict()
             for field, values in sorted(hot_path_timings.items())
         },
         "gpu_utilization": gpu_utilization,

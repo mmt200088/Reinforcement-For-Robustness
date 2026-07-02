@@ -3,8 +3,10 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import statistics
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = REPO_ROOT / "scripts" / "gpu_utilization_report.py"
@@ -121,7 +123,6 @@ class GpuUtilizationReportTest(unittest.TestCase):
 
     def test_nvidia_smi_csv_summary_uses_running_aggregates(self):
         report = _load_report_module()
-        original_mean = report.statistics.mean
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -136,17 +137,49 @@ class GpuUtilizationReportTest(unittest.TestCase):
             def fail_mean(_values):
                 raise AssertionError("nvidia-smi summary should not materialize samples for statistics.mean")
 
-            try:
-                report.statistics.mean = fail_mean
+            with mock.patch.object(statistics, "mean", fail_mean):
                 summary = report._load_nvidia_smi_csv(smi)
-            finally:
-                report.statistics.mean = original_mean
 
         self.assertEqual(summary["cuda:0"]["samples"], 2)
         self.assertEqual(summary["cuda:0"]["mean_util_pct"], 30.0)
         self.assertEqual(summary["cuda:0"]["max_util_pct"], 40.0)
         self.assertEqual(summary["cuda:0"]["active_sample_rate"], 1.0)
         self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
+
+    def test_summarizes_rows_uses_running_timing_stats(self):
+        report = _load_report_module()
+
+        rows = [
+            {
+                "terminal_probe_devices": ["cuda:0"],
+                "terminal_probe_trial_counts": [4],
+                "terminal_probe_wall_seconds": 1.0,
+                "policy_rollout_wall_seconds": 0.25,
+                "replan_wall_seconds": 0.5,
+                "jsonl_write_wall_seconds": 0.05,
+            },
+            {
+                "terminal_probe_devices": ["cuda:0"],
+                "terminal_probe_trial_counts": [4],
+                "terminal_probe_wall_seconds": 3.0,
+                "policy_rollout_wall_seconds": 0.75,
+                "replan_wall_seconds": 1.5,
+                "jsonl_write_wall_seconds": 0.15,
+            },
+        ]
+
+        def fail_mean(_values):
+            raise AssertionError("episode timing summary should use running aggregates")
+
+        with mock.patch.object(statistics, "mean", fail_mean):
+            summary = report.summarize_rows(rows, visible_devices=["0"])
+
+        self.assertEqual(summary["terminal_probe_wall_seconds"]["count"], 2)
+        self.assertEqual(summary["terminal_probe_wall_seconds"]["mean"], 2.0)
+        self.assertEqual(summary["policy_rollout_wall_seconds"]["mean"], 0.5)
+        self.assertEqual(summary["replan_wall_seconds"]["mean"], 1.0)
+        self.assertEqual(summary["probe_wall_seconds_by_device"]["cuda:0"]["mean"], 2.0)
+        self.assertEqual(summary["hot_path_wall_seconds"]["jsonl_write_wall_seconds"]["mean"], 0.1)
 
     def test_summarizes_rows_from_single_pass_iterable(self):
         report = _load_report_module()
