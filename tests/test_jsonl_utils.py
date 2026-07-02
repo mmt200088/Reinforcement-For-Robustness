@@ -1,9 +1,16 @@
 import ast
+import gzip
 import pathlib
 import tempfile
 import unittest
 
-from jsonl_utils import count_jsonl_with_required_fields, iter_jsonl, iter_jsonl_records, read_jsonl
+from jsonl_utils import (
+    count_jsonl_with_required_fields,
+    iter_jsonl,
+    iter_jsonl_records,
+    read_jsonl,
+    resolve_jsonl_path,
+)
 
 
 class JsonlUtilsTest(unittest.TestCase):
@@ -50,6 +57,18 @@ class JsonlUtilsTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 read_jsonl(path)
 
+    def test_iter_jsonl_can_fallback_to_gzip_sidecar(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "rows.jsonl"
+            with gzip.open(str(path) + ".gz", "wt", encoding="utf-8") as handle:
+                handle.write('{"a": 1}\n')
+
+            rows = list(iter_jsonl(path, gzip_fallback=True))
+            resolved_name = resolve_jsonl_path(path, gzip_fallback=True).name
+
+        self.assertEqual(rows, [{"a": 1}])
+        self.assertEqual(resolved_name, "rows.jsonl.gz")
+
     def test_count_jsonl_with_required_fields(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "rows.jsonl"
@@ -79,11 +98,12 @@ class JsonlUtilsStaticGuardTest(unittest.TestCase):
             "scripts/stage2_reward_probe_scaling_report.py": "from jsonl_utils import iter_jsonl",
             "scripts/gpu_utilization_report.py": "from jsonl_utils import iter_jsonl",
             "scripts/blb_fusion_ab_compare.py": "from jsonl_utils import iter_jsonl",
+            "scripts/blb_regen_stage2_outputs.py": "from jsonl_utils import iter_jsonl",
             "scripts/verify_stage2_persistent_outputs.py": (
                 "from jsonl_utils import count_jsonl_with_required_fields"
             ),
         }
-        forbidden = {"_read_jsonl"}
+        forbidden = {"_read_jsonl", "_open_jsonl", "_count_jsonl", "_count_jsonl_with_required_fields"}
         for rel_path, needle in expected.items():
             with self.subTest(path=rel_path):
                 text = (repo / rel_path).read_text(encoding="utf-8")

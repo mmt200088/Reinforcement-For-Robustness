@@ -24,9 +24,7 @@
 from __future__ import annotations
 
 import argparse
-import gzip
 import importlib.util
-import json
 import os
 import re
 import sys
@@ -35,6 +33,7 @@ import sys
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
+from jsonl_utils import iter_jsonl  # noqa: E402
 import rl_local_optimum  # noqa: E402
 
 
@@ -72,20 +71,8 @@ def _resolve_progress_dir(path: str) -> str:
     )
 
 
-def _open_jsonl(progress_dir: str, name: str):
-    """优先 .jsonl，其次 .jsonl.gz；都没有返回 None。"""
-    plain = os.path.join(progress_dir, "diagnostics", name)
-    if os.path.isfile(plain):
-        return open(plain, "r", encoding="utf-8")
-    gz = plain + ".gz"
-    if os.path.isfile(gz):
-        return gzip.open(gz, "rt", encoding="utf-8")
-    return None
-
-
 def _read_episodes(progress_dir: str):
     """返回每回合并列序列 dict。total_reward = per_step_sum + terminal_reward。"""
-    f = _open_jsonl(progress_dir, "episodes.jsonl")
     series = {k: [] for k in (
         "returns", "losses", "metric1s", "metric2s", "fusion", "k_gain", "priority",
         # ADR-014 debug fields (absent on pre-2026-06-14 runs -> stay empty).
@@ -95,8 +82,6 @@ def _read_episodes(progress_dir: str):
     )}
     present: set = set()
     series["_present"] = present  # type: ignore[assignment]
-    if f is None:
-        return series
     _extra = (
         ("fusion_b2", "fusion_count_b2"),
         ("fusion_b4", "fusion_count_b4"),
@@ -109,14 +94,10 @@ def _read_episodes(progress_dir: str):
         ("metric1_std", "terminal_metric1_std"),
     )
     row_count = 0
-    with f:
-        for line in f:
-            if not line or line.isspace():
-                continue
-            try:
-                d = json.loads(line)
-            except Exception:
-                continue
+    episodes_path = os.path.join(progress_dir, "diagnostics", "episodes.jsonl")
+    try:
+        rows = iter_jsonl(episodes_path, errors="skip", gzip_fallback=True)
+        for d in rows:
             total = float(d.get("per_step_sum", 0.0) or 0.0) + float(
                 d.get("terminal_reward", 0.0) or 0.0
             )
@@ -136,27 +117,24 @@ def _read_episodes(progress_dir: str):
                 elif key in present:
                     series[key].append(0.0)
             row_count += 1
+    except FileNotFoundError:
+        return series
     return series
 
 
 def _read_entropy(progress_dir: str):
     """ppo_updates.jsonl → (entropy_series, completed_episodes)。"""
-    f = _open_jsonl(progress_dir, "ppo_updates.jsonl")
     ent, eps = [], []
-    if f is None:
-        return ent, eps
-    with f:
-        for line in f:
-            if not line or line.isspace():
-                continue
-            try:
-                d = json.loads(line)
-            except Exception:
-                continue
+    ppo_path = os.path.join(progress_dir, "diagnostics", "ppo_updates.jsonl")
+    try:
+        rows = iter_jsonl(ppo_path, errors="skip", gzip_fallback=True)
+        for d in rows:
             if d.get("entropy") is None:
                 continue
             ent.append(float(d["entropy"]))
             eps.append(float(d.get("completed_episodes", len(ent) * 1) or len(ent)))
+    except FileNotFoundError:
+        return ent, eps
     return ent, eps
 
 

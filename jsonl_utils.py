@@ -1,11 +1,27 @@
 """Shared JSONL readers for report and diagnostics scripts."""
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, TextIO
 
 JsonlErrorMode = Literal["skip", "raise"]
+
+
+def resolve_jsonl_path(path: str | Path, *, gzip_fallback: bool = False) -> Path:
+    jsonl_path = Path(path)
+    if jsonl_path.exists() or not gzip_fallback:
+        return jsonl_path
+    gz_path = Path(str(jsonl_path) + ".gz")
+    return gz_path if gz_path.exists() else jsonl_path
+
+
+def open_jsonl(path: str | Path, *, gzip_fallback: bool = False) -> TextIO:
+    jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
+    if jsonl_path.suffix == ".gz":
+        return gzip.open(jsonl_path, "rt", encoding="utf-8", errors="replace")
+    return jsonl_path.open(encoding="utf-8", errors="replace")
 
 
 def iter_jsonl_records(
@@ -13,6 +29,7 @@ def iter_jsonl_records(
         *,
         errors: JsonlErrorMode = "skip",
         dict_only: bool = True,
+        gzip_fallback: bool = False,
         ) -> Iterable[tuple[int, Any]]:
     """Yield ``(line_no, parsed_payload)`` JSONL records.
 
@@ -20,8 +37,8 @@ def iter_jsonl_records(
     behavior for partially-written logs; ``errors="raise"`` preserves verifier
     behavior that reports the file and line number on malformed JSON.
     """
-    jsonl_path = Path(path)
-    with jsonl_path.open(encoding="utf-8", errors="replace") as handle:
+    jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
+    with open_jsonl(jsonl_path) as handle:
         for line_no, line in enumerate(handle, start=1):
             if not line or line.isspace():
                 continue
@@ -43,9 +60,15 @@ def iter_jsonl(
         *,
         errors: JsonlErrorMode = "skip",
         dict_only: bool = True,
+        gzip_fallback: bool = False,
         ) -> Iterable[Any]:
     """Yield parsed JSONL rows."""
-    for _line_no, payload in iter_jsonl_records(path, errors=errors, dict_only=dict_only):
+    for _line_no, payload in iter_jsonl_records(
+        path,
+        errors=errors,
+        dict_only=dict_only,
+        gzip_fallback=gzip_fallback,
+    ):
         yield payload
 
 
@@ -55,8 +78,9 @@ def read_jsonl(
         errors: JsonlErrorMode = "skip",
         dict_only: bool = True,
         missing_ok: bool = False,
+        gzip_fallback: bool = False,
         ) -> list[Any]:
-    jsonl_path = Path(path)
+    jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
     if missing_ok and not jsonl_path.exists():
         return []
     return list(iter_jsonl(jsonl_path, errors=errors, dict_only=dict_only))
