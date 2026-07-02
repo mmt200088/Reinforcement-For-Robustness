@@ -91,7 +91,6 @@ def _load_action_configs(action_dir: Path) -> List[dict]:
         configs.append({
             "name": name,
             "path": path,
-            "payload": payload,
             "action_hash": _json_hash(hash_payload),
             "group": group,
         })

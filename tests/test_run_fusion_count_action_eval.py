@@ -8,6 +8,29 @@ from scripts import run_fusion_count_action_eval as action_eval
 
 
 class FusionCountActionEvalTest(unittest.TestCase):
+    def test_load_action_configs_does_not_retain_full_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            config = root / "candidate.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "group": {"name": "candidate", "family": "bench"},
+                        "action_vec": [1, 2, 3],
+                        "large_unused_payload": [{"i": i} for i in range(32)],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            configs = action_eval._load_action_configs(root)
+
+        self.assertEqual(len(configs), 1)
+        self.assertEqual(configs[0]["name"], "candidate")
+        self.assertEqual(configs[0]["group"], {"name": "candidate", "family": "bench"})
+        self.assertIn("action_hash", configs[0])
+        self.assertNotIn("payload", configs[0])
+
     def test_build_combined_avoids_deepcopying_large_candidate_payloads(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

@@ -538,6 +538,14 @@ whole preset through `read_text().splitlines()[0]`. A local 200k-line synthetic
 preset benchmark preserved the displayed summary while reducing the lookup
 from `0.0400s` / `14.92MB` to `0.0002s` / `0.02MB`.
 
+Progress 2026-07-02: `scripts/run_fusion_count_action_eval.py` now drops the
+full parsed action-config payload after deriving the fields it actually uses
+(`name`, `path`, `group`, and `action_hash`). Final-eval launch/report behavior
+is unchanged, but large `action_vec`/`slots` diagnostics no longer stay resident
+for the whole combined-report flow. A local 120-config synthetic benchmark kept
+the same action hashes and reduced retained loader memory from `16.90MB` to
+`0.17MB` (`101.86x`), with comparable wall time (`0.3065s` -> `0.3008s`).
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
