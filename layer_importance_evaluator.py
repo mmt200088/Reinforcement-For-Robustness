@@ -1632,6 +1632,30 @@ class LSTMStrategyNetwork(nn.Module):
 
 
 # ==================== LSTM PDF优化方案：循环网络专用Rollout Buffer ====================
+def _pack_recurrent_rollout_arrays(episodes):
+    if not episodes:
+        raise RuntimeError("RecurrentRolloutBuffer is empty")
+    layer_indices_np = np.asarray([ep['layer_indices'] for ep in episodes], dtype=np.int64)
+    prev_g_actions_np = np.asarray([ep['prev_g_actions'] for ep in episodes], dtype=np.int64)
+    actions_g_np = np.asarray([ep['actions_g'] for ep in episodes], dtype=np.int64)
+    rewards_np = np.asarray([ep['rewards'] for ep in episodes], dtype=np.float32)
+    dones_np = np.asarray([ep['dones'] for ep in episodes], dtype=np.float32)
+    has_masks = all(len(ep.get('gelu_masks', [])) > 0 for ep in episodes)
+    gelu_masks_np = (
+        np.asarray([ep['gelu_masks'] for ep in episodes], dtype=bool)
+        if has_masks
+        else None
+    )
+    return (
+        layer_indices_np,
+        prev_g_actions_np,
+        actions_g_np,
+        rewards_np,
+        dones_np,
+        gelu_masks_np,
+    )
+
+
 class RecurrentRolloutBuffer:
     """
     循环网络专用Rollout Buffer（LSTM PDF 4.1）
@@ -1703,41 +1727,37 @@ class RecurrentRolloutBuffer:
         cont_features = torch.stack([
             torch.stack(ep['cont_features']) for ep in self.episodes
         ]).to(device)
-        
-        layer_indices = torch.stack([
-            torch.tensor(ep['layer_indices'], dtype=torch.long) for ep in self.episodes
-        ]).to(device)
-        
-        prev_g_actions = torch.stack([
-            torch.tensor(ep['prev_g_actions'], dtype=torch.long) for ep in self.episodes
-        ]).to(device)
 
-        actions_g = torch.stack([
-            torch.tensor(ep['actions_g'], dtype=torch.long) for ep in self.episodes
-        ]).to(device)
+        (
+            layer_indices_np,
+            prev_g_actions_np,
+            actions_g_np,
+            rewards_np,
+            dones_np,
+            gelu_masks_np,
+        ) = _pack_recurrent_rollout_arrays(self.episodes)
+        
+        layer_indices = torch.from_numpy(layer_indices_np).to(device)
+        
+        prev_g_actions = torch.from_numpy(prev_g_actions_np).to(device)
+
+        actions_g = torch.from_numpy(actions_g_np).to(device)
 
         logprobs = torch.stack([
             torch.stack(ep['logprobs']) for ep in self.episodes
         ]).to(device)
         
-        rewards = torch.tensor([
-            ep['rewards'] for ep in self.episodes
-        ], dtype=torch.float32).to(device)
+        rewards = torch.from_numpy(rewards_np).to(device)
         
         values = torch.stack([
             torch.stack(ep['values']) for ep in self.episodes
         ]).to(device)
         
-        dones = torch.tensor([
-            ep['dones'] for ep in self.episodes
-        ], dtype=torch.float32).to(device)
+        dones = torch.from_numpy(dones_np).to(device)
         
         # GELU动作掩码: (N_eps, 12, 4) bool
-        has_masks = all(len(ep.get('gelu_masks', [])) > 0 for ep in self.episodes)
-        if has_masks:
-            gelu_masks = torch.stack([
-                torch.tensor(np.array(ep['gelu_masks']), dtype=torch.bool) for ep in self.episodes
-            ]).to(device)
+        if gelu_masks_np is not None:
+            gelu_masks = torch.from_numpy(gelu_masks_np).to(device)
         else:
             gelu_masks = None
         

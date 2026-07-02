@@ -47,6 +47,22 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("load_state_dict(state_dict)", region)
         self.assertNotIn("load_state_dict(gtrxl_net.state_dict())", region)
 
+    def test_recurrent_rollout_buffer_packs_scalar_arrays_before_tensor_transfer(self):
+        source = _source(LAYER_EVALUATOR)
+        region = _method_region(source, "get_batch")
+
+        self.assertIn("def _pack_recurrent_rollout_arrays", source)
+        self.assertIn("np.asarray([ep['layer_indices'] for ep in episodes], dtype=np.int64)", source)
+        self.assertIn("np.asarray([ep['gelu_masks'] for ep in episodes], dtype=bool)", source)
+        self.assertIn("layer_indices_np,", region)
+        self.assertIn("prev_g_actions_np,", region)
+        self.assertIn("actions_g_np,", region)
+        self.assertIn("torch.from_numpy(layer_indices_np).to(device)", region)
+        self.assertNotIn("torch.tensor(ep['layer_indices'], dtype=torch.long)", region)
+        self.assertNotIn("torch.tensor(ep['prev_g_actions'], dtype=torch.long)", region)
+        self.assertNotIn("torch.tensor(ep['actions_g'], dtype=torch.long)", region)
+        self.assertNotIn("torch.tensor([", region)
+
 
 if __name__ == "__main__":
     unittest.main()
