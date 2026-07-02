@@ -10,6 +10,7 @@ evidence for 1GPU vs NGPU Stage-1 throughput checks.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Collection
 import json
 from pathlib import Path
 import re
@@ -64,6 +65,26 @@ def _safe_div(numer: float, denom: float) -> float | None:
     if denom <= 0.0:
         return None
     return float(numer) / float(denom)
+
+
+def _worker_counts_imbalanced(counts: Iterable[int]) -> bool:
+    if isinstance(counts, Collection):
+        if not counts:
+            return False
+        min_count = min(counts)
+        if not min_count:
+            return False
+        return max(counts) / min_count > 1.2
+
+    min_count: int | None = None
+    max_count: int | None = None
+    for raw_count in counts:
+        count = int(raw_count)
+        if min_count is None or count < min_count:
+            min_count = count
+        if max_count is None or count > max_count:
+            max_count = count
+    return bool(min_count and max_count is not None and max_count / min_count > 1.2)
 
 
 def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
@@ -135,10 +156,8 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
         warnings.append("No [stage1-rollout] worker timing lines found.")
     if not total_window_count:
         warnings.append("No [stage1-rollout-total] window timing lines found.")
-    if worker_episode_counts:
-        counts = list(worker_episode_counts.values())
-        if min(counts) and max(counts) / min(counts) > 1.2:
-            warnings.append("Worker episode counts are imbalanced across devices.")
+    if _worker_counts_imbalanced(worker_episode_counts.values()):
+        warnings.append("Worker episode counts are imbalanced across devices.")
 
     return {
         "windows": max(rollout_window_count, total_window_count),

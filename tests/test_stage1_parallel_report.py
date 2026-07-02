@@ -91,6 +91,26 @@ class Stage1ParallelReportTest(unittest.TestCase):
         self.assertAlmostEqual(summary["mean_worker_speedup"], 1.965)
         self.assertAlmostEqual(summary["max_worker_speedup"], 1.97)
 
+    def test_worker_balance_check_streams_counts_without_list(self):
+        report = _load_report_module()
+
+        class SinglePassCounts:
+            def __init__(self):
+                self.iterated = False
+
+            def __iter__(self):
+                if self.iterated:
+                    raise AssertionError("worker counts were iterated more than once")
+                self.iterated = True
+                yield 10
+                yield 13
+
+        with mock.patch("builtins.list", side_effect=AssertionError("worker counts were materialized")):
+            self.assertTrue(report._worker_counts_imbalanced(SinglePassCounts()))
+
+        self.assertFalse(report._worker_counts_imbalanced([10, 12]))
+        self.assertFalse(report._worker_counts_imbalanced([0, 100]))
+
     def test_parse_log_lines_skips_regex_for_unrelated_lines(self):
         report = _load_report_module()
 

@@ -262,6 +262,15 @@ millisecond/total timing lists after a server benchmark completes. A local
 summary time from `2.133355s` to `0.124024s` (`17.20x`), and eliminated the
 `18.39MB` traced peak from list materialization.
 
+Progress 2026-07-02: `scripts/stage1_parallel_report.py` now checks Stage-1
+worker episode-count imbalance without materializing `worker_episode_counts`
+into a list and without scanning the minimum twice. For real `dict_values`
+inputs it uses built-in `min/max` over the existing view; single-pass iterables
+fall back to one-pass aggregation. A local 200k-worker synthetic count
+benchmark preserved the warning result, reduced time from `2.868017s` to
+`1.976543s` (`1.45x`), and cut traced peak allocation from `1,600,128B` to
+`72B`.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:
