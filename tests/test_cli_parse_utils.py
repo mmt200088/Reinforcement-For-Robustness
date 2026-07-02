@@ -2,11 +2,18 @@ import pathlib
 import unittest
 
 from cli_parse_utils import (
+    parse_bool_flag,
     parse_broadcast_int_vector,
+    parse_degree_config,
     parse_exact_json_int_list,
     parse_int_list_text,
     parse_json_int_list,
+    parse_noise_config,
     parse_optional_int_list,
+    parse_optional_positive_float,
+    parse_optional_positive_int,
+    parse_positive_int,
+    parse_stage1_episode_limit,
     split_int_tokens,
 )
 
@@ -43,6 +50,34 @@ class CliParseUtilsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "degree vector length 2 must be 1 or num_layers=3"):
             parse_broadcast_int_vector([1, 2], num_layers=3, default=4)
 
+    def test_legacy_rl_cli_parsers(self):
+        self.assertIsNone(parse_degree_config(None))
+        self.assertIsNone(parse_degree_config(""))
+        self.assertEqual(parse_degree_config([1, "2"]), [1, 2])
+        self.assertEqual(parse_degree_config("[1, \"2\"]"), [1, 2])
+        self.assertEqual(parse_degree_config("1, 2"), [1, 2])
+
+        self.assertIsNone(parse_noise_config(""))
+        self.assertEqual(parse_noise_config({"x": 1}), {"x": 1})
+        self.assertEqual(parse_noise_config('{"x": 1}'), {"x": 1})
+
+        self.assertTrue(parse_bool_flag("yes", "flag"))
+        self.assertFalse(parse_bool_flag("off", "flag"))
+        with self.assertRaisesRegex(ValueError, "Invalid boolean value for flag"):
+            parse_bool_flag("maybe", "flag")
+
+        self.assertEqual(parse_positive_int("3", "n"), 3)
+        self.assertIsNone(parse_optional_positive_int("", "n"))
+        self.assertEqual(parse_optional_positive_int("4", "n"), 4)
+        with self.assertRaisesRegex(ValueError, "Invalid positive integer for n"):
+            parse_positive_int("0", "n")
+
+        self.assertEqual(parse_stage1_episode_limit("-1", "episodes"), -1)
+        self.assertIsNone(parse_optional_positive_float(None, "lr"))
+        self.assertEqual(parse_optional_positive_float("0.5", "lr"), 0.5)
+        with self.assertRaisesRegex(ValueError, "Invalid positive float for lr"):
+            parse_optional_positive_float("0", "lr")
+
     def test_existing_script_wrappers_use_shared_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         checks = {
@@ -52,11 +87,21 @@ class CliParseUtilsTest(unittest.TestCase):
             "scripts/blb_make_fusion_fixed_action_config.py": "from cli_parse_utils import parse_exact_json_int_list",
             "scripts/blb_f0_scan_feasible_domain.py": "from cli_parse_utils import parse_optional_int_list",
             "scripts/stage1_parallel_report.py": "from cli_parse_utils import parse_int_list_text, split_int_tokens",
+            "rl_tune.py": "from cli_parse_utils import",
+            "rl_tune_general.py": "from cli_parse_utils import",
+            "rl_tune_genetic.py": "from cli_parse_utils import",
         }
         for rel, needle in checks.items():
             text = (repo / rel).read_text(encoding="utf-8")
             self.assertIn(needle, text)
         self.assertNotIn("text.replace(\";\", \",\").split(\",\")", (repo / "scripts/blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8"))
+
+        for rel in ("rl_tune.py", "rl_tune_general.py", "rl_tune_genetic.py"):
+            text = (repo / rel).read_text(encoding="utf-8")
+            self.assertNotIn("def parse_degree_config(", text)
+            self.assertNotIn("def parse_noise_config(", text)
+            self.assertNotIn("def parse_bool_flag(", text)
+            self.assertNotIn("def parse_positive_int(", text)
 
 
 if __name__ == "__main__":

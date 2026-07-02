@@ -27,6 +27,13 @@ sys.path.append(os.path.join(os.getcwd(), "./importance-aware-sparse-tuning-IST-
 #     set_peft_model_state_dict,
 # )
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer, LlamaTokenizer, DataCollatorWithPadding, AutoModel  # noqa: F402
+from cli_parse_utils import (
+    parse_bool_flag,
+    parse_degree_config,
+    parse_noise_config,
+    parse_optional_positive_int,
+    parse_positive_int,
+)
 
 
 def seed_everything(seed: int) -> int:
@@ -37,72 +44,6 @@ def seed_everything(seed: int) -> int:
     except Exception:
         pass
     return seed
-
-
-
-def parse_degree_config(raw_value):
-    if raw_value is None or raw_value == "":
-        return None
-    if isinstance(raw_value, (list, tuple)):
-        return [int(item) for item in raw_value]
-
-    text = str(raw_value).strip()
-    if not text:
-        return None
-    if text.startswith("["):
-        return [int(item) for item in json.loads(text)]
-    return [int(item.strip()) for item in text.split(",") if item.strip()]
-
-
-def parse_noise_config(raw_value):
-    if raw_value is None or raw_value == "":
-        return None
-    if isinstance(raw_value, dict):
-        return raw_value
-    text = str(raw_value).strip()
-    if not text:
-        return None
-    return json.loads(text)
-
-
-def parse_bool_flag(raw_value, flag_name):
-    if isinstance(raw_value, bool):
-        return raw_value
-    if raw_value is None:
-        return False
-
-    text = str(raw_value).strip().lower()
-    if text in ("1", "true", "t", "yes", "y", "on"):
-        return True
-    if text in ("0", "false", "f", "no", "n", "off", ""):
-        return False
-
-    raise ValueError(
-        f"Invalid boolean value for {flag_name}: {raw_value!r}. "
-        "Expected one of: true/false/1/0/yes/no."
-    )
-
-
-def parse_positive_int(raw_value, flag_name):
-    try:
-        value = int(raw_value)
-    except (TypeError, ValueError):
-        raise ValueError(
-            f"Invalid positive integer for {flag_name}: {raw_value!r}."
-        ) from None
-
-    if value <= 0:
-        raise ValueError(
-            f"Invalid positive integer for {flag_name}: {raw_value!r}."
-        )
-    return value
-
-
-def parse_optional_positive_int(raw_value, flag_name):
-    if raw_value is None or raw_value == "":
-        return None
-    return parse_positive_int(raw_value, flag_name)
-
 
 def _load_prior_ga_search_results(
     run_dir,
@@ -1323,4 +1264,3 @@ if __name__ == "__main__":
         train,
         program_name="rl_tune_genetic.py",
     )
-

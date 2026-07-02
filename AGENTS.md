@@ -173,9 +173,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `parse_json_int_list()` for JSON-list flags with defaults,
   `parse_exact_json_int_list()` for exact-length JSON vectors,
   `parse_optional_int_list()` / `parse_int_list_text()` for comma/semicolon
-  lists, and `parse_broadcast_int_vector()` for one-value-or-per-layer degree
-  flags. Keep script-local `_parse_int_list`, `_json_int_list`, or
-  `_parse_degree_vector` only as compatibility wrappers around this seam.
+  lists, `parse_broadcast_int_vector()` for one-value-or-per-layer degree
+  flags, and the legacy RL entrypoint helpers `parse_degree_config()`,
+  `parse_noise_config()`, `parse_bool_flag()`, `parse_positive_int()`,
+  `parse_optional_positive_int()`, `parse_stage1_episode_limit()`, and
+  `parse_optional_positive_float()` for `rl_tune*.py` Fire arguments. Keep
+  script-local `_parse_int_list`, `_json_int_list`, `_parse_degree_vector`,
+  `parse_bool_flag`, or `parse_positive_int` only as compatibility wrappers
+  around this seam; do not reimplement those parser bodies in new launchers or
+  RL entrypoints.
 - Shared device-list parsing rule, added 2026-07-03: Stage-1 and Stage-2 GPU
   device flags must use `device_utils.parse_device_ids()` for int/list/tuple,
   comma-separated string, and Python Fire tuple-string forms. `stage1_rl` and
