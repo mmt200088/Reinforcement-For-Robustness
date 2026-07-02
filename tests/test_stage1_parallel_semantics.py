@@ -84,7 +84,7 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("gelu_action_idx = int(gelu_action.item())", worker_region)
         self.assertIn("env.step(gelu_action_idx)", worker_region)
         self.assertIn("rollout.actions_g.append(gelu_action_idx)", worker_region)
-        self.assertIn("cont_feat_np, dtype=torch.float32, device=device", worker_region)
+        self.assertIn("cont_feat_record, dtype=torch.float32, device=device", worker_region)
         self.assertIn("gelu_mask_np, dtype=torch.bool, device=device", worker_region)
         self.assertIn("seq_prev_g[0, step] = int(prev_g_idx)", worker_region)
 
@@ -110,6 +110,17 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertNotIn("torch.cat(seq_layer_indices", source)
         self.assertNotIn("torch.cat(seq_prev_g", source)
         self.assertNotIn("torch.cat(seq_gelu_masks", source)
+
+    def test_stage1_rollout_records_cont_features_without_cpu_tensor_roundtrip(self):
+        source = _source(LAYER_EVALUATOR)
+        worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
+        runner_source = _source(PARALLEL_RUNNER)
+
+        self.assertIn("cont_feat_record = np.asarray(cont_feat_np, dtype=np.float32)", worker_region)
+        self.assertIn("rollout.cont_features.append(cont_feat_record)", worker_region)
+        self.assertIn("cont_feat=cont_feat_record", source)
+        self.assertIn("cont_features: List[np.ndarray]", runner_source)
+        self.assertNotIn("torch.tensor(cont_feat_np", source)
 
 
 if __name__ == "__main__":

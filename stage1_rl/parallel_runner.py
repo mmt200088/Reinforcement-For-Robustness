@@ -114,10 +114,10 @@ class EpisodeRollout:
     Field names match ``RecurrentRolloutBuffer._current`` so the caller can
     splat directly via ``buffer.episodes.append(rollout.to_buffer_dict())``.
 
-    Tensor fields stay on CPU; the Stage-1 PPO update path moves the whole
+    Recorded fields stay on CPU; the Stage-1 PPO update path moves the whole
     buffer to the target device via ``RecurrentRolloutBuffer.get_batch``.
     """
-    cont_features: List[torch.Tensor]
+    cont_features: List[np.ndarray]
     layer_indices: List[int]
     prev_g_actions: List[int]
     actions_g: List[int]

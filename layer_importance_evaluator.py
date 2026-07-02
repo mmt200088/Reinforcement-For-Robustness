@@ -5704,9 +5704,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             # gelu-only: pull the 6 policy continuous features by name (no magic
             # offsets into the flat state, whose layout changed when softmax left).
             cont_feat_np = env.get_policy_cont_features()
+            cont_feat_record = np.asarray(cont_feat_np, dtype=np.float32)
 
             cont_feat_t = torch.as_tensor(
-                cont_feat_np, dtype=torch.float32, device=device
+                cont_feat_record, dtype=torch.float32, device=device
             )
             gelu_mask_np = env.get_gelu_action_mask(layer_idx)
             gelu_mask_t = torch.as_tensor(
@@ -5745,7 +5746,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             gelu_action_idx = int(gelu_action.item())
             next_state, reward, done, info = env.step(gelu_action_idx)
 
-            rollout.cont_features.append(torch.tensor(cont_feat_np, dtype=torch.float32))
+            rollout.cont_features.append(cont_feat_record)
             rollout.layer_indices.append(layer_idx)
             rollout.prev_g_actions.append(prev_g_idx)
             rollout.actions_g.append(gelu_action_idx)
@@ -6496,9 +6497,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                         N = self.total_layers
                         layer_idx = int(np.argmax(state[0:N]))
                         cont_feat_np = env.get_policy_cont_features()
+                        cont_feat_record = np.asarray(cont_feat_np, dtype=np.float32)
 
                         cont_feat_t = torch.as_tensor(
-                            cont_feat_np, dtype=torch.float32, device=self.device
+                            cont_feat_record, dtype=torch.float32, device=self.device
                         )
 
                         gelu_mask_np = env.get_gelu_action_mask(layer_idx)
@@ -6555,7 +6557,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
                         # 存入RecurrentRolloutBuffer（与LSTM使用相同的Buffer格式）
                         buffer.add_step(
-                            cont_feat=torch.tensor(cont_feat_np, dtype=torch.float32),
+                            cont_feat=cont_feat_record,
                             layer_idx=layer_idx,
                             prev_g=prev_g_idx,
                             action_g=gelu_action_idx,
