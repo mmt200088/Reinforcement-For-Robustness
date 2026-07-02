@@ -56,6 +56,7 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertEqual(configs[0]["baseline_k_index"], 2)
         self.assertEqual(configs[0]["group"]["option_by_graph"], {"block2_mrpc": 1})
         self.assertNotIn("payload", configs[0])
+        self.assertEqual(configs[0]["group_key"], rlpath._group_key(configs[0]))
 
     def test_load_action_configs_scans_directory_without_path_glob(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
@@ -142,6 +143,22 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         })
 
         unique = rlpath._unique_configs([first, duplicate])
+
+        self.assertEqual(len(unique), 1)
+        self.assertIs(next(iter(unique)), first)
+
+    def test_unique_configs_reuses_cached_group_key(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        first = {"name": "first", "group_key": "same"}
+        duplicate = {"name": "duplicate", "group_key": "same"}
+
+        with mock.patch.object(
+            rlpath,
+            "_group_key",
+            side_effect=AssertionError("cached group_key should be reused"),
+        ):
+            unique = rlpath._unique_configs([first, duplicate])
 
         self.assertEqual(len(unique), 1)
         self.assertIs(next(iter(unique)), first)

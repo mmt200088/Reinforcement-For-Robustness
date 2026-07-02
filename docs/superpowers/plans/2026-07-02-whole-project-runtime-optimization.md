@@ -804,6 +804,15 @@ benchmark with 3000 valid configs plus 2000 sidecar/non-JSON files preserved
 config ordering and improved discovery from `0.036433s` / `2.17MB` to
 `0.020808s` / `0.86MB` (`1.75x`).
 
+Progress 2026-07-02: `scripts/run_fusion_count_action_eval_rlpath.py` now
+computes each action config's canonical group key once at load time and reuses
+it during deduplication, result indexing, and requested-group result backfill.
+This removes repeated JSON key serialization from the RL-path fusion-count
+comparison driver. A local 80k-config duplicate benchmark covering those three
+keyed phases preserved canonical selection and reduced runtime from
+`25.343264s` to `1.572615s` (`16.12x`), with traced peak allocation dropping
+from `0.78MiB` to `0.70MiB`.
+
 Progress 2026-07-02: `Paean/action_grid.py` now precomputes the truncation
 `K_LEVELS` value-to-action-index map and the invalid-value choices string at
 module import. Action-range and slot decoding no longer allocates

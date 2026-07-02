@@ -124,12 +124,14 @@ def _load_action_configs(action_dir: Path) -> List[dict]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         group = payload.get("group") or {}
         name = str(group.get("name") or path.stem)
-        out.append({
+        cfg = {
             "name": name,
             "path": path,
             "group": group,
             "baseline_k_index": int(payload.get("baseline_k_index", 3)),
-        })
+        }
+        cfg["group_key"] = _group_key(cfg)
+        out.append(cfg)
     if not out:
         raise RuntimeError(f"no action configs found under {action_dir}")
     return out
@@ -145,10 +147,17 @@ def _group_key(cfg: Mapping[str, Any]) -> str:
     return json.dumps(key_payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
+def _config_group_key(cfg: Mapping[str, Any]) -> str:
+    cached = cfg.get("group_key")
+    if cached is not None:
+        return str(cached)
+    return _group_key(cfg)
+
+
 def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> ValuesView[Mapping[str, Any]]:
     seen: Dict[str, Mapping[str, Any]] = {}
     for cfg in configs:
-        seen.setdefault(_group_key(cfg), cfg)
+        seen.setdefault(_config_group_key(cfg), cfg)
     return seen.values()
 
 
@@ -624,11 +633,11 @@ def main() -> int:
     result_by_key: Dict[str, dict] = {}
     for idx, cfg in enumerate(unique):
         print(f"[run] {cfg['name']}", flush=True)
-        result_by_key[_group_key(cfg)] = _run_group(seq_env, cfg, seed=int(args.seed) + idx)
+        result_by_key[_config_group_key(cfg)] = _run_group(seq_env, cfg, seed=int(args.seed) + idx)
 
     group_results = []
     for cfg in configs:
-        r = dict(result_by_key[_group_key(cfg)])
+        r = dict(result_by_key[_config_group_key(cfg)])
         r["name"] = str(cfg["name"])
         orig = original_by_name.get(str(cfg["name"])) or {}
         r["original_metrics"] = {
