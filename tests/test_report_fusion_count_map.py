@@ -8,6 +8,39 @@ from scripts import report_fusion_count_map as report
 
 
 class FusionCountMapReportTest(unittest.TestCase):
+    def test_options_in_id_order_skips_sort_when_already_ordered(self):
+        options = [
+            {"option_id": 0, "fusion_count": 0},
+            {"option_id": 1, "fusion_count": 1},
+            {"option_id": 2, "fusion_count": 1},
+        ]
+
+        def fail_sorted(*_args, **_kwargs):
+            raise AssertionError("ordered options should not be sorted again")
+
+        original_sorted = getattr(report, "sorted", None)
+        report.sorted = fail_sorted
+        try:
+            ordered = report._options_in_id_order(options)
+        finally:
+            if original_sorted is None:
+                delattr(report, "sorted")
+            else:
+                report.sorted = original_sorted
+
+        self.assertEqual([int(item["option_id"]) for item in ordered], [0, 1, 2])
+
+    def test_options_in_id_order_sorts_unordered_options(self):
+        options = [
+            {"option_id": 2, "fusion_count": 1},
+            {"option_id": 0, "fusion_count": 0},
+            {"option_id": 1, "fusion_count": 1},
+        ]
+
+        ordered = report._options_in_id_order(options)
+
+        self.assertEqual([int(item["option_id"]) for item in ordered], [0, 1, 2])
+
     def test_choose_option_scans_candidates_without_sorting(self):
         graph = {
             "graph_key": "blockX",

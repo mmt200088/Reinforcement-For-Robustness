@@ -619,6 +619,17 @@ def _option_slot_summary(
     }
 
 
+def _options_in_id_order(options: Iterable[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+    out = options if isinstance(options, list) else list(options)
+    previous_id = None
+    for option in out:
+        option_id = int(option.get("option_id", 0))
+        if previous_id is not None and option_id < previous_id:
+            return sorted(out, key=lambda o: int(o.get("option_id", 0)))
+        previous_id = option_id
+    return out
+
+
 def _build_report_payload(
     *,
     graphs: Mapping[str, Mapping[str, Any]],
@@ -635,7 +646,7 @@ def _build_report_payload(
     for graph_key, graph in graphs.items():
         block_idx = int(graph["block_idx"])
         fields = fields_by_block[block_idx]
-        options = sorted(graph.get("options", []), key=lambda o: int(o["option_id"]))
+        options = _options_in_id_order(graph.get("options", []))
         base = _option_by_id(graph, 0)
         graph_payload.append({
             "graph_key": graph_key,

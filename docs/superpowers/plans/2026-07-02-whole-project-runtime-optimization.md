@@ -384,6 +384,13 @@ building per-count candidate buckets and sorting the selected bucket. A local
 max targets; exact target selection improved from `0.5034s` / `6.17MB` to
 `0.3138s` / near-zero traced allocations.
 
+Progress 2026-07-02: `scripts/report_fusion_count_map.py` now detects
+already-ordered fusion map option lists and reuses the list directly instead of
+unconditionally sorting by `option_id` while building the HTML/JSON report.
+Unordered inputs still fall back to the old sort semantics. A local
+300k-option ordered-list benchmark preserved rows and reduced extra allocation
+from `4.58MB` to near zero with comparable wall time (`0.0327s` -> `0.0325s`).
+
 - [ ] **Step 3: Verify**
 
 Run:
