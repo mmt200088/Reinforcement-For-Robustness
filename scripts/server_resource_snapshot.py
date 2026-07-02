@@ -165,7 +165,7 @@ def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
     return parse_nvidia_smi_lines(_iter_text_lines(str(text or "")))
 
 
-def _run_command(cmd: Sequence[str], *, cwd: Path | None = None) -> str:
+def _run_command(cmd: Sequence[str], *, cwd: Path | None = None, timeout: float = 5.0) -> str:
     try:
         completed = subprocess.run(
             list(cmd),
@@ -173,6 +173,7 @@ def _run_command(cmd: Sequence[str], *, cwd: Path | None = None) -> str:
             check=False,
             text=True,
             capture_output=True,
+            timeout=timeout,
         )
     except Exception:
         return ""

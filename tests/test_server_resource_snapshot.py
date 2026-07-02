@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 from unittest import mock
@@ -72,6 +73,18 @@ class ServerResourceSnapshotTest(unittest.TestCase):
         self.assertEqual(rows, [{"index": 0}])
         self.assertFalse(captured["is_list"])
         self.assertEqual(captured["rows"], ["0, GPU, 10, 1, 2\n"])
+
+    def test_external_commands_are_bounded(self):
+        snap = _load_snapshot_module()
+
+        with mock.patch.object(
+            snap.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=0, stdout="ok\n"),
+        ) as run:
+            self.assertEqual(snap._run_command(["git", "status"]), "ok")
+
+        self.assertEqual(run.call_args.kwargs["timeout"], 5.0)
 
     def test_cli_writes_json_and_markdown_from_offline_gpu_csv(self):
         snap = _load_snapshot_module()
