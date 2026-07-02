@@ -521,7 +521,6 @@ def ppo_update(
 
     states, actions, old_log_probs, returns, advantages = buffer.to_tensors(device)
     n = states.shape[0]
-    indices = np.arange(n)
 
     metrics_sum_t = {
         "policy_loss": torch.zeros((), device=device),
@@ -532,8 +531,7 @@ def ppo_update(
     n_minibatches = 0
 
     for _ in range(int(cfg.n_epochs)):
-        np.random.shuffle(indices)
-        epoch_indices = torch.from_numpy(indices).long().to(device)
+        epoch_indices = torch.randperm(n, device=device)
         mb_size = max(1, int(cfg.minibatch_size))
         for start in range(0, n, mb_size):
             end = min(n, start + mb_size)
