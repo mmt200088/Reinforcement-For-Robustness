@@ -183,6 +183,29 @@ class Stage2RewardProbeScalingReportTest(unittest.TestCase):
         self.assertEqual(gpu_util, {"0": 40.0})
         self.assertEqual(gpu_mem, {"0": 1500.0})
 
+    def test_gpu_sample_summary_avoids_per_row_dict_reader(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "samples.csv"
+            smi.write_text(
+                "gpu index, utilization.gpu [%], memory.used [MiB]\n"
+                "0,20 %,1000 MiB\n"
+                "0,40 %,1500 MiB\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                report.csv,
+                "DictReader",
+                side_effect=AssertionError("GPU samples should not allocate one dict per CSV row"),
+            ):
+                gpu_util, gpu_mem = report._summarize_gpu_samples(smi)
+
+        self.assertEqual(gpu_util, {"0": 40.0})
+        self.assertEqual(gpu_mem, {"0": 1500.0})
+
     def test_float_value_uses_precompiled_pattern(self):
         report = _load_report_module()
 

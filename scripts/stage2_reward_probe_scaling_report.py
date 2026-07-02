@@ -82,6 +82,28 @@ def _first_present_by_lookup(
     return None
 
 
+def _normalized_field_index(fieldnames: Sequence[str | None] | None) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for idx, fieldname in enumerate(fieldnames or ()):
+        if fieldname is None:
+            continue
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(fieldname).strip().lower()).strip("_")
+        out[normalized] = int(idx)
+    return out
+
+
+def _first_present_by_index(
+        row: Sequence[str],
+        field_index: Mapping[str, int],
+        keys: Sequence[str],
+        ) -> str | None:
+    for key in keys:
+        idx = field_index.get(key)
+        if idx is not None and 0 <= int(idx) < len(row):
+            return row[int(idx)]
+    return None
+
+
 def _summarize_episodes(path: Path) -> dict[str, Any]:
     probe_walls: list[float] = []
     wall_total = 0.0
@@ -136,18 +158,24 @@ def _summarize_gpu_samples(path: Path) -> tuple[dict[str, float], dict[str, floa
     if not path.exists():
         return gpu_util, gpu_mem
     with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        field_lookup = _normalized_field_lookup(reader.fieldnames)
+        reader = csv.reader(handle)
+        try:
+            header = next(reader)
+        except StopIteration:
+            return gpu_util, gpu_mem
+        field_index = _normalized_field_index(header)
         for raw_row in reader:
-            idx = _first_present_by_lookup(raw_row, field_lookup, ["index", "gpu_index", "gpu"])
-            mem = _first_present_by_lookup(
+            if not raw_row or all(not cell or cell.isspace() for cell in raw_row):
+                continue
+            idx = _first_present_by_index(raw_row, field_index, ["index", "gpu_index", "gpu"])
+            mem = _first_present_by_index(
                 raw_row,
-                field_lookup,
+                field_index,
                 ["memory_used_mib", "memory_used", "memory_used_mi_b", "mem_used_mib"],
             )
-            util = _first_present_by_lookup(
+            util = _first_present_by_index(
                 raw_row,
-                field_lookup,
+                field_index,
                 ["utilization_gpu_pct", "utilization_gpu", "gpu_util_pct", "gpu_util"],
             )
             if idx is None:

@@ -354,6 +354,13 @@ row. A local 200k-row sampled GPU CSV benchmark preserved max util/memory maps
 and reduced GPU-sample post-processing from `3.853528s` to `2.066302s`
 (`1.86x`), with traced peak allocation dropping from `60,023B` to `49,098B`.
 
+Progress 2026-07-02: `scripts/stage2_reward_probe_scaling_report.py` now parses
+sampled `nvidia-smi` CSV files with `csv.reader` and precomputed column indices
+instead of `csv.DictReader`, avoiding one dictionary allocation per sample row.
+A local 120k-row / 4-GPU sampled CSV benchmark preserved max util/memory maps
+and reduced post-processing from `1.039389s` / `0.05MB` peak to `0.910350s` /
+`0.04MB` (`1.14x`).
+
 Progress 2026-07-02: `scripts/stage2_reward_probe_scaling_report.py`
 `render_html()` now iterates the summary `runs` collection directly instead of
 wrapping it with `list()` before rendering rows. This preserves HTML output and
