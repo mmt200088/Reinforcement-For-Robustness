@@ -69,6 +69,16 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             self.assertNotIn('"trial": i + 1', text)
             self.assertNotIn("for i, t in enumerate(trials)", text)
 
+    def test_probe_runner_diagnostics_payload_uses_shared_helper(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
+        probe = (repo / "blb_stage2_rl" / "probe_runner.py").read_text(encoding="utf-8")
+
+        self.assertIn("def diagnostics_payload(", probe)
+        self.assertIn("diagnostics_payload", env)
+        self.assertNotIn('"per_worker_trial_counts": [int(x) for x in diag.', env)
+        self.assertNotIn('"per_worker_trial_counts": [int(x) for x in diag_obj.', env)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -40,7 +40,7 @@ from .action_space import (
 from .candidate_store import action_hash
 from .inference_eval import run_installed_probe_trial
 from .optimizer_cost import apply_optimizer_outputs_to_cfgs, evaluate_action_for_cost
-from .probe_runner import ProbeRunner, format_diagnostics_line
+from .probe_runner import ProbeRunner, diagnostics_payload
 from .reward import (
     BaselineCostStats,
     EpisodeMetrics,
@@ -648,22 +648,7 @@ class BLBStage2Env:
                 diag_obj = self.probe_runner.last_diagnostics
                 diag = {}
                 if diag_obj is not None:
-                    diag = {
-                        "k": int(diag_obj.k),
-                        "wall_seconds": float(diag_obj.wall_seconds),
-                        "per_worker_seconds": [float(x) for x in diag_obj.per_worker_seconds],
-                        "per_worker_trial_counts": [int(x) for x in diag_obj.per_worker_trial_counts],
-                        "per_worker_trial_indices": [
-                            list(map(int, x)) for x in diag_obj.per_worker_trial_indices
-                        ],
-                        "per_worker_trial_seeds": [
-                            list(map(int, x)) for x in diag_obj.per_worker_trial_seeds
-                        ],
-                        "devices": [str(x) for x in diag_obj.devices],
-                        "speedup_vs_sequential": float(diag_obj.speedup_vs_sequential),
-                        "multi_action": bool(getattr(diag_obj, "multi_action", False)),
-                        "line": format_diagnostics_line(diag_obj),
-                    }
+                    diag = diagnostics_payload(diag_obj)
                 diag.update({
                     "fast_reward_mode": True,
                     "online_num_trials_per_step": int(k),
@@ -1200,17 +1185,7 @@ class BLBStage2Env:
                 results = self.probe_runner.run_trials(k, base_seed=base_seed)
                 diag = self.probe_runner.last_diagnostics
                 if diag is not None:
-                    self._last_probe_diagnostics = {
-                        "k": int(diag.k),
-                        "wall_seconds": float(diag.wall_seconds),
-                        "per_worker_seconds": [float(x) for x in diag.per_worker_seconds],
-                        "per_worker_trial_counts": [int(x) for x in diag.per_worker_trial_counts],
-                        "per_worker_trial_indices": [list(map(int, x)) for x in diag.per_worker_trial_indices],
-                        "per_worker_trial_seeds": [list(map(int, x)) for x in diag.per_worker_trial_seeds],
-                        "devices": [str(x) for x in diag.devices],
-                        "speedup_vs_sequential": float(diag.speedup_vs_sequential),
-                        "line": format_diagnostics_line(diag),
-                    }
+                    self._last_probe_diagnostics = diagnostics_payload(diag)
                 for (loss, m1, m2) in results:
                     if loss is None or (isinstance(loss, float) and not math.isfinite(loss)):
                         # NaN/inf from a probe trial is kept and handled below

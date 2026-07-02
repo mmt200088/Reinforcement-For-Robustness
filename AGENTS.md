@@ -78,6 +78,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   hand-roll JSON normalization plus SHA256 in diagnostics, reports, candidate
   stores, or experiment scripts; extending `candidate_store.py` is the shared
   seam if action identity semantics need to change.
+- Stage-2 shared probe-diagnostics rule, added 2026-07-02: ProbeRunner timing
+  and worker split snapshots must be serialized with
+  `blb_stage2_rl.probe_runner.diagnostics_payload()`. Do not hand-roll
+  `per_worker_seconds`, `per_worker_trial_counts`, `speedup_vs_sequential`, or
+  formatted probe-runner lines in env/runner/report code; extend
+  `ProbeRunnerDiagnostics`, `format_diagnostics_line()`, and
+  `diagnostics_payload()` together.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper

@@ -647,3 +647,25 @@ def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
         f"wall={diag.wall_seconds:.3f}s worker_seconds=[{ws}]  "
         f"speedup={diag.speedup_vs_sequential:.2f}x  trials=[{trial_map}]"
     )
+
+
+def diagnostics_payload(diag: ProbeRunnerDiagnostics) -> dict:
+    """Canonical JSON-ready payload for ProbeRunner diagnostics."""
+    payload = {
+        "k": int(diag.k),
+        "wall_seconds": float(diag.wall_seconds),
+        "per_worker_seconds": [float(x) for x in diag.per_worker_seconds],
+        "per_worker_trial_counts": [int(x) for x in diag.per_worker_trial_counts],
+        "per_worker_trial_indices": [
+            list(map(int, x)) for x in diag.per_worker_trial_indices
+        ],
+        "per_worker_trial_seeds": [
+            list(map(int, x)) for x in diag.per_worker_trial_seeds
+        ],
+        "devices": [str(x) for x in diag.devices],
+        "speedup_vs_sequential": float(diag.speedup_vs_sequential),
+        "line": format_diagnostics_line(diag),
+    }
+    if bool(getattr(diag, "multi_action", False)):
+        payload["multi_action"] = True
+    return payload
