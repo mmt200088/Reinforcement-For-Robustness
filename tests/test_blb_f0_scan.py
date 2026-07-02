@@ -151,6 +151,12 @@ class BLBF0ScanTests(unittest.TestCase):
         self.assertIsInstance(candidates, range)
         self.assertEqual(list(candidates), [0, 1, 2, 3, 4])
 
+    def test_safe_allowed_k_indices_uses_shared_int_parser(self):
+        from scripts.blb_f0_scan_feasible_domain import _safe_allowed_k_indices
+
+        with mock.patch.dict("os.environ", {"BLB_TRUNCATION_K_LEVELS": "8; 13; 12"}, clear=False):
+            self.assertEqual(_safe_allowed_k_indices(), [1, 2])
+
     def test_scan_stops_when_baseline_is_invalid(self):
         from scripts.blb_f0_scan_feasible_domain import run_scan_core
 
