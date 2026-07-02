@@ -32,6 +32,28 @@ class ExperimentsLogTest(unittest.TestCase):
 
         self.assertEqual([row["run_id"] for row in rows], ["run-a"])
 
+    def test_query_last_n_does_not_sort_all_latest_records(self):
+        class NoFullSortList(list):
+            def sort(self, *_args, **_kwargs):
+                raise AssertionError("last_n query should not sort every latest record")
+
+        latest = NoFullSortList(
+            {
+                "run_id": f"run-{idx}",
+                "registered_at": f"2026-07-02T00:{idx:02d}:00",
+                "dataset": "mrpc",
+                "algorithm": "rl",
+                "status": "complete",
+                "best_reward": float(idx),
+            }
+            for idx in range(12)
+        )
+
+        with mock.patch.object(experiments_log, "_latest_per_run_id", return_value=latest):
+            rows = experiments_log._query(dataset="mrpc", last_n=3, registry_path="unused.jsonl")
+
+        self.assertEqual([row["run_id"] for row in rows], ["run-11", "run-10", "run-9"])
+
     def test_rebuild_index_streams_registry_without_load_records(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

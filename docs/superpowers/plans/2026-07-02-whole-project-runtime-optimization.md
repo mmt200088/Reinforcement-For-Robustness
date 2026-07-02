@@ -571,6 +571,12 @@ over latest records, instead of building per-dataset buckets and sorting each
 bucket. A local 250k-record synthetic registry preserved the selected run IDs
 while reducing that index substep from `0.132s`/`1.44MB` to `0.113s`/`0.01MB`.
 
+Progress 2026-07-02: `tools/experiments_log.py` query now applies filters
+before ordering and uses a bounded heap for `--last-n`, instead of sorting
+every latest run record before filtering. A local 120k-record registry
+preserved `last_n=20` results while reducing query wall time from `0.9792s` to
+`0.8729s`; peak memory is still dominated by latest-run de-duplication.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run

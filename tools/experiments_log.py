@@ -64,6 +64,7 @@ Design notes
 from __future__ import annotations
 
 import argparse
+import heapq
 import json
 import os
 import re
@@ -344,24 +345,32 @@ def _query(
         registry_path: str = REGISTRY_REL,
         ) -> List[Dict[str, Any]]:
     records = _latest_per_run_id(_iter_records(registry_path))
-    records.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
-    out: List[Dict[str, Any]] = []
-    for r in records:
+
+    def matches(r: Mapping[str, Any]) -> bool:
         if dataset and r.get("dataset") != dataset:
-            continue
+            return False
         if algorithm and r.get("algorithm") != algorithm:
-            continue
+            return False
         if preset_substr and preset_substr.lower() not in str(r.get("preset", "")).lower():
-            continue
+            return False
         if status and r.get("status") != status:
-            continue
+            return False
         if min_reward is not None:
             br = r.get("best_reward")
             if not isinstance(br, (int, float)) or float(br) < float(min_reward):
-                continue
-        out.append(r)
-        if last_n and len(out) >= int(last_n):
-            break
+                return False
+        return True
+
+    filtered = (r for r in records if matches(r))
+    if last_n and int(last_n) > 0:
+        return heapq.nlargest(
+            int(last_n),
+            filtered,
+            key=lambda r: str(r.get("registered_at", "")),
+        )
+
+    out = list(filtered)
+    out.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
     return out
 
 
