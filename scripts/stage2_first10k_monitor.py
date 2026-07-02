@@ -17,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from device_utils import parse_logical_device_spec  # noqa: E402
 from jsonl_utils import read_jsonl  # noqa: E402
 from stats_utils import mean_or_none, median_sorted  # noqa: E402
 
@@ -137,21 +138,7 @@ def _episode_priority(row: Dict[str, Any]) -> int:
 
 
 def _parse_expected_devices(spec: str) -> List[str]:
-    if not spec:
-        return []
-    out: List[str] = []
-    for item in str(spec).replace(";", ",").split(","):
-        item = item.strip()
-        if not item:
-            continue
-        if item.startswith("cuda:"):
-            out.append(item)
-        else:
-            try:
-                out.append(f"cuda:{int(item)}")
-            except Exception:
-                out.append(item)
-    return out
+    return parse_logical_device_spec(spec, allow_semicolon=True)
 
 
 def _expected_trial_split(k_trials: int, device_count: int) -> List[int]:

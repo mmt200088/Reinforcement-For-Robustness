@@ -44,6 +44,39 @@ def split_device_spec_tokens(
     return out
 
 
+def normalize_logical_device_token(value: object) -> str:
+    """Normalize a device token to the logical names used in diagnostics."""
+    text = str(value).strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    if lowered in {"none", "null", "nil", "-1"}:
+        return ""
+    if lowered == "cpu":
+        return "cpu"
+    if lowered.startswith("cuda:"):
+        suffix = lowered.split("cuda:", 1)[1].strip()
+        return f"cuda:{suffix}" if suffix else ""
+    if lowered.isdigit():
+        return f"cuda:{lowered}"
+    return text
+
+
+def parse_logical_device_spec(
+        spec: Any,
+        *,
+        allow_semicolon: bool = False,
+        disabled_tokens: Iterable[str] = (),
+        ) -> List[str]:
+    """Parse device specs into logical diagnostic names such as ``cuda:0``."""
+    raw_spec = spec
+    if allow_semicolon and isinstance(raw_spec, str):
+        raw_spec = raw_spec.replace(";", ",")
+    tokens = split_device_spec_tokens(raw_spec, disabled_tokens=disabled_tokens)
+    devices = [normalize_logical_device_token(item) for item in tokens]
+    return [device for device in devices if device]
+
+
 def parse_device_ids(spec: Any) -> List[int]:
     """Parse GPU id specs into a clean integer list.
 

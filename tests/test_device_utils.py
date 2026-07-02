@@ -1,6 +1,12 @@
+from pathlib import Path
 import unittest
 
-from device_utils import parse_device_ids, split_device_spec_tokens
+from device_utils import (
+    normalize_logical_device_token,
+    parse_device_ids,
+    parse_logical_device_spec,
+    split_device_spec_tokens,
+)
 
 
 class DeviceUtilsTest(unittest.TestCase):
@@ -30,6 +36,32 @@ class DeviceUtilsTest(unittest.TestCase):
         self.assertEqual(
             split_device_spec_tokens("disabled", disabled_tokens={"disabled"}),
             [],
+        )
+
+    def test_parse_logical_device_spec_normalizes_diagnostic_names(self):
+        self.assertEqual(normalize_logical_device_token("0"), "cuda:0")
+        self.assertEqual(normalize_logical_device_token(" CUDA:1 "), "cuda:1")
+        self.assertEqual(normalize_logical_device_token("cpu"), "cpu")
+        self.assertEqual(normalize_logical_device_token("none"), "")
+        self.assertEqual(parse_logical_device_spec("0,cuda:1,cpu"), ["cuda:0", "cuda:1", "cpu"])
+        self.assertEqual(parse_logical_device_spec("0;1", allow_semicolon=True), ["cuda:0", "cuda:1"])
+        self.assertEqual(
+            parse_logical_device_spec("disabled", disabled_tokens={"disabled"}),
+            [],
+        )
+
+    def test_diagnostic_scripts_use_shared_logical_device_parser(self):
+        repo = Path(__file__).resolve().parents[1]
+        expected = {
+            "scripts/gpu_utilization_report.py": "from device_utils import normalize_logical_device_token, parse_logical_device_spec",
+            "scripts/stage2_first10k_monitor.py": "from device_utils import parse_logical_device_spec",
+        }
+        for rel, needle in expected.items():
+            text = (repo / rel).read_text(encoding="utf-8")
+            self.assertIn(needle, text)
+        self.assertNotIn(
+            "str(spec).replace(\";\", \",\").split(\",\")",
+            (repo / "scripts/stage2_first10k_monitor.py").read_text(encoding="utf-8"),
         )
 
 

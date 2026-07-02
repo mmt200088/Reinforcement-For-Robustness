@@ -23,7 +23,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
-from device_utils import split_device_spec_tokens  # noqa: E402
+from device_utils import normalize_logical_device_token, parse_logical_device_spec  # noqa: E402
 from jsonl_utils import iter_jsonl  # noqa: E402
 from numeric_parse_utils import parse_first_float  # noqa: E402
 
@@ -51,25 +51,11 @@ def _device_sort_key(device: str) -> tuple[int, int | str]:
 
 
 def normalize_device_token(value: object) -> str:
-    text = str(value).strip()
-    if not text:
-        return ""
-    lowered = text.lower()
-    if lowered in {"none", "null", "nil", "-1"}:
-        return ""
-    if lowered == "cpu":
-        return "cpu"
-    if lowered.startswith("cuda:"):
-        suffix = lowered.split("cuda:", 1)[1].strip()
-        return f"cuda:{suffix}" if suffix else ""
-    if lowered.isdigit():
-        return f"cuda:{lowered}"
-    return text
+    return normalize_logical_device_token(value)
 
 
 def parse_device_spec(value: str | Sequence[object] | None) -> list[str]:
-    devices = [normalize_device_token(item) for item in split_device_spec_tokens(value)]
-    return [device for device in devices if device]
+    return parse_logical_device_spec(value)
 
 
 def _find_episodes_path(path: str | Path) -> Path:

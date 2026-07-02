@@ -21,59 +21,11 @@ def _load_monitor_module():
 
 
 class Stage2First10kMonitorTest(unittest.TestCase):
-    def test_read_jsonl_streams_lines_without_read_text(self):
-        monitor = _load_monitor_module()
-        original_read_text = Path.read_text
+    def test_monitor_uses_shared_jsonl_reader(self):
+        source = MONITOR_PATH.read_text(encoding="utf-8")
 
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "episodes.jsonl"
-            path.write_text('{"episode": 0, "total_reward": 1.0}\n\nnot-json\n{"episode": 1}\n', encoding="utf-8")
-
-            def fail_read_text(_path, *args, **kwargs):
-                raise AssertionError("_read_jsonl should stream file lines")
-
-            try:
-                Path.read_text = fail_read_text
-                rows = monitor._read_jsonl(path)
-            finally:
-                Path.read_text = original_read_text
-
-        self.assertEqual([row["episode"] for row in rows], [0, 1])
-
-    def test_read_jsonl_skips_blank_lines_without_strip_copy(self):
-        monitor = _load_monitor_module()
-
-        class NoStripLine(str):
-            def strip(self, *_args, **_kwargs):
-                raise AssertionError("_read_jsonl should not allocate strip() copies")
-
-        class FakeHandle:
-            def __init__(self):
-                self.lines = [
-                    NoStripLine('{"episode": 0}\n'),
-                    NoStripLine("   \n"),
-                    NoStripLine('{"episode": 1}\n'),
-                ]
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return False
-
-            def __iter__(self):
-                return iter(self.lines)
-
-        class FakePath:
-            def exists(self):
-                return True
-
-            def open(self, **_kwargs):
-                return FakeHandle()
-
-        rows = monitor._read_jsonl(FakePath())
-
-        self.assertEqual([row["episode"] for row in rows], [0, 1])
+        self.assertIn("from jsonl_utils import read_jsonl", source)
+        self.assertNotIn("def _read_jsonl(", source)
 
     def test_window_reuses_sorted_tail_for_bounds_and_mean(self):
         monitor = _load_monitor_module()
@@ -336,13 +288,13 @@ class Stage2First10kMonitorTest(unittest.TestCase):
                 "gpu_idx,util_pct,mem_used_mib\n0,10,100\n1,12,110\n",
                 encoding="utf-8",
             )
-            original_read_jsonl = monitor._read_jsonl
+            original_read_jsonl = monitor.read_jsonl
             read_counts = {}
 
-            def counting_read_jsonl(path):
+            def counting_read_jsonl(path, **kwargs):
                 path = Path(path)
                 read_counts[path] = read_counts.get(path, 0) + 1
-                return original_read_jsonl(path)
+                return original_read_jsonl(path, **kwargs)
 
             argv = [
                 "stage2_first10k_monitor.py",
@@ -365,7 +317,7 @@ class Stage2First10kMonitorTest(unittest.TestCase):
             ]
             with mock.patch.object(sys, "argv", argv), mock.patch.object(
                 monitor,
-                "_read_jsonl",
+                "read_jsonl",
                 side_effect=counting_read_jsonl,
             ):
                 rc = monitor.main()

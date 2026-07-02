@@ -222,8 +222,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `blb_stage2_rl.probe_runner` may re-export the helper for compatibility, but
   do not clone new parser variants in launchers, runners, or reports. When a
   script needs raw CUDA_VISIBLE_DEVICES/UUID tokens rather than integer ids,
-  split with `device_utils.split_device_spec_tokens()` and then apply only the
-  caller-specific normalization needed by that report or launcher audit.
+  split with `device_utils.split_device_spec_tokens()` and preserve the raw
+  tokens. When a report or monitor needs logical diagnostic names such as
+  `cuda:0`, use `device_utils.normalize_logical_device_token()` or
+  `device_utils.parse_logical_device_spec()` instead of script-local
+  `cuda:` normalization or `str(spec).replace(";", ",").split(",")` parsing.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper

@@ -159,16 +159,20 @@ class GpuUtilizationReportTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch.object(
-                report,
-                "_normalized_fieldnames",
-                side_effect=AssertionError("CSV headers should be normalized once"),
-            ):
+            calls = []
+            original = report.normalized_field_index
+
+            def recording_normalized_field_index(header, **kwargs):
+                calls.append(tuple(header))
+                return original(header, **kwargs)
+
+            with mock.patch.object(report, "normalized_field_index", recording_normalized_field_index):
                 summary = report._load_nvidia_smi_csv(smi)
 
         self.assertEqual(summary["cuda:0"]["samples"], 2)
         self.assertEqual(summary["cuda:0"]["mean_util_pct"], 30.0)
         self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
+        self.assertEqual(len(calls), 1)
 
     def test_nvidia_smi_csv_avoids_per_row_dict_reader(self):
         report = _load_report_module()
@@ -195,17 +199,31 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["cuda:0"]["max_util_pct"], 40.0)
         self.assertEqual(summary["cuda:0"]["max_memory_mib"], 1500.0)
 
-    def test_float_value_uses_precompiled_pattern(self):
+    def test_nvidia_smi_csv_uses_shared_float_parser(self):
         report = _load_report_module()
 
-        with mock.patch.object(
-            report.re,
-            "search",
-            side_effect=AssertionError("float parsing should use the compiled hot-path regex"),
-        ):
-            self.assertEqual(report._float_value("95 %"), 95.0)
-            self.assertEqual(report._float_value("12000 MiB"), 12000.0)
-            self.assertIsNone(report._float_value("n/a"))
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "nvidia_smi.csv"
+            smi.write_text(
+                "timestamp,index,utilization.gpu,memory.used\n"
+                "2026/07/02 00:00:00.000,0,95 %,12000 MiB\n",
+                encoding="utf-8",
+            )
+            calls = []
+            original = report.parse_first_float
+
+            def recording_parse_first_float(value):
+                calls.append(value)
+                return original(value)
+
+            with mock.patch.object(report, "parse_first_float", recording_parse_first_float):
+                summary = report._load_nvidia_smi_csv(smi)
+
+        self.assertEqual(summary["cuda:0"]["max_util_pct"], 95.0)
+        self.assertEqual(summary["cuda:0"]["max_memory_mib"], 12000.0)
+        self.assertIn("95 %", calls)
+        self.assertIn("12000 MiB", calls)
 
     def test_device_sort_key_caches_repeated_cuda_parsing(self):
         report = _load_report_module()
