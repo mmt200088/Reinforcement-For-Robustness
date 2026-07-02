@@ -1087,12 +1087,14 @@ def _robust_normalize_advantages(
     adv = advantages.float()
     median = torch.median(adv)
     mad = torch.median(torch.abs(adv - median))
-    if bool(torch.isfinite(mad).item()) and float(mad.item()) > 1e-8:
-        radius = float(outlier_clip) * 1.4826 * mad
-        adv = torch.clamp(adv, median - radius, median + radius)
+    mad_ok = torch.isfinite(mad) & (mad > 1e-8)
+    radius = float(outlier_clip) * 1.4826 * mad
+    clipped_adv = torch.clamp(adv, median - radius, median + radius)
+    adv = torch.where(mad_ok, clipped_adv, adv)
     std = torch.std(adv, unbiased=False)
-    if bool(torch.isfinite(std).item()) and float(std.item()) > 1e-8:
-        adv = (adv - torch.mean(adv)) / (std + 1e-8)
+    std_ok = torch.isfinite(std) & (std > 1e-8)
+    normalized_adv = (adv - torch.mean(adv)) / (std + 1e-8)
+    adv = torch.where(std_ok, normalized_adv, adv)
     return adv
 
 
@@ -1180,8 +1182,9 @@ def sequential_ppo_update(
         )
     elif advantages.numel() > 1:
         std = torch.std(advantages, unbiased=False)
-        if bool(torch.isfinite(std).item()) and float(std.item()) > 1e-8:
-            advantages = (advantages - torch.mean(advantages)) / (std + 1e-8)
+        std_ok = torch.isfinite(std) & (std > 1e-8)
+        normalized_advantages = (advantages - torch.mean(advantages)) / (std + 1e-8)
+        advantages = torch.where(std_ok, normalized_advantages, advantages)
 
     n = states.shape[0]
     indices = np.arange(n)

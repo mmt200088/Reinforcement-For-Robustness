@@ -929,6 +929,20 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertNotIn('metrics_sum["entropy"] += float(entropy_mean.item())', update_region)
         self.assertNotIn("mean().item()", update_region)
 
+    def test_sequential_advantage_norm_avoids_scalar_sync(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        robust_region = _method_region_from_source(policy_src, "_robust_normalize_advantages")
+        update_region = _method_region_from_source(policy_src, "sequential_ppo_update")
+
+        self.assertIn("mad_ok = torch.isfinite(mad) & (mad > 1e-8)", robust_region)
+        self.assertIn("adv = torch.where(mad_ok, clipped_adv, adv)", robust_region)
+        self.assertIn("std_ok = torch.isfinite(std) & (std > 1e-8)", robust_region)
+        self.assertIn("adv = torch.where(std_ok, normalized_adv, adv)", robust_region)
+        self.assertNotIn(".item()", robust_region)
+        self.assertIn("normalized_advantages = (advantages - torch.mean(advantages)) / (std + 1e-8)", update_region)
+        self.assertIn("advantages = torch.where(std_ok, normalized_advantages, advantages)", update_region)
+        self.assertNotIn("torch.isfinite(std).item()", update_region)
+
     def test_legacy_rollout_buffer_packs_numpy_arrays_in_single_pass(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         to_tensors_region = _method_region_from_source(policy_src, "to_tensors")
