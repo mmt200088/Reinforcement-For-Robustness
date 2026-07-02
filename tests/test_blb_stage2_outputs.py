@@ -90,6 +90,49 @@ class UpgradedCurvesTest(unittest.TestCase):
             self.assertEqual(os.path.basename(out["entropy_png"]),
                              "blb_stage2_entropy_curve.png")
 
+    def test_render_plots_false_writes_npz_only(self):
+        old = persistence.save_stage1_style_training_curve
+        calls = []
+
+        def fake_renderer(**_kwargs):
+            calls.append(_kwargs)
+            raise AssertionError("plot renderer should not be called")
+
+        persistence.save_stage1_style_training_curve = fake_renderer
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                out = persistence.write_training_curves(
+                    d,
+                    **self._full_kwargs(),
+                    render_plots=False,
+                )
+                self.assertTrue(_nonempty_file(out["npz"]))
+                self.assertEqual(out["png"], "")
+                self.assertEqual(out["entropy_png"], "")
+                self.assertEqual(out["paper_png"], "")
+                self.assertEqual(out["paper_pdf"], "")
+                self.assertFalse(os.path.exists(os.path.join(d, "blb_stage2_training_curve.png")))
+        finally:
+            persistence.save_stage1_style_training_curve = old
+        self.assertEqual(calls, [])
+
+    def test_env_can_disable_stage2_plot_rendering_without_callsite_change(self):
+        old_env = os.environ.get("RFR_STAGE2_RENDER_PLOTS")
+        os.environ["RFR_STAGE2_RENDER_PLOTS"] = "0"
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                out = persistence.write_training_curves(d, **self._full_kwargs())
+                self.assertTrue(_nonempty_file(out["npz"]))
+                self.assertEqual(out["png"], "")
+                self.assertEqual(out["entropy_png"], "")
+                self.assertEqual(out["paper_png"], "")
+                self.assertEqual(out["paper_pdf"], "")
+        finally:
+            if old_env is None:
+                os.environ.pop("RFR_STAGE2_RENDER_PLOTS", None)
+            else:
+                os.environ["RFR_STAGE2_RENDER_PLOTS"] = old_env
+
     def test_main_curve_uses_stage1_style_renderer_without_cost_panels(self):
         calls = []
 
@@ -415,6 +458,17 @@ class DiagnosticCurvesTest(unittest.TestCase):
                 rolling_window=100,
             )
             self.assertTrue(_nonempty_file(out["diagnostics_png"]))
+
+    def test_render_plots_false_skips_diagnostic_png(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = persistence.write_diagnostic_curves(
+                d,
+                priority=[1, 2, 3],
+                fusion_count=[0, 1, 2],
+                render_plots=False,
+            )
+            self.assertEqual(out["diagnostics_png"], "")
+            self.assertFalse(os.path.exists(os.path.join(d, "blb_stage2_diagnostics_curve.png")))
 
     def test_no_data_is_safe(self):
         with tempfile.TemporaryDirectory() as d:

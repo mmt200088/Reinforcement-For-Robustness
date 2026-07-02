@@ -53,6 +53,7 @@ BLB_LIVE_SUMMARY_MD = "blb_stage2_live_summary.md"
 BLB_SEARCH_LOG_TXT = "blb_stage2_search_log.txt"
 BLB_ERROR_TXT = "blb_stage2_error.txt"
 BLB_EPISODE_TRACE_CSV = "blb_stage2_episode_trace.csv"
+_PLOT_RENDER_FALSE_VALUES = {"0", "false", "no", "off", "skip", "none"}
 
 BLB_TRACE_FIELDNAMES = (
     "episode",
@@ -141,6 +142,15 @@ def _atomic_text_dump(path: str, text: str) -> None:
         except OSError:
             pass
         raise
+
+
+def _stage2_plot_rendering_enabled(render_plots: Optional[bool]) -> bool:
+    if render_plots is not None:
+        return bool(render_plots)
+    raw = os.environ.get("RFR_STAGE2_RENDER_PLOTS")
+    if raw is None:
+        return True
+    return raw.strip().lower() not in _PLOT_RENDER_FALSE_VALUES
 
 
 def _fmt_live_number(value: Any, *, signed: bool = False) -> str:
@@ -882,6 +892,7 @@ def write_training_curves(
         substage_labels: Optional[Sequence[str]] = None,
         ema_window: int = 200,
         log_fn=None,
+        render_plots: Optional[bool] = None,
         ) -> Dict[str, str]:
     """把训练曲线写成 PNG（matplotlib 可用时）+ NPZ（无脑兜底）。
 
@@ -911,6 +922,7 @@ def write_training_curves(
     log = log_fn or (lambda _msg: None)
     out = {"png": "", "npz": "", "paper_png": "", "paper_pdf": "", "entropy_png": ""}
     os.makedirs(persistence_dir, exist_ok=True)
+    should_render_plots = _stage2_plot_rendering_enabled(render_plots)
 
     def _has(seq):
         return seq is not None and len(list(seq)) > 0
@@ -945,6 +957,10 @@ def write_training_curves(
         out["npz"] = npz_path
     except Exception as exc:
         log(f"  [BLB曲线][警告] 写 NPZ 失败：{exc}")
+
+    if not should_render_plots:
+        log("  [BLB曲线][信息] 跳过 PNG/PDF 渲染（RFR_STAGE2_RENDER_PLOTS=0 或 render_plots=False）。")
+        return out
 
     # ---- 主训练曲线（Stage-1 风格：Reward / Loss / metric1 / metric2）----
     # 标题/坐标统一用 ASCII：matplotlib 默认 DejaVu Sans 不含 CJK 字形，写中文会
@@ -1101,6 +1117,7 @@ def write_diagnostic_curves(
         rolling_window: int = 600,
         ma_window: Optional[int] = None,
         log_fn=None,
+        render_plots: Optional[bool] = None,
         ) -> Dict[str, str]:
     """Stage-2 崩溃诊断多联图（``blb_stage2_diagnostics_curve.png``）。
 
@@ -1118,6 +1135,9 @@ def write_diagnostic_curves(
     log = log_fn or (lambda _msg: None)
     out = {"diagnostics_png": ""}
     os.makedirs(persistence_dir, exist_ok=True)
+    if not _stage2_plot_rendering_enabled(render_plots):
+        log("  [诊断曲线][信息] 跳过 PNG 渲染（RFR_STAGE2_RENDER_PLOTS=0 或 render_plots=False）。")
+        return out
     try:
         import matplotlib
         matplotlib.use("Agg")
