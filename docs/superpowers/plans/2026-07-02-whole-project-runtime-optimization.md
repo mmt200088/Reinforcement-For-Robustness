@@ -155,6 +155,13 @@ Progress 2026-07-02: `scripts/launcher_gpu_audit.py` now bounds fallback
 non-fatal GPU audit gate from stalling expensive RL launchers when the server
 driver/CLI is slow or wedged and `CUDA_VISIBLE_DEVICES` was not set.
 
+Progress 2026-07-02: `scripts/launcher_gpu_audit.py` now parses comma device
+lists and fallback `nvidia-smi` output through one shared single-strip helper,
+so each nonblank token is trimmed once instead of twice. A regression test
+counts `strip()` calls on synthetic `nvidia-smi` output. A local 200k-line
+synthetic parser benchmark preserved device IDs and improved parsing from
+`0.013890s` to `0.010055s` (`1.38x`).
+
 Progress 2026-07-02: startup/preset parsing now streams configuration files
 instead of materializing full `read().splitlines()` lists. `tools/validate_preset.py`
 parses preset files with a one-line lookahead iterator, and `Paean/config.py`

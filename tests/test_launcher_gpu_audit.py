@@ -18,6 +18,24 @@ def _load_audit_module():
     return module
 
 
+class CountingStripLine:
+    def __init__(self, text):
+        self.text = text
+        self.strip_calls = 0
+
+    def strip(self):
+        self.strip_calls += 1
+        return self.text.strip()
+
+
+class SplitlinesOutput:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def splitlines(self):
+        return self.lines
+
+
 class LauncherGpuAuditTest(unittest.TestCase):
     def test_nvidia_smi_detection_uses_timeout(self):
         audit = _load_audit_module()
@@ -32,6 +50,24 @@ class LauncherGpuAuditTest(unittest.TestCase):
             devices = audit._detect_nvidia_smi_devices()
 
         self.assertEqual(devices, ["0", "1"])
+
+    def test_nvidia_smi_detection_strips_each_output_line_once(self):
+        audit = _load_audit_module()
+        lines = [
+            CountingStripLine(" 0 \n"),
+            CountingStripLine("\n"),
+            CountingStripLine(" 1 \n"),
+        ]
+
+        with mock.patch.object(
+            subprocess,
+            "check_output",
+            return_value=SplitlinesOutput(lines),
+        ):
+            devices = audit._detect_nvidia_smi_devices()
+
+        self.assertEqual(devices, ["0", "1"])
+        self.assertEqual([line.strip_calls for line in lines], [1, 1, 1])
 
     def test_stage1_warns_when_multiple_gpus_visible_without_stage1_devices(self):
         audit = _load_audit_module()

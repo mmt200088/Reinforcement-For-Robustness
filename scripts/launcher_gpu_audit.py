@@ -12,11 +12,15 @@ import argparse
 import os
 import subprocess
 import sys
-from typing import List, Sequence
+from typing import Iterable, List, Sequence
 
 
 def _normalise(value: object) -> str:
     return str(value or "").strip()
+
+
+def _strip_nonempty(values: Iterable[str]) -> List[str]:
+    return [stripped for value in values if (stripped := value.strip())]
 
 
 def parse_device_spec(raw: object) -> List[str]:
@@ -36,7 +40,7 @@ def parse_device_spec(raw: object) -> List[str]:
         text.startswith("[") and text.endswith("]")
     ):
         text = text[1:-1].strip()
-    return [part.strip() for part in text.split(",") if part.strip()]
+    return _strip_nonempty(text.split(","))
 
 
 def _detect_nvidia_smi_devices() -> List[str]:
@@ -49,7 +53,7 @@ def _detect_nvidia_smi_devices() -> List[str]:
         )
     except Exception:
         return []
-    return [line.strip() for line in out.splitlines() if line.strip()]
+    return _strip_nonempty(out.splitlines())
 
 
 def visible_devices(cuda_visible_devices: str | None) -> List[str]:
