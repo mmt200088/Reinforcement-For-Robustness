@@ -33,10 +33,10 @@ Design (mirrors Stage-2 conventions where they fit):
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass, field
 import hashlib
 import threading
 import time
-from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -242,6 +242,7 @@ class Stage1ParallelRunner:
         GTrXL rollout now runs on each worker's GPU in parallel instead of
         serializing through one lock on ``cuda:0``.
         """
+        state_dict = None
         for w in self.workers:
             if w.gtrxl_replica is None:
                 if w.device == self.primary_device:
@@ -251,7 +252,9 @@ class Stage1ParallelRunner:
                         replica = copy.deepcopy(gtrxl_net).to(w.device)
                 w.gtrxl_replica = replica
             else:
-                w.gtrxl_replica.load_state_dict(gtrxl_net.state_dict())
+                if state_dict is None:
+                    state_dict = gtrxl_net.state_dict()
+                w.gtrxl_replica.load_state_dict(state_dict)
             w.gtrxl_replica.eval()
 
     def run_window(

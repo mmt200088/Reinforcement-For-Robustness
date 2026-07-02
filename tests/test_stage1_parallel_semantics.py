@@ -1,6 +1,5 @@
-import unittest
 from pathlib import Path
-
+import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYER_EVALUATOR = ROOT / "layer_importance_evaluator.py"
@@ -39,6 +38,14 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
 
         self.assertIn("per_worker_seconds", source)
         self.assertIn("speedup_vs_sequential", source)
+
+    def test_policy_replica_sync_reuses_one_state_dict_per_window(self):
+        region = _method_region(_source(PARALLEL_RUNNER), "_sync_policy_replicas")
+
+        self.assertIn("state_dict = None", region)
+        self.assertIn("state_dict = gtrxl_net.state_dict()", region)
+        self.assertIn("load_state_dict(state_dict)", region)
+        self.assertNotIn("load_state_dict(gtrxl_net.state_dict())", region)
 
 
 if __name__ == "__main__":
