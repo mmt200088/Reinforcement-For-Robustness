@@ -24,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_json_int_list  # noqa: E402
-from json_utils import write_json_file  # noqa: E402
+from json_utils import read_json_file, write_json_file  # noqa: E402
 from report_format_utils import html_table  # noqa: E402
 
 ACTION_SPACE_PATH = REPO_ROOT / "blb_stage2_rl" / "action_space.py"
@@ -78,7 +78,7 @@ def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
 def _load_maps(map_dir: Path) -> OrderedDict[str, dict]:
     graphs: OrderedDict[str, dict] = OrderedDict()
     for path in _iter_map_paths(map_dir):
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
         if not isinstance(payload, Mapping) or "graph_key" not in payload or "options" not in payload:
             continue
         graphs[str(payload["graph_key"])] = dict(payload)

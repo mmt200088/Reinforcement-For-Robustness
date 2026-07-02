@@ -31,6 +31,7 @@ from blb_stage2_rl.candidate_store import (  # noqa: E402
     normalize_action_indices,
 )
 from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost  # noqa: E402
+from json_utils import read_json_file, write_json_file  # noqa: E402
 from rescale_optimizer_bridge import (  # noqa: E402
     InProcessInvoker,
     RescaleOptimizerBridge,
@@ -132,7 +133,7 @@ def build_f0_candidate_record(
 def _load_action(path: str | None, *, num_layers: int) -> np.ndarray:
     if not path:
         return make_all_max_action_vector(num_layers=num_layers)
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = read_json_file(path)
     if isinstance(payload, Mapping):
         payload = payload.get("action_indices", payload.get("action", payload))
     return np.asarray(normalize_action_indices(payload), dtype=int)
@@ -232,10 +233,7 @@ def run_f0_eval(
     signals = cost_eval.signals
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "optimizer_outputs.json").write_text(
-        json.dumps(_optimizer_outputs_summary(outputs), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_json_file(out / "optimizer_outputs.json", _optimizer_outputs_summary(outputs))
     record = build_f0_candidate_record(
         action,
         source=source,

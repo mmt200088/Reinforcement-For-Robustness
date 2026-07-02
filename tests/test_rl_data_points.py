@@ -133,14 +133,15 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_json_artifact_scripts_use_shared_writer(self):
         checks = {
-            "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import stable_json_hash, write_json_file",
+            "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import read_json_file, stable_json_hash, write_json_file",
+            "scripts/blb_eval_action.py": "from json_utils import read_json_file, write_json_file",
             "scripts/blb_compare_optimizer_modes.py": "from json_utils import write_json_file",
             "scripts/optimization_evidence_bundle.py": "from json_utils import write_json_file",
             "scripts/gpu_utilization_report.py": "from json_utils import write_json_file",
             "scripts/server_resource_snapshot.py": "from json_utils import write_json_file",
             "scripts/stage1_parallel_report.py": "from json_utils import write_json_file",
             "scripts/stage2_reward_probe_scaling_report.py": "from json_utils import write_json_file",
-            "scripts/report_fusion_count_map.py": "from json_utils import write_json_file",
+            "scripts/report_fusion_count_map.py": "from json_utils import read_json_file, write_json_file",
             "scripts/run_fusion_count_action_eval.py": "from json_utils import read_json_file, write_json_file",
             "scripts/run_fusion_count_action_eval_rlpath.py": "from json_utils import read_json_file, to_jsonable, write_json_file",
             "scripts/blb_apply_precision_boost.py": "from json_utils import read_json_file, write_json_file",
@@ -161,12 +162,15 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/blb_apply_precision_boost.py": "from json_utils import read_json_file",
             "scripts/blb_make_fusion_fixed_action_config.py": "from json_utils import read_json_file",
             "scripts/blb_make_run_manifest.py": "from json_utils import read_json_file",
+            "scripts/blb_eval_action.py": "from json_utils import read_json_file",
+            "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import read_json_file",
             "blb_stage2_rl/action_space.py": "from json_utils import read_json_file",
             "blb_stage2_rl/action_mask.py": "from json_utils import read_json_file",
             "blb_stage2_rl/fusion_count_map.py": "from json_utils import read_json_file",
             "blb_stage2_rl/skeleton_stage_map.py": "from json_utils import read_json_file",
             "scripts/blb_diagnose_invalid_blocks.py": "from json_utils import read_json_file",
             "scripts/blb_diag_block2_boost.py": "from json_utils import read_json_file",
+            "scripts/report_fusion_count_map.py": "from json_utils import read_json_file",
             "Paean/action_grid.py": "from json_utils import read_json_file",
             "Paean/blb_action_eval.py": "from json_utils import read_json_file",
         }

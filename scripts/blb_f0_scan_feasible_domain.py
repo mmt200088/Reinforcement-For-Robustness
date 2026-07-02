@@ -20,7 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from cli_parse_utils import parse_int_list_text, parse_optional_int_list  # noqa: E402
 from csv_field_utils import write_csv_rows  # noqa: E402
-from json_utils import stable_json_hash, write_json_file  # noqa: E402
+from json_utils import read_json_file, stable_json_hash, write_json_file  # noqa: E402
 from jsonl_utils import write_jsonl_rows  # noqa: E402
 from blb_stage2_rl.candidate_store import (  # noqa: E402
     action_hash,
@@ -56,7 +56,7 @@ def _load_stage1_vectors(
     if not p.is_absolute():
         p = REPO_ROOT / p
     content_hash = _file_sha256(p) if p.exists() else None
-    payload = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    payload = read_json_file(p) if p.exists() else {}
     candidates = payload
     if isinstance(payload, Mapping):
         model_node = payload.get(str(model))
