@@ -3,7 +3,7 @@ import pathlib
 import tempfile
 import unittest
 
-from jsonl_utils import iter_jsonl, read_jsonl
+from jsonl_utils import count_jsonl_with_required_fields, iter_jsonl, iter_jsonl_records, read_jsonl
 
 
 class JsonlUtilsTest(unittest.TestCase):
@@ -33,6 +33,15 @@ class JsonlUtilsTest(unittest.TestCase):
 
         self.assertEqual(rows, [{"a": 1}, [1, 2]])
 
+    def test_iter_jsonl_records_preserves_line_numbers(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "rows.jsonl"
+            path.write_text('\n{"a": 1}\n[1, 2]\n', encoding="utf-8")
+
+            rows = list(iter_jsonl_records(path, dict_only=False))
+
+        self.assertEqual(rows, [(2, {"a": 1}), (3, [1, 2])])
+
     def test_read_jsonl_missing_ok(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "missing.jsonl"
@@ -40,6 +49,17 @@ class JsonlUtilsTest(unittest.TestCase):
             self.assertEqual(read_jsonl(path, missing_ok=True), [])
             with self.assertRaises(FileNotFoundError):
                 read_jsonl(path)
+
+    def test_count_jsonl_with_required_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "rows.jsonl"
+            path.write_text('{"a": 1, "b": 2}\n[1]\n{"a": 3}\n', encoding="utf-8")
+
+            count, failures = count_jsonl_with_required_fields(path, ("a", "b"), label="rows")
+
+        self.assertEqual(count, 3)
+        self.assertIn("rows:2 is not a JSON object", failures)
+        self.assertIn("rows missing required fields in 1 rows (line 3: b)", failures)
 
 
 class JsonlUtilsStaticGuardTest(unittest.TestCase):
@@ -59,6 +79,9 @@ class JsonlUtilsStaticGuardTest(unittest.TestCase):
             "scripts/stage2_reward_probe_scaling_report.py": "from jsonl_utils import iter_jsonl",
             "scripts/gpu_utilization_report.py": "from jsonl_utils import iter_jsonl",
             "scripts/blb_fusion_ab_compare.py": "from jsonl_utils import iter_jsonl",
+            "scripts/verify_stage2_persistent_outputs.py": (
+                "from jsonl_utils import count_jsonl_with_required_fields"
+            ),
         }
         forbidden = {"_read_jsonl"}
         for rel_path, needle in expected.items():
