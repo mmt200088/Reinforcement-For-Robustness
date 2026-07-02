@@ -18,6 +18,8 @@ import statistics
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
+FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
+
 
 def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
     with path.open(encoding="utf-8") as handle:
@@ -37,7 +39,7 @@ def _float_value(value: object) -> float | None:
         return None
     if isinstance(value, (int, float)):
         return float(value)
-    match = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)", str(value))
+    match = FLOAT_RE.search(str(value))
     if not match:
         return None
     return float(match.group(0))

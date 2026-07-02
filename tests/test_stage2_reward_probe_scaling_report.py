@@ -183,6 +183,18 @@ class Stage2RewardProbeScalingReportTest(unittest.TestCase):
         self.assertEqual(gpu_util, {"0": 40.0})
         self.assertEqual(gpu_mem, {"0": 1500.0})
 
+    def test_float_value_uses_precompiled_pattern(self):
+        report = _load_report_module()
+
+        with mock.patch.object(
+            report.re,
+            "search",
+            side_effect=AssertionError("float parsing should use the compiled hot-path regex"),
+        ):
+            self.assertEqual(report._float_value("40 %"), 40.0)
+            self.assertEqual(report._float_value("1500 MiB"), 1500.0)
+            self.assertIsNone(report._float_value("n/a"))
+
     def test_render_html_iterates_runs_without_materializing_list(self):
         report = _load_report_module()
 
