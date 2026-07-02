@@ -64,16 +64,22 @@ Design notes
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from datetime import datetime, timezone
 import heapq
 import json
 import os
-from pathlib import Path
 import re
 import shlex
 import subprocess
 import sys
 from typing import Any, Dict, Iterable, List, Mapping, Optional
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from jsonl_utils import iter_jsonl  # noqa: E402
 
 REGISTRY_REL = "experiments/registry.jsonl"
 INDEX_REL = "experiments/index.md"
@@ -114,17 +120,7 @@ def _load_records(registry_path: str) -> List[Dict[str, Any]]:
 def _iter_records(registry_path: str) -> Iterable[Dict[str, Any]]:
     if not os.path.isfile(registry_path):
         return
-    with open(registry_path, "r", encoding="utf-8") as f:
-        for line in f:
-            if not line or line.isspace():
-                continue
-            try:
-                row = json.loads(line)
-            except Exception:
-                pass
-            else:
-                if isinstance(row, dict):
-                    yield row
+    yield from iter_jsonl(registry_path, errors="skip")
 
 
 def _append_record(registry_path: str, record: Mapping[str, Any]) -> None:

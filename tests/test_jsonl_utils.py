@@ -172,6 +172,7 @@ class JsonlUtilsStaticGuardTest(unittest.TestCase):
                 "from jsonl_utils import count_jsonl_with_required_fields"
             ),
             "tools/paper_figures.py": "from jsonl_utils import read_jsonl_fields, read_jsonl_xy",
+            "tools/experiments_log.py": "from jsonl_utils import iter_jsonl",
         }
         forbidden = {"_read_jsonl", "_open_jsonl", "_count_jsonl", "_count_jsonl_with_required_fields"}
         for rel_path, needle in expected.items():

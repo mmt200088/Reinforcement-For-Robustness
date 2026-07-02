@@ -33,31 +33,16 @@ class LazyMaterializationRecord(Mapping):
 
 
 class ExperimentsLogTest(unittest.TestCase):
-    def test_iter_records_skips_blank_lines_without_strip_copy(self):
-        class NoStripLine(str):
-            def strip(self, *_args, **_kwargs):
-                raise AssertionError("registry reader should not allocate strip() copies")
+    def test_iter_records_delegates_to_shared_jsonl_reader(self):
+        with tempfile.TemporaryDirectory() as td:
+            registry = Path(td) / "registry.jsonl"
+            registry.write_text(
+                json.dumps({"run_id": "run-a"}) + "\n\n{bad-json\n"
+                + json.dumps({"run_id": "run-b"}) + "\n",
+                encoding="utf-8",
+            )
 
-        class FakeHandle:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return False
-
-            def __iter__(self):
-                return iter([
-                    NoStripLine(json.dumps({"run_id": "run-a"}) + "\n"),
-                    NoStripLine("   \n"),
-                    NoStripLine(json.dumps({"run_id": "run-b"}) + "\n"),
-                ])
-
-        def fake_open(*_args, **_kwargs):
-            return FakeHandle()
-
-        with mock.patch.object(experiments_log.os.path, "isfile", return_value=True):
-            with mock.patch.object(builtins, "open", fake_open):
-                rows = list(experiments_log._iter_records("registry.jsonl"))
+            rows = list(experiments_log._iter_records(str(registry)))
 
         self.assertEqual([row["run_id"] for row in rows], ["run-a", "run-b"])
 
