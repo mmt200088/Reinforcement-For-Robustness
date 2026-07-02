@@ -39,6 +39,41 @@ class Stage2First10kMonitorTest(unittest.TestCase):
 
         self.assertEqual([row["episode"] for row in rows], [0, 1])
 
+    def test_read_jsonl_skips_blank_lines_without_strip_copy(self):
+        monitor = _load_monitor_module()
+
+        class NoStripLine(str):
+            def strip(self, *_args, **_kwargs):
+                raise AssertionError("_read_jsonl should not allocate strip() copies")
+
+        class FakeHandle:
+            def __init__(self):
+                self.lines = [
+                    NoStripLine('{"episode": 0}\n'),
+                    NoStripLine("   \n"),
+                    NoStripLine('{"episode": 1}\n'),
+                ]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return iter(self.lines)
+
+        class FakePath:
+            def exists(self):
+                return True
+
+            def open(self, **_kwargs):
+                return FakeHandle()
+
+        rows = monitor._read_jsonl(FakePath())
+
+        self.assertEqual([row["episode"] for row in rows], [0, 1])
+
     def test_gpu_stats_ignores_directory_path(self):
         monitor = _load_monitor_module()
 

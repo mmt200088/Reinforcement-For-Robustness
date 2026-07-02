@@ -625,6 +625,11 @@ string first, and it treats a missing/empty `nvidia_log` path as no GPU samples
 instead of trying to open the current directory. This keeps long-run monitoring
 memory-bounded and avoids a default-path crash during post-run summaries.
 
+Progress 2026-07-02: the same monitor now skips blank JSONL lines with
+`isspace()` instead of allocating `strip()` copies while loading episode and PPO
+diagnostics. A local 80k-row long-line benchmark preserved parsed row count and
+reduced `_read_jsonl()` from `0.497555s` to `0.475890s` (`1.05x`).
+
 Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now writes
 `reward_windows.csv` with one-pass rolling accumulators and monotonic queues
 for mean/min/max, instead of repeatedly slicing and sorting each prefix window.

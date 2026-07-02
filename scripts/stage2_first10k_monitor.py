@@ -20,7 +20,7 @@ def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     with path.open(encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            if not line.strip():
+            if not line or line.isspace():
                 continue
             try:
                 out.append(json.loads(line))
