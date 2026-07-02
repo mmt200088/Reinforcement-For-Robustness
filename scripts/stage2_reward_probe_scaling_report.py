@@ -22,11 +22,10 @@ from typing import Any, Iterable, Mapping, Sequence
 def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
     with path.open(encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
-            stripped = line.strip()
-            if not stripped:
+            if not line or line.isspace():
                 continue
             try:
-                payload = json.loads(stripped)
+                payload = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_no}: invalid JSON") from exc
             if isinstance(payload, dict):

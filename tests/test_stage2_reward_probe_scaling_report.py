@@ -26,6 +26,36 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 class Stage2RewardProbeScalingReportTest(unittest.TestCase):
+    def test_iter_jsonl_passes_unstripped_lines_to_json_loader(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "rows.jsonl"
+            path.write_text('{"label": "bs128_g1"}\n', encoding="utf-8")
+            seen = []
+            original_loads = report.json.loads
+
+            def recording_loads(value):
+                seen.append(value)
+                return original_loads(value)
+
+            with mock.patch.object(report.json, "loads", recording_loads):
+                rows = list(report._iter_jsonl(path))
+
+        self.assertEqual(rows, [{"label": "bs128_g1"}])
+        self.assertTrue(seen[0].endswith("\n"))
+
+    def test_iter_jsonl_skips_whitespace_only_lines(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "rows.jsonl"
+            path.write_text('\n  \n{"label": "bs128_g1"}\n', encoding="utf-8")
+
+            rows = list(report._iter_jsonl(path))
+
+        self.assertEqual(rows, [{"label": "bs128_g1"}])
+
     def test_episode_summary_uses_running_means(self):
         report = _load_report_module()
 

@@ -93,11 +93,10 @@ def _iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
     episodes_path = _find_episodes_path(path)
     with episodes_path.open(encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
-            stripped = line.strip()
-            if not stripped:
+            if not line or line.isspace():
                 continue
             try:
-                row = json.loads(stripped)
+                row = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{episodes_path}:{line_no}: invalid JSON") from exc
             if isinstance(row, dict):

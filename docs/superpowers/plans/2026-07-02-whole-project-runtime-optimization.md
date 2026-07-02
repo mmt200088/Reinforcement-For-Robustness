@@ -311,6 +311,14 @@ list only for exact median. A local 100k-row parity benchmark reduced report
 post-processing from `1.282s`/`7.21MB` to `1.074s`/`4.14MB` (`1.74x` lower
 peak memory).
 
+Progress 2026-07-02: `scripts/gpu_utilization_report.py` and
+`scripts/stage2_reward_probe_scaling_report.py` now parse JSONL episode lines
+directly instead of allocating `line.strip()` copies before `json.loads()`,
+while still skipping whitespace-only lines. Local 80k-row long-line benchmarks
+preserved report summaries and reduced `gpu_utilization_report` from
+`3.0698s` to `2.8886s` (`1.06x`) and reward-probe scaling episode summary
+from `1.3052s` to `1.2424s` (`1.05x`).
+
 Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now analyzes ordered
 Stage-2 `episodes.jsonl` files with a streaming two-pass path for summary and
 bounded-window rows, avoiding materializing full 60k+ episode lists during A/B
