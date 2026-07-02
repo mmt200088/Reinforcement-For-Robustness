@@ -94,6 +94,30 @@ class FusionCountMapReportTest(unittest.TestCase):
 
             self.assertEqual(list(graphs), ["block1_mrpc"])
 
+    def test_load_maps_scans_directory_without_path_glob(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "_summary.json").write_text("{}", encoding="utf-8")
+            (root / "._block1_mrpc.json").write_text("{}", encoding="utf-8")
+            (root / "map_summary.json").write_text("{}", encoding="utf-8")
+            (root / "notes.txt").write_text("ignored", encoding="utf-8")
+            (root / "block1_mrpc.json").write_text(
+                json.dumps({
+                    "graph_key": "block1_mrpc",
+                    "options": [{"option_id": 0, "fusion_count": 0}],
+                }),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                Path,
+                "glob",
+                side_effect=AssertionError("fusion map loading should not use Path.glob"),
+            ):
+                graphs = report._load_maps(root)
+
+        self.assertEqual(list(graphs), ["block1_mrpc"])
+
     def test_group_specs_reuses_graph_target_choices(self):
         graphs = {
             "block2_mrpc": {

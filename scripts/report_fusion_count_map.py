@@ -14,6 +14,7 @@ from collections import Counter, OrderedDict
 from datetime import datetime, timezone
 import html
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
@@ -81,9 +82,7 @@ def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
 
 def _load_maps(map_dir: Path) -> OrderedDict[str, dict]:
     graphs: OrderedDict[str, dict] = OrderedDict()
-    for path in sorted(map_dir.glob("*.json")):
-        if not _looks_like_map_file(path):
-            continue
+    for path in _iter_map_paths(map_dir):
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, Mapping) or "graph_key" not in payload or "options" not in payload:
             continue
@@ -93,11 +92,30 @@ def _load_maps(map_dir: Path) -> OrderedDict[str, dict]:
     return graphs
 
 
+def _iter_map_paths(map_dir: Path) -> Iterable[Path]:
+    try:
+        with os.scandir(map_dir) as entries:
+            names = sorted(
+                entry.name
+                for entry in entries
+                if entry.is_file() and _looks_like_map_name(entry.name)
+            )
+    except OSError:
+        names = []
+    for name in names:
+        yield map_dir / name
+
+
 def _looks_like_map_file(path: Path) -> bool:
-    name = path.name
+    return _looks_like_map_name(path.name)
+
+
+def _looks_like_map_name(name: str) -> bool:
     if name.startswith("._") or name.startswith("_"):
         return False
-    stem = path.stem
+    if not name.endswith(".json"):
+        return False
+    stem = name[:-5]
     return (
         stem == "block4"
         or stem.startswith("block1_")

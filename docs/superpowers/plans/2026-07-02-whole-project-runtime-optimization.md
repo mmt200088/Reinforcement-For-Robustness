@@ -412,6 +412,14 @@ sidecars such as `map_summary.json` are not parsed as maps. This keeps fusion
 map reporting focused on real `block*.json` maps and avoids unnecessary
 sidecar reads after large server builds.
 
+Progress 2026-07-02: `scripts/report_fusion_count_map.py` now discovers map
+files with `os.scandir()` and filename filtering before constructing `Path`
+objects, instead of `Path.glob("*.json")` followed by sidecar filtering. A
+regression test patches `Path.glob()` out of `_load_maps()`. A local directory
+benchmark with 3000 map files plus 3000 sidecar/non-map files preserved map
+ordering and improved discovery from `0.059813s` / `3.15MB` to `0.027619s` /
+`0.86MB` (`2.17x`).
+
 Progress 2026-07-02: `scripts/blb_f0_scan_feasible_domain.py` now lazily
 imports its torch/optimizer-heavy execution dependencies and uses
 `heapq.nsmallest()` for the masked-random and multi-random best-cost summaries
