@@ -851,11 +851,20 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             self.assertIn(needle, src, msg=f"sequential_runner.py missing: {needle!r}")
 
     def test_rollout_policy_uses_causal_prefix_fast_path(self):
-        policy_src = open("blb_stage2_rl/sequential_policy.py", encoding="utf-8").read()
-        runner_src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(
+            encoding="utf-8"
+        )
+        runner_src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        parallel_runner_src = (
+            REPO_ROOT / "blb_stage2_rl/parallel_runner.py"
+        ).read_text(encoding="utf-8")
         for needle in (
             "truncate_to_current: bool = False",
+            "truncate_seq_len: Optional[int] = None",
             "seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1",
+            "if truncate_seq_len is not None:",
             "prev_actions = torch.zeros(B, seq_len, S",
             "register_buffer(\"_step_indices\"",
             "\"_level_indices\"",
@@ -868,6 +877,8 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         ):
             self.assertIn(needle, policy_src, msg=f"sequential_policy.py missing: {needle!r}")
         self.assertIn("truncate_to_current=True", runner_src)
+        self.assertIn("truncate_seq_len=int(spec.step_idx) + 1", runner_src)
+        self.assertIn("truncate_seq_len=int(spec.step_idx) + 1", parallel_runner_src)
         self.assertIn("torch.inference_mode()", runner_src)
         self.assertIn("policy.eval()", runner_src)
         self.assertIn("policy_rollout_wall_seconds", runner_src)

@@ -407,6 +407,7 @@ def collect_fusion_episode(
                     action_level_mask=action_level_mask_t,
                     baseline_prior_scale=baseline_prior_scale,
                     truncate_to_current=True,
+                    truncate_seq_len=int(spec.step_idx) + 1,
                 )
             policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
             chosen_eval_info = env.evaluate_step(forced_action.tolist())
@@ -438,6 +439,7 @@ def collect_fusion_episode(
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
+                            truncate_seq_len=int(spec.step_idx) + 1,
                         )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
@@ -463,6 +465,7 @@ def collect_fusion_episode(
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
+                            truncate_seq_len=int(spec.step_idx) + 1,
                         )
                     policy_rollout_wall_seconds_val += float(
                         time.perf_counter() - policy_t1
@@ -514,6 +517,7 @@ def collect_fusion_episode(
                         action_level_mask=action_level_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
+                        truncate_seq_len=int(spec.step_idx) + 1,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(fallback_action.tolist())

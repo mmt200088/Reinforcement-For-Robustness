@@ -362,6 +362,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             state: torch.Tensor,
             *,
             truncate_to_current: bool = False,
+            truncate_seq_len: Optional[int] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         B = int(state.shape[0])
         H = int(self.cfg.horizon)
@@ -380,7 +381,10 @@ class BLBStage2SequentialPolicy(nn.Module):
         cursor += 5 + 1
         seq_len = H
         if bool(truncate_to_current) and B == 1:
-            seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
+            if truncate_seq_len is not None:
+                seq_len = max(1, min(H, int(truncate_seq_len)))
+            else:
+                seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
         prev_actions = torch.zeros(B, seq_len, S, dtype=torch.long, device=device)
         prev_signals = torch.zeros(B, seq_len, 3, dtype=state.dtype, device=device)
         need_actions = H * S
@@ -413,10 +417,12 @@ class BLBStage2SequentialPolicy(nn.Module):
             state: torch.Tensor,
             *,
             truncate_to_current: bool = False,
+            truncate_seq_len: Optional[int] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor]:
         static, current_step, prev_actions, prev_signals = self._parse_state(
             state,
             truncate_to_current=bool(truncate_to_current),
+            truncate_seq_len=truncate_seq_len,
         )
         B = int(state.shape[0])
         device = state.device
@@ -508,12 +514,14 @@ class BLBStage2SequentialPolicy(nn.Module):
             baseline_prior_scale: Optional[Any] = None,
             *,
             truncate_to_current: bool = False,
+            truncate_seq_len: Optional[int] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor]:
         if state.dim() == 1:
             state = state.unsqueeze(0)
         tokens, current_step = self._build_tokens(
             state,
             truncate_to_current=bool(truncate_to_current),
+            truncate_seq_len=truncate_seq_len,
         )
         causal_mask = self._get_causal_mask(tokens.size(1), tokens.device)
         x = tokens
@@ -601,6 +609,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             action_level_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
             truncate_to_current: bool = False,
+            truncate_seq_len: Optional[int] = None,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample one per-step action.
 
@@ -613,6 +622,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             state,
             baseline_prior_scale=baseline_prior_scale,
             truncate_to_current=bool(truncate_to_current),
+            truncate_seq_len=truncate_seq_len,
         )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
@@ -648,6 +658,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             baseline_prior_scale: Optional[Any] = None,
             return_per_slot_entropy: bool = False,
             truncate_to_current: bool = False,
+            truncate_seq_len: Optional[int] = None,
             ) -> Tuple[torch.Tensor, ...]:
         """Re-evaluate (log_prob, entropy, value) for a given action under the
         current policy. Used by PPO update.
@@ -656,6 +667,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             state,
             baseline_prior_scale=baseline_prior_scale,
             truncate_to_current=bool(truncate_to_current),
+            truncate_seq_len=truncate_seq_len,
         )
         logits = logits + self._build_logit_mask(
             slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
