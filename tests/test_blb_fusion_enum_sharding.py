@@ -58,6 +58,25 @@ class FusionEnumShardingTests(unittest.TestCase):
         self.assertEqual(num_valid, len(expected))
         self.assertEqual(seen, expected)
 
+    def test_degeneracy_probe_reuses_corner_evaluation(self):
+        class Ctx:
+            baseline_block_indices = (9, 9)
+            enum_choices = [[1, 2], [3, 4]]
+            enum_positions = [0, 1]
+
+        seen = []
+
+        def fake_eval(_ctx, block):
+            seen.append(tuple(int(x) for x in block))
+            return {"valid": True, "fusion_count": 0}
+
+        with mock.patch.object(fusion_enum, "_eval_block", side_effect=fake_eval):
+            result = fusion_enum.degeneracy_probe(Ctx(), num_random=0)
+
+        self.assertTrue(result["degenerate"])
+        self.assertEqual(seen, [(9, 9), (1, 3)])
+        self.assertEqual(result["samples_checked"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

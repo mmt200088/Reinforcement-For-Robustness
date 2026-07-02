@@ -938,18 +938,21 @@ def degeneracy_probe(
 
     def _with(combo: Sequence[int]) -> np.ndarray:
         blk = base_block.copy()
-        for pos, lvl in zip(ctx.enum_positions, combo, strict=True):
+        for pos, lvl in zip(ctx.enum_positions, combo):
             blk[pos] = int(lvl)
         return blk
 
     corner = [ch[0] for ch in ctx.enum_choices]  # deepest level of every enum slot
     corner_res = _eval_block(ctx, _with(corner))
     rng = np.random.default_rng(int(seed))
-    probes = [corner] + [[int(rng.choice(ch)) for ch in ctx.enum_choices] for _ in range(int(num_random))]
 
     fusion_seen: set = set()
     checked = 0
-    for combo in probes:
+    if corner_res.get("valid"):
+        fusion_seen.add(int(corner_res["fusion_count"]))
+        checked += 1
+    for _ in range(int(num_random)):
+        combo = [int(rng.choice(ch)) for ch in ctx.enum_choices]
         r = _eval_block(ctx, _with(combo))
         if r.get("valid"):
             fusion_seen.add(int(r["fusion_count"]))
