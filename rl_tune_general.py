@@ -40,6 +40,7 @@ from runtime_error_reporter import run_fire_entrypoint
 from cli_parse_utils import (
     parse_bool_flag,
     parse_degree_config,
+    parse_float_list_text,
     parse_positive_int,
 )
 
@@ -294,7 +295,7 @@ def train(
     if accuracy_tolerances and str(accuracy_tolerances).strip():
         _raw = str(accuracy_tolerances).strip()
         try:
-            parsed_tolerances = [float(x.strip()) for x in _raw.split(",") if x.strip()]
+            parsed_tolerances = parse_float_list_text(_raw, allow_semicolon=False)
         except ValueError:
             raise ValueError(
                 f"--accuracy_tolerances 格式错误: {_raw!r}. "
@@ -313,7 +314,7 @@ def train(
     if accuracy_tolerance_range and str(accuracy_tolerance_range).strip():
         _raw_range = str(accuracy_tolerance_range).strip()
         try:
-            _parts = [float(x.strip()) for x in _raw_range.split(",") if x.strip()]
+            _parts = parse_float_list_text(_raw_range, allow_semicolon=False)
         except ValueError:
             raise ValueError(
                 f"--accuracy_tolerance_range 格式错误: {_raw_range!r}. "

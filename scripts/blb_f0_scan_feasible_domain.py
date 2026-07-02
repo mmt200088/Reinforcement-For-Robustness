@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from cli_parse_utils import parse_optional_int_list  # noqa: E402
+from cli_parse_utils import parse_int_list_text, parse_optional_int_list  # noqa: E402
 from csv_field_utils import write_csv_rows  # noqa: E402
 from json_utils import stable_json_hash, write_json_file  # noqa: E402
 from jsonl_utils import write_jsonl_rows  # noqa: E402
@@ -881,14 +881,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output_dir,
         metadata=metadata,
         beam_size=args.beam_size,
-        beam_depths=[int(x) for x in str(args.beam_depths).split(",") if x.strip()],
+        beam_depths=parse_int_list_text(args.beam_depths, allow_semicolon=False),
         beam_mutation_limit=args.beam_mutation_limit,
         random_samples=args.random_samples,
         random_seed=args.random_seed,
         multi_random_samples=args.multi_random_samples,
-        multi_mutation_counts=[
-            int(x) for x in str(args.multi_mutation_counts).split(",") if str(x).strip()
-        ],
+        multi_mutation_counts=parse_int_list_text(args.multi_mutation_counts, allow_semicolon=False),
         expected_baseline_bits=args.expected_baseline_bits,
         expected_baseline_fusion=args.expected_baseline_fusion,
     )

@@ -31,6 +31,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from json_utils import to_jsonable  # noqa: E402
+from cli_parse_utils import parse_float_list_text  # noqa: E402
 from csv_field_utils import write_csv_rows  # noqa: E402
 
 
@@ -79,7 +80,7 @@ def build_sigma_grid(
 def parse_sigma_values(raw: Optional[str]) -> List[float]:
     if raw is None or raw.strip() == "":
         return build_sigma_grid()
-    values = [_nice_float(float(item.strip())) for item in raw.split(",") if item.strip()]
+    values = [_nice_float(value) for value in parse_float_list_text(raw, allow_semicolon=False)]
     if not values:
         raise ValueError("--sigmas must contain at least one value")
     if any(value <= 0 for value in values):

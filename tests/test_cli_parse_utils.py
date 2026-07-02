@@ -6,6 +6,7 @@ from cli_parse_utils import (
     parse_broadcast_int_vector,
     parse_degree_config,
     parse_exact_json_int_list,
+    parse_float_list_text,
     parse_int_list_text,
     parse_json_int_list,
     parse_noise_config,
@@ -25,6 +26,9 @@ class CliParseUtilsTest(unittest.TestCase):
         self.assertEqual(split_int_tokens("1, 2;3", allow_semicolon=False), ["1", "2;3"])
         with self.assertRaises(ValueError):
             parse_int_list_text("1, 2;3", allow_semicolon=False)
+        self.assertEqual(parse_float_list_text("0.1, .2;3"), [0.1, 0.2, 3.0])
+        with self.assertRaises(ValueError):
+            parse_float_list_text("0.1;0.2", allow_semicolon=False)
 
     def test_optional_int_list(self):
         self.assertIsNone(parse_optional_int_list(None))
@@ -85,7 +89,8 @@ class CliParseUtilsTest(unittest.TestCase):
             "scripts/report_fusion_count_map.py": "from cli_parse_utils import parse_json_int_list",
             "scripts/blb_export_action_registry.py": "from cli_parse_utils import parse_broadcast_int_vector",
             "scripts/blb_make_fusion_fixed_action_config.py": "from cli_parse_utils import parse_exact_json_int_list",
-            "scripts/blb_f0_scan_feasible_domain.py": "from cli_parse_utils import parse_optional_int_list",
+            "scripts/blb_f0_scan_feasible_domain.py": "from cli_parse_utils import parse_int_list_text, parse_optional_int_list",
+            "scripts/bert_mrpc_layer_noise_experiment.py": "from cli_parse_utils import parse_float_list_text",
             "scripts/stage1_parallel_report.py": "from cli_parse_utils import parse_int_list_text, split_int_tokens",
             "rl_tune.py": "from cli_parse_utils import",
             "rl_tune_general.py": "from cli_parse_utils import",
@@ -95,6 +100,9 @@ class CliParseUtilsTest(unittest.TestCase):
             text = (repo / rel).read_text(encoding="utf-8")
             self.assertIn(needle, text)
         self.assertNotIn("text.replace(\";\", \",\").split(\",\")", (repo / "scripts/blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8"))
+        self.assertNotIn("str(args.beam_depths).split(\",\")", (repo / "scripts/blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8"))
+        self.assertNotIn("raw.split(\",\")", (repo / "scripts/bert_mrpc_layer_noise_experiment.py").read_text(encoding="utf-8"))
+        self.assertNotIn("_raw.split(\",\")", (repo / "rl_tune_general.py").read_text(encoding="utf-8"))
         for rel in (
             "scripts/blb_f0_scan_feasible_domain.py",
             "scripts/blb_make_fusion_fixed_action_config.py",

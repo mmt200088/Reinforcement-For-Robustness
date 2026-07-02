@@ -19,6 +19,10 @@ def parse_int_list_text(raw: str | None, *, allow_semicolon: bool = True) -> Lis
     return [int(item) for item in split_int_tokens(raw, allow_semicolon=allow_semicolon)]
 
 
+def parse_float_list_text(raw: str | None, *, allow_semicolon: bool = True) -> List[float]:
+    return [float(item) for item in split_int_tokens(raw, allow_semicolon=allow_semicolon)]
+
+
 def parse_optional_int_list(raw: str | None, *, allow_semicolon: bool = True) -> List[int] | None:
     if raw is None or str(raw).strip() == "":
         return None

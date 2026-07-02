@@ -195,13 +195,14 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `_json_int_list`, `_group_key`, `_config_group_key`, or `_unique_configs`
   wrappers when adding a new fusion-count experiment; extend the common helper
   and its tests if the shared contract needs a new variant.
-- Shared CLI integer parser rule, added 2026-07-03: small scripts that parse
-  command-line integer vectors must use `cli_parse_utils.py`. Use
+- Shared CLI numeric parser rule, added 2026-07-03: small scripts that parse
+  command-line integer/float vectors must use `cli_parse_utils.py`. Use
   `parse_json_int_list()` for JSON-list flags with defaults,
   `parse_exact_json_int_list()` for exact-length JSON vectors,
   `parse_optional_int_list()` / `parse_int_list_text()` for comma/semicolon
-  lists, `parse_broadcast_int_vector()` for one-value-or-per-layer degree
-  flags, and the legacy RL entrypoint helpers `parse_degree_config()`,
+  integer lists, `parse_float_list_text()` for comma/semicolon float lists,
+  `parse_broadcast_int_vector()` for one-value-or-per-layer degree flags, and
+  the legacy RL entrypoint helpers `parse_degree_config()`,
   `parse_noise_config()`, `parse_bool_flag()`, `parse_positive_int()`,
   `parse_optional_positive_int()`, `parse_stage1_episode_limit()`, and
   `parse_optional_positive_float()` for `rl_tune*.py` Fire arguments. Keep
@@ -209,7 +210,8 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `parse_positive_int` only as compatibility wrappers around this seam; private
   one-call `_parse_int_list` / `_json_list` wrappers are not compatibility and
   should be replaced by direct calls to `cli_parse_utils`. Do not reimplement
-  parser bodies in new launchers or RL entrypoints.
+  parser bodies in new launchers or RL entrypoints, including local
+  `split(",")` loops for comma-separated numeric lists.
 - Shared command-format helper rule, added 2026-07-03: command logging in
   launchers, final-eval wrappers, and error summaries must use
   `runtime_error_reporter.format_command()` for shell-escaped argv rendering.
