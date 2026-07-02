@@ -59,7 +59,6 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-import json
 import os
 from pathlib import Path
 import sys
@@ -72,6 +71,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from jsonl_utils import read_jsonl_fields, read_jsonl_xy
+from json_utils import read_json_file
 
 # ---------------------------------------------------------------------------
 # Style setup
@@ -138,16 +138,6 @@ class RunData:
     action_histogram: Optional[np.ndarray]   # shape (num_slots, max_levels)
 
 
-def _read_json(path: str) -> Dict[str, Any]:
-    if not os.path.isfile(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
 def load_run(
         run_dir: str,
         label: str = "",
@@ -182,9 +172,18 @@ def load_run(
         os.path.join(diag, "ppo_updates.jsonl"),
         fields=("policy_loss", "value_loss", "entropy", "clip_fraction"),
     ) if include_ppo_updates else []
-    best_blob = _read_json(os.path.join(diag, "best_action_vec.json")) if include_best_action else {}
-    baseline_blob = _read_json(os.path.join(diag, "baseline_action_vec.json")) if include_baseline_action else {}
-    first_inv = _read_json(os.path.join(diag, "first_invalid_counts.json")) if include_first_invalid else {}
+    best_blob = (
+        read_json_file(os.path.join(diag, "best_action_vec.json"), default={})
+        if include_best_action else {}
+    )
+    baseline_blob = (
+        read_json_file(os.path.join(diag, "baseline_action_vec.json"), default={})
+        if include_baseline_action else {}
+    )
+    first_inv = (
+        read_json_file(os.path.join(diag, "first_invalid_counts.json"), default={})
+        if include_first_invalid else {}
+    )
     hist = None
     npz_path = os.path.join(diag, "action_histogram.npz")
     if include_action_histogram and os.path.isfile(npz_path):

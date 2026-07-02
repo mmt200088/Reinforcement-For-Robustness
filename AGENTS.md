@@ -98,6 +98,9 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   script-local `json.loads(path.read_text(...))` loops in core
   RL/Paean/final-eval/report tools, fusion-count map loaders, Stage-2
   max-SF/action-mask/skeleton config loaders, and BLB diagnostic scripts.
+  When a report reads optional JSON sidecars, pass `default={}` (or the needed
+  default value) to `read_json_file()` rather than adding a local `_read_json`
+  helper that swallows missing/invalid artifacts.
   Do not add local `_json_ready`, `_jsonable`, `_json_safe`, `_json_default`,
   `json_default`, `_stable_json`, `_sha256_json`, `_read_json`, `_load_json`,
   or `_write_json` helpers in core RL/Paean/final-eval code or standalone

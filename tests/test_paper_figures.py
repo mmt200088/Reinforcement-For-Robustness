@@ -38,7 +38,7 @@ class PaperFiguresTest(unittest.TestCase):
                     raise AssertionError(f"should not load {name} for cost_vs_accuracy-only")
                 return []
 
-            def guarded_read_json(path):
+            def guarded_read_json_file(path, **_kwargs):
                 raise AssertionError(f"should not load JSON sidecar {Path(path).name}")
 
             def fake_cost_vs_accuracy(runs, **_kwargs):
@@ -48,7 +48,7 @@ class PaperFiguresTest(unittest.TestCase):
                 return []
 
             with mock.patch.object(paper, "read_jsonl_fields", guarded_read_jsonl_fields):
-                with mock.patch.object(paper, "_read_json", guarded_read_json):
+                with mock.patch.object(paper, "read_json_file", guarded_read_json_file):
                     with mock.patch.object(paper, "fig_cost_vs_accuracy", fake_cost_vs_accuracy):
                         rc = paper.main([
                             "--runs",

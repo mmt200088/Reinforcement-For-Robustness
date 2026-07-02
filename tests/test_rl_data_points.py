@@ -131,6 +131,15 @@ class RLDataPointWriterTest(unittest.TestCase):
 
             self.assertEqual(read_json_file(path), {"a": 1, "b": [2]})
 
+    def test_read_json_file_default_handles_optional_sidecars(self):
+        with tempfile.TemporaryDirectory() as td:
+            missing = Path(td) / "missing.json"
+            broken = Path(td) / "broken.json"
+            broken.write_text("{", encoding="utf-8")
+
+            self.assertEqual(read_json_file(missing, default={}), {})
+            self.assertEqual(read_json_file(broken, default=[]), [])
+
     def test_json_artifact_scripts_use_shared_writer(self):
         checks = {
             "scripts/blb_f0_scan_feasible_domain.py": "from json_utils import read_json_file, stable_json_hash, write_json_file",
@@ -178,6 +187,7 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/blb_verify_noise_install.py": "from json_utils import read_json_file",
             "scripts/blb_orphan_slot_audit.py": "from json_utils import read_json_file",
             "reports/generate_blb_mapping_html_reports.py": "from json_utils import read_json_file",
+            "tools/paper_figures.py": "from json_utils import read_json_file",
             "Paean/action_grid.py": "from json_utils import read_json_file",
             "Paean/blb_action_eval.py": "from json_utils import read_json_file",
         }

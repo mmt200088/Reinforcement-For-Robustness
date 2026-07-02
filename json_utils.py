@@ -11,6 +11,7 @@ import numpy as np
 
 _TORCH_TENSOR_TYPE: Any = None
 _TORCH_TENSOR_TYPE_RESOLVED = False
+_RAISE = object()
 
 
 def _torch_tensor_type() -> Any:
@@ -168,6 +169,21 @@ def write_json_file(
     return out_path
 
 
-def read_json_file(path: str | Path, *, encoding: str = "utf-8") -> Any:
-    """Read a JSON artifact through the repository's shared file seam."""
-    return json.loads(Path(path).read_text(encoding=encoding))
+def read_json_file(
+        path: str | Path,
+        *,
+        encoding: str = "utf-8",
+        default: Any = _RAISE,
+        ) -> Any:
+    """Read a JSON artifact through the repository's shared file seam.
+
+    ``default`` is for optional sidecar artifacts in reports. Missing or invalid
+    JSON returns the supplied default; callers that need strict reads should omit
+    it and let the underlying exception surface.
+    """
+    try:
+        return json.loads(Path(path).read_text(encoding=encoding))
+    except (FileNotFoundError, json.JSONDecodeError):
+        if default is not _RAISE:
+            return default
+        raise
