@@ -475,6 +475,13 @@ candidate list. A local 6000-candidate synthetic final-eval tree kept the same
 latest result and reduced lookup peak memory from `1.28MB` to `0.02MB`, with
 wall time improving from `0.0838s` to `0.0613s`.
 
+Progress 2026-07-02: `tools/aggregate_seeds.py` now builds one filtered
+legacy persistent-dir index for the seed list instead of running a persistent
+tree glob once per seed. A local synthetic tree with 5000 persistent dirs and
+100 queried seed tags returned the same 100 matches while reducing directory
+discovery wall time from `4.5251s` to `0.0379s` and traced peak memory from
+`0.11MB` to `0.05MB`.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run

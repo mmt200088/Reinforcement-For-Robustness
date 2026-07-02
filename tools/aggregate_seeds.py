@@ -22,14 +22,15 @@ The seed-list file is two columns: ``<seed> <run_tag>`` per line.
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import os
 import statistics
 import sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import AbstractSet, Any, Dict, List, Optional, Tuple
+
+PERSISTENT_ROOT = os.path.join("Parting Chapter", "persistent")
 
 
 @dataclass
@@ -50,23 +51,63 @@ class SeedRow:
     error_msg: Optional[str] = None
 
 
+def _iter_child_dirs(path: str):
+    try:
+        with os.scandir(path) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir():
+                        yield entry
+                except OSError:
+                    continue
+    except OSError:
+        return
+
+
+def _build_persistent_dir_index(
+    root: str = PERSISTENT_ROOT,
+    requested_run_tags: Optional[AbstractSet[str]] = None,
+) -> Dict[str, str]:
+    """Index legacy persistent dirs keyed by run_tag suffix.
+
+    Matches the old ``Parting Chapter/persistent/*/*/*/*__<run_tag>`` shape
+    while scanning the tree once for a whole multi-seed aggregation.
+    """
+    if requested_run_tags is not None and not requested_run_tags:
+        return {}
+
+    best: Dict[str, Tuple[float, str]] = {}
+    for level1 in _iter_child_dirs(root):
+        for level2 in _iter_child_dirs(level1.path):
+            for level3 in _iter_child_dirs(level2.path):
+                for entry in _iter_child_dirs(level3.path):
+                    if "__" not in entry.name:
+                        continue
+                    run_tag = entry.name.rsplit("__", 1)[1]
+                    if not run_tag:
+                        continue
+                    if requested_run_tags is not None and run_tag not in requested_run_tags:
+                        continue
+                    try:
+                        mtime = entry.stat().st_mtime
+                    except OSError:
+                        continue
+                    candidate = (mtime, entry.path)
+                    if run_tag not in best or candidate > best[run_tag]:
+                        best[run_tag] = candidate
+    return {run_tag: path for run_tag, (_, path) in best.items()}
+
+
 def _find_persistent_dir(run_tag: str) -> Optional[str]:
     """Walk the persistent root looking for a slug ending in ``__<run_tag>``.
 
     注：这是给旧 ``persistent/`` 多 seed sweep（``--run-tag``）用的。解耦后新布局
     （2026-06-01）每个 combo 只一个工作目录，多次运行归档到
     ``Parting Chapter/stage{1,2}/record/{combo} N date/``（按 N 编号，不是 run_tag
-    seed），不走这条 glob；如需聚合解耦 record，请按 combo + N 直接读 record 目录。
+    seed），不走这条 legacy discovery；如需聚合解耦 record，请按 combo + N 直接读
+    record 目录。
     """
-    root = "Parting Chapter/persistent"
-    if not os.path.isdir(root):
-        return None
-    matches = glob.glob(f"{root}/*/*/*/*__{run_tag}")
-    if not matches:
-        return None
-    # If multiple matches, prefer the most recently modified one.
-    matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return matches[0]
+    return _build_persistent_dir_index().get(run_tag)
 
 
 def _read_status(progress_dir: str) -> Dict[str, Any]:
@@ -138,9 +179,12 @@ def _extract_final_eval_metrics(results: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _gather_one_seed(seed: int, run_tag: str) -> SeedRow:
+def _gather_one_seed(seed: int, run_tag: str, persistent_index: Optional[Dict[str, str]] = None) -> SeedRow:
     row = SeedRow(seed=seed, run_tag=run_tag)
-    persistent_dir = _find_persistent_dir(run_tag)
+    if persistent_index is None:
+        persistent_dir = _find_persistent_dir(run_tag)
+    else:
+        persistent_dir = persistent_index.get(run_tag)
     if persistent_dir is None:
         row.status = "missing"
         row.error_msg = f"no persistent dir matching __${run_tag} under Parting Chapter/persistent/"
@@ -284,7 +328,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--output-dir", required=True)
     args = ap.parse_args(argv)
 
-    seed_rows: List[SeedRow] = []
+    seed_specs: List[Tuple[int, str]] = []
     with open(args.seed_list, "r", encoding="utf-8") as f:
         for line in f:
             parts = line.strip().split()
@@ -292,7 +336,15 @@ def main(argv: Optional[List[str]] = None) -> int:
                 continue
             seed = int(parts[0])
             run_tag = parts[1]
-            seed_rows.append(_gather_one_seed(seed, run_tag))
+            seed_specs.append((seed, run_tag))
+
+    persistent_index = _build_persistent_dir_index(
+        requested_run_tags={run_tag for _, run_tag in seed_specs}
+    )
+    seed_rows = [
+        _gather_one_seed(seed, run_tag, persistent_index=persistent_index)
+        for seed, run_tag in seed_specs
+    ]
 
     os.makedirs(args.output_dir, exist_ok=True)
     md = _build_summary_md(args.run_name, seed_rows)
