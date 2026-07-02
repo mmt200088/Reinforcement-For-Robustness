@@ -54,6 +54,42 @@ def _source_region(source: str, start_marker: str, end_marker: str) -> str:
 
 
 class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
+    def test_scalar_encode_constants_sample_noise_without_full_shape_prefill(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        block1_region = _source_region(
+            source,
+            "class NoisyBlock1LayerNorm",
+            "# ============================================================================\n# BLB Block 3",
+        )
+        block3_region = _source_region(
+            source,
+            "def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):",
+            "    return block3_approx_exp",
+        )
+        block4_region = _source_region(
+            source,
+            "class NoisyBlock4LayerNorm",
+            "# ============================================================================\n# BLB Block 5",
+        )
+
+        self.assertIn("noisy_inv_d = _sample_gaussian_for_point(x, cfg.mean_inv_d_encode)", block1_region)
+        self.assertIn("noisy_inv_d.add_(1.0 / D)", block1_region)
+        self.assertIn("noisy_inv_d_var = _sample_gaussian_for_point(sq, cfg.var_inv_d_encode)", block1_region)
+        self.assertIn("noisy_inv_d_var.add_(1.0 / D)", block1_region)
+        self.assertNotIn("torch.full_like(x, 1.0 / D)", block1_region)
+        self.assertNotIn("torch.full_like(sq, 1.0 / D)", block1_region)
+
+        self.assertIn("noisy_inv_2n = _sample_gaussian_for_point(x, cfg.inv_2n_encode)", block3_region)
+        self.assertIn("noisy_inv_2n.add_(inv_2n_value)", block3_region)
+        self.assertNotIn("torch.full_like(x, inv_2n_value)", block3_region)
+
+        self.assertIn("noisy_inv_d = _sample_gaussian_for_point(x, cfg4.ln_mean_inv_d_encode)", block4_region)
+        self.assertIn("noisy_inv_d.add_(1.0 / D)", block4_region)
+        self.assertIn("noisy_inv_d_var = _sample_gaussian_for_point(sq, cfg4.ln_var_inv_d_encode)", block4_region)
+        self.assertIn("noisy_inv_d_var.add_(1.0 / D)", block4_region)
+        self.assertNotIn("torch.full_like(x, 1.0 / D)", block4_region)
+        self.assertNotIn("torch.full_like(sq, 1.0 / D)", block4_region)
+
     def test_block5_gelu_coeff_encode_reuses_input_as_noise_reference(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
         block5_region = _source_region(

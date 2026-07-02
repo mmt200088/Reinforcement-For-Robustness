@@ -1049,11 +1049,11 @@ class NoisyBlock1LayerNorm(nn.Module):
         sum_x = x.sum(dim=-1, keepdim=True)                            # [B, S, 1]
         if cfg is not None:
             # encode on 1/D：模拟 CKKS 真实密文情况——
-            # plaintext 1/D 被显式广播到与操作数矩阵 x 同形 [B, S, H]，
-            # 然后每个 slot 加独立 encode 噪声 ε_{b,s,h}（不再是同一个标量 ε）。
+            # 以操作数矩阵 x 同形 [B, S, H] 采样 encode 噪声 ε_{b,s,h}，
+            # 然后加标量 1/D（不再是同一个标量 ε）。
             # 之后与 sum_x ([B, S, 1]) 按位乘（自动 broadcast），得到 [B, S, H] 的 noisy μ。
-            inv_d_broadcast = torch.full_like(x, 1.0 / D)              # [B, S, H]
-            noisy_inv_d = inv_d_broadcast + _sample_gaussian_for_point(inv_d_broadcast, cfg.mean_inv_d_encode)
+            noisy_inv_d = _sample_gaussian_for_point(x, cfg.mean_inv_d_encode)
+            noisy_inv_d.add_(1.0 / D)
             mean = sum_x * noisy_inv_d                                 # [B, S, H]，每 slot 独立噪声
             if cfg.mean_result_rescale is not None:
                 mean = mean + _sample_gaussian_for_point(mean, cfg.mean_result_rescale)
@@ -1075,8 +1075,8 @@ class NoisyBlock1LayerNorm(nn.Module):
         # ===== variance = sum_sq · (1/D) =====
         sum_sq = sq.sum(dim=-1, keepdim=True)                          # [B, S, 1]
         if cfg is not None:
-            inv_d_var_broadcast = torch.full_like(sq, 1.0 / D)         # [B, S, H]
-            noisy_inv_d_var = inv_d_var_broadcast + _sample_gaussian_for_point(inv_d_var_broadcast, cfg.var_inv_d_encode)
+            noisy_inv_d_var = _sample_gaussian_for_point(sq, cfg.var_inv_d_encode)
+            noisy_inv_d_var.add_(1.0 / D)
             var = sum_sq * noisy_inv_d_var                             # [B, S, H]，每 slot 独立噪声
             if cfg.var_result_rescale is not None:
                 var = var + _sample_gaussian_for_point(var, cfg.var_result_rescale)
@@ -1312,8 +1312,8 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
         # 1. fresh on softmax 输入 x
         x = x + _sample_gaussian_for_point(x, cfg.x_fresh)
         # 2. encode on 1/2^n（CKKS smulcp 的 plaintext-side 噪声；按 1/D / γ 同方式 per-slot）
-        inv_2n_broadcast = torch.full_like(x, inv_2n_value)
-        noisy_inv_2n = inv_2n_broadcast + _sample_gaussian_for_point(inv_2n_broadcast, cfg.inv_2n_encode)
+        noisy_inv_2n = _sample_gaussian_for_point(x, cfg.inv_2n_encode)
+        noisy_inv_2n.add_(inv_2n_value)
         # 3. ewmulcp: x · (1/2^n)
         x_scaled = x * noisy_inv_2n
         if cfg.x_inv_2n_result_rescale is not None:
@@ -1686,8 +1686,8 @@ class NoisyBlock4LayerNorm(nn.Module):
         # ===================== Block 4: head =====================
         sum_x = x.sum(dim=-1, keepdim=True)                            # [B, S, 1]
         if cfg4 is not None:
-            inv_d_broadcast = torch.full_like(x, 1.0 / D)              # [B, S, H]
-            noisy_inv_d = inv_d_broadcast + _sample_gaussian_for_point(inv_d_broadcast, cfg4.ln_mean_inv_d_encode)
+            noisy_inv_d = _sample_gaussian_for_point(x, cfg4.ln_mean_inv_d_encode)
+            noisy_inv_d.add_(1.0 / D)
             mean = sum_x * noisy_inv_d                                 # [B, S, H]
             if cfg4.ln_mean_result_rescale is not None:
                 mean = mean + _sample_gaussian_for_point(mean, cfg4.ln_mean_result_rescale)
@@ -1705,8 +1705,8 @@ class NoisyBlock4LayerNorm(nn.Module):
 
         sum_sq = sq.sum(dim=-1, keepdim=True)
         if cfg4 is not None:
-            inv_d_var_broadcast = torch.full_like(sq, 1.0 / D)
-            noisy_inv_d_var = inv_d_var_broadcast + _sample_gaussian_for_point(inv_d_var_broadcast, cfg4.ln_var_inv_d_encode)
+            noisy_inv_d_var = _sample_gaussian_for_point(sq, cfg4.ln_var_inv_d_encode)
+            noisy_inv_d_var.add_(1.0 / D)
             var = sum_sq * noisy_inv_d_var
             if cfg4.ln_var_result_rescale is not None:
                 var = var + _sample_gaussian_for_point(var, cfg4.ln_var_result_rescale)
