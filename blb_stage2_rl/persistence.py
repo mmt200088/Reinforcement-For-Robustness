@@ -811,6 +811,15 @@ def _ema_smooth(values, window):
     return out
 
 
+def _seq_len(values) -> int:
+    if values is None:
+        return 0
+    try:
+        return len(values)
+    except TypeError:
+        return len(list(values))
+
+
 def _moving_average(values, window):
     """Trailing simple moving average (matches Stage-1's ``Moving Avg (N)`` line).
 
@@ -925,10 +934,10 @@ def write_training_curves(
     should_render_plots = _stage2_plot_rendering_enabled(render_plots)
 
     def _has(seq):
-        return seq is not None and len(list(seq)) > 0
+        return _seq_len(seq) > 0
 
     _bl = dict(baselines or {})
-    n_ep = len(list(episode_returns)) if episode_returns is not None else 0
+    n_ep = _seq_len(episode_returns)
     requested_ma_window = ma_window
     if ma_window is None:
         ma_window = max(10, n_ep // 200) if n_ep else 10
@@ -938,7 +947,10 @@ def write_training_curves(
         import numpy as _np
 
         def _arr(seq):
-            return _np.asarray(list(seq), dtype=float) if _has(seq) else _np.array([], dtype=float)
+            if seq is None:
+                return _np.array([], dtype=float)
+            values = list(seq)
+            return _np.asarray(values, dtype=float) if values else _np.array([], dtype=float)
 
         npz_path = os.path.join(persistence_dir, BLB_TRAINING_CURVE_NPZ)
         _np.savez(
@@ -1005,7 +1017,7 @@ def write_training_curves(
             import numpy as _np
 
             ent = _np.asarray(list(entropy_series), dtype=float)
-            if _has(entropy_episodes) and len(list(entropy_episodes)) == ent.size:
+            if _has(entropy_episodes) and _seq_len(entropy_episodes) == ent.size:
                 ex = _np.asarray(list(entropy_episodes), dtype=float)
                 xlabel = "Episode (at PPO update)"
             else:
@@ -1145,7 +1157,10 @@ def write_diagnostic_curves(
         import numpy as _np
 
         def _arr(seq):
-            return _np.asarray(list(seq), dtype=float) if (seq is not None and len(list(seq)) > 0) else None
+            if seq is None:
+                return None
+            values = list(seq)
+            return _np.asarray(values, dtype=float) if values else None
 
         def _roll(seq):
             a = _arr(seq)

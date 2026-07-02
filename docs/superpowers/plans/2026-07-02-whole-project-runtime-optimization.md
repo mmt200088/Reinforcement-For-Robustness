@@ -579,6 +579,15 @@ post-run reports can regenerate the inspection artifacts later. A local
 `44.88MB` with PNG/PDF rendering to `0.002s` / `0.30MB` when plot rendering is
 disabled.
 
+Progress 2026-07-02: the Stage-2 curve persistence path now checks sequence
+length with `len()` where available and converts each NPZ series with one
+`list()` pass, instead of using `len(list(seq))` before converting the same
+series again. A regression test now enforces that `render_plots=False` iterates
+each supplied NPZ sequence at most once. A warmed 60k-episode local parity
+benchmark kept the NPZ byte size identical (`3374656` bytes) with comparable
+median write time (`0.0123s` -> `0.0116s`), while removing avoidable temporary
+copies from the training hot path.
+
 Progress 2026-07-02: `scripts/blb_regen_stage2_outputs.py` now lazily
 materializes ADR-014 optional diagnostic series while reading `episodes.jsonl`.
 Older runs that do not contain those fields no longer allocate nine extra
