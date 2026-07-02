@@ -728,9 +728,15 @@ class UnifiedFinalEvaluationModule:
             ) from exc
 
     def _load_dataset_config_from_json(self, required_sections=("stage1", "stage2")):
-        with open(self.config_path, "r", encoding="utf-8") as fh:
-            config_map = json.load(fh)
-        config_map.pop("_comment", None)
+        config_path = str(self.config_path)
+        if getattr(self, "_config_json_cache_path", None) == config_path:
+            config_map = self._config_json_cache
+        else:
+            with open(config_path, encoding="utf-8") as fh:
+                config_map = json.load(fh)
+            config_map.pop("_comment", None)
+            self._config_json_cache_path = config_path
+            self._config_json_cache = config_map
 
         total_layers = int(getattr(self.evaluator, "total_layers", 12) or 12)
         explicit = getattr(self.evaluator, "model_type", None)

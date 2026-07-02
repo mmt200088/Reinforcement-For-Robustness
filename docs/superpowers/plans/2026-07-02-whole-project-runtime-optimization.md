@@ -331,6 +331,12 @@ Allowed changes:
 - Schedule independent configs across visible GPUs only after local tests and
   server smoke show no metric drift.
 
+Progress 2026-07-02: `UnifiedFinalEvaluationModule` now caches the loaded
+final-eval JSON config map per `config_path` inside one module instance. This
+prevents Stage-1 and Stage-2 JSON resolution from opening/parsing the same
+config file twice in a single final-eval flow while preserving config-source
+semantics.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
