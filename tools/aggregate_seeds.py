@@ -94,13 +94,28 @@ def _read_best_action_full(progress_dir: str) -> Dict[str, Any]:
 def _read_final_eval_results(persistent_dir: str) -> Dict[str, Any]:
     """Look for Paean's blb_action_final_eval_results_*.json under
     final_eval/ in the run directory."""
-    candidates = glob.glob(f"{persistent_dir}/**/blb_action_final_eval_results_*.json", recursive=True)
-    if not candidates:
+    latest_path = None
+    latest_mtime = None
+    for dirpath, _, filenames in os.walk(persistent_dir):
+        for filename in filenames:
+            if not filename.startswith("blb_action_final_eval_results_"):
+                continue
+            if not filename.endswith(".json"):
+                continue
+            path = os.path.join(dirpath, filename)
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if latest_mtime is None or mtime > latest_mtime:
+                latest_path = path
+                latest_mtime = mtime
+
+    if latest_path is None:
         return {}
-    # Most recent one.
-    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+
     try:
-        with open(candidates[0], "r", encoding="utf-8") as f:
+        with open(latest_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}

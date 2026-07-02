@@ -468,6 +468,13 @@ top-candidate scatter. A local 100k-episode synthetic run comparison reduced
 run loading for that path from `0.464s`/`39.39MB` to effectively `0.000s`/
 `0.00MB`.
 
+Progress 2026-07-02: `tools/aggregate_seeds.py` now finds the latest Paean
+`blb_action_final_eval_results_*.json` by streaming `os.walk()` and retaining
+only the newest path, instead of recursive `glob` plus sorting a materialized
+candidate list. A local 6000-candidate synthetic final-eval tree kept the same
+latest result and reduced lookup peak memory from `1.28MB` to `0.02MB`, with
+wall time improving from `0.0838s` to `0.0613s`.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
