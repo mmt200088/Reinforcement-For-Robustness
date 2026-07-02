@@ -47,27 +47,50 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimi
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from action_space import parse_config_name  # noqa: E402
-import fusion_enum  # noqa: E402
-import numpy as np  # noqa: E402
-from optimizer_cost import evaluate_action_for_cost  # noqa: E402
-from optimizer_output_introspect import fused_skeleton_positions  # noqa: E402
-
-from rescale_optimizer_bridge import (  # noqa: E402
-    _extract_sf_from_cfg,
-    _SkelEntry,
-    _strip_layer_suffix,
-    apply_optimizer_output_to_cfg,
-    sync_block2_aux_fresh_binding,
-    sync_block2_qk_binding,
-    sync_block4_v_mask_binding,
-    sync_block5_aux_fresh_binding,
-)
-
 # Degenerate / dormant maps carry no boosted fusion option to install. block1's
 # key is profile-suffixed (block1_<profile>) and is fusion-degenerate (never
 # boosted); block5_n0 is the dormant degree-0 map.
 _SKIP_GRAPH_KEYS = {"block5_n0"}
+
+_RUNTIME_DEPS: dict[str, object] | None = None
+
+
+def _load_runtime_deps() -> dict[str, object]:
+    """Import the real install-path dependencies only when a map needs checking."""
+    global _RUNTIME_DEPS
+    if _RUNTIME_DEPS is None:
+        from action_space import parse_config_name
+        import fusion_enum
+        import numpy as np
+        from optimizer_cost import evaluate_action_for_cost
+        from optimizer_output_introspect import fused_skeleton_positions
+        from rescale_optimizer_bridge import (
+            _extract_sf_from_cfg,
+            _SkelEntry,
+            _strip_layer_suffix,
+            apply_optimizer_output_to_cfg,
+            sync_block2_aux_fresh_binding,
+            sync_block2_qk_binding,
+            sync_block4_v_mask_binding,
+            sync_block5_aux_fresh_binding,
+        )
+
+        _RUNTIME_DEPS = {
+            "parse_config_name": parse_config_name,
+            "fusion_enum": fusion_enum,
+            "np": np,
+            "evaluate_action_for_cost": evaluate_action_for_cost,
+            "fused_skeleton_positions": fused_skeleton_positions,
+            "_extract_sf_from_cfg": _extract_sf_from_cfg,
+            "_SkelEntry": _SkelEntry,
+            "_strip_layer_suffix": _strip_layer_suffix,
+            "apply_optimizer_output_to_cfg": apply_optimizer_output_to_cfg,
+            "sync_block2_aux_fresh_binding": sync_block2_aux_fresh_binding,
+            "sync_block2_qk_binding": sync_block2_qk_binding,
+            "sync_block4_v_mask_binding": sync_block4_v_mask_binding,
+            "sync_block5_aux_fresh_binding": sync_block5_aux_fresh_binding,
+        }
+    return _RUNTIME_DEPS
 
 
 def _is_skipped_graph_key(graph_key: str) -> bool:
@@ -97,6 +120,18 @@ def _install_and_inspect(ev, ctx):
     BLBStage2Env.step. ``fused_still_installed`` = the cfg attrs at FUSED skeleton
     rescale positions that STILL carry an installed noise point after the write-back
     (the c6ee25e invariant violation; empty when correct)."""
+    deps = _load_runtime_deps()
+    parse_config_name = deps["parse_config_name"]
+    fused_skeleton_positions = deps["fused_skeleton_positions"]
+    _extract_sf_from_cfg = deps["_extract_sf_from_cfg"]
+    _SkelEntry = deps["_SkelEntry"]
+    _strip_layer_suffix = deps["_strip_layer_suffix"]
+    apply_optimizer_output_to_cfg = deps["apply_optimizer_output_to_cfg"]
+    sync_block2_aux_fresh_binding = deps["sync_block2_aux_fresh_binding"]
+    sync_block2_qk_binding = deps["sync_block2_qk_binding"]
+    sync_block4_v_mask_binding = deps["sync_block4_v_mask_binding"]
+    sync_block5_aux_fresh_binding = deps["sync_block5_aux_fresh_binding"]
+
     invoker = getattr(ctx.bridge, "invoker", None)
     invoker_baselines = getattr(invoker, "baselines", {}) or {}
     target_cfg = None
@@ -143,6 +178,9 @@ def _install_and_inspect(ev, ctx):
 
 
 def _evaluate(ctx, action_indices, boosted_overrides=None):
+    deps = _load_runtime_deps()
+    np = deps["np"]
+    evaluate_action_for_cost = deps["evaluate_action_for_cost"]
     full = np.asarray(ctx.baseline_full, dtype=int).copy()
     full[ctx.block_offset: ctx.block_offset + ctx.block_num_slots] = np.asarray(action_indices, dtype=int)
     return evaluate_action_for_cost(
@@ -157,9 +195,17 @@ def _evaluate(ctx, action_indices, boosted_overrides=None):
     )
 
 
-def verify_map(path: pathlib.Path, profile: str, ro_root: str, num_layers: int) -> tuple:
+def verify_map(
+    path: pathlib.Path,
+    profile: str,
+    ro_root: str,
+    num_layers: int,
+    *,
+    payload: dict | None = None,
+) -> tuple:
     """Returns (checked, problems) for one map file."""
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload is None:
+        payload = json.loads(path.read_text(encoding="utf-8"))
     graph_key = str(payload["graph_key"])
     block_idx = int(payload["block_idx"])
     gelu_degree = int(payload.get("gelu_degree", 4))
@@ -172,6 +218,7 @@ def verify_map(path: pathlib.Path, profile: str, ro_root: str, num_layers: int) 
         print(f"[skip] {graph_key}: no boosted fusion option")
         return 0, 0
 
+    fusion_enum = _load_runtime_deps()["fusion_enum"]
     ctx = fusion_enum.prepare_block_type_context(
         graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu_degree, attn_degree=attn_degree,
         profile=profile, rescale_optimizer_root=ro_root, num_layers=num_layers, ref_layer=1,
@@ -232,29 +279,48 @@ def verify_map(path: pathlib.Path, profile: str, ro_root: str, num_layers: int) 
     return checked, problems
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--profile", default="mrpc")
-    ap.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
-    ap.add_argument("--maps-dir", default="blb_stage2_rl/fusion_maps/mrpc")
-    ap.add_argument("--num-layers", type=int, default=12)
-    args = ap.parse_args()
-
-    mdir = pathlib.Path(args.maps_dir)
+def _verify_maps(
+    maps_dir: str | pathlib.Path,
+    *,
+    profile: str,
+    ro_root: str,
+    num_layers: int,
+    verify_fn=verify_map,
+) -> tuple[int, int]:
+    mdir = pathlib.Path(maps_dir)
     files = sorted(p for p in mdir.glob("*.json") if not p.name.startswith("_"))
     total_checked = 0
     total_problems = 0
     for p in files:
+        payload = None
         try:
-            gk = json.loads(p.read_text(encoding="utf-8")).get("graph_key", p.stem)
+            payload = json.loads(p.read_text(encoding="utf-8"))
+            gk = payload.get("graph_key", p.stem)
         except Exception:
             gk = p.stem
         if _is_skipped_graph_key(gk):
             print(f"[skip] {gk}: degenerate/dormant map (no boosted fusion option)")
             continue
-        c, pr = verify_map(p, args.profile, args.rescale_optimizer_root, args.num_layers)
+        c, pr = verify_fn(p, profile, ro_root, num_layers, payload=payload)
         total_checked += c
         total_problems += pr
+    return total_checked, total_problems
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--profile", default="mrpc")
+    ap.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
+    ap.add_argument("--maps-dir", default="blb_stage2_rl/fusion_maps/mrpc")
+    ap.add_argument("--num-layers", type=int, default=12)
+    args = ap.parse_args(argv)
+
+    total_checked, total_problems = _verify_maps(
+        args.maps_dir,
+        profile=args.profile,
+        ro_root=args.rescale_optimizer_root,
+        num_layers=args.num_layers,
+    )
 
     print(f"\nchecked {total_checked} boosted option(s); {total_problems} problem(s)")
     if total_checked == 0:

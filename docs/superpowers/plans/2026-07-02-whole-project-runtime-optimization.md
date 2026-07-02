@@ -442,6 +442,15 @@ options for `0`, `1`, and `max` targets. A local seven-graph / 25k-options-per
 graph benchmark preserved the exact group specs and reduced `_group_specs()`
 from `0.463743s` to `0.103732s` (`4.47x`).
 
+Progress 2026-07-02: `scripts/blb_verify_boosted_install.py` now lazily imports
+the torch/rescale install-path dependencies only after it finds a non-skipped map
+with boosted fusion options, and the map loop passes the already-loaded JSON
+payload into `verify_map()`. This removes one duplicate full JSON parse per
+verified fusion map and lets degenerate/no-boost maps skip without loading torch.
+A local 7-map synthetic JSON benchmark for the eliminated parse path preserved
+the checked option count and reduced median time from `6.84s` to `3.44s`, with
+traced peak memory down from `60.37MB` to `42.10MB`.
+
 - [ ] **Step 3: Verify**
 
 Run:
