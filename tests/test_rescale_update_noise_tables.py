@@ -17,6 +17,28 @@ def _load_module():
 
 
 class UpdateNoiseTablesDiscoveryTest(unittest.TestCase):
+    def test_load_csv_avoids_per_row_dict_reader(self):
+        mod = _load_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "noise.csv"
+            path.write_text(
+                "N,scale_bits,B_enc,B_fresh,B_rs\n"
+                "8192,12,0.0,1.25,2.5\n"
+                "16384,13,0.0,3.75,4.5\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                mod.csv,
+                "DictReader",
+                side_effect=AssertionError("noise CSV parsing should not allocate one dict per row"),
+            ):
+                table = mod.load_csv(path)
+
+        self.assertEqual(table[(8192, 12)], (1.25, 2.5))
+        self.assertEqual(table[(16384, 13)], (3.75, 4.5))
+
     def test_discovers_configs_without_path_glob(self):
         mod = _load_module()
 

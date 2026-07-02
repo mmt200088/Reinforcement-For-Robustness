@@ -78,11 +78,19 @@ def n_for_stem(stem: str) -> int:
 def load_csv(csv_path: Path) -> Dict[Tuple[int, int], Tuple[float, float]]:
     out: Dict[Tuple[int, int], Tuple[float, float]] = {}
     with open(csv_path, newline="") as f:
-        rdr = csv.DictReader(f)
+        rdr = csv.reader(f)
+        header = next(rdr)
+        columns = {str(name): idx for idx, name in enumerate(header)}
+        n_col = columns["N"]
+        sf_col = columns["scale_bits"]
+        fresh_col = columns["B_fresh"]
+        rescale_col = columns["B_rs"]
         for row in rdr:
-            N = int(row["N"])
-            sf = int(row["scale_bits"])
-            out[(N, sf)] = (float(row["B_fresh"]), float(row["B_rs"]))
+            if not row or all(not cell or cell.isspace() for cell in row):
+                continue
+            N = int(row[n_col])
+            sf = int(row[sf_col])
+            out[(N, sf)] = (float(row[fresh_col]), float(row[rescale_col]))
     return out
 
 

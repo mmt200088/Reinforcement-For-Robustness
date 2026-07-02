@@ -607,6 +607,13 @@ skipping `.json` directories before any file rewrite attempt. A local
 ordering and reduced discovery from `0.073012s` / `5.20MB` to `0.030925s` /
 `1.18MB`.
 
+Progress 2026-07-02: `Rescale_optimizer/scripts/update_noise_tables_from_csv.py`
+now parses measured-noise CSV rows with `csv.reader` and precomputed header
+indices instead of `csv.DictReader`, avoiding one dictionary allocation per
+measured `(N, scale_bits)` row. A local 200k-row synthetic noise CSV benchmark
+preserved the loaded table and reduced parsing from `0.996201s` / `0.07MB` peak
+to `0.723280s` / `0.06MB` (`1.38x`).
+
 Progress 2026-07-02: `blb_stage2_rl/fusion_count_map.py` runtime
 `FusionCountMap.load()` now discovers canonical block-map JSON files with
 `os.scandir()` and filename filtering before parsing payloads. Runtime map
