@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
 from report_format_utils import format_float  # noqa: E402
 from stats_utils import median_sorted  # noqa: E402
 
@@ -49,65 +50,6 @@ def _float_value(value: object) -> float | None:
     if not match:
         return None
     return float(match.group(0))
-
-
-def _normalized_row(row: Mapping[str, str]) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for key, value in row.items():
-        normalized = re.sub(r"[^a-z0-9]+", "_", str(key).strip().lower()).strip("_")
-        out[normalized] = value
-    return out
-
-
-def _first_present(row: Mapping[str, str], keys: Sequence[str]) -> str | None:
-    for key in keys:
-        if key in row:
-            return row[key]
-    return None
-
-
-def _normalized_field_lookup(fieldnames: Sequence[str | None] | None) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for fieldname in fieldnames or ():
-        if fieldname is None:
-            continue
-        normalized = re.sub(r"[^a-z0-9]+", "_", str(fieldname).strip().lower()).strip("_")
-        out[normalized] = fieldname
-    return out
-
-
-def _first_present_by_lookup(
-        row: Mapping[str, str],
-        field_lookup: Mapping[str, str],
-        keys: Sequence[str],
-        ) -> str | None:
-    for key in keys:
-        fieldname = field_lookup.get(key)
-        if fieldname is not None and fieldname in row:
-            return row[fieldname]
-    return None
-
-
-def _normalized_field_index(fieldnames: Sequence[str | None] | None) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for idx, fieldname in enumerate(fieldnames or ()):
-        if fieldname is None:
-            continue
-        normalized = re.sub(r"[^a-z0-9]+", "_", str(fieldname).strip().lower()).strip("_")
-        out[normalized] = int(idx)
-    return out
-
-
-def _first_present_by_index(
-        row: Sequence[str],
-        field_index: Mapping[str, int],
-        keys: Sequence[str],
-        ) -> str | None:
-    for key in keys:
-        idx = field_index.get(key)
-        if idx is not None and 0 <= int(idx) < len(row):
-            return row[int(idx)]
-    return None
 
 
 def _summarize_episodes(path: Path) -> dict[str, Any]:
@@ -174,17 +116,17 @@ def _summarize_gpu_samples(path: Path) -> tuple[dict[str, float], dict[str, floa
             header = next(reader)
         except StopIteration:
             return gpu_util, gpu_mem
-        field_index = _normalized_field_index(header)
+        field_index = normalized_field_index(header)
         for raw_row in reader:
             if not raw_row or all(not cell or cell.isspace() for cell in raw_row):
                 continue
-            idx = _first_present_by_index(raw_row, field_index, ["index", "gpu_index", "gpu"])
-            mem = _first_present_by_index(
+            idx = first_present_by_index(raw_row, field_index, ["index", "gpu_index", "gpu"])
+            mem = first_present_by_index(
                 raw_row,
                 field_index,
                 ["memory_used_mib", "memory_used", "memory_used_mi_b", "mem_used_mib"],
             )
-            util = _first_present_by_index(
+            util = first_present_by_index(
                 raw_row,
                 field_index,
                 ["utilization_gpu_pct", "utilization_gpu", "gpu_util_pct", "gpu_util"],

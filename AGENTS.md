@@ -116,6 +116,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   report needs another small reusable statistic. Keep core model/reward
   semantics in their owning modules rather than moving domain-specific
   metrics into this generic helper.
+- Shared CSV-field helper rule, added 2026-07-03: report and monitor scripts
+  that parse CSV headers must use `csv_field_utils.py` for tolerant field-name
+  normalization and first-present lookups. Use `normalized_field_index()` for
+  `csv.reader` rows, `normalized_field_lookup()` for `csv.DictReader`-style
+  rows, and set `keep_first=True` only when preserving the first duplicate
+  normalized header is required. Do not add script-local `_normalized_row`,
+  `_normalized_field_lookup`, `_normalized_field_index`,
+  `_first_present_by_lookup`, or `_first_present_by_index`; extend
+  `csv_field_utils.py` and `tests/test_csv_field_utils.py` instead.
 - Fusion-count fixed-action experiment helper rule, added 2026-07-03:
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and

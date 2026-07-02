@@ -18,7 +18,12 @@ import re
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
-from device_utils import split_device_spec_tokens
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
+from device_utils import split_device_spec_tokens  # noqa: E402
 
 LOW_UTIL_THRESHOLD_PCT = 10.0
 HOT_PATH_TIMING_FIELDS = (
@@ -186,66 +191,6 @@ def _per_device_probe_walls(
     return {device: fallback_wall_seconds for device in devices}
 
 
-def _normalized_fieldnames(row: Mapping[str, str]) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for key, value in row.items():
-        normalized = re.sub(r"[^a-z0-9]+", "_", str(key).strip().lower()).strip("_")
-        out[normalized] = value
-    return out
-
-
-def _first_present(row: Mapping[str, str], keys: Sequence[str]) -> str | None:
-    for key in keys:
-        if key in row:
-            return row[key]
-    return None
-
-
-def _normalized_field_lookup(fieldnames: Sequence[str | None] | None) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for fieldname in fieldnames or ():
-        if fieldname is None:
-            continue
-        normalized = re.sub(r"[^a-z0-9]+", "_", str(fieldname).strip().lower()).strip("_")
-        out[normalized] = fieldname
-    return out
-
-
-def _first_present_by_lookup(
-        row: Mapping[str, str],
-        field_lookup: Mapping[str, str],
-        keys: Sequence[str],
-        ) -> str | None:
-    for key in keys:
-        fieldname = field_lookup.get(key)
-        if fieldname is not None and fieldname in row:
-            return row[fieldname]
-    return None
-
-
-def _normalized_index_lookup(fieldnames: Sequence[str | None] | None) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for idx, fieldname in enumerate(fieldnames or ()):
-        if fieldname is None:
-            continue
-        normalized = re.sub(r"[^a-z0-9]+", "_", str(fieldname).strip().lower()).strip("_")
-        if normalized:
-            out.setdefault(normalized, idx)
-    return out
-
-
-def _first_present_by_index(
-        row: Sequence[str],
-        field_lookup: Mapping[str, int],
-        keys: Sequence[str],
-        ) -> str | None:
-    for key in keys:
-        index = field_lookup.get(key)
-        if index is not None and 0 <= index < len(row):
-            return row[index]
-    return None
-
-
 def _first_float(row: Mapping[str, Any], keys: Sequence[str]) -> float | None:
     for key in keys:
         value = _float_value(row.get(key))
@@ -271,14 +216,14 @@ def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float |
     )
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.reader(handle)
-        field_lookup = _normalized_index_lookup(next(reader, []))
+        field_lookup = normalized_field_index(next(reader, []), keep_first=True)
         for raw_row in reader:
-            idx = _first_present_by_index(
+            idx = first_present_by_index(
                 raw_row,
                 field_lookup,
                 ["index", "gpu_idx", "gpu_index", "gpu"],
             )
-            util = _first_present_by_index(
+            util = first_present_by_index(
                 raw_row,
                 field_lookup,
                 [
@@ -289,7 +234,7 @@ def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float |
                     "gpu_util",
                 ],
             )
-            mem = _first_present_by_index(
+            mem = first_present_by_index(
                 raw_row,
                 field_lookup,
                 [
