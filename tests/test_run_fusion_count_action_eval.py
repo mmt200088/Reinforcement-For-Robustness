@@ -5,6 +5,10 @@ import unittest
 from unittest import mock
 
 from scripts import run_fusion_count_action_eval as action_eval
+from scripts.fusion_count_action_eval_common import (
+    load_paean_action_configs,
+    unique_paean_action_configs,
+)
 
 
 class NoCopyMapping:
@@ -40,7 +44,7 @@ class FusionCountActionEvalTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            configs = action_eval._load_action_configs(root)
+            configs = load_paean_action_configs(root)
 
         self.assertEqual(len(configs), 1)
         self.assertEqual(configs[0]["name"], "candidate")
@@ -64,7 +68,7 @@ class FusionCountActionEvalTest(unittest.TestCase):
                 "glob",
                 side_effect=AssertionError("action config loading should not use Path.glob"),
             ):
-                configs = action_eval._load_action_configs(root)
+                configs = load_paean_action_configs(root)
 
         self.assertEqual([cfg["name"] for cfg in configs], ["candidate"])
 
@@ -138,21 +142,25 @@ class FusionCountActionEvalTest(unittest.TestCase):
             "group": {"name": "duplicate"},
         })
 
-        unique = action_eval._unique_configs([first, duplicate])
+        unique = unique_paean_action_configs([first, duplicate])
 
         self.assertEqual(len(unique), 1)
         self.assertIs(next(iter(unique)), first)
 
-    def test_loader_wrapper_delegates_to_shared_common_helper(self):
-        with mock.patch.object(
-            action_eval,
-            "load_paean_action_configs",
-            return_value=[{"name": "shared"}],
-        ) as helper:
-            configs = action_eval._load_action_configs(Path("actions"))
-
-        helper.assert_called_once_with(Path("actions"))
-        self.assertEqual(configs, [{"name": "shared"}])
+    def test_action_eval_script_has_no_local_common_wrappers(self):
+        source = Path(action_eval.__file__).read_text(encoding="utf-8")
+        forbidden = [
+            "def _resolve(",
+            "def _json_int_list(",
+            "def _json_hash(",
+            "def _iter_action_config_paths(",
+            "def _load_action_configs(",
+            "def _unique_configs(",
+        ]
+        for token in forbidden:
+            self.assertNotIn(token, source)
+        self.assertIn("resolve_repo_path", source)
+        self.assertIn("unique_paean_action_configs", source)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, List, Mapping, Sequence, ValuesView
+from typing import Any, Dict, List, Mapping, Sequence
 
 import numpy as np
 
@@ -31,11 +31,11 @@ if str(REPO_ROOT) not in sys.path:
 from json_utils import to_jsonable
 from report_format_utils import format_float, html_table, metric_float
 from scripts.fusion_count_action_eval_common import (
-    iter_action_config_paths,
     load_rlpath_action_configs,
     parse_json_int_list,
-    rlpath_group_key,
-    unique_configs_by_key,
+    resolve_repo_path,
+    rlpath_config_group_key,
+    unique_rlpath_action_configs,
 )
 
 
@@ -97,42 +97,6 @@ def _load_runtime_deps() -> dict[str, object]:
     return _RUNTIME_DEPS
 
 
-def _resolve(path: str | os.PathLike[str]) -> Path:
-    p = Path(path)
-    return p if p.is_absolute() else REPO_ROOT / p
-
-
-def _json_int_list(raw: str | None, *, default: Sequence[int], name: str) -> List[int]:
-    return parse_json_int_list(raw, default=default, name=name)
-
-
-def _iter_action_config_paths(action_dir: Path):
-    return iter_action_config_paths(action_dir)
-
-
-def _load_action_configs(action_dir: Path) -> List[dict]:
-    return load_rlpath_action_configs(action_dir)
-
-
-def _group_key(cfg: Mapping[str, Any]) -> str:
-    return rlpath_group_key(cfg)
-
-
-def _config_group_key(cfg: Mapping[str, Any]) -> str:
-    cached = cfg.get("group_key")
-    if cached is not None:
-        return str(cached)
-    return _group_key(cfg)
-
-
-def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> ValuesView[Mapping[str, Any]]:
-    return unique_configs_by_key(
-        configs,
-        key_name="group_key",
-        fallback_key_fn=_group_key,
-    )
-
-
 def _base_model(model_type: str, dataset: str) -> str:
     if model_type != "bert-base" or dataset != "mrpc":
         raise ValueError("this diagnostic script currently supports bert-base MRPC only")
@@ -192,7 +156,7 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
 
     data = load_glue_dataset_equivalent(
         args.dataset,
-        route_log_dir=str(_resolve(args.output_json).parent / "logs"),
+        route_log_dir=str(resolve_repo_path(args.output_json).parent / "logs"),
     )
     train_data, val_data = _tokenize_glue(data, task=args.dataset, tokenizer=tokenizer, seed=int(args.seed))
     collator = DataCollatorWithPadding(
@@ -212,9 +176,9 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
         stage2_rl_episodes=40000,
         stage1_rl_episodes_specified=False,
         stage2_rl_episodes_specified=False,
-        run_output_dir=str(_resolve(args.run_output_dir)),
+        run_output_dir=str(resolve_repo_path(args.run_output_dir)),
         final_eval_config_source="json",
-        final_eval_config_path=str(_resolve(args.stage1_config_json)),
+        final_eval_config_path=str(resolve_repo_path(args.stage1_config_json)),
         manual_stage1_gelu=[int(v) for v in stage1_gelu],
         manual_stage1_softmax=[int(v) for v in stage1_softmax],
         skip_stage1_rl=True,
@@ -227,7 +191,7 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
         stage2_k_trials=int(args.repeat),
         stage2_probe_size=int(args.probe_size),
         stage2_rl_variant="blb_v3",
-        blb_v3_inproc_rescale_optimizer_root=str(_resolve(args.rescale_optimizer_root)),
+        blb_v3_inproc_rescale_optimizer_root=str(resolve_repo_path(args.rescale_optimizer_root)),
         blb_v3_fusion_count_action=True,
         blb_v3_fusion_neighbor_curriculum=False,
         blb_v3_fusion_probe_interval=0,
@@ -262,7 +226,7 @@ def _build_seq_env(args, ev, *, stage1_gelu: Sequence[int], stage1_softmax: Sequ
         num_trials_per_step=int(args.repeat),
         probe_batch_count=1,
         calibrate_baseline_samples=1,
-        inproc_rescale_optimizer_root=str(_resolve(args.rescale_optimizer_root)),
+        inproc_rescale_optimizer_root=str(resolve_repo_path(args.rescale_optimizer_root)),
         fusion_count_action=True,
         fusion_neighbor_curriculum_enabled=False,
         fusion_probe_interval=0,
@@ -279,7 +243,7 @@ def _build_seq_env(args, ev, *, stage1_gelu: Sequence[int], stage1_softmax: Sequ
     train_cfg.probe_batch_count = max(1, int(len(probe_batches) or train_cfg.probe_batch_count))
     rescale_bridge = runner._build_rescale_bridge(train_cfg, log=lambda m: print(m, flush=True))
     ss_baseline = load_static_skeletons_baseline(
-        rescale_optimizer_root=str(_resolve(args.rescale_optimizer_root)),
+        rescale_optimizer_root=str(resolve_repo_path(args.rescale_optimizer_root)),
         dataset=str(args.dataset),
         num_layers=int(ev.total_layers),
         gelu_per_layer=[int(x) for x in stage1_gelu],
@@ -533,18 +497,18 @@ def main() -> int:
     args = parser.parse_args()
 
     args.base_model = args.base_model or _base_model(args.model_type, args.dataset)
-    action_dir = _resolve(args.action_dir)
-    original_json = _resolve(args.original_json)
-    output_json = _resolve(args.output_json)
-    output_html = _resolve(args.output_html)
+    action_dir = resolve_repo_path(args.action_dir)
+    original_json = resolve_repo_path(args.original_json)
+    output_json = resolve_repo_path(args.output_json)
+    output_html = resolve_repo_path(args.output_html)
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_html.parent.mkdir(parents=True, exist_ok=True)
 
-    stage1_gelu = _json_int_list(args.stage1_gelu, default=DEFAULT_STAGE1_GELU, name="--stage1-gelu")
-    stage1_softmax = _json_int_list(args.stage1_softmax, default=DEFAULT_STAGE1_SOFTMAX, name="--stage1-softmax")
+    stage1_gelu = parse_json_int_list(args.stage1_gelu, default=DEFAULT_STAGE1_GELU, name="--stage1-gelu")
+    stage1_softmax = parse_json_int_list(args.stage1_softmax, default=DEFAULT_STAGE1_SOFTMAX, name="--stage1-softmax")
 
-    configs = _load_action_configs(action_dir)
-    unique = _unique_configs(configs)
+    configs = load_rlpath_action_configs(action_dir)
+    unique = unique_rlpath_action_configs(configs)
     print(f"[info] groups={len(configs)} unique_group_actions={len(unique)}", flush=True)
     ev = _build_evaluator(args, stage1_gelu=stage1_gelu, stage1_softmax=stage1_softmax)
     seq_env, baseline = _build_seq_env(args, ev, stage1_gelu=stage1_gelu, stage1_softmax=stage1_softmax)
@@ -558,11 +522,11 @@ def main() -> int:
     result_by_key: Dict[str, dict] = {}
     for idx, cfg in enumerate(unique):
         print(f"[run] {cfg['name']}", flush=True)
-        result_by_key[_config_group_key(cfg)] = _run_group(seq_env, cfg, seed=int(args.seed) + idx)
+        result_by_key[rlpath_config_group_key(cfg)] = _run_group(seq_env, cfg, seed=int(args.seed) + idx)
 
     group_results = []
     for cfg in configs:
-        r = dict(result_by_key[_config_group_key(cfg)])
+        r = dict(result_by_key[rlpath_config_group_key(cfg)])
         r["name"] = str(cfg["name"])
         orig = original_by_name.get(str(cfg["name"])) or {}
         r["original_metrics"] = {

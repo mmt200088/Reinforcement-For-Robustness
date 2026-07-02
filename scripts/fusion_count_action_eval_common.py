@@ -15,6 +15,11 @@ from cli_parse_utils import parse_json_int_list  # noqa: E402
 from json_utils import stable_json_hash, stable_json_key  # noqa: E402
 
 
+def resolve_repo_path(path: str | os.PathLike[str]) -> Path:
+    p = Path(path)
+    return p if p.is_absolute() else REPO_ROOT / p
+
+
 def iter_action_config_paths(action_dir: Path) -> Iterable[Path]:
     try:
         with os.scandir(action_dir) as entries:
@@ -75,6 +80,13 @@ def rlpath_group_key(cfg: Mapping[str, Any]) -> str:
     return stable_json_key(key_payload)
 
 
+def rlpath_config_group_key(cfg: Mapping[str, Any]) -> str:
+    cached = cfg.get("group_key")
+    if cached is not None:
+        return str(cached)
+    return rlpath_group_key(cfg)
+
+
 def load_rlpath_action_configs(action_dir: Path) -> List[dict]:
     configs: List[dict] = []
     for path in iter_action_config_paths(action_dir):
@@ -92,6 +104,26 @@ def load_rlpath_action_configs(action_dir: Path) -> List[dict]:
     if not configs:
         raise RuntimeError(f"no action configs found under {action_dir}")
     return configs
+
+
+def unique_paean_action_configs(
+        configs: Sequence[Mapping[str, Any]],
+        ) -> ValuesView[Mapping[str, Any]]:
+    return unique_configs_by_key(
+        configs,
+        key_name="action_hash",
+        fallback_key_fn=lambda cfg: cfg["action_hash"],
+    )
+
+
+def unique_rlpath_action_configs(
+        configs: Sequence[Mapping[str, Any]],
+        ) -> ValuesView[Mapping[str, Any]]:
+    return unique_configs_by_key(
+        configs,
+        key_name="group_key",
+        fallback_key_fn=rlpath_group_key,
+    )
 
 
 def unique_configs_by_key(

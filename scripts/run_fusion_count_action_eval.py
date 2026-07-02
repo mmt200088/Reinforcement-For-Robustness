@@ -15,18 +15,17 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Dict, List, Mapping, Sequence, ValuesView
+from typing import Dict, List, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.fusion_count_action_eval_common import (
-    iter_action_config_paths,
     load_paean_action_configs,
     parse_json_int_list,
-    stable_json_hash,
-    unique_configs_by_key,
+    resolve_repo_path,
+    unique_paean_action_configs,
 )
 from report_format_utils import html_table, metric_float
 
@@ -47,35 +46,6 @@ DEFAULT_MANUAL_NOISE = {
     "wffn1": [22] * 12,
     "wffn2": [22] * 12,
 }
-
-
-def _resolve(path: str | os.PathLike[str]) -> Path:
-    p = Path(path)
-    return p if p.is_absolute() else REPO_ROOT / p
-
-
-def _json_int_list(raw: str | None, *, default: Sequence[int], name: str) -> List[int]:
-    return parse_json_int_list(raw, default=default, name=name)
-
-
-def _json_hash(payload: Any) -> str:
-    return stable_json_hash(payload)
-
-
-def _iter_action_config_paths(action_dir: Path):
-    return iter_action_config_paths(action_dir)
-
-
-def _load_action_configs(action_dir: Path) -> List[dict]:
-    return load_paean_action_configs(action_dir)
-
-
-def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> ValuesView[Mapping[str, Any]]:
-    return unique_configs_by_key(
-        configs,
-        key_name="action_hash",
-        fallback_key_fn=lambda cfg: cfg["action_hash"],
-    )
 
 
 def _output_dir(output_root: Path, run_name: str) -> Path:
@@ -184,7 +154,7 @@ def _build_combined(
 ) -> dict:
     result_by_hash: Dict[str, dict] = {}
     canonical_by_hash: Dict[str, str] = {}
-    for cfg in _unique_configs(configs):
+    for cfg in unique_paean_action_configs(configs):
         h = str(cfg["action_hash"])
         result = _load_result(_result_json_path(output_root, str(cfg["name"])))
         result_by_hash[h] = result
@@ -362,16 +332,16 @@ def main() -> int:
     parser.add_argument("--skip-run", action="store_true", help="Only collect existing Paean result JSON files.")
     args = parser.parse_args()
 
-    action_dir = _resolve(args.action_dir)
-    map_report_path = _resolve(args.map_report)
-    output_root = _resolve(args.output_root)
-    output_json = _resolve(args.output_json)
-    output_html = _resolve(args.output_html)
-    configs = _load_action_configs(action_dir)
-    unique = _unique_configs(configs)
+    action_dir = resolve_repo_path(args.action_dir)
+    map_report_path = resolve_repo_path(args.map_report)
+    output_root = resolve_repo_path(args.output_root)
+    output_json = resolve_repo_path(args.output_json)
+    output_html = resolve_repo_path(args.output_html)
+    configs = load_paean_action_configs(action_dir)
+    unique = unique_paean_action_configs(configs)
     print(f"[info] requested groups={len(configs)} unique action vectors={len(unique)}")
-    stage1_gelu = _json_int_list(args.stage1_gelu, default=DEFAULT_STAGE1_GELU, name="--stage1-gelu")
-    stage1_softmax = _json_int_list(args.stage1_softmax, default=DEFAULT_STAGE1_SOFTMAX, name="--stage1-softmax")
+    stage1_gelu = parse_json_int_list(args.stage1_gelu, default=DEFAULT_STAGE1_GELU, name="--stage1-gelu")
+    stage1_softmax = parse_json_int_list(args.stage1_softmax, default=DEFAULT_STAGE1_SOFTMAX, name="--stage1-softmax")
     if len(stage1_gelu) != len(stage1_softmax):
         raise SystemExit("--stage1-gelu and --stage1-softmax must have equal length")
 

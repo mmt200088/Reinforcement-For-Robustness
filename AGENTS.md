@@ -181,10 +181,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and
   duplicate-action folding through
-  `scripts/fusion_count_action_eval_common.py`. Keep script-local
-  `_load_action_configs`, `_json_int_list`, `_group_key`, or `_unique_configs`
-  only as compatibility wrappers; do not reintroduce recursive loaders or
-  per-script hash/key implementations when adding a new fusion-count experiment.
+  `scripts/fusion_count_action_eval_common.py`. Use
+  `resolve_repo_path()` for repo-relative CLI paths,
+  `load_paean_action_configs()` / `unique_paean_action_configs()` for Paean
+  final-eval drivers, and `load_rlpath_action_configs()` /
+  `rlpath_config_group_key()` / `unique_rlpath_action_configs()` for RL-path
+  drivers. Do not add script-local `_resolve`, `_load_action_configs`,
+  `_json_int_list`, `_group_key`, `_config_group_key`, or `_unique_configs`
+  wrappers when adding a new fusion-count experiment; extend the common helper
+  and its tests if the shared contract needs a new variant.
 - Shared CLI integer parser rule, added 2026-07-03: small scripts that parse
   command-line integer vectors must use `cli_parse_utils.py`. Use
   `parse_json_int_list()` for JSON-list flags with defaults,
