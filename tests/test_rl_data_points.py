@@ -147,6 +147,7 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/blb_apply_precision_boost.py": "from json_utils import read_json_file, write_json_file",
             "scripts/blb_make_fusion_fixed_action_config.py": "from json_utils import read_json_file, write_json_file",
             "scripts/blb_make_run_manifest.py": "from json_utils import read_json_file, write_json_file",
+            "scripts/blb_build_fusion_count_map.py": "from json_utils import write_json_file",
         }
         for rel, needle in checks.items():
             with self.subTest(path=rel):

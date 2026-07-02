@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import html
-import json
 import multiprocessing as mp
 from pathlib import Path
 import sys
@@ -35,6 +34,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 for _p in (str(REPO_ROOT / "blb_stage2_rl"), str(REPO_ROOT / "Rescale_optimizer"), str(REPO_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+from json_utils import write_json_file  # noqa: E402
 
 
 # (graph_key, block_idx, gelu_degree, attn_degree). attn=2 keeps the bootstrap's
@@ -583,7 +584,7 @@ def main() -> int:
         results.append(res)
         m = res["build_meta"]
         max_num_options = max(max_num_options, len(res["options"]))
-        (out_dir / f"{graph_key}.json").write_text(json.dumps(res, indent=2), encoding="utf-8")
+        write_json_file(out_dir / f"{graph_key}.json", res)
         if res.get("over_budget_degenerate"):
             pr = m["degeneracy_probe"]
             print(
@@ -609,7 +610,7 @@ def main() -> int:
         "graph_keys": [r["graph_key"] for r in results],
         "per_type": {r["graph_key"]: r["build_meta"] for r in results},
     }
-    (out_dir / "_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_json_file(out_dir / "_summary.json", summary)
     if args.report:
         write_report(Path(args.report), args.profile, results)
 
