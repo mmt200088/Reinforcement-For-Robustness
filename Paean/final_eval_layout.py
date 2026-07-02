@@ -112,6 +112,14 @@ def _cost_q(gelu: Sequence[int]) -> int:
     return int(round(sum(GELU_COST[int(g)] for g in gelu) * 2))
 
 
+def _gelu_choice_costs_q(gelu_choices: Sequence[int]) -> np.ndarray:
+    """Return per-choice GELU costs in the same quantized units as ``_cost_q``."""
+    return np.asarray(
+        [int(round(float(GELU_COST[int(choice)]) * 2)) for choice in gelu_choices],
+        dtype=np.int64,
+    )
+
+
 def build_cost_matched_stage1_configs(
     selected_gelu: Sequence[int],
     selected_softmax: Sequence[int],
@@ -135,17 +143,18 @@ def build_cost_matched_stage1_configs(
     sel_gelu = [int(g) for g in selected_gelu]
     sel_softmax = [int(s) for s in selected_softmax]
     target_q = _cost_q(sel_gelu)
-    choices = [int(c) for c in gelu_choices]
+    choices = np.asarray([int(c) for c in gelu_choices], dtype=np.int64)
+    choice_costs_q = _gelu_choice_costs_q(choices)
 
     accepted: List[Tuple[List[int], List[int]]] = []
     seen = {tuple(sel_gelu)}  # exclude the selected config
     attempts = 0
     while len(accepted) < int(count) and attempts < int(max_attempts):
         attempts += 1
-        idx = rng.integers(0, len(choices), size=int(num_layers))
-        vec = [choices[int(i)] for i in idx]
-        if _cost_q(vec) != target_q:
+        idx = rng.integers(0, choices.size, size=int(num_layers))
+        if int(choice_costs_q[idx].sum()) != target_q:
             continue
+        vec = [int(choice) for choice in choices[idx]]
         key = tuple(vec)
         if key in seen:
             continue

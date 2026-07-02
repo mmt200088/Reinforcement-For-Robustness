@@ -474,6 +474,14 @@ longer clone large result payloads. A local 1200-alias synthetic combined-report
 benchmark reduced merge cost from `2.0259s` / `68.41MB` to `0.0048s` /
 `0.86MB`.
 
+Progress 2026-07-02: `Paean/final_eval_layout.py` now precomputes quantized
+GELU choice costs for Stage-1 same-cost peer sampling and checks sampled index
+costs before materializing a GELU vector. The accepted peer sequence is
+unchanged for the same seed. A local same-process benchmark over 12-layer
+sampler cases kept outputs identical and improved runtime by `1.48x` to
+`2.26x`; the common all-degree-1 case reduced traced peak memory from
+`0.782MB` to `0.024MB`.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

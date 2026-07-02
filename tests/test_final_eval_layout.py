@@ -13,6 +13,7 @@ import tempfile
 import unittest
 
 from Paean.final_eval_layout import (
+    _gelu_choice_costs_q,
     build_cost_matched_stage1_configs,
     next_final_eval_number,
     paean_stage_run_dir,
@@ -26,6 +27,10 @@ def _total_cost(gelu, softmax):
 
 
 class Stage1CostMatchTest(unittest.TestCase):
+    def test_gelu_choice_costs_are_precomputed_in_choice_order(self):
+        costs = _gelu_choice_costs_q((4, 0, 2, 1))
+        self.assertEqual(costs.tolist(), [6, -2, 5, 2])
+
     def test_peers_match_total_cost_exactly_and_exclude_selected(self):
         gelu, softmax = [2, 1, 4], [6, 6, 6]
         target = _total_cost(gelu, softmax)  # 2.5+1.0+3.0 + 9.0 = 15.5
