@@ -79,9 +79,8 @@ class Stage2First10kMonitorTest(unittest.TestCase):
         monitor = _load_monitor_module()
 
         with (
-            mock.patch.object(
-                monitor.statistics,
-                "mean",
+            mock.patch(
+                "statistics.mean",
                 side_effect=AssertionError("_window should use a single sum pass"),
             ),
             mock.patch(
@@ -137,9 +136,8 @@ class Stage2First10kMonitorTest(unittest.TestCase):
             }
         ]
 
-        with tempfile.TemporaryDirectory() as td, mock.patch.object(
-            monitor.statistics,
-            "mean",
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "statistics.mean",
             side_effect=AssertionError("build_summary should avoid statistics.mean"),
         ):
             args = argparse.Namespace(
@@ -220,6 +218,29 @@ class Stage2First10kMonitorTest(unittest.TestCase):
         self.assertEqual(summary["by_gpu"]["0"]["max_util"], 30.0)
         self.assertEqual(summary["by_gpu"]["0"]["p50_util"], 20.0)
         self.assertEqual(summary["by_gpu"]["0"]["max_mem_mib"], 120.0)
+
+    def test_gpu_stats_computes_median_without_statistics_copy(self):
+        monitor = _load_monitor_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "nvidia.csv"
+            path.write_text(
+                "gpu_idx,util_pct,mem_used_mib\n"
+                "0,40,100\n"
+                "0,10,110\n"
+                "0,30,120\n"
+                "0,20,130\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch(
+                "statistics.median",
+                side_effect=AssertionError("_gpu_stats should avoid statistics.median copies"),
+            ):
+                summary = monitor._gpu_stats(path)
+
+        self.assertEqual(summary["by_gpu"]["0"]["max_util"], 40.0)
+        self.assertEqual(summary["by_gpu"]["0"]["p50_util"], 25.0)
 
     def test_write_window_csv_uses_linear_rolling_stats(self):
         monitor = _load_monitor_module()

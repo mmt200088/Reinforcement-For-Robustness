@@ -9,7 +9,6 @@ import html
 import json
 import math
 from pathlib import Path
-import statistics
 import time
 from typing import Any, Dict, Iterable, List
 
@@ -48,6 +47,15 @@ def _mean_or_none(values: List[float]) -> float | None:
     if not values:
         return None
     return float(math.fsum(values)) / float(len(values))
+
+
+def _median_sorted(values: List[float]) -> float:
+    if not values:
+        return 0.0
+    mid = len(values) // 2
+    if len(values) % 2:
+        return float(values[mid])
+    return float(values[mid - 1] + values[mid]) / 2.0
 
 
 def _window(values: List[float], size: int) -> Dict[str, float] | None:
@@ -128,9 +136,10 @@ def _gpu_stats(path: Path) -> Dict[str, Any]:
     summary: Dict[str, Any] = {"samples": sample_count, "by_gpu": {}}
     for idx, bucket in sorted(by_gpu.items()):
         utils = bucket["utils"]
+        utils.sort()
         summary["by_gpu"][idx] = {
-            "max_util": max(utils) if utils else 0.0,
-            "p50_util": statistics.median(utils) if utils else 0.0,
+            "max_util": float(utils[-1]) if utils else 0.0,
+            "p50_util": _median_sorted(utils) if utils else 0.0,
             "active_sample_rate": (
                 int(bucket["active_count"]) / float(len(utils))
                 if utils else 0.0
