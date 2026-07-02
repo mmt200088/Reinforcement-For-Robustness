@@ -134,9 +134,16 @@ def _looks_like_header(parts: Sequence[str]) -> bool:
     ) and _int_from_text(parts[0], default=-1) == -1
 
 
+def _nonblank_lines(lines: Iterable[str]) -> Iterable[str]:
+    for line in lines:
+        text = line if isinstance(line, str) else str(line)
+        if text and not text.isspace():
+            yield text
+
+
 def parse_nvidia_smi_lines(lines: Iterable[str]) -> list[dict[str, Any]]:
     rows_by_index: dict[int, dict[str, Any]] = {}
-    reader = csv.reader(line for line in lines if str(line).strip())
+    reader = csv.reader(_nonblank_lines(lines))
     header_indices: dict[str, int | None] | None = None
     for parts in reader:
         parts = [part.strip() for part in parts]

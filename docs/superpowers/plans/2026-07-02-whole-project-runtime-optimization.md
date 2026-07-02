@@ -136,6 +136,13 @@ Progress 2026-07-02: `scripts/server_resource_snapshot.py` now parses offline
 keeping server evidence capture memory-bounded if a sampled GPU log is supplied
 instead of a tiny one-shot inventory.
 
+Progress 2026-07-02: `scripts/server_resource_snapshot.py` now skips blank
+offline `nvidia-smi` CSV rows with `isspace()` before handing lines to
+`csv.reader`, instead of allocating stripped copies during row filtering. A
+local 100k valid-row / 100k blank-row GPU CSV benchmark preserved the collapsed
+GPU summary and reduced parsing from `2.666752s` to `2.537524s`, with traced
+peak allocation dropping from `27,575B` to `23,068B`.
+
 Progress 2026-07-02: `scripts/server_resource_snapshot.py` now detects sampled
 `nvidia-smi` CSV headers and collapses repeated samples into one max-util/max
 memory row per GPU. This keeps snapshot `gpu_count` tied to unique devices and

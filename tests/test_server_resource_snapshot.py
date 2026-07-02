@@ -1,8 +1,8 @@
 import importlib.util
 import json
 from pathlib import Path
-from types import SimpleNamespace
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -73,6 +73,29 @@ class ServerResourceSnapshotTest(unittest.TestCase):
         self.assertEqual(rows, [{"index": 0}])
         self.assertFalse(captured["is_list"])
         self.assertEqual(captured["rows"], ["0, GPU, 10, 1, 2\n"])
+
+    def test_parse_nvidia_smi_lines_skips_blank_rows_without_strip_copy(self):
+        snap = _load_snapshot_module()
+
+        class NoStripLine(str):
+            def strip(self, *_args, **_kwargs):
+                raise AssertionError("CSV line filter should not allocate strip() copies")
+
+        class GuardedLine:
+            def __init__(self, text):
+                self.text = text
+
+            def __str__(self):
+                return NoStripLine(self.text)
+
+        rows = snap.parse_nvidia_smi_lines([
+            GuardedLine("  \n"),
+            GuardedLine("0, NVIDIA A100-SXM4-40GB, 40960, 1024, 57\n"),
+        ])
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["index"], 0)
+        self.assertEqual(rows[0]["utilization_gpu_pct"], 57)
 
     def test_external_commands_are_bounded(self):
         snap = _load_snapshot_module()
