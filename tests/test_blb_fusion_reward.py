@@ -131,6 +131,22 @@ class FusionCostSavingTest(unittest.TestCase):
         self.assertAlmostEqual(res.cost_norm, 0.5)
         self.assertAlmostEqual(res.max_actual, 400.0)
 
+    def test_default_max_actual_reuses_single_pass_accumulators(self):
+        choices = [_bc(2, 1, 1, 8), _bc(5, 0, 1, 13), _bc(4, 0, 0, 8)]
+        original = fusion_cost.max_actual_for_choices
+
+        def fail_second_pass(*_args, **_kwargs):
+            raise AssertionError("compute_fusion_cost_saving should not rescan choices for max_actual")
+
+        fusion_cost.max_actual_for_choices = fail_second_pass
+        try:
+            res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
+        finally:
+            fusion_cost.max_actual_for_choices = original
+
+        # denom = fusable block2+block5 fusion weights + 3 truncation weights.
+        self.assertAlmostEqual(res.max_actual, 150.0 + 40.0 + 3 * 50.0)
+
 
 class NearMissGradedTierTest(unittest.TestCase):
     """ADR-012: graded near-miss tier replaces the P1 cliff near the threshold.

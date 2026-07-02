@@ -381,6 +381,13 @@ and sampled `nvidia-smi` utilization/memory fields. A local 200k-value mixed
 scaling-report benchmark preserved parsed values and reduced `_float_value()`
 from `0.108688s` to `0.072969s` (`1.49x`).
 
+Progress 2026-07-02: `blb_stage2_rl/fusion_cost.py`
+`compute_fusion_cost_saving()` now reuses the per-call fusion/truncation maxima
+it already accumulates to derive the default `max_actual`, instead of rescanning
+the same block choices through `max_actual_for_choices()`. A local 47-block
+hot-path benchmark preserved all reward-cost outputs and reduced the full
+calculation from `1.867492s` to `1.701235s` over 10k iterations (`1.10x`).
+
 Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now analyzes ordered
 Stage-2 `episodes.jsonl` files with a streaming two-pass path for summary and
 bounded-window rows, avoiding materializing full 60k+ episode lists during A/B

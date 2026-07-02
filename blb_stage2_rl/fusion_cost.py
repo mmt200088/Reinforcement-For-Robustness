@@ -27,8 +27,8 @@ does not dilute the normalization.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
+import math
 from typing import Any, Dict, List, Mapping, Sequence
 
 # Truncation-bit range (K_LEVELS = (8, 9, 11, 13, 10, 12); baseline K = 13 = max).
@@ -184,7 +184,7 @@ def compute_fusion_cost_saving(
     denom = (
         float(max_actual)
         if max_actual is not None
-        else max_actual_for_choices(choices, fusion_w=fusion_w, trunc_w=trunc_w)
+        else fusion_max + trunc_max
     )
     cost_norm = min(1.0, max(0.0, actual / denom)) if denom > 0.0 else 0.0
     fusion_norm = (
