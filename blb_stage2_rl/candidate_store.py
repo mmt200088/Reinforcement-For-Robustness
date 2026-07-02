@@ -10,6 +10,7 @@ import json
 import math
 import os
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -43,13 +44,18 @@ def normalize_action_indices(action_indices: Any) -> List[int]:
     return out
 
 
-def action_hash(action_indices: Any) -> str:
+@lru_cache(maxsize=8192)
+def _action_hash_from_tuple(action_indices: Tuple[int, ...]) -> str:
     payload = json.dumps(
-        normalize_action_indices(action_indices),
+        list(action_indices),
         ensure_ascii=True,
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def action_hash(action_indices: Any) -> str:
+    return _action_hash_from_tuple(tuple(normalize_action_indices(action_indices)))
 
 
 def raw_action_hash(action_indices: Any) -> str:

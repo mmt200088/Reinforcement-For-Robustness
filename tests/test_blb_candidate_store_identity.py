@@ -5,6 +5,29 @@ from unittest import mock
 
 
 class BLBCandidateStoreIdentityTests(unittest.TestCase):
+    def test_action_hash_caches_by_normalized_action_tuple(self):
+        from blb_stage2_rl import candidate_store as store_mod
+
+        action = [1, 2, 3]
+        original_dumps = store_mod.json.dumps
+        dumps_calls = 0
+
+        def counting_dumps(*args, **kwargs):
+            nonlocal dumps_calls
+            dumps_calls += 1
+            return original_dumps(*args, **kwargs)
+
+        store_mod._action_hash_from_tuple.cache_clear()
+        with mock.patch.object(store_mod.json, "dumps", side_effect=counting_dumps):
+            first = store_mod.action_hash(action)
+            second = store_mod.action_hash(list(action))
+            action.append(4)
+            third = store_mod.action_hash(action)
+
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, third)
+        self.assertEqual(dumps_calls, 2)
+
     def test_read_all_skips_blank_lines_without_strip_copy(self):
         from blb_stage2_rl.candidate_store import CandidateStore
 
