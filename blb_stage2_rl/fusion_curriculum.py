@@ -174,6 +174,8 @@ def select_mutable_step_indices(
     """Random subset of step indices allowed to leave baseline this episode."""
     horizon = max(1, int(horizon))
     k = max(1, min(int(num_mutable), horizon))
+    if k == 1:
+        return {int(rng.integers(horizon))}
     sel = rng.choice(horizon, size=k, replace=False)
     return {int(x) for x in np.atleast_1d(sel)}
 

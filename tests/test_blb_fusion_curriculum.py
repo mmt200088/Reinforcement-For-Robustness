@@ -192,6 +192,26 @@ class NearBaselineKTest(unittest.TestCase):
 
 
 class SelectMutableStepIndicesTest(unittest.TestCase):
+    def test_single_mutable_step_uses_integer_draw_without_choice_array(self):
+        class OneDrawRng:
+            def __init__(self):
+                self.integer_calls = 0
+
+            def integers(self, high):
+                self.integer_calls += 1
+                self.high = high
+                return 7
+
+            def choice(self, *_args, **_kwargs):
+                raise AssertionError("single mutable step should not allocate choice array")
+
+        rng = OneDrawRng()
+        sel = fcur.select_mutable_step_indices(rng=rng, horizon=47, num_mutable=1)
+
+        self.assertEqual(sel, {7})
+        self.assertEqual(rng.high, 47)
+        self.assertEqual(rng.integer_calls, 1)
+
     def test_distinct_in_range_and_count(self):
         rng = np.random.default_rng(0)
         for num in (1, 5, 47):
