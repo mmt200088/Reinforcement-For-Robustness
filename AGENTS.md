@@ -125,8 +125,10 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   that parse CSV headers must use `csv_field_utils.py` for tolerant field-name
   normalization and first-present lookups. Use `normalized_field_index()` for
   `csv.reader` rows, `normalized_field_lookup()` for `csv.DictReader`-style
-  rows, and set `keep_first=True` only when preserving the first duplicate
-  normalized header is required. Do not add script-local `_normalized_row`,
+  rows, `first_present_index()` when the caller needs the matched column
+  position rather than the row value, and set `keep_first=True` only when
+  preserving the first duplicate normalized header is required. Do not add
+  script-local `_normalize_header`, `_first_header_index`, `_normalized_row`,
   `_normalized_field_lookup`, `_normalized_field_index`,
   `_first_present_by_lookup`, or `_first_present_by_index`; extend
   `csv_field_utils.py` and `tests/test_csv_field_utils.py` instead. For simple

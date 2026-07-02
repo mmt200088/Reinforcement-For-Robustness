@@ -5,6 +5,7 @@ import unittest
 from tests.source_inspection_utils import function_names, source_text
 from csv_field_utils import (
     first_present,
+    first_present_index,
     first_present_by_index,
     first_present_by_lookup,
     normalize_field_name,
@@ -44,6 +45,12 @@ class CsvFieldUtilsTest(unittest.TestCase):
         self.assertEqual(first_present_by_index(row, lookup, ["gpu_index", "index"]), "0")
         self.assertEqual(first_present_by_index(row, lookup, ["memory_used"]), "4096")
         self.assertIsNone(first_present_by_index(row, lookup, ["missing"]))
+
+    def test_first_present_index(self):
+        lookup = normalized_field_index(["GPU Index", "Memory Used MiB"])
+        self.assertEqual(first_present_index(lookup, ["index", "gpu_index"]), 0)
+        self.assertEqual(first_present_index(lookup, ["memory_used_mib"]), 1)
+        self.assertIsNone(first_present_index(lookup, ["missing"]))
 
     def test_write_csv_rows_projects_fields_and_creates_parent(self):
         with tempfile.TemporaryDirectory() as td:
@@ -91,14 +98,19 @@ class CsvFieldUtilsStaticGuardTest(unittest.TestCase):
             "scripts/stage2_reward_probe_scaling_report.py": (
                 "from csv_field_utils import first_present_by_index, normalized_field_index"
             ),
+            "scripts/server_resource_snapshot.py": (
+                "from csv_field_utils import first_present_index, normalize_field_name, normalized_field_index"
+            ),
         }
         forbidden = {
+            "_normalize_header",
             "_normalized_fieldnames",
             "_normalized_row",
             "_normalized_field_lookup",
             "_normalized_index_lookup",
             "_normalized_field_index",
             "_first_present",
+            "_first_header_index",
             "_first_present_by_lookup",
             "_first_present_by_index",
         }

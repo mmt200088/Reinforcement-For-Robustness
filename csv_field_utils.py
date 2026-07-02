@@ -74,6 +74,17 @@ def first_present_by_index(
     return None
 
 
+def first_present_index(
+        field_index: Mapping[str, int],
+        keys: Sequence[str],
+        ) -> int | None:
+    for key in keys:
+        idx = field_index.get(key)
+        if idx is not None:
+            return int(idx)
+    return None
+
+
 def write_csv_rows(
         path: str | Path,
         rows: Sequence[Mapping[str, Any]],

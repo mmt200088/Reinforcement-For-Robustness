@@ -22,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from csv_field_utils import first_present_index, normalize_field_name, normalized_field_index  # noqa: E402
 from text_utils import iter_text_lines  # noqa: E402
 
 
@@ -34,20 +35,6 @@ def _int_from_text(value: object, default: int = 0) -> int:
         return int(float(token))
     except ValueError:
         return int(default)
-
-
-def _normalize_header(value: object) -> str:
-    text = str(value or "").strip().lower()
-    chars = [char if char.isalnum() else "_" for char in text]
-    return "_".join(part for part in "".join(chars).split("_") if part)
-
-
-def _first_header_index(header: Sequence[str], keys: Sequence[str]) -> int | None:
-    normalized = [_normalize_header(value) for value in header]
-    for key in keys:
-        if key in normalized:
-            return normalized.index(key)
-    return None
 
 
 def _part_at(parts: Sequence[str], index: int | None) -> str:
@@ -79,19 +66,20 @@ def _merge_gpu_row(rows_by_index: dict[int, dict[str, Any]], row: dict[str, Any]
 
 
 def _header_indices(header: Sequence[str]) -> dict[str, int | None]:
+    lookup = normalized_field_index(header, keep_first=True)
     return {
-        "index": _first_header_index(header, ("index", "gpu_idx", "gpu_index", "gpu")),
-        "name": _first_header_index(header, ("name", "gpu_name")),
-        "memory_total_mib": _first_header_index(
-            header,
+        "index": first_present_index(lookup, ("index", "gpu_idx", "gpu_index", "gpu")),
+        "name": first_present_index(lookup, ("name", "gpu_name")),
+        "memory_total_mib": first_present_index(
+            lookup,
             ("memory_total_mib", "memory_total", "memory_total_mi_b"),
         ),
-        "memory_used_mib": _first_header_index(
-            header,
+        "memory_used_mib": first_present_index(
+            lookup,
             ("memory_used_mib", "memory_used", "memory_used_mi_b", "mem_used_mib"),
         ),
-        "utilization_gpu_pct": _first_header_index(
-            header,
+        "utilization_gpu_pct": first_present_index(
+            lookup,
             ("utilization_gpu_pct", "utilization_gpu", "gpu_util_pct", "gpu_util", "util_pct"),
         ),
     }
@@ -124,7 +112,7 @@ def _row_from_legacy_parts(parts: Sequence[str]) -> dict[str, Any]:
 
 
 def _looks_like_header(parts: Sequence[str]) -> bool:
-    normalized = {_normalize_header(part) for part in parts}
+    normalized = {normalize_field_name(part) for part in parts}
     return bool(
         normalized
         & {
