@@ -38,6 +38,16 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_AST_CACHE: Dict[Path, ast.AST] = {}
+
+
+def _load_ast(rel_path: str) -> ast.AST:
+    path = (REPO_ROOT / rel_path).resolve()
+    tree = _AST_CACHE.get(path)
+    if tree is None:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        _AST_CACHE[path] = tree
+    return tree
 
 
 # ---------------------------------------------------------------------------
@@ -80,8 +90,7 @@ def load_slot_to_cfg_field(block_idx: int) -> Dict[str, Tuple[str, str]]:
     kind is ``"core"`` (NoisePoint is always constructed) or ``"rescale_optional"``
     (NoisePoint is constructed inside ``if <slot>_rescale_sf is not None``).
     """
-    src = (REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
+    tree = _load_ast("function_handler.py")
     out: Dict[str, Tuple[str, str]] = {}
     fn_name = f"make_block{block_idx}_default_config"
     for fn in ast.walk(tree):
@@ -126,8 +135,7 @@ def load_cfg_field_to_graph_node(block_idx: int) -> Dict[str, Tuple[str, str]]:
 
     kind ∈ {"cfg_field", "literal_x2", "literal_int", "literal_other"}.
     """
-    src = (REPO_ROOT / "rescale_optimizer_bridge.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
+    tree = _load_ast("rescale_optimizer_bridge.py")
     out: Dict[str, Tuple[str, str]] = {}
     fn_name = f"default_block{block_idx}_cfg_to_delta"
     for fn in ast.walk(tree):
@@ -205,8 +213,7 @@ def load_t_new_map() -> Dict[str, List[Tuple[str, Optional[int]]]]:
     ``DEFAULT_CFG_TO_T_NEW_MAP``. ``cfg_field`` may carry a list-like cfg attribute
     (e.g. ``square_rescales``) — in that case ``tuple_index`` is set.
     """
-    src = (REPO_ROOT / "rescale_optimizer_bridge.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
+    tree = _load_ast("rescale_optimizer_bridge.py")
     out: Dict[str, List[Tuple[str, Optional[int]]]] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.AnnAssign):

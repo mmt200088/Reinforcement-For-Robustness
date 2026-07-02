@@ -451,6 +451,13 @@ A local 7-map synthetic JSON benchmark for the eliminated parse path preserved
 the checked option count and reduced median time from `6.84s` to `3.44s`, with
 traced peak memory down from `60.37MB` to `42.10MB`.
 
+Progress 2026-07-02: `scripts/blb_orphan_slot_audit.py` now caches parsed ASTs
+for `function_handler.py` and `rescale_optimizer_bridge.py` across all block
+loaders in one audit process. The static slot/cfg/t_new extraction output is
+unchanged, but the audit no longer rereads and reparses the same bridge source
+for every block. A real-source local benchmark over blocks 1..5 reduced the
+static extraction phase from `0.471s` to `0.231s` (`2.04x`).
+
 - [ ] **Step 3: Verify**
 
 Run:
