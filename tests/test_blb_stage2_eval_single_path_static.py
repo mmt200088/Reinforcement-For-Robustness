@@ -128,14 +128,14 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         f0_scan = (repo / "scripts" / "blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8")
         registry = (repo / "scripts" / "blb_export_action_registry.py").read_text(encoding="utf-8")
 
-        self.assertIn("from json_utils import stable_json_hash", candidate_store)
-        self.assertIn("from json_utils import stable_json_hash", action_mask)
+        self.assertRegex(candidate_store, r"from json_utils import .*\bstable_json_hash\b")
+        self.assertRegex(action_mask, r"from json_utils import .*\bstable_json_hash\b")
         self.assertRegex(
             fusion_common,
             r"from json_utils import .*\bstable_json_hash\b.*\bstable_json_key\b",
         )
-        self.assertIn("from json_utils import stable_json_hash", f0_scan)
-        self.assertIn("from json_utils import stable_json_hash", registry)
+        self.assertRegex(f0_scan, r"from json_utils import .*\bstable_json_hash\b")
+        self.assertRegex(registry, r"from json_utils import .*\bstable_json_hash\b")
         self.assertNotIn("def _stable_json", candidate_store)
         self.assertNotIn("def _stable_mask_payload", action_mask)
         self.assertNotIn("def stable_json_hash", fusion_common)
