@@ -1,9 +1,9 @@
-import json
 import builtins
+from collections.abc import Mapping
+import json
+from pathlib import Path
 import tempfile
 import unittest
-from collections.abc import Mapping
-from pathlib import Path
 from unittest import mock
 
 from tools import experiments_log
@@ -181,6 +181,31 @@ class ExperimentsLogTest(unittest.TestCase):
         self.assertFalse(info["git_dirty"])
         self.assertEqual(len(calls), 2)
         self.assertTrue(all(kwargs.get("timeout") == 5 for _, kwargs in calls))
+
+    def test_git_info_marks_dirty_without_status_strip_copy(self):
+        class NoStripStatus(str):
+            def strip(self, *_args, **_kwargs):
+                raise AssertionError("dirty status check should not allocate strip() copies")
+
+        class FakeOutput:
+            def __init__(self, text):
+                self.text = text
+
+            def decode(self):
+                return self.text
+
+        def fake_check_output(cmd, **_kwargs):
+            if cmd[:2] == ["git", "rev-parse"]:
+                return b"abc123\n"
+            if cmd[:2] == ["git", "status"]:
+                return FakeOutput(NoStripStatus(" M experiments/registry.jsonl\n"))
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with mock.patch.object(experiments_log.subprocess, "check_output", fake_check_output):
+            info = experiments_log._git_info()
+
+        self.assertEqual(info["git_commit"], "abc123")
+        self.assertTrue(info["git_dirty"])
 
     def test_best_by_dataset_selects_max_reward_without_bucket_sort(self):
         records = [

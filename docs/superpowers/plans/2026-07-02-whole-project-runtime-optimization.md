@@ -847,6 +847,14 @@ same selected run IDs while improving latest-run de-duplication from `0.1253s`
 to `0.0454s` (`2.76x`) and best-by-dataset selection from `0.1291s` to
 `0.0613s` (`2.11x`).
 
+Progress 2026-07-02: `_git_info()` in `tools/experiments_log.py` now treats
+raw `git status --porcelain` emptiness as the dirty-state signal instead of
+calling `strip()` on the whole status payload. Git porcelain output is empty
+for clean trees and non-empty for dirty trees, so run registration keeps the
+same semantics while avoiding a full dirty-status copy. A local 200k-row
+synthetic dirty-status benchmark preserved the result and improved the check
+from `0.010460s` / `11.89MB` to `0.000009s` / `520B` traced peak allocation.
+
 Progress 2026-07-02: `scripts/blb_export_action_registry.py` now lazily imports
 `blb_stage2_rl.action_space` only when registry generation actually needs it,
 so dependency-light imports and help/static tooling no longer pull the torch

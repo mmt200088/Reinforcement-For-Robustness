@@ -64,17 +64,16 @@ Design notes
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import heapq
 import json
 import os
+from pathlib import Path
 import re
 import shlex
 import subprocess
 import sys
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
-
 
 REGISTRY_REL = "experiments/registry.jsonl"
 INDEX_REL = "experiments/index.md"
@@ -102,7 +101,7 @@ def _git_info() -> Dict[str, Any]:
             stderr=subprocess.DEVNULL,
             timeout=5,
         ).decode()
-        out["git_dirty"] = bool(status.strip())
+        out["git_dirty"] = bool(status)
     except Exception:
         pass
     return out
