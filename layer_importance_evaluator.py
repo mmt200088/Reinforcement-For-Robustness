@@ -2365,15 +2365,15 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.data_collator = data_collator
         self.batch_size = max(1, int(batch_size))
 
-        # 评估结果缓存（基于 (gelu_config, softmax_config, use_train, split) 的确定性缓存）
+        # 评估结果缓存（基于 (gelu_config, softmax_config, resolved_split) 的确定性缓存）
         # 模型在 eval 模式 + no_grad + dataloader shuffle=False + 无随机性 → 相同配置评估结果必然一致
         # 相同配置的重复评估可直接复用缓存结果，不会改变任何数值结果
-        self._eval_cache = {}
+        from stage1_rl.eval_cache import Stage1EvalCache
+        self._eval_cache = Stage1EvalCache()
         # 多 GPU worker 路径的共享版缓存（带锁）：worker 的 Stage-1 明文评估同样是
         # (gelu, softmax, split) 的确定性函数，重复配置可整体跳过 install + forward。
         # 命中返回的是先前算出的同一组浮点数 → 对 rollout_sig / 1==N 完全透明。
         # 仅 Stage-1 明文评估可用；任何带噪声采样的评估路径不得使用。
-        from stage1_rl.eval_cache import Stage1EvalCache
         self._stage1_worker_eval_cache = Stage1EvalCache()
         # Track one-time device placement; eval mode is re-asserted before each forward.
         self._eval_infra_ready = False
@@ -4428,9 +4428,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         ``self.model`` / ``self.reversible_handler`` / ``self.device``.
 
         Differences vs ``stage1_evaluate``:
-          * Skips ``self._eval_cache`` (workers compute independently;
-            sharing cache writes across threads is a race risk and the
-            cache benefits the single-GPU sequential path most).
+          * Uses the lock-protected worker cache instead of the single-GPU
+            cache, so worker writes remain thread-safe.
           * Does NOT write to ``self.current_*_scaling_factors`` state
             attributes (race risk under concurrent workers).
           * GELU/Softmax install is inlined against the passed ``handler``.
@@ -5297,18 +5296,18 @@ class LayerImportanceEvaluator(TrainerCallback):
         """评估模型，use_train=True时使用训练集，否则使用验证集
 
         性能优化: 评估结果缓存。由于 model 在 eval 模式冻结参数、dataloader shuffle=False、
-        无任何随机性源, 相同 (gelu, softmax, use_train, split) 评估结果必然 bit-identical。
+        无任何随机性源, 相同 (gelu, softmax, resolved_split) 评估结果必然 bit-identical。
         直接从缓存返回可节省一次完整数据集前向推理, 不改变任何数值结果。
 
         Returns:
             ``(loss, metric1, metric2, time_ms)`` — metric2 is 0 for
             single-metric datasets.
         """
-        cache_key = (
-            tuple(int(d) for d in gelu_degrees),
-            tuple(int(d) for d in softmax_degrees),
-            bool(use_train),
-            split,
+        split_name = self._resolve_eval_split(use_train=use_train, split=split)
+        cache_key = self._eval_cache.make_key(
+            gelu_degrees,
+            softmax_degrees,
+            split_name,
         )
         cached = self._eval_cache.get(cache_key)
         if cached is not None:
@@ -5321,14 +5320,13 @@ class LayerImportanceEvaluator(TrainerCallback):
         if self._last_applied_config != cfg_sig:
             self.apply_configuration(gelu_degrees, softmax_degrees)
             self._last_applied_config = cfg_sig
-        split_name = self._resolve_eval_split(use_train=use_train, split=split)
         dataloader = self.dataloaders[split_name]
         result = self._run_evaluation(
             dataloader,
             use_train=(split_name == "train"),
             split_name=split_name,
         )
-        self._eval_cache[cache_key] = result
+        self._eval_cache.put(cache_key, result)
         return result
 
     @staticmethod

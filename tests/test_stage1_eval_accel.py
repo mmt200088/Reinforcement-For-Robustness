@@ -271,6 +271,31 @@ class Stage1EvalCacheTest(unittest.TestCase):
         self.assertGreater(c.hits, 1000)
 
 
+class Stage1EvaluateModelCacheSourceTest(unittest.TestCase):
+    def test_single_gpu_evaluate_model_uses_shared_cache_helper(self):
+        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        init_region = _source_region(
+            source,
+            "        self._eval_cache =",
+            "        # Track one-time device placement;",
+        )
+        eval_region = _source_region(
+            source,
+            "    def evaluate_model(",
+            "    @staticmethod\n    def _logits_to_classes",
+        )
+
+        self.assertIn("self._eval_cache = Stage1EvalCache()", init_region)
+        self.assertIn("split_name = self._resolve_eval_split", eval_region)
+        self.assertIn("cache_key = self._eval_cache.make_key(", eval_region)
+        self.assertIn("self._eval_cache.put(cache_key, result)", eval_region)
+        self.assertNotIn("self._eval_cache[cache_key] = result", eval_region)
+        self.assertLess(
+            eval_region.index("split_name = self._resolve_eval_split"),
+            eval_region.index("cache_key = self._eval_cache.make_key("),
+        )
+
+
 @unittest.skipUnless(_HAS_TORCH, "torch unavailable")
 class HornerPolyEquivalenceTest(unittest.TestCase):
     """Horner ``_poly`` vs the stacked-powers reference ``polynomial``."""

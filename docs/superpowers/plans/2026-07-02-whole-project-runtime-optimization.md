@@ -355,6 +355,13 @@ allocating `torch.zeros_like(x)` before discarding below-band values. This
 removes two full-shape zero tensor allocations from shared approximate-softmax
 forward paths while preserving the same lower-bound zeroing semantics.
 
+Progress 2026-07-03: single-GPU `LayerImportanceEvaluator.evaluate_model()` now
+uses the same `Stage1EvalCache` helper as the worker path and keys cache entries
+by the resolved split name. This avoids duplicate validation_full forwards when
+callers reach the same Stage-1 plaintext configuration through equivalent
+`use_train=False` / `split="validation_full"` entrypoints, while preserving the
+existing install/forward semantics.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:
