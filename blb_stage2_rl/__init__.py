@@ -21,6 +21,12 @@ CLI / Python 调用：
 详见 ``docs/BLB_stage2_rl_spec.md``。
 """
 
-from .runner import BLBStage2RLRunner
-
 __all__ = ["BLBStage2RLRunner"]
+
+
+def __getattr__(name):
+    if name == "BLBStage2RLRunner":
+        from .runner import BLBStage2RLRunner
+
+        return BLBStage2RLRunner
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
