@@ -25,10 +25,11 @@ Torch-free.
 """
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+from json_utils import read_json_file
 
 # ---------------------------------------------------------------------------
 # Per-block SOURCE (chain input / cut_point_sf[0]) → cfg fresh + RL fresh field.
@@ -338,6 +339,5 @@ def load_profile_configs(rescale_optimizer_root: str, profile: str) -> Dict[str,
     for fn in sorted(os.listdir(cfg_dir)):
         if not fn.endswith(".json") or fn.startswith("static_skeletons"):
             continue
-        with open(os.path.join(cfg_dir, fn), "r", encoding="utf-8") as f:
-            out[fn[:-5]] = json.load(f)
+        out[fn[:-5]] = read_json_file(os.path.join(cfg_dir, fn))
     return out

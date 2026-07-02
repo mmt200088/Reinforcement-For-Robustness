@@ -26,14 +26,13 @@ Two related-but-distinct mask abstractions live here:
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set, Tuple
 
 import numpy as np
 
-from json_utils import stable_json_hash
+from json_utils import read_json_file, stable_json_hash
 
 from .action_space import (
     K_LEVELS,
@@ -129,7 +128,7 @@ def load_action_mask_file(
         slot_records: Sequence[Mapping[str, Any]] | None = None,
         ) -> Tuple[List[np.ndarray], Mapping[str, Any]]:
     mask_path = Path(path)
-    payload = json.loads(mask_path.read_text(encoding="utf-8"))
+    payload = read_json_file(mask_path)
     if not isinstance(payload, Mapping):
         raise ValueError(f"action mask file must contain a JSON object: {mask_path}")
     slots = payload.get("slots")

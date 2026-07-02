@@ -33,7 +33,6 @@ None（即不安装该处噪声），所以 RL 选这些槽的值不会改变 cf
 """
 from __future__ import annotations
 
-import json
 import math
 import os
 from dataclasses import dataclass, field
@@ -42,6 +41,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 from cli_parse_utils import parse_int_list_text
+from json_utils import read_json_file
 from blb_rl_bridge import (
     Block1ActionSpec,
     Block2ActionSpec,
@@ -533,8 +533,7 @@ def load_max_sfs(profile: str, search_paths: Optional[Sequence[str]] = None) -> 
         if not os.path.isfile(path):
             continue
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
+            payload = read_json_file(path)
         except Exception:
             continue
         if not isinstance(payload, dict):
@@ -1626,15 +1625,13 @@ def _load_active_rescale_sets() -> Dict[str, frozenset]:
         out: Dict[str, frozenset] = {}
         try:
             import os
-            import json
             from . import skeleton_stage_map as _ssm
             ro_root = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 "Rescale_optimizer",
             )
             arch_path = os.path.join(ro_root, "configs", "mrpc", "static_skeletons_mrpc.json")
-            with open(arch_path, "r", encoding="utf-8") as f:
-                archive = json.load(f)
+            archive = read_json_file(arch_path)
             for gk, plan in _ssm.build_stage_plans_from_archive(archive).items():
                 out[gk] = frozenset(plan.active_rescale_rl_fields)
         except Exception:
