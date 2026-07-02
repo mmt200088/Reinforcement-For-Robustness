@@ -973,6 +973,16 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("ep_indices = torch.randperm(n_eps, device=device)", update_region)
         self.assertNotIn("ep_indices = torch.randperm(n_eps)\n", update_region)
 
+    def test_running_mean_std_updates_torch_tensor_without_full_cpu_copy(self):
+        evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(evaluator_src, "update")
+
+        self.assertIn("x_detached = x.detach()", update_region)
+        self.assertIn("batch_mean = float(x_detached.mean().item())", update_region)
+        self.assertIn("batch_var = float(x_detached.var(unbiased=False).item())", update_region)
+        self.assertIn("batch_count = int(x_detached.numel())", update_region)
+        self.assertNotIn("x = x.detach().cpu().numpy()", update_region)
+
     def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         mask_region = _method_region_from_source(policy_src, "_mask_logits_for_slot")

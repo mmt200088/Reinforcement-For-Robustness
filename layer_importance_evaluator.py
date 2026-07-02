@@ -690,7 +690,14 @@ class RunningMeanStd:
             x: numpy array 或 torch tensor 的数据
         """
         if isinstance(x, torch.Tensor):
-            x = x.detach().cpu().numpy()
+            x_detached = x.detach()
+            if not torch.is_floating_point(x_detached):
+                x_detached = x_detached.float()
+            batch_mean = float(x_detached.mean().item())
+            batch_var = float(x_detached.var(unbiased=False).item())
+            batch_count = int(x_detached.numel())
+            self._update_from_moments(batch_mean, batch_var, batch_count)
+            return
         x = np.asarray(x).flatten()
         
         batch_mean = np.mean(x)
