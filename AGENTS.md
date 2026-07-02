@@ -169,6 +169,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   all Unicode line separators. Do not add script-local `_iter_text_lines`
   helpers; extend `text_utils.py` and `tests/test_text_utils.py` if another
   in-memory text iteration convention is needed.
+- Shared static-test source inspection rule, added 2026-07-03: tests that
+  statically inspect project source for helper reuse must use
+  `tests/source_inspection_utils.py`. Use `source_text()` for source reads and
+  `function_names()` for AST function-name sets; do not copy local
+  `_function_names` helpers across `test_*_utils.py` files.
 - Fusion-count fixed-action experiment helper rule, added 2026-07-03:
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and

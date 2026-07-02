@@ -1,8 +1,7 @@
-import ast
 import math
-import pathlib
 import unittest
 
+from tests.source_inspection_utils import function_names, source_text
 from stats_utils import (
     fraction_true,
     mean_from_total,
@@ -44,17 +43,7 @@ class StatsUtilsTest(unittest.TestCase):
 
 
 class StatsUtilsStaticGuardTest(unittest.TestCase):
-    def _function_names(self, rel_path: str) -> set[str]:
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        tree = ast.parse((repo / rel_path).read_text(encoding="utf-8"))
-        return {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-
     def test_known_report_scripts_use_shared_stats_helpers(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
         expected_imports = {
             "scripts/stage2_first10k_monitor.py": "from stats_utils import mean_or_none, median_sorted",
             "scripts/stage2_reward_probe_scaling_report.py": "from stats_utils import median_sorted",
@@ -74,10 +63,9 @@ class StatsUtilsStaticGuardTest(unittest.TestCase):
         }
         for rel_path, import_line in expected_imports.items():
             with self.subTest(path=rel_path):
-                text = (repo / rel_path).read_text(encoding="utf-8")
+                text = source_text(rel_path)
                 self.assertIn(import_line, text)
-                function_names = self._function_names(rel_path)
-                self.assertFalse(forbidden & function_names)
+                self.assertFalse(forbidden & function_names(rel_path))
 
 
 if __name__ == "__main__":

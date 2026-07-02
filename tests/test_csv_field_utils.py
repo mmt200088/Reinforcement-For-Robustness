@@ -1,8 +1,8 @@
-import ast
 import pathlib
 import tempfile
 import unittest
 
+from tests.source_inspection_utils import function_names, source_text
 from csv_field_utils import (
     first_present,
     first_present_by_index,
@@ -60,17 +60,7 @@ class CsvFieldUtilsTest(unittest.TestCase):
 
 
 class CsvFieldUtilsStaticGuardTest(unittest.TestCase):
-    def _function_names(self, rel_path: str) -> set[str]:
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        tree = ast.parse((repo / rel_path).read_text(encoding="utf-8"))
-        return {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-
     def test_known_gpu_report_scripts_use_shared_csv_helpers(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
         expected = {
             "scripts/gpu_utilization_report.py": (
                 "from csv_field_utils import first_present_by_index, normalized_field_index"
@@ -91,19 +81,18 @@ class CsvFieldUtilsStaticGuardTest(unittest.TestCase):
         }
         for rel_path, needle in expected.items():
             with self.subTest(path=rel_path):
-                text = (repo / rel_path).read_text(encoding="utf-8")
+                text = source_text(rel_path)
                 self.assertIn(needle, text)
-                self.assertFalse(forbidden & self._function_names(rel_path))
+                self.assertFalse(forbidden & function_names(rel_path))
 
     def test_simple_csv_artifact_scripts_use_shared_writer(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
         expected = {
             "scripts/blb_f0_scan_feasible_domain.py": "from csv_field_utils import write_csv_rows",
             "scripts/bert_mrpc_layer_noise_experiment.py": "from csv_field_utils import write_csv_rows",
         }
         for rel_path, needle in expected.items():
             with self.subTest(path=rel_path):
-                text = (repo / rel_path).read_text(encoding="utf-8")
+                text = source_text(rel_path)
                 self.assertIn(needle, text)
                 self.assertNotIn("def _write_csv(", text)
                 self.assertNotIn("def write_csv(", text)

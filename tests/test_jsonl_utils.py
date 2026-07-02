@@ -1,10 +1,10 @@
-import ast
 import gzip
 import pathlib
 import tempfile
 import unittest
 from unittest import mock
 
+from tests.source_inspection_utils import function_names, source_text
 from jsonl_utils import (
     count_jsonl_with_required_fields,
     iter_jsonl,
@@ -169,17 +169,7 @@ class JsonlUtilsTest(unittest.TestCase):
 
 
 class JsonlUtilsStaticGuardTest(unittest.TestCase):
-    def _function_names(self, rel_path: str) -> set[str]:
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        tree = ast.parse((repo / rel_path).read_text(encoding="utf-8"))
-        return {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-
     def test_known_report_scripts_use_shared_jsonl_reader(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
         expected = {
             "scripts/stage2_first10k_monitor.py": "from jsonl_utils import read_jsonl",
             "scripts/stage2_reward_probe_scaling_report.py": "from jsonl_utils import iter_jsonl",
@@ -195,14 +185,13 @@ class JsonlUtilsStaticGuardTest(unittest.TestCase):
         forbidden = {"_read_jsonl", "_open_jsonl", "_count_jsonl", "_count_jsonl_with_required_fields"}
         for rel_path, needle in expected.items():
             with self.subTest(path=rel_path):
-                text = (repo / rel_path).read_text(encoding="utf-8")
+                text = source_text(rel_path)
                 self.assertIn(needle, text)
-                self.assertFalse(forbidden & self._function_names(rel_path))
+                self.assertFalse(forbidden & function_names(rel_path))
 
     def test_finite_jsonl_artifact_script_uses_shared_writer(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
         rel_path = "scripts/blb_f0_scan_feasible_domain.py"
-        text = (repo / rel_path).read_text(encoding="utf-8")
+        text = source_text(rel_path)
 
         self.assertIn("from jsonl_utils import write_jsonl_rows", text)
         self.assertNotIn("def _write_jsonl(", text)

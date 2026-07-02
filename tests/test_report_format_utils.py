@@ -1,9 +1,8 @@
-import ast
 import math
-import pathlib
 import unittest
 
 from report_format_utils import format_elapsed, format_float, html_table, metric_float, progress_bar
+from tests.source_inspection_utils import function_names, source_text
 
 
 class ReportFormatUtilsTest(unittest.TestCase):
@@ -39,17 +38,7 @@ class ReportFormatUtilsTest(unittest.TestCase):
 
 
 class ReportFormatStaticGuardTest(unittest.TestCase):
-    def _function_names(self, rel_path: str) -> set[str]:
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        tree = ast.parse((repo / rel_path).read_text(encoding="utf-8"))
-        return {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-
     def test_shared_report_helpers_are_used_by_known_report_scripts(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
         expected_imports = {
             "scripts/run_fusion_count_action_eval.py": "from report_format_utils import html_table, metric_float",
             "scripts/run_fusion_count_action_eval_rlpath.py": (
@@ -66,17 +55,17 @@ class ReportFormatStaticGuardTest(unittest.TestCase):
         }
         for rel_path, import_line in expected_imports.items():
             with self.subTest(path=rel_path):
-                text = (repo / rel_path).read_text(encoding="utf-8")
+                text = source_text(rel_path)
                 self.assertIn(import_line, text)
-                function_names = self._function_names(rel_path)
-                self.assertNotIn("_html_table", function_names)
-                self.assertNotIn("_fmt", function_names)
+                names = function_names(rel_path)
+                self.assertNotIn("_html_table", names)
+                self.assertNotIn("_fmt", names)
                 if not rel_path.endswith("stage2_reward_probe_scaling_report.py"):
-                    self.assertNotIn("_metric", function_names)
-                self.assertNotIn("_fmt_elapsed", function_names)
-                self.assertNotIn("_progress_bar", function_names)
-                self.assertNotIn("_seq_fmt_elapsed", function_names)
-                self.assertNotIn("_seq_progress_bar", function_names)
+                    self.assertNotIn("_metric", names)
+                self.assertNotIn("_fmt_elapsed", names)
+                self.assertNotIn("_progress_bar", names)
+                self.assertNotIn("_seq_fmt_elapsed", names)
+                self.assertNotIn("_seq_progress_bar", names)
 
 
 if __name__ == "__main__":

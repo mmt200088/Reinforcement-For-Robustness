@@ -1,8 +1,7 @@
-import ast
-import pathlib
 import unittest
 
 from numeric_parse_utils import parse_first_float
+from tests.source_inspection_utils import function_names, source_text
 
 
 class NumericParseUtilsTest(unittest.TestCase):
@@ -16,26 +15,16 @@ class NumericParseUtilsTest(unittest.TestCase):
 
 
 class NumericParseStaticGuardTest(unittest.TestCase):
-    def _function_names(self, rel_path: str) -> set[str]:
-        repo = pathlib.Path(__file__).resolve().parents[1]
-        tree = ast.parse((repo / rel_path).read_text(encoding="utf-8"))
-        return {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-
     def test_gpu_report_scripts_use_shared_float_parser(self):
-        repo = pathlib.Path(__file__).resolve().parents[1]
         for rel_path in (
             "scripts/gpu_utilization_report.py",
             "scripts/stage2_reward_probe_scaling_report.py",
         ):
             with self.subTest(path=rel_path):
-                text = (repo / rel_path).read_text(encoding="utf-8")
+                text = source_text(rel_path)
                 self.assertIn("from numeric_parse_utils import parse_first_float", text)
                 self.assertNotIn("FLOAT_RE = re.compile", text)
-                self.assertNotIn("_float_value", self._function_names(rel_path))
+                self.assertNotIn("_float_value", function_names(rel_path))
 
 
 if __name__ == "__main__":
