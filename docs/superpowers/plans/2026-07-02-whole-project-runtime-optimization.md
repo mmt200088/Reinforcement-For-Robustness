@@ -595,6 +595,14 @@ the migration path, and a local 50k-row old-schema trace benchmark preserved
 the migrated row count while reducing migration peak memory from `137.08MB` to
 `0.19MB` and wall time from `0.980s` to `0.877s`.
 
+Progress 2026-07-02: `append_blb_episode_trace_row()` now caches trace CSV
+paths whose schema has already been confirmed or freshly written in the current
+process, so repeated PPO-update trace appends skip the redundant header
+inspection. A regression test verifies the second append does not call schema
+migration again after the first append created a current-schema trace. A local
+3000-row append benchmark preserved CSV byte size while reducing append wall
+time from `0.5079s` to `0.3204s`.
+
 Progress 2026-07-02: `scripts/blb_regen_stage2_outputs.py` now lazily
 materializes ADR-014 optional diagnostic series while reading `episodes.jsonl`.
 Older runs that do not contain those fields no longer allocate nine extra
