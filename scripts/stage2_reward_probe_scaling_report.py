@@ -58,6 +58,28 @@ def _first_present(row: Mapping[str, str], keys: Sequence[str]) -> str | None:
     return None
 
 
+def _normalized_field_lookup(fieldnames: Sequence[str | None] | None) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for fieldname in fieldnames or ():
+        if fieldname is None:
+            continue
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(fieldname).strip().lower()).strip("_")
+        out[normalized] = fieldname
+    return out
+
+
+def _first_present_by_lookup(
+        row: Mapping[str, str],
+        field_lookup: Mapping[str, str],
+        keys: Sequence[str],
+        ) -> str | None:
+    for key in keys:
+        fieldname = field_lookup.get(key)
+        if fieldname is not None and fieldname in row:
+            return row[fieldname]
+    return None
+
+
 def _summarize_episodes(path: Path) -> dict[str, Any]:
     probe_walls: list[float] = []
     wall_total = 0.0
@@ -113,15 +135,17 @@ def _summarize_gpu_samples(path: Path) -> tuple[dict[str, float], dict[str, floa
         return gpu_util, gpu_mem
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
+        field_lookup = _normalized_field_lookup(reader.fieldnames)
         for raw_row in reader:
-            row = _normalized_row(raw_row)
-            idx = _first_present(row, ["index", "gpu_index", "gpu"])
-            mem = _first_present(
-                row,
+            idx = _first_present_by_lookup(raw_row, field_lookup, ["index", "gpu_index", "gpu"])
+            mem = _first_present_by_lookup(
+                raw_row,
+                field_lookup,
                 ["memory_used_mib", "memory_used", "memory_used_mi_b", "mem_used_mib"],
             )
-            util = _first_present(
-                row,
+            util = _first_present_by_lookup(
+                raw_row,
+                field_lookup,
                 ["utilization_gpu_pct", "utilization_gpu", "gpu_util_pct", "gpu_util"],
             )
             if idx is None:

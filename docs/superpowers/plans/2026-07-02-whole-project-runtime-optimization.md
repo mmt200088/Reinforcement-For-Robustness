@@ -340,6 +340,13 @@ list only for exact median. A local 100k-row parity benchmark reduced report
 post-processing from `1.282s`/`7.21MB` to `1.074s`/`4.14MB` (`1.74x` lower
 peak memory).
 
+Progress 2026-07-02: `scripts/stage2_reward_probe_scaling_report.py` now
+normalizes sampled `nvidia-smi` CSV headers once per file and uses raw-field
+lookups for every sample row, instead of regex-normalizing field names on each
+row. A local 200k-row sampled GPU CSV benchmark preserved max util/memory maps
+and reduced GPU-sample post-processing from `3.853528s` to `2.066302s`
+(`1.86x`), with traced peak allocation dropping from `60,023B` to `49,098B`.
+
 Progress 2026-07-02: `scripts/stage2_reward_probe_scaling_report.py`
 `render_html()` now iterates the summary `runs` collection directly instead of
 wrapping it with `list()` before rendering rows. This preserves HTML output and

@@ -160,6 +160,29 @@ class Stage2RewardProbeScalingReportTest(unittest.TestCase):
         self.assertEqual(rows["bs256_g4"]["max_gpu_util_pct"], {"0": 91.0, "1": 88.0})
         self.assertEqual(rows["bs256_g4"]["max_gpu_mem_mib"], {"0": 12000.0, "1": 11800.0})
 
+    def test_gpu_sample_summary_normalizes_header_once_not_per_row(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "samples.csv"
+            smi.write_text(
+                "gpu index, utilization.gpu [%], memory.used [MiB]\n"
+                "0,20 %,1000 MiB\n"
+                "0,40 %,1500 MiB\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                report,
+                "_normalized_row",
+                side_effect=AssertionError("CSV headers should be normalized once"),
+            ):
+                gpu_util, gpu_mem = report._summarize_gpu_samples(smi)
+
+        self.assertEqual(gpu_util, {"0": 40.0})
+        self.assertEqual(gpu_mem, {"0": 1500.0})
+
     def test_render_html_iterates_runs_without_materializing_list(self):
         report = _load_report_module()
 
