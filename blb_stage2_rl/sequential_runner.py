@@ -2310,8 +2310,8 @@ def train_sequential(
                             spec.layer_idx, spec.block_idx, forced_action.tolist()
                         )
                 chosen_action_np = forced_padded
-                chosen_log_prob = float(lp_t.item())
-                chosen_value = float(val_t.item())
+                chosen_log_prob = lp_t.detach().reshape(())
+                chosen_value = val_t.detach().reshape(())
                 rejection_counters["steps_forced_to_baseline_anchor"] += 1
 
                 action_np = chosen_action_np
@@ -2470,8 +2470,8 @@ def train_sequential(
             #      is available, commit the last sampled action even though
             #      it failed — caller will see invalid=True in the info dict.
             chosen_action_np: Optional[np.ndarray] = None
-            chosen_log_prob: float = 0.0
-            chosen_value: float = 0.0
+            chosen_log_prob: Any = 0.0
+            chosen_value: Any = 0.0
             chosen_eval_info: Optional[Dict[str, Any]] = None
             attempts_this_step = 0
 
@@ -2538,8 +2538,8 @@ def train_sequential(
                             spec.layer_idx, spec.block_idx, tup
                         )
                     chosen_action_np = action_np_try
-                    chosen_log_prob = float(log_prob_t.item())
-                    chosen_value = float(value_t.item())
+                    chosen_log_prob = log_prob_t.detach().reshape(())
+                    chosen_value = value_t.detach().reshape(())
                     chosen_eval_info = eval_info
                     break
 
@@ -2589,16 +2589,16 @@ def train_sequential(
                                 spec.layer_idx, spec.block_idx, fallback_action.tolist()
                             )
                     chosen_action_np = fallback_padded
-                    chosen_log_prob = float(lp_t.item())
-                    chosen_value = float(val_t.item())
+                    chosen_log_prob = lp_t.detach().reshape(())
+                    chosen_value = val_t.detach().reshape(())
                     rejection_counters["steps_fallen_back_to_baseline"] += 1
                 else:
                     # Last-resort: commit the most-recently sampled action even
                     # though it failed. Should not happen in production because
                     # the runner always provides baseline_action_vec.
                     chosen_action_np = action_np_try
-                    chosen_log_prob = float(log_prob_t.item())
-                    chosen_value = float(value_t.item())
+                    chosen_log_prob = log_prob_t.detach().reshape(())
+                    chosen_value = value_t.detach().reshape(())
                     chosen_eval_info = eval_info
 
             assert chosen_action_np is not None and chosen_eval_info is not None

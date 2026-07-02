@@ -888,7 +888,7 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         for needle in (
             "def _pack_numpy_arrays",
             "for i, t in enumerate(buf):",
-            "returns, advantages = _compute_gae_from_arrays(",
+            "returns, advantages = _compute_gae_from_tensors(",
         ):
             self.assertIn(needle, policy_src, msg=f"sequential_policy.py missing: {needle!r}")
         for old_pattern in (
@@ -898,6 +898,31 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "returns, advantages = self.compute_gae(gamma=gamma, lam=lam)",
         ):
             self.assertNotIn(old_pattern, policy_src, msg=f"old multi-pass pack remains: {old_pattern!r}")
+
+    def test_sequential_stage2_rollout_defers_logprob_value_sync_until_buffer_pack(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        runner_src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        add_region = _method_region_from_source(policy_src, "add")
+        to_tensors_region = _method_region_from_source(policy_src, "to_tensors")
+
+        self.assertIn("def _pack_transition_scalar_tensors", policy_src)
+        self.assertIn("def _compute_gae_from_tensors", policy_src)
+        self.assertIn("log_probs_t = _pack_transition_scalar_tensors(", to_tensors_region)
+        self.assertIn("old_values_t = _pack_transition_scalar_tensors(", to_tensors_region)
+        self.assertIn("returns, advantages = _compute_gae_from_tensors(", to_tensors_region)
+        self.assertIn("log_prob=log_prob.detach().reshape(())", add_region)
+        self.assertIn("value=value.detach().reshape(())", add_region)
+        self.assertNotIn("log_prob=float(log_prob)", add_region)
+        self.assertNotIn("value=float(value)", add_region)
+        for old_sync in (
+            "chosen_log_prob = float(lp_t.item())",
+            "chosen_value = float(val_t.item())",
+            "chosen_log_prob = float(log_prob_t.item())",
+            "chosen_value = float(value_t.item())",
+        ):
+            self.assertNotIn(old_sync, runner_src)
+        self.assertIn("chosen_log_prob = lp_t.detach().reshape(())", runner_src)
+        self.assertIn("chosen_log_prob = log_prob_t.detach().reshape(())", runner_src)
 
     def test_sequential_ppo_update_reuses_device_minibatch_indices_per_epoch(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")

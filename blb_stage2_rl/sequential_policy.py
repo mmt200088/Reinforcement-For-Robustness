@@ -813,8 +813,8 @@ class SequentialTransition:
     action: np.ndarray            # [max_step_dim]
     slot_mask: np.ndarray         # [max_step_dim] bool
     per_slot_num_levels: np.ndarray  # [max_step_dim] int
-    log_prob: float
-    value: float
+    log_prob: Any
+    value: Any
     reward: float
     done: bool
     # action_level_mask: np.ndarray when provided; shape [max_step_dim, max_num_levels].
@@ -846,6 +846,59 @@ def _compute_gae_from_arrays(
     return returns, advantages
 
 
+def _pack_transition_scalar_tensors(
+        transitions: Sequence[SequentialTransition],
+        field_name: str,
+        device: torch.device,
+        ) -> torch.Tensor:
+    values = [getattr(t, field_name) for t in transitions]
+    if not any(torch.is_tensor(value) for value in values):
+        return torch.as_tensor([float(value) for value in values], dtype=torch.float32, device=device)
+    tensor_device = next(
+        (value.device for value in values if torch.is_tensor(value)),
+        device,
+    )
+    packed = torch.stack([
+        (
+            value.detach().reshape(()).to(
+                device=tensor_device, dtype=torch.float32, non_blocking=True,
+            )
+            if torch.is_tensor(value)
+            else torch.tensor(float(value), dtype=torch.float32, device=tensor_device)
+        )
+        for value in values
+    ], dim=0)
+    return packed.to(device=device, dtype=torch.float32, non_blocking=True)
+
+
+def _compute_gae_from_tensors(
+        rewards: torch.Tensor,
+        values: torch.Tensor,
+        dones: np.ndarray,
+        *,
+        gamma: float,
+        lam: float,
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
+    n = int(rewards.shape[0])
+    advantages = torch.zeros_like(rewards, dtype=torch.float32)
+    last_gae = torch.zeros((), dtype=torch.float32, device=rewards.device)
+    gamma_f = float(gamma)
+    lam_f = float(lam)
+    for t in range(n - 1, -1, -1):
+        done = bool(dones[t])
+        not_done = 0.0 if done else 1.0
+        next_value = (
+            torch.zeros((), dtype=torch.float32, device=rewards.device)
+            if done or t == n - 1
+            else values[t + 1]
+        )
+        delta = rewards[t] + gamma_f * next_value * not_done - values[t]
+        last_gae = delta + gamma_f * lam_f * not_done * last_gae
+        advantages[t] = last_gae
+    returns = advantages + values
+    return returns, advantages
+
+
 class SequentialRolloutBuffer:
     """Stores transitions across multiple horizon-N episodes; computes GAE.
 
@@ -867,8 +920,8 @@ class SequentialRolloutBuffer:
             slot_mask: np.ndarray,
             per_slot_num_levels: np.ndarray,
             action_level_mask: Optional[np.ndarray] = None,
-            log_prob: float,
-            value: float,
+            log_prob: Any,
+            value: Any,
             reward: float,
             done: bool,
             baseline_prior_scale: float = 0.0,
@@ -888,8 +941,8 @@ class SequentialRolloutBuffer:
                 None if action_level_mask is None
                 else np.asarray(action_level_mask, dtype=bool)
             ),
-            log_prob=float(log_prob),
-            value=float(value),
+            log_prob=log_prob.detach().reshape(()) if torch.is_tensor(log_prob) else float(log_prob),
+            value=value.detach().reshape(()) if torch.is_tensor(value) else float(value),
             reward=float(reward),
             done=bool(done),
             baseline_prior_scale=float(baseline_prior_scale),
@@ -978,33 +1031,34 @@ class SequentialRolloutBuffer:
             slot_masks,
             levels,
             level_masks,
-            log_probs,
-            old_values,
             rewards,
             dones,
             prior_scales,
         ) = self._pack_numpy_arrays()
-        returns, advantages = _compute_gae_from_arrays(
-            rewards,
-            old_values,
+        log_probs_t = _pack_transition_scalar_tensors(self._buf, "log_prob", device)
+        old_values_t = _pack_transition_scalar_tensors(self._buf, "value", device)
+        rewards_t = torch.from_numpy(rewards).to(device)
+        returns, advantages = _compute_gae_from_tensors(
+            rewards_t,
+            old_values_t,
             dones,
             gamma=float(gamma),
             lam=float(lam),
         )
-        if advantage_normalize and advantages.size > 1:
-            adv_std = float(advantages.std())
-            if adv_std > 1e-3:
-                advantages = (advantages - advantages.mean()) / (adv_std + 1e-8)
+        if advantage_normalize and int(advantages.numel()) > 1:
+            adv_std_t = advantages.std(unbiased=False)
+            normalized_advantages = (advantages - advantages.mean()) / (adv_std_t + 1e-8)
+            advantages = torch.where(adv_std_t > 1e-3, normalized_advantages, advantages)
         return (
             torch.from_numpy(states).to(device),
             torch.from_numpy(actions).to(device),
             torch.from_numpy(slot_masks).to(device),
             torch.from_numpy(levels).to(device),
             None if level_masks is None else torch.from_numpy(level_masks).to(device),
-            torch.from_numpy(log_probs).to(device),
-            torch.from_numpy(old_values).to(device),
-            torch.from_numpy(returns).to(device),
-            torch.from_numpy(advantages).to(device),
+            log_probs_t,
+            old_values_t,
+            returns,
+            advantages,
             torch.from_numpy(prior_scales).to(device),
         )
 
@@ -1019,8 +1073,6 @@ class SequentialRolloutBuffer:
                 np.ndarray,
                 np.ndarray,
                 np.ndarray,
-                np.ndarray,
-                np.ndarray,
             ]:
         buf = self._buf
         if not buf:
@@ -1031,8 +1083,6 @@ class SequentialRolloutBuffer:
         actions = np.empty((n,) + tuple(first.action.shape), dtype=np.int64)
         slot_masks = np.empty((n,) + tuple(first.slot_mask.shape), dtype=bool)
         levels = np.empty((n,) + tuple(first.per_slot_num_levels.shape), dtype=np.int64)
-        log_probs = np.empty(n, dtype=np.float32)
-        old_values = np.empty(n, dtype=np.float32)
         rewards = np.empty(n, dtype=np.float32)
         dones = np.empty(n, dtype=bool)
         prior_scales = np.empty(n, dtype=np.float32)
@@ -1044,8 +1094,6 @@ class SequentialRolloutBuffer:
             actions[i] = t.action
             slot_masks[i] = t.slot_mask
             levels[i] = t.per_slot_num_levels
-            log_probs[i] = float(t.log_prob)
-            old_values[i] = float(t.value)
             rewards[i] = float(t.reward)
             dones[i] = bool(t.done)
             prior_scales[i] = float(t.baseline_prior_scale)
@@ -1062,8 +1110,6 @@ class SequentialRolloutBuffer:
             slot_masks,
             levels,
             level_masks,
-            log_probs,
-            old_values,
             rewards,
             dones,
             prior_scales,
