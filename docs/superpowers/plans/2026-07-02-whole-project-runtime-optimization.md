@@ -875,6 +875,13 @@ same selected run IDs while improving latest-run de-duplication from `0.1253s`
 to `0.0454s` (`2.76x`) and best-by-dataset selection from `0.1291s` to
 `0.0613s` (`2.11x`).
 
+Progress 2026-07-02: `tools/experiments_log.py query` now keeps latest
+registry records as mapping references through filtering and materializes dicts
+only for rows returned to the caller. A local 100k-record synthetic registry
+with 1k matching `mrpc` rows preserved query output while reducing filtered
+query time from `0.056000s` to `0.030052s` (`1.86x`) and traced peak
+allocation from `42.06MB` to `7.88MB`.
+
 Progress 2026-07-02: `_git_info()` in `tools/experiments_log.py` now treats
 raw `git status --porcelain` emptiness as the dirty-state signal instead of
 calling `strip()` on the whole status payload. Git porcelain output is empty

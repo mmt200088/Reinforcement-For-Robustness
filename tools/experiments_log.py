@@ -199,6 +199,10 @@ def register(
 # ---------------------------------------------------------------------------
 
 def _latest_per_run_id(records: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    return [dict(r) for r in _latest_by_run_id(records).values()]
+
+
+def _latest_by_run_id(records: Iterable[Mapping[str, Any]]) -> Dict[str, Mapping[str, Any]]:
     by_id: Dict[str, Mapping[str, Any]] = {}
     for r in records:
         rid = str(r.get("run_id", ""))
@@ -211,7 +215,7 @@ def _latest_per_run_id(records: Iterable[Mapping[str, Any]]) -> List[Dict[str, A
         # keep the later-registered one
         if str(r.get("registered_at", "")) >= str(prev.get("registered_at", "")):
             by_id[rid] = r
-    return [dict(r) for r in by_id.values()]
+    return by_id
 
 
 def _md_row(r: Mapping[str, Any]) -> str:
@@ -342,7 +346,7 @@ def _query(
         last_n: Optional[int] = None,
         registry_path: str = REGISTRY_REL,
         ) -> List[Dict[str, Any]]:
-    records = _latest_per_run_id(_iter_records(registry_path))
+    records = _latest_by_run_id(_iter_records(registry_path)).values()
 
     def matches(r: Mapping[str, Any]) -> bool:
         if dataset and r.get("dataset") != dataset:
@@ -361,13 +365,16 @@ def _query(
 
     filtered = (r for r in records if matches(r))
     if last_n and int(last_n) > 0:
-        return heapq.nlargest(
-            int(last_n),
-            filtered,
-            key=lambda r: str(r.get("registered_at", "")),
-        )
+        return [
+            dict(r)
+            for r in heapq.nlargest(
+                int(last_n),
+                filtered,
+                key=lambda r: str(r.get("registered_at", "")),
+            )
+        ]
 
-    out = list(filtered)
+    out = [dict(r) for r in filtered]
     out.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
     return out
 
