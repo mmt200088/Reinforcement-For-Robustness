@@ -282,61 +282,62 @@ def _migrate_trace_schema_if_needed(path: str, *, log_fn=None) -> None:
                 return
             if old_fields == current_fields:
                 return
-            raw_rows = list(reader)
+
+            old_index = {field: idx for idx, field in enumerate(old_fields)}
+            anchor_idx = old_index.get("anchor_count")
+            parent = os.path.dirname(path) or "."
+            timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"{path}.bak_schema_{timestamp}"
+            fd, tmp_path = tempfile.mkstemp(prefix=".blb_trace_", suffix=".tmp", dir=parent)
+            tmp_open = True
+            try:
+                shutil.copyfile(path, backup_path)
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as out_f:
+                    tmp_open = False
+                    writer = csv.DictWriter(out_f, fieldnames=current_fields)
+                    writer.writeheader()
+                    for raw in reader:
+                        shifted_cost_probe_row = (
+                            "cost_probe_count" not in old_index
+                            and anchor_idx is not None
+                            and len(raw) == len(old_fields) + 1
+                        )
+                        migrated: Dict[str, Any] = {}
+                        for field in current_fields:
+                            if shifted_cost_probe_row and field == "cost_probe_count":
+                                src_idx = int(anchor_idx) + 1
+                            elif (
+                                shifted_cost_probe_row
+                                and field in old_index
+                                and old_index[field] > int(anchor_idx)
+                            ):
+                                src_idx = old_index[field] + 1
+                            else:
+                                src_idx = old_index.get(field)
+                            migrated[field] = (
+                                raw[src_idx] if src_idx is not None and src_idx < len(raw) else ""
+                            )
+                        if "cost_probe_count" not in old_index and not migrated.get("cost_probe_count"):
+                            migrated["cost_probe_count"] = "0"
+                        writer.writerow(migrated)
+                os.replace(tmp_path, path)
+                if log_fn is not None:
+                    log_fn(f"  [BLB trace] migrated CSV schema -> {path} (backup: {backup_path})")
+            except Exception as exc:
+                if tmp_open:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+                if log_fn is not None:
+                    log_fn(f"  [BLB trace][warning] failed to migrate {path}: {exc}")
     except Exception as exc:
         if log_fn is not None:
             log_fn(f"  [BLB trace][warning] failed to inspect {path}: {exc}")
-        return
-
-    old_index = {field: idx for idx, field in enumerate(old_fields)}
-    anchor_idx = old_index.get("anchor_count")
-    rows: List[Dict[str, Any]] = []
-    for raw in raw_rows:
-        shifted_cost_probe_row = (
-            "cost_probe_count" not in old_index
-            and anchor_idx is not None
-            and len(raw) == len(old_fields) + 1
-        )
-        migrated: Dict[str, Any] = {}
-        for field in current_fields:
-            if shifted_cost_probe_row and field == "cost_probe_count":
-                src_idx = int(anchor_idx) + 1
-            elif shifted_cost_probe_row and field in old_index and old_index[field] > int(anchor_idx):
-                src_idx = old_index[field] + 1
-            else:
-                src_idx = old_index.get(field)
-            migrated[field] = raw[src_idx] if src_idx is not None and src_idx < len(raw) else ""
-        if "cost_probe_count" not in old_index and not migrated.get("cost_probe_count"):
-            migrated["cost_probe_count"] = "0"
-        rows.append(migrated)
-
-    parent = os.path.dirname(path) or "."
-    timestamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = f"{path}.bak_schema_{timestamp}"
-    fd, tmp_path = tempfile.mkstemp(prefix=".blb_trace_", suffix=".tmp", dir=parent)
-    tmp_open = True
-    try:
-        shutil.copyfile(path, backup_path)
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-            tmp_open = False
-            writer = csv.DictWriter(f, fieldnames=current_fields)
-            writer.writeheader()
-            writer.writerows(rows)
-        os.replace(tmp_path, path)
-        if log_fn is not None:
-            log_fn(f"  [BLB trace] migrated CSV schema -> {path} (backup: {backup_path})")
-    except Exception as exc:
-        if tmp_open:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-        if log_fn is not None:
-            log_fn(f"  [BLB trace][warning] failed to migrate {path}: {exc}")
 
 
 def append_blb_episode_trace_row(
