@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import csv
 import html
 import json
@@ -517,15 +518,47 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def write_window_csv(path: Path, episodes: List[Dict[str, Any]]) -> None:
+    windows = {
+        size: {
+            "items": deque(),
+            "mins": deque(),
+            "maxes": deque(),
+            "sum": 0.0,
+        }
+        for size in (60, 300, 1000)
+    }
     rows = []
-    returns = [_finite(e.get("total_reward")) for e in episodes]
     for idx in range(len(episodes)):
+        value = _finite(episodes[idx].get("total_reward"))
         record = {"episode": int(episodes[idx].get("episode", idx))}
-        for size in (60, 300, 1000):
-            win = _window(returns[: idx + 1], size)
-            record[f"rolling{size}_mean"] = "" if win is None else f"{win['mean']:.8f}"
-            record[f"rolling{size}_min"] = "" if win is None else f"{win['min']:.8f}"
-            record[f"rolling{size}_max"] = "" if win is None else f"{win['max']:.8f}"
+        for size, state in windows.items():
+            items = state["items"]
+            mins = state["mins"]
+            maxes = state["maxes"]
+            items.append((idx, value))
+            state["sum"] += value
+            if len(items) > size:
+                _old_idx, old_value = items.popleft()
+                state["sum"] -= old_value
+            while mins and mins[-1][1] > value:
+                mins.pop()
+            mins.append((idx, value))
+            while maxes and maxes[-1][1] < value:
+                maxes.pop()
+            maxes.append((idx, value))
+            expired_before = idx - size
+            while mins and mins[0][0] <= expired_before:
+                mins.popleft()
+            while maxes and maxes[0][0] <= expired_before:
+                maxes.popleft()
+            if len(items) < size:
+                record[f"rolling{size}_mean"] = ""
+                record[f"rolling{size}_min"] = ""
+                record[f"rolling{size}_max"] = ""
+            else:
+                record[f"rolling{size}_mean"] = f"{state['sum'] / float(size):.8f}"
+                record[f"rolling{size}_min"] = f"{mins[0][1]:.8f}"
+                record[f"rolling{size}_max"] = f"{maxes[0][1]:.8f}"
         rows.append(record)
     if not rows:
         path.write_text("episode\n", encoding="utf-8")

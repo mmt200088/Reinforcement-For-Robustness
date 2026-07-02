@@ -403,6 +403,13 @@ string first, and it treats a missing/empty `nvidia_log` path as no GPU samples
 instead of trying to open the current directory. This keeps long-run monitoring
 memory-bounded and avoids a default-path crash during post-run summaries.
 
+Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now writes
+`reward_windows.csv` with one-pass rolling accumulators and monotonic queues
+for mean/min/max, instead of repeatedly slicing and sorting each prefix window.
+This reduces final monitor CSV rendering CPU work for 10k/60k episode runs.
+Local 20k-row mixed-reward microbenchmark produced identical CSV output and
+reduced wall time from `9.580s` to `0.186s` (`51.50x`).
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
