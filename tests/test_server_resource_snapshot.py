@@ -86,6 +86,35 @@ class ServerResourceSnapshotTest(unittest.TestCase):
 
         self.assertEqual(run.call_args.kwargs["timeout"], 5.0)
 
+    def test_git_summary_counts_dirty_rows_without_splitlines_list(self):
+        snap = _load_snapshot_module()
+
+        class NoSplitlinesStatus:
+            def __str__(self):
+                return "".join(f" M file_{idx}.py\n" for idx in range(25))
+
+            def splitlines(self):
+                raise AssertionError("git status summary should not materialize splitlines()")
+
+        def fake_run_command(cmd, **_kwargs):
+            if cmd == ["git", "rev-parse", "HEAD"]:
+                return "abc123"
+            if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+                return "jk_standard_rl"
+            if cmd[:2] == ["git", "status"]:
+                return NoSplitlinesStatus()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with mock.patch.object(snap, "_run_command", side_effect=fake_run_command):
+            summary = snap._git_summary(Path("/tmp"))
+
+        self.assertEqual(summary["commit"], "abc123")
+        self.assertEqual(summary["branch"], "jk_standard_rl")
+        self.assertEqual(summary["dirty_file_count"], 25)
+        self.assertEqual(len(summary["dirty_examples"]), 20)
+        self.assertEqual(summary["dirty_examples"][0], " M file_0.py")
+        self.assertEqual(summary["dirty_examples"][-1], " M file_19.py")
+
     def test_cli_writes_json_and_markdown_from_offline_gpu_csv(self):
         snap = _load_snapshot_module()
 

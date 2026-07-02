@@ -192,16 +192,37 @@ def _query_nvidia_smi() -> str:
     )
 
 
+def _dirty_status_summary(status: object, *, example_limit: int = 20) -> tuple[int, list[str]]:
+    text = str(status or "")
+    if not text:
+        return 0, []
+    count = text.count("\n") + (0 if text.endswith("\n") else 1)
+    examples: list[str] = []
+    start = 0
+    while start < len(text) and len(examples) < example_limit:
+        end = text.find("\n", start)
+        if end < 0:
+            line = text[start:].rstrip("\r")
+            start = len(text)
+        else:
+            line = text[start:end].rstrip("\r")
+            start = end + 1
+        if not line.strip():
+            continue
+        examples.append(line)
+    return count, examples
+
+
 def _git_summary(root: Path) -> dict[str, Any]:
     commit = _run_command(["git", "rev-parse", "HEAD"], cwd=root)
     branch = _run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=root)
     status = _run_command(["git", "status", "--porcelain"], cwd=root)
-    dirty = [line for line in status.splitlines() if line.strip()]
+    dirty_count, dirty_examples = _dirty_status_summary(status)
     return {
         "commit": commit,
         "branch": branch,
-        "dirty_file_count": len(dirty),
-        "dirty_examples": dirty[:20],
+        "dirty_file_count": dirty_count,
+        "dirty_examples": dirty_examples,
     }
 
 

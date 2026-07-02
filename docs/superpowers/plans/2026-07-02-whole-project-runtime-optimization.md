@@ -150,6 +150,14 @@ This keeps pre-run resource evidence collection from stalling a server launch
 when the GPU driver CLI or git status is slow, while preserving the existing
 empty-output fallback behavior.
 
+Progress 2026-07-02: `scripts/server_resource_snapshot.py` now summarizes
+`git status --porcelain` output by counting newline-delimited records and
+retaining only the first 20 examples, instead of materializing every dirty line
+with `splitlines()`. A regression test guards against calling `splitlines()` on
+the dirty-status payload. A local 200k-row synthetic dirty-status benchmark
+preserved count/examples and improved the summary from `0.087380s` / `17.21MB`
+to `0.002384s` / near-zero traced allocations (`36.66x`).
+
 Progress 2026-07-02: `scripts/launcher_gpu_audit.py` now bounds fallback
 `nvidia-smi` GPU discovery with a 5-second timeout. This prevents the
 non-fatal GPU audit gate from stalling expensive RL launchers when the server
