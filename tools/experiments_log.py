@@ -241,6 +241,26 @@ def _md_row(r: Mapping[str, Any]) -> str:
     )
 
 
+def _best_by_dataset(records: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    best: Dict[str, Dict[str, Any]] = {}
+    for r in records:
+        if r.get("status") not in ("complete", "training_only"):
+            continue
+        ds = str(r.get("dataset", ""))
+        reward = r.get("best_reward")
+        score = float(reward) if isinstance(reward, (int, float)) else float("-inf")
+        prev = best.get(ds)
+        prev_reward = prev.get("best_reward") if prev is not None else None
+        prev_score = (
+            float(prev_reward)
+            if isinstance(prev_reward, (int, float))
+            else float("-inf")
+        )
+        if prev is None or score > prev_score:
+            best[ds] = dict(r)
+    return best
+
+
 def _rebuild_index(registry_path: str = REGISTRY_REL, index_path: str = INDEX_REL) -> str:
     latest = _latest_per_run_id(_iter_records(registry_path))
     latest.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
@@ -272,16 +292,7 @@ def _rebuild_index(registry_path: str = REGISTRY_REL, index_path: str = INDEX_RE
     lines.append("")
     lines.append("| Dataset | Best reward | Final loss | Final metric1 | Run ID |")
     lines.append("|---|---:|---:|---:|---|")
-    by_ds: Dict[str, List[Dict[str, Any]]] = {}
-    for r in latest:
-        if r.get("status") not in ("complete", "training_only"):
-            continue
-        by_ds.setdefault(str(r.get("dataset", "")), []).append(r)
-    for ds, items in sorted(by_ds.items()):
-        items.sort(key=lambda r: float(r.get("best_reward") or float("-inf")), reverse=True)
-        if not items:
-            continue
-        top = items[0]
+    for ds, top in sorted(_best_by_dataset(latest).items()):
         final = top.get("final_eval") or {}
         best_r_val = top.get("best_reward")
         final_loss_val = final.get("loss") if isinstance(final, dict) else None

@@ -79,6 +79,21 @@ class ExperimentsLogTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertTrue(all(kwargs.get("timeout") == 5 for _, kwargs in calls))
 
+    def test_best_by_dataset_selects_max_reward_without_bucket_sort(self):
+        records = [
+            {"run_id": "a", "dataset": "mrpc", "status": "complete", "best_reward": 0.1},
+            {"run_id": "b", "dataset": "mrpc", "status": "complete", "best_reward": 0.9},
+            {"run_id": "c", "dataset": "mrpc", "status": "crashed", "best_reward": 5.0},
+            {"run_id": "d", "dataset": "rte", "status": "training_only", "best_reward": 0.4},
+            {"run_id": "e", "dataset": "rte", "status": "complete", "best_reward": 0.3},
+        ]
+
+        best = experiments_log._best_by_dataset(records)
+
+        self.assertEqual(set(best), {"mrpc", "rte"})
+        self.assertEqual(best["mrpc"]["run_id"], "b")
+        self.assertEqual(best["rte"]["run_id"], "d")
+
 
 if __name__ == "__main__":
     unittest.main()

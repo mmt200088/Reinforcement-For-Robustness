@@ -558,6 +558,12 @@ A local 100k-row registry with 1000 unique run IDs preserved the query result
 and reduced peak memory from `98.00MB` to `1.08MB`, with wall time improving
 from `0.7549s` to `0.6560s`.
 
+Progress 2026-07-02: `tools/experiments_log.py` now computes the
+best-by-dataset table for `experiments/index.md` with one streaming max pass
+over latest records, instead of building per-dataset buckets and sorting each
+bucket. A local 250k-record synthetic registry preserved the selected run IDs
+while reducing that index substep from `0.132s`/`1.44MB` to `0.113s`/`0.01MB`.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
