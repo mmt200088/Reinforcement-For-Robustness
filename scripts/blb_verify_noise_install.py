@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from json_utils import to_jsonable  # noqa: E402
+from json_utils import read_json_file, to_jsonable  # noqa: E402
 
 _NOISE_VARIANCE_TABLE_CACHE: Dict[int, Dict[int, Dict[str, float]]] | None = None
 
@@ -379,7 +379,7 @@ def run_full(args: argparse.Namespace) -> Path:
 
     max_sfs = load_max_sfs(profile=profile)
     if args.action_file:
-        action_doc = json.loads(Path(args.action_file).read_text(encoding="utf-8"))
+        action_doc = read_json_file(Path(args.action_file))
         action_vec = list(action_doc.get("action_indices") or action_doc.get("action") or [])
         if not action_vec:
             raise ValueError(f"{args.action_file} did not contain 'action_indices' or 'action' list")

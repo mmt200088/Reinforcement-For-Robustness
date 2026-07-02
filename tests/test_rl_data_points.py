@@ -172,6 +172,8 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/blb_diagnose_invalid_blocks.py": "from json_utils import read_json_file",
             "scripts/blb_diag_block2_boost.py": "from json_utils import read_json_file",
             "scripts/report_fusion_count_map.py": "from json_utils import read_json_file",
+            "scripts/blb_verify_boosted_install.py": "from json_utils import read_json_file",
+            "scripts/blb_verify_noise_install.py": "from json_utils import read_json_file",
             "Paean/action_grid.py": "from json_utils import read_json_file",
             "Paean/blb_action_eval.py": "from json_utils import read_json_file",
         }

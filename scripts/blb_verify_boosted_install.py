@@ -38,7 +38,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import pathlib
 import sys
@@ -47,6 +46,8 @@ _REPO = pathlib.Path(__file__).resolve().parents[1]
 for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimizer")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+from json_utils import read_json_file  # noqa: E402
 
 # Degenerate / dormant maps carry no boosted fusion option to install. block1's
 # key is profile-suffixed (block1_<profile>) and is fusion-degenerate (never
@@ -232,7 +233,7 @@ def verify_map(
 ) -> tuple:
     """Returns (checked, problems) for one map file."""
     if payload is None:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
     graph_key = str(payload["graph_key"])
     block_idx = int(payload["block_idx"])
     gelu_degree = int(payload.get("gelu_degree", 4))
@@ -321,7 +322,7 @@ def _verify_maps(
     for p in files:
         payload = None
         try:
-            payload = json.loads(p.read_text(encoding="utf-8"))
+            payload = read_json_file(p)
             gk = payload.get("graph_key", p.stem)
         except Exception:
             gk = p.stem
