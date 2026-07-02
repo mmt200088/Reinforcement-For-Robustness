@@ -386,6 +386,13 @@ lines with `isspace()` and passes nonblank episode lines directly to
 80k-row long-line benchmark preserved row count and reduced episode parse time
 from `0.434637s` to `0.415472s` (`1.05x`).
 
+Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now computes each
+per-window stats row with a single chunk scan and running counters instead of
+building temporary value and boolean lists for every metric. A local 200k-row,
+400-window benchmark preserved identical stats and reduced window aggregation
+from `0.152045s` to `0.142315s` (`1.07x`), with traced peak allocation dropping
+from `381,192B` to `359,168B`.
+
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.

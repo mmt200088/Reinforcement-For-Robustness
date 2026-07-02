@@ -115,21 +115,47 @@ def window_stats(eps: List[Dict[str, Any]], window: int) -> List[Dict[str, Any]]
 
 
 def _window_stats_chunk(chunk: List[Dict[str, Any]], fallback_offset: int) -> Dict[str, Any]:
-    pr = [int(r.get("terminal_priority", 0) or 0) for r in chunk]
+    n = len(chunk)
+    p1 = p2 = p3 = 0
+    loss_cap = 0
+    sn_active = 0
+    reward_sum = 0.0
+    fusion_sum = 0.0
+    m1_sum = 0.0
+    sn_radius_sum = 0.0
+    invalid_sum = 0.0
+    for row in chunk:
+        priority = int(row.get("terminal_priority", 0) or 0)
+        if priority == 1:
+            p1 += 1
+        elif priority == 2:
+            p2 += 1
+        elif priority == 3:
+            p3 += 1
+        reward_sum += float(row.get("total_reward", 0.0) or 0.0)
+        fusion_sum += float(row.get("fusion_count", 0) or 0)
+        loss = float(row.get("terminal_loss_mean", 0.0) or 0.0)
+        if loss >= LOSS_CAP:
+            loss_cap += 1
+        m1_sum += float(row.get("terminal_metric1_mean", 0.0) or 0.0)
+        if bool(row.get("safe_neighbor_active", False)):
+            sn_active += 1
+        sn_radius_sum += float(row.get("safe_neighbor_radius", 0) or 0)
+        invalid_sum += float(row.get("invalid_steps", 0) or 0)
     return {
         "ep_lo": int(chunk[0].get("episode", fallback_offset)),
         "ep_hi": int(chunk[-1].get("episode", fallback_offset + len(chunk) - 1)),
-        "n": len(chunk),
-        "reward": _mean([float(r.get("total_reward", 0.0) or 0.0) for r in chunk]),
-        "p1": _frac([p == 1 for p in pr]),
-        "p2": _frac([p == 2 for p in pr]),
-        "p3": _frac([p == 3 for p in pr]),
-        "fusion": _mean([float(r.get("fusion_count", 0) or 0) for r in chunk]),
-        "loss_cap": _frac([float(r.get("terminal_loss_mean", 0.0) or 0.0) >= LOSS_CAP for r in chunk]),
-        "m1": _mean([float(r.get("terminal_metric1_mean", 0.0) or 0.0) for r in chunk]),
-        "sn_active": _frac([bool(r.get("safe_neighbor_active", False)) for r in chunk]),
-        "sn_radius": _mean([float(r.get("safe_neighbor_radius", 0) or 0) for r in chunk]),
-        "invalid": _mean([float(r.get("invalid_steps", 0) or 0) for r in chunk]),
+        "n": n,
+        "reward": _mean_counts(reward_sum, n),
+        "p1": _frac_counts(p1, n),
+        "p2": _frac_counts(p2, n),
+        "p3": _frac_counts(p3, n),
+        "fusion": _mean_counts(fusion_sum, n),
+        "loss_cap": _frac_counts(loss_cap, n),
+        "m1": _mean_counts(m1_sum, n),
+        "sn_active": _frac_counts(sn_active, n),
+        "sn_radius": _mean_counts(sn_radius_sum, n),
+        "invalid": _mean_counts(invalid_sum, n),
     }
 
 

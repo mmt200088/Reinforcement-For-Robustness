@@ -208,6 +208,61 @@ class StreamingMainTest(unittest.TestCase):
 
         self.assertEqual(payload, {"slots": [{"slot": 1}]})
 
+    def test_window_stats_chunk_scans_once_without_temp_list_helpers(self):
+        chunk = [
+            {
+                "episode": 10,
+                "terminal_priority": 1,
+                "total_reward": 3.0,
+                "fusion_count": 0,
+                "terminal_loss_mean": 100.0,
+                "terminal_metric1_mean": 0.7,
+                "safe_neighbor_active": True,
+                "safe_neighbor_radius": 1,
+                "invalid_steps": 0,
+            },
+            {
+                "episode": 11,
+                "terminal_priority": 2,
+                "total_reward": 6.0,
+                "fusion_count": 2,
+                "terminal_loss_mean": 0.3,
+                "terminal_metric1_mean": 0.8,
+                "safe_neighbor_active": False,
+                "safe_neighbor_radius": 2,
+                "invalid_steps": 1,
+            },
+            {
+                "episode": 12,
+                "terminal_priority": 3,
+                "total_reward": 9.0,
+                "fusion_count": 4,
+                "terminal_loss_mean": 0.4,
+                "terminal_metric1_mean": 0.9,
+                "safe_neighbor_active": True,
+                "safe_neighbor_radius": 3,
+                "invalid_steps": 2,
+            },
+        ]
+
+        with mock.patch.object(abc_mod, "_mean", side_effect=AssertionError("no temp mean list")):
+            with mock.patch.object(abc_mod, "_frac", side_effect=AssertionError("no temp frac list")):
+                stats = abc_mod._window_stats_chunk(chunk, fallback_offset=0)
+
+        self.assertEqual(stats["ep_lo"], 10)
+        self.assertEqual(stats["ep_hi"], 12)
+        self.assertEqual(stats["n"], 3)
+        self.assertAlmostEqual(stats["reward"], 6.0)
+        self.assertAlmostEqual(stats["p1"], 1 / 3)
+        self.assertAlmostEqual(stats["p2"], 1 / 3)
+        self.assertAlmostEqual(stats["p3"], 1 / 3)
+        self.assertAlmostEqual(stats["fusion"], 2.0)
+        self.assertAlmostEqual(stats["loss_cap"], 1 / 3)
+        self.assertAlmostEqual(stats["m1"], 0.8)
+        self.assertAlmostEqual(stats["sn_active"], 2 / 3)
+        self.assertAlmostEqual(stats["sn_radius"], 2.0)
+        self.assertAlmostEqual(stats["invalid"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
