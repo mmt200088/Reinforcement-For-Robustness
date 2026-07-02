@@ -1376,19 +1376,48 @@ class UnifiedFinalEvaluationModule:
         for res in random_results:
             grouped.setdefault(res["family"], []).append(res)
 
+        selected_loss = selected["loss"]
+        selected_p = selected["p"]
+        selected_s = selected["s"] if num_metrics > 1 else 0.0
+        selected_stage1 = selected["stage1_tot_c"]
+        selected_stage2 = selected["stage2_tot_c"]
         all_feasible, all_loss_win, all_primary_win, all_secondary_win, all_dom = (
             [], [], [], [], []
         )
         for family, items in grouped.items():
             feasible = [1.0 if it["feasible"] else 0.0 for it in items]
-            loss_win = [1.0 if selected["loss"] <= it["loss"] else 0.0 for it in items]
-            p_win = [1.0 if selected["p"] >= it["p"] else 0.0 for it in items]
+            loss_win = [1.0 if selected_loss <= it["loss"] else 0.0 for it in items]
+            p_win = [1.0 if selected_p >= it["p"] else 0.0 for it in items]
             s_win = (
-                [1.0 if selected["s"] >= it["s"] else 0.0 for it in items]
+                [1.0 if selected_s >= it["s"] else 0.0 for it in items]
                 if num_metrics > 1
                 else []
             )
-            dom = [1.0 if self._dominates(selected, it) else 0.0 for it in items]
+            dom = [
+                1.0
+                if (
+                    selected_stage1 <= it["stage1_tot_c"]
+                    and selected_stage2 <= it["stage2_tot_c"]
+                    and selected_loss <= it["loss"]
+                    and selected_p >= it["p"]
+                    and (
+                        num_metrics <= 1
+                        or selected_s >= it["s"]
+                    )
+                    and (
+                        selected_stage1 < it["stage1_tot_c"]
+                        or selected_stage2 < it["stage2_tot_c"]
+                        or selected_loss < it["loss"]
+                        or selected_p > it["p"]
+                        or (
+                            num_metrics > 1
+                            and selected_s > it["s"]
+                        )
+                    )
+                )
+                else 0.0
+                for it in items
+            ]
             summary["by_family"][family] = {
                 "count": len(items),
                 "feasible_rate": float(np.mean(feasible)),
@@ -1437,9 +1466,9 @@ class UnifiedFinalEvaluationModule:
                     if f"{metric_key}_var" in it
                 ]
                 if var_values:
-                    summary["by_family"][family][f"{metric_key}_eval_variance_mean"] = float(
-                        np.mean(var_values)
-                    )
+                    summary["by_family"][family][
+                        f"{metric_key}_eval_variance_mean"
+                    ] = float(np.mean(var_values))
             all_feasible.extend(feasible)
             all_loss_win.extend(loss_win)
             all_primary_win.extend(p_win)

@@ -265,6 +265,56 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
                 build_result=build_result,
             )
 
+    def test_random_summary_vectorizes_dominance_checks(self):
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        runner.evaluator = SimpleNamespace(get_num_metrics=lambda: 2)
+        selected = {
+            "loss": 0.30,
+            "p": 0.90,
+            "s": 0.85,
+            "stage1_tot_c": 10.0,
+            "stage2_tot_c": 20.0,
+        }
+        random_results = [
+            {
+                "family": "cost_matched",
+                "feasible": True,
+                "loss": 0.40,
+                "p": 0.80,
+                "s": 0.80,
+                "loss_delta_vs_baseline": 0.02,
+                "p_delta_vs_baseline": -0.01,
+                "s_delta_vs_baseline": -0.02,
+                "total_cost": 31.0,
+                "stage1_tot_c": 11.0,
+                "stage2_tot_c": 22.0,
+            },
+            {
+                "family": "cost_matched",
+                "feasible": False,
+                "loss": 0.20,
+                "p": 0.95,
+                "s": 0.90,
+                "loss_delta_vs_baseline": -0.01,
+                "p_delta_vs_baseline": 0.02,
+                "s_delta_vs_baseline": 0.03,
+                "total_cost": 28.0,
+                "stage1_tot_c": 9.0,
+                "stage2_tot_c": 19.0,
+            },
+        ]
+
+        with mock.patch.object(
+            runner,
+            "_dominates",
+            side_effect=AssertionError("dominance should be computed inline"),
+        ):
+            summary = runner._summarize_random_results(selected, random_results, num_metrics=2)
+
+        self.assertEqual(summary["by_family"]["cost_matched"]["count"], 2)
+        self.assertEqual(summary["by_family"]["cost_matched"]["dominance_rate"], 0.5)
+        self.assertEqual(summary["overall"]["dominance_rate"], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()
