@@ -11,6 +11,7 @@ from __future__ import annotations
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
@@ -138,6 +139,39 @@ class FusionMapLoaderTest(unittest.TestCase):
             m = fcm.FusionCountMap.load("mrpc", root=td)
             self.assertEqual(sorted(m.graphs), ["block1_mrpc"])
             self.assertEqual(m.num_options("block1_mrpc"), 2)
+
+    def test_load_discovers_maps_without_path_glob_or_sidecar_reads(self):
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            d = pathlib.Path(td) / "fusion_maps" / "mrpc"
+            d.mkdir(parents=True)
+            map_path = d / "block1_mrpc.json"
+            sidecar_path = d / "map_summary.json"
+            map_path.write_text(json.dumps(_toy_payload()["graphs"]["block1_mrpc"]), encoding="utf-8")
+            sidecar_path.write_text("{not-json", encoding="utf-8")
+            (d / "notes.txt").write_text("ignored", encoding="utf-8")
+
+            original_read_text = pathlib.Path.read_text
+
+            def guarded_read_text(path, *args, **kwargs):
+                if pathlib.Path(path) == sidecar_path:
+                    raise AssertionError("fusion-count map loader should not read sidecars")
+                return original_read_text(path, *args, **kwargs)
+
+            with (
+                mock.patch.object(
+                    pathlib.Path,
+                    "glob",
+                    side_effect=AssertionError("fusion-count map loader should not use Path.glob"),
+                ),
+                mock.patch.object(pathlib.Path, "read_text", guarded_read_text),
+            ):
+                m = fcm.FusionCountMap.load("mrpc", root=td)
+
+        self.assertEqual(sorted(m.graphs), ["block1_mrpc"])
+        self.assertEqual(m.num_options("block1_mrpc"), 2)
 
 
 class GroupMinNoiseOptionsTest(unittest.TestCase):

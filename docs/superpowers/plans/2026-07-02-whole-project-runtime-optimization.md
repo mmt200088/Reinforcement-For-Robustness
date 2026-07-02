@@ -587,6 +587,14 @@ skipping `.json` directories before any file rewrite attempt. A local
 ordering and reduced discovery from `0.073012s` / `5.20MB` to `0.030925s` /
 `1.18MB`.
 
+Progress 2026-07-02: `blb_stage2_rl/fusion_count_map.py` runtime
+`FusionCountMap.load()` now discovers canonical block-map JSON files with
+`os.scandir()` and filename filtering before parsing payloads. Runtime map
+loading no longer opens sidecars such as `map_summary.json`, and `.json`
+directories are ignored before any read attempt. A local 1000-map /
+3000-sidecar benchmark preserved loaded graph count and reduced map loading
+from `0.208784s` / `3.57MB` to `0.068689s` / `2.54MB` (`3.04x`).
+
 - [ ] **Step 3: Verify**
 
 Run:

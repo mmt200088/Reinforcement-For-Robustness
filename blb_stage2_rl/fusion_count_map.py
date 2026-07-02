@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 import pathlib
 from typing import Dict, List, Protocol, Sequence, runtime_checkable
 
@@ -153,12 +154,8 @@ class FusionCountMap:
         map_dir = base / "fusion_maps" / profile
         merged: dict = {"profile": profile, "graphs": {}, "max_num_options": 0}
         mx = 0
-        for path in sorted(map_dir.glob("*.json")):
-            if path.name.startswith(("_", ".")):
-                continue  # skip non-graph / macOS sidecars like _summary.json or ._block.json
+        for path in _iter_map_paths(map_dir):
             g = json.loads(path.read_text(encoding="utf-8"))
-            if "graph_key" not in g:
-                continue
             merged["graphs"][str(g["graph_key"])] = g
             mx = max(mx, len(g["options"]))
         if not merged["graphs"]:
@@ -189,3 +186,17 @@ class FusionCountMap:
         vec = np.asarray(opt.action_indices, dtype=int).copy()
         vec[int(g.k_slot_index)] = int(k_index)
         return vec
+
+
+def _iter_map_paths(map_dir: pathlib.Path) -> List[pathlib.Path]:
+    try:
+        names = sorted(
+            entry.name
+            for entry in os.scandir(map_dir)
+            if entry.is_file()
+            and entry.name.endswith(".json")
+            and entry.name.startswith("block")
+        )
+    except OSError:
+        return []
+    return [map_dir / name for name in names]
