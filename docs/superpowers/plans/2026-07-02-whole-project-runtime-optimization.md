@@ -149,6 +149,13 @@ Progress 2026-07-02: `scripts/launcher_gpu_audit.py` now bounds fallback
 non-fatal GPU audit gate from stalling expensive RL launchers when the server
 driver/CLI is slow or wedged and `CUDA_VISIBLE_DEVICES` was not set.
 
+Progress 2026-07-02: `scripts/server_resource_snapshot.py`
+`parse_nvidia_smi_csv()` now streams text through a small line iterator instead
+of materializing `splitlines()`. This keeps resource snapshot parsing
+memory-bounded when callers pass long sampled `nvidia-smi` text. A local 100k
+sample benchmark preserved collapsed GPU rows while reducing traced peak memory
+from `9.53MB` to `0.02MB` and wall time from `1.0655s` to `0.9515s`.
+
 - [x] **Step 3: Verify**
 
 Run:

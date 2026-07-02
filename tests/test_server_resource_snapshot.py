@@ -57,6 +57,22 @@ class ServerResourceSnapshotTest(unittest.TestCase):
         self.assertEqual(summary["memory_total_mib"], 81920)
         self.assertEqual(summary["max_utilization_gpu_pct"], 81)
 
+    def test_parse_nvidia_smi_csv_streams_text_lines_without_list(self):
+        snap = _load_snapshot_module()
+        captured = {}
+
+        def fake_parse_lines(lines):
+            captured["is_list"] = isinstance(lines, list)
+            captured["rows"] = list(lines)
+            return [{"index": 0}]
+
+        with mock.patch.object(snap, "parse_nvidia_smi_lines", fake_parse_lines):
+            rows = snap.parse_nvidia_smi_csv("0, GPU, 10, 1, 2\n")
+
+        self.assertEqual(rows, [{"index": 0}])
+        self.assertFalse(captured["is_list"])
+        self.assertEqual(captured["rows"], ["0, GPU, 10, 1, 2\n"])
+
     def test_cli_writes_json_and_markdown_from_offline_gpu_csv(self):
         snap = _load_snapshot_module()
 
