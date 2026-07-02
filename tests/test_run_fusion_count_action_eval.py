@@ -7,6 +7,23 @@ from unittest import mock
 from scripts import run_fusion_count_action_eval as action_eval
 
 
+class NoCopyMapping:
+    def __init__(self, payload):
+        self.payload = dict(payload)
+
+    def __getitem__(self, key):
+        return self.payload[key]
+
+    def __iter__(self):
+        raise AssertionError("unique config selection should not copy mappings")
+
+    def __len__(self):
+        raise AssertionError("unique config selection should not copy mappings")
+
+    def get(self, key, default=None):
+        return self.payload.get(key, default)
+
+
 class FusionCountActionEvalTest(unittest.TestCase):
     def test_load_action_configs_does_not_retain_full_payload(self):
         with tempfile.TemporaryDirectory() as td:
@@ -106,6 +123,25 @@ class FusionCountActionEvalTest(unittest.TestCase):
         self.assertEqual([row["name"] for row in combined["group_results"]], ["canonical", "alias"])
         self.assertTrue(combined["group_results"][1]["reused_from_canonical"])
         self.assertIn("large_diagnostics", combined["group_results"][0])
+
+    def test_unique_configs_reuses_first_config_without_copying(self):
+        first = NoCopyMapping({
+            "name": "first",
+            "path": Path("first.json"),
+            "action_hash": "same",
+            "group": {"name": "first"},
+        })
+        duplicate = NoCopyMapping({
+            "name": "duplicate",
+            "path": Path("duplicate.json"),
+            "action_hash": "same",
+            "group": {"name": "duplicate"},
+        })
+
+        unique = action_eval._unique_configs([first, duplicate])
+
+        self.assertEqual(len(unique), 1)
+        self.assertIs(next(iter(unique)), first)
 
 
 if __name__ == "__main__":

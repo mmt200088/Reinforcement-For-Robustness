@@ -8,16 +8,15 @@ requested groups, including duplicate/no-op aliases, are folded into one report.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import html
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
-
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, ValuesView
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RUN_DIR = REPO_ROOT / "experiments" / "server_command_runs" / "fusion_count_map_action_eval_20260610"
@@ -113,11 +112,11 @@ def _load_action_configs(action_dir: Path) -> List[dict]:
     return configs
 
 
-def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> List[dict]:
-    first_by_hash: Dict[str, dict] = {}
+def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> ValuesView[Mapping[str, Any]]:
+    first_by_hash: Dict[str, Mapping[str, Any]] = {}
     for cfg in configs:
-        first_by_hash.setdefault(str(cfg["action_hash"]), dict(cfg))
-    return list(first_by_hash.values())
+        first_by_hash.setdefault(str(cfg["action_hash"]), cfg)
+    return first_by_hash.values()
 
 
 def _output_dir(output_root: Path, run_name: str) -> Path:

@@ -20,7 +20,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, ValuesView
 
 import numpy as np
 
@@ -145,11 +145,11 @@ def _group_key(cfg: Mapping[str, Any]) -> str:
     return json.dumps(key_payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
-def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> List[dict]:
-    seen: Dict[str, dict] = {}
+def _unique_configs(configs: Sequence[Mapping[str, Any]]) -> ValuesView[Mapping[str, Any]]:
+    seen: Dict[str, Mapping[str, Any]] = {}
     for cfg in configs:
-        seen.setdefault(_group_key(cfg), dict(cfg))
-    return list(seen.values())
+        seen.setdefault(_group_key(cfg), cfg)
+    return seen.values()
 
 
 def _base_model(model_type: str, dataset: str) -> str:

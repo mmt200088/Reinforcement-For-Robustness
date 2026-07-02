@@ -459,6 +459,17 @@ building temporary value and boolean lists for every metric. A local 200k-row,
 from `0.152045s` to `0.142315s` (`1.07x`), with traced peak allocation dropping
 from `381,192B` to `359,168B`.
 
+Progress 2026-07-02: `scripts/run_fusion_count_action_eval.py` and
+`scripts/run_fusion_count_action_eval_rlpath.py` now keep the first unique
+fusion-count action config by reference during deduplication instead of
+eagerly shallow-copying every input config via `dict(cfg)` and then copying
+the unique values into a list. The returned `dict_values` view still supports
+`len()` and ordered iteration for the launch loops. Local 80k-config duplicate
+benchmarks preserved canonical selection; standalone Paean action eval
+deduplication improved from `1.340131s` to `0.819613s` (`1.64x`, peak
+`15,592B` to `6,888B`), while RL-path deduplication improved from `19.053310s`
+to `18.179581s` (`1.05x`, peak `108,156B` to `50,443B`).
+
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.

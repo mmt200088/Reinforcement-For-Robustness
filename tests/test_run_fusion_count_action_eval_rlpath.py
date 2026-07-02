@@ -5,6 +5,23 @@ import unittest
 from unittest import mock
 
 
+class NoCopyMapping:
+    def __init__(self, payload):
+        self.payload = dict(payload)
+
+    def get(self, key, default=None):
+        return self.payload.get(key, default)
+
+    def __getitem__(self, key):
+        return self.payload[key]
+
+    def __iter__(self):
+        raise AssertionError("unique config selection should not copy mappings")
+
+    def __len__(self):
+        raise AssertionError("unique config selection should not copy mappings")
+
+
 class FusionCountActionEvalRLPathTest(unittest.TestCase):
     def test_module_import_is_dependency_light(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
@@ -109,3 +126,22 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertIsNot(converted, payload)
         self.assertIs(converted["steps"], steps)
         self.assertEqual(converted["array"], [1, 2, 3])
+
+    def test_unique_configs_reuses_first_config_without_copying(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        first = NoCopyMapping({
+            "name": "first",
+            "group": {"option_by_graph": {"block2_mrpc": 1}, "option_by_step": {"0": 1}},
+            "baseline_k_index": 2,
+        })
+        duplicate = NoCopyMapping({
+            "name": "duplicate",
+            "group": {"option_by_graph": {"block2_mrpc": 1}, "option_by_step": {"0": 1}},
+            "baseline_k_index": 2,
+        })
+
+        unique = rlpath._unique_configs([first, duplicate])
+
+        self.assertEqual(len(unique), 1)
+        self.assertIs(next(iter(unique)), first)
