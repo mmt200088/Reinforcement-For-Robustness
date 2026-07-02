@@ -185,6 +185,10 @@ def _smallest_cost_rows(rows: Iterable[Mapping[str, Any]], limit: int) -> List[M
     )
 
 
+def _candidate_indices_below_baseline(baseline_idx: int) -> range:
+    return range(0, int(baseline_idx))
+
+
 def _build_per_slot_summary_rows(
         *,
         baseline_action: Sequence[int],
@@ -540,8 +544,7 @@ def run_scan_core(
     rows: List[Dict[str, Any]] = []
     for slot_idx, baseline_idx in enumerate(baseline_action):
         record = records[slot_idx] if slot_idx < len(records) else {}
-        candidates = list(range(0, int(baseline_idx)))
-        for candidate_idx in candidates:
+        for candidate_idx in _candidate_indices_below_baseline(baseline_idx):
             action = list(baseline_action)
             action[slot_idx] = int(candidate_idx)
             evaluated = _normalize_eval(

@@ -143,6 +143,14 @@ class BLBF0ScanTests(unittest.TestCase):
         self.assertEqual(mask["slots"][0]["allowed_indices"], [0, 1])
         self.assertEqual(mask["slots"][0]["allowed_values"], [16, 18])
 
+    def test_candidate_indices_below_baseline_are_streamed(self):
+        from scripts.blb_f0_scan_feasible_domain import _candidate_indices_below_baseline
+
+        candidates = _candidate_indices_below_baseline(5)
+
+        self.assertIsInstance(candidates, range)
+        self.assertEqual(list(candidates), [0, 1, 2, 3, 4])
+
     def test_scan_stops_when_baseline_is_invalid(self):
         from scripts.blb_f0_scan_feasible_domain import run_scan_core
 
