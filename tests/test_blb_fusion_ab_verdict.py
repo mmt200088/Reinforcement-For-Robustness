@@ -8,9 +8,12 @@ ep 1000), which is exploration collapse, not a better search. The comparator
 must also report P2 (the missing 11% that made P1+P3 look like 89%).
 """
 import importlib.util
+import json
 import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(
@@ -105,6 +108,54 @@ class VerdictSearchProgressTest(unittest.TestCase):
         s_bad = abc_mod.summarize(collapsed, anchor=80)
         verdict = abc_mod._verdict(s_on, s_bad, "curriculum ON", "curriculum OFF")
         self.assertIn("Curriculum helps", verdict)
+
+
+class StreamingMainTest(unittest.TestCase):
+    def _write_run(self, root, label, rows):
+        run_dir = root / label / "diagnostics"
+        run_dir.mkdir(parents=True)
+        with (run_dir / "episodes.jsonl").open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, sort_keys=True) + "\n")
+        return run_dir.parent
+
+    def test_main_streams_ordered_episode_files_without_load_episodes(self):
+        rows_a = _make_on_arm(n=260, anchor=80)
+        rows_b = _make_off_arm(n=260, anchor=80)
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            run_a = self._write_run(root, "a", rows_a)
+            run_b = self._write_run(root, "b", rows_b)
+            out = root / "ab.html"
+
+            with mock.patch.object(abc_mod, "load_episodes", side_effect=AssertionError("should stream")):
+                with mock.patch.object(abc_mod, "_try_plots", return_value=[]):
+                    abc_mod.main([
+                        "--run-a",
+                        str(run_a),
+                        "--run-b",
+                        str(run_b),
+                        "--out",
+                        str(out),
+                        "--window",
+                        "50",
+                    ])
+
+            self.assertTrue(out.is_file())
+            payload = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary_a"]["n_total"], len(rows_a))
+            self.assertEqual(payload["summary_b"]["n_total"], len(rows_b))
+
+    def test_streaming_analysis_matches_legacy_list_analysis_for_ordered_jsonl(self):
+        rows = _make_on_arm(n=260, anchor=80)
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            run = self._write_run(root, "a", rows)
+
+            summary, windows = abc_mod.analyze_episodes(str(run), anchor=80, window=50)
+
+        self.assertEqual(summary, abc_mod.summarize(rows, anchor=80))
+        self.assertEqual(windows, abc_mod.window_stats(rows, window=50))
 
 
 if __name__ == "__main__":

@@ -17,12 +17,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 LOSS_CAP = 100.0  # terminal_loss_mean sentinel for an accuracy-collapse episode
 
 
-def _find_episodes_jsonl(run_dir: str) -> Optional[str]:
+def _find_episodes_jsonl(run_dir: str) -> str | None:
     cands = [
         os.path.join(run_dir, "diagnostics", "episodes.jsonl"),
         os.path.join(run_dir, "progress", "diagnostics", "episodes.jsonl"),
@@ -42,17 +42,40 @@ def load_episodes(run_dir: str) -> List[Dict[str, Any]]:
     if not path:
         raise FileNotFoundError(f"no episodes.jsonl under {run_dir}")
     out: List[Dict[str, Any]] = []
+    for row in _iter_episode_rows(path):
+        out.append(row)
+    out.sort(key=lambda r: int(r.get("episode", 0) or 0))
+    return out
+
+
+def _iter_episode_rows(path: str):
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
-                out.append(json.loads(line))
+                row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-    out.sort(key=lambda r: int(r.get("episode", 0) or 0))
-    return out
+            if isinstance(row, dict):
+                yield row
+
+
+def _episode_scan(path: str, anchor: int) -> Dict[str, Any]:
+    prev_episode: int | None = None
+    ordered = True
+    n_total = 0
+    n_post = 0
+    for row in _iter_episode_rows(path):
+        episode = int(row.get("episode", 0) or 0)
+        if prev_episode is not None and episode < prev_episode:
+            ordered = False
+        prev_episode = episode
+        n_total += 1
+        if episode >= anchor:
+            n_post += 1
+    return {"ordered": ordered, "n_total": n_total, "n_post": n_post}
 
 
 def _mean(xs: List[float]) -> float:
@@ -61,6 +84,14 @@ def _mean(xs: List[float]) -> float:
 
 def _frac(flags: List[bool]) -> float:
     return float(sum(1 for x in flags if x) / len(flags)) if flags else 0.0
+
+
+def _frac_counts(count: int, total: int) -> float:
+    return float(count / total) if total else 0.0
+
+
+def _mean_counts(total: float, count: int) -> float:
+    return float(total / count) if count else 0.0
 
 
 def window_stats(eps: List[Dict[str, Any]], window: int) -> List[Dict[str, Any]]:
@@ -126,7 +157,117 @@ def summarize(eps: List[Dict[str, Any]], anchor: int) -> Dict[str, Any]:
     }
 
 
-def _load_best_action(run_dir: str) -> Optional[Dict[str, Any]]:
+def _summarize_ordered_path(path: str, anchor: int, n_post: int) -> Dict[str, Any]:
+    tail_keep = max(1, n_post // 5) if n_post else 0
+    tail_start = n_post - tail_keep
+
+    n_total = 0
+    best_reward: float | None = None
+    best_p3: tuple[float, int] | None = None
+
+    post_seen = 0
+    post_p1 = post_p2 = post_p3 = 0
+    post_loss_cap = 0
+    post_reward_sum = 0.0
+    post_fusion_sum = 0.0
+
+    tail_n = 0
+    tail_p1 = tail_p2 = tail_p3 = 0
+    tail_reward_sum = 0.0
+    tail_fusion_sum = 0.0
+    tail_m1_sum = 0.0
+
+    for row in _iter_episode_rows(path):
+        episode = int(row.get("episode", 0) or 0)
+        priority = int(row.get("terminal_priority", 0) or 0)
+        reward = float(row.get("total_reward", 0.0) or 0.0)
+        fusion = float(row.get("fusion_count", 0) or 0)
+        loss = float(row.get("terminal_loss_mean", 0.0) or 0.0)
+        metric1 = float(row.get("terminal_metric1_mean", 0.0) or 0.0)
+        invalid_steps = int(row.get("invalid_steps", 0) or 0)
+
+        n_total += 1
+        best_reward = reward if best_reward is None else max(best_reward, reward)
+        if episode < anchor:
+            continue
+
+        if priority == 1:
+            post_p1 += 1
+        elif priority == 2:
+            post_p2 += 1
+        elif priority == 3:
+            post_p3 += 1
+        if loss >= LOSS_CAP:
+            post_loss_cap += 1
+        post_reward_sum += reward
+        post_fusion_sum += fusion
+        if priority == 3 and invalid_steps == 0:
+            candidate = (reward, episode)
+            best_p3 = candidate if best_p3 is None else max(best_p3, candidate)
+
+        if post_seen >= tail_start:
+            tail_n += 1
+            if priority == 1:
+                tail_p1 += 1
+            elif priority == 2:
+                tail_p2 += 1
+            elif priority == 3:
+                tail_p3 += 1
+            tail_reward_sum += reward
+            tail_fusion_sum += fusion
+            tail_m1_sum += metric1
+        post_seen += 1
+
+    best_p3_reward, best_p3_episode = best_p3 if best_p3 is not None else (0.0, -1)
+    return {
+        "n_total": n_total,
+        "n_post": n_post,
+        "best_reward": best_reward if best_reward is not None else 0.0,
+        "best_p3_reward": float(best_p3_reward),
+        "best_p3_episode": int(best_p3_episode),
+        "post_p1": _frac_counts(post_p1, n_post),
+        "post_p2": _frac_counts(post_p2, n_post),
+        "post_p3": _frac_counts(post_p3, n_post),
+        "post_loss_cap": _frac_counts(post_loss_cap, n_post),
+        "post_mean_reward": _mean_counts(post_reward_sum, n_post),
+        "post_mean_fusion": _mean_counts(post_fusion_sum, n_post),
+        "tail_p1": _frac_counts(tail_p1, tail_n),
+        "tail_p2": _frac_counts(tail_p2, tail_n),
+        "tail_p3": _frac_counts(tail_p3, tail_n),
+        "tail_mean_reward": _mean_counts(tail_reward_sum, tail_n),
+        "tail_mean_fusion": _mean_counts(tail_fusion_sum, tail_n),
+        "tail_mean_m1": _mean_counts(tail_m1_sum, tail_n),
+    }
+
+
+def _window_stats_ordered_path(path: str, window: int) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    chunk: List[Dict[str, Any]] = []
+    for row in _iter_episode_rows(path):
+        chunk.append(row)
+        if len(chunk) >= window:
+            rows.extend(window_stats(chunk, window))
+            chunk = []
+    if chunk:
+        rows.extend(window_stats(chunk, window))
+    return rows
+
+
+def analyze_episodes(run_dir: str, anchor: int, window: int) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    path = _find_episodes_jsonl(run_dir)
+    if not path:
+        raise FileNotFoundError(f"no episodes.jsonl under {run_dir}")
+    scan = _episode_scan(path, anchor)
+    if not scan["ordered"]:
+        eps = load_episodes(run_dir)
+        return summarize(eps, anchor), window_stats(eps, window)
+    return (
+        _summarize_ordered_path(path, anchor, int(scan["n_post"])),
+        _window_stats_ordered_path(path, window),
+    )
+
+
+def _load_best_action(run_dir: str) -> Dict[str, Any] | None:
     for root, _dirs, files in os.walk(run_dir):
         if "blb_stage2_best_action_full.json" in files:
             try:
@@ -280,7 +421,7 @@ th{{background:#f3f3f3}} td:first-child,th:first-child{{text-align:left}}
 </body></html>"""
 
 
-def main() -> None:
+def main(argv: List[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-a", required=True)
     ap.add_argument("--run-b", required=True)
@@ -289,11 +430,10 @@ def main() -> None:
     ap.add_argument("--anchor", type=int, default=80)
     ap.add_argument("--window", type=int, default=200)
     ap.add_argument("--out", required=True)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
-    ea, eb = load_episodes(args.run_a), load_episodes(args.run_b)
-    sa, sb = summarize(ea, args.anchor), summarize(eb, args.anchor)
-    wa, wb = window_stats(ea, args.window), window_stats(eb, args.window)
+    sa, wa = analyze_episodes(args.run_a, args.anchor, args.window)
+    sb, wb = analyze_episodes(args.run_b, args.anchor, args.window)
     out_dir = os.path.dirname(os.path.abspath(args.out)) or "."
     os.makedirs(out_dir, exist_ok=True)
     pngs = _try_plots(out_dir, wa, wb, args.label_a, args.label_b)

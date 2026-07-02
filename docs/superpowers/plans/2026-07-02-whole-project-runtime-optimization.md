@@ -244,6 +244,12 @@ from `scripts/stage2_reward_probe_scaling_benchmark.sh` into
 unit-tested and streams `runs.jsonl`, per-run `episodes.jsonl`, and sampled
 `nvidia-smi` CSV files instead of reading them into large strings.
 
+Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now analyzes ordered
+Stage-2 `episodes.jsonl` files with a streaming two-pass path for summary and
+bounded-window rows, avoiding materializing full 60k+ episode lists during A/B
+HTML generation. If an input file is out of episode order, it falls back to the
+legacy load-and-sort path to preserve report semantics.
+
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.
