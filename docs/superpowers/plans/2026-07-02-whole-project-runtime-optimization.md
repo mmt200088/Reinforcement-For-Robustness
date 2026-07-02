@@ -526,6 +526,13 @@ rolling-window update instead of buffering the full row list before
 and reduced write peak memory from `141.65MB` to `0.25MB` while slightly
 improving wall time from `2.460s` to `2.335s`.
 
+Progress 2026-07-02: `scripts/verify_stage2_persistent_outputs.py` now counts
+Stage-2 detail batch files without materializing and sorting the full file list.
+The verifier only needs the count for its gate output, so long runs with many
+detail batches avoid unnecessary path-list allocation. A local 8000-detail-file
+benchmark preserved the count and reduced detail discovery from `0.1079s` /
+`3.51MB` to `0.0805s` / `0.56MB`.
+
 Progress 2026-07-02: `tools/paper_figures.py` now lazily loads run artifacts
 based on the requested `--figs`. For example, `--figs cost_vs_accuracy` no
 longer reads `episodes.jsonl`, `ppo_updates.jsonl`, best-action JSON, baseline

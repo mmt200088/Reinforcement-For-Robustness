@@ -160,13 +160,13 @@ def _detail_dir_candidates(progress: Path, args: argparse.Namespace) -> list[Pat
     return unique
 
 
-def _latest_detail_files(progress: Path, args: argparse.Namespace) -> tuple[list[Path], list[Path]]:
+def _latest_detail_files(progress: Path, args: argparse.Namespace) -> tuple[int, list[Path]]:
     detail_dirs = _detail_dir_candidates(progress, args)
     existing_dirs = [p for p in detail_dirs if p.is_dir()]
-    files: list[Path] = []
+    file_count = 0
     for details_dir in existing_dirs:
-        files.extend(p for p in details_dir.iterdir() if p.is_file())
-    return sorted(files), existing_dirs
+        file_count += sum(1 for p in details_dir.iterdir() if p.is_file())
+    return file_count, existing_dirs
 
 
 def verify(args: argparse.Namespace) -> int:
@@ -237,12 +237,12 @@ def verify(args: argparse.Namespace) -> int:
         except Exception as exc:
             failures.append(f"cannot parse diagnostics/ppo_updates.jsonl: {exc}")
 
-    detail_files, detail_dirs = _latest_detail_files(progress, args)
-    if args.require_details and not detail_files:
+    detail_file_count, detail_dirs = _latest_detail_files(progress, args)
+    if args.require_details and not detail_file_count:
         failures.append("missing detail batch files under stage2_noise/details or progress/details")
-    elif detail_files:
+    elif detail_file_count:
         detail_dir_list = ", ".join(str(p) for p in detail_dirs)
-        successes.append(f"details files={len(detail_files)} ({detail_dir_list})")
+        successes.append(f"details files={detail_file_count} ({detail_dir_list})")
 
     print(f"progress_dir={progress}")
     print(f"completed_episodes={completed}")

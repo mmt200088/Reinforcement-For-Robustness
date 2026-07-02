@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+
+from scripts import verify_stage2_persistent_outputs as verifier
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,6 +98,26 @@ def _write_minimal_progress(
 
 
 class Stage2PersistentOutputVerifierTest(unittest.TestCase):
+    def test_detail_file_count_does_not_sort_or_materialize_files(self):
+        with tempfile.TemporaryDirectory(prefix="stage2_verify_details_") as td:
+            progress_dir = Path(td) / "progress"
+            details_dir = progress_dir / "details"
+            details_dir.mkdir(parents=True)
+            for idx in range(5):
+                (details_dir / f"batch_{idx}.txt").write_text("details\n", encoding="utf-8")
+
+            with mock.patch(
+                "builtins.sorted",
+                side_effect=AssertionError("detail check should count files without sorting"),
+            ):
+                count, detail_dirs = verifier._latest_detail_files(
+                    progress_dir,
+                    Namespace(run_dir=""),
+                )
+
+        self.assertEqual(count, 5)
+        self.assertEqual(detail_dirs, [details_dir])
+
     def test_verifier_accepts_complete_persistent_run_dir(self):
         with tempfile.TemporaryDirectory(prefix="stage2_verify_ok_") as td:
             run_dir = Path(td) / "persistent" / "rl" / "bert-base" / "mrpc" / "s1t0.001_s2t0.001_s2st3.0__smoke"
