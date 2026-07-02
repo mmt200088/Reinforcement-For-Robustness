@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import importlib.util
 from pathlib import Path
@@ -52,6 +53,49 @@ class BlbMakeRunManifestTest(unittest.TestCase):
         self.assertEqual(result, "ok")
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][1].get("timeout"), 5)
+
+    def test_build_manifest_marks_dirty_without_second_status_strip(self):
+        manifest = _load_manifest_module()
+
+        class NoStripStatus(str):
+            def strip(self, *_args, **_kwargs):
+                raise AssertionError("manifest dirty check should not strip git status twice")
+
+        args = argparse.Namespace(
+            registry_path="",
+            max_sfs_path="",
+            rescale_optimizer_root="",
+            stage1_config_path="",
+            stage1_source="",
+            model="bert-base",
+            profile="mrpc",
+            threshold_source="manual",
+            dataset="mrpc",
+            rescale_optimizer_mode="canonical",
+            action_space_version="test",
+            num_layers=12,
+            decode_version="test",
+            acc_limit=0.0,
+            f1_limit=0.0,
+            acc_std_limit=0.0,
+            f1_std_limit=0.0,
+            strict_z=1.0,
+            mpc_truncation_cost_enabled=False,
+        )
+
+        def fake_run_git(git_args):
+            if git_args[:2] == ["status", "--short"]:
+                return NoStripStatus(" M run_manifest.json")
+            if git_args and git_args[0] == "diff":
+                return ""
+            if git_args[:2] == ["rev-parse", "HEAD"]:
+                return "abc123"
+            return ""
+
+        with mock.patch.object(manifest, "_run_git", side_effect=fake_run_git):
+            result = manifest.build_manifest(args)
+
+        self.assertTrue(result["git"]["dirty"])
 
     def test_canonical_rescale_optimizer_hash_streams_file_contents(self):
         manifest = _load_manifest_module()

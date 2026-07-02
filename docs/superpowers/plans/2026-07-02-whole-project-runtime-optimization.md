@@ -1001,6 +1001,14 @@ keeps Trust-0 manifest generation from stalling a server command indefinitely
 if git status/diff/upstream resolution hangs, while preserving the existing
 `None` fallback on failure.
 
+Progress 2026-07-02: `scripts/blb_make_run_manifest.py` now reuses the
+already-cleaned `git status --short --branch` string for manifest dirty-state
+detection instead of calling `strip()` a second time in `build_manifest()`.
+This preserves `status_short` and dirty semantics while avoiding another full
+status edge scan in evidence packaging. A local 200k-row synthetic status
+benchmark preserved the dirty result and improved the second-check path from
+`0.078152s` to `0.060709s` over 200k repeats (`1.29x`).
+
 Progress 2026-07-02: `_dir_sha256()` in `scripts/blb_make_run_manifest.py` now
 prunes skip directories such as `.git`, `__pycache__`, `.pytest_cache`, and
 `.mypy_cache` before calling `iterdir()` on them, while preserving the existing

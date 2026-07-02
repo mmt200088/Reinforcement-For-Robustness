@@ -234,7 +234,7 @@ def build_manifest(args: argparse.Namespace) -> Dict[str, Any]:
             "branch": _run_git(["rev-parse", "--abbrev-ref", "HEAD"]),
             "upstream": _run_git(["rev-parse", "@{u}"]),
             "diff_hash": _git_diff_hash(),
-            "dirty": bool(status.strip()),
+            "dirty": bool(status),
             "status_short": status,
         },
         "environment": {
