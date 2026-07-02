@@ -29,6 +29,7 @@ from scripts.fusion_count_action_eval_common import (
 )
 from json_utils import read_json_file, write_json_file
 from report_format_utils import html_table, metric_float
+from runtime_error_reporter import format_command
 
 DEFAULT_RUN_DIR = REPO_ROOT / "experiments" / "server_command_runs" / "fusion_count_map_action_eval_20260610"
 DEFAULT_ACTION_DIR = DEFAULT_RUN_DIR / "action_configs"
@@ -125,9 +126,10 @@ def _run_one(
         "408",
         "--foreground",
     ]
-    print(f"[run] {run_name}: {' '.join(cmd)}")
+    command_text = format_command(cmd)
+    print(f"[run] {run_name}: {command_text}")
     with log_path.open("w", encoding="utf-8") as log:
-        log.write("command:\n" + " ".join(cmd) + "\n\n")
+        log.write("command:\n" + command_text + "\n\n")
         log.flush()
         rc = subprocess.run(cmd, cwd=str(REPO_ROOT), stdout=log, stderr=subprocess.STDOUT, env=dict(env)).returncode
     if rc != 0:

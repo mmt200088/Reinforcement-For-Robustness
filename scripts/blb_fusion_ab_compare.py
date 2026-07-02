@@ -25,6 +25,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from jsonl_utils import iter_jsonl  # noqa: E402
+from report_format_utils import html_table  # noqa: E402
 from stats_utils import fraction_true, mean_from_total, mean_or_default, ratio_or_default  # noqa: E402
 
 LOSS_CAP = 100.0  # terminal_loss_mean sentinel for an accuracy-collapse episode
@@ -382,41 +383,50 @@ def _verdict(sa: Dict[str, Any], sb: Dict[str, Any], la: str, lb: str) -> str:
             f"B tail P1={sb['tail_p1']:.0%}. Inspect curves.")
 
 
-def _table(rows: List[Dict[str, Any]]) -> str:
-    head = ("<tr><th>ep</th><th>n</th><th>reward</th><th>P1</th><th>P2</th><th>P3</th>"
-            "<th>fusion</th><th>loss_cap</th><th>m1</th><th>sn_act</th><th>sn_r</th></tr>")
-    body = "".join(
-        f"<tr><td>{r['ep_lo']}-{r['ep_hi']}</td><td>{r['n']}</td><td>{r['reward']:.2f}</td>"
-        f"<td>{r['p1']:.0%}</td><td>{r['p2']:.0%}</td><td>{r['p3']:.0%}</td>"
-        f"<td>{r['fusion']:.1f}</td><td>{r['loss_cap']:.0%}</td><td>{r['m1']:.3f}</td>"
-        f"<td>{r['sn_active']:.0%}</td><td>{r['sn_radius']:.1f}</td></tr>"
-        for r in rows
+def _window_table(rows: List[Dict[str, Any]]) -> str:
+    return html_table(
+        ["ep", "n", "reward", "P1", "P2", "P3", "fusion", "loss_cap", "m1", "sn_act", "sn_r"],
+        [
+            [
+                f"{r['ep_lo']}-{r['ep_hi']}",
+                r["n"],
+                f"{r['reward']:.2f}",
+                f"{r['p1']:.0%}",
+                f"{r['p2']:.0%}",
+                f"{r['p3']:.0%}",
+                f"{r['fusion']:.1f}",
+                f"{r['loss_cap']:.0%}",
+                f"{r['m1']:.3f}",
+                f"{r['sn_active']:.0%}",
+                f"{r['sn_radius']:.1f}",
+            ]
+            for r in rows
+        ],
     )
-    return f"<table>{head}{body}</table>"
 
 
 def render_html(la, lb, sa, sb, wa, wb, pngs, ba, bb) -> str:
-    def _sum_row(name, key, fmt="{:.3f}"):
-        return f"<tr><td>{name}</td><td>{fmt.format(sa[key])}</td><td>{fmt.format(sb[key])}</td></tr>"
-    summary = (
-        "<table><tr><th>metric</th><th>" + la + "</th><th>" + lb + "</th></tr>"
-        + _sum_row("episodes", "n_total", "{:d}")
-        + _sum_row("best reward", "best_reward", "{:.2f}")
-        + _sum_row("best P3 reward (valid)", "best_p3_reward", "{:.2f}")
-        + _sum_row("best P3 found @ episode", "best_p3_episode", "{:d}")
-        + _sum_row("post-anchor mean reward", "post_mean_reward", "{:.2f}")
-        + _sum_row("post-anchor P1(acc) rate", "post_p1", "{:.1%}")
-        + _sum_row("post-anchor P2(stab) rate", "post_p2", "{:.1%}")
-        + _sum_row("post-anchor P3(cost) rate", "post_p3", "{:.1%}")
-        + _sum_row("post-anchor loss-cap rate", "post_loss_cap", "{:.1%}")
-        + _sum_row("post-anchor mean fusion", "post_mean_fusion", "{:.2f}")
-        + _sum_row("final-20% P1 rate", "tail_p1", "{:.1%}")
-        + _sum_row("final-20% P2 rate", "tail_p2", "{:.1%}")
-        + _sum_row("final-20% P3 rate", "tail_p3", "{:.1%}")
-        + _sum_row("final-20% mean reward", "tail_mean_reward", "{:.2f}")
-        + _sum_row("final-20% mean metric1", "tail_mean_m1", "{:.3f}")
-        + _sum_row("final-20% mean fusion", "tail_mean_fusion", "{:.2f}")
-        + "</table>"
+    summary_specs = [
+        ("episodes", "n_total", "{:d}"),
+        ("best reward", "best_reward", "{:.2f}"),
+        ("best P3 reward (valid)", "best_p3_reward", "{:.2f}"),
+        ("best P3 found @ episode", "best_p3_episode", "{:d}"),
+        ("post-anchor mean reward", "post_mean_reward", "{:.2f}"),
+        ("post-anchor P1(acc) rate", "post_p1", "{:.1%}"),
+        ("post-anchor P2(stab) rate", "post_p2", "{:.1%}"),
+        ("post-anchor P3(cost) rate", "post_p3", "{:.1%}"),
+        ("post-anchor loss-cap rate", "post_loss_cap", "{:.1%}"),
+        ("post-anchor mean fusion", "post_mean_fusion", "{:.2f}"),
+        ("final-20% P1 rate", "tail_p1", "{:.1%}"),
+        ("final-20% P2 rate", "tail_p2", "{:.1%}"),
+        ("final-20% P3 rate", "tail_p3", "{:.1%}"),
+        ("final-20% mean reward", "tail_mean_reward", "{:.2f}"),
+        ("final-20% mean metric1", "tail_mean_m1", "{:.3f}"),
+        ("final-20% mean fusion", "tail_mean_fusion", "{:.2f}"),
+    ]
+    summary = html_table(
+        ["metric", la, lb],
+        [[name, fmt.format(sa[key]), fmt.format(sb[key])] for name, key, fmt in summary_specs],
     )
     plots = "".join(f'<img src="{p}" style="max-width:48%;margin:4px">' for p in pngs)
 
@@ -439,8 +449,8 @@ th{{background:#f3f3f3}} td:first-child,th:first-child{{text-align:left}}
 <h2>Summary</h2>{summary}
 <h2>Curves</h2>{plots or '<p>(matplotlib unavailable — see tables)</p>'}
 <h2>Best action</h2>{_best_block(la, ba)}{_best_block(lb, bb)}
-<h2>{la} — per-window</h2>{_table(wa)}
-<h2>{lb} — per-window</h2>{_table(wb)}
+<h2>{la} — per-window</h2>{_window_table(wa)}
+<h2>{lb} — per-window</h2>{_window_table(wb)}
 </body></html>"""
 
 

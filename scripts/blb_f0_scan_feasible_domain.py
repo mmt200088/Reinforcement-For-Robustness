@@ -22,6 +22,7 @@ from cli_parse_utils import parse_int_list_text, parse_optional_int_list  # noqa
 from csv_field_utils import write_csv_rows  # noqa: E402
 from json_utils import read_json_file, stable_json_hash, write_json_file  # noqa: E402
 from jsonl_utils import write_jsonl_rows  # noqa: E402
+from stats_utils import mean_or_none, ratio_or_default  # noqa: E402
 from blb_stage2_rl.candidate_store import (  # noqa: E402
     action_hash,
     build_candidate_identity_context,
@@ -394,12 +395,12 @@ def _masked_random_validity(
             "mutation_count": int(mutation_count),
             "attempted": attempted,
             "valid": valid,
-            "valid_rate": float(valid / attempted) if attempted else 0.0,
+            "valid_rate": ratio_or_default(valid, attempted),
             "total_bits_min": int(min(bits)) if bits else None,
-            "total_bits_mean": float(np.mean(bits)) if bits else None,
+            "total_bits_mean": mean_or_none(bits),
             "total_bits_max": int(max(bits)) if bits else None,
             "fusion_count_min": int(min(fusion)) if fusion else None,
-            "fusion_count_mean": float(np.mean(fusion)) if fusion else None,
+            "fusion_count_mean": mean_or_none(fusion),
             "fusion_count_max": int(max(fusion)) if fusion else None,
             "best_action_hashes": [str(row["effective_action_hash"]) for row in best],
             "best_raw_action_hashes": [str(row["raw_action_hash"]) for row in best],

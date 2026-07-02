@@ -161,6 +161,8 @@ class FusionCountActionEvalTest(unittest.TestCase):
             self.assertNotIn(token, source)
         self.assertIn("resolve_repo_path", source)
         self.assertIn("unique_paean_action_configs", source)
+        self.assertIn("from runtime_error_reporter import format_command", source)
+        self.assertNotIn('" ".join(cmd)', source)
 
 
 if __name__ == "__main__":

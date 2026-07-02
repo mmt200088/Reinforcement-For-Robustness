@@ -24,6 +24,22 @@ sys.modules["blb_fusion_ab_compare"] = abc_mod
 _spec.loader.exec_module(abc_mod)
 
 
+def _assert_close(testcase, actual, expected):
+    testcase.assertEqual(set(actual), set(expected))
+    for key, expected_value in expected.items():
+        actual_value = actual[key]
+        if isinstance(expected_value, float):
+            testcase.assertAlmostEqual(actual_value, expected_value)
+        else:
+            testcase.assertEqual(actual_value, expected_value)
+
+
+def _assert_rows_close(testcase, actual_rows, expected_rows):
+    testcase.assertEqual(len(actual_rows), len(expected_rows))
+    for actual, expected in zip(actual_rows, expected_rows):
+        _assert_close(testcase, actual, expected)
+
+
 def _episode(ep, priority, reward, fusion, loss=0.3):
     return {
         "episode": ep,
@@ -154,8 +170,8 @@ class StreamingMainTest(unittest.TestCase):
 
             summary, windows = abc_mod.analyze_episodes(str(run), anchor=80, window=50)
 
-        self.assertEqual(summary, abc_mod.summarize(rows, anchor=80))
-        self.assertEqual(windows, abc_mod.window_stats(rows, window=50))
+        _assert_close(self, summary, abc_mod.summarize(rows, anchor=80))
+        _assert_rows_close(self, windows, abc_mod.window_stats(rows, window=50))
 
     def test_ordered_analysis_reads_episode_file_twice(self):
         rows = _make_on_arm(n=260, anchor=80)
@@ -245,9 +261,9 @@ class StreamingMainTest(unittest.TestCase):
             },
         ]
 
-        with mock.patch.object(abc_mod, "_mean", side_effect=AssertionError("no temp mean list")):
-            with mock.patch.object(abc_mod, "_frac", side_effect=AssertionError("no temp frac list")):
-                stats = abc_mod._window_stats_chunk(chunk, fallback_offset=0)
+        self.assertFalse(hasattr(abc_mod, "_mean"))
+        self.assertFalse(hasattr(abc_mod, "_frac"))
+        stats = abc_mod._window_stats_chunk(chunk, fallback_offset=0)
 
         self.assertEqual(stats["ep_lo"], 10)
         self.assertEqual(stats["ep_hi"], 12)
