@@ -5,15 +5,14 @@ fidelity ordering, and the hard-priority rank key used by the playbook.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from functools import lru_cache
 import hashlib
 import json
 import math
 import os
-from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
-
 
 FIDELITY_ORDER = {
     "F0": 0,
@@ -35,6 +34,10 @@ def normalize_action_indices(action_indices: Any) -> List[int]:
         action_indices = json.loads(action_indices)
     if not isinstance(action_indices, Iterable):
         raise TypeError("action_indices must be an iterable of integers")
+    try:
+        return [int(item) for item in action_indices]
+    except TypeError:
+        pass
     out: List[int] = []
     for item in action_indices:
         if isinstance(item, (list, tuple)):

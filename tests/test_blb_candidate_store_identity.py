@@ -1,10 +1,38 @@
+import builtins
+from pathlib import Path
 import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 
 class BLBCandidateStoreIdentityTests(unittest.TestCase):
+    def test_flat_action_normalization_avoids_per_item_nested_checks(self):
+        from blb_stage2_rl import candidate_store as store_mod
+
+        class IntLike:
+            def __init__(self, value):
+                self.value = int(value)
+
+            def __int__(self):
+                return self.value
+
+        items = [IntLike(1), IntLike(2), IntLike(3)]
+        item_ids = {id(item) for item in items}
+        original_isinstance = builtins.isinstance
+
+        def guarded_isinstance(obj, classinfo):
+            if id(obj) in item_ids and classinfo == (list, tuple):
+                raise AssertionError("flat action normalization should not run nested checks per item")
+            return original_isinstance(obj, classinfo)
+
+        with mock.patch.object(
+            store_mod,
+            "isinstance",
+            create=True,
+            side_effect=guarded_isinstance,
+        ):
+            self.assertEqual(store_mod.normalize_action_indices(items), [1, 2, 3])
+
     def test_action_hash_caches_by_normalized_action_tuple(self):
         from blb_stage2_rl import candidate_store as store_mod
 
