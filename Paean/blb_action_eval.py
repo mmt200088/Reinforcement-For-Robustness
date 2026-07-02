@@ -29,6 +29,7 @@ from blb_stage2_rl.action_space import (
     sum_truncation_k_in_action,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
+from blb_stage2_rl.eval_metrics import summarize_eval_trials
 from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from rescale_optimizer_bridge import (
@@ -1382,10 +1383,8 @@ class BLBActionFinalEvaluationModule:
         trials = []
         for _idx in range(repeats):
             trials.append(self._run_single_blb_eval(decoded, gelu=gelu, softmax=softmax))
-        losses = np.asarray([t["loss"] for t in trials], dtype=float)
-        ps = np.asarray([t["p"] for t in trials], dtype=float)
-        ss = np.asarray([t["s"] for t in trials], dtype=float)
-        times = np.asarray([t["time_ms"] for t in trials], dtype=float)
+        stats = summarize_eval_trials(trials)
+        stats["evaluation_mode"] = "blb_action_repeated_validation_full"
         repeat = {
             "trials": [
                 {
@@ -1397,18 +1396,7 @@ class BLBActionFinalEvaluationModule:
                 }
                 for i, t in enumerate(trials)
             ],
-            "stats": {
-                "n": int(repeats),
-                "loss_mean": float(losses.mean()),
-                "loss_std": float(losses.std(ddof=0)),
-                "p_mean": float(ps.mean()),
-                "p_std": float(ps.std(ddof=0)),
-                "s_mean": float(ss.mean()),
-                "s_std": float(ss.std(ddof=0)),
-                "time_mean_ms": float(times.mean()),
-                "time_std_ms": float(times.std(ddof=0)),
-                "evaluation_mode": "blb_action_repeated_validation_full",
-            },
+            "stats": stats,
         }
         return {
             "loss": float(repeat["stats"]["loss_mean"]),

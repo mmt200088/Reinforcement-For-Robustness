@@ -39,9 +39,14 @@ import torch.optim as optim
 from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
-from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 from sklearn.model_selection import train_test_split
+from blb_stage2_rl.eval_metrics import (
+    accuracy_from_labels as shared_accuracy_from_labels,
+    logits_to_classes as shared_logits_to_classes,
+    metric_pair_for_dataset,
+    sample_weighted_mean,
+    summarize_eval_trials,
+)
 from function_handler import (
     ReversibleLayerHandler,
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
@@ -4509,32 +4514,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             np.random.set_state(_np_rng_state)
             random.setstate(_py_rng_state)
 
-        losses = np.asarray([trial["loss"] for trial in trials], dtype=float)
-        ps = np.asarray([trial["p"] for trial in trials], dtype=float)
-        ss = np.asarray([trial["s"] for trial in trials], dtype=float)
-        times = np.asarray([trial["time_ms"] for trial in trials], dtype=float)
-        return {
+        summary = summarize_eval_trials(trials)
+        summary.update({
             "split_name": split_name,
-            "n": repeats,
-            "loss_mean": float(np.mean(losses)),
-            "loss_std": float(np.std(losses)),
-            "loss_min": float(np.min(losses)),
-            "loss_max": float(np.max(losses)),
-            "loss_range": float(np.max(losses) - np.min(losses)),
-            "p_mean": float(np.mean(ps)),
-            "p_std": float(np.std(ps)),
-            "p_min": float(np.min(ps)),
-            "p_max": float(np.max(ps)),
-            "p_range": float(np.max(ps) - np.min(ps)),
-            "s_mean": float(np.mean(ss)),
-            "s_std": float(np.std(ss)),
-            "s_min": float(np.min(ss)),
-            "s_max": float(np.max(ss)),
-            "s_range": float(np.max(ss) - np.min(ss)),
-            "time_mean_ms": float(np.mean(times)),
-            "time_std_ms": float(np.std(times)),
             "trials": trials,
-        }
+        })
+        return summary
 
     def evaluate_model_with_attention_noise_segmented(
             self,
@@ -4677,34 +4662,14 @@ class LayerImportanceEvaluator(TrainerCallback):
             np.random.set_state(_np_rng_state)
             random.setstate(_py_rng_state)
 
-        losses = np.asarray([trial["loss"] for trial in trial_results], dtype=float)
-        ps = np.asarray([trial["p"] for trial in trial_results], dtype=float)
-        ss = np.asarray([trial["s"] for trial in trial_results], dtype=float)
-        times = np.asarray([trial["time_ms"] for trial in trial_results], dtype=float)
-        return {
+        summary = summarize_eval_trials(trial_results)
+        summary.update({
             "split_name": split_name,
-            "n": trials,
             "probe_size": int(len(probe_subset)),
             "evaluation_mode": "stability_probe_trials",
-            "loss_mean": float(np.mean(losses)),
-            "loss_std": float(np.std(losses)),
-            "loss_min": float(np.min(losses)),
-            "loss_max": float(np.max(losses)),
-            "loss_range": float(np.max(losses) - np.min(losses)),
-            "p_mean": float(np.mean(ps)),
-            "p_std": float(np.std(ps)),
-            "p_min": float(np.min(ps)),
-            "p_max": float(np.max(ps)),
-            "p_range": float(np.max(ps) - np.min(ps)),
-            "s_mean": float(np.mean(ss)),
-            "s_std": float(np.std(ss)),
-            "s_min": float(np.min(ss)),
-            "s_max": float(np.max(ss)),
-            "s_range": float(np.max(ss) - np.min(ss)),
-            "time_mean_ms": float(np.mean(times)),
-            "time_std_ms": float(np.std(times)),
             "trials": trial_results,
-        }
+        })
+        return summary
 
     def get_stage1_exact_baseline_configuration(self):
         return (
@@ -4745,32 +4710,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 }
             )
 
-        losses = np.asarray([trial["loss"] for trial in trials], dtype=float)
-        ps = np.asarray([trial["p"] for trial in trials], dtype=float)
-        ss = np.asarray([trial["s"] for trial in trials], dtype=float)
-        times = np.asarray([trial["time_ms"] for trial in trials], dtype=float)
-        return {
+        summary = summarize_eval_trials(trials)
+        summary.update({
             "split_name": split_name,
-            "n": repeats,
-            "loss_mean": float(np.mean(losses)),
-            "loss_std": float(np.std(losses)),
-            "loss_min": float(np.min(losses)),
-            "loss_max": float(np.max(losses)),
-            "loss_range": float(np.max(losses) - np.min(losses)),
-            "p_mean": float(np.mean(ps)),
-            "p_std": float(np.std(ps)),
-            "p_min": float(np.min(ps)),
-            "p_max": float(np.max(ps)),
-            "p_range": float(np.max(ps) - np.min(ps)),
-            "s_mean": float(np.mean(ss)),
-            "s_std": float(np.std(ss)),
-            "s_min": float(np.min(ss)),
-            "s_max": float(np.max(ss)),
-            "s_range": float(np.max(ss) - np.min(ss)),
-            "time_mean_ms": float(np.mean(times)),
-            "time_std_ms": float(np.std(times)),
             "trials": trials,
-        }
+        })
+        return summary
 
     def get_noise_simulated_cost(
             self,
@@ -5224,7 +5169,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         if _model is self.model and not self._eval_infra_ready:
             _model.to(_device)
             self._eval_infra_ready = True
-        total_loss = 0.0
         all_preds, all_labels = [], []
         _use_cuda = torch.cuda.is_available()
         _t0 = time.time()
@@ -5254,36 +5198,28 @@ class LayerImportanceEvaluator(TrainerCallback):
                 _batch_logits.append(outputs.logits.detach())
                 _batch_labels.append(labels)
             # 单一同步点：所有 forward 已提交后再做 D2H 转换。
+            _loss_values = []
+            _loss_counts = []
             for _loss_t, _logits_t, labels in zip(_batch_losses, _batch_logits, _batch_labels):
                 if _loss_t is not None:
-                    total_loss += _loss_t.item()
+                    _loss_values.append(float(_loss_t.item()))
+                    _loss_counts.append(len(labels))
                 logits = self._normalize_logits_for_metrics(
                     _logits_t.cpu().numpy(),
                     expected_batch_size=len(labels),
                 )
                 all_preds.extend(logits.tolist())
                 all_labels.extend(labels.tolist())
-        avg_loss = total_loss / len(dataloader)
+        avg_loss = sample_weighted_mean(_loss_values, _loss_counts) if _loss_values else 0.0
         # avg_time 以整体墙钟时间平均给出（避免每批次 cuda.synchronize 的阻塞开销）
         # 训练路径不使用 avg_time 字段, 仅日志用途
         _n_batches = max(1, len(dataloader))
         avg_time = (time.time() - _t0) * 1000.0 / _n_batches
         ds = self.dataset_key
         try:
-            if ds == 'stsb':
-                metric1 = pearsonr(all_preds, all_labels)[0]
-                metric2 = spearmanr(all_preds, all_labels)[0]
-            elif ds == 'mrpc':
-                pred_classes = self._logits_to_classes(all_preds)
-                metric1 = accuracy_score(all_labels, pred_classes)
-                metric2 = f1_score(all_labels, pred_classes, average='weighted')
-            elif ds == 'cola':
-                pred_classes = self._logits_to_classes(all_preds)
-                metric1 = matthews_corrcoef(all_labels, pred_classes)
-                metric2 = metric1
-            elif ds == 'mnli':
-                pred_classes = self._logits_to_classes(all_preds)
-                metric1 = accuracy_score(all_labels, pred_classes)
+            if ds == 'mnli':
+                pred_classes = shared_logits_to_classes(all_preds)
+                metric1 = shared_accuracy_from_labels(all_labels, pred_classes)
                 mm_dataloader = None
                 if split_name is not None:
                     mm_dataloader = self.dataloaders_mm.get(split_name)
@@ -5294,9 +5230,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 else:
                     metric2 = metric1
             else:
-                pred_classes = self._logits_to_classes(all_preds)
-                metric1 = accuracy_score(all_labels, pred_classes)
-                metric2 = metric1
+                metric1, metric2 = metric_pair_for_dataset(ds, all_labels, all_preds)
         except Exception as e:
             print(f"[警告] 为数据集（dataset）'{ds}' 计算指标失败: {e}")
             metric1, metric2 = 0.0, 0.0
@@ -5389,8 +5323,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
                 all_preds.extend(logits.tolist())
                 all_labels.extend(labels.tolist())
-        pred_classes = self._logits_to_classes(all_preds)
-        return accuracy_score(all_labels, pred_classes)
+        pred_classes = shared_logits_to_classes(all_preds)
+        return shared_accuracy_from_labels(all_labels, pred_classes)
 
     def compute_gae(self, rewards, values, dones, gamma=PPO_GAMMA, lam=PPO_LAMBDA):
         """计算广义优势估计 (GAE)"""
