@@ -19,6 +19,7 @@ is permanently masked, and the optimum is never hidden.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 import math
 from typing import List, Sequence, Tuple
 
@@ -57,6 +58,20 @@ def fusion_block_curriculum(
     return False, max(1, min(num_mutable, horizon)), max(1, radius)
 
 
+@lru_cache(maxsize=256)
+def _cached_near_baseline_k_indices(
+        k_level_values: Tuple[int, ...],
+        baseline_idx: int,
+        radius: int,
+        ) -> Tuple[int, ...]:
+    dim = len(k_level_values)
+    base_k = int(k_level_values[int(baseline_idx)])
+    candidates = list(range(dim))
+    candidates.sort(key=lambda idx: (abs(int(k_level_values[idx]) - base_k), int(idx)))
+    keep = min(len(candidates), max(1, 2 * int(radius) + 1))
+    return tuple(sorted(int(idx) for idx in candidates[:keep]))
+
+
 def near_baseline_k_indices(
         *,
         k_level_values: Sequence[int],
@@ -76,11 +91,8 @@ def near_baseline_k_indices(
     baseline_idx = int(baseline_idx)
     if baseline_idx < 0 or baseline_idx >= dim:
         raise ValueError(f"baseline K index {baseline_idx} out of width {dim}")
-    base_k = int(k_level_values[baseline_idx])
-    candidates = list(range(dim))
-    candidates.sort(key=lambda idx: (abs(int(k_level_values[idx]) - base_k), int(idx)))
-    keep = min(len(candidates), max(1, 2 * radius + 1))
-    return sorted(int(idx) for idx in candidates[:keep])
+    k_values = tuple(int(k_level_values[idx]) for idx in range(dim))
+    return list(_cached_near_baseline_k_indices(k_values, baseline_idx, radius))
 
 
 def build_fusion_step_level_mask(

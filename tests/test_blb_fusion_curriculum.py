@@ -164,6 +164,20 @@ class NearBaselineKTest(unittest.TestCase):
         # value 13 nearest neighbours by |Δbits|: 12 (idx5) at distance 1.
         self.assertEqual(set(r1), {2, 3, 5})
 
+    def test_reuses_cached_near_k_ordering_without_exposing_cached_tuple(self):
+        cache = fcur._cached_near_baseline_k_indices
+        cache.cache_clear()
+
+        first = fcur.near_baseline_k_indices(
+            k_level_values=K_LEVELS, baseline_idx=BASELINE_K_IDX, dim=N_K, radius=1)
+        first.append(99)
+        second = fcur.near_baseline_k_indices(
+            k_level_values=K_LEVELS, baseline_idx=BASELINE_K_IDX, dim=N_K, radius=1)
+
+        self.assertEqual(set(second), {2, 3, 5})
+        self.assertNotIn(99, second)
+        self.assertGreaterEqual(cache.cache_info().hits, 1)
+
 
 class SelectMutableStepIndicesTest(unittest.TestCase):
     def test_distinct_in_range_and_count(self):
