@@ -8,6 +8,46 @@ from scripts import report_fusion_count_map as report
 
 
 class FusionCountMapReportTest(unittest.TestCase):
+    def test_build_report_payload_reuses_decoded_base_option(self):
+        class CountingList(list):
+            def __init__(self, values):
+                super().__init__(values)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                return super().__iter__()
+
+        base_action = CountingList([0])
+        graphs = {
+            "block1_mrpc": {
+                "graph_key": "block1_mrpc",
+                "block_idx": 1,
+                "k_slot_index": 0,
+                "block_num_slots": 1,
+                "options": [
+                    {"option_id": 0, "fusion_count": 0, "action_indices": base_action, "slots": {}},
+                    {"option_id": 1, "fusion_count": 1, "action_indices": [1], "slots": {}},
+                    {"option_id": 2, "fusion_count": 1, "action_indices": [2], "slots": {}},
+                ],
+            }
+        }
+        fields_by_block = {1: [("output_truncation_k", "K", 0)]}
+
+        payload = report._build_report_payload(
+            graphs=graphs,
+            fields_by_block=fields_by_block,
+            schedule=[],
+            group_specs=[],
+            action_config_paths={},
+            profile="mrpc",
+            gelu=[1],
+            softmax=[6],
+        )
+
+        self.assertEqual(len(payload["graphs"][0]["options"]), 3)
+        self.assertLessEqual(base_action.iterations, 2)
+
     def test_options_in_id_order_skips_sort_when_already_ordered(self):
         options = [
             {"option_id": 0, "fusion_count": 0},

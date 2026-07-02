@@ -586,11 +586,16 @@ def _option_slot_summary(
     fields: Sequence[Tuple[str, str, int]],
     option: Mapping[str, Any],
     base_option: Mapping[str, Any],
+    *,
+    base_action: Sequence[int] | None = None,
+    base_slots: Mapping[str, int] | None = None,
 ) -> dict:
     action = [int(v) for v in option.get("action_indices", [])]
-    base_action = [int(v) for v in base_option.get("action_indices", [])]
+    if base_action is None:
+        base_action = [int(v) for v in base_option.get("action_indices", [])]
     slots = {str(k): int(v) for k, v in dict(option.get("slots", {})).items()}
-    base_slots = {str(k): int(v) for k, v in dict(base_option.get("slots", {})).items()}
+    if base_slots is None:
+        base_slots = {str(k): int(v) for k, v in dict(base_option.get("slots", {})).items()}
     rows = []
     changed_raw = []
     changed_real = []
@@ -683,6 +688,8 @@ def _build_report_payload(
         fields = fields_by_block[block_idx]
         options = _options_in_id_order(graph.get("options", []))
         base = _option_by_id(graph, 0)
+        base_action = [int(v) for v in base.get("action_indices", [])]
+        base_slots = {str(k): int(v) for k, v in dict(base.get("slots", {})).items()}
         graph_payload.append({
             "graph_key": graph_key,
             "block_idx": block_idx,
@@ -694,7 +701,14 @@ def _build_report_payload(
             "current_schedule_layers": occurrences.get(graph_key, []),
             "current_schedule_occurrences": int(len(occurrences.get(graph_key, []))),
             "options": [
-                _option_slot_summary(graph, fields, option, base)
+                _option_slot_summary(
+                    graph,
+                    fields,
+                    option,
+                    base,
+                    base_action=base_action,
+                    base_slots=base_slots,
+                )
                 for option in options
             ],
         })

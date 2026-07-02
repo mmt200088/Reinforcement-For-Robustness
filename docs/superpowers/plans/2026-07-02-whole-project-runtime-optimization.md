@@ -539,6 +539,12 @@ options for `0`, `1`, and `max` targets. A local seven-graph / 25k-options-per
 graph benchmark preserved the exact group specs and reduced `_group_specs()`
 from `0.463743s` to `0.103732s` (`4.47x`).
 
+Progress 2026-07-02: `scripts/report_fusion_count_map.py` now decodes each
+graph's fusion0/base option action indices and real slots once while building
+the report payload, then reuses that baseline for every option summary. A local
+8000-option / 24-slot payload benchmark preserved the exact graph payload and
+reduced payload construction from `0.536779s` to `0.498236s` (`1.08x`).
+
 Progress 2026-07-02: `scripts/blb_verify_boosted_install.py` now lazily imports
 the torch/rescale install-path dependencies only after it finds a non-skipped map
 with boosted fusion options, and the map loop passes the already-loaded JSON
