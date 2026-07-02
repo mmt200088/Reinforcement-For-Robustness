@@ -1675,6 +1675,20 @@ def _rollout_scalar_to_float(value):
     return float(value)
 
 
+def _stage1_scalar_tensors_to_float_list(values):
+    if not values:
+        return []
+    stacked = torch.stack([v.detach().reshape(()) for v in values], dim=0)
+    return [float(x) for x in stacked.detach().cpu().numpy().reshape(-1)]
+
+
+def _stage1_prob_tensors_to_nested_lists(values):
+    if not values:
+        return []
+    stacked = torch.stack([v.detach() for v in values], dim=0)
+    return stacked.detach().cpu().numpy().tolist()
+
+
 def _pack_recurrent_rollout_tensor_arrays(episodes):
     if not episodes:
         raise RuntimeError("RecurrentRolloutBuffer is empty")
@@ -5717,6 +5731,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
 
         episode_reward = 0.0
+        logprob_tensors = []
+        value_tensors = []
+        gelu_prob_tensors = []
         for step in range(self.total_layers):
             N = self.total_layers
             layer_idx = int(np.argmax(state[0:N]))
@@ -5764,16 +5781,15 @@ class LayerImportanceEvaluator(TrainerCallback):
             # per-episode work that this entire runner exists to parallelize.
             gelu_action_idx = int(gelu_action.item())
             next_state, reward, done, info = env.step(gelu_action_idx)
-            logprob_value = float(logprob.detach().cpu().item())
-            critic_value = float(value.item())
+            logprob_tensors.append(logprob.detach().reshape(()))
+            value_tensors.append(value.detach().reshape(()))
+            gelu_prob_tensors.append(gelu_probs.detach())
 
             rollout.cont_features.append(cont_feat_record)
             rollout.layer_indices.append(layer_idx)
             rollout.prev_g_actions.append(prev_g_idx)
             rollout.actions_g.append(gelu_action_idx)
-            rollout.logprobs.append(logprob_value)
             rollout.rewards.append(float(reward))
-            rollout.values.append(critic_value)
             rollout.dones.append(float(done))
             rollout.gelu_masks.append(gelu_mask_np)
             rollout.step_infos.append({
@@ -5784,11 +5800,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "gelu_action_degree": int(GELU_MAP[gelu_action_idx]),
                 "step_reward": float(reward),
                 "done": bool(done),
-                "logprob": logprob_value,
+                "logprob": None,
                 "curr_gelu_degree": info["curr_gelu_degree"],
                 "curr_softmax_degree": info["curr_softmax_degree"],
-                "gelu_prob_dist": gelu_probs.detach().cpu().numpy().tolist(),
-                "critic_value": critic_value,
+                "gelu_prob_dist": None,
+                "critic_value": None,
                 "accumulated_cost": info["accumulated_cost"],
                 "gelu_config": info["gelu_config"],
                 "softmax_config": info["softmax_config"],
@@ -5800,6 +5816,16 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             episode_reward += reward
             state = next_state
+
+        logprob_values = _stage1_scalar_tensors_to_float_list(logprob_tensors)
+        critic_values = _stage1_scalar_tensors_to_float_list(value_tensors)
+        gelu_prob_dists = _stage1_prob_tensors_to_nested_lists(gelu_prob_tensors)
+        rollout.logprobs.extend(logprob_values)
+        rollout.values.extend(critic_values)
+        for idx, step_info in enumerate(rollout.step_infos):
+            step_info["logprob"] = logprob_values[idx]
+            step_info["critic_value"] = critic_values[idx]
+            step_info["gelu_prob_dist"] = gelu_prob_dists[idx]
 
         rollout.episode_reward = float(episode_reward)
         rollout.gelu_config = list(env.gelu_config)

@@ -122,20 +122,20 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("cont_features: List[np.ndarray]", runner_source)
         self.assertNotIn("torch.tensor(cont_feat_np", source)
 
-    def test_stage1_rollout_records_logprob_value_without_cpu_tensor_roundtrip(self):
+    def test_stage1_rollout_defers_worker_logprob_value_sync_until_episode_end(self):
         source = _source(LAYER_EVALUATOR)
         worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
         runner_source = _source(PARALLEL_RUNNER)
 
-        self.assertIn("logprob_value = float(logprob.detach().cpu().item())", worker_region)
-        self.assertIn("critic_value = float(value.item())", worker_region)
-        self.assertIn("rollout.logprobs.append(logprob_value)", worker_region)
-        self.assertIn("rollout.values.append(critic_value)", worker_region)
-        self.assertIn('"logprob": logprob_value', worker_region)
-        self.assertIn('"critic_value": critic_value', worker_region)
+        self.assertIn("logprob_tensors.append(logprob.detach()", worker_region)
+        self.assertIn("value_tensors.append(value.detach()", worker_region)
+        self.assertIn("gelu_prob_tensors.append(gelu_probs.detach()", worker_region)
+        self.assertIn("_stage1_scalar_tensors_to_float_list(logprob_tensors)", worker_region)
+        self.assertIn("_stage1_prob_tensors_to_nested_lists(gelu_prob_tensors)", worker_region)
+        self.assertNotIn("logprob_value = float(logprob.detach().cpu().item())", worker_region)
+        self.assertNotIn("critic_value = float(value.item())", worker_region)
+        self.assertNotIn("gelu_probs.detach().cpu().numpy().tolist()", worker_region)
 
-        self.assertIn("logprob=logprob_value", source)
-        self.assertIn("value=critic_value", source)
         self.assertIn("logprobs: List[float]", runner_source)
         self.assertIn("values: List[float]", runner_source)
         self.assertNotIn("rollout.logprobs.append(logprob.detach().cpu())", source)
