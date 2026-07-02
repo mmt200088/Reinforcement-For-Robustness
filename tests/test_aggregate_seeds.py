@@ -1,4 +1,5 @@
 import glob
+import builtins
 import json
 import os
 import tempfile
@@ -39,6 +40,26 @@ def _make_seed_run(root: Path, run_tag: str, reward: float) -> None:
         {"candidate_results": [{"loss": 1.0 - reward, "p": 0.8, "s": 0.7}]},
         mtime=100,
     )
+
+
+class BoundedReadText:
+    def __init__(self, text):
+        self._text = text
+        self._pos = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def read(self, size=-1):
+        if size is None or size < 0:
+            raise AssertionError("diagnostics summary should not be read without a size limit")
+        start = self._pos
+        end = min(len(self._text), start + size)
+        self._pos = end
+        return self._text[start:end]
 
 
 class AggregateSeedsFinalEvalTest(unittest.TestCase):
@@ -110,6 +131,35 @@ class AggregateSeedsFinalEvalTest(unittest.TestCase):
 
         self.assertEqual(list(index), ["wanted"])
         self.assertTrue(index["wanted"].endswith("slug__wanted"))
+
+    def test_diagnostics_summary_invalid_rate_is_streamed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _make_seed_run(root, "run_s1", reward=0.25)
+            persistent_dir = root / "Parting Chapter" / "persistent" / "bert" / "base" / "mrpc" / "slug__run_s1"
+            diag = persistent_dir / "blb_stage2" / "progress" / "diagnostics" / "diagnostics_summary.md"
+            diag.parent.mkdir(parents=True, exist_ok=True)
+            diag.write_text(
+                "# diagnostics\n"
+                "最近 50 回合 mean invalid 子步数: **1.18**\n",
+                encoding="utf-8",
+            )
+            original_open = builtins.open
+            diag_text = "# diagnostics\n最近 50 回合 mean invalid 子步数: **1.18**\n"
+
+            def guarded_open(path, *args, **kwargs):
+                if Path(path) == diag:
+                    return BoundedReadText(diag_text)
+                return original_open(path, *args, **kwargs)
+
+            with mock.patch.object(builtins, "open", guarded_open):
+                row = aggregate_seeds._gather_one_seed(
+                    1,
+                    "run_s1",
+                    persistent_index={"run_s1": str(persistent_dir)},
+                )
+
+        self.assertAlmostEqual(row.invalid_rate_last50, 1.18 / 59.0)
 
 
 if __name__ == "__main__":

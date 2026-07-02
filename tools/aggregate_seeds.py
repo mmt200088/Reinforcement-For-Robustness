@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 from dataclasses import dataclass, asdict, field
@@ -31,6 +32,8 @@ from pathlib import Path
 from typing import AbstractSet, Any, Dict, List, Optional, Tuple
 
 PERSISTENT_ROOT = os.path.join("Parting Chapter", "persistent")
+_INVALID_RATE_LAST50_RE = re.compile(r"最近 50 回合 mean invalid 子步数: \*\*([0-9.]+)\*\*")
+_DIAGNOSTICS_SCAN_CHUNK_SIZE = 1 << 20
 
 
 @dataclass
@@ -179,6 +182,25 @@ def _extract_final_eval_metrics(results: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _read_invalid_rate_last50(diag_summary: str) -> Optional[float]:
+    if not os.path.isfile(diag_summary):
+        return None
+    try:
+        with open(diag_summary, "r", encoding="utf-8") as f:
+            tail = ""
+            while True:
+                chunk = f.read(_DIAGNOSTICS_SCAN_CHUNK_SIZE)
+                if not chunk:
+                    return None
+                text = tail + chunk
+                match = _INVALID_RATE_LAST50_RE.search(text)
+                if match:
+                    return float(match.group(1)) / 59.0
+                tail = text[-256:]
+    except Exception:
+        return None
+
+
 def _gather_one_seed(seed: int, run_tag: str, persistent_index: Optional[Dict[str, str]] = None) -> SeedRow:
     row = SeedRow(seed=seed, run_tag=run_tag)
     if persistent_index is None:
@@ -213,17 +235,9 @@ def _gather_one_seed(seed: int, run_tag: str, persistent_index: Optional[Dict[st
 
     # Pull invalid_rate from diagnostics summary if present.
     diag_summary = os.path.join(progress_dir, "diagnostics", "diagnostics_summary.md")
-    if os.path.isfile(diag_summary):
-        try:
-            with open(diag_summary, "r", encoding="utf-8") as f:
-                txt = f.read()
-            # Look for "最近 50 回合 mean invalid 子步数: **N.NN**" pattern.
-            import re
-            m = re.search(r"最近 50 回合 mean invalid 子步数: \*\*([0-9.]+)\*\*", txt)
-            if m:
-                row.invalid_rate_last50 = float(m.group(1)) / 59.0  # normalize to fraction
-        except Exception:
-            pass
+    invalid_rate = _read_invalid_rate_last50(diag_summary)
+    if invalid_rate is not None:
+        row.invalid_rate_last50 = invalid_rate
 
     if row.best_reward is None:
         row.status = "incomplete"

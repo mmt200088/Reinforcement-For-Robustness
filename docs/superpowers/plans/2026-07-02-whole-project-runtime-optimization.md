@@ -625,6 +625,12 @@ tree glob once per seed. A local synthetic tree with 5000 persistent dirs and
 discovery wall time from `4.5251s` to `0.0379s` and traced peak memory from
 `0.11MB` to `0.05MB`.
 
+Progress 2026-07-02: `tools/aggregate_seeds.py` now scans
+`diagnostics_summary.md` for the last-50 invalid-rate line with bounded 1MiB
+chunks instead of reading the whole Markdown file into memory. A local
+200k-line synthetic summary preserved the parsed rate and improved the lookup
+from `0.0015s` / `8.40MB` to `0.0011s` / `4.01MB`.
+
 Progress 2026-07-02: `tools/experiments_log.py` now bounds both best-effort
 git provenance subprocesses in `_git_info()` with a 5-second timeout. This
 prevents run registration/index rebuild from hanging indefinitely on a slow or
