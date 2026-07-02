@@ -1,9 +1,10 @@
 """Final-eval feasibility semantics for BLB Trust-0."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Dict, Mapping
+
+from json_utils import write_json_file
 
 
 def _finite_or_none(value: Any) -> float | None:
@@ -151,6 +152,6 @@ def write_final_eval_feasibility_report(
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{stem}.json"
     md_path = out / f"{stem}.md"
-    json_path.write_text(json.dumps(dict(report), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_file(json_path, dict(report))
     md_path.write_text(_markdown(report), encoding="utf-8")
     return {"json": str(json_path), "markdown": str(md_path)}

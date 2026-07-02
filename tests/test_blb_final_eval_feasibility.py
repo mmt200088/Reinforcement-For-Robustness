@@ -79,3 +79,12 @@ class BLBFinalEvalFeasibilityTests(unittest.TestCase):
             text = Path(paths["markdown"]).read_text(encoding="utf-8")
             self.assertIn("loss 非硬约束", text)
             self.assertIn("strict_z", text)
+
+    def test_feasibility_report_uses_shared_json_writer(self):
+        source = (Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "feasibility.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("from json_utils import write_json_file", source)
+        self.assertIn("write_json_file(json_path", source)
+        self.assertNotIn("json.dumps(dict(report)", source)
