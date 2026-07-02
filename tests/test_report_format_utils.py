@@ -3,7 +3,7 @@ import math
 import pathlib
 import unittest
 
-from report_format_utils import format_float, html_table, metric_float
+from report_format_utils import format_elapsed, format_float, html_table, metric_float, progress_bar
 
 
 class ReportFormatUtilsTest(unittest.TestCase):
@@ -31,6 +31,12 @@ class ReportFormatUtilsTest(unittest.TestCase):
         self.assertEqual(metric_float({}, "loss", default=3.0), 3.0)
         self.assertTrue(math.isnan(metric_float({"loss": object()}, "loss", default=math.nan)))
 
+    def test_training_log_format_helpers(self):
+        self.assertEqual(format_elapsed(65), "1m05s")
+        self.assertEqual(format_elapsed(3661), "1h01m01s")
+        self.assertEqual(progress_bar(1, 4, width=4), "[█░░░]  25.0%")
+        self.assertEqual(progress_bar(5, 4, width=4), "[████] 100.0%")
+
 
 class ReportFormatStaticGuardTest(unittest.TestCase):
     def _function_names(self, rel_path: str) -> set[str]:
@@ -51,6 +57,12 @@ class ReportFormatStaticGuardTest(unittest.TestCase):
             ),
             "scripts/report_fusion_count_map.py": "from report_format_utils import html_table",
             "scripts/stage2_reward_probe_scaling_report.py": "from report_format_utils import format_float",
+            "genetic_search_module.py": "from report_format_utils import format_elapsed as _fmt_elapsed",
+            "general_policy_module.py": "from report_format_utils import progress_bar as _progress_bar",
+            "noise_rl_module_v2.py": "from report_format_utils import format_elapsed as _fmt_elapsed",
+            "blb_stage2_rl/sequential_runner.py": (
+                "from report_format_utils import progress_bar as _seq_progress_bar"
+            ),
         }
         for rel_path, import_line in expected_imports.items():
             with self.subTest(path=rel_path):
@@ -61,6 +73,10 @@ class ReportFormatStaticGuardTest(unittest.TestCase):
                 self.assertNotIn("_fmt", function_names)
                 if not rel_path.endswith("stage2_reward_probe_scaling_report.py"):
                     self.assertNotIn("_metric", function_names)
+                self.assertNotIn("_fmt_elapsed", function_names)
+                self.assertNotIn("_progress_bar", function_names)
+                self.assertNotIn("_seq_fmt_elapsed", function_names)
+                self.assertNotIn("_seq_progress_bar", function_names)
 
 
 if __name__ == "__main__":

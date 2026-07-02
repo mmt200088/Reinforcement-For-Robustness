@@ -26,6 +26,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 import numpy as np
 import torch
 
+from report_format_utils import format_elapsed as _seq_fmt_elapsed
+from report_format_utils import progress_bar as _seq_progress_bar
 from rl_data_points import RLDataPointWriter, make_unique_run_id
 
 from .action_mask import (
@@ -216,21 +218,6 @@ def _seq_log_rounded_box(log_fn, lines, indent: str = "  ", min_inner_width: int
     for s in stripped:
         log_fn(f"{indent}· {s}")
     log_fn(f"{indent}{sep}")
-
-
-def _seq_progress_bar(current: int, total: int, width: int = 30) -> str:
-    ratio = min(float(current) / max(float(total), 1.0), 1.0)
-    filled = int(round(ratio * width))
-    bar = "█" * filled + "░" * (width - filled)
-    return f"[{bar}] {ratio:6.1%}"
-
-
-def _seq_fmt_elapsed(seconds: float) -> str:
-    h, rem = divmod(int(seconds), 3600)
-    m, s = divmod(rem, 60)
-    if h > 0:
-        return f"{h}h{m:02d}m{s:02d}s"
-    return f"{m}m{s:02d}s"
 
 
 def _seq_fmt_eta_finish(eta_seconds: float) -> str:

@@ -105,11 +105,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   rendering. Use `html_table()` for small escaped tables, enabling
   `allow_html_cells=True` only for cells that are already intentionally
   rendered HTML; use `format_float()` for compact numeric cells and
-  `metric_float()` for tolerant metric extraction from JSON dictionaries. Do
-  not add new script-local `_html_table`, `_fmt`, or `_metric` helpers in
-  report/experiment scripts; extend `report_format_utils.py` and
-  `tests/test_report_format_utils.py` when a report needs a new shared
-  formatting convention.
+  `metric_float()` for tolerant metric extraction from JSON dictionaries. Use
+  `progress_bar()` and `format_elapsed()` for training/search progress logs
+  rather than local `_progress_bar`, `_seq_progress_bar`, `_fmt_elapsed`, or
+  `_seq_fmt_elapsed` implementations. Do not add new script-local
+  `_html_table`, `_fmt`, or `_metric` helpers in report/experiment scripts;
+  extend `report_format_utils.py` and `tests/test_report_format_utils.py` when
+  a report or log needs a new shared formatting convention.
 - Shared report-stat helper rule, added 2026-07-03: lightweight report,
   monitor, and benchmark scripts must use `stats_utils.py` for simple
   means, sorted medians, fractions, count-based ratios, and safe division.

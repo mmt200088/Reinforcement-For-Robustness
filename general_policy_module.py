@@ -99,6 +99,8 @@ from noise_rl_module_v2 import (
     is_graceful_stop_requested as _is_stop,
     consume_stop_flag_file as _consume_stop,
 )
+from report_format_utils import format_elapsed as _fmt_elapsed
+from report_format_utils import progress_bar as _progress_bar
 
 GENERAL_STAGE1_TRAIN_CHECKPOINT = "general_stage1_train_checkpoint.pt"
 GENERAL_STAGE2_TRAIN_CHECKPOINT = "general_stage2_train_checkpoint.pt"
@@ -109,25 +111,6 @@ GENERAL_STAGE2_TRAIN_CHECKPOINT = "general_stage2_train_checkpoint.pt"
 TASK_CONTEXT_DIM = 5
 GENERAL_POLICY_VERSION = 1
 GENERAL_STAGE1_ALLOWED_GELU_DEGREES = (4, 2, 1)
-
-
-# ===========================================================================
-# 进度输出辅助
-# ===========================================================================
-
-def _progress_bar(current, total, width=30):
-    ratio = min(current / max(total, 1), 1.0)
-    filled = int(round(ratio * width))
-    bar = "\u2588" * filled + "\u2591" * (width - filled)
-    return f"[{bar}] {ratio:6.1%}"
-
-
-def _fmt_elapsed(seconds):
-    h, rem = divmod(int(seconds), 3600)
-    m, s = divmod(rem, 60)
-    if h > 0:
-        return f"{h}h{m:02d}m{s:02d}s"
-    return f"{m}m{s:02d}s"
 
 
 def _log_general_header(log_fn, title, info_lines):

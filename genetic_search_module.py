@@ -53,6 +53,8 @@ from noise_rl_module_v2 import (
     is_graceful_stop_requested,
     consume_stop_flag_file,
 )
+from report_format_utils import format_elapsed as _fmt_elapsed
+from report_format_utils import progress_bar as _progress_bar
 
 import torch
 
@@ -67,22 +69,6 @@ STAGNATION_TOLERANCE_BASE = 10
 GA_PROGRESS_BOX_INTERVAL = 5
 STAGE1_GA_CONSTRAINT_RATIO = 0.005
 GA_STAGE1_ALLOWED_GELU_DEGREES = (4, 2, 1)
-
-
-def _progress_bar(current, total, width=30):
-    """Render a fixed-width unicode progress bar."""
-    ratio = min(current / max(total, 1), 1.0)
-    filled = int(round(ratio * width))
-    bar = "\u2588" * filled + "\u2591" * (width - filled)
-    return f"[{bar}] {ratio:6.1%}"
-
-
-def _fmt_elapsed(seconds):
-    h, rem = divmod(int(seconds), 3600)
-    m, s = divmod(rem, 60)
-    if h > 0:
-        return f"{h}h{m:02d}m{s:02d}s"
-    return f"{m}m{s:02d}s"
 
 
 def _log_ga_stage_header(log_fn, stage_label, pop_size, max_gen, stag_tol):

@@ -18,6 +18,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
 import time as _time
+from report_format_utils import format_elapsed as _fmt_elapsed
+from report_format_utils import progress_bar as _progress_bar
 
 
 # ===========================================================================
@@ -653,22 +655,6 @@ def _write_noise_step_info(step_info, f):
     if step_info.get("mc_loss_mean") is not None:
         f.write(f"  MC: loss={step_info['mc_loss_mean']:.4f}+/-{step_info.get('mc_loss_std', 0):.4f}, "
                 f"m1={step_info.get('mc_metric1_mean', 0):.4f}+/-{step_info.get('mc_metric1_std', 0):.4f}\n")
-
-
-def _progress_bar(current, total, width=30):
-    """Render a fixed-width unicode progress bar."""
-    ratio = min(current / max(total, 1), 1.0)
-    filled = int(round(ratio * width))
-    bar = "\u2588" * filled + "\u2591" * (width - filled)
-    return f"[{bar}] {ratio:6.1%}"
-
-
-def _fmt_elapsed(seconds):
-    h, rem = divmod(int(seconds), 3600)
-    m, s = divmod(rem, 60)
-    if h > 0:
-        return f"{h}h{m:02d}m{s:02d}s"
-    return f"{m}m{s:02d}s"
 
 
 def _fmt_eta_finish(eta_seconds):

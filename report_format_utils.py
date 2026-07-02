@@ -65,3 +65,20 @@ def html_table(
         parts.append("</tr>")
     parts.append("</tbody></table>")
     return "\n".join(parts)
+
+
+def progress_bar(current: float, total: float, width: int = 30) -> str:
+    """Render the compact unicode progress bar used in training logs."""
+    ratio = min(float(current) / max(float(total), 1.0), 1.0)
+    filled = int(round(ratio * int(width)))
+    bar = "\u2588" * filled + "\u2591" * (int(width) - filled)
+    return f"[{bar}] {ratio:6.1%}"
+
+
+def format_elapsed(seconds: float) -> str:
+    """Format elapsed seconds as ``XmYYs`` or ``XhYYmZZs``."""
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h{m:02d}m{s:02d}s"
+    return f"{m}m{s:02d}s"
