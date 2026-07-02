@@ -355,6 +355,14 @@ benchmark, the summary selection stayed identical while median time dropped
 from `0.280s` to `0.069s` and traced peak memory dropped from `22.76MB` to
 near zero.
 
+Progress 2026-07-02: `scripts/blb_build_fusion_count_map.py` now consumes golden
+enumeration shard results with `Pool.imap_unordered()` and merges the result
+stream directly, instead of `Pool.map()` batching every shard result before
+reduction. A synthetic 80-shard/120k-row local benchmark kept identical merged
+counts while reducing traced peak memory from `69.60MB` to `59.74MB` and median
+merge wall time from `0.718s` to `0.644s`; the real benefit is avoiding a second
+parent-process copy of large golden fallback shard payloads.
+
 - [ ] **Step 3: Verify**
 
 Run:

@@ -104,6 +104,32 @@ def _enumerate_shard_worker(payload: Dict[str, Any]) -> Tuple[int, List[Tuple]]:
     ]
 
 
+def _iter_golden_shard_results(payloads: List[Dict[str, Any]], num_shards: int):
+    if int(num_shards) == 1:
+        yield _enumerate_shard_worker(payloads[0])
+        return
+    with mp.get_context("spawn").Pool(processes=int(num_shards)) as pool:
+        yield from pool.imap_unordered(_enumerate_shard_worker, payloads)
+
+
+def _merge_golden_shard_results(shard_results) -> Tuple[List[Any], int]:
+    import fusion_enum
+
+    ev_g: List[Any] = []
+    nv_g = 0
+    for num_valid, shard in shard_results:
+        nv_g += int(num_valid)
+        for ai, fc, tb, tv, sig in shard:
+            ev_g.append(
+                fusion_enum.EvaluatedConfig(
+                    action_indices=tuple(ai), fusion_count=int(fc),
+                    total_bits=int(tb), total_variance=float(tv),
+                    installed_signature=sig, slots={},
+                )
+            )
+    return ev_g, nv_g
+
+
 def _fast_range_payloads(
     template: Any, total: int, num_shards: int, *, profile: str, ro_root: str,
 ) -> List[Dict[str, Any]]:
@@ -326,24 +352,9 @@ def build_one_block_type(
             }
             for s in range(num_shards)
         ]
-        if num_shards == 1:
-            shard_results = [_enumerate_shard_worker(payloads_g[0])]
-        else:
-            with mp.get_context("spawn").Pool(processes=num_shards) as pool:
-                shard_results = pool.map(_enumerate_shard_worker, payloads_g)
-        ev_g: List[Any] = []
-        nv_g = 0
-        for num_valid, shard in shard_results:
-            nv_g += int(num_valid)
-            for ai, fc, tb, tv, sig in shard:
-                ev_g.append(
-                    fusion_enum.EvaluatedConfig(
-                        action_indices=tuple(ai), fusion_count=int(fc),
-                        total_bits=int(tb), total_variance=float(tv),
-                        installed_signature=sig, slots={},
-                    )
-                )
-        return ev_g, nv_g
+        return _merge_golden_shard_results(
+            _iter_golden_shard_results(payloads_g, num_shards=num_shards)
+        )
 
     if effective_enum_path in ("golden", "both"):
         # ---- original cfg-path enumeration (stride shards) ----
