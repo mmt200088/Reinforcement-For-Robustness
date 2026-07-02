@@ -5338,6 +5338,24 @@ class LayerImportanceEvaluator(TrainerCallback):
         
         return advantages, returns
 
+    def compute_gae_batch(self, rewards, values, dones, gamma=PPO_GAMMA, lam=PPO_LAMBDA):
+        """Batch GAE over all episodes while staying on the tensor device."""
+        advantages = torch.zeros_like(rewards, dtype=torch.float32)
+        gae = torch.zeros(rewards.size(0), dtype=torch.float32, device=rewards.device)
+
+        for t in range(rewards.size(1) - 1, -1, -1):
+            if t == rewards.size(1) - 1:
+                next_value = torch.zeros_like(gae)
+            else:
+                next_value = values[:, t + 1]
+            not_done = 1.0 - dones[:, t]
+            delta = rewards[:, t] + gamma * next_value * not_done - values[:, t]
+            gae = delta + gamma * lam * not_done * gae
+            advantages[:, t] = gae
+
+        returns = advantages + values
+        return advantages, returns
+
     def ppo_update_gtrxl(self, gtrxl_net, optimizer, buffer, device,
                           mini_batch_episodes=GTRXL_MINI_BATCH_EPISODES, entropy_coef=None,
                           ppo_update_step=0):
@@ -5386,19 +5404,7 @@ class LayerImportanceEvaluator(TrainerCallback):
          actions_g, old_logprobs, rewards, values, dones, gelu_masks) = buffer.get_batch(device)
         
         n_eps = cont_features.size(0)
-        
-        all_advantages = []
-        all_returns = []
-        for i in range(n_eps):
-            ep_rewards = rewards[i].cpu().numpy()
-            ep_values = values[i].cpu().numpy()
-            ep_dones = dones[i].cpu().numpy()
-            adv, ret = self.compute_gae(ep_rewards, ep_values, ep_dones)
-            all_advantages.append(adv)
-            all_returns.append(ret)
-        
-        advantages = torch.stack(all_advantages).to(device)
-        returns = torch.stack(all_returns).to(device)
+        advantages, returns = self.compute_gae_batch(rewards, values, dones)
         
         adv_flat = advantages.reshape(-1)
         advantages = (advantages - adv_flat.mean()) / (adv_flat.std() + 1e-8)

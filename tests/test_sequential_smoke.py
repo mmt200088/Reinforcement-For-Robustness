@@ -951,6 +951,21 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertNotIn("returns_normalized = torch.tensor(", update_region)
         self.assertNotIn("values_normalized = torch.tensor(", update_region)
 
+    def test_stage1_ppo_computes_gae_batch_on_device(self):
+        evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(evaluator_src, "ppo_update_gtrxl")
+        batch_gae_region = _method_region_from_source(evaluator_src, "compute_gae_batch")
+
+        self.assertIn("advantages, returns = self.compute_gae_batch(rewards, values, dones)", update_region)
+        self.assertNotIn("all_advantages", update_region)
+        self.assertNotIn("all_returns", update_region)
+        self.assertNotIn("rewards[i].cpu().numpy()", update_region)
+        self.assertNotIn("values[i].cpu().numpy()", update_region)
+        self.assertNotIn("dones[i].cpu().numpy()", update_region)
+        self.assertIn("torch.zeros_like(rewards", batch_gae_region)
+        self.assertIn("values[:, t + 1]", batch_gae_region)
+        self.assertIn("advantages[:, t] = gae", batch_gae_region)
+
     def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         mask_region = _method_region_from_source(policy_src, "_mask_logits_for_slot")
