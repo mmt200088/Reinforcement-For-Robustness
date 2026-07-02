@@ -15,13 +15,13 @@ test lane. See docs/superpowers/specs/2026-06-03-stage2-fusion-count-action-desi
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 import os
 import pathlib
 from typing import Dict, List, Protocol, Sequence, runtime_checkable
 
 import numpy as np
 
+from json_utils import read_json_file
 import noise_tables  # repo-root torch-free module (always on sys.path)
 
 
@@ -155,7 +155,7 @@ class FusionCountMap:
         merged: dict = {"profile": profile, "graphs": {}, "max_num_options": 0}
         mx = 0
         for path in _iter_map_paths(map_dir):
-            g = json.loads(path.read_text(encoding="utf-8"))
+            g = read_json_file(path)
             merged["graphs"][str(g["graph_key"])] = g
             mx = max(mx, len(g["options"]))
         if not merged["graphs"]:

@@ -41,6 +41,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from cli_parse_utils import parse_int_list_text
 from blb_rl_bridge import (
     Block1ActionSpec,
     Block2ActionSpec,
@@ -96,7 +97,7 @@ def _load_k_levels_from_env() -> Tuple[int, ...]:
     raw = str(os.environ.get("BLB_TRUNCATION_K_LEVELS", "") or "").strip()
     if not raw:
         return DEFAULT_K_LEVELS_LEGACY_COMPAT
-    values = tuple(int(x.strip()) for x in raw.replace(";", ",").split(",") if x.strip())
+    values = tuple(parse_int_list_text(raw))
     if not values:
         raise ValueError("BLB_TRUNCATION_K_LEVELS must contain at least one integer")
     if len(set(values)) != len(values):

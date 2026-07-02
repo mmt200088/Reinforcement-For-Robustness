@@ -96,7 +96,8 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `json_utils.write_json_file()` instead of script-local `_write_json` helpers.
   For JSON artifact reads, use `json_utils.read_json_file()` instead of
   script-local `json.loads(path.read_text(...))` loops in core
-  RL/Paean/final-eval/report tools.
+  RL/Paean/final-eval/report tools, fusion-count map loaders, and BLB
+  diagnostic scripts.
   Do not add local `_json_ready`, `_jsonable`, `_json_safe`, `_json_default`,
   `json_default`, `_stable_json`, `_sha256_json`, `_read_json`, `_load_json`,
   or `_write_json` helpers in core RL/Paean/final-eval code or standalone
@@ -200,7 +201,8 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   and its tests if the shared contract needs a new variant.
 - Shared CLI numeric parser rule, added 2026-07-03: small scripts that parse
   command-line integer/float vectors and Paean/final-eval action vector text
-  fields must use `cli_parse_utils.py`. Use
+  fields, Stage-2 environment/config integer lists, and Paean/final-eval action
+  vector text fields must use `cli_parse_utils.py`. Use
   `parse_json_int_list()` for JSON-list flags with defaults,
   `parse_exact_json_int_list()` for exact-length JSON vectors,
   `parse_optional_int_list()` / `parse_int_list_text()` for comma/semicolon

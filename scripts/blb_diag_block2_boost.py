@@ -27,7 +27,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import pathlib
 import sys
 
@@ -38,7 +37,9 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimi
 
 import numpy as np  # noqa: E402
 
+from cli_parse_utils import parse_int_list_text  # noqa: E402
 import fusion_enum  # noqa: E402
+from json_utils import read_json_file  # noqa: E402
 import precision_boost as pb  # noqa: E402
 
 
@@ -137,10 +138,10 @@ def main() -> int:
     )
 
     if args.action_indices:
-        ai = [int(x) for x in args.action_indices.split(",")]
+        ai = parse_int_list_text(args.action_indices, allow_semicolon=False)
     else:
         mp = pathlib.Path(args.maps_dir) / f"{gk}.json"
-        payload = json.loads(mp.read_text(encoding="utf-8"))
+        payload = read_json_file(mp)
         fc1 = [o for o in payload["options"] if int(o.get("fusion_count", 0)) == 1]
         if not fc1:
             print(f"[diag] no fc=1 option in {mp}")

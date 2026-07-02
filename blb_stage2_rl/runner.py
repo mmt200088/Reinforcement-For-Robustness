@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
+from cli_parse_utils import parse_int_list_text
 from rescale_optimizer_bridge import RescaleOptimizerBridge
 from .action_mask import (
     action_allowed,
@@ -2888,13 +2889,13 @@ class BLBStage2RLRunner:
         v = getattr(ev, "blb_v3_substage_block_order", None)
         if v not in (None, ""):
             try:
-                cfg.substage_block_order = [int(x) for x in str(v).split(",") if str(x).strip()]
+                cfg.substage_block_order = parse_int_list_text(str(v), allow_semicolon=False)
             except Exception:
                 pass
         v = getattr(ev, "blb_v3_substage_frozen_blocks", None)
         if v not in (None, ""):
             try:
-                cfg.substage_frozen_blocks = [int(x) for x in str(v).split(",") if str(x).strip()]
+                cfg.substage_frozen_blocks = parse_int_list_text(str(v), allow_semicolon=False)
             except Exception:
                 pass
         v = getattr(ev, "blb_v3_substage_episodes_each", None)

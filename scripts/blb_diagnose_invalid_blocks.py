@@ -36,6 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from cli_parse_utils import parse_int_list_text  # noqa: E402
 from blb_stage2_rl.action_space import (  # noqa: E402
     avg_truncation_k_in_action,
     build_optimizer_requests,
@@ -44,6 +45,7 @@ from blb_stage2_rl.action_space import (  # noqa: E402
 )
 from blb_stage2_rl.action_io import action_vec_to_slots_list  # noqa: E402
 from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost  # noqa: E402
+from json_utils import read_json_file  # noqa: E402
 from rescale_optimizer_bridge import (  # noqa: E402
     InProcessInvoker,
     RescaleOptimizerBridge,
@@ -57,7 +59,7 @@ from rescale_optimizer_bridge import (  # noqa: E402
 
 def _load_action_vec(action_config_path: str, num_layers: int) -> Tuple[np.ndarray, Dict[str, Any]]:
     """Load a Paean-style action JSON, return (action_vec, metadata)."""
-    payload = json.loads(Path(action_config_path).read_text(encoding="utf-8"))
+    payload = read_json_file(action_config_path)
     if "action_vec" not in payload:
         raise ValueError(
             f"{action_config_path}: missing top-level 'action_vec'. "
@@ -104,7 +106,7 @@ def _stage1_degrees_from_meta(
     src = meta.get("stage1_config_path") or "glue_final_configs_best_ppo.json"
     path = REPO_ROOT / src
     try:
-        cfg = json.loads(path.read_text(encoding="utf-8"))
+        cfg = read_json_file(path)
     except Exception as exc:
         print(f"[warn] could not read stage-1 config {path}: {exc}", file=sys.stderr)
         return stage1_default
@@ -226,8 +228,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"[load] action_vec dim={action.size}, action source={meta.get('source')!r}", flush=True)
 
     if args.gelu_degree and args.softmax_degree:
-        gelu = [int(x) for x in args.gelu_degree.split(",")]
-        softmax = [int(x) for x in args.softmax_degree.split(",")]
+        gelu = parse_int_list_text(args.gelu_degree, allow_semicolon=False)
+        softmax = parse_int_list_text(args.softmax_degree, allow_semicolon=False)
     else:
         gelu, softmax = _stage1_degrees_from_meta(
             meta, args.num_layers, model_type=args.model_type,
