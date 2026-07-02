@@ -377,6 +377,13 @@ duplicate real replan call and a temporary probe list on every over-budget
 degeneracy check. A local call-count check with `num_random=5` now performs the
 expected `7` evals (`baseline + corner + 5 random`) instead of the previous `8`.
 
+Progress 2026-07-02: `scripts/report_fusion_count_map.py` now selects the best
+option for a requested fusion count with targeted streaming scans instead of
+building per-count candidate buckets and sorting the selected bucket. A local
+250k-option benchmark preserved the selected option for exact, clamped, and
+max targets; exact target selection improved from `0.5034s` / `6.17MB` to
+`0.3138s` / near-zero traced allocations.
+
 - [ ] **Step 3: Verify**
 
 Run:

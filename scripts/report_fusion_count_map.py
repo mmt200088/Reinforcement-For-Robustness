@@ -170,22 +170,79 @@ def _schedule(num_layers: int, profile: str, gelu: Sequence[int], softmax: Seque
 
 
 def _choose_option(graph: Mapping[str, Any], target: str | int) -> Tuple[int, int, bool]:
-    options = list(graph.get("options", []))
-    if not options:
-        raise ValueError(f"graph {graph.get('graph_key')} has no options")
-    by_count: Dict[int, List[dict]] = {}
-    for option in options:
-        by_count.setdefault(int(option["fusion_count"]), []).append(option)
+    options = graph.get("options", [])
     if target == "max":
-        count = max(by_count)
-    else:
-        count = int(target)
-        if count not in by_count:
-            count = max(c for c in by_count if c <= count) if any(c <= count for c in by_count) else min(by_count)
-    candidates = sorted(by_count[count], key=lambda x: (int(x.get("option_id", 0)), float(x.get("total_bits", 0.0))))
-    option_id = int(candidates[0]["option_id"])
-    clamped = target != "max" and int(target) != count
-    return option_id, count, bool(clamped)
+        count = None
+        best_option_id = None
+        best_total_bits = 0.0
+        for option in options:
+            option_count = int(option["fusion_count"])
+            option_id = int(option.get("option_id", 0))
+            total_bits = float(option.get("total_bits", 0.0))
+            if (
+                count is None
+                or option_count > count
+                or (
+                    option_count == count
+                    and (
+                        best_option_id is None
+                        or option_id < best_option_id
+                        or (option_id == best_option_id and total_bits < best_total_bits)
+                    )
+                )
+            ):
+                count = option_count
+                best_option_id = option_id
+                best_total_bits = total_bits
+        if count is None or best_option_id is None:
+            raise ValueError(f"graph {graph.get('graph_key')} has no options")
+        return int(best_option_id), int(count), False
+
+    requested_count = int(target)
+    min_count = None
+    lower_count = None
+    best_option_id = None
+    best_total_bits = 0.0
+    for option in options:
+        option_count = int(option["fusion_count"])
+        if min_count is None or option_count < min_count:
+            min_count = option_count
+        if option_count <= requested_count and (lower_count is None or option_count > lower_count):
+            lower_count = option_count
+        if option_count != requested_count:
+            continue
+        option_id = int(option.get("option_id", 0))
+        total_bits = float(option.get("total_bits", 0.0))
+        if (
+            best_option_id is None
+            or option_id < best_option_id
+            or (option_id == best_option_id and total_bits < best_total_bits)
+        ):
+            best_option_id = option_id
+            best_total_bits = total_bits
+    if min_count is None:
+        raise ValueError(f"graph {graph.get('graph_key')} has no options")
+    if best_option_id is not None:
+        return int(best_option_id), requested_count, False
+
+    count = lower_count if lower_count is not None else min_count
+    best_total_bits = 0.0
+    for option in options:
+        if int(option["fusion_count"]) != count:
+            continue
+        option_id = int(option.get("option_id", 0))
+        total_bits = float(option.get("total_bits", 0.0))
+        if (
+            best_option_id is None
+            or option_id < best_option_id
+            or (option_id == best_option_id and total_bits < best_total_bits)
+        ):
+            best_option_id = option_id
+            best_total_bits = total_bits
+    if best_option_id is None:
+        raise ValueError(f"graph {graph.get('graph_key')} has no options")
+    clamped = requested_count != count
+    return int(best_option_id), int(count), bool(clamped)
 
 
 def _option_by_id(graph: Mapping[str, Any], option_id: int) -> Mapping[str, Any]:
