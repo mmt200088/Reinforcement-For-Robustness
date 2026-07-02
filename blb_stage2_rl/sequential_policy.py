@@ -91,7 +91,18 @@ class RunningMeanStd:
 
     def update(self, values: Any) -> None:
         if isinstance(values, torch.Tensor):
-            values = values.detach().cpu().numpy()
+            values_detached = values.detach()
+            batch_count = int(values_detached.numel())
+            if batch_count == 0:
+                return
+            values_stats = values_detached.reshape(-1).to(dtype=torch.float64)
+            stats = torch.stack((
+                values_stats.mean(),
+                values_stats.var(unbiased=False),
+            ))
+            batch_mean, batch_var = (float(x) for x in stats.detach().cpu().numpy())
+            self._update_from_moments(batch_mean, batch_var, batch_count)
+            return
         arr = np.asarray(values, dtype=np.float64).reshape(-1)
         if arr.size == 0:
             return

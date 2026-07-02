@@ -1054,6 +1054,16 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("batch_count = int(x_detached.numel())", update_region)
         self.assertNotIn("x = x.detach().cpu().numpy()", update_region)
 
+    def test_sequential_running_mean_std_updates_torch_tensor_without_full_cpu_copy(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(policy_src, "update")
+
+        self.assertIn("values_detached = values.detach()", update_region)
+        self.assertIn("stats = torch.stack(", update_region)
+        self.assertIn("batch_count = int(values_detached.numel())", update_region)
+        self.assertIn("batch_mean, batch_var = (float(x) for x in stats", update_region)
+        self.assertNotIn("values = values.detach().cpu().numpy()", update_region)
+
     def test_stage1_entropy_recovery_avoids_loss_path_item_sync(self):
         evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
         update_region = _method_region_from_source(evaluator_src, "ppo_update_gtrxl")
