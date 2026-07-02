@@ -460,6 +460,14 @@ rolling-window update instead of buffering the full row list before
 and reduced write peak memory from `141.65MB` to `0.25MB` while slightly
 improving wall time from `2.460s` to `2.335s`.
 
+Progress 2026-07-02: `tools/paper_figures.py` now lazily loads run artifacts
+based on the requested `--figs`. For example, `--figs cost_vs_accuracy` no
+longer reads `episodes.jsonl`, `ppo_updates.jsonl`, best-action JSON, baseline
+JSON, first-invalid counts, or action histograms before rendering the
+top-candidate scatter. A local 100k-episode synthetic run comparison reduced
+run loading for that path from `0.464s`/`39.39MB` to effectively `0.000s`/
+`0.00MB`.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run

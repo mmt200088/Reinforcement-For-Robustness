@@ -159,7 +159,17 @@ def _read_json(path: str) -> Dict[str, Any]:
         return {}
 
 
-def load_run(run_dir: str, label: str = "") -> RunData:
+def load_run(
+        run_dir: str,
+        label: str = "",
+        *,
+        include_episodes: bool = True,
+        include_ppo_updates: bool = True,
+        include_best_action: bool = True,
+        include_baseline_action: bool = True,
+        include_first_invalid: bool = True,
+        include_action_histogram: bool = True,
+) -> RunData:
     """Read a run's persistent dir into a RunData."""
     run_dir = str(run_dir).rstrip("/")
     # The blb_stage2/progress/ subtree is where everything lives.
@@ -178,14 +188,14 @@ def load_run(run_dir: str, label: str = "") -> RunData:
             progress_dir = run_dir
 
     diag = os.path.join(progress_dir, "diagnostics")
-    episodes = _read_jsonl(os.path.join(diag, "episodes.jsonl"))
-    ppo_updates = _read_jsonl(os.path.join(diag, "ppo_updates.jsonl"))
-    best_blob = _read_json(os.path.join(diag, "best_action_vec.json"))
-    baseline_blob = _read_json(os.path.join(diag, "baseline_action_vec.json"))
-    first_inv = _read_json(os.path.join(diag, "first_invalid_counts.json"))
+    episodes = _read_jsonl(os.path.join(diag, "episodes.jsonl")) if include_episodes else []
+    ppo_updates = _read_jsonl(os.path.join(diag, "ppo_updates.jsonl")) if include_ppo_updates else []
+    best_blob = _read_json(os.path.join(diag, "best_action_vec.json")) if include_best_action else {}
+    baseline_blob = _read_json(os.path.join(diag, "baseline_action_vec.json")) if include_baseline_action else {}
+    first_inv = _read_json(os.path.join(diag, "first_invalid_counts.json")) if include_first_invalid else {}
     hist = None
     npz_path = os.path.join(diag, "action_histogram.npz")
-    if os.path.isfile(npz_path):
+    if include_action_histogram and os.path.isfile(npz_path):
         try:
             hist = np.load(npz_path)["counts"]
         except Exception:
@@ -598,7 +608,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not labels:
         labels = [os.path.basename(r.rstrip("/")) for r in args.runs]
 
-    runs = [load_run(r, label=lbl) for r, lbl in zip(args.runs, labels)]
+    selected_figs = set(args.figs)
+    need_episodes = bool(args.latex_tables or "training_curves" in selected_figs)
+    need_ppo_updates = "ppo_dynamics" in selected_figs
+    need_best_action = bool(args.latex_tables or "best_vs_baseline" in selected_figs)
+    need_baseline_action = "best_vs_baseline" in selected_figs
+    need_first_invalid = "invalid_heatmap" in selected_figs
+    need_action_histogram = "action_histogram" in selected_figs
+    runs: List[RunData] = []
+    for idx, run_path in enumerate(args.runs):
+        runs.append(load_run(
+            run_path,
+            label=labels[idx],
+            include_episodes=need_episodes,
+            include_ppo_updates=need_ppo_updates,
+            include_best_action=need_best_action,
+            include_baseline_action=need_baseline_action,
+            include_first_invalid=need_first_invalid,
+            include_action_histogram=need_action_histogram,
+        ))
     os.makedirs(args.out, exist_ok=True)
 
     written: List[str] = []
