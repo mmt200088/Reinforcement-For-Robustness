@@ -32,7 +32,7 @@ from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
 from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
 from blb_stage2_rl.optimizer_cost import apply_optimizer_outputs_to_cfgs
 from final_evaluation_module import UnifiedFinalEvaluationModule
-from json_utils import to_jsonable
+from json_utils import read_json_file, to_jsonable
 from rescale_optimizer_bridge import (
     InProcessInvoker,
     RescaleOptimizerBridge,
@@ -974,7 +974,7 @@ class BLBActionFinalEvaluationModule:
         if not self.action_config_path:
             return "cfg_derived"
         try:
-            payload = json.loads(Path(self.action_config_path).read_text(encoding="utf-8-sig"))
+            payload = read_json_file(self.action_config_path, encoding="utf-8-sig")
         except Exception:
             return "cfg_derived"
         mode = str(

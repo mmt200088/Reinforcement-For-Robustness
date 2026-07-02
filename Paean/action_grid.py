@@ -10,6 +10,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from json_utils import read_json_file
+
 from blb_stage2_rl.action_space import (
     K_LEVELS,
     NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
@@ -128,7 +130,7 @@ def load_action_grid_config(
     path = Path(str(path_value or "").strip())
     if not path.is_file():
         raise FileNotFoundError(f"final_eval action config does not exist: {path}")
-    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    payload = read_json_file(path, encoding="utf-8-sig")
     if not isinstance(payload, Mapping):
         raise ValueError("--action-config JSON must be an object")
 
