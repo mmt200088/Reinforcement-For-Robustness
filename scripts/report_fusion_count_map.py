@@ -40,10 +40,6 @@ DEFAULT_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
 DEFAULT_SOFTMAX = [6] * 12
 
 
-def _json_list(raw: str, *, default: Sequence[int], name: str) -> List[int]:
-    return parse_json_int_list(raw, default=default, name=name)
-
-
 def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
     tree = ast.parse(ACTION_SPACE_PATH.read_text(encoding="utf-8-sig"))
     out: Dict[int, List[Tuple[str, str, int]]] = {}
@@ -892,8 +888,8 @@ def main() -> int:
     if not json_path.is_absolute():
         json_path = REPO_ROOT / json_path
 
-    gelu = _json_list(args.gelu, default=DEFAULT_GELU, name="--gelu")
-    softmax = _json_list(args.softmax, default=DEFAULT_SOFTMAX, name="--softmax")
+    gelu = parse_json_int_list(args.gelu, default=DEFAULT_GELU, name="--gelu")
+    softmax = parse_json_int_list(args.softmax, default=DEFAULT_SOFTMAX, name="--softmax")
     if len(gelu) != len(softmax):
         raise SystemExit("GELU and Softmax degree lists must have equal length")
 
