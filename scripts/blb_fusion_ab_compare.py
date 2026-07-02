@@ -51,8 +51,7 @@ def load_episodes(run_dir: str) -> List[Dict[str, Any]]:
 def _iter_episode_rows(path: str):
     with open(path, encoding="utf-8") as f:
         for line in f:
-            line = line.strip()
-            if not line:
+            if not line or line.isspace():
                 continue
             try:
                 row = json.loads(line)

@@ -337,6 +337,12 @@ recursive directory walk. A local synthetic run tree with 402 directories and
 2001 files preserved the same best-action payload and reduced common-path
 lookup from `0.0064s`/`0.03MB` to `0.0001s`/`0.01MB`.
 
+Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now skips blank JSONL
+lines with `isspace()` and passes nonblank episode lines directly to
+`json.loads()` instead of allocating a stripped copy for every row. A local
+80k-row long-line benchmark preserved row count and reduced episode parse time
+from `0.434637s` to `0.415472s` (`1.05x`).
+
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.

@@ -175,6 +175,23 @@ class StreamingMainTest(unittest.TestCase):
 
         self.assertEqual(pass_count, 2)
 
+    def test_iter_episode_rows_passes_original_line_to_json_loads(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "episodes.jsonl"
+            path.write_text('{"episode": 0}\n   \n{"episode": 1}\n', encoding="utf-8")
+            original_loads = abc_mod.json.loads
+            seen_inputs = []
+
+            def tracking_loads(raw):
+                seen_inputs.append(raw)
+                return original_loads(raw)
+
+            with mock.patch.object(abc_mod.json, "loads", tracking_loads):
+                rows = list(abc_mod._iter_episode_rows(str(path)))
+
+        self.assertEqual([row["episode"] for row in rows], [0, 1])
+        self.assertEqual(seen_inputs, ['{"episode": 0}\n', '{"episode": 1}\n'])
+
     def test_load_best_action_uses_common_path_without_os_walk(self):
         with tempfile.TemporaryDirectory() as td:
             run = pathlib.Path(td)
