@@ -14,9 +14,24 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 import numpy as np
+
+
+def _float_array(values) -> np.ndarray:
+    if isinstance(values, np.ndarray):
+        return values.astype(float, copy=False).reshape(-1)
+    return np.asarray(list(values), dtype=float)
+
+
+def _float_array_if_length(values, expected_len: int) -> Optional[np.ndarray]:
+    if values is None:
+        return None
+    arr = _float_array(values)
+    if arr.size != int(expected_len):
+        return None
+    return arr
 
 
 def detect_rl_local_optimum(
@@ -62,7 +77,7 @@ def detect_rl_local_optimum(
           - likely_local_optimum: 综合判定
           - summary: 一行人类可读总结
     """
-    returns = np.asarray(list(episode_returns), dtype=float)
+    returns = _float_array(episode_returns)
     n = returns.size
     out = {"signals": {}, "metrics": {}, "likely_local_optimum": False, "summary": ""}
     if n < max(20, window // 4):
@@ -75,8 +90,12 @@ def detect_rl_local_optimum(
     # ---- A. entropy collapse ----
     entropy_collapsed = False
     recent_entropy_mean = None
-    if episode_entropies is not None and len(episode_entropies) > 0:
-        ent_arr = np.asarray(list(episode_entropies), dtype=float)
+    ent_arr = None
+    if episode_entropies is not None:
+        ent_arr = _float_array(episode_entropies)
+        if ent_arr.size == 0:
+            ent_arr = None
+    if ent_arr is not None:
         ew = int(min(w, ent_arr.size))
         recent_entropy_mean = float(np.mean(ent_arr[-ew:]))
         entropy_collapsed = recent_entropy_mean < entropy_collapse_threshold
@@ -97,7 +116,7 @@ def detect_rl_local_optimum(
     if best_score_history is None:
         best_curve = np.maximum.accumulate(returns)
     else:
-        best_curve = np.asarray(list(best_score_history), dtype=float)
+        best_curve = _float_array(best_score_history)
     bw = int(best_stuck_window if best_stuck_window is not None else 2 * w)
     bw = min(bw, best_curve.size)
     best_stuck = False
@@ -113,10 +132,14 @@ def detect_rl_local_optimum(
     # ---- D. action diversity collapse (optional) ----
     diversity_collapsed = False
     action_kl = None
-    if action_history is not None and len(action_history) >= 2 * w:
+    if action_history is not None:
+        action_rows = list(action_history)
+    else:
+        action_rows = []
+    if len(action_rows) >= 2 * w:
         try:
-            recent = np.asarray(list(action_history)[-w:]).reshape(-1)
-            early = np.asarray(list(action_history)[:w]).reshape(-1)
+            recent = np.asarray(action_rows[-w:]).reshape(-1)
+            early = np.asarray(action_rows[:w]).reshape(-1)
             vals = np.unique(np.concatenate([recent, early]))
             def _hist(x):
                 h = np.array([(x == v).sum() for v in vals], dtype=float)
@@ -221,8 +244,8 @@ def attribute_collapse(
     if onset is None:
         lines.append(f"  未检测到崩溃（rolling{w} P3 始终 ≥ {p3_floor:.0%}）。")
         return lines
-    fc = np.asarray(list(fusion_count), dtype=float) if (fusion_count is not None and len(list(fusion_count)) == n) else None
-    mu = np.asarray(list(worst_signed_margin), dtype=float) if (worst_signed_margin is not None and len(list(worst_signed_margin)) == n) else None
+    fc = _float_array_if_length(fusion_count, n)
+    mu = _float_array_if_length(worst_signed_margin, n)
     lines.append(f"  崩溃起点（rolling{w} P3 首次 < {p3_floor:.0%}）: episode≈{onset}")
     verdict = "未知"
     if fc is not None:
@@ -264,11 +287,12 @@ def write_local_optimum_report(
     """
     log = log_fn or (lambda _msg: None)
     try:
-        n = len(list(episode_returns))
+        returns = _float_array(episode_returns)
+        n = returns.size
         if window is None:
             window = max(50, int(max(1, n) * 0.1))
         diag = detect_rl_local_optimum(
-            episode_returns=episode_returns,
+            episode_returns=returns,
             episode_entropies=episode_entropies,
             best_score_history=best_score_history,
             action_history=None,

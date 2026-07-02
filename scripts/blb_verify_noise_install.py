@@ -42,7 +42,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from json_utils import read_json_file, to_jsonable  # noqa: E402
+from json_utils import read_json_file  # noqa: E402
+from json_utils import to_jsonable  # noqa: E402
 
 _NOISE_VARIANCE_TABLE_CACHE: Dict[int, Dict[int, Dict[str, float]]] | None = None
 

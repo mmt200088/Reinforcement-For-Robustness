@@ -18,7 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from jsonl_utils import count_jsonl_with_required_fields  # noqa: E402
+from jsonl_utils import (  # noqa: E402
+    count_jsonl_with_required_fields,
+    missing_required_fields,
+)
 
 REQUIRED_EPISODE_FIELDS = (
     "episode",
@@ -48,6 +51,43 @@ REQUIRED_PPO_UPDATE_FIELDS = (
     "best_reward_so_far",
     "elapsed_sec",
 )
+
+
+_missing_required_fields = missing_required_fields
+
+
+def _count_jsonl_with_required_fields(
+        path: Path,
+        required_fields: tuple[str, ...],
+        label: str | None = None,
+) -> tuple[int, list[str]]:
+    if isinstance(path, (str, Path)):
+        return count_jsonl_with_required_fields(path, required_fields, label=label)
+    row_count = 0
+    failures: list[str] = []
+    missing_examples: list[str] = []
+    missing_row_count = 0
+    row_label = label or getattr(path, "name", "jsonl")
+    with path.open("r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            if not line or line.isspace():
+                continue
+            row_count += 1
+            payload = json.loads(line)
+            if not isinstance(payload, dict):
+                failures.append(f"{row_label}:{line_no} is not a JSON object")
+                continue
+            missing = missing_required_fields(payload, required_fields)
+            if missing:
+                missing_row_count += 1
+                if len(missing_examples) < 3:
+                    missing_examples.append(f"line {line_no}: {', '.join(missing)}")
+    if missing_row_count:
+        failures.append(
+            f"{row_label} missing required fields in {missing_row_count} rows "
+            f"({'; '.join(missing_examples)})"
+        )
+    return row_count, failures
 
 
 def _resolve_progress_dir(args: argparse.Namespace) -> Path:
@@ -172,7 +212,7 @@ def verify(args: argparse.Namespace) -> int:
     episodes_path = progress / "diagnostics" / "episodes.jsonl"
     if episodes_path.is_file():
         try:
-            n_episode_rows, field_failures = count_jsonl_with_required_fields(
+            n_episode_rows, field_failures = _count_jsonl_with_required_fields(
                 episodes_path,
                 REQUIRED_EPISODE_FIELDS,
                 label="episodes.jsonl",
@@ -189,7 +229,7 @@ def verify(args: argparse.Namespace) -> int:
     ppo_path = progress / "diagnostics" / "ppo_updates.jsonl"
     if ppo_path.is_file():
         try:
-            n_ppo_rows, field_failures = count_jsonl_with_required_fields(
+            n_ppo_rows, field_failures = _count_jsonl_with_required_fields(
                 ppo_path,
                 REQUIRED_PPO_UPDATE_FIELDS,
                 label="ppo_updates.jsonl",

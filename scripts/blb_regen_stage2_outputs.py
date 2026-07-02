@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -33,7 +34,7 @@ import sys
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
-from jsonl_utils import iter_jsonl  # noqa: E402
+from jsonl_utils import open_jsonl  # noqa: E402
 import rl_local_optimum  # noqa: E402
 
 
@@ -71,6 +72,26 @@ def _resolve_progress_dir(path: str) -> str:
     )
 
 
+def _open_jsonl(progress_dir: str, name: str):
+    return open_jsonl(
+        os.path.join(progress_dir, "diagnostics", name),
+        gzip_fallback=True,
+    )
+
+
+def _iter_progress_jsonl(progress_dir: str, name: str):
+    with _open_jsonl(progress_dir, name) as handle:
+        for line in handle:
+            if not line or line.isspace():
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                yield payload
+
+
 def _read_episodes(progress_dir: str):
     """返回每回合并列序列 dict。total_reward = per_step_sum + terminal_reward。"""
     series = {k: [] for k in (
@@ -94,10 +115,8 @@ def _read_episodes(progress_dir: str):
         ("metric1_std", "terminal_metric1_std"),
     )
     row_count = 0
-    episodes_path = os.path.join(progress_dir, "diagnostics", "episodes.jsonl")
     try:
-        rows = iter_jsonl(episodes_path, errors="skip", gzip_fallback=True)
-        for d in rows:
+        for d in _iter_progress_jsonl(progress_dir, "episodes.jsonl"):
             total = float(d.get("per_step_sum", 0.0) or 0.0) + float(
                 d.get("terminal_reward", 0.0) or 0.0
             )
@@ -125,10 +144,8 @@ def _read_episodes(progress_dir: str):
 def _read_entropy(progress_dir: str):
     """ppo_updates.jsonl → (entropy_series, completed_episodes)。"""
     ent, eps = [], []
-    ppo_path = os.path.join(progress_dir, "diagnostics", "ppo_updates.jsonl")
     try:
-        rows = iter_jsonl(ppo_path, errors="skip", gzip_fallback=True)
-        for d in rows:
+        for d in _iter_progress_jsonl(progress_dir, "ppo_updates.jsonl"):
             if d.get("entropy") is None:
                 continue
             ent.append(float(d["entropy"]))

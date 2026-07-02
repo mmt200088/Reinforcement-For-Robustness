@@ -1253,6 +1253,13 @@ report with the baseline table followed by 200k tail lines preserved parsed
 baselines and reduced parsing from `0.0006s` / `4.20MB` to `0.0001s` /
 `0.02MB`.
 
+Progress 2026-07-03: `rl_local_optimum.py` now materializes episode returns,
+optional entropy/best-score series, and collapse-attribution fusion/margin
+series at most once before computing local-optimum and HOT/COLD reports. This
+keeps Stage-1/Stage-2 shared health-report generation compatible with
+one-shot iterators from offline regenerators and removes repeated full-list
+copies from long-run report paths.
+
 - [ ] **Step 3: Verify**
 
 Run:
