@@ -25,13 +25,14 @@ Usage (server, four-GPU box — single GPU is enough for this microbenchmark):
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
+import math
 import os
 import random
-import statistics
 import sys
 import time
-from datetime import datetime
+from typing import Sequence
 
 import torch
 from transformers import BertConfig, BertForSequenceClassification
@@ -109,6 +110,59 @@ def _timed_episode(handler, model, batch, gelu, softmax, device):
     return logits, (t1 - t0), (t2 - t1)
 
 
+def _mean_seconds(values: Sequence[float]) -> float:
+    return float(math.fsum(values)) / float(len(values)) if values else float("nan")
+
+
+def _summarize_timings(
+        fast_install: Sequence[float],
+        fast_fwd: Sequence[float],
+        slow_install: Sequence[float],
+        slow_fwd: Sequence[float],
+) -> dict:
+    fast_install_mean = _mean_seconds(fast_install)
+    fast_fwd_mean = _mean_seconds(fast_fwd)
+    slow_install_mean = _mean_seconds(slow_install)
+    slow_fwd_mean = _mean_seconds(slow_fwd)
+
+    fast_total_sum = 0.0
+    slow_total_sum = 0.0
+    total_count = 0
+    for fi, ff, si, sf in zip(fast_install, fast_fwd, slow_install, slow_fwd):
+        fast_total_sum += float(fi) + float(ff)
+        slow_total_sum += float(si) + float(sf)
+        total_count += 1
+
+    if total_count:
+        fast_total_mean = fast_total_sum / float(total_count)
+        slow_total_mean = slow_total_sum / float(total_count)
+    else:
+        fast_total_mean = float("nan")
+        slow_total_mean = float("nan")
+
+    return {
+        "num_episodes_timed": total_count,
+        "reuse_on": {
+            "install_ms_mean": fast_install_mean * 1000.0,
+            "forward_ms_mean": fast_fwd_mean * 1000.0,
+            "total_ms_mean": fast_total_mean * 1000.0,
+        },
+        "reuse_off": {
+            "install_ms_mean": slow_install_mean * 1000.0,
+            "forward_ms_mean": slow_fwd_mean * 1000.0,
+            "total_ms_mean": slow_total_mean * 1000.0,
+        },
+        "episode_speedup": (
+            slow_total_mean / fast_total_mean
+            if fast_total_mean > 0 else float("nan")
+        ),
+        "install_speedup": (
+            slow_install_mean / fast_install_mean
+            if fast_install_mean > 0 else float("nan")
+        ),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model-type", choices=list(_DIMS), default="bert-large")
@@ -168,43 +222,33 @@ def main():
             fast_install.append(fi); fast_fwd.append(ff)
             slow_install.append(si); slow_fwd.append(sf)
 
-    def _ms(xs):
-        return [x * 1000.0 for x in xs]
-
-    fast_total = [a + b for a, b in zip(fast_install, fast_fwd)]
-    slow_total = [a + b for a, b in zip(slow_install, slow_fwd)]
-    fast_total_mean = statistics.mean(fast_total) * 1000.0
-    slow_total_mean = statistics.mean(slow_total) * 1000.0
-    speedup = (slow_total_mean / fast_total_mean) if fast_total_mean > 0 else float("nan")
+    timing_summary = _summarize_timings(fast_install, fast_fwd, slow_install, slow_fwd)
+    reuse_on = {
+        **timing_summary["reuse_on"],
+        "softmax_rebuilds": handler_fast._approx_softmax_rebuilds,
+        "gelu_rebuilds": handler_fast._approx_gelu_rebuilds,
+    }
+    reuse_off = {
+        **timing_summary["reuse_off"],
+        "softmax_rebuilds": handler_slow._approx_softmax_rebuilds,
+        "gelu_rebuilds": handler_slow._approx_gelu_rebuilds,
+    }
 
     summary = {
         "device": str(device),
         "model_type": args.model_type,
         "num_layers": n_layers,
-        "num_episodes_timed": len(fast_total),
+        "num_episodes_timed": timing_summary["num_episodes_timed"],
         "warmup": args.warmup,
         "batch_size": args.batch_size,
         "seq_len": args.seq_len,
         "identical_logits": mismatches == 0,
         "logit_mismatches": mismatches,
         "max_abs_logit_diff": max_abs_diff,
-        "reuse_on": {
-            "install_ms_mean": statistics.mean(_ms(fast_install)),
-            "forward_ms_mean": statistics.mean(_ms(fast_fwd)),
-            "total_ms_mean": fast_total_mean,
-            "softmax_rebuilds": handler_fast._approx_softmax_rebuilds,
-            "gelu_rebuilds": handler_fast._approx_gelu_rebuilds,
-        },
-        "reuse_off": {
-            "install_ms_mean": statistics.mean(_ms(slow_install)),
-            "forward_ms_mean": statistics.mean(_ms(slow_fwd)),
-            "total_ms_mean": slow_total_mean,
-            "softmax_rebuilds": handler_slow._approx_softmax_rebuilds,
-            "gelu_rebuilds": handler_slow._approx_gelu_rebuilds,
-        },
-        "episode_speedup": speedup,
-        "install_speedup": (statistics.mean(slow_install) / statistics.mean(fast_install)
-                            if statistics.mean(fast_install) > 0 else float("nan")),
+        "reuse_on": reuse_on,
+        "reuse_off": reuse_off,
+        "episode_speedup": timing_summary["episode_speedup"],
+        "install_speedup": timing_summary["install_speedup"],
         # Proof the reuse path actually engaged across the changing per-episode
         # configs: reuse rebuilds each layer at most once, vs once-per-episode
         # without it. If this is False the cache silently did nothing.
@@ -218,11 +262,13 @@ def main():
           f"(mismatches={mismatches}, max|diff|={max_abs_diff:.3e})")
     print(f"  reuse OFF  install/fwd/total ms: "
           f"{summary['reuse_off']['install_ms_mean']:.2f} / "
-          f"{summary['reuse_off']['forward_ms_mean']:.2f} / {slow_total_mean:.2f}")
+          f"{summary['reuse_off']['forward_ms_mean']:.2f} / "
+          f"{summary['reuse_off']['total_ms_mean']:.2f}")
     print(f"  reuse ON   install/fwd/total ms: "
           f"{summary['reuse_on']['install_ms_mean']:.2f} / "
-          f"{summary['reuse_on']['forward_ms_mean']:.2f} / {fast_total_mean:.2f}")
-    print(f"  episode speedup       : {speedup:.2f}x  (install speedup "
+          f"{summary['reuse_on']['forward_ms_mean']:.2f} / "
+          f"{summary['reuse_on']['total_ms_mean']:.2f}")
+    print(f"  episode speedup       : {summary['episode_speedup']:.2f}x  (install speedup "
           f"{summary['install_speedup']:.2f}x)")
     print(f"  softmax rebuilds      : ON={handler_fast._approx_softmax_rebuilds} "
           f"OFF={handler_slow._approx_softmax_rebuilds}")

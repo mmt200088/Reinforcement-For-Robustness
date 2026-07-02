@@ -254,6 +254,14 @@ benchmark preserved the full summary; the file/line parser path improved from
 `1.1329s` to `0.8107s` (`1.40x`), while the text-entry path reduced
 `splitlines()` peak memory from `38.77MB` to `0.01MB`.
 
+Progress 2026-07-02: `scripts/stage1_approx_reuse_benchmark.py` now summarizes
+install/forward/total timing means and speedups in one helper using
+`math.fsum()`, avoiding repeated `statistics.mean()` calls and intermediate
+millisecond/total timing lists after a server benchmark completes. A local
+200k-row timing-summary benchmark produced matching rounded results, reduced
+summary time from `2.133355s` to `0.124024s` (`17.20x`), and eliminated the
+`18.39MB` traced peak from list materialization.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:
