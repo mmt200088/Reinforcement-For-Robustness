@@ -269,11 +269,25 @@ def _rebuild_index(registry_path: str = REGISTRY_REL, index_path: str = INDEX_RE
     latest.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
 
     by_status: Dict[str, int] = {}
+    by_dataset: Dict[str, int] = {}
+    best_by_dataset: Dict[str, Mapping[str, Any]] = {}
     for r in latest:
         by_status[str(r.get("status", "unknown"))] = by_status.get(str(r.get("status", "unknown")), 0) + 1
-    by_dataset: Dict[str, int] = {}
-    for r in latest:
         by_dataset[str(r.get("dataset", ""))] = by_dataset.get(str(r.get("dataset", "")), 0) + 1
+        if r.get("status") not in ("complete", "training_only"):
+            continue
+        ds = str(r.get("dataset", ""))
+        reward = r.get("best_reward")
+        score = float(reward) if isinstance(reward, (int, float)) else float("-inf")
+        prev = best_by_dataset.get(ds)
+        prev_reward = prev.get("best_reward") if prev is not None else None
+        prev_score = (
+            float(prev_reward)
+            if isinstance(prev_reward, (int, float))
+            else float("-inf")
+        )
+        if prev is None or score > prev_score:
+            best_by_dataset[ds] = r
 
     os.makedirs(os.path.dirname(index_path) or ".", exist_ok=True)
     with open(index_path, "w", encoding="utf-8") as f:
@@ -306,7 +320,7 @@ def _rebuild_index(registry_path: str = REGISTRY_REL, index_path: str = INDEX_RE
         emit("")
         emit("| Dataset | Best reward | Final loss | Final metric1 | Run ID |")
         emit("|---|---:|---:|---:|---|")
-        for ds, top in sorted(_best_by_dataset(latest).items()):
+        for ds, top in sorted(best_by_dataset.items()):
             final = top.get("final_eval") or {}
             best_r_val = top.get("best_reward")
             final_loss_val = final.get("loss") if isinstance(final, dict) else None

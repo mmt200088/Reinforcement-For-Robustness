@@ -974,6 +974,13 @@ in a list and joining the full document before one final write. A local
 comparable wall time (`0.472218s` to `0.473366s`) while reducing traced peak
 allocation from `166.66MB` to `131.88MB`.
 
+Progress 2026-07-02: `tools/experiments_log.py rebuild` now computes status
+counts, dataset counts, and best-by-dataset rows in one pass over the sorted
+latest registry records, instead of scanning the same latest list again through
+`_best_by_dataset()`. A local 120k-row synthetic rebuild preserved index output
+and reduced the aggregation/render-prep path from `2.113363s` to `2.021970s`
+(`1.05x`).
+
 Progress 2026-07-02: `_git_info()` in `tools/experiments_log.py` now treats
 raw `git status --porcelain` emptiness as the dirty-state signal instead of
 calling `strip()` on the whole status payload. Git porcelain output is empty

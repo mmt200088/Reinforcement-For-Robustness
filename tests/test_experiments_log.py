@@ -285,6 +285,47 @@ class ExperimentsLogTest(unittest.TestCase):
         self.assertIn("run-2", text)
         self.assertGreater(len(captured.parts), 5)
 
+    def test_rebuild_index_computes_best_during_summary_scan(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = root / "registry.jsonl"
+            index = root / "index.md"
+            registry.write_text(
+                "\n".join([
+                    json.dumps({
+                        "run_id": "run-a",
+                        "registered_at": "2026-07-02T00:00:00",
+                        "dataset": "mrpc",
+                        "algorithm": "rl",
+                        "status": "complete",
+                        "best_reward": 0.5,
+                        "final_eval": {"loss": 0.3, "metric1": 0.8},
+                    }),
+                    json.dumps({
+                        "run_id": "run-b",
+                        "registered_at": "2026-07-02T00:01:00",
+                        "dataset": "mrpc",
+                        "algorithm": "rl",
+                        "status": "complete",
+                        "best_reward": 0.9,
+                        "final_eval": {"loss": 0.2, "metric1": 0.9},
+                    }),
+                ])
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                experiments_log,
+                "_best_by_dataset",
+                side_effect=AssertionError("rebuild should not rescan latest records for best rows"),
+            ):
+                experiments_log._rebuild_index(str(registry), str(index))
+
+            text = index.read_text(encoding="utf-8")
+
+        self.assertIn("| mrpc | +0.9000 | 0.2000 | 0.9000 | `run-b` |", text)
+
     def test_git_info_bounds_git_commands_with_timeout(self):
         calls = []
 
