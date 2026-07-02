@@ -21,7 +21,6 @@ See docs/superpowers/specs/2026-06-03-stage2-fusion-count-action-design.md.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import itertools
 from typing import Any, Dict, Hashable, List, Mapping, Sequence, Tuple
 
 import numpy as np
@@ -271,6 +270,42 @@ def _level_breaks_pin(probe_result: Mapping[str, Any], base_key: Tuple[int, int]
     if not probe_result.get("valid"):
         return True
     return (int(probe_result["fusion_count"]), int(probe_result["total_bits"])) != tuple(base_key)
+
+
+def _unrank_product_positions(choice_lengths: Sequence[int], rank: int) -> Tuple[int, ...]:
+    """Return the per-axis positions for ``itertools.product`` rank ``rank``."""
+    out = [0] * len(choice_lengths)
+    r = int(rank)
+    for i in range(len(choice_lengths) - 1, -1, -1):
+        base = int(choice_lengths[i])
+        out[i] = r % base
+        r //= base
+    return tuple(out)
+
+
+def _iter_product_shard(
+    choices: Sequence[Sequence[int]],
+    shard_idx: int,
+    num_shards: int,
+):
+    """Yield the exact combos selected by ``rank % num_shards == shard_idx``.
+
+    This preserves the historical stride-shard partitioning without making each
+    worker iterate the full cartesian product and skip most ranks.
+    """
+    n = int(num_shards)
+    s = int(shard_idx)
+    if n <= 0:
+        raise ValueError("num_shards must be positive")
+    if s < 0 or s >= n:
+        return
+    lengths = [len(choice) for choice in choices]
+    total = 1
+    for length in lengths:
+        total *= int(length)
+    for rank in range(s, total, n):
+        positions = _unrank_product_positions(lengths, rank)
+        yield tuple(int(choices[i][positions[i]]) for i in range(len(choices)))
 
 
 # ---------------------------------------------------------------------------
@@ -854,11 +889,9 @@ def enumerate_shard(
     """
     base_block = np.asarray(ctx.baseline_block_indices, dtype=int)
     reducer = _MinNoiseReducer(noise_tol=float(noise_tol))
-    for i, combo in enumerate(itertools.product(*ctx.enum_choices)):
-        if (i % int(num_shards)) != int(shard_idx):
-            continue
+    for combo in _iter_product_shard(ctx.enum_choices, shard_idx, num_shards):
         block = base_block.copy()
-        for pos, lvl in zip(ctx.enum_positions, combo, strict=True):
+        for pos, lvl in zip(ctx.enum_positions, combo):
             block[pos] = int(lvl)
         res = _eval_block(ctx, block)
         if not res.get("valid"):
