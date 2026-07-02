@@ -1,7 +1,7 @@
 import json
+from pathlib import Path
 import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 
@@ -82,3 +82,30 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         }
 
         self.assertNotEqual(rlpath._group_key(left), rlpath._group_key(right))
+
+    def test_jsonable_reuses_json_native_nested_payloads(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        steps = [
+            {"step_idx": i, "valid": bool(i % 2), "nested": {"fusion_count": i}}
+            for i in range(8)
+        ]
+
+        converted = rlpath._jsonable(steps)
+
+        self.assertIs(converted, steps)
+        self.assertIs(converted[0]["nested"], steps[0]["nested"])
+
+    def test_jsonable_converts_only_branches_that_need_conversion(self):
+        import numpy as np
+
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        steps = [{"step_idx": i, "valid": True} for i in range(8)]
+        payload = {"steps": steps, "array": np.array([1, 2, 3])}
+
+        converted = rlpath._jsonable(payload)
+
+        self.assertIsNot(converted, payload)
+        self.assertIs(converted["steps"], steps)
+        self.assertEqual(converted["array"], [1, 2, 3])

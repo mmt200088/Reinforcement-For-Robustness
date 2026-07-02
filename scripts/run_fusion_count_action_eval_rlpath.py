@@ -13,13 +13,13 @@ does not call the Paean final-eval decoder.
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict, is_dataclass
+from datetime import datetime, timezone
 import html
 import json
 import os
-import sys
-from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 import numpy as np
@@ -47,8 +47,6 @@ def _load_runtime_deps() -> dict[str, object]:
             DataCollatorWithPadding,
         )
 
-        from rl_tune import load_glue_dataset_equivalent, seed_everything
-        from layer_importance_evaluator import LayerImportanceEvaluator
         from blb_stage2_rl.action_space import K_LEVELS
         from blb_stage2_rl.baseline_bootstrap import (
             load_static_skeletons_baseline,
@@ -59,6 +57,8 @@ def _load_runtime_deps() -> dict[str, object]:
         from blb_stage2_rl.reward import BaselineCostStats, RewardWeights, calibrate_weights_from_baseline
         from blb_stage2_rl.runner import BLBStage2RLRunner, BLBStage2TrainConfig
         from blb_stage2_rl.sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
+        from layer_importance_evaluator import LayerImportanceEvaluator
+        from rl_tune import load_glue_dataset_equivalent, seed_everything
 
         _RUNTIME_DEPS = {
             "torch": torch,
@@ -385,18 +385,30 @@ def _metric_dict(metrics: Any) -> Dict[str, float]:
 
 
 def _jsonable(value: Any) -> Any:
-    if is_dataclass(value):
-        return _jsonable(asdict(value))
-    if isinstance(value, Mapping):
-        return {str(k): _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(v) for v in value]
     if isinstance(value, np.ndarray):
-        return [_jsonable(v) for v in value.tolist()]
+        return _jsonable(value.tolist())
     if isinstance(value, np.generic):
         return value.item()
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
+    if is_dataclass(value):
+        return _jsonable(asdict(value))
+    if isinstance(value, dict):
+        for key, item in value.items():
+            converted = _jsonable(item)
+            if not isinstance(key, str) or converted is not item:
+                return {str(k): _jsonable(v) for k, v in value.items()}
+        return value
+    if isinstance(value, Mapping):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        for item in value:
+            converted = _jsonable(item)
+            if converted is not item:
+                return [_jsonable(v) for v in value]
+        return value
+    if isinstance(value, tuple):
+        return [_jsonable(v) for v in value]
     return str(value)
 
 

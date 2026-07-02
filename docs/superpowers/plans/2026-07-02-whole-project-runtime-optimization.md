@@ -1091,6 +1091,14 @@ artifact roots with a streaming sorted `os.walk()` iterator instead of
 evidence counts and reduced scan cost from `0.1523s`/`1.89MB` to
 `0.1270s`/`0.58MB`.
 
+Progress 2026-07-02: `scripts/run_fusion_count_action_eval_rlpath.py` now
+uses copy-on-convert behavior in `_jsonable()`, so already JSON-native
+RL-path report trees such as `step_records`, `fusion_action_steps`, and
+terminal diagnostics are reused instead of being recursively cloned before
+`json.dumps()`. A local 800-group synthetic RL-path report benchmark preserved
+the converted payload semantics and reduced conversion from `2.391359s` /
+`37.62MiB` peak to `0.485470s` / near-zero traced allocation.
+
 - [ ] **Step 3: Commit/push source and evidence**
 
 Never leave canonical source changes only on the server.
