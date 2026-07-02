@@ -54,6 +54,17 @@ def _source_region(source: str, start_marker: str, end_marker: str) -> str:
 
 
 class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
+    def test_gelu_piecewise_select_uses_scalar_zero_branch(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        helper_region = _source_region(
+            source,
+            "def _select_piecewise_gelu_output(x: Tensor, y_neg: Tensor, y_pos: Tensor) -> Tensor:",
+            "def _make_block5_gelu_forward",
+        )
+
+        self.assertIn("torch.where((x >= -2.7) & (x < 0), y_neg, 0.0)", helper_region)
+        self.assertNotIn("torch.zeros_like", helper_region)
+
     def test_scalar_encode_constants_sample_noise_without_full_shape_prefill(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
         block1_region = _source_region(

@@ -335,6 +335,13 @@ benchmark preserved the warning result, reduced time from `2.868017s` to
 `1.976543s` (`1.45x`), and cut traced peak allocation from `1,600,128B` to
 `72B`.
 
+Progress 2026-07-03: `_select_piecewise_gelu_output()` in `function_handler.py`
+now uses scalar `0.0` for the low/NaN branch instead of allocating
+`torch.zeros_like(x)`. The helper is shared by regular Stage-1
+`PolynomialGELU` and Block-5 noisy GELU, so this removes one full-shape zero
+tensor allocation from both installed forward paths while preserving the same
+piecewise boundaries.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:

@@ -1984,8 +1984,8 @@ def _make_block5_wffn1_forward(
 
 
 def _select_piecewise_gelu_output(x: Tensor, y_neg: Tensor, y_pos: Tensor) -> Tensor:
-    """Select GELU approximation pieces with one zero fill for low/NaN values."""
-    out = torch.where((x >= -2.7) & (x < 0), y_neg, torch.zeros_like(x))
+    """Select GELU approximation pieces with a scalar-zero low/NaN branch."""
+    out = torch.where((x >= -2.7) & (x < 0), y_neg, 0.0)
     out = torch.where((x >= 0) & (x <= 2.7), y_pos, out)
     return torch.where(x > 2.7, x, out)
 
