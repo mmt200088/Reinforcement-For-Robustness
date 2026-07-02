@@ -444,6 +444,14 @@ Stage-1 GELU/Softmax solution maps lazily. Stage2Budget-only runs and other
 paths that do not need Stage-1 budget/equivalence controls skip the Stage-1
 cost-solution enumeration entirely.
 
+Progress 2026-07-02: `UnifiedFinalEvaluationModule` Stage2Budget/Budget random
+sampling now caches feasible Stage-2 count-combo keys by `(noise-domain index,
+remaining target cost)` inside the reused combo plan. Repeated random controls
+with the same target no longer rescan every cost key for every domain on every
+trial. A local 5000-sample synthetic benchmark kept valid samples while reducing
+key scans from `25000` to `478` and sampler wall time from `0.168s` to
+`0.047s`.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

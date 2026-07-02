@@ -151,6 +151,40 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertTrue(all(cfg is not None for cfg in configs))
         self.assertEqual(key_scan_count, len(fem.BREAKDOWN_KEYS))
 
+    def test_stage2_count_combo_plan_caches_feasible_keys_by_state(self):
+        class CountingKeys:
+            def __init__(self, values):
+                self.values = tuple(values)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                return iter(self.values)
+
+        key_options = (CountingKeys(range(5)), CountingKeys(range(5)))
+        suffix_possible = (
+            frozenset(range(9)),
+            frozenset(range(5)),
+            frozenset({0}),
+        )
+        combo_plan = (key_options, suffix_possible, {})
+        solution_maps = [
+            {key: [(key,)] for key in range(5)},
+            {key: [(key,)] for key in range(5)},
+        ]
+        rng = np.random.default_rng(123)
+
+        for _ in range(4):
+            choice = fem.UnifiedFinalEvaluationModule._sample_stage2_count_combo(
+                rng,
+                solution_maps,
+                target_key=4,
+                combo_plan=combo_plan,
+            )
+            self.assertIsNotNone(choice)
+
+        self.assertEqual(key_options[0].iterations, 1)
+
     def test_stage1_total_cost_sampling_reuses_feasible_pairs(self):
         runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
         runner.allowed_gelu_random = [1, 2]
