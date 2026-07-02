@@ -63,6 +63,26 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertNotIn("torch.tensor(ep['actions_g'], dtype=torch.long)", region)
         self.assertNotIn("torch.tensor([", region)
 
+    def test_stage1_rollout_reuses_action_scalar_and_builds_device_tensors_directly(self):
+        source = _source(LAYER_EVALUATOR)
+        worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
+
+        self.assertIn("prev_g_idx = SOS_TOKEN_GELU", worker_region)
+        self.assertIn("gelu_action_idx = int(gelu_action.item())", worker_region)
+        self.assertIn("env.step(gelu_action_idx)", worker_region)
+        self.assertIn("rollout.actions_g.append(gelu_action_idx)", worker_region)
+        self.assertIn("cont_feat_np, dtype=torch.float32, device=device", worker_region)
+        self.assertIn("gelu_mask_np, dtype=torch.bool, device=device", worker_region)
+        self.assertIn("torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long, device=device)", worker_region)
+
+        self.assertIn("prev_g_idx = SOS_TOKEN_GELU", source)
+        self.assertIn("action_g=gelu_action_idx", source)
+        self.assertIn("prev_g=prev_g_idx", source)
+        self.assertNotIn("env.step(gelu_action.item())", source)
+        self.assertNotIn("GELU_MAP[int(gelu_action.item())]", source)
+        self.assertNotIn("prev_g=prev_g.squeeze().item()", source)
+        self.assertNotIn("action_g=gelu_action.item()", source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5643,7 +5643,8 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         # Per-episode action-history accumulators live on the worker's device
         # (where its policy replica lives).
-        prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(device)
+        prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long, device=device)
+        prev_g_idx = SOS_TOKEN_GELU
 
         seq_cont_feats: List[torch.Tensor] = []
         seq_layer_indices: List[torch.Tensor] = []
@@ -5668,10 +5669,14 @@ class LayerImportanceEvaluator(TrainerCallback):
             # offsets into the flat state, whose layout changed when softmax left).
             cont_feat_np = env.get_policy_cont_features()
 
-            cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
-            layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(device)
+            cont_feat_t = torch.as_tensor(
+                cont_feat_np, dtype=torch.float32, device=device
+            ).unsqueeze(0).unsqueeze(0)
+            layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long, device=device)
             gelu_mask_np = env.get_gelu_action_mask(layer_idx)
-            gelu_mask_t = torch.tensor(gelu_mask_np, dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(device)
+            gelu_mask_t = torch.as_tensor(
+                gelu_mask_np, dtype=torch.bool, device=device
+            ).unsqueeze(0).unsqueeze(0)
 
             seq_cont_feats.append(cont_feat_t)
             seq_layer_indices.append(layer_idx_t)
@@ -5702,12 +5707,13 @@ class LayerImportanceEvaluator(TrainerCallback):
             # wrapper, which calls self._stage1_evaluate_on_model(...) on
             # the worker's BERT replica + device. That is the expensive
             # per-episode work that this entire runner exists to parallelize.
-            next_state, reward, done, info = env.step(gelu_action.item())
+            gelu_action_idx = int(gelu_action.item())
+            next_state, reward, done, info = env.step(gelu_action_idx)
 
             rollout.cont_features.append(torch.tensor(cont_feat_np, dtype=torch.float32))
             rollout.layer_indices.append(layer_idx)
-            rollout.prev_g_actions.append(int(prev_g.squeeze().item()))
-            rollout.actions_g.append(int(gelu_action.item()))
+            rollout.prev_g_actions.append(prev_g_idx)
+            rollout.actions_g.append(gelu_action_idx)
             rollout.logprobs.append(logprob.detach().cpu())
             rollout.rewards.append(float(reward))
             rollout.values.append(value.detach().cpu())
@@ -5717,8 +5723,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "episode_id": -1,  # patched by the central loop with the absolute index
                 "layer_index": info["layer_index"],
                 "state_vector": state.tolist(),
-                "gelu_action_index": int(gelu_action.item()),
-                "gelu_action_degree": int(GELU_MAP[int(gelu_action.item())]),
+                "gelu_action_index": gelu_action_idx,
+                "gelu_action_degree": int(GELU_MAP[gelu_action_idx]),
                 "step_reward": float(reward),
                 "done": bool(done),
                 "logprob": float(logprob.detach().cpu().item()),
@@ -5733,7 +5739,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "current_entropy_coef": None,
             })
 
-            prev_g = gelu_action.reshape(1, 1).to(device)
+            prev_g = gelu_action.reshape(1, 1)
+            prev_g_idx = gelu_action_idx
 
             episode_reward += reward
             state = next_state
@@ -6425,7 +6432,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if not _handled_via_parallel:
                     # GTrXL Rollout：环境重置 + SOS标记 + 空token序列（gelu-only）
                     state = env.reset()
-                    prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long).to(self.device)
+                    prev_g = torch.tensor([[SOS_TOKEN_GELU]], dtype=torch.long, device=self.device)
+                    prev_g_idx = SOS_TOKEN_GELU
 
                     # GTrXL：token序列累积器（每步追加，因果掩码自动处理时序依赖）
                     seq_cont_feats = []
@@ -6444,11 +6452,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                         layer_idx = int(np.argmax(state[0:N]))
                         cont_feat_np = env.get_policy_cont_features()
 
-                        cont_feat_t = torch.tensor(cont_feat_np, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,6)
-                        layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long).to(self.device)  # (1,1)
+                        cont_feat_t = torch.as_tensor(
+                            cont_feat_np, dtype=torch.float32, device=self.device
+                        ).unsqueeze(0).unsqueeze(0)  # (1,1,6)
+                        layer_idx_t = torch.tensor([[layer_idx]], dtype=torch.long, device=self.device)  # (1,1)
 
                         gelu_mask_np = env.get_gelu_action_mask(layer_idx)
-                        gelu_mask_t = torch.tensor(gelu_mask_np, dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(self.device)  # (1,1,4)
+                        gelu_mask_t = torch.as_tensor(
+                            gelu_mask_np, dtype=torch.bool, device=self.device
+                        ).unsqueeze(0).unsqueeze(0)  # (1,1,4)
 
                         # GTrXL：将当前token追加到序列
                         seq_cont_feats.append(cont_feat_t)
@@ -6471,7 +6483,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                                 )
 
                         # 执行动作
-                        next_state, reward, done, info = env.step(gelu_action.item())
+                        gelu_action_idx = int(gelu_action.item())
+                        next_state, reward, done, info = env.step(gelu_action_idx)
 
                         # 记录中间结果
                         step_info = {
@@ -6479,8 +6492,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                             'episode_id': episode,
                             'layer_index': info['layer_index'],
                             'state_vector': state.tolist(),
-                            'gelu_action_index': int(gelu_action.item()),
-                            'gelu_action_degree': int(GELU_MAP[int(gelu_action.item())]),
+                            'gelu_action_index': gelu_action_idx,
+                            'gelu_action_degree': int(GELU_MAP[gelu_action_idx]),
                             'step_reward': float(reward),
                             'done': bool(done),
                             'logprob': float(logprob.detach().cpu().item()),
@@ -6500,8 +6513,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         buffer.add_step(
                             cont_feat=torch.tensor(cont_feat_np, dtype=torch.float32),
                             layer_idx=layer_idx,
-                            prev_g=prev_g.squeeze().item(),
-                            action_g=gelu_action.item(),
+                            prev_g=prev_g_idx,
+                            action_g=gelu_action_idx,
                             logprob=logprob.cpu(),
                             reward=reward,
                             value=value.cpu(),
@@ -6510,7 +6523,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         )
 
                         # 更新前一步动作（自回归输入下一步）
-                        prev_g = gelu_action.reshape(1, 1).to(self.device)
+                        prev_g = gelu_action.reshape(1, 1)
+                        prev_g_idx = gelu_action_idx
 
                         episode_reward += reward
                         state = next_state
