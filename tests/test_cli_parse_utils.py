@@ -95,6 +95,15 @@ class CliParseUtilsTest(unittest.TestCase):
             text = (repo / rel).read_text(encoding="utf-8")
             self.assertIn(needle, text)
         self.assertNotIn("text.replace(\";\", \",\").split(\",\")", (repo / "scripts/blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8"))
+        for rel in (
+            "scripts/blb_f0_scan_feasible_domain.py",
+            "scripts/blb_make_fusion_fixed_action_config.py",
+            "scripts/stage1_parallel_report.py",
+        ):
+            self.assertNotIn(
+                "def _parse_int_list(",
+                (repo / rel).read_text(encoding="utf-8"),
+            )
 
         for rel in ("rl_tune.py", "rl_tune_general.py", "rl_tune_genetic.py"):
             text = (repo / rel).read_text(encoding="utf-8")

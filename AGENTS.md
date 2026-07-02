@@ -202,10 +202,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `parse_noise_config()`, `parse_bool_flag()`, `parse_positive_int()`,
   `parse_optional_positive_int()`, `parse_stage1_episode_limit()`, and
   `parse_optional_positive_float()` for `rl_tune*.py` Fire arguments. Keep
-  script-local `_parse_int_list`, `_json_int_list`, `_parse_degree_vector`,
-  `parse_bool_flag`, or `parse_positive_int` only as compatibility wrappers
-  around this seam; do not reimplement those parser bodies in new launchers or
-  RL entrypoints.
+  script-local `_json_int_list`, `_parse_degree_vector`, `parse_bool_flag`, or
+  `parse_positive_int` only as compatibility wrappers around this seam; private
+  one-call `_parse_int_list` wrappers are not compatibility and should be
+  replaced by direct calls to `cli_parse_utils`. Do not reimplement parser
+  bodies in new launchers or RL entrypoints.
 - Shared command-format helper rule, added 2026-07-03: command logging in
   launchers, final-eval wrappers, and error summaries must use
   `runtime_error_reporter.format_command()` for shell-escaped argv rendering.

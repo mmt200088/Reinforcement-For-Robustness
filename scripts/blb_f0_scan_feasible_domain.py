@@ -44,10 +44,6 @@ def _file_sha256(path: Path) -> str | None:
     return h.hexdigest()
 
 
-def _parse_int_list(raw: str | None) -> List[int] | None:
-    return parse_optional_int_list(raw)
-
-
 def _load_stage1_vectors(
         path: str | None,
         *,
@@ -819,8 +815,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     stage1 = _load_stage1_vectors(args.stage1_config, model=args.model, profile=args.profile)
-    fixed_gelu = _parse_int_list(args.fixed_gelu)
-    fixed_softmax = _parse_int_list(args.fixed_softmax)
+    fixed_gelu = parse_optional_int_list(args.fixed_gelu)
+    fixed_softmax = parse_optional_int_list(args.fixed_softmax)
     gelu = fixed_gelu or stage1.get("gelu") or [4] * int(args.num_layers)
     softmax = fixed_softmax or stage1.get("softmax") or [4] * int(args.num_layers)
     if len(gelu) != int(args.num_layers) or len(softmax) != int(args.num_layers):

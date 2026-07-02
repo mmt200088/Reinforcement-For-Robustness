@@ -62,10 +62,6 @@ def _split_csv(text: str) -> list[str]:
     return split_int_tokens(text, allow_semicolon=False)
 
 
-def _parse_int_list(text: str) -> list[int]:
-    return parse_int_list_text(text, allow_semicolon=False)
-
-
 def _worker_counts_imbalanced(counts: Iterable[int]) -> bool:
     if isinstance(counts, Collection):
         if not counts:
@@ -112,7 +108,7 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
         rollout_match = ROLLOUT_RE.search(line)
         if rollout_match:
             devices = _split_csv(rollout_match.group("devices"))
-            counts = _parse_int_list(rollout_match.group("counts"))
+            counts = parse_int_list_text(rollout_match.group("counts"), allow_semicolon=False)
             for device, count in zip(devices, counts):  # noqa: B905 - diagnostics emit matching lists on py39.
                 devices_seen.add(device)
                 worker_episode_counts[device] = worker_episode_counts.get(device, 0) + int(count)

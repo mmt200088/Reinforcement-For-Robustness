@@ -26,10 +26,6 @@ from cli_parse_utils import parse_exact_json_int_list
 from blb_stage2_rl.fusion_fixed_action import build_fusion_fixed_config
 
 
-def _parse_int_list(raw: str, *, name: str, num_layers: int) -> List[int]:
-    return parse_exact_json_int_list(raw, name=name, length=int(num_layers))
-
-
 def _load_action_vec(path: Path) -> List[int]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, Mapping) or not isinstance(payload.get("action_vec"), list):
@@ -75,8 +71,8 @@ def main() -> None:
         action_vec=action_vec,
         profile=str(args.profile),
         num_layers=int(args.num_layers),
-        gelu=_parse_int_list(args.gelu, name="gelu", num_layers=int(args.num_layers)),
-        softmax=_parse_int_list(args.softmax, name="softmax", num_layers=int(args.num_layers)),
+        gelu=parse_exact_json_int_list(args.gelu, name="gelu", length=int(args.num_layers)),
+        softmax=parse_exact_json_int_list(args.softmax, name="softmax", length=int(args.num_layers)),
         source_path=str(input_path),
     )
     output_path = Path(args.output)
