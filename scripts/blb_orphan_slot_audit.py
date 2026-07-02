@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import json
 import os
 from pathlib import Path
 import sys
@@ -40,6 +39,11 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _AST_CACHE: Dict[Path, ast.AST] = {}
 _GRAPH_CONFIG_NAMES_CACHE: Dict[Path, Tuple[str, ...]] = {}
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from json_utils import read_json_file, write_json_file  # noqa: E402
 
 
 def _load_ast(rel_path: str) -> ast.AST:
@@ -307,7 +311,7 @@ def cfg_fields_in_t_new_for_block(
 # ---------------------------------------------------------------------------
 def load_graph_node_names(graph_path: Path) -> List[Tuple[str, str]]:
     """Return ordered list of (node_name, node_type). Source first, then per-stage cut_point."""
-    doc = json.loads(graph_path.read_text(encoding="utf-8"))
+    doc = read_json_file(graph_path)
     out: List[Tuple[str, str]] = []
     src = doc.get("source", {})
     if isinstance(src, dict) and src.get("name"):
@@ -689,7 +693,7 @@ def main(argv: List[str]) -> int:
     md_path = out_dir / f"audit_{args.profile}.md"
     md_path.write_text("\n".join(lines), encoding="utf-8")
     json_path = out_dir / f"audit_{args.profile}.json"
-    json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_json_file(json_path, summary)
 
     print(f"wrote {md_path}")
     print(f"wrote {json_path}")
