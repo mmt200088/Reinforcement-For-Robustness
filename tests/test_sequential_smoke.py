@@ -966,6 +966,13 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("values[:, t + 1]", batch_gae_region)
         self.assertIn("advantages[:, t] = gae", batch_gae_region)
 
+    def test_stage1_ppo_epoch_indices_are_created_on_device(self):
+        evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(evaluator_src, "ppo_update_gtrxl")
+
+        self.assertIn("ep_indices = torch.randperm(n_eps, device=device)", update_region)
+        self.assertNotIn("ep_indices = torch.randperm(n_eps)\n", update_region)
+
     def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         mask_region = _method_region_from_source(policy_src, "_mask_logits_for_slot")

@@ -5425,7 +5425,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         for epoch in range(PPO_K_EPOCHS):
             if kl_early_stop:
                 break
-            ep_indices = torch.randperm(n_eps)
+            ep_indices = torch.randperm(n_eps, device=device)
             epoch_kl_acc = 0.0
             epoch_kl_count = 0
 
