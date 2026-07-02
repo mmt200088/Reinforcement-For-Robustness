@@ -161,6 +161,62 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertTrue(calls)
         self.assertLessEqual(max(calls.values()), 1)
 
+    def test_write_action_configs_reuses_static_baseline_layout(self):
+        fields_by_block = {
+            block_idx: [("output_truncation_k", "K", 0)]
+            for block_idx in (1, 2, 3, 4, 5)
+        }
+        graphs = {
+            "block2_mrpc": {
+                "graph_key": "block2_mrpc",
+                "block_idx": 2,
+                "k_slot_index": 0,
+                "options": [
+                    {"option_id": 0, "fusion_count": 0, "action_indices": [0], "slots": {}},
+                    {"option_id": 1, "fusion_count": 1, "action_indices": [1], "slots": {}},
+                ],
+            }
+        }
+        schedule = [
+            {"step_idx": 0, "layer_idx": 0, "block_idx": 2, "graph_key": "block2_mrpc"},
+        ]
+        group_specs = [
+            {
+                "name": "first",
+                "option_by_graph": {"block2_mrpc": 0},
+                "fusion_count_by_graph": {"block2_mrpc": 0},
+            },
+            {
+                "name": "second",
+                "option_by_graph": {"block2_mrpc": 1},
+                "fusion_count_by_graph": {"block2_mrpc": 1},
+            },
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            original = report._make_all_max_action
+            calls = 0
+
+            def counted_make_all_max_action(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                return original(*args, **kwargs)
+
+            with mock.patch.object(report, "_make_all_max_action", counted_make_all_max_action):
+                paths = report._write_action_configs(
+                    output_dir=Path(td),
+                    fields_by_block=fields_by_block,
+                    graphs=graphs,
+                    num_layers=1,
+                    schedule=schedule,
+                    group_specs=group_specs,
+                    profile="mrpc",
+                    gelu=[1],
+                    softmax=[6],
+                )
+
+        self.assertEqual(set(paths), {"first", "second"})
+        self.assertEqual(calls, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

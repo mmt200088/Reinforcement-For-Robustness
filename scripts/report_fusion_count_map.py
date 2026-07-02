@@ -285,10 +285,13 @@ def _splice_group_action(
     schedule: Sequence[Mapping[str, Any]],
     option_by_graph: Mapping[str, int],
     option_by_step: Mapping[str, int] | None = None,
+    base_action: Sequence[int] | None = None,
+    layer_width: int | None = None,
+    block_offsets: Mapping[int, int] | None = None,
 ) -> List[int]:
-    action = _make_all_max_action(fields_by_block, num_layers)
-    width = _layer_width(fields_by_block)
-    offsets = _block_offsets(fields_by_block)
+    action = list(base_action) if base_action is not None else _make_all_max_action(fields_by_block, num_layers)
+    width = int(layer_width) if layer_width is not None else _layer_width(fields_by_block)
+    offsets = block_offsets if block_offsets is not None else _block_offsets(fields_by_block)
     for step in schedule:
         graph_key = str(step["graph_key"])
         graph = graphs[graph_key]
@@ -523,6 +526,9 @@ def _write_action_configs(
     action_dir = output_dir / "action_configs"
     action_dir.mkdir(parents=True, exist_ok=True)
     paths: Dict[str, str] = {}
+    base_action = _make_all_max_action(fields_by_block, num_layers)
+    width = _layer_width(fields_by_block)
+    offsets = _block_offsets(fields_by_block)
     for spec in group_specs:
         name = str(spec["name"])
         action = _splice_group_action(
@@ -532,6 +538,9 @@ def _write_action_configs(
             schedule=schedule,
             option_by_graph=spec["option_by_graph"],
             option_by_step=spec.get("option_by_step"),
+            base_action=base_action,
+            layer_width=width,
+            block_offsets=offsets,
         )
         slots = _splice_group_slots(
             fields_by_block=fields_by_block,

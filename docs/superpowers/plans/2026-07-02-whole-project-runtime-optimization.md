@@ -455,6 +455,13 @@ benchmark with 3000 map files plus 3000 sidecar/non-map files preserved map
 ordering and improved discovery from `0.059813s` / `3.15MB` to `0.027619s` /
 `0.86MB` (`2.17x`).
 
+Progress 2026-07-02: `scripts/report_fusion_count_map.py` now precomputes the
+static all-max baseline action, layer width, and block offsets once per
+action-config report instead of recomputing them for every generated group. A
+local 12-layer / 5000-group splice benchmark preserved generated actions and
+reduced action splice time from `1.613343s` / `15.57MiB` peak to `0.853562s` /
+`14.08MiB`.
+
 Progress 2026-07-02: `scripts/blb_f0_scan_feasible_domain.py` now lazily
 imports its torch/optimizer-heavy execution dependencies and uses
 `heapq.nsmallest()` for the masked-random and multi-random best-cost summaries
