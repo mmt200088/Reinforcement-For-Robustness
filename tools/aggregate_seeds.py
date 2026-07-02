@@ -345,7 +345,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     seed_specs: List[Tuple[int, str]] = []
     with open(args.seed_list, "r", encoding="utf-8") as f:
         for line in f:
-            parts = line.strip().split()
+            parts = line.split()
             if len(parts) < 2:
                 continue
             seed = int(parts[0])

@@ -730,6 +730,13 @@ chunks instead of reading the whole Markdown file into memory. A local
 200k-line synthetic summary preserved the parsed rate and improved the lookup
 from `0.0015s` / `8.40MB` to `0.0011s` / `4.01MB`.
 
+Progress 2026-07-02: `tools/aggregate_seeds.py` now parses the multi-seed
+seed-list with `line.split()` directly instead of allocating a stripped copy of
+every line before splitting. A regression test guards that the parser does not
+call `strip()` per line. A local 200k-line synthetic seed-list benchmark
+preserved parsed `(seed, run_tag)` rows and improved parsing from `0.284336s`
+to `0.239681s` (`1.19x`).
+
 Progress 2026-07-02: `tools/experiments_log.py` now bounds both best-effort
 git provenance subprocesses in `_git_info()` with a 5-second timeout. This
 prevents run registration/index rebuild from hanging indefinitely on a slow or

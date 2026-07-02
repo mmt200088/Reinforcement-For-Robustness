@@ -62,6 +62,31 @@ class BoundedReadText:
         return self._text[start:end]
 
 
+class NoStripLine:
+    def __init__(self, text):
+        self._text = text
+
+    def strip(self, *_args, **_kwargs):
+        raise AssertionError("seed-list parsing should rely on split() without a strip() copy")
+
+    def split(self, *args, **kwargs):
+        return self._text.split(*args, **kwargs)
+
+
+class SeedListFile:
+    def __init__(self, lines):
+        self._lines = lines
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def __iter__(self):
+        return iter(self._lines)
+
+
 class AggregateSeedsFinalEvalTest(unittest.TestCase):
     def test_read_final_eval_results_streams_latest_json_without_recursive_glob(self):
         with tempfile.TemporaryDirectory() as td:
@@ -117,6 +142,51 @@ class AggregateSeedsFinalEvalTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual([row["status"] for row in rows], ["complete", "complete"])
         self.assertEqual([row["persistent_dir"].split("/")[-1] for row in rows], ["slug__run_s1", "slug__run_s2"])
+
+    def test_main_parses_seed_list_without_stripping_each_line(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            seed_list = root / "seed_list.txt"
+            output_dir = root / "out"
+            original_open = builtins.open
+
+            def guarded_open(path, *args, **kwargs):
+                if Path(path) == seed_list:
+                    return SeedListFile(
+                        [
+                            NoStripLine("  1   run_s1   \n"),
+                            NoStripLine("\n"),
+                            NoStripLine("\t2\trun_s2\t\n"),
+                        ]
+                    )
+                return original_open(path, *args, **kwargs)
+
+            def fake_gather(seed, run_tag, persistent_index=None):
+                return aggregate_seeds.SeedRow(seed=seed, run_tag=run_tag, status="complete")
+
+            with (
+                mock.patch.object(builtins, "open", guarded_open),
+                mock.patch.object(aggregate_seeds, "_build_persistent_dir_index", return_value={}),
+                mock.patch.object(aggregate_seeds, "_gather_one_seed", side_effect=fake_gather),
+            ):
+                rc = aggregate_seeds.main(
+                    [
+                        "--run-name",
+                        "nostrip",
+                        "--seed-list",
+                        str(seed_list),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            rows = json.loads((output_dir / "seed_summary.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            [(row["seed"], row["run_tag"]) for row in rows],
+            [(1, "run_s1"), (2, "run_s2")],
+        )
 
     def test_persistent_dir_index_keeps_only_requested_run_tags(self):
         with tempfile.TemporaryDirectory() as td:
