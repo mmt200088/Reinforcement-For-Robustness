@@ -37,6 +37,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from csv_field_utils import write_csv_rows_with_inferred_fields
+
 
 DISPLAY = {
     "relative": "Relative",
@@ -58,15 +60,6 @@ def read_csv(path: Path) -> list[dict]:
                 out[k] = v if k == "method" else float(v)
             rows.append(out)
     return rows
-
-
-def write_csv(path: Path, rows: list[dict]) -> None:
-    if not rows:
-        return
-    with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def trapezoid_auc(xs: list[float], ys: list[float], x_max: float) -> float:
@@ -164,7 +157,7 @@ def main() -> None:
         point_rows.append(row)
 
     point_path = args.output_dir / f"{args.output_prefix}_point_scores.csv"
-    write_csv(point_path, point_rows)
+    write_csv_rows_with_inferred_fields(point_path, point_rows)
 
     method_rows = []
     methods = sorted({r["method"] for r in point_rows})
@@ -206,7 +199,7 @@ def main() -> None:
         method_rows.append(summary)
 
     summary_path = args.output_dir / f"{args.output_prefix}_method_summary.csv"
-    write_csv(summary_path, method_rows)
+    write_csv_rows_with_inferred_fields(summary_path, method_rows)
 
     # Compact plot: APNU per point using the absolute P80(|noise|) budget and F1.
     score_col = f"apnu_abs_f1_g{args.gamma:g}"

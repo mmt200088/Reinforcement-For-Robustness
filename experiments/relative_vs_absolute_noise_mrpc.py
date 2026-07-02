@@ -32,7 +32,6 @@ global metric for these intermediates.
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import math
 import os
@@ -53,6 +52,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+from csv_field_utils import write_csv_rows_with_inferred_fields
 
 
 MODEL_NAME = "textattack/bert-base-uncased-MRPC"
@@ -375,15 +376,6 @@ def summarize_by_method(rows: list[dict]) -> list[dict]:
     return summary
 
 
-def write_csv(path: Path, rows: list[dict]) -> None:
-    if not rows:
-        return
-    with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-
-
 def plot_results(summary: list[dict], baseline: dict, out_path: Path) -> None:
     display = {
         "relative": ("Relative Gaussian", "#1f77b4", "o"),
@@ -540,8 +532,8 @@ def main() -> None:
             )
 
     summary = summarize_by_method(rows)
-    write_csv(args.output_dir / "per_seed_results.csv", rows)
-    write_csv(args.output_dir / "summary_results.csv", summary)
+    write_csv_rows_with_inferred_fields(args.output_dir / "per_seed_results.csv", rows)
+    write_csv_rows_with_inferred_fields(args.output_dir / "summary_results.csv", summary)
     with (args.output_dir / "baseline.json").open("w") as f:
         json.dump(baseline, f, indent=2)
 

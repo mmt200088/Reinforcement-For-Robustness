@@ -12,6 +12,7 @@ from csv_field_utils import (
     normalized_field_lookup,
     normalized_row,
     write_csv_rows,
+    write_csv_rows_with_inferred_fields,
 )
 
 
@@ -58,6 +59,28 @@ class CsvFieldUtilsTest(unittest.TestCase):
         self.assertEqual(written, path)
         self.assertEqual(text, "a,b\n1,2\n4,\n")
 
+    def test_write_csv_rows_with_inferred_fields_preserves_first_row_order(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "rows.csv"
+
+            written = write_csv_rows_with_inferred_fields(
+                path,
+                [{"b": 2, "a": 1, "extra": 3}, {"a": 4, "b": 5}],
+            )
+            text = path.read_text(encoding="utf-8")
+
+        self.assertEqual(written, path)
+        self.assertEqual(text, "b,a,extra\n2,1,3\n5,4,\n")
+
+    def test_write_csv_rows_with_inferred_fields_preserves_empty_noop(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "rows.csv"
+
+            written = write_csv_rows_with_inferred_fields(path, [])
+
+        self.assertIsNone(written)
+        self.assertFalse(path.exists())
+
 
 class CsvFieldUtilsStaticGuardTest(unittest.TestCase):
     def test_known_gpu_report_scripts_use_shared_csv_helpers(self):
@@ -89,6 +112,15 @@ class CsvFieldUtilsStaticGuardTest(unittest.TestCase):
         expected = {
             "scripts/blb_f0_scan_feasible_domain.py": "from csv_field_utils import write_csv_rows",
             "scripts/bert_mrpc_layer_noise_experiment.py": "from csv_field_utils import write_csv_rows",
+            "experiments/noise_accuracy_tradeoff_score.py": (
+                "from csv_field_utils import write_csv_rows_with_inferred_fields"
+            ),
+            "experiments/relative_vs_absolute_noise_mrpc.py": (
+                "from csv_field_utils import write_csv_rows_with_inferred_fields"
+            ),
+            "experiments/relative_vs_absolute_noise_mrpc_distribution.py": (
+                "from csv_field_utils import write_csv_rows_with_inferred_fields"
+            ),
         }
         for rel_path, needle in expected.items():
             with self.subTest(path=rel_path):

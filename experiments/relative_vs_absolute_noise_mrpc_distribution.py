@@ -49,6 +49,8 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
+from csv_field_utils import write_csv_rows_with_inferred_fields
+
 
 MODEL_NAME = "textattack/bert-base-uncased-MRPC"
 DATASET_NAME = "nyu-mll/glue"
@@ -370,15 +372,6 @@ def summarize_by_method(rows: list[dict]) -> list[dict]:
             }
         )
     return out
-
-
-def write_csv(path: Path, rows: list[dict]) -> None:
-    if not rows:
-        return
-    with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def plot_results(summary: list[dict], baseline: dict, out_path: Path) -> None:
@@ -774,8 +767,8 @@ def main() -> None:
             )
 
     summary = summarize_by_method(rows)
-    write_csv(args.output_dir / "per_seed_results.csv", rows)
-    write_csv(args.output_dir / "summary_results.csv", summary)
+    write_csv_rows_with_inferred_fields(args.output_dir / "per_seed_results.csv", rows)
+    write_csv_rows_with_inferred_fields(args.output_dir / "summary_results.csv", summary)
     plot_results(summary, baseline, args.output_dir / "relative_vs_absolute_noise_mrpc_distribution.png")
     plot_preservation_zoom(
         summary,

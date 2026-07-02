@@ -132,8 +132,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `csv_field_utils.py` and `tests/test_csv_field_utils.py` instead. For simple
   finite CSV artifact output that writes a header and projects mappings onto a
   fixed field list, use `csv_field_utils.write_csv_rows()` instead of
-  script-local `_write_csv` / `write_csv` helpers; keep specialized streaming or
-  append-only CSV writers local when they intentionally manage migration,
+  script-local `_write_csv` / `write_csv` helpers. For finite experiment CSV
+  artifacts that intentionally infer the header from the first row and no-op on
+  empty row lists, use `csv_field_utils.write_csv_rows_with_inferred_fields()`
+  instead of local `write_csv(path, rows)` wrappers. Keep specialized streaming
+  or append-only CSV writers local when they intentionally manage migration,
   rolling-window state, or trace buffering.
 - Shared JSONL reader rule, added 2026-07-03: report, monitor, verifier,
   registry, and diagnostics scripts that consume JSONL artifacts must use

@@ -91,3 +91,20 @@ def write_csv_rows(
         for row in rows:
             writer.writerow({field: row.get(field, default) for field in fields})
     return out_path
+
+
+def write_csv_rows_with_inferred_fields(
+        path: str | Path,
+        rows: Sequence[Mapping[str, Any]],
+        *,
+        default: Any = "",
+        ) -> Path | None:
+    """Write rows using the first row's key order, preserving empty-row no-op."""
+    if not rows:
+        return None
+    return write_csv_rows(
+        path,
+        rows,
+        list(rows[0].keys()),
+        default=default,
+    )
