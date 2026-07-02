@@ -523,8 +523,13 @@ def ppo_update(
     n = states.shape[0]
     indices = np.arange(n)
 
-    metrics_sum = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
-                   "clip_fraction": 0.0, "n_minibatches": 0}
+    metrics_sum_t = {
+        "policy_loss": torch.zeros((), device=device),
+        "value_loss": torch.zeros((), device=device),
+        "entropy": torch.zeros((), device=device),
+        "clip_fraction": torch.zeros((), device=device),
+    }
+    n_minibatches = 0
 
     for _ in range(int(cfg.n_epochs)):
         np.random.shuffle(indices)
@@ -565,19 +570,19 @@ def ppo_update(
             optimizer.step()
 
             with torch.no_grad():
-                clip_frac = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean().item()
-            metrics_sum["policy_loss"] += float(policy_loss.item())
-            metrics_sum["value_loss"] += float(value_loss.item())
-            metrics_sum["entropy"] += float(entropy_mean.item())
-            metrics_sum["clip_fraction"] += float(clip_frac)
-            metrics_sum["n_minibatches"] += 1
+                clip_frac_t = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean()
+            metrics_sum_t["policy_loss"] += policy_loss.detach()
+            metrics_sum_t["value_loss"] += value_loss.detach()
+            metrics_sum_t["entropy"] += entropy_mean.detach()
+            metrics_sum_t["clip_fraction"] += clip_frac_t.detach()
+            n_minibatches += 1
 
-    n_mb = max(1, metrics_sum["n_minibatches"])
+    n_mb = max(1, n_minibatches)
     out = {
-        "policy_loss": metrics_sum["policy_loss"] / n_mb,
-        "value_loss": metrics_sum["value_loss"] / n_mb,
-        "entropy": metrics_sum["entropy"] / n_mb,
-        "clip_fraction": metrics_sum["clip_fraction"] / n_mb,
+        "policy_loss": float((metrics_sum_t["policy_loss"] / n_mb).item()),
+        "value_loss": float((metrics_sum_t["value_loss"] / n_mb).item()),
+        "entropy": float((metrics_sum_t["entropy"] / n_mb).item()),
+        "clip_fraction": float((metrics_sum_t["clip_fraction"] / n_mb).item()),
         "n_samples": int(n),
     }
     return out

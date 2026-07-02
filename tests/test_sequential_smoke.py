@@ -957,6 +957,21 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertNotIn("mb_idx = indices[start:end]", update_region)
         self.assertNotIn("torch.from_numpy(mb_idx).long().to(device)", update_region)
 
+    def test_legacy_ppo_update_accumulates_metrics_on_device(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(policy_src, "ppo_update")
+
+        self.assertIn("metrics_sum_t = {", update_region)
+        self.assertIn('"policy_loss": torch.zeros((), device=device)', update_region)
+        self.assertIn("clip_frac_t = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean()", update_region)
+        self.assertIn('metrics_sum_t["policy_loss"] += policy_loss.detach()', update_region)
+        self.assertIn('metrics_sum_t["clip_fraction"] += clip_frac_t.detach()', update_region)
+        self.assertIn('float((metrics_sum_t["policy_loss"] / n_mb).item())', update_region)
+        self.assertNotIn('metrics_sum["policy_loss"] += float(policy_loss.item())', update_region)
+        self.assertNotIn('metrics_sum["value_loss"] += float(value_loss.item())', update_region)
+        self.assertNotIn('metrics_sum["entropy"] += float(entropy_mean.item())', update_region)
+        self.assertNotIn("mean().item()", update_region)
+
     def test_stage1_ppo_return_normalization_stays_on_device(self):
         evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
         update_region = _method_region_from_source(evaluator_src, "ppo_update_gtrxl")
