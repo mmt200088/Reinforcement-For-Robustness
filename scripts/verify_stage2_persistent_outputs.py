@@ -55,6 +55,13 @@ def _count_jsonl(path: Path) -> int:
     return n
 
 
+def _missing_required_fields(payload: dict[str, Any], required_fields: tuple[str, ...]) -> tuple[str, ...] | None:
+    for field in required_fields:
+        if field not in payload:
+            return tuple(name for name in required_fields if name not in payload)
+    return None
+
+
 def _count_jsonl_with_required_fields(path: Path, required_fields: tuple[str, ...], label: str) -> tuple[int, list[str]]:
     n = 0
     failures: list[str] = []
@@ -69,7 +76,7 @@ def _count_jsonl_with_required_fields(path: Path, required_fields: tuple[str, ..
             if not isinstance(payload, dict):
                 failures.append(f"{label}:{line_no} is not a JSON object")
                 continue
-            missing = [field for field in required_fields if field not in payload]
+            missing = _missing_required_fields(payload, required_fields)
             if missing:
                 missing_row_count += 1
                 if len(missing_examples) < 3:

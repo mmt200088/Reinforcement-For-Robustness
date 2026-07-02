@@ -178,6 +178,33 @@ class PaperFiguresTest(unittest.TestCase):
         self.assertEqual(rows, [{"total_reward": 1.25}])
         self.assertTrue(seen[0].endswith("\n"))
 
+    def test_read_jsonl_skips_whitespace_lines_without_json_exception(self):
+        paper = _load_paper_figures_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "rows.jsonl"
+            path.write_text(
+                "   \n"
+                + json.dumps({"total_reward": 1.25, "unused": "x"})
+                + "\n\t\n",
+                encoding="utf-8",
+            )
+            original_loads = paper.json.loads
+            seen = []
+
+            def guarded_loads(value):
+                seen.append(value)
+                return original_loads(value)
+
+            with mock.patch.object(paper.json, "loads", guarded_loads):
+                rows = paper._read_jsonl(str(path), fields=("total_reward",))
+                xs, ys = paper._read_jsonl_xy(str(path), "total_reward", "total_reward")
+
+        self.assertEqual(rows, [{"total_reward": 1.25}])
+        self.assertEqual(xs, [1.25])
+        self.assertEqual(ys, [1.25])
+        self.assertFalse(any(value.isspace() for value in seen))
+
     def test_read_jsonl_xy_projects_points_without_row_dicts(self):
         paper = _load_paper_figures_module()
 

@@ -731,6 +731,15 @@ allocating a stripped copy of every diagnostics line while checking required
 fields. A local 80k-row long-line benchmark preserved row/failure counts and
 reduced required-field scanning from `0.658321s` to `0.642286s` (`1.02x`).
 
+Progress 2026-07-02: `scripts/verify_stage2_persistent_outputs.py` now checks
+required JSONL fields with a complete-row fast path that returns `None` and only
+constructs the missing-field tuple for rows that actually fail the schema gate.
+This keeps the persistent-output verifier's hot loop allocation-free on healthy
+60k+ episode logs. A local 200k complete-row field-check benchmark reduced the
+field-scan loop from `0.173905s` to `0.118869s` (`1.46x`); full JSONL parse is
+still dominated by `json.loads`, so end-to-end 100k-row verification improved
+modestly from `1.253700s` to `1.236978s`.
+
 Progress 2026-07-02: `tools/paper_figures.py` now lazily loads run artifacts
 based on the requested `--figs`. For example, `--figs cost_vs_accuracy` no
 longer reads `episodes.jsonl`, `ppo_updates.jsonl`, best-action JSON, baseline
@@ -758,6 +767,13 @@ lists instead of first building a list of projected row dictionaries and then
 splitting it into columns. A local 120k-row top-candidate benchmark preserved
 the plotted points and reduced this read path from `0.8249s` / `39.78MB` to
 `0.6445s` / `7.81MB`.
+
+Progress 2026-07-02: `tools/paper_figures.py` now skips whitespace-only JSONL
+lines with `isspace()` before calling `json.loads()` in both projected-row and
+XY readers. Nonblank lines are still passed through unstripped, preserving the
+existing low-copy parse path. A local 100k valid-row / 50k blank-row episode
+benchmark preserved projected rows and reduced read time from `0.716423s` to
+`0.468636s` (`1.53x`).
 
 Progress 2026-07-02: `blb_stage2_rl/candidate_store.py` now skips blank
 candidate JSONL rows with `isspace()` and passes nonblank rows directly to

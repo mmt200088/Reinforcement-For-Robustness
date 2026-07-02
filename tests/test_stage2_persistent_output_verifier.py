@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 from argparse import Namespace
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -98,6 +98,27 @@ def _write_minimal_progress(
 
 
 class Stage2PersistentOutputVerifierTest(unittest.TestCase):
+    def test_missing_required_fields_returns_none_for_complete_rows(self):
+        payload = {
+            "episode": 0,
+            "total_reward": 1.0,
+            "terminal_reward": 0.5,
+        }
+
+        self.assertIsNone(
+            verifier._missing_required_fields(
+                payload,
+                ("episode", "total_reward", "terminal_reward"),
+            )
+        )
+        self.assertEqual(
+            verifier._missing_required_fields(
+                payload,
+                ("episode", "total_reward", "missing_a", "missing_b"),
+            ),
+            ("missing_a", "missing_b"),
+        )
+
     def test_required_field_counter_skips_blank_lines_without_strip_copy(self):
         class NoStripLine(str):
             def strip(self, *_args, **_kwargs):

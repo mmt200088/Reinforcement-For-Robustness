@@ -58,15 +58,14 @@ Style
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import os
-import sys
-from dataclasses import dataclass
 from pathlib import Path
+import sys
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # Style setup
@@ -140,7 +139,7 @@ def _read_jsonl(path: str, fields: Sequence[str] | None = None) -> List[Dict[str
     wanted = tuple(fields or ())
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
-            if not line:
+            if not line or line.isspace():
                 continue
             try:
                 row = json.loads(line)
@@ -161,7 +160,7 @@ def _read_jsonl_xy(path: str, x_field: str, y_field: str) -> Tuple[List[float], 
     ys: List[float] = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
-            if not line:
+            if not line or line.isspace():
                 continue
             try:
                 row = json.loads(line)
