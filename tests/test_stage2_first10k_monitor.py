@@ -1,6 +1,7 @@
 import csv
 import importlib.util
 from pathlib import Path
+import sys
 import tempfile
 import tracemalloc
 import unittest
@@ -96,6 +97,88 @@ class Stage2First10kMonitorTest(unittest.TestCase):
         self.assertEqual(rows[1000]["rolling1000_mean"], "500.50000000")
         self.assertEqual(rows[1000]["rolling1000_min"], "1.00000000")
         self.assertEqual(rows[1000]["rolling1000_max"], "1000.00000000")
+
+    def test_final_main_reuses_loaded_episode_rows_for_csv_outputs(self):
+        monitor = _load_monitor_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            artifact = root / "artifact"
+            artifact.mkdir()
+            stage2_noise = root / "stage2_noise"
+            (stage2_noise / "progress" / "diagnostics").mkdir(parents=True)
+            episodes_path = artifact / "episodes.jsonl"
+            episodes_path.write_text(
+                "\n".join(
+                    [
+                        (
+                            '{"episode": 0, "total_reward": 1.0, "terminal_reward": 1.0, '
+                            '"terminal_priority": 3, "terminal_loss_mean": 0.2, '
+                            '"terminal_metric1_mean": 0.9, "terminal_metric2_mean": 0.8, '
+                            '"valid_steps": 47, "invalid_steps": 0, "total_bits": 100}'
+                        ),
+                        (
+                            '{"episode": 1, "total_reward": 2.0, "terminal_reward": 2.0, '
+                            '"terminal_priority": 3, "terminal_loss_mean": 0.2, '
+                            '"terminal_metric1_mean": 0.9, "terminal_metric2_mean": 0.8, '
+                            '"valid_steps": 47, "invalid_steps": 0, "total_bits": 99}'
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (artifact / "ppo_updates.jsonl").write_text(
+                (
+                    '{"update": 1, "n_samples": 1, "policy_loss": 0.1, '
+                    '"value_loss": 0.2, "entropy": 1.0, "clip_fraction": 0.0}'
+                    "\n"
+                ),
+                encoding="utf-8",
+            )
+            nvidia_log = root / "nvidia.csv"
+            nvidia_log.write_text(
+                "gpu_idx,util_pct,mem_used_mib\n0,10,100\n1,12,110\n",
+                encoding="utf-8",
+            )
+            original_read_jsonl = monitor._read_jsonl
+            read_counts = {}
+
+            def counting_read_jsonl(path):
+                path = Path(path)
+                read_counts[path] = read_counts.get(path, 0) + 1
+                return original_read_jsonl(path)
+
+            argv = [
+                "stage2_first10k_monitor.py",
+                "--phase",
+                "final",
+                "--artifact-dir",
+                str(artifact),
+                "--stage2-noise",
+                str(stage2_noise),
+                "--nvidia-log",
+                str(nvidia_log),
+                "--planned",
+                "2",
+                "--anchor",
+                "0",
+                "--rollout",
+                "1",
+                "--horizon",
+                "1",
+            ]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                monitor,
+                "_read_jsonl",
+                side_effect=counting_read_jsonl,
+            ):
+                rc = monitor.main()
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(read_counts.get(episodes_path), 1)
+            self.assertTrue((artifact / "reward_windows.csv").is_file())
+            self.assertTrue((artifact / "episode_health_windows.csv").is_file())
 
 
 if __name__ == "__main__":

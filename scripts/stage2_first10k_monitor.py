@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 import statistics
 import time
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List
 
 
 def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -150,7 +150,7 @@ def _expected_trial_split(k_trials: int, device_count: int) -> List[int]:
     return [base + (1 if idx < rem else 0) for idx in range(device_count)]
 
 
-def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
+def _load_monitor_rows(args: argparse.Namespace) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     artifact = Path(args.artifact_dir)
     stage2_noise = Path(args.stage2_noise)
     episodes = _read_jsonl(artifact / "episodes.jsonl")
@@ -159,7 +159,18 @@ def build_summary(args: argparse.Namespace) -> Dict[str, Any]:
     ppo = _read_jsonl(artifact / "ppo_updates.jsonl")
     if not ppo:
         ppo = _read_jsonl(stage2_noise / "progress" / "diagnostics" / "ppo_updates.jsonl")
+    return episodes, ppo
 
+
+def build_summary(
+        args: argparse.Namespace,
+        episodes: List[Dict[str, Any]] | None = None,
+        ppo: List[Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
+    artifact = Path(args.artifact_dir)
+    stage2_noise = Path(args.stage2_noise)
+    if episodes is None or ppo is None:
+        episodes, ppo = _load_monitor_rows(args)
     returns = [_finite(e.get("total_reward")) for e in episodes]
     terminal_rewards = [_finite(e.get("terminal_reward")) for e in episodes]
     priorities = [_episode_priority(e) for e in episodes]
@@ -707,7 +718,8 @@ def main() -> int:
 
     artifact = Path(args.artifact_dir)
     artifact.mkdir(parents=True, exist_ok=True)
-    summary = build_summary(args)
+    episodes, ppo = _load_monitor_rows(args)
+    summary = build_summary(args, episodes=episodes, ppo=ppo)
     (artifact / "monitor_live.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -723,10 +735,6 @@ def main() -> int:
         }, ensure_ascii=False) + "\n")
 
     if args.phase == "final":
-        stage2_noise = Path(args.stage2_noise)
-        episodes = _read_jsonl(artifact / "episodes.jsonl")
-        if not episodes:
-            episodes = _read_jsonl(stage2_noise / "progress" / "diagnostics" / "episodes.jsonl")
         (artifact / "monitor_summary.json").write_text(
             json.dumps(summary, ensure_ascii=False, indent=2),
             encoding="utf-8",

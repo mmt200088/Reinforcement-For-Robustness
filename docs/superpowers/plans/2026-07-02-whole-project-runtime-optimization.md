@@ -416,6 +416,11 @@ row and grouping in a second pass. A local 30k-row CSV comparison produced
 identical GPU summaries and reduced traced peak memory from `9.15MB` to
 `1.08MB` (`8.48x`).
 
+Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` final mode now loads
+episode and PPO JSONL rows once and reuses those rows for the summary,
+`reward_windows.csv`, and `episode_health_windows.csv`. This avoids rereading
+large Stage-2 episode logs during final monitor report generation.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
