@@ -54,6 +54,18 @@ def _source_region(source: str, start_marker: str, end_marker: str) -> str:
 
 
 class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
+    def test_block5_gelu_power_builder_skips_unused_x0_tensor(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        block5_region = _source_region(
+            source,
+            "def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):",
+            "# tensor polynomial approximation",
+        )
+
+        self.assertIn("def _compute_powers(x: Tensor):", block5_region)
+        self.assertNotIn("powers[0] = torch.ones_like", block5_region)
+        self.assertNotIn("powers[0] =", block5_region)
+
     def test_gelu_piecewise_select_avoids_low_mask_zero_fill(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
         regions = [

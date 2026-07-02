@@ -2018,9 +2018,8 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
     coeff_rs = cfg5.gelu_coeff_mul_rescales
 
     def _compute_powers(x: Tensor):
-        """返回 [x^0, x^1, ..., x^degree]，按 degree 决定中间 rescale。"""
+        """返回 [None, x^1, ..., x^degree]，按 degree 决定中间 rescale。"""
         powers = [None] * (degree + 1)
-        powers[0] = torch.ones_like(x)   # x^0：仅作为 c_0·1 的占位（实际不会乘 powers[0]）
         powers[1] = x
         if degree >= 2:
             x2 = x * x
