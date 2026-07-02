@@ -812,6 +812,14 @@ benchmark preserved indexes and reduced K lookup time from `0.293003s` to
 `0.213070s` (`1.38x`), with traced peak allocation dropping from `180B` to
 `156B` over 10k calls.
 
+Progress 2026-07-02: `Paean/action_grid.py` now caches non-K scaling-factor
+value-to-action-index tables by `(kind, max_sf)`. Repeated action-range and
+slot decoding no longer rebuilds the same SF choices list or scans it twice for
+membership plus index lookup. A local same-signature 1M-call benchmark
+preserved indexes and reduced lookup time from `1.802358s` to `0.447846s`
+(`4.02x`), with traced peak allocation dropping from `404B` to `124B` over
+10k calls.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

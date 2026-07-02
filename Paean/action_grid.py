@@ -4,6 +4,7 @@ import itertools
 import json
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -26,6 +27,14 @@ from blb_stage2_rl.action_space import (
 
 _K_LEVEL_TO_INDEX = {int(value): int(idx) for idx, value in enumerate(K_LEVELS)}
 _K_LEVEL_CHOICES_TEXT = str(sorted(int(value) for value in K_LEVELS))
+
+
+@lru_cache(maxsize=None)
+def _sf_value_index_table(kind: str, max_sf: int) -> Tuple[Dict[int, int], str]:
+    levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[str(kind)]
+    choices = tuple(int(sf_from(idx, int(max_sf), levels)) for idx in range(levels))
+    choices_text = "[" + ", ".join(str(choice) for choice in choices) + "]"
+    return {int(choice): int(idx) for idx, choice in enumerate(choices)}, choices_text
 
 
 @dataclass(frozen=True)
@@ -639,15 +648,15 @@ def _value_to_action_index(*, value: int, block_idx: int, field_name: str, kind:
                 f"truncation={value} is not selectable; expected one of {_K_LEVEL_CHOICES_TEXT}"
             ) from exc
 
-    levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[str(kind)]
     max_sf = max_sfs.get(int(block_idx), str(field_name))
-    choices = [int(sf_from(idx, max_sf, levels)) for idx in range(levels)]
-    if int(value) not in choices:
+    index_by_value, choices_text = _sf_value_index_table(str(kind), int(max_sf))
+    try:
+        return index_by_value[int(value)]
+    except KeyError as exc:
         raise ValueError(
             f"{field_name}={value} is not selectable for block{block_idx}; "
-            f"expected one of {choices}"
-        )
-    return choices.index(int(value))
+            f"expected one of {choices_text}"
+        ) from exc
 
 
 def _canonical_selector_name(selector: str) -> str:

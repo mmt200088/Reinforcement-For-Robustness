@@ -58,6 +58,41 @@ class PaeanActionGridTest(unittest.TestCase):
 
         self.assertEqual(idx, expected_idx)
 
+    def test_scaling_factor_value_lookup_reuses_choice_table(self):
+        action_grid = _load_action_grid_module()
+        calls = 0
+
+        def counting_sf_from(idx, max_sf, levels):
+            nonlocal calls
+            calls += 1
+            return int(max_sf) - 2 * (int(levels) - 1 - int(idx))
+
+        class MaxSfs:
+            def get(self, block_idx, field_name):
+                self.last_key = (int(block_idx), str(field_name))
+                return 30
+
+        action_grid.sf_from = counting_sf_from
+        max_sfs = MaxSfs()
+
+        first = action_grid._value_to_action_index(
+            value=28,
+            block_idx=2,
+            field_name="wffn1_sf",
+            kind="x",
+            max_sfs=max_sfs,
+        )
+        second = action_grid._value_to_action_index(
+            value=30,
+            block_idx=2,
+            field_name="wffn1_sf",
+            kind="x",
+            max_sfs=max_sfs,
+        )
+
+        self.assertEqual((first, second), (3, 4))
+        self.assertEqual(calls, 5)
+
 
 if __name__ == "__main__":
     unittest.main()
