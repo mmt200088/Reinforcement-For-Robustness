@@ -74,6 +74,40 @@ class Stage2First10kMonitorTest(unittest.TestCase):
 
         self.assertEqual([row["episode"] for row in rows], [0, 1])
 
+    def test_window_reuses_sorted_tail_for_bounds_and_mean(self):
+        monitor = _load_monitor_module()
+
+        with (
+            mock.patch.object(
+                monitor.statistics,
+                "mean",
+                side_effect=AssertionError("_window should use a single sum pass"),
+            ),
+            mock.patch(
+                "builtins.min",
+                side_effect=AssertionError("_window should reuse sorted bounds"),
+            ),
+            mock.patch(
+                "builtins.max",
+                side_effect=AssertionError("_window should reuse sorted bounds"),
+            ),
+        ):
+            summary = monitor._window([9.0, 1.0, 5.0, 3.0, 7.0], 5)
+
+        self.assertEqual(
+            summary,
+            {
+                "size": 5,
+                "mean": 5.0,
+                "min": 1.0,
+                "p05": 1.0,
+                "p50": 5.0,
+                "p95": 9.0,
+                "max": 9.0,
+                "slope": -0.5,
+            },
+        )
+
     def test_gpu_stats_ignores_directory_path(self):
         monitor = _load_monitor_module()
 

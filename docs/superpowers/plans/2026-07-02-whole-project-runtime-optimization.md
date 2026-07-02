@@ -806,6 +806,13 @@ This reduces final monitor CSV rendering CPU work for 10k/60k episode runs.
 Local 20k-row mixed-reward microbenchmark produced identical CSV output and
 reduced wall time from `9.580s` to `0.186s` (`51.50x`).
 
+Progress 2026-07-02: `_window()` in `scripts/stage2_first10k_monitor.py` now
+reuses the sorted tail for min/max bounds and uses `math.fsum()` for the mean,
+avoiding separate `statistics.mean()`, `min()`, and `max()` scans while
+preserving the summary values. A local 1000-point window benchmark over 3000
+calls produced identical output and reduced time from `3.776341s` to
+`0.181783s` (`20.77x`).
+
 Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now aggregates
 nvidia-smi GPU samples while reading the CSV instead of retaining every parsed
 row and grouping in a second pass. A local 30k-row CSV comparison produced

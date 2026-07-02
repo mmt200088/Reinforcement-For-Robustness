@@ -49,20 +49,27 @@ def _window(values: List[float], size: int) -> Dict[str, float] | None:
         return None
     tail = values[-size:]
     ordered = sorted(tail)
+    tail_len = len(tail)
+    slope_denominator = tail_len - 1 if tail_len > 1 else 1
+
     def pct(q: float) -> float:
         if not ordered:
             return 0.0
-        idx = min(len(ordered) - 1, max(0, round((len(ordered) - 1) * q)))
+        idx = round((tail_len - 1) * q)
+        if idx < 0:
+            idx = 0
+        elif idx >= tail_len:
+            idx = tail_len - 1
         return float(ordered[idx])
     return {
         "size": int(size),
-        "mean": float(statistics.mean(tail)),
-        "min": float(min(tail)),
+        "mean": float(math.fsum(tail)) / float(tail_len),
+        "min": float(ordered[0]),
         "p05": pct(0.05),
         "p50": pct(0.50),
         "p95": pct(0.95),
-        "max": float(max(tail)),
-        "slope": float(tail[-1] - tail[0]) / float(max(1, len(tail) - 1)),
+        "max": float(ordered[-1]),
+        "slope": float(tail[-1] - tail[0]) / float(slope_denominator),
     }
 
 
