@@ -1,8 +1,10 @@
 import importlib.util
 import json
 from pathlib import Path
+import statistics
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = REPO_ROOT / "scripts" / "stage2_reward_probe_scaling_report.py"
@@ -24,6 +26,36 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 class Stage2RewardProbeScalingReportTest(unittest.TestCase):
+    def test_episode_summary_uses_running_means(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            episodes = Path(td) / "episodes.jsonl"
+            _write_jsonl(
+                episodes,
+                [
+                    {
+                        "terminal_probe_wall_seconds": 1.0,
+                        "terminal_probe_speedup": 2.0,
+                    },
+                    {
+                        "terminal_probe_wall_seconds": 3.0,
+                        "terminal_probe_speedup": 4.0,
+                    },
+                ],
+            )
+
+            def fail_mean(_values):
+                raise AssertionError("episode summary means should use running totals")
+
+            with mock.patch.object(statistics, "mean", fail_mean):
+                summary = report._summarize_episodes(episodes)
+
+        self.assertEqual(summary["probe_calls"], 2)
+        self.assertEqual(summary["mean_wall"], 2.0)
+        self.assertEqual(summary["median_wall"], 2.0)
+        self.assertEqual(summary["mean_speedup"], 3.0)
+
     def test_build_summary_streams_benchmark_artifacts_and_selects_best_run(self):
         report = _load_report_module()
 

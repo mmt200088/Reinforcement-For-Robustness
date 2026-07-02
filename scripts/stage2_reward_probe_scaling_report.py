@@ -61,7 +61,9 @@ def _first_present(row: Mapping[str, str], keys: Sequence[str]) -> str | None:
 
 def _summarize_episodes(path: Path) -> dict[str, Any]:
     probe_walls: list[float] = []
-    speedups: list[float] = []
+    wall_total = 0.0
+    speedup_total = 0.0
+    speedup_count = 0
     devices_seen: set[str] = set()
     counts_seen: set[tuple[int, ...]] = set()
     if not path.exists():
@@ -78,9 +80,11 @@ def _summarize_episodes(path: Path) -> dict[str, Any]:
         wall = _float_value(rec.get("terminal_probe_wall_seconds")) or 0.0
         if wall > 0.0:
             probe_walls.append(float(wall))
+            wall_total += float(wall)
         speedup = _float_value(rec.get("terminal_probe_speedup")) or 0.0
         if speedup > 0.0:
-            speedups.append(float(speedup))
+            speedup_total += float(speedup)
+            speedup_count += 1
         for dev in rec.get("terminal_probe_devices") or []:
             devices_seen.add(str(dev))
         counts = rec.get("terminal_probe_trial_counts") or []
@@ -95,9 +99,9 @@ def _summarize_episodes(path: Path) -> dict[str, Any]:
 
     return {
         "probe_calls": len(probe_walls),
-        "mean_wall": statistics.mean(probe_walls) if probe_walls else None,
+        "mean_wall": wall_total / float(len(probe_walls)) if probe_walls else None,
         "median_wall": statistics.median(probe_walls) if probe_walls else None,
-        "mean_speedup": statistics.mean(speedups) if speedups else None,
+        "mean_speedup": speedup_total / float(speedup_count) if speedup_count else None,
         "devices_seen": sorted(devices_seen),
         "trial_splits": [list(item) for item in sorted(counts_seen)],
     }

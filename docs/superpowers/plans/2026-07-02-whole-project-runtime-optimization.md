@@ -257,6 +257,12 @@ from `scripts/stage2_reward_probe_scaling_benchmark.sh` into
 unit-tested and streams `runs.jsonl`, per-run `episodes.jsonl`, and sampled
 `nvidia-smi` CSV files instead of reading them into large strings.
 
+Progress 2026-07-02: `scripts/stage2_reward_probe_scaling_report.py` now
+computes probe wall/speedup means with running totals while retaining the wall
+list only for exact median. A local 100k-row parity benchmark reduced report
+post-processing from `1.282s`/`7.21MB` to `1.074s`/`4.14MB` (`1.74x` lower
+peak memory).
+
 Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now analyzes ordered
 Stage-2 `episodes.jsonl` files with a streaming two-pass path for summary and
 bounded-window rows, avoiding materializing full 60k+ episode lists during A/B
