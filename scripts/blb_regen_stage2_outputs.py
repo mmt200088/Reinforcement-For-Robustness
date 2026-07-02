@@ -234,6 +234,7 @@ def main(argv=None):
         entropy_episodes=ent_eps or None,
         ma_window=args.ma_window,
         log_fn=print,
+        render_plots=True,
     )
     for k, v in curve_paths.items():
         if v:
@@ -259,6 +260,7 @@ def main(argv=None):
         p3_metric_margin=_opt("p3_metric_margin"),
         metric1_std=_opt("metric1_std"),
         log_fn=print,
+        render_plots=True,
     )
     if diag_curve.get("diagnostics_png"):
         print(f"[regen]   diagnostics → {diag_curve['diagnostics_png']}  "

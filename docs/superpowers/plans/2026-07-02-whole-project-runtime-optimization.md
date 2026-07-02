@@ -569,6 +569,16 @@ while reducing that index substep from `0.132s`/`1.44MB` to `0.113s`/`0.01MB`.
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
 commands unless the user explicitly requests live rendering.
 
+Progress 2026-07-02: `blb_stage2_rl/persistence.py` now supports
+`render_plots=False` and the `RFR_STAGE2_RENDER_PLOTS=0` environment switch
+for Stage-2 curve generation. Training can keep writing the required NPZ data
+while skipping synchronous PNG/PDF matplotlib rendering; the offline
+`scripts/blb_regen_stage2_outputs.py` path forces `render_plots=True` so
+post-run reports can regenerate the inspection artifacts later. A local
+5000-episode benchmark reduced `write_training_curves()` from `1.999s` /
+`44.88MB` with PNG/PDF rendering to `0.002s` / `0.30MB` when plot rendering is
+disabled.
+
 - [ ] **Step 3: Verify**
 
 Run:
