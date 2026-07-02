@@ -906,6 +906,16 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         ):
             self.assertNotIn(old_pattern, to_tensors_region, msg=f"old multi-pass pack remains: {old_pattern!r}")
 
+    def test_legacy_ppo_update_reuses_device_minibatch_indices_per_epoch(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(policy_src, "ppo_update")
+
+        self.assertIn("np.random.shuffle(indices)", update_region)
+        self.assertIn("epoch_indices = torch.from_numpy(indices).long().to(device)", update_region)
+        self.assertIn("mb_idx_t = epoch_indices[start:end]", update_region)
+        self.assertNotIn("mb_idx = indices[start:end]", update_region)
+        self.assertNotIn("torch.from_numpy(mb_idx).long().to(device)", update_region)
+
     def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         mask_region = _method_region_from_source(policy_src, "_mask_logits_for_slot")

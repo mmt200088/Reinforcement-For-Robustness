@@ -528,11 +528,11 @@ def ppo_update(
 
     for _ in range(int(cfg.n_epochs)):
         np.random.shuffle(indices)
+        epoch_indices = torch.from_numpy(indices).long().to(device)
         mb_size = max(1, int(cfg.minibatch_size))
         for start in range(0, n, mb_size):
             end = min(n, start + mb_size)
-            mb_idx = indices[start:end]
-            mb_idx_t = torch.from_numpy(mb_idx).long().to(device)
+            mb_idx_t = epoch_indices[start:end]
             mb_states = states.index_select(0, mb_idx_t)
             mb_actions = actions.index_select(0, mb_idx_t)
             mb_old_log_probs = old_log_probs.index_select(0, mb_idx_t)
