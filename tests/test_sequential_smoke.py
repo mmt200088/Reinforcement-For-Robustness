@@ -1094,6 +1094,18 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertNotIn("last_value_loss = value_loss.item()", update_region)
         self.assertNotIn("last_entropy = mean_entropy.item()", update_region)
 
+    def test_stage1_ppo_kl_early_stop_accumulates_on_device_until_epoch_end(self):
+        evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(evaluator_src, "ppo_update_gtrxl")
+
+        self.assertIn("epoch_kl_acc_t = torch.zeros((), device=device)", update_region)
+        self.assertIn("approx_kl_t = (mb_old_lp_flat - new_logprobs_flat).mean()", update_region)
+        self.assertIn("epoch_kl_acc_t += approx_kl_t.detach()", update_region)
+        self.assertIn("avg_kl_t = epoch_kl_acc_t / float(epoch_kl_count)", update_region)
+        self.assertIn("float(avg_kl_t.item())", update_region)
+        self.assertNotIn("(mb_old_lp_flat - new_logprobs_flat).mean().item()", update_region)
+        self.assertNotIn("epoch_kl_acc += approx_kl", update_region)
+
     def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         mask_region = _method_region_from_source(policy_src, "_mask_logits_for_slot")

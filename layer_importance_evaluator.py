@@ -5447,7 +5447,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             if kl_early_stop:
                 break
             ep_indices = torch.randperm(n_eps, device=device)
-            epoch_kl_acc = 0.0
+            epoch_kl_acc_t = torch.zeros((), device=device)
             epoch_kl_count = 0
 
             for start in range(0, n_eps, mini_batch_episodes):
@@ -5514,8 +5514,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # 仅作为安全阀；若关闭 use_kl_early_stop 则与原行为一致。
                 if RL_OPT_FLAGS.get("use_kl_early_stop", False):
                     with torch.no_grad():
-                        approx_kl = (mb_old_lp_flat - new_logprobs_flat).mean().item()
-                    epoch_kl_acc += approx_kl
+                        approx_kl_t = (mb_old_lp_flat - new_logprobs_flat).mean()
+                    epoch_kl_acc_t += approx_kl_t.detach()
                     epoch_kl_count += 1
 
                 last_policy_loss_t = policy_loss.detach()
@@ -5524,7 +5524,8 @@ class LayerImportanceEvaluator(TrainerCallback):
 
             if (RL_OPT_FLAGS.get("use_kl_early_stop", False)
                     and epoch_kl_count > 0):
-                avg_kl = epoch_kl_acc / epoch_kl_count
+                avg_kl_t = epoch_kl_acc_t / float(epoch_kl_count)
+                avg_kl = float(avg_kl_t.item())
                 if avg_kl > 1.5 * float(RL_OPT_FLAGS.get("kl_target", 0.02)):
                     kl_early_stop = True
 
