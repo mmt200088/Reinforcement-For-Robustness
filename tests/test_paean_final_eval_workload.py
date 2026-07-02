@@ -1,6 +1,10 @@
 from pathlib import Path
+import io
+from contextlib import redirect_stdout
 import unittest
+from unittest import mock
 
+from Paean import run_final_eval
 from Paean.config import FinalEvalSettings
 from Paean.run_final_eval import configuration_lines, estimate_workload
 
@@ -65,6 +69,33 @@ class FinalEvalWorkloadEstimateTest(unittest.TestCase):
         self.assertIn("    repeat: 5", text)
         self.assertIn("    total_repeated_evaluations: 10", text)
         self.assertIn("    gpu_parallelism_candidate: true", text)
+
+    def test_list_presets_streams_only_first_line(self):
+        with self.subTest("list-presets avoids whole-file read"):
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as td:
+                preset_dir = Path(td)
+                preset = preset_dir / "stream.conf"
+                preset.write_text("# stream preset\n--repeat 5\n", encoding="utf-8")
+                original_read_text = Path.read_text
+
+                def fail_read_text(path, *_args, **_kwargs):
+                    if Path(path) == preset:
+                        raise AssertionError("--list-presets should not read the whole preset")
+                    return original_read_text(path, *_args, **_kwargs)
+
+                buffer = io.StringIO()
+                with (
+                    mock.patch.object(run_final_eval, "PRESET_DIR", preset_dir),
+                    mock.patch.object(Path, "read_text", fail_read_text),
+                    redirect_stdout(buffer),
+                ):
+                    rc = run_final_eval.main(["--list-presets"])
+
+        self.assertEqual(rc, 0)
+        self.assertIn("stream", buffer.getvalue())
+        self.assertIn("stream preset", buffer.getvalue())
 
 
 if __name__ == "__main__":

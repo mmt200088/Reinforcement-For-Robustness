@@ -367,17 +367,21 @@ def launch_background(
     }
 
 
+def _read_preset_summary(path: Path) -> str:
+    try:
+        with path.open(encoding="utf-8-sig") as handle:
+            return handle.readline().rstrip("\r\n").lstrip("# ")
+    except Exception:
+        return ""
+
+
 def main(argv: List[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv[1:])
     if "--list-presets" in argv:
         print("Available final_eval presets:")
         for name in list_presets(PRESET_DIR):
             path = PRESET_DIR / f"{name}.conf"
-            first = ""
-            try:
-                first = path.read_text(encoding="utf-8-sig").splitlines()[0].lstrip("# ")
-            except Exception:
-                pass
+            first = _read_preset_summary(path)
             print(f"  {name:<30} {first}")
         return 0
 

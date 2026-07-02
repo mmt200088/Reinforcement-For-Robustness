@@ -512,6 +512,12 @@ final-eval controls. Same-process benchmarks kept outputs identical and reduced
 all-degree-4 from `0.2044s` to `0.00014s` and all-degree-0 from `0.1829s` to
 `0.00011s`.
 
+Progress 2026-07-02: `Paean/run_final_eval.py --list-presets` now reads only
+the first line of each preset with `readline()` instead of materializing the
+whole preset through `read_text().splitlines()[0]`. A local 200k-line synthetic
+preset benchmark preserved the displayed summary while reducing the lookup
+from `0.0400s` / `14.92MB` to `0.0002s` / `0.02MB`.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
