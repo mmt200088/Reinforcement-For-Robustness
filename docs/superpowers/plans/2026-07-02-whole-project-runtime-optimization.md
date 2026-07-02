@@ -426,6 +426,14 @@ Unordered inputs still fall back to the old sort semantics. A local
 300k-option ordered-list benchmark preserved rows and reduced extra allocation
 from `4.58MB` to near zero with comparable wall time (`0.0327s` -> `0.0325s`).
 
+Progress 2026-07-02: `scripts/report_fusion_count_map.py` now caches
+`_choose_option()` results inside `_group_specs()` by `(graph_key, target)`.
+The report still emits the same fixed-action groups, but repeated global,
+one-hot, combined, and partial-block4 specs no longer rescan the same graph
+options for `0`, `1`, and `max` targets. A local seven-graph / 25k-options-per
+graph benchmark preserved the exact group specs and reduced `_group_specs()`
+from `0.463743s` to `0.103732s` (`4.47x`).
+
 - [ ] **Step 3: Verify**
 
 Run:

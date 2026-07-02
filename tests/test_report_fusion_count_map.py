@@ -94,6 +94,49 @@ class FusionCountMapReportTest(unittest.TestCase):
 
             self.assertEqual(list(graphs), ["block1_mrpc"])
 
+    def test_group_specs_reuses_graph_target_choices(self):
+        graphs = {
+            "block2_mrpc": {
+                "graph_key": "block2_mrpc",
+                "options": [
+                    {"option_id": 0, "fusion_count": 0},
+                    {"option_id": 1, "fusion_count": 1},
+                ],
+            },
+            "block4": {
+                "graph_key": "block4",
+                "options": [
+                    {"option_id": 0, "fusion_count": 0},
+                    {"option_id": 1, "fusion_count": 1},
+                ],
+            },
+            "block5_n1": {
+                "graph_key": "block5_n1",
+                "options": [
+                    {"option_id": 0, "fusion_count": 0},
+                    {"option_id": 1, "fusion_count": 1},
+                ],
+            },
+        }
+        schedule = [
+            {"step_idx": idx, "layer_idx": idx, "graph_key": graph_key}
+            for idx, graph_key in enumerate(graphs)
+        ]
+        calls = {}
+        original_choose_option = report._choose_option
+
+        def counted_choose_option(graph, target):
+            key = (str(graph["graph_key"]), target)
+            calls[key] = calls.get(key, 0) + 1
+            return original_choose_option(graph, target)
+
+        with mock.patch.object(report, "_choose_option", counted_choose_option):
+            specs = report._group_specs(graphs, schedule)
+
+        self.assertTrue(specs)
+        self.assertTrue(calls)
+        self.assertLessEqual(max(calls.values()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

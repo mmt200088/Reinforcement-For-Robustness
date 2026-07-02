@@ -387,6 +387,13 @@ def _splice_group_slots(
 def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Mapping[str, Any]]) -> List[dict]:
     graph_order = list(graphs.keys())
     occurrence_counts = Counter(str(s["graph_key"]) for s in schedule)
+    choice_cache: Dict[Tuple[str, str | int], Tuple[int, int, bool]] = {}
+
+    def choose(graph_key: str, target: str | int) -> Tuple[int, int, bool]:
+        key = (str(graph_key), target)
+        if key not in choice_cache:
+            choice_cache[key] = _choose_option(graphs[graph_key], target)
+        return choice_cache[key]
 
     specs: List[dict] = []
     for name, target in (
@@ -398,7 +405,7 @@ def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Map
         count_by_graph = {}
         clamped_graphs = []
         for graph_key in graph_order:
-            opt, count, clamped = _choose_option(graphs[graph_key], target)
+            opt, count, clamped = choose(graph_key, target)
             option_by_graph[graph_key] = opt
             count_by_graph[graph_key] = count
             if clamped:
@@ -418,7 +425,7 @@ def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Map
         count_by_graph = {}
         for candidate in graph_order:
             target = "max" if candidate == graph_key else 0
-            opt, count, _clamped = _choose_option(graphs[candidate], target)
+            opt, count, _clamped = choose(candidate, target)
             option_by_graph[candidate] = opt
             count_by_graph[candidate] = count
         specs.append({
@@ -435,7 +442,7 @@ def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Map
     count_by_graph = {}
     for graph_key in graph_order:
         target = "max" if graph_key == "block2_mrpc" or graph_key.startswith("block5_") else 0
-        opt, count, _clamped = _choose_option(graphs[graph_key], target)
+        opt, count, _clamped = choose(graph_key, target)
         option_by_graph[graph_key] = opt
         count_by_graph[graph_key] = count
     specs.append({
@@ -449,7 +456,7 @@ def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Map
 
     block4_graph = graphs.get("block4")
     if block4_graph is not None:
-        b4_max_opt, b4_max_count, _clamped = _choose_option(block4_graph, "max")
+        b4_max_opt, b4_max_count, _clamped = choose("block4", "max")
         for name, layers in (
             ("block4_fusionmax_1_layer", [0]),
             ("block4_fusionmax_2_layers", [0, 6]),
@@ -458,13 +465,14 @@ def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Map
             base_options = {}
             base_counts = {}
             for graph_key in graph_order:
-                opt, count, _ = _choose_option(graphs[graph_key], 0)
+                opt, count, _ = choose(graph_key, 0)
                 base_options[graph_key] = opt
                 base_counts[graph_key] = count
+            selected_layers = set(layers)
             option_by_step = {
                 str(step["step_idx"]): int(b4_max_opt)
                 for step in schedule
-                if str(step["graph_key"]) == "block4" and int(step["layer_idx"]) in set(layers)
+                if str(step["graph_key"]) == "block4" and int(step["layer_idx"]) in selected_layers
             }
             specs.append({
                 "name": name,
