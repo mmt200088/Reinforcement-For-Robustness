@@ -505,6 +505,13 @@ git provenance subprocesses in `_git_info()` with a 5-second timeout. This
 prevents run registration/index rebuild from hanging indefinitely on a slow or
 wedged git command while preserving the existing fallback behavior.
 
+Progress 2026-07-02: `tools/experiments_log.py` now streams
+`experiments/registry.jsonl` rows through `_iter_records()` for query and index
+rebuild instead of first materializing every append-only record in a list.
+A local 100k-row registry with 1000 unique run IDs preserved the query result
+and reduced peak memory from `98.00MB` to `1.08MB`, with wall time improving
+from `0.7549s` to `0.6560s`.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run

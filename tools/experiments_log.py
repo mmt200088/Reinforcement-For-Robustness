@@ -108,19 +108,24 @@ def _git_info() -> Dict[str, Any]:
 
 
 def _load_records(registry_path: str) -> List[Dict[str, Any]]:
+    return list(_iter_records(registry_path))
+
+
+def _iter_records(registry_path: str) -> Iterable[Dict[str, Any]]:
     if not os.path.isfile(registry_path):
-        return []
-    out: List[Dict[str, Any]] = []
+        return
     with open(registry_path, "r", encoding="utf-8") as f:
         for line in f:
             t = line.strip()
             if not t:
                 continue
             try:
-                out.append(json.loads(t))
+                row = json.loads(t)
             except Exception:
                 pass
-    return out
+            else:
+                if isinstance(row, dict):
+                    yield row
 
 
 def _append_record(registry_path: str, record: Mapping[str, Any]) -> None:
@@ -237,8 +242,7 @@ def _md_row(r: Mapping[str, Any]) -> str:
 
 
 def _rebuild_index(registry_path: str = REGISTRY_REL, index_path: str = INDEX_REL) -> str:
-    records = _load_records(registry_path)
-    latest = _latest_per_run_id(records)
+    latest = _latest_per_run_id(_iter_records(registry_path))
     latest.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
 
     lines: List[str] = []
@@ -328,7 +332,7 @@ def _query(
         last_n: Optional[int] = None,
         registry_path: str = REGISTRY_REL,
         ) -> List[Dict[str, Any]]:
-    records = _latest_per_run_id(_load_records(registry_path))
+    records = _latest_per_run_id(_iter_records(registry_path))
     records.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
     out: List[Dict[str, Any]] = []
     for r in records:
