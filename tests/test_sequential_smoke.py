@@ -983,6 +983,19 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("batch_count = int(x_detached.numel())", update_region)
         self.assertNotIn("x = x.detach().cpu().numpy()", update_region)
 
+    def test_stage1_entropy_recovery_avoids_loss_path_item_sync(self):
+        evaluator_src = (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(evaluator_src, "ppo_update_gtrxl")
+
+        self.assertIn("mean_entropy_detached = mean_entropy.detach()", update_region)
+        self.assertIn("entropy_deficit = torch.relu(", update_region)
+        self.assertIn(
+            "effective_entropy_coef = entropy_coef + _rl_opt_entropy_recovery_mul() * entropy_deficit",
+            update_region,
+        )
+        self.assertNotIn("if mean_entropy.item() < _entropy_lb:", update_region)
+        self.assertEqual(update_region.count("mean_entropy.item()"), 1)
+
     def test_legacy_action_mask_validation_avoids_gpu_scalar_sync_for_numpy_masks(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         mask_region = _method_region_from_source(policy_src, "_mask_logits_for_slot")

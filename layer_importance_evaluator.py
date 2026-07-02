@@ -5480,11 +5480,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 
                 # 最小熵约束（PDF 4.3）：当策略熵低于下界时提升熵正则化
                 mean_entropy = entropy_flat.mean()
-                effective_entropy_coef = entropy_coef
                 _entropy_lb = _rl_opt_entropy_lower_bound()
-                if mean_entropy.item() < _entropy_lb:
-                    entropy_deficit = _entropy_lb - mean_entropy.item()
-                    effective_entropy_coef = entropy_coef + _rl_opt_entropy_recovery_mul() * entropy_deficit
+                mean_entropy_detached = mean_entropy.detach()
+                entropy_deficit = torch.relu(
+                    mean_entropy_detached.new_tensor(_entropy_lb) - mean_entropy_detached
+                )
+                effective_entropy_coef = entropy_coef + _rl_opt_entropy_recovery_mul() * entropy_deficit
 
                 entropy_loss = -mean_entropy
 
