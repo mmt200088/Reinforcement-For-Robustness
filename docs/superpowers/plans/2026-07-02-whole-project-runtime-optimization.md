@@ -487,6 +487,14 @@ A local 7-map synthetic JSON benchmark for the eliminated parse path preserved
 the checked option count and reduced median time from `6.84s` to `3.44s`, with
 traced peak memory down from `60.37MB` to `42.10MB`.
 
+Progress 2026-07-02: `scripts/blb_verify_boosted_install.py` now discovers
+fusion maps with `os.scandir()` and canonical block-map filename filtering
+before opening JSON payloads. Post-build sidecars such as `map_summary.json`
+and hidden summaries are no longer read or passed to the boosted-install
+verifier. A local 7-map / 3000-sidecar benchmark reduced the discover+load
+phase from `0.159301s` / `3.18MB` to `0.015133s` / `0.01MB` (`10.53x`, with
+candidate payloads dropping from `3006` to `6` after degenerate skips).
+
 Progress 2026-07-02: `scripts/blb_orphan_slot_audit.py` now caches parsed ASTs
 for `function_handler.py` and `rescale_optimizer_bridge.py` across all block
 loaders in one audit process. The static slot/cfg/t_new extraction output is
@@ -611,6 +619,14 @@ the first line of each preset with `readline()` instead of materializing the
 whole preset through `read_text().splitlines()[0]`. A local 200k-line synthetic
 preset benchmark preserved the displayed summary while reducing the lookup
 from `0.0400s` / `14.92MB` to `0.0002s` / `0.02MB`.
+
+Progress 2026-07-02: `Paean/config.py` now lists final-eval preset names with
+a single `os.scandir()` pass instead of `Path.glob("*.conf")` plus per-entry
+`Path` objects. The CLI behavior is unchanged, but startup/list-presets paths
+avoid extra filesystem wrapper allocation. A local 4000-preset /
+4000-nonpreset benchmark preserved sorted preset names while improving
+discovery from `0.058477s` / `2.48MB` to `0.010787s` / `0.29MB` (`5.42x`,
+`8.41x` lower peak memory).
 
 Progress 2026-07-02: `scripts/run_fusion_count_action_eval.py` now drops the
 full parsed action-config payload after deriving the fields it actually uses

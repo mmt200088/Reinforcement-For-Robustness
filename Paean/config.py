@@ -3,12 +3,11 @@
 import argparse
 import dataclasses
 import os
+from pathlib import Path
 import re
 import shlex
 import time
-from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
-
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_DIR.parent
@@ -88,7 +87,15 @@ def _read_preset_args(preset_name: str, preset_dir: Path = PRESET_DIR) -> List[s
 def list_presets(preset_dir: Path = PRESET_DIR) -> List[str]:
     if not preset_dir.is_dir():
         return []
-    return sorted(p.stem for p in preset_dir.glob("*.conf") if p.is_file())
+    try:
+        with os.scandir(preset_dir) as entries:
+            return sorted(
+                entry.name[: -len(".conf")]
+                for entry in entries
+                if entry.name.endswith(".conf") and entry.is_file()
+            )
+    except OSError:
+        return []
 
 
 def expand_preset_args(argv: Sequence[str], preset_dir: Path = PRESET_DIR) -> List[str]:

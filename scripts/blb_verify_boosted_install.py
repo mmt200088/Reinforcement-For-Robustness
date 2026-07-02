@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 
@@ -64,6 +65,7 @@ def _load_runtime_deps() -> dict[str, object]:
         import numpy as np
         from optimizer_cost import evaluate_action_for_cost
         from optimizer_output_introspect import fused_skeleton_positions
+
         from rescale_optimizer_bridge import (
             _extract_sf_from_cfg,
             _SkelEntry,
@@ -96,6 +98,31 @@ def _load_runtime_deps() -> dict[str, object]:
 def _is_skipped_graph_key(graph_key: str) -> bool:
     gk = str(graph_key)
     return gk in _SKIP_GRAPH_KEYS or gk.startswith("block1_")
+
+
+def _is_fusion_map_filename(name: str, profile: str) -> bool:
+    if name.startswith("_") or not name.endswith(".json"):
+        return False
+    return (
+        name == f"block1_{profile}.json"
+        or name == f"block2_{profile}.json"
+        or name.startswith("block3_exp_n")
+        or name == "block4.json"
+        or name.startswith("block5_n")
+    )
+
+
+def _fusion_map_files(maps_dir: pathlib.Path, profile: str) -> list[pathlib.Path]:
+    try:
+        with os.scandir(maps_dir) as entries:
+            names = sorted(
+                entry.name
+                for entry in entries
+                if entry.is_file() and _is_fusion_map_filename(entry.name, profile)
+            )
+    except OSError:
+        return []
+    return [maps_dir / name for name in names]
 
 
 def _cfg_sf_projection(cfg) -> dict:
@@ -288,7 +315,7 @@ def _verify_maps(
     verify_fn=verify_map,
 ) -> tuple[int, int]:
     mdir = pathlib.Path(maps_dir)
-    files = sorted(p for p in mdir.glob("*.json") if not p.name.startswith("_"))
+    files = _fusion_map_files(mdir, profile)
     total_checked = 0
     total_problems = 0
     for p in files:

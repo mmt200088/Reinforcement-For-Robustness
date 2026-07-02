@@ -42,6 +42,23 @@ class PaeanConfigTest(unittest.TestCase):
             ],
         )
 
+    def test_list_presets_scans_directory_without_path_glob(self):
+        with tempfile.TemporaryDirectory() as td:
+            preset_dir = Path(td)
+            (preset_dir / "zeta.conf").write_text("--repeat 1\n", encoding="utf-8")
+            (preset_dir / "alpha.conf").write_text("--repeat 2\n", encoding="utf-8")
+            (preset_dir / "notes.txt").write_text("", encoding="utf-8")
+            (preset_dir / "nested.conf").mkdir()
+
+            with mock.patch.object(
+                Path,
+                "glob",
+                side_effect=AssertionError("preset listing should not use Path.glob"),
+            ):
+                presets = paean_config.list_presets(preset_dir)
+
+        self.assertEqual(presets, ["alpha", "zeta"])
+
 
 if __name__ == "__main__":
     unittest.main()
