@@ -365,10 +365,6 @@ def _metric_dict(metrics: Any) -> Dict[str, float]:
     return out
 
 
-def _jsonable(value: Any) -> Any:
-    return to_jsonable(value, stringify_unknown=True, preserve_native=True)
-
-
 def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     K_LEVELS = _load_runtime_deps()["K_LEVELS"]
     group = cfg.get("group") or {}
@@ -443,10 +439,22 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
         "fusion_by_block": fusion_by_block,
         "k_distribution": k_dist,
         "block5_graph_counts": block5_graphs,
-        "terminal_probe": _jsonable(terminal_info.get("probe_diagnostics") or {}),
-        "reward_breakdown": _jsonable(terminal_info.get("reward_breakdown") or {}),
+        "terminal_probe": to_jsonable(
+            terminal_info.get("probe_diagnostics") or {},
+            stringify_unknown=True,
+            preserve_native=True,
+        ),
+        "reward_breakdown": to_jsonable(
+            terminal_info.get("reward_breakdown") or {},
+            stringify_unknown=True,
+            preserve_native=True,
+        ),
         "step_records": step_records,
-        "fusion_action_steps": _jsonable(action_steps),
+        "fusion_action_steps": to_jsonable(
+            action_steps,
+            stringify_unknown=True,
+            preserve_native=True,
+        ),
     }
 
 
@@ -590,8 +598,8 @@ def main() -> int:
         "stage1_softmax": [int(v) for v in stage1_softmax],
         "repeat": int(args.repeat),
         "probe_size": int(args.probe_size),
-        "baseline": _jsonable(baseline),
-        "group_results": _jsonable(group_results),
+        "baseline": to_jsonable(baseline, stringify_unknown=True, preserve_native=True),
+        "group_results": to_jsonable(group_results, stringify_unknown=True, preserve_native=True),
     }
     output_json.write_text(json.dumps(combined, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     output_html.write_text(_render_html(combined), encoding="utf-8")

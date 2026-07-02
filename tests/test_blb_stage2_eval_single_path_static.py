@@ -96,11 +96,15 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertNotIn("def _to_jsonable", persistence)
         for text in (noise_install, layer_noise):
             self.assertIn("from json_utils import to_jsonable", text)
-            self.assertIn("return to_jsonable(value", text)
+            self.assertIn("to_jsonable(", text)
+            self.assertNotIn("def _json_safe", text)
             self.assertNotIn("return {str(k): _json_safe", text)
             self.assertNotIn("return {str(key): _json_safe", text)
         self.assertIn("from json_utils import to_jsonable", rl_ga)
         self.assertNotIn("def to_jsonable(value)", rl_ga)
+        rlpath = (repo / "scripts" / "run_fusion_count_action_eval_rlpath.py").read_text(encoding="utf-8")
+        self.assertIn("from json_utils import to_jsonable", rlpath)
+        self.assertNotIn("def _jsonable", rlpath)
 
     def test_json_default_scripts_use_shared_adapter(self):
         repo = pathlib.Path(__file__).resolve().parents[1]

@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+from json_utils import to_jsonable
+
 
 class NoCopyMapping:
     def __init__(self, payload):
@@ -102,14 +104,12 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertNotEqual(rlpath._group_key(left), rlpath._group_key(right))
 
     def test_jsonable_reuses_json_native_nested_payloads(self):
-        import scripts.run_fusion_count_action_eval_rlpath as rlpath
-
         steps = [
             {"step_idx": i, "valid": bool(i % 2), "nested": {"fusion_count": i}}
             for i in range(8)
         ]
 
-        converted = rlpath._jsonable(steps)
+        converted = to_jsonable(steps, stringify_unknown=True, preserve_native=True)
 
         self.assertIs(converted, steps)
         self.assertIs(converted[0]["nested"], steps[0]["nested"])
@@ -117,20 +117,16 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
     def test_jsonable_converts_only_branches_that_need_conversion(self):
         import numpy as np
 
-        import scripts.run_fusion_count_action_eval_rlpath as rlpath
-
         steps = [{"step_idx": i, "valid": True} for i in range(8)]
         payload = {"steps": steps, "array": np.array([1, 2, 3])}
 
-        converted = rlpath._jsonable(payload)
+        converted = to_jsonable(payload, stringify_unknown=True, preserve_native=True)
 
         self.assertIsNot(converted, payload)
         self.assertIs(converted["steps"], steps)
         self.assertEqual(converted["array"], [1, 2, 3])
 
     def test_jsonable_does_not_reconvert_changed_list_item(self):
-        import scripts.run_fusion_count_action_eval_rlpath as rlpath
-
         class CountedString:
             calls = 0
 
@@ -139,15 +135,13 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                 return "converted"
 
         native = {"step_idx": 1, "valid": True}
-        converted = rlpath._jsonable([native, CountedString()])
+        converted = to_jsonable([native, CountedString()], stringify_unknown=True, preserve_native=True)
 
         self.assertEqual(converted, [native, "converted"])
         self.assertIs(converted[0], native)
         self.assertEqual(CountedString.calls, 1)
 
     def test_jsonable_does_not_reconvert_changed_dict_item(self):
-        import scripts.run_fusion_count_action_eval_rlpath as rlpath
-
         class CountedString:
             calls = 0
 
@@ -156,7 +150,7 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                 return "converted"
 
         native = {"step_idx": 1, "valid": True}
-        converted = rlpath._jsonable({"native": native, "custom": CountedString()})
+        converted = to_jsonable({"native": native, "custom": CountedString()}, stringify_unknown=True, preserve_native=True)
 
         self.assertEqual(converted, {"native": native, "custom": "converted"})
         self.assertIs(converted["native"], native)

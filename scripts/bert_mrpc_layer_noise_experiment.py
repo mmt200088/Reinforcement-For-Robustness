@@ -326,15 +326,11 @@ def write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequenc
             writer.writerow({field: row.get(field, "") for field in fieldnames})
 
 
-def _json_safe(value: Any) -> Any:
-    return to_jsonable(value, preserve_native=True)
-
-
 def save_results(output_dir: Path, results: Mapping[str, Any]) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     result_path = output_dir / "bert_mrpc_layer_noise_results.json"
     with result_path.open("w", encoding="utf-8") as handle:
-        json.dump(_json_safe(results), handle, indent=2, sort_keys=True)
+        json.dump(to_jsonable(results, preserve_native=True), handle, indent=2, sort_keys=True)
 
     exp1_rows = results["experiment1"]
     write_csv(

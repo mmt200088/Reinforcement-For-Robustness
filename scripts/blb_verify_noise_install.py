@@ -58,10 +58,6 @@ def _html_escape(s: Any) -> str:
     return html.escape(str(s), quote=True)
 
 
-def _json_safe(value: Any) -> Any:
-    return to_jsonable(value, preserve_native=True)
-
-
 # ---------------------------------------------------------------------------
 # Noise variance table — extracted via AST from function_handler.py so we
 # don't need torch at script load time.
@@ -544,7 +540,8 @@ def write_full_html(
     parts.append(f"<li>profile: <code>{_html_escape(args.profile)}</code></li>")
     parts.append(f"<li>num_layers: {int(args.num_layers)}</li>")
     action_indices = [int(x) for x in action_vec]
-    parts.append(f"<li>Stage-1: <pre>{_html_escape(json.dumps(_json_safe(stage1), indent=2))}</pre></li>")
+    stage1_json = json.dumps(to_jsonable(stage1, preserve_native=True), indent=2)
+    parts.append(f"<li>Stage-1: <pre>{_html_escape(stage1_json)}</pre></li>")
     parts.append(f"<li>action_vector ({len(action_indices)} indices): <pre>{_html_escape(json.dumps(action_indices))}</pre></li>")
     parts.append("</ul></section>")
 
@@ -609,7 +606,8 @@ def write_full_html(
         compact = r.get("compact") or {}
         if compact:
             parts.append("<h4>Optimizer return — new_compact_config</h4>")
-            parts.append(f"<pre>{_html_escape(json.dumps(_json_safe(compact), indent=2)[:5000])}</pre>")
+            compact_json = json.dumps(to_jsonable(compact, preserve_native=True), indent=2)
+            parts.append(f"<pre>{_html_escape(compact_json[:5000])}</pre>")
         parts.append("</details>")
     parts.append("</section>")
     parts.append("</main></body></html>")
