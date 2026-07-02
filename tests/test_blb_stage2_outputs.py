@@ -360,6 +360,33 @@ class RegeneratorEndToEndTest(unittest.TestCase):
         return regen.main([progress_dir, "--out-dir", out_dir,
                            "--metric1-name", "accuracy", "--metric2-name", "f1"])
 
+    def test_episode_reader_does_not_materialize_absent_debug_fields(self):
+        regen = _load_standalone("blb_regen_reader_test", "scripts/blb_regen_stage2_outputs.py")
+        with tempfile.TemporaryDirectory() as d:
+            diag = os.path.join(d, "diagnostics")
+            os.makedirs(diag, exist_ok=True)
+            with open(os.path.join(diag, "episodes.jsonl"), "w", encoding="utf-8") as f:
+                for i in range(3):
+                    f.write(json.dumps({
+                        "per_step_sum": -1.0,
+                        "terminal_reward": 2.0,
+                        "terminal_loss_mean": 0.3,
+                        "terminal_metric1_mean": 0.87,
+                        "terminal_metric2_mean": 0.86,
+                        "fusion_count": i,
+                        "terminal_k_gain": 1.0,
+                        "terminal_priority": 3,
+                    }) + "\n")
+            ep = regen._read_episodes(d)
+        self.assertEqual(len(ep["returns"]), 3)
+        self.assertEqual(ep["_present"], set())
+        for key in (
+            "fusion_b2", "fusion_b4", "fusion_b5", "worst_signed_margin",
+            "acc_barrier_sat", "acc_barrier_vio", "cost_score",
+            "p3_metric_margin", "metric1_std",
+        ):
+            self.assertEqual(ep[key], [], key)
+
     def test_regenerator_plain_jsonl(self):
         with tempfile.TemporaryDirectory() as d:
             self._make_fake_run(d, gz=False)

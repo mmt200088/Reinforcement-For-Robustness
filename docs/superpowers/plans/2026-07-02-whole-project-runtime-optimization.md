@@ -579,6 +579,13 @@ post-run reports can regenerate the inspection artifacts later. A local
 `44.88MB` with PNG/PDF rendering to `0.002s` / `0.30MB` when plot rendering is
 disabled.
 
+Progress 2026-07-02: `scripts/blb_regen_stage2_outputs.py` now lazily
+materializes ADR-014 optional diagnostic series while reading `episodes.jsonl`.
+Older runs that do not contain those fields no longer allocate nine extra
+all-zero lists before plotting. A local 100k-row legacy-log benchmark preserved
+the base reward/loss/metric series and reduced parsing from `1.068s` /
+`25.97MB` to `0.973s` / `19.10MB`.
+
 - [ ] **Step 3: Verify**
 
 Run:

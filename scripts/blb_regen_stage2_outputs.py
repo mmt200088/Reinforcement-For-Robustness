@@ -108,6 +108,7 @@ def _read_episodes(progress_dir: str):
         ("p3_metric_margin", "terminal_p3_metric_margin_reward"),
         ("metric1_std", "terminal_metric1_std"),
     )
+    row_count = 0
     with f:
         for line in f:
             line = line.strip()
@@ -130,7 +131,12 @@ def _read_episodes(progress_dir: str):
             for key, jkey in _extra:
                 if jkey in d:
                     present.add(key)
-                series[key].append(float(d.get(jkey, 0.0) or 0.0))
+                    if len(series[key]) < row_count:
+                        series[key].extend([0.0] * (row_count - len(series[key])))
+                    series[key].append(float(d.get(jkey, 0.0) or 0.0))
+                elif key in present:
+                    series[key].append(0.0)
+            row_count += 1
     return series
 
 
