@@ -1314,7 +1314,10 @@ def sequential_ppo_update(
                 entropy_recovery_delta,
                 loss,
             )
-            if not all(bool(torch.isfinite(t).all().item()) for t in finite_tensors):
+            finite_checks = torch.stack([
+                torch.isfinite(t).all().reshape(()) for t in finite_tensors
+            ])
+            if not bool(finite_checks.all().item()):
                 nonfinite_minibatches += 1
                 kl_early_stop = True
                 optimizer.zero_grad(set_to_none=True)

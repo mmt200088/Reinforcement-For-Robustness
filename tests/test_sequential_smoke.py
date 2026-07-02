@@ -941,6 +941,18 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertNotIn('metrics_sum["entropy"] += float(entropy_mean.item())', update_region)
         self.assertNotIn("mean().item()", update_region)
 
+    def test_sequential_ppo_update_batches_nonfinite_checks_before_cpu_sync(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(policy_src, "sequential_ppo_update")
+
+        self.assertIn("finite_checks = torch.stack(", update_region)
+        self.assertIn("torch.isfinite(t).all().reshape(())", update_region)
+        self.assertIn("if not bool(finite_checks.all().item()):", update_region)
+        self.assertNotIn(
+            "all(bool(torch.isfinite(t).all().item()) for t in finite_tensors)",
+            update_region,
+        )
+
     def test_sequential_advantage_norm_avoids_scalar_sync(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
         robust_region = _method_region_from_source(policy_src, "_robust_normalize_advantages")
