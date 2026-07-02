@@ -1,6 +1,6 @@
+from pathlib import Path
 import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 from scripts import blb_orphan_slot_audit as audit
@@ -9,9 +9,11 @@ from scripts import blb_orphan_slot_audit as audit
 class OrphanSlotAuditTest(unittest.TestCase):
     def setUp(self):
         audit._AST_CACHE.clear()
+        audit._GRAPH_CONFIG_NAMES_CACHE.clear()
 
     def tearDown(self):
         audit._AST_CACHE.clear()
+        audit._GRAPH_CONFIG_NAMES_CACHE.clear()
 
     def test_slot_loader_reuses_function_handler_ast(self):
         with tempfile.TemporaryDirectory() as td:
@@ -83,3 +85,69 @@ DEFAULT_CFG_TO_T_NEW_MAP = {
 
         self.assertEqual(len(reads), 1)
 
+    def test_graphs_for_block_scans_directory_without_path_glob(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            names = [
+                "block1_mrpc.json",
+                "block2_mrpc.json",
+                "block3_exp_n2.json",
+                "block3_exp_n6.json",
+                "block4.json",
+                "block5_n1.json",
+                "block5_n4.json",
+                "_summary.json",
+                "map_summary.json",
+                "notes.txt",
+            ]
+            for name in names:
+                (root / name).write_text("{}", encoding="utf-8")
+
+            with mock.patch.object(
+                Path,
+                "glob",
+                side_effect=AssertionError("graph discovery should not use Path.glob"),
+            ):
+                found = {
+                    block_idx: [path.name for path in audit.graphs_for_block(block_idx, "mrpc", root)]
+                    for block_idx in (1, 2, 3, 4, 5)
+                }
+
+        self.assertEqual(found[1], ["block1_mrpc.json"])
+        self.assertEqual(found[2], ["block2_mrpc.json"])
+        self.assertEqual(found[3], ["block3_exp_n2.json", "block3_exp_n6.json"])
+        self.assertEqual(found[4], ["block4.json"])
+        self.assertEqual(found[5], ["block5_n1.json", "block5_n4.json"])
+
+    def test_graphs_for_block_reuses_directory_scan_across_blocks(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name in (
+                "block1_mrpc.json",
+                "block2_mrpc.json",
+                "block3_exp_n2.json",
+                "block4.json",
+                "block5_n1.json",
+            ):
+                (root / name).write_text("{}", encoding="utf-8")
+
+            original_scandir = audit.os.scandir
+            calls = []
+
+            def counting_scandir(path):
+                if Path(path) == root:
+                    calls.append(Path(path))
+                return original_scandir(path)
+
+            with mock.patch.object(audit.os, "scandir", counting_scandir):
+                found = {
+                    block_idx: [path.name for path in audit.graphs_for_block(block_idx, "mrpc", root)]
+                    for block_idx in (1, 2, 3, 4, 5)
+                }
+
+        self.assertEqual(found[1], ["block1_mrpc.json"])
+        self.assertEqual(found[2], ["block2_mrpc.json"])
+        self.assertEqual(found[3], ["block3_exp_n2.json"])
+        self.assertEqual(found[4], ["block4.json"])
+        self.assertEqual(found[5], ["block5_n1.json"])
+        self.assertEqual(len(calls), 1)

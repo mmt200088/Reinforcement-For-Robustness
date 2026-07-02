@@ -494,6 +494,14 @@ unchanged, but the audit no longer rereads and reparses the same bridge source
 for every block. A real-source local benchmark over blocks 1..5 reduced the
 static extraction phase from `0.471s` to `0.231s` (`2.04x`).
 
+Progress 2026-07-02: `scripts/blb_orphan_slot_audit.py` now discovers
+Rescale graph JSON files with one cached `os.scandir()` result per config
+directory, then filters that sorted filename tuple for each block. This avoids
+five repeated directory scans in one audit run and keeps graph discovery
+independent of `Path.glob()`. A local 603-graph / 3000-sidecar benchmark
+preserved graph ordering while improving discovery from `0.026675s` /
+`1.95MB` to `0.014171s` / `0.41MB` (`1.88x`, `4.76x` lower peak memory).
+
 Progress 2026-07-02: `scripts/blb_apply_precision_boost.py` no longer
 materializes an unused pre-boost snapshot of every fusion-map option before
 calling the deterministic precision-boost pass. A 300k-option synthetic

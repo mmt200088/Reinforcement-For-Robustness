@@ -32,13 +32,14 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import sys
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
+import sys
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _AST_CACHE: Dict[Path, ast.AST] = {}
+_GRAPH_CONFIG_NAMES_CACHE: Dict[Path, Tuple[str, ...]] = {}
 
 
 def _load_ast(rel_path: str) -> ast.AST:
@@ -318,18 +319,51 @@ def load_graph_node_names(graph_path: Path) -> List[Tuple[str, str]]:
     return out
 
 
-def graphs_for_block(block_idx: int, profile: str, configs_dir: Path) -> List[Path]:
+def _graph_names_for_block(block_idx: int, profile: str, names: Iterable[str]) -> List[str]:
     if block_idx == 1:
-        return sorted(configs_dir.glob(f"block1_{profile}.json"))
+        target = f"block1_{profile}.json"
+        return [name for name in names if name == target]
     if block_idx == 2:
-        return sorted(configs_dir.glob(f"block2_{profile}.json"))
+        target = f"block2_{profile}.json"
+        return [name for name in names if name == target]
     if block_idx == 3:
-        return sorted(configs_dir.glob("block3_exp_n*.json"))
+        return [
+            name
+            for name in names
+            if name.startswith("block3_exp_n") and name.endswith(".json")
+        ]
     if block_idx == 4:
-        return sorted(configs_dir.glob("block4.json"))
+        return [name for name in names if name == "block4.json"]
     if block_idx == 5:
-        return sorted(configs_dir.glob("block5_n*.json"))
+        return [
+            name
+            for name in names
+            if name.startswith("block5_n") and name.endswith(".json")
+        ]
     return []
+
+
+def _graph_config_names(configs_dir: Path) -> Tuple[str, ...]:
+    key = configs_dir.resolve()
+    cached = _GRAPH_CONFIG_NAMES_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        with os.scandir(configs_dir) as entries:
+            names = tuple(sorted(
+                entry.name
+                for entry in entries
+                if entry.is_file() and entry.name.endswith(".json")
+            ))
+    except OSError:
+        names = ()
+    _GRAPH_CONFIG_NAMES_CACHE[key] = names
+    return names
+
+
+def graphs_for_block(block_idx: int, profile: str, configs_dir: Path) -> List[Path]:
+    names = _graph_config_names(configs_dir)
+    return [configs_dir / name for name in _graph_names_for_block(block_idx, profile, names)]
 
 
 # ---------------------------------------------------------------------------
