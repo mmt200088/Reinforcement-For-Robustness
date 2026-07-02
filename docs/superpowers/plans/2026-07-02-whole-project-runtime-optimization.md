@@ -149,6 +149,14 @@ Progress 2026-07-02: `scripts/launcher_gpu_audit.py` now bounds fallback
 non-fatal GPU audit gate from stalling expensive RL launchers when the server
 driver/CLI is slow or wedged and `CUDA_VISIBLE_DEVICES` was not set.
 
+Progress 2026-07-02: startup/preset parsing now streams configuration files
+instead of materializing full `read().splitlines()` lists. `tools/validate_preset.py`
+parses preset files with a one-line lookahead iterator, and `Paean/config.py`
+streams final-eval preset lines through `shlex`. Local synthetic preset
+benchmarks preserved parsed arguments/flags; `validate_preset` improved from
+`0.2321s` / `25.81MB` to `0.2060s` / `21.16MB`, and Paean preset parsing
+reduced peak memory from `21.50MB` to `10.62MB`.
+
 Progress 2026-07-02: `scripts/server_resource_snapshot.py`
 `parse_nvidia_smi_csv()` now streams text through a small line iterator instead
 of materializing `splitlines()`. This keeps resource snapshot parsing

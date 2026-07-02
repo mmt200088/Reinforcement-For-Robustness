@@ -73,14 +73,15 @@ def _read_preset_args(preset_name: str, preset_dir: Path = PRESET_DIR) -> List[s
         available = " ".join(list_presets(preset_dir))
         raise FileNotFoundError(
             f"final_eval preset not found: {path}. Available presets: {available or '(none)'}"
-        )
+    )
 
     args: List[str] = []
-    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
-        lexer = shlex.shlex(raw_line, posix=True)
-        lexer.whitespace_split = True
-        lexer.commenters = "#"
-        args.extend(list(lexer))
+    with path.open(encoding="utf-8-sig") as handle:
+        for raw_line in handle:
+            lexer = shlex.shlex(raw_line, posix=True)
+            lexer.whitespace_split = True
+            lexer.commenters = "#"
+            args.extend(list(lexer))
     return args
 
 

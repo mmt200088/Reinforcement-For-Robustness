@@ -27,7 +27,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Iterable, Iterator, List, Set, Tuple
 
 
 LAUNCHER_REL = "llama_7B_LayerImportance.sh"
@@ -58,20 +58,26 @@ def extract_launcher_flags(launcher_path: str) -> Set[str]:
     return flags
 
 
-def extract_preset_flags(preset_path: str) -> List[Tuple[int, str, str]]:
-    """Return ``[(line_num, flag, value), ...]`` from a preset file.
+def _iter_numbered_lines(lines: Iterable[str]) -> Iterator[Tuple[int, str]]:
+    for line_num, raw in enumerate(lines, start=1):
+        yield line_num, raw.rstrip("\r\n")
 
-    Lines starting with `#` or empty are skipped. Values on the next line
-    after a flag (the launcher tolerates both) are paired with the flag.
-    """
+
+def _extract_preset_flags_from_lines(lines: Iterable[str]) -> List[Tuple[int, str, str]]:
+    numbered = iter(_iter_numbered_lines(lines))
+    pending: Tuple[int, str] | None = None
     out: List[Tuple[int, str, str]] = []
-    if not os.path.isfile(preset_path):
-        return out
-    lines = open(preset_path, encoding="utf-8").read().splitlines()
-    i = 0
-    while i < len(lines):
-        raw = lines[i]
-        i += 1
+
+    while True:
+        if pending is None:
+            try:
+                line_num, raw = next(numbered)
+            except StopIteration:
+                break
+        else:
+            line_num, raw = pending
+            pending = None
+
         s = raw.strip()
         if not s or s.startswith("#"):
             continue
@@ -82,18 +88,34 @@ def extract_preset_flags(preset_path: str) -> List[Tuple[int, str, str]]:
         flag = parts[0]
         if not flag.startswith("--"):
             # Stray token / value line; just record as a value with no flag.
-            out.append((i, "", flag))
+            out.append((line_num, "", flag))
             continue
         value = parts[1] if len(parts) > 1 else ""
         if not value:
-            # Look-ahead one line for the value.
-            if i < len(lines):
-                nxt = lines[i].strip()
-                if nxt and not nxt.startswith("#") and not nxt.startswith("--"):
-                    value = nxt
-                    i += 1
-        out.append((i - (1 if not parts[1:] else 0), flag, value))
+            # Look-ahead one line for the value without materializing the file.
+            try:
+                next_line_num, next_raw = next(numbered)
+            except StopIteration:
+                next_line_num, next_raw = 0, ""
+            nxt = next_raw.strip()
+            if nxt and not nxt.startswith("#") and not nxt.startswith("--"):
+                value = nxt
+            elif next_line_num:
+                pending = (next_line_num, next_raw)
+        out.append((line_num, flag, value))
     return out
+
+
+def extract_preset_flags(preset_path: str) -> List[Tuple[int, str, str]]:
+    """Return ``[(line_num, flag, value), ...]`` from a preset file.
+
+    Lines starting with `#` or empty are skipped. Values on the next line
+    after a flag (the launcher tolerates both) are paired with the flag.
+    """
+    if not os.path.isfile(preset_path):
+        return []
+    with open(preset_path, encoding="utf-8") as handle:
+        return _extract_preset_flags_from_lines(handle)
 
 
 def _classify_value(flag: str, value: str) -> str:
