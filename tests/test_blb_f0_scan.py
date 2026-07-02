@@ -1,8 +1,8 @@
 import json
+from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
-from pathlib import Path
 
 
 class BLBF0ScanTests(unittest.TestCase):
@@ -112,6 +112,36 @@ class BLBF0ScanTests(unittest.TestCase):
         self.assertEqual(summary[0]["best_delta_total_bits"], -2)
         self.assertEqual(summary[1]["candidate_count"], 1)
         self.assertEqual(summary[1]["best_delta_fusion_count"], -1)
+
+    def test_mask_reuses_sorted_allowed_indices_for_values(self):
+        from scripts.blb_f0_scan_feasible_domain import _build_mask
+
+        real_sorted = sorted
+        sort_calls = 0
+
+        def counting_sorted(*args, **kwargs):
+            nonlocal sort_calls
+            sort_calls += 1
+            return real_sorted(*args, **kwargs)
+
+        with mock.patch("builtins.sorted", side_effect=counting_sorted):
+            mask = _build_mask(
+                baseline_action=[1, 3, 1],
+                action_dims=[2, 6, 2],
+                records=self._records(),
+                per_slot_rows=[
+                    {
+                        "slot_global_index": 0,
+                        "optimizer_valid": True,
+                        "candidate_index": 0,
+                    }
+                ],
+                source="test",
+            )
+
+        self.assertEqual(sort_calls, len(mask["slots"]))
+        self.assertEqual(mask["slots"][0]["allowed_indices"], [0, 1])
+        self.assertEqual(mask["slots"][0]["allowed_values"], [16, 18])
 
     def test_scan_stops_when_baseline_is_invalid(self):
         from scripts.blb_f0_scan_feasible_domain import run_scan_core

@@ -628,6 +628,14 @@ independent of `Path.glob()`. A local 603-graph / 3000-sidecar benchmark
 preserved graph ordering while improving discovery from `0.026675s` /
 `1.95MB` to `0.014171s` / `0.41MB` (`1.88x`, `4.76x` lower peak memory).
 
+Progress 2026-07-02: `scripts/blb_f0_scan_feasible_domain.py` now sorts each
+slot's allowed action indices once while building the suggested action mask and
+reuses that list for both `allowed_indices` and `allowed_values`. This removes
+one duplicate filter/sort pass per slot in F0 feasible-domain scans. A local
+20k-slot synthetic mask benchmark preserved the full mask payload and reduced
+runtime from `9.584897s` to `8.428960s` (`1.14x`) over 80 builds, with traced
+peak memory unchanged at `13.36MiB`.
+
 Progress 2026-07-02: `scripts/blb_apply_precision_boost.py` no longer
 materializes an unused pre-boost snapshot of every fusion-map option before
 calling the deterministic precision-boost pass. A 300k-option synthetic

@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter, defaultdict
 import csv
-import heapq
 import hashlib
+import heapq
 import json
 import os
+from pathlib import Path
 import random
 import sys
-from collections import Counter, defaultdict
-from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence
 
 import numpy as np
@@ -275,9 +275,10 @@ def _build_mask(
                 allowed.add(int(row["candidate_index"]))
             if valid_rows:
                 reason = "single_slot_f0_valid"
+        allowed_indices = sorted(int(x) for x in allowed if 0 <= int(x) < int(dim))
         slots.append({
             "global_index": int(idx),
-            "allowed_indices": sorted(int(x) for x in allowed if 0 <= int(x) < int(dim)),
+            "allowed_indices": allowed_indices,
             "baseline_index": int(baseline_idx),
             "reason": reason,
             "kind": str(record.get("kind", "")),
@@ -285,7 +286,7 @@ def _build_mask(
             "field": str(record.get("field", "")),
             "allowed_values": [
                 _record_value(record, int(action_idx))
-                for action_idx in sorted(int(x) for x in allowed if 0 <= int(x) < int(dim))
+                for action_idx in allowed_indices
             ],
         })
     return {
