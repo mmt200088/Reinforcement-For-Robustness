@@ -270,6 +270,19 @@ def analyze_episodes(run_dir: str, anchor: int, window: int) -> tuple[Dict[str, 
 
 
 def _load_best_action(run_dir: str) -> Dict[str, Any] | None:
+    direct_candidates = [
+        os.path.join(run_dir, "blb_stage2_best_action_full.json"),
+        os.path.join(run_dir, "progress", "blb_stage2_best_action_full.json"),
+        os.path.join(run_dir, "blb_stage2", "progress", "blb_stage2_best_action_full.json"),
+    ]
+    for path in direct_candidates:
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
     for root, _dirs, files in os.walk(run_dir):
         if "blb_stage2_best_action_full.json" in files:
             try:

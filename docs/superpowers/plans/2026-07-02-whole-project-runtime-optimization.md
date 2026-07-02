@@ -294,6 +294,12 @@ one second pass for tail-aware summary statistics. This reduces ordered
 `episodes.jsonl` reads from three passes to two while preserving the legacy
 list-based summary/window output.
 
+Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now checks common
+`blb_stage2_best_action_full.json` locations directly before falling back to a
+recursive directory walk. A local synthetic run tree with 402 directories and
+2001 files preserved the same best-action payload and reduced common-path
+lookup from `0.0064s`/`0.03MB` to `0.0001s`/`0.01MB`.
+
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.

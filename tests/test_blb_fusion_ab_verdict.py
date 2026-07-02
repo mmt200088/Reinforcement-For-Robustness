@@ -175,6 +175,22 @@ class StreamingMainTest(unittest.TestCase):
 
         self.assertEqual(pass_count, 2)
 
+    def test_load_best_action_uses_common_path_without_os_walk(self):
+        with tempfile.TemporaryDirectory() as td:
+            run = pathlib.Path(td)
+            path = run / "blb_stage2" / "progress" / "blb_stage2_best_action_full.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"slots": [{"slot": 1}]}), encoding="utf-8")
+
+            with mock.patch.object(
+                abc_mod.os,
+                "walk",
+                side_effect=AssertionError("common best-action path should avoid recursive walk"),
+            ):
+                payload = abc_mod._load_best_action(str(run))
+
+        self.assertEqual(payload, {"slots": [{"slot": 1}]})
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
