@@ -54,6 +54,20 @@ def _source_region(source: str, start_marker: str, end_marker: str) -> str:
 
 
 class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
+    def test_block5_gelu_coeff_encode_reuses_input_as_noise_reference(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        block5_region = _source_region(
+            source,
+            "def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):",
+            "# tensor polynomial approximation",
+        )
+
+        self.assertIn("def _compute_polynomial(", block5_region)
+        self.assertIn("_sample_gaussian_for_point(x_ref, cfg5.gelu_coeff_encode)", block5_region)
+        self.assertIn("noisy_coeff.add_(coeff_value)", block5_region)
+        self.assertNotIn("coeff_broadcast", block5_region)
+        self.assertNotIn("torch.full_like(x_ref, coeff_value)", block5_region)
+
     def test_block5_gelu_power_builder_skips_unused_x0_tensor(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
         block5_region = _source_region(

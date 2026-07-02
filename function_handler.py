@@ -1999,7 +1999,7 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
       1. 计算 x 的幂 x², x³, x⁴（按 degree 决定哪些）：每个 power 之后加可选 rescale。
          共享 power 用于 piecewise 两段多项式，避免重复加噪。
       2. 对负段 (x ∈ [-2.7, 0)) 和正段 (x ∈ [0, 2.7]) 分别用各自 ``coeff[sign]``：
-         a) 每个系数 c_k 广播到 x 同形 [B, S, H] 后加 encode 噪声（per-slot 独立）；
+         a) 以 x 同形 [B, S, H] 采样每个系数的 encode 噪声，再加标量 c_k（per-slot 独立）；
          b) 常数项 c_0 直接累加（无乘法 → 无 rescale）；
          c) 非常数项 c_k * x^k：乘法后加可选 rescale（按 cfg5.gelu_coeff_mul_rescales[k-1]）。
       3. 用 mask 选段，与原 PolynomialGELU.forward 一致。
@@ -2050,10 +2050,8 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
         result = None
         for k in range(degree + 1):
             coeff_value = float(coeffs_for_piece[k])
-            coeff_broadcast = torch.full_like(x_ref, coeff_value)
-            noisy_coeff = coeff_broadcast + _sample_gaussian_for_point(
-                coeff_broadcast, cfg5.gelu_coeff_encode
-            )
+            noisy_coeff = _sample_gaussian_for_point(x_ref, cfg5.gelu_coeff_encode)
+            noisy_coeff.add_(coeff_value)
             if k == 0:
                 # 常数项：仅 encode，不乘 power（c_0 · 1 = c_0），无 rescale
                 term = noisy_coeff
