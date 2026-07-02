@@ -897,6 +897,21 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("mb = epoch_indices[start:end]", update_region)
         self.assertNotIn("mb = torch.from_numpy(indices[start:end]).long().to(device)", update_region)
 
+    def test_sequential_ppo_update_reuses_minibatch_gathers(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(policy_src, "sequential_ppo_update")
+
+        self.assertIn("mb_slot_masks = slot_masks.index_select(0, mb)", update_region)
+        self.assertIn("mb_levels = levels.index_select(0, mb)", update_region)
+        self.assertIn("mb_level_masks = (", update_region)
+        self.assertIn("mb_prior_scales = prior_scales.index_select(0, mb)", update_region)
+        self.assertIn("mb_slot_masks_float = mb_slot_masks.float()", update_region)
+        self.assertIn("mb_levels_float = mb_levels.float().clamp_min(1.0)", update_region)
+        self.assertEqual(update_region.count("slot_masks.index_select(0, mb)"), 1)
+        self.assertEqual(update_region.count("levels.index_select(0, mb)"), 1)
+        self.assertEqual(update_region.count("level_masks.index_select(0, mb)"), 1)
+        self.assertEqual(update_region.count("prior_scales.index_select(0, mb)"), 1)
+
     def test_legacy_rollout_buffer_packs_numpy_arrays_in_single_pass(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         to_tensors_region = _method_region_from_source(policy_src, "to_tensors")

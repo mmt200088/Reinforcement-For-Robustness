@@ -1210,15 +1210,21 @@ def sequential_ppo_update(
         for start in range(0, n, mb_size):
             end = min(n, start + mb_size)
             mb = epoch_indices[start:end]
+            mb_states = states.index_select(0, mb)
+            mb_actions = actions.index_select(0, mb)
+            mb_slot_masks = slot_masks.index_select(0, mb)
+            mb_levels = levels.index_select(0, mb)
+            mb_level_masks = (
+                None if level_masks is None else level_masks.index_select(0, mb)
+            )
+            mb_prior_scales = prior_scales.index_select(0, mb)
             eval_out = policy.evaluate_action(
-                states.index_select(0, mb),
-                actions.index_select(0, mb),
-                slot_masks.index_select(0, mb),
-                levels.index_select(0, mb),
-                action_level_mask=(
-                    None if level_masks is None else level_masks.index_select(0, mb)
-                ),
-                baseline_prior_scale=prior_scales.index_select(0, mb),
+                mb_states,
+                mb_actions,
+                mb_slot_masks,
+                mb_levels,
+                action_level_mask=mb_level_masks,
+                baseline_prior_scale=mb_prior_scales,
                 return_per_slot_entropy=True,
             )
             new_log_probs, entropy, value, entropy_per_slot = eval_out
@@ -1259,15 +1265,17 @@ def sequential_ppo_update(
             entropy_mean = entropy.mean()
             entropy_recovery_delta = torch.zeros((), device=device)
             if bool(getattr(cfg, "per_slot_entropy_recovery", True)):
-                mb_slot_masks = slot_masks.index_select(0, mb).float()
-                mb_levels = levels.index_select(0, mb).float().clamp_min(1.0)
+                mb_slot_masks_float = mb_slot_masks.float()
+                mb_levels_float = mb_levels.float().clamp_min(1.0)
                 entropy_floor = (
                     float(getattr(cfg, "per_slot_entropy_floor_frac", 0.22))
-                    * torch.log(mb_levels)
-                    * mb_slot_masks
+                    * torch.log(mb_levels_float)
+                    * mb_slot_masks_float
                 )
-                entropy_deficit = torch.relu(entropy_floor - entropy_per_slot) * mb_slot_masks
-                denom = torch.clamp(mb_slot_masks.sum(), min=1.0)
+                entropy_deficit = (
+                    torch.relu(entropy_floor - entropy_per_slot) * mb_slot_masks_float
+                )
+                denom = torch.clamp(mb_slot_masks_float.sum(), min=1.0)
                 entropy_recovery_delta = entropy_deficit.sum() / denom
             loss = (
                 policy_loss
