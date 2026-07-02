@@ -117,11 +117,10 @@ def _iter_records(registry_path: str) -> Iterable[Dict[str, Any]]:
         return
     with open(registry_path, "r", encoding="utf-8") as f:
         for line in f:
-            t = line.strip()
-            if not t:
+            if not line or line.isspace():
                 continue
             try:
-                row = json.loads(t)
+                row = json.loads(line)
             except Exception:
                 pass
             else:

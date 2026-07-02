@@ -728,6 +728,12 @@ A local 100k-row registry with 1000 unique run IDs preserved the query result
 and reduced peak memory from `98.00MB` to `1.08MB`, with wall time improving
 from `0.7549s` to `0.6560s`.
 
+Progress 2026-07-02: `_iter_records()` in `tools/experiments_log.py` now skips
+blank registry JSONL rows with `isspace()` and passes nonblank rows directly to
+`json.loads()` instead of allocating stripped line copies. A local 100k-row
+registry benchmark preserved row count and reduced raw registry iteration from
+`0.688479s` to `0.666293s` (`1.03x`).
+
 Progress 2026-07-02: `tools/experiments_log.py` now computes the
 best-by-dataset table for `experiments/index.md` with one streaming max pass
 over latest records, instead of building per-dataset buckets and sorting each

@@ -1,4 +1,5 @@
 import json
+import builtins
 import tempfile
 import unittest
 from collections.abc import Mapping
@@ -32,6 +33,34 @@ class LazyMaterializationRecord(Mapping):
 
 
 class ExperimentsLogTest(unittest.TestCase):
+    def test_iter_records_skips_blank_lines_without_strip_copy(self):
+        class NoStripLine(str):
+            def strip(self, *_args, **_kwargs):
+                raise AssertionError("registry reader should not allocate strip() copies")
+
+        class FakeHandle:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return iter([
+                    NoStripLine(json.dumps({"run_id": "run-a"}) + "\n"),
+                    NoStripLine("   \n"),
+                    NoStripLine(json.dumps({"run_id": "run-b"}) + "\n"),
+                ])
+
+        def fake_open(*_args, **_kwargs):
+            return FakeHandle()
+
+        with mock.patch.object(experiments_log.os.path, "isfile", return_value=True):
+            with mock.patch.object(builtins, "open", fake_open):
+                rows = list(experiments_log._iter_records("registry.jsonl"))
+
+        self.assertEqual([row["run_id"] for row in rows], ["run-a", "run-b"])
+
     def test_latest_per_run_id_does_not_materialize_overwritten_records(self):
         rows = experiments_log._latest_per_run_id([
             LazyMaterializationRecord(
