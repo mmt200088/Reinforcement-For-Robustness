@@ -38,6 +38,21 @@ def _load_manifest_module():
 
 
 class BlbMakeRunManifestTest(unittest.TestCase):
+    def test_run_git_bounds_subprocess_with_timeout(self):
+        manifest = _load_manifest_module()
+        calls = []
+
+        def fake_check_output(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return b"ok\n"
+
+        with mock.patch.object(manifest.subprocess, "check_output", fake_check_output):
+            result = manifest._run_git(["status", "--short"])
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1].get("timeout"), 5)
+
     def test_canonical_rescale_optimizer_hash_streams_file_contents(self):
         manifest = _load_manifest_module()
         original_read_bytes = Path.read_bytes

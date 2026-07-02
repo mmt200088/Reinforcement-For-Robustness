@@ -569,6 +569,12 @@ heap-ordered traversal for generic directory hashes, replacing
 comparison preserved the full-tree hash, kept cache-directory skip semantics,
 and reduced traced peak memory from `2.21MB` to `1.10MB` (`2.02x`).
 
+Progress 2026-07-02: `scripts/blb_make_run_manifest.py` now bounds all
+best-effort git subprocess calls in `_run_git()` with a 5-second timeout. This
+keeps Trust-0 manifest generation from stalling a server command indefinitely
+if git status/diff/upstream resolution hangs, while preserving the existing
+`None` fallback on failure.
+
 Progress 2026-07-02: `scripts/blb_phase0_preflight.py` now scans source/config
 files line by line when building `blb_entrypoints_grep.txt` instead of
 materializing each file with `read_text().splitlines()`. A local 100k-line

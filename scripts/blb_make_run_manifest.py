@@ -21,7 +21,7 @@ from blb_stage2_rl.action_space import action_dims_for_config, per_layer_field_o
 
 def _run_git(args: Sequence[str]) -> str | None:
     try:
-        out = subprocess.check_output(["git", *args], cwd=REPO_ROOT, stderr=subprocess.STDOUT)
+        out = subprocess.check_output(["git", *args], cwd=REPO_ROOT, stderr=subprocess.STDOUT, timeout=5)
     except Exception:
         return None
     return out.decode("utf-8", errors="replace").strip()
