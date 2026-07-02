@@ -52,11 +52,9 @@ def _dir_sha256(path: Path) -> str | None:
         return None
     h = hashlib.sha256()
     skip_dirs = {".git", "__pycache__", ".pytest_cache", ".mypy_cache"}
-    files: Iterable[Path] = (
-        p for p in sorted(path.rglob("*"))
-        if p.is_file() and not any(part in skip_dirs for part in p.parts)
-    )
-    for file_path in files:
+    for file_path in _iter_sorted_tree_paths([path]):
+        if not file_path.is_file() or any(part in skip_dirs for part in file_path.parts):
+            continue
         rel = file_path.relative_to(path).as_posix()
         h.update(rel.encode("utf-8"))
         file_hash = _file_sha256(file_path)

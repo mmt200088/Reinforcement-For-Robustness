@@ -115,6 +115,56 @@ class BlbMakeRunManifestTest(unittest.TestCase):
 
         self.assertEqual(digest, expected.hexdigest())
 
+    def test_dir_sha256_streams_tree_without_global_sort(self):
+        manifest = _load_manifest_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a").mkdir()
+            (root / "a" / "one.py").write_text("one\n", encoding="utf-8")
+            (root / "b").mkdir()
+            (root / "b" / "two.json").write_text('{"two": 2}\n', encoding="utf-8")
+
+            with mock.patch(
+                "builtins.sorted",
+                side_effect=AssertionError("directory hash should stream tree traversal"),
+            ):
+                digest = manifest._dir_sha256(root)
+
+        self.assertRegex(digest or "", r"^[0-9a-f]{64}$")
+
+    def test_dir_sha256_preserves_global_path_order_and_skip_dirs(self):
+        manifest = _load_manifest_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for rel, text in {
+                "z/tail.py": "tail\n",
+                "a/head.py": "head\n",
+                ".git/ignored.py": "ignored\n",
+                "__pycache__/ignored.py": "ignored\n",
+                "m/mid.json": '{"mid": 1}\n',
+            }.items():
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+
+            expected = hashlib.sha256()
+            for file_path in sorted(
+                [
+                    root / "a" / "head.py",
+                    root / "m" / "mid.json",
+                    root / "z" / "tail.py",
+                ]
+            ):
+                expected.update(file_path.relative_to(root).as_posix().encode("utf-8"))
+                file_hash = manifest._file_sha256(file_path)
+                expected.update(str(file_hash).encode("ascii"))
+
+            digest = manifest._dir_sha256(root)
+
+        self.assertEqual(digest, expected.hexdigest())
+
 
 if __name__ == "__main__":
     unittest.main()

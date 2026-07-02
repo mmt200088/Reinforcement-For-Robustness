@@ -491,6 +491,12 @@ instead of collecting all `.py`/`.json` paths before hashing. A local 2k-file
 Rescale tree comparison produced the same canonical hash and reduced traced
 peak memory from `2.05MB` to `1.08MB` (`1.90x`).
 
+Progress 2026-07-02: `scripts/blb_make_run_manifest.py` now uses the same
+heap-ordered traversal for generic directory hashes, replacing
+`sorted(path.rglob("*"))` in `_dir_sha256()`. A local 2k-file directory
+comparison preserved the full-tree hash, kept cache-directory skip semantics,
+and reduced traced peak memory from `2.21MB` to `1.10MB` (`2.02x`).
+
 - [ ] **Step 3: Commit/push source and evidence**
 
 Never leave canonical source changes only on the server.
