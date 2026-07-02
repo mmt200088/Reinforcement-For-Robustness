@@ -103,6 +103,14 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `_load_action_configs`, `_json_int_list`, `_group_key`, or `_unique_configs`
   only as compatibility wrappers; do not reintroduce recursive loaders or
   per-script hash/key implementations when adding a new fusion-count experiment.
+- Shared CLI integer parser rule, added 2026-07-03: small scripts that parse
+  command-line integer vectors must use `cli_parse_utils.py`. Use
+  `parse_json_int_list()` for JSON-list flags with defaults,
+  `parse_exact_json_int_list()` for exact-length JSON vectors,
+  `parse_optional_int_list()` / `parse_int_list_text()` for comma/semicolon
+  lists, and `parse_broadcast_int_vector()` for one-value-or-per-layer degree
+  flags. Keep script-local `_parse_int_list`, `_json_int_list`, or
+  `_parse_degree_vector` only as compatibility wrappers around this seam.
 - Shared device-list parsing rule, added 2026-07-03: Stage-1 and Stage-2 GPU
   device flags must use `device_utils.parse_device_ids()` for int/list/tuple,
   comma-separated string, and Python Fire tuple-string forms. `stage1_rl` and

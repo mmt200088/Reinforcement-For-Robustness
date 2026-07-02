@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from cli_parse_utils import parse_optional_int_list  # noqa: E402
 from blb_stage2_rl.candidate_store import (  # noqa: E402
     action_hash,
     build_candidate_identity_context,
@@ -50,9 +51,7 @@ def _file_sha256(path: Path) -> str | None:
 
 
 def _parse_int_list(raw: str | None) -> List[int] | None:
-    if raw is None or str(raw).strip() == "":
-        return None
-    return [int(x.strip()) for x in str(raw).replace(";", ",").split(",") if x.strip()]
+    return parse_optional_int_list(raw)
 
 
 def _load_stage1_vectors(

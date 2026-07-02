@@ -15,6 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from cli_parse_utils import parse_broadcast_int_vector  # noqa: E402
+
 
 SEMANTIC_TYPE_BY_KIND = {
     "F": "fresh",
@@ -153,22 +155,12 @@ ROTATION_ROWS = [
 
 
 def _parse_degree_vector(raw: str | Sequence[int] | None, *, num_layers: int, default: int) -> List[int]:
-    if raw is None or raw == "":
-        return [int(default)] * int(num_layers)
-    if isinstance(raw, str):
-        text = raw.strip()
-        if text.startswith("["):
-            values = json.loads(text)
-        else:
-            values = [item.strip() for item in text.replace(";", ",").split(",") if item.strip()]
-    else:
-        values = list(raw)
-    out = [int(v) for v in values]
-    if len(out) == 1:
-        return out * int(num_layers)
-    if len(out) != int(num_layers):
-        raise ValueError(f"degree vector length {len(out)} must be 1 or num_layers={num_layers}")
-    return out
+    return parse_broadcast_int_vector(
+        raw,
+        num_layers=int(num_layers),
+        default=int(default),
+        name="degree vector",
+    )
 
 
 def _scale_semantics(record: Dict[str, Any]) -> str:

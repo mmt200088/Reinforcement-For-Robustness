@@ -17,6 +17,12 @@ import re
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from cli_parse_utils import parse_int_list_text, split_int_tokens  # noqa: E402
+
 ROLLOUT_RE = re.compile(
     r"\[stage1-rollout\]\s+"
     r"window=(?P<window>\d+)\s+"
@@ -51,14 +57,11 @@ COMPONENT_KEYS = ("collect", "replay", "detail", "ppo_update", "other")
 
 
 def _split_csv(text: str) -> list[str]:
-    return [item.strip() for item in str(text or "").split(",") if item.strip()]
+    return split_int_tokens(text, allow_semicolon=False)
 
 
 def _parse_int_list(text: str) -> list[int]:
-    out: list[int] = []
-    for item in _split_csv(text):
-        out.append(int(item))
-    return out
+    return parse_int_list_text(text, allow_semicolon=False)
 
 
 def _safe_div(numer: float, denom: float) -> float | None:

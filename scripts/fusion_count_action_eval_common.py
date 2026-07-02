@@ -5,20 +5,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, ValuesView
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-def parse_json_int_list(raw: str | None, *, default: Sequence[int], name: str) -> List[int]:
-    text = str(raw or "").strip()
-    if not text:
-        return [int(v) for v in default]
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"{name} must be a JSON list: {exc}") from exc
-    if not isinstance(payload, list):
-        raise SystemExit(f"{name} must be a JSON list")
-    return [int(v) for v in payload]
+from cli_parse_utils import parse_json_int_list  # noqa: E402
 
 
 def stable_json_key(payload: Any) -> str:

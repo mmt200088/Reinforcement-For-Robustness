@@ -22,14 +22,12 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from cli_parse_utils import parse_exact_json_int_list
 from blb_stage2_rl.fusion_fixed_action import build_fusion_fixed_config
 
 
 def _parse_int_list(raw: str, *, name: str, num_layers: int) -> List[int]:
-    value = json.loads(raw)
-    if not isinstance(value, list) or len(value) != int(num_layers):
-        raise ValueError(f"{name} must be a JSON list with {num_layers} entries")
-    return [int(x) for x in value]
+    return parse_exact_json_int_list(raw, name=name, length=int(num_layers))
 
 
 def _load_action_vec(path: Path) -> List[int]:

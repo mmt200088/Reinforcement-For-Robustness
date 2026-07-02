@@ -16,9 +16,15 @@ import html
 import json
 import os
 from pathlib import Path
+import sys
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from cli_parse_utils import parse_json_int_list  # noqa: E402
+
 ACTION_SPACE_PATH = REPO_ROOT / "blb_stage2_rl" / "action_space.py"
 DEFAULT_MAP_DIR = REPO_ROOT / "blb_stage2_rl" / "fusion_maps" / "mrpc"
 
@@ -34,16 +40,7 @@ DEFAULT_SOFTMAX = [6] * 12
 
 
 def _json_list(raw: str, *, default: Sequence[int], name: str) -> List[int]:
-    text = str(raw or "").strip()
-    if not text:
-        return [int(v) for v in default]
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"{name} must be a JSON list: {exc}") from exc
-    if not isinstance(payload, list):
-        raise SystemExit(f"{name} must be a JSON list")
-    return [int(v) for v in payload]
+    return parse_json_int_list(raw, default=default, name=name)
 
 
 def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
