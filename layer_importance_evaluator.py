@@ -1689,6 +1689,26 @@ def _stage1_prob_tensors_to_nested_lists(values):
     return stacked.detach().cpu().numpy().tolist()
 
 
+_stage1_gelu_mask_template_cache: Dict[Tuple[str, Tuple[bool, ...]], Tuple[np.ndarray, torch.Tensor]] = {}
+
+
+def _get_stage1_gelu_mask_templates(device):
+    """Static Stage-1 GELU action mask as reusable numpy + device tensors."""
+    device = torch.device(device)
+    mask_key = tuple(bool(x) for x in STAGE1_GELU_ACTION_MASK.tolist())
+    key = (str(device), mask_key)
+    cached = _stage1_gelu_mask_template_cache.get(key)
+    if cached is not None:
+        return cached
+
+    mask_np = np.asarray(STAGE1_GELU_ACTION_MASK, dtype=bool).copy()
+    mask_t = torch.as_tensor(mask_np, dtype=torch.bool, device=device)
+    mask_np.setflags(write=False)
+    cached = (mask_np, mask_t)
+    _stage1_gelu_mask_template_cache[key] = cached
+    return cached
+
+
 def _pack_recurrent_rollout_tensor_arrays(episodes):
     if not episodes:
         raise RuntimeError("RecurrentRolloutBuffer is empty")
@@ -5720,6 +5740,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             dtype=torch.bool,
             device=device,
         )
+        gelu_mask_np, gelu_mask_t = _get_stage1_gelu_mask_templates(device)
+        seq_gelu_masks.copy_(gelu_mask_t.view(1, 1, -1).expand_as(seq_gelu_masks))
 
         rollout = EpisodeRollout(
             cont_features=[], layer_indices=[], prev_g_actions=[],
@@ -5746,15 +5768,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             cont_feat_t = torch.as_tensor(
                 cont_feat_record, dtype=torch.float32, device=device
             )
-            gelu_mask_np = env.get_gelu_action_mask(layer_idx)
-            gelu_mask_t = torch.as_tensor(
-                gelu_mask_np, dtype=torch.bool, device=device
-            )
 
             seq_cont_feats[0, step].copy_(cont_feat_t)
             seq_layer_indices[0, step] = int(layer_idx)
             seq_prev_g[0, step] = int(prev_g_idx)
-            seq_gelu_masks[0, step].copy_(gelu_mask_t)
 
             full_cont = seq_cont_feats[:, : step + 1, :]
             full_layer = seq_layer_indices[:, : step + 1]
@@ -6534,6 +6551,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         dtype=torch.bool,
                         device=self.device,
                     )
+                    gelu_mask_np, gelu_mask_t = _get_stage1_gelu_mask_templates(self.device)
+                    seq_gelu_masks.copy_(gelu_mask_t.view(1, 1, -1).expand_as(seq_gelu_masks))
 
                     episode_reward = 0
                     step_infos = []
@@ -6555,16 +6574,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                             cont_feat_record, dtype=torch.float32, device=self.device
                         )
 
-                        gelu_mask_np = env.get_gelu_action_mask(layer_idx)
-                        gelu_mask_t = torch.as_tensor(
-                            gelu_mask_np, dtype=torch.bool, device=self.device
-                        )
-
                         # GTrXL：写入当前 token，前缀 slice 作为因果输入
                         seq_cont_feats[0, step].copy_(cont_feat_t)
                         seq_layer_indices[0, step] = int(layer_idx)
                         seq_prev_g[0, step] = int(prev_g_idx)
-                        seq_gelu_masks[0, step].copy_(gelu_mask_t)
 
                         # 切出当前完整前缀序列 (1, step+1, ...)
                         full_cont = seq_cont_feats[:, : step + 1, :]

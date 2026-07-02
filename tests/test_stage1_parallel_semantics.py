@@ -87,7 +87,6 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("env.step(gelu_action_idx)", worker_region)
         self.assertIn("rollout.actions_g.append(gelu_action_idx)", worker_region)
         self.assertIn("cont_feat_record, dtype=torch.float32, device=device", worker_region)
-        self.assertIn("gelu_mask_np, dtype=torch.bool, device=device", worker_region)
         self.assertIn("seq_prev_g[0, step] = int(prev_g_idx)", worker_region)
 
         self.assertIn("prev_g_idx = SOS_TOKEN_GELU", source)
@@ -99,6 +98,26 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertNotIn("GELU_MAP[int(gelu_action.item())]", source)
         self.assertNotIn("prev_g=prev_g.squeeze().item()", source)
         self.assertNotIn("action_g=gelu_action.item()", source)
+
+    def test_stage1_rollout_reuses_static_gelu_mask_template_per_device(self):
+        source = _source(LAYER_EVALUATOR)
+        worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
+        marker = "if not _handled_via_parallel:\n                    # GTrXL Rollout"
+        fallback_region = source.split(marker, 1)[1].split("buffer.end_episode()", 1)[0]
+
+        self.assertIn("def _get_stage1_gelu_mask_templates(", source)
+        self.assertIn("_stage1_gelu_mask_template_cache", source)
+        for region in (worker_region, fallback_region):
+            self.assertIn(
+                "gelu_mask_np, gelu_mask_t = _get_stage1_gelu_mask_templates(",
+                region,
+            )
+            self.assertIn(
+                "seq_gelu_masks.copy_(gelu_mask_t.view(1, 1, -1).expand_as(seq_gelu_masks))",
+                region,
+            )
+            self.assertNotIn("env.get_gelu_action_mask(layer_idx)", region)
+            self.assertNotIn("torch.as_tensor(\n                gelu_mask_np, dtype=torch.bool", region)
 
     def test_stage1_rollout_reuses_preallocated_sequence_tensors(self):
         source = _source(LAYER_EVALUATOR)
