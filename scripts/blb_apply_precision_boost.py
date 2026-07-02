@@ -76,8 +76,6 @@ def main() -> int:
             continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         options = payload["options"]
-        before = [(o["option_id"], o["fusion_count"], o.get("boosted", False),
-                   o["total_bits"], o["total_variance"]) for o in options]
 
         ctx = fusion_enum.prepare_block_type_context(
             graph_key=graph_key, block_idx=block_idx, gelu_degree=gelu, attn_degree=attn,
