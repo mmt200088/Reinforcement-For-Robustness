@@ -17,6 +17,22 @@ from typing import Any, Dict, Optional, TextIO
 
 import numpy as np
 
+_TORCH_TENSOR_TYPE: Any = None
+_TORCH_TENSOR_TYPE_RESOLVED = False
+
+
+def _torch_tensor_type() -> Any:
+    global _TORCH_TENSOR_TYPE, _TORCH_TENSOR_TYPE_RESOLVED
+    if not _TORCH_TENSOR_TYPE_RESOLVED:
+        try:
+            import torch
+
+            _TORCH_TENSOR_TYPE = torch.Tensor
+        except Exception:
+            _TORCH_TENSOR_TYPE = ()
+        _TORCH_TENSOR_TYPE_RESOLVED = True
+    return _TORCH_TENSOR_TYPE
+
 
 def to_jsonable(value: Any) -> Any:
     """Convert common training values into JSON-serializable objects."""
@@ -28,13 +44,11 @@ def to_jsonable(value: Any) -> Any:
         return to_jsonable(value.tolist())
     if isinstance(value, np.generic):
         return value.item()
-    try:
-        import torch
-
-        if isinstance(value, torch.Tensor):
-            return to_jsonable(value.detach().cpu().tolist())
-    except Exception:
-        pass
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    tensor_type = _torch_tensor_type()
+    if tensor_type and isinstance(value, tensor_type):
+        return to_jsonable(value.detach().cpu().tolist())
     return value
 
 

@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -51,6 +52,32 @@ class RLDataPointWriterTest(unittest.TestCase):
     def test_to_jsonable_handles_nested_numpy_values(self):
         value = {"a": np.int64(3), "b": [np.float32(1.5), np.array([2, 4])]}
         self.assertEqual(to_jsonable(value), {"a": 3, "b": [1.5, [2, 4]]})
+
+    def test_to_jsonable_does_not_import_torch_for_json_native_scalars(self):
+        import builtins
+
+        value = {
+            "episode": 1,
+            "done": False,
+            "reward": 1.25,
+            "note": "ok",
+            "missing": None,
+            "nested": [2, True, "x"],
+        }
+        torch_imports = 0
+        original_import = builtins.__import__
+
+        def counting_import(name, *args, **kwargs):
+            nonlocal torch_imports
+            if name == "torch":
+                torch_imports += 1
+                raise ModuleNotFoundError("torch intentionally hidden")
+            return original_import(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=counting_import):
+            self.assertEqual(to_jsonable(value), value)
+
+        self.assertEqual(torch_imports, 0)
 
     def test_make_unique_run_id_preserves_base_and_separates_invocations(self):
         first = make_unique_run_id(
