@@ -9,7 +9,12 @@ from unittest import mock
 
 import numpy as np
 
-from json_utils import json_default, to_jsonable as shared_to_jsonable
+from json_utils import (
+    json_default,
+    stable_json_hash,
+    stable_json_key,
+    to_jsonable as shared_to_jsonable,
+)
 from rl_data_points import RLDataPointWriter, make_unique_run_id, to_jsonable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -95,6 +100,12 @@ class RLDataPointWriterTest(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             json.dumps({"bad": object()}, default=json_default)
+
+    def test_stable_json_key_and_hash_normalize_common_values(self):
+        a = {"b": np.int64(2), "a": Path("x")}
+        b = {"a": "x", "b": 2}
+        self.assertEqual(stable_json_key(a), stable_json_key(b))
+        self.assertEqual(stable_json_hash(a), stable_json_hash(b))
 
     def test_to_jsonable_does_not_import_torch_for_json_native_scalars(self):
         import builtins

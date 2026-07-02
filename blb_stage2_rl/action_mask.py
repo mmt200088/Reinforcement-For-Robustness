@@ -26,13 +26,14 @@ Two related-but-distinct mask abstractions live here:
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set, Tuple
 
 import numpy as np
+
+from json_utils import stable_json_hash
 
 from .action_space import (
     K_LEVELS,
@@ -62,15 +63,11 @@ def _baseline_only(dim: int, baseline_idx: int) -> np.ndarray:
     return mask
 
 
-def _stable_mask_payload(mask: Sequence[Sequence[bool]]) -> str:
-    rows = [[bool(x) for x in row] for row in mask]
-    return json.dumps(rows, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-
-
 def action_mask_hash(mask: Sequence[Sequence[bool]] | None) -> str:
     if mask is None:
         return ""
-    return hashlib.sha256(_stable_mask_payload(mask).encode("utf-8")).hexdigest()
+    rows = [[bool(x) for x in row] for row in mask]
+    return stable_json_hash(rows)
 
 
 def build_baseline_action_bias(

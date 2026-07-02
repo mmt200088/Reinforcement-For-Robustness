@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -16,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_broadcast_int_vector  # noqa: E402
+from json_utils import stable_json_hash  # noqa: E402
 
 
 SEMANTIC_TYPE_BY_KIND = {
@@ -451,9 +451,7 @@ def build_registry_payload(
     for _block_idx, _field, _kind in per_layer_offsets:
         key = f"block{int(_block_idx)}"
         block_counts[key] = block_counts.get(key, 0) + 1
-    registry_hash = hashlib.sha256(
-        json.dumps(records, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
+    registry_hash = stable_json_hash(records)
     return {
         "schema": "blb_action_registry_export_v1",
         "action_space_version": "current-code-v1",

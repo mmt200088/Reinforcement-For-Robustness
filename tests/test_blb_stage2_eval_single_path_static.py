@@ -116,6 +116,24 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertIn("from json_utils import json_default", softmax_sweep)
         self.assertNotIn("def json_default", softmax_sweep)
 
+    def test_stable_json_hash_callers_use_shared_helper(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        candidate_store = (repo / "blb_stage2_rl" / "candidate_store.py").read_text(encoding="utf-8")
+        action_mask = (repo / "blb_stage2_rl" / "action_mask.py").read_text(encoding="utf-8")
+        fusion_common = (repo / "scripts" / "fusion_count_action_eval_common.py").read_text(encoding="utf-8")
+        f0_scan = (repo / "scripts" / "blb_f0_scan_feasible_domain.py").read_text(encoding="utf-8")
+        registry = (repo / "scripts" / "blb_export_action_registry.py").read_text(encoding="utf-8")
+
+        self.assertIn("from json_utils import stable_json_hash", candidate_store)
+        self.assertIn("from json_utils import stable_json_hash", action_mask)
+        self.assertIn("from json_utils import stable_json_hash, stable_json_key", fusion_common)
+        self.assertIn("from json_utils import stable_json_hash", f0_scan)
+        self.assertIn("from json_utils import stable_json_hash", registry)
+        self.assertNotIn("def _stable_json", candidate_store)
+        self.assertNotIn("def _stable_mask_payload", action_mask)
+        self.assertNotIn("def stable_json_hash", fusion_common)
+        self.assertNotIn("def _sha256_json", f0_scan)
+
 
 if __name__ == "__main__":
     unittest.main()

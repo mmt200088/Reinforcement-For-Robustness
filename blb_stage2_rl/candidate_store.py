@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from json_utils import stable_json_hash
+
 FIDELITY_ORDER = {
     "F0": 0,
     "F1": 1,
@@ -65,12 +67,8 @@ def raw_action_hash(action_indices: Any) -> str:
     return action_hash(action_indices)
 
 
-def _stable_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-
-
 def sha256_json(value: Any) -> str:
-    return hashlib.sha256(_stable_json(value).encode("utf-8")).hexdigest()
+    return stable_json_hash(value)
 
 
 def _records_from_registry(registry_or_description: Any) -> List[Mapping[str, Any]]:

@@ -1,7 +1,6 @@
 """Shared helpers for fusion-count fixed-action evaluation scripts."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,14 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_json_int_list  # noqa: E402
-
-
-def stable_json_key(payload: Any) -> str:
-    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-
-
-def stable_json_hash(payload: Any) -> str:
-    return hashlib.sha256(stable_json_key(payload).encode("utf-8")).hexdigest()
+from json_utils import stable_json_hash, stable_json_key  # noqa: E402
 
 
 def iter_action_config_paths(action_dir: Path) -> Iterable[Path]:

@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_optional_int_list  # noqa: E402
+from json_utils import stable_json_hash  # noqa: E402
 from blb_stage2_rl.candidate_store import (  # noqa: E402
     action_hash,
     build_candidate_identity_context,
@@ -30,14 +31,6 @@ from blb_stage2_rl.candidate_store import (  # noqa: E402
 )
 
 _DEFAULT_K_LEVELS_LEGACY_COMPAT = (8, 9, 11, 13, 10, 12)
-
-
-def _stable_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-
-
-def _sha256_json(value: Any) -> str:
-    return hashlib.sha256(_stable_json(value).encode("utf-8")).hexdigest()
 
 
 def _file_sha256(path: Path) -> str | None:
@@ -133,7 +126,7 @@ def _normalize_eval(raw: Mapping[str, Any], action: Sequence[int], source: str) 
         int(x) for x in raw.get("effective_action_indices", action)
     ]
     record["candidate_key_basis"] = str(raw.get("candidate_key_basis") or "effective_action_hash + identity_context")
-    record["candidate_key"] = str(raw.get("candidate_key") or _sha256_json({
+    record["candidate_key"] = str(raw.get("candidate_key") or stable_json_hash({
         "effective_action_hash": record["effective_action_hash"],
         "candidate_key_basis": record["candidate_key_basis"],
         "source": source,
@@ -646,7 +639,7 @@ def run_scan_core(
         "max_sfs_hash": metadata.get("max_sfs_hash", ""),
         "stage1_config_content_hash": metadata.get("stage1_config_content_hash", ""),
     })
-    mask_hash = _sha256_json(mask)
+    mask_hash = stable_json_hash(mask)
     mask["mask_hash"] = mask_hash
     _write_json(out / "suggested_action_mask.json", mask)
     mask_md = [

@@ -89,12 +89,14 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   payloads, RL data-point writers, diagnostics, and experiment artifacts must
   use `json_utils.to_jsonable()` for numpy scalars/arrays, dataclasses, paths,
   and optional torch tensors. For `json.dump(..., default=...)` / `json.dumps`
-  adapters, use `json_utils.json_default()`. Do not add local `_json_ready`,
-  `_jsonable`, `_json_safe`, `_json_default`, or `json_default` helpers in core
-  RL/Paean/final-eval code or standalone experiment scripts; keep legacy-named
-  helpers only as thin wrappers around `json_utils` when compatibility requires
-  them. Extend `json_utils.py` and its tests when a new serializable type is
-  needed.
+  adapters, use `json_utils.json_default()`. For deterministic JSON identity
+  strings or SHA256 hashes, use `json_utils.stable_json_key()` and
+  `json_utils.stable_json_hash()`. Do not add local `_json_ready`, `_jsonable`,
+  `_json_safe`, `_json_default`, `json_default`, `_stable_json`, or
+  `_sha256_json` helpers in core RL/Paean/final-eval code or standalone
+  experiment scripts; keep legacy-named helpers only as thin wrappers around
+  `json_utils` when compatibility requires them. Extend `json_utils.py` and its
+  tests when a new serializable type is needed.
 - Fusion-count fixed-action experiment helper rule, added 2026-07-03:
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and

@@ -1,6 +1,8 @@
 """Shared JSON normalization helpers for reports and RL artifacts."""
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -120,3 +122,16 @@ def json_default(value: Any) -> Any:
     if converted is value:
         raise TypeError(f"Object of type {type(value)!r} is not JSON serializable")
     return converted
+
+
+def stable_json_key(value: Any) -> str:
+    return json.dumps(
+        to_jsonable(value, preserve_native=True),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def stable_json_hash(value: Any) -> str:
+    return hashlib.sha256(stable_json_key(value).encode("utf-8")).hexdigest()
