@@ -797,6 +797,13 @@ rolling-window update instead of buffering the full row list before
 and reduced write peak memory from `141.65MB` to `0.25MB` while slightly
 improving wall time from `2.460s` to `2.335s`.
 
+Progress 2026-07-02: `scripts/stage2_first10k_monitor.py` now parses sampled
+`nvidia-smi` CSV logs with `csv.reader` and header indices instead of
+`csv.DictReader`, avoiding one per-row dictionary allocation in final monitor
+summaries. A local 120k-row / 4-GPU CSV benchmark preserved the GPU summary and
+reduced `_gpu_stats()` from `0.562882s` / `4.22MB` to `0.333455s` / `4.24MB`
+(`1.69x`).
+
 Progress 2026-07-02: `scripts/verify_stage2_persistent_outputs.py` now counts
 Stage-2 detail batch files without materializing and sorting the full file list.
 The verifier only needs the count for its gate output, so long runs with many

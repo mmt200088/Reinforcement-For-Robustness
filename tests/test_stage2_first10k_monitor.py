@@ -104,6 +104,30 @@ class Stage2First10kMonitorTest(unittest.TestCase):
         self.assertEqual(sorted(summary["by_gpu"]), ["0", "1", "2", "3"])
         self.assertLess(peak, 6 * 1024 * 1024)
 
+    def test_gpu_stats_avoids_per_row_dict_reader(self):
+        monitor = _load_monitor_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "nvidia.csv"
+            path.write_text(
+                "gpu_idx,util_pct,mem_used_mib\n"
+                "0,10,100\n"
+                "0,30,120\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                monitor.csv,
+                "DictReader",
+                side_effect=AssertionError("_gpu_stats should avoid per-row CSV dicts"),
+            ):
+                summary = monitor._gpu_stats(path)
+
+        self.assertEqual(summary["samples"], 2)
+        self.assertEqual(summary["by_gpu"]["0"]["max_util"], 30.0)
+        self.assertEqual(summary["by_gpu"]["0"]["p50_util"], 20.0)
+        self.assertEqual(summary["by_gpu"]["0"]["max_mem_mib"], 120.0)
+
     def test_write_window_csv_uses_linear_rolling_stats(self):
         monitor = _load_monitor_module()
         episodes = [

@@ -83,11 +83,23 @@ def _gpu_stats(path: Path) -> Dict[str, Any]:
     sample_count = 0
     if path.is_file():
         with path.open(newline="", encoding="utf-8", errors="replace") as f:
-            for row in csv.DictReader(f):
+            reader = csv.reader(f)
+            header = next(reader, [])
+            field_index = {str(name): idx for idx, name in enumerate(header)}
+            gpu_idx_i = field_index.get("gpu_idx")
+            util_i = field_index.get("util_pct")
+            mem_i = field_index.get("mem_used_mib")
+
+            def field(row: List[str], index: int | None, default: str) -> str:
+                if index is None or index >= len(row):
+                    return default
+                return row[index]
+
+            for row in reader:
                 try:
-                    idx = str(row.get("gpu_idx", "")).strip()
-                    util = float(str(row.get("util_pct", "0")).strip())
-                    mem = float(str(row.get("mem_used_mib", "0")).strip())
+                    idx = str(field(row, gpu_idx_i, "")).strip()
+                    util = float(str(field(row, util_i, "0")).strip())
+                    mem = float(str(field(row, mem_i, "0")).strip())
                 except Exception:
                     continue
                 bucket = by_gpu.setdefault(idx, {
