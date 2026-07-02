@@ -1,11 +1,12 @@
-import glob
 import builtins
+from contextlib import contextmanager
+import glob
 import json
 import os
+from pathlib import Path
+import statistics
 import tempfile
 import unittest
-from contextlib import contextmanager
-from pathlib import Path
 from unittest import mock
 
 from tools import aggregate_seeds
@@ -230,6 +231,23 @@ class AggregateSeedsFinalEvalTest(unittest.TestCase):
                 )
 
         self.assertAlmostEqual(row.invalid_rate_last50, 1.18 / 59.0)
+
+    def test_mean_std_str_avoids_statistics_slow_path(self):
+        with (
+            mock.patch.object(
+                statistics,
+                "mean",
+                side_effect=AssertionError("mean/std formatting should avoid statistics.mean"),
+            ),
+            mock.patch.object(
+                statistics,
+                "stdev",
+                side_effect=AssertionError("mean/std formatting should avoid statistics.stdev"),
+            ),
+        ):
+            text = aggregate_seeds._mean_std_str([1.0, 2.0, 4.0])
+
+        self.assertEqual(text, "+2.3333 ± +1.5275 (n=3)")
 
 
 if __name__ == "__main__":

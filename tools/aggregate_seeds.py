@@ -22,13 +22,13 @@ The seed-list file is two columns: ``<seed> <run_tag>`` per line.
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict, dataclass, field
 import json
+import math
 import os
-import re
-import statistics
-import sys
-from dataclasses import dataclass, asdict, field
 from pathlib import Path
+import re
+import sys
 from typing import AbstractSet, Any, Dict, List, Optional, Tuple
 
 PERSISTENT_ROOT = os.path.join("Parting Chapter", "persistent")
@@ -253,8 +253,10 @@ def _mean_std_str(values: List[float], fmt: str = "+.4f") -> str:
         return "n/a"
     if len(values) == 1:
         return f"{values[0]:{fmt}} (n=1)"
-    m = statistics.mean(values)
-    s = statistics.stdev(values)
+    n = len(values)
+    m = float(math.fsum(values)) / float(n)
+    variance = math.fsum((float(value) - m) ** 2 for value in values) / float(n - 1)
+    s = math.sqrt(variance)
     return f"{m:{fmt}} ± {s:{fmt}} (n={len(values)})"
 
 

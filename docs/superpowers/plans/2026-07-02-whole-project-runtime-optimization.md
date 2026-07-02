@@ -959,6 +959,12 @@ call `strip()` per line. A local 200k-line synthetic seed-list benchmark
 preserved parsed `(seed, run_tag)` rows and improved parsing from `0.284336s`
 to `0.239681s` (`1.19x`).
 
+Progress 2026-07-02: `tools/aggregate_seeds.py` now formats aggregate
+`mean ± std` values with `math.fsum()` plus a direct sample-standard-deviation
+calculation instead of `statistics.mean()` / `statistics.stdev()`. A local
+200k-value benchmark produced identical formatted output and reduced formatting
+time from `0.909304s` to `0.036743s` (`24.75x`).
+
 Progress 2026-07-02: `tools/experiments_log.py` now bounds both best-effort
 git provenance subprocesses in `_git_info()` with a 5-second timeout. This
 prevents run registration/index rebuild from hanging indefinitely on a slow or
