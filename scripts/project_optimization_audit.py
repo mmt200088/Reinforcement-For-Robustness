@@ -187,7 +187,6 @@ def _iter_files(root: Path) -> Iterable[Path]:
         return
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames.sort()
-        filenames.sort()
         current = Path(dirpath)
         for filename in filenames:
             path = current / filename

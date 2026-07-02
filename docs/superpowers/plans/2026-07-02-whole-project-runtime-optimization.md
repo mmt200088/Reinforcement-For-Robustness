@@ -1233,6 +1233,13 @@ artifact roots with a streaming sorted `os.walk()` iterator instead of
 evidence counts and reduced scan cost from `0.1523s`/`1.89MB` to
 `0.1270s`/`0.58MB`.
 
+Progress 2026-07-02: `_iter_files()` in `scripts/project_optimization_audit.py`
+now keeps deterministic directory traversal with `dirnames.sort()` but avoids
+sorting each directory's `filenames` list before artifact classification. A
+local 120k-filename synthetic artifact directory preserved evidence counts,
+reduced scan time from `2.215341s` to `2.059308s` (`1.08x`), and cut traced
+peak memory from `8.43MB` to `0.92MB`.
+
 Progress 2026-07-02: `scripts/run_fusion_count_action_eval_rlpath.py` now
 uses copy-on-convert behavior in `_jsonable()`, so already JSON-native
 RL-path report trees such as `step_records`, `fusion_action_steps`, and

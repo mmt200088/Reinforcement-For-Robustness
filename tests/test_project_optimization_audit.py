@@ -185,6 +185,36 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
 
         self.assertEqual(artifacts["counts"]["episodes_jsonl"], 1)
 
+    def test_artifact_file_walk_does_not_sort_filenames(self):
+        audit = _load_audit_module()
+
+        class NoSortFileNames(list):
+            def sort(self, *_args, **_kwargs):
+                raise AssertionError("artifact scan should not sort filenames")
+
+        root = Path("/tmp/project-audit")
+
+        def fake_walk(_root):
+            yield (
+                "/tmp/project-audit/run",
+                [],
+                NoSortFileNames(["report.html", "episodes.jsonl", "status.json"]),
+            )
+
+        def fake_is_file(path):
+            return str(path).startswith("/tmp/project-audit/run/")
+
+        with (
+            mock.patch.object(audit.os, "walk", fake_walk),
+            mock.patch.object(Path, "exists", return_value=True),
+            mock.patch.object(Path, "is_file", fake_is_file),
+        ):
+            artifacts = audit.summarize_artifacts(root, artifact_roots=[root / "run"])
+
+        self.assertEqual(artifacts["counts"]["episodes_jsonl"], 1)
+        self.assertEqual(artifacts["counts"]["html_reports"], 1)
+        self.assertEqual(artifacts["counts"]["status_json"], 1)
+
     def test_cli_writes_json_and_markdown(self):
         audit = _load_audit_module()
 
