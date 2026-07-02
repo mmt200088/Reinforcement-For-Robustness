@@ -235,6 +235,56 @@ class ExperimentsLogTest(unittest.TestCase):
         self.assertIn("crashed-large-run", text)
         self.assertIn("complete-mrpc", text)
 
+    def test_rebuild_index_writes_incrementally_without_joining_full_index(self):
+        class CapturingHandle:
+            def __init__(self):
+                self.parts = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def write(self, text):
+                self.parts.append(str(text))
+                return len(str(text))
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = root / "registry.jsonl"
+            index = root / "index.md"
+            registry.write_text(
+                "\n".join(
+                    json.dumps({
+                        "run_id": f"run-{idx}",
+                        "registered_at": f"2026-07-02T00:0{idx}:00",
+                        "dataset": "mrpc",
+                        "algorithm": "rl",
+                        "status": "complete",
+                        "best_reward": float(idx),
+                    })
+                    for idx in range(3)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            captured = CapturingHandle()
+            original_open = builtins.open
+
+            def fake_open(path, mode="r", *args, **kwargs):
+                if Path(path) == index and "w" in mode:
+                    return captured
+                return original_open(path, mode, *args, **kwargs)
+
+            with mock.patch.object(builtins, "open", fake_open):
+                experiments_log._rebuild_index(str(registry), str(index))
+
+        text = "".join(captured.parts)
+        self.assertIn("# Experiments index", text)
+        self.assertIn("run-2", text)
+        self.assertGreater(len(captured.parts), 5)
+
     def test_git_info_bounds_git_commands_with_timeout(self):
         calls = []
 

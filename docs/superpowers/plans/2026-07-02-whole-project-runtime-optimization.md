@@ -889,6 +889,13 @@ record into a fresh dict before rendering `experiments/index.md`. A local
 reducing prep/sort time from `0.092343s` to `0.050433s` (`1.83x`) and traced
 peak allocation from `42.04MB` to `7.86MB`.
 
+Progress 2026-07-02: `tools/experiments_log.py rebuild` now writes
+`experiments/index.md` incrementally instead of accumulating every Markdown row
+in a list and joining the full document before one final write. A local
+50k-record synthetic rebuild produced byte-identical index output with
+comparable wall time (`0.472218s` to `0.473366s`) while reducing traced peak
+allocation from `166.66MB` to `131.88MB`.
+
 Progress 2026-07-02: `_git_info()` in `tools/experiments_log.py` now treats
 raw `git status --porcelain` emptiness as the dirty-state signal instead of
 calling `strip()` on the whole status payload. Git porcelain output is empty

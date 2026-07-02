@@ -268,67 +268,73 @@ def _rebuild_index(registry_path: str = REGISTRY_REL, index_path: str = INDEX_RE
     latest = list(_latest_by_run_id(_iter_records(registry_path)).values())
     latest.sort(key=lambda r: str(r.get("registered_at", "")), reverse=True)
 
-    lines: List[str] = []
-    lines.append("# Experiments index")
-    lines.append("")
-    lines.append(
-        f"_Auto-generated from `{registry_path}` on {_now_iso()}. "
-        "Edit `notes` field in registry.jsonl to annotate a run; rerun "
-        "`python3 tools/experiments_log.py rebuild` to refresh._"
-    )
-    lines.append("")
-    lines.append(f"- Total registered run_ids: **{len(latest)}**")
     by_status: Dict[str, int] = {}
     for r in latest:
         by_status[str(r.get("status", "unknown"))] = by_status.get(str(r.get("status", "unknown")), 0) + 1
-    if by_status:
-        lines.append(f"- By status: " + ", ".join(f"{k}={v}" for k, v in sorted(by_status.items())))
     by_dataset: Dict[str, int] = {}
     for r in latest:
         by_dataset[str(r.get("dataset", ""))] = by_dataset.get(str(r.get("dataset", "")), 0) + 1
-    if by_dataset:
-        lines.append(f"- By dataset: " + ", ".join(f"{k}={v}" for k, v in sorted(by_dataset.items())))
-    lines.append("")
-
-    # Best-by-dataset summary
-    lines.append("## Best so far (per dataset)")
-    lines.append("")
-    lines.append("| Dataset | Best reward | Final loss | Final metric1 | Run ID |")
-    lines.append("|---|---:|---:|---:|---|")
-    for ds, top in sorted(_best_by_dataset(latest).items()):
-        final = top.get("final_eval") or {}
-        best_r_val = top.get("best_reward")
-        final_loss_val = final.get("loss") if isinstance(final, dict) else None
-        final_m1_val = final.get("metric1") if isinstance(final, dict) else None
-        best_r_str = f"{best_r_val:+.4f}" if isinstance(best_r_val, (int, float)) else ""
-        final_loss_str = f"{final_loss_val:.4f}" if isinstance(final_loss_val, (int, float)) else ""
-        final_m1_str = f"{final_m1_val:.4f}" if isinstance(final_m1_val, (int, float)) else ""
-        top_run_id = str(top.get("run_id", ""))[:19]
-        lines.append(
-            f"| {ds} | {best_r_str} | {final_loss_str} | {final_m1_str} | `{top_run_id}` |"
-        )
-    lines.append("")
-
-    # All runs (most recent first)
-    lines.append("## All runs (most recent first)")
-    lines.append("")
-    lines.append("| Run ID | Dataset | Algo | Preset | Seed | Status | Time | Best | Loss | Metric1 | Git | Persistent |")
-    lines.append("|---|---|---|---|---:|---|---:|---:|---:|---:|---|---|")
-    for r in latest:
-        lines.append(_md_row(r))
-    lines.append("")
-
-    lines.append("---")
-    lines.append("")
-    lines.append("**How to use this file**:")
-    lines.append("")
-    lines.append("- 想看某个具体 run 的细节：去 `persistent` 列对应的目录，看 `blb_stage2_best_action_full.md` / `diagnostics/diagnostics_summary.md`。")
-    lines.append("- 想做 cross-run 对比：用 `python3 tools/experiments_log.py query --dataset mrpc --min-reward 0.4`。")
-    lines.append("- 想给某个 run 加注释：直接编辑 `registry.jsonl` 那一行的 `notes` 字段，然后 `python3 tools/experiments_log.py rebuild`。")
 
     os.makedirs(os.path.dirname(index_path) or ".", exist_ok=True)
     with open(index_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        first_line = True
+
+        def emit(line: str = "") -> None:
+            nonlocal first_line
+            if first_line:
+                first_line = False
+                f.write(line)
+            else:
+                f.write("\n" + line)
+
+        emit("# Experiments index")
+        emit("")
+        emit(
+            f"_Auto-generated from `{registry_path}` on {_now_iso()}. "
+            "Edit `notes` field in registry.jsonl to annotate a run; rerun "
+            "`python3 tools/experiments_log.py rebuild` to refresh._"
+        )
+        emit("")
+        emit(f"- Total registered run_ids: **{len(latest)}**")
+        if by_status:
+            emit(f"- By status: " + ", ".join(f"{k}={v}" for k, v in sorted(by_status.items())))
+        if by_dataset:
+            emit(f"- By dataset: " + ", ".join(f"{k}={v}" for k, v in sorted(by_dataset.items())))
+        emit("")
+
+        emit("## Best so far (per dataset)")
+        emit("")
+        emit("| Dataset | Best reward | Final loss | Final metric1 | Run ID |")
+        emit("|---|---:|---:|---:|---|")
+        for ds, top in sorted(_best_by_dataset(latest).items()):
+            final = top.get("final_eval") or {}
+            best_r_val = top.get("best_reward")
+            final_loss_val = final.get("loss") if isinstance(final, dict) else None
+            final_m1_val = final.get("metric1") if isinstance(final, dict) else None
+            best_r_str = f"{best_r_val:+.4f}" if isinstance(best_r_val, (int, float)) else ""
+            final_loss_str = f"{final_loss_val:.4f}" if isinstance(final_loss_val, (int, float)) else ""
+            final_m1_str = f"{final_m1_val:.4f}" if isinstance(final_m1_val, (int, float)) else ""
+            top_run_id = str(top.get("run_id", ""))[:19]
+            emit(
+                f"| {ds} | {best_r_str} | {final_loss_str} | {final_m1_str} | `{top_run_id}` |"
+            )
+        emit("")
+
+        emit("## All runs (most recent first)")
+        emit("")
+        emit("| Run ID | Dataset | Algo | Preset | Seed | Status | Time | Best | Loss | Metric1 | Git | Persistent |")
+        emit("|---|---|---|---|---:|---|---:|---:|---:|---:|---|---|")
+        for r in latest:
+            emit(_md_row(r))
+        emit("")
+
+        emit("---")
+        emit("")
+        emit("**How to use this file**:")
+        emit("")
+        emit("- 想看某个具体 run 的细节：去 `persistent` 列对应的目录，看 `blb_stage2_best_action_full.md` / `diagnostics/diagnostics_summary.md`。")
+        emit("- 想做 cross-run 对比：用 `python3 tools/experiments_log.py query --dataset mrpc --min-reward 0.4`。")
+        emit("- 想给某个 run 加注释：直接编辑 `registry.jsonl` 那一行的 `notes` 字段，然后 `python3 tools/experiments_log.py rebuild`。")
     return index_path
 
 
