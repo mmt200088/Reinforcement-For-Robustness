@@ -564,6 +564,12 @@ heap-ordered traversal for generic directory hashes, replacing
 comparison preserved the full-tree hash, kept cache-directory skip semantics,
 and reduced traced peak memory from `2.21MB` to `1.10MB` (`2.02x`).
 
+Progress 2026-07-02: `scripts/blb_phase0_preflight.py` now scans source/config
+files line by line when building `blb_entrypoints_grep.txt` instead of
+materializing each file with `read_text().splitlines()`. A local 100k-line
+source-file benchmark preserved the same 10 entrypoint matches and reduced
+traced peak memory from `8.36MB` to `0.02MB`.
+
 - [ ] **Step 3: Commit/push source and evidence**
 
 Never leave canonical source changes only on the server.

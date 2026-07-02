@@ -103,14 +103,15 @@ def _grep_entrypoints(repo_root: Path) -> List[str]:
     for path in iter_repo_files(repo_root):
         if path.suffix.lower() not in CODE_CONFIG_SUFFIXES:
             continue
+        rel = _relative(path, repo_root)
         try:
-            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+            handle = path.open("r", encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        rel = _relative(path, repo_root)
-        for lineno, line in enumerate(lines, start=1):
-            if pattern.search(line):
-                matches.append(f"{rel}:{lineno}:{line.strip()}")
+        with handle:
+            for lineno, line in enumerate(handle, start=1):
+                if pattern.search(line):
+                    matches.append(f"{rel}:{lineno}:{line.strip()}")
     return matches
 
 
