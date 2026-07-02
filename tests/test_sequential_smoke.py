@@ -973,7 +973,8 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         for needle in (
             "def _pack_rollout_samples",
             "for i, sample in enumerate(samples):",
-            "states, actions, log_probs, rewards, values = _pack_rollout_samples(",
+            "states, actions, rewards = _pack_rollout_samples(",
+            "def _pack_rollout_scalar_tensors",
         ):
             self.assertIn(needle, policy_src, msg=f"policy.py missing: {needle!r}")
         for old_pattern in (
@@ -984,6 +985,27 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "values = np.array([s.value for s in self._samples], dtype=np.float32)",
         ):
             self.assertNotIn(old_pattern, to_tensors_region, msg=f"old multi-pass pack remains: {old_pattern!r}")
+
+    def test_legacy_stage2_rollout_defers_logprob_value_sync_until_buffer_pack(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
+        runner_src = (REPO_ROOT / "blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+        add_region = _method_region_from_source(policy_src, "add")
+        to_tensors_region = _method_region_from_source(policy_src, "to_tensors")
+
+        self.assertIn("def _pack_rollout_scalar_tensors", policy_src)
+        self.assertIn("log_probs_t = _pack_rollout_scalar_tensors(", to_tensors_region)
+        self.assertIn("old_values_t = _pack_rollout_scalar_tensors(", to_tensors_region)
+        self.assertIn("advantages = returns - old_values_t", to_tensors_region)
+        self.assertIn("if not any(torch.is_tensor(value) for value in values):", policy_src)
+        self.assertIn("torch.as_tensor([float(value) for value in values]", policy_src)
+        self.assertIn("log_prob=log_prob.detach().reshape(())", add_region)
+        self.assertIn("value=value.detach().reshape(())", add_region)
+        self.assertNotIn("log_prob=float(log_prob)", add_region)
+        self.assertNotIn("value=float(value)", add_region)
+        self.assertNotIn("log_prob = float(log_prob_t.item())", runner_src)
+        self.assertNotIn("value = float(value_t.item())", runner_src)
+        self.assertIn("log_prob = log_prob_t.detach().reshape(())", runner_src)
+        self.assertIn("value = value_t.detach().reshape(())", runner_src)
 
     def test_legacy_ppo_update_reuses_device_minibatch_indices_per_epoch(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")

@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -393,30 +393,51 @@ class BLBStage2Policy(nn.Module):
 class RolloutSample:
     state: np.ndarray
     action: np.ndarray
-    log_prob: float
+    log_prob: Any
     reward: float
-    value: float
+    value: Any
 
 
 def _pack_rollout_samples(
         samples: Sequence[RolloutSample],
-        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     if not samples:
         raise RuntimeError("RolloutBuffer is empty")
     first = samples[0]
     n = len(samples)
     states = np.empty((n, *first.state.shape), dtype=np.float32)
     actions = np.empty((n, *first.action.shape), dtype=np.int64)
-    log_probs = np.empty(n, dtype=np.float32)
     rewards = np.empty(n, dtype=np.float32)
-    values = np.empty(n, dtype=np.float32)
     for i, sample in enumerate(samples):
         states[i] = sample.state
         actions[i] = sample.action
-        log_probs[i] = sample.log_prob
         rewards[i] = sample.reward
-        values[i] = sample.value
-    return states, actions, log_probs, rewards, values
+    return states, actions, rewards
+
+
+def _pack_rollout_scalar_tensors(
+        samples: Sequence[RolloutSample],
+        field_name: str,
+        device: torch.device,
+        ) -> torch.Tensor:
+    values = [getattr(sample, field_name) for sample in samples]
+    if not any(torch.is_tensor(value) for value in values):
+        return torch.as_tensor([float(value) for value in values], dtype=torch.float32, device=device)
+    tensor_device = next(
+        (value.device for value in values if torch.is_tensor(value)),
+        device,
+    )
+    packed = torch.stack([
+        (
+            value.detach().reshape(()).to(
+                device=tensor_device, dtype=torch.float32, non_blocking=True,
+            )
+            if torch.is_tensor(value)
+            else torch.tensor(float(value), dtype=torch.float32, device=tensor_device)
+        )
+        for value in values
+    ], dim=0)
+    return packed.to(device=device, dtype=torch.float32, non_blocking=True)
 
 
 class RolloutBuffer:
@@ -436,16 +457,16 @@ class RolloutBuffer:
             self,
             state: np.ndarray,
             action: np.ndarray,
-            log_prob: float,
+            log_prob: Any,
             reward: float,
-            value: float,
+            value: Any,
             ) -> None:
         self._samples.append(RolloutSample(
             state=np.asarray(state, dtype=np.float32),
             action=np.asarray(action, dtype=np.int64),
-            log_prob=float(log_prob),
+            log_prob=log_prob.detach().reshape(()) if torch.is_tensor(log_prob) else float(log_prob),
             reward=float(reward),
-            value=float(value),
+            value=value.detach().reshape(()) if torch.is_tensor(value) else float(value),
         ))
 
     def clear(self) -> None:
@@ -462,14 +483,16 @@ class RolloutBuffer:
         """
         if not self._samples:
             raise RuntimeError("RolloutBuffer is empty")
-        states, actions, log_probs, rewards, values = _pack_rollout_samples(
+        states, actions, rewards = _pack_rollout_samples(
             self._samples,
         )
+        log_probs_t = _pack_rollout_scalar_tensors(self._samples, "log_prob", device)
+        old_values_t = _pack_rollout_scalar_tensors(self._samples, "value", device)
 
-        returns = rewards.copy()
-        advantages = returns - values
-        if advantage_normalize and advantages.size > 1:
-            adv_std = float(advantages.std())
+        returns = torch.from_numpy(rewards).to(device)
+        advantages = returns - old_values_t
+        if advantage_normalize and int(advantages.numel()) > 1:
+            adv_std_t = advantages.std(unbiased=False)
             # When a rollout collapses to a single reward bucket (e.g. nearly
             # every action invalid → all rewards == -invalid_penalty), the
             # critic also learns to predict that constant, so advantages all
@@ -477,15 +500,15 @@ class RolloutBuffer:
             # either zeros out the few valid-action signals or blows them up
             # to numerical noise. Skip normalization in that regime so the
             # rare valid candidates keep an unambiguous gradient direction.
-            if adv_std > 1e-3:
-                advantages = (advantages - advantages.mean()) / (adv_std + 1e-8)
+            normalized_advantages = (advantages - advantages.mean()) / (adv_std_t + 1e-8)
+            advantages = torch.where(adv_std_t > 1e-3, normalized_advantages, advantages)
 
         return (
             torch.from_numpy(states).to(device),
             torch.from_numpy(actions).to(device),
-            torch.from_numpy(log_probs).to(device),
-            torch.from_numpy(returns).to(device),
-            torch.from_numpy(advantages).to(device),
+            log_probs_t,
+            returns,
+            advantages,
         )
 
 
