@@ -24,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_json_int_list  # noqa: E402
+from json_utils import write_json_file  # noqa: E402
 from report_format_utils import html_table  # noqa: E402
 
 ACTION_SPACE_PATH = REPO_ROOT / "blb_stage2_rl" / "action_space.py"
@@ -563,7 +564,7 @@ def _write_action_configs(
             ),
         }
         path = action_dir / f"{name}.json"
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_json_file(path, payload)
         paths[name] = str(path)
     return paths
 
@@ -925,7 +926,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     html_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_file(json_path, payload)
     html_path.write_text(_render_html(payload), encoding="utf-8")
     print(json.dumps({
         "html": str(html_path),

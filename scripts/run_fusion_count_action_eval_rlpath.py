@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from json_utils import to_jsonable
+from json_utils import to_jsonable, write_json_file
 from report_format_utils import format_float, html_table, metric_float
 from scripts.fusion_count_action_eval_common import (
     load_rlpath_action_configs,
@@ -565,7 +565,7 @@ def main() -> int:
         "baseline": to_jsonable(baseline, stringify_unknown=True, preserve_native=True),
         "group_results": to_jsonable(group_results, stringify_unknown=True, preserve_native=True),
     }
-    output_json.write_text(json.dumps(combined, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_file(output_json, combined)
     output_html.write_text(_render_html(combined), encoding="utf-8")
     print(json.dumps({"output_json": str(output_json), "output_html": str(output_html)}, ensure_ascii=False, indent=2))
     return 0

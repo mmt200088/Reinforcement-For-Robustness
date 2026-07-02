@@ -27,6 +27,7 @@ from scripts.fusion_count_action_eval_common import (
     resolve_repo_path,
     unique_paean_action_configs,
 )
+from json_utils import write_json_file
 from report_format_utils import html_table, metric_float
 
 DEFAULT_RUN_DIR = REPO_ROOT / "experiments" / "server_command_runs" / "fusion_count_map_action_eval_20260610"
@@ -371,7 +372,7 @@ def main() -> int:
     )
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_html.parent.mkdir(parents=True, exist_ok=True)
-    output_json.write_text(json.dumps(combined, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_file(output_json, combined)
     output_html.write_text(_render_html(combined), encoding="utf-8")
     print(json.dumps({
         "output_json": str(output_json),

@@ -132,6 +132,9 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/server_resource_snapshot.py": "from json_utils import write_json_file",
             "scripts/stage1_parallel_report.py": "from json_utils import write_json_file",
             "scripts/stage2_reward_probe_scaling_report.py": "from json_utils import write_json_file",
+            "scripts/report_fusion_count_map.py": "from json_utils import write_json_file",
+            "scripts/run_fusion_count_action_eval.py": "from json_utils import write_json_file",
+            "scripts/run_fusion_count_action_eval_rlpath.py": "from json_utils import to_jsonable, write_json_file",
         }
         for rel, needle in checks.items():
             with self.subTest(path=rel):
