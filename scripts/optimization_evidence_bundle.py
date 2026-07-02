@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tarfile
@@ -233,11 +234,20 @@ def render_index(manifest: dict[str, Any]) -> str:
 
 def _write_tar_gz(out_dir: Path, tar_path: Path) -> None:
     tar_path.parent.mkdir(parents=True, exist_ok=True)
+    tar_resolved = tar_path.resolve()
     with tarfile.open(tar_path, "w:gz") as archive:
-        for path in sorted(out_dir.rglob("*")):
-            if not path.is_file() or path.resolve() == tar_path.resolve():
-                continue
-            archive.add(path, arcname=str(Path(out_dir.name) / path.relative_to(out_dir)))
+        for dirpath, dirnames, filenames in os.walk(out_dir):
+            dirnames.sort()
+            filenames.sort()
+            current_dir = Path(dirpath)
+            for filename in filenames:
+                path = current_dir / filename
+                if not path.is_file() or path.resolve() == tar_resolved:
+                    continue
+                archive.add(
+                    path,
+                    arcname=str(Path(out_dir.name) / path.relative_to(out_dir)),
+                )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

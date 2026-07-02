@@ -1,8 +1,10 @@
 import importlib.util
 import json
 from pathlib import Path
+import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_PATH = REPO_ROOT / "scripts" / "optimization_evidence_bundle.py"
@@ -136,6 +138,33 @@ class OptimizationEvidenceBundleTest(unittest.TestCase):
             self.assertIn("stage1_parallel_report.md", index)
             self.assertIn("stage2_gpu_utilization_report.md", index)
             self.assertTrue(out_tgz.is_file())
+
+    def test_tar_writer_streams_files_without_sorting_full_tree(self):
+        bundle = _load_bundle_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            out_dir = root / "bundle"
+            _write_text(out_dir / "a" / "one.txt", "one\n")
+            _write_text(out_dir / "b" / "two.txt", "two\n")
+            tar_path = root / "bundle.tgz"
+
+            with mock.patch(
+                "builtins.sorted",
+                side_effect=AssertionError("tar writer should stream directory traversal"),
+            ):
+                bundle._write_tar_gz(out_dir, tar_path)
+
+            with tarfile.open(tar_path, "r:gz") as archive:
+                names = set(archive.getnames())
+
+        self.assertEqual(
+            names,
+            {
+                "bundle/a/one.txt",
+                "bundle/b/two.txt",
+            },
+        )
 
 
 if __name__ == "__main__":

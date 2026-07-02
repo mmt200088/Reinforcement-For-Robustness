@@ -473,6 +473,12 @@ large `experiments/` trees. Stage-1 logs and Stage-2 episode diagnostics are
 now streamed by the evidence tools, reducing peak memory during long-run bundle
 generation. Actual server A/B artifact pullback is still pending.
 
+Progress 2026-07-02: `scripts/optimization_evidence_bundle.py` now writes
+optional tar.gz archives with a streaming `os.walk` traversal instead of
+materializing and sorting every path under the bundle directory. A local 2k-file
+archive comparison produced identical entries and reduced traced peak memory
+from `2.76MB` to `1.70MB` (`1.63x`).
+
 Progress 2026-07-02: `scripts/blb_make_run_manifest.py` now hashes the
 canonical Rescale_optimizer source/config subset by streaming file chunks
 instead of calling `Path.read_bytes()` for every `.py`/`.json` file. This keeps
