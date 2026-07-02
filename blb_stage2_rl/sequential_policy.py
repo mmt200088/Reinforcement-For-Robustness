@@ -1187,7 +1187,6 @@ def sequential_ppo_update(
         advantages = torch.where(std_ok, normalized_advantages, advantages)
 
     n = states.shape[0]
-    indices = np.arange(n)
     current_lr, lr_scale = _apply_adaptive_kl_lr(policy, optimizer, cfg)
 
     metrics_sum_t = {
@@ -1213,8 +1212,7 @@ def sequential_ppo_update(
             group["lr"] = current_lr
 
     for _ in range(int(cfg.n_epochs)):
-        np.random.shuffle(indices)
-        epoch_indices = torch.from_numpy(indices).long().to(device)
+        epoch_indices = torch.randperm(n, device=device)
         mb_size = max(1, int(cfg.minibatch_size))
         for start in range(0, n, mb_size):
             end = min(n, start + mb_size)

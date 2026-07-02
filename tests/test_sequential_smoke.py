@@ -892,9 +892,10 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
         update_region = _method_region_from_source(policy_src, "sequential_ppo_update")
 
-        self.assertIn("np.random.shuffle(indices)", update_region)
-        self.assertIn("epoch_indices = torch.from_numpy(indices).long().to(device)", update_region)
+        self.assertIn("epoch_indices = torch.randperm(n, device=device)", update_region)
         self.assertIn("mb = epoch_indices[start:end]", update_region)
+        self.assertNotIn("np.random.shuffle(indices)", update_region)
+        self.assertNotIn("epoch_indices = torch.from_numpy(indices).long().to(device)", update_region)
         self.assertNotIn("mb = torch.from_numpy(indices[start:end]).long().to(device)", update_region)
 
     def test_sequential_ppo_update_reuses_minibatch_gathers(self):
