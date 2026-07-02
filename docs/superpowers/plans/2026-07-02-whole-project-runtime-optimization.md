@@ -347,6 +347,13 @@ list only for exact median. A local 100k-row parity benchmark reduced report
 post-processing from `1.282s`/`7.21MB` to `1.074s`/`4.14MB` (`1.74x` lower
 peak memory).
 
+Progress 2026-07-02: the same reward-probe scaling report now sorts the retained
+probe-wall list in place and computes the median directly instead of calling
+`statistics.median()`, which copies and sorts another list. A local 80k-row
+episode JSONL benchmark produced identical summaries, reduced total time from
+`0.798515s` to `0.767511s` (`1.04x`), and cut traced peak memory from `3.42MB`
+to `2.81MB` (`1.22x`).
+
 Progress 2026-07-02: `scripts/stage2_reward_probe_scaling_report.py` now
 normalizes sampled `nvidia-smi` CSV headers once per file and uses raw-field
 lookups for every sample row, instead of regex-normalizing field names on each

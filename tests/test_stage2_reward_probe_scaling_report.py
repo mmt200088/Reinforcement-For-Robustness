@@ -86,6 +86,31 @@ class Stage2RewardProbeScalingReportTest(unittest.TestCase):
         self.assertEqual(summary["median_wall"], 2.0)
         self.assertEqual(summary["mean_speedup"], 3.0)
 
+    def test_episode_summary_computes_median_without_statistics_copy(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            episodes = Path(td) / "episodes.jsonl"
+            _write_jsonl(
+                episodes,
+                [
+                    {"terminal_probe_wall_seconds": 3.0},
+                    {"terminal_probe_wall_seconds": 1.0},
+                    {"terminal_probe_wall_seconds": 7.0},
+                    {"terminal_probe_wall_seconds": 5.0},
+                ],
+            )
+
+            with mock.patch.object(
+                statistics,
+                "median",
+                side_effect=AssertionError("episode summary should sort probe walls in place"),
+            ):
+                summary = report._summarize_episodes(episodes)
+
+        self.assertEqual(summary["probe_calls"], 4)
+        self.assertEqual(summary["median_wall"], 4.0)
+
     def test_build_summary_streams_benchmark_artifacts_and_selects_best_run(self):
         report = _load_report_module()
 

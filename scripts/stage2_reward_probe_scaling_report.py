@@ -14,7 +14,6 @@ import html
 import json
 from pathlib import Path
 import re
-import statistics
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -104,6 +103,14 @@ def _first_present_by_index(
     return None
 
 
+def _median_sorted(values: Sequence[float]) -> float:
+    count = len(values)
+    mid = count // 2
+    if count % 2:
+        return float(values[mid])
+    return float(values[mid - 1] + values[mid]) / 2.0
+
+
 def _summarize_episodes(path: Path) -> dict[str, Any]:
     probe_walls: list[float] = []
     wall_total = 0.0
@@ -142,10 +149,15 @@ def _summarize_episodes(path: Path) -> dict[str, Any]:
             if parsed_counts:
                 counts_seen.add(tuple(parsed_counts))
 
+    median_wall = None
+    if probe_walls:
+        probe_walls.sort()
+        median_wall = _median_sorted(probe_walls)
+
     return {
         "probe_calls": len(probe_walls),
         "mean_wall": wall_total / float(len(probe_walls)) if probe_walls else None,
-        "median_wall": statistics.median(probe_walls) if probe_walls else None,
+        "median_wall": median_wall,
         "mean_speedup": speedup_total / float(speedup_count) if speedup_count else None,
         "devices_seen": sorted(devices_seen),
         "trial_splits": [list(item) for item in sorted(counts_seen)],
