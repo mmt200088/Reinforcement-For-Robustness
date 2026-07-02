@@ -912,6 +912,23 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertEqual(update_region.count("level_masks.index_select(0, mb)"), 1)
         self.assertEqual(update_region.count("prior_scales.index_select(0, mb)"), 1)
 
+    def test_sequential_ppo_update_accumulates_metrics_on_device(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(policy_src, "sequential_ppo_update")
+
+        self.assertIn("metrics_sum_t = {", update_region)
+        self.assertIn('"policy_loss": torch.zeros((), device=device)', update_region)
+        self.assertIn("clip_frac_t = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean()", update_region)
+        self.assertIn("approx_kl_t = (old_lp - new_log_probs).mean()", update_region)
+        self.assertIn('metrics_sum_t["policy_loss"] += policy_loss.detach()', update_region)
+        self.assertIn('metrics_sum_t["clip_fraction"] += clip_frac_t.detach()', update_region)
+        self.assertIn('epoch_avg_kl_t = metrics_sum_t["approx_kl"] / float(n_seen)', update_region)
+        self.assertIn('float((metrics_sum_t["policy_loss"] / n_mb).item())', update_region)
+        self.assertNotIn('metrics_sum["policy_loss"] += float(policy_loss.item())', update_region)
+        self.assertNotIn('metrics_sum["value_loss"] += float(value_loss.item())', update_region)
+        self.assertNotIn('metrics_sum["entropy"] += float(entropy_mean.item())', update_region)
+        self.assertNotIn("mean().item()", update_region)
+
     def test_legacy_rollout_buffer_packs_numpy_arrays_in_single_pass(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
         to_tensors_region = _method_region_from_source(policy_src, "to_tensors")

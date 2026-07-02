@@ -1187,9 +1187,15 @@ def sequential_ppo_update(
     indices = np.arange(n)
     current_lr, lr_scale = _apply_adaptive_kl_lr(policy, optimizer, cfg)
 
-    metrics_sum = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
-                   "clip_fraction": 0.0, "approx_kl": 0.0,
-                   "entropy_recovery_delta": 0.0, "n_minibatches": 0}
+    metrics_sum_t = {
+        "policy_loss": torch.zeros((), device=device),
+        "value_loss": torch.zeros((), device=device),
+        "entropy": torch.zeros((), device=device),
+        "clip_fraction": torch.zeros((), device=device),
+        "approx_kl": torch.zeros((), device=device),
+        "entropy_recovery_delta": torch.zeros((), device=device),
+    }
+    n_minibatches = 0
     kl_early_stop = False
     nonfinite_minibatches = 0
 
@@ -1313,45 +1319,48 @@ def sequential_ppo_update(
                     break
             optimizer.step()
             with torch.no_grad():
-                clip_frac = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean().item()
-                approx_kl = (old_lp - new_log_probs).mean().item()
-            metrics_sum["policy_loss"] += float(policy_loss.item())
-            metrics_sum["value_loss"] += float(value_loss.item())
-            metrics_sum["entropy"] += float(entropy_mean.item())
-            metrics_sum["clip_fraction"] += float(clip_frac)
-            metrics_sum["approx_kl"] += float(approx_kl)
-            metrics_sum["entropy_recovery_delta"] += float(entropy_recovery_delta.detach().item())
-            metrics_sum["n_minibatches"] += 1
-        n_seen = max(1, int(metrics_sum["n_minibatches"]))
-        epoch_avg_kl = metrics_sum["approx_kl"] / float(n_seen)
+                clip_frac_t = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean()
+                approx_kl_t = (old_lp - new_log_probs).mean()
+            metrics_sum_t["policy_loss"] += policy_loss.detach()
+            metrics_sum_t["value_loss"] += value_loss.detach()
+            metrics_sum_t["entropy"] += entropy_mean.detach()
+            metrics_sum_t["clip_fraction"] += clip_frac_t.detach()
+            metrics_sum_t["approx_kl"] += approx_kl_t.detach()
+            metrics_sum_t["entropy_recovery_delta"] += entropy_recovery_delta.detach()
+            n_minibatches += 1
+        n_seen = max(1, int(n_minibatches))
+        epoch_avg_kl_t = metrics_sum_t["approx_kl"] / float(n_seen)
         if nonfinite_minibatches > 0:
             break
         if (
                 bool(getattr(cfg, "use_kl_early_stop", True))
-                and float(epoch_avg_kl) > 1.5 * float(getattr(cfg, "kl_target", 0.02))
+                and float(epoch_avg_kl_t.item()) > 1.5 * float(getattr(cfg, "kl_target", 0.02))
         ):
             kl_early_stop = True
             break
 
-    n_mb = max(1, metrics_sum["n_minibatches"])
-    avg_kl = metrics_sum["approx_kl"] / n_mb
+    n_mb = max(1, n_minibatches)
+    avg_kl_t = metrics_sum_t["approx_kl"] / float(n_mb)
+    avg_kl = float(avg_kl_t.item())
     policy._ppo_last_avg_kl = float(avg_kl)
     return {
-        "policy_loss": metrics_sum["policy_loss"] / n_mb,
-        "value_loss": metrics_sum["value_loss"] / n_mb,
-        "entropy": metrics_sum["entropy"] / n_mb,
-        "clip_fraction": metrics_sum["clip_fraction"] / n_mb,
+        "policy_loss": float((metrics_sum_t["policy_loss"] / n_mb).item()),
+        "value_loss": float((metrics_sum_t["value_loss"] / n_mb).item()),
+        "entropy": float((metrics_sum_t["entropy"] / n_mb).item()),
+        "clip_fraction": float((metrics_sum_t["clip_fraction"] / n_mb).item()),
         "approx_kl": float(avg_kl),
         "kl_early_stop": bool(kl_early_stop),
         "n_samples": int(n),
         "ent_coef": float(effective_ent_coef),
         "lr": float(current_lr),
         "lr_scale": float(lr_scale),
-        "entropy_recovery_delta": metrics_sum["entropy_recovery_delta"] / n_mb,
+        "entropy_recovery_delta": float(
+            (metrics_sum_t["entropy_recovery_delta"] / n_mb).item()
+        ),
         "return_mean": float(return_normalizer.mean if return_normalizer is not None else 0.0),
         "return_std": float(return_normalizer.std if return_normalizer is not None else 1.0),
         "nonfinite_minibatches": int(nonfinite_minibatches),
-        "nonfinite_update_skipped": bool(nonfinite_minibatches > 0 and metrics_sum["n_minibatches"] == 0),
+        "nonfinite_update_skipped": bool(nonfinite_minibatches > 0 and n_minibatches == 0),
     }
 
 
