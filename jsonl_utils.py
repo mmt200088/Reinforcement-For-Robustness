@@ -86,6 +86,47 @@ def read_jsonl(
     return list(iter_jsonl(jsonl_path, errors=errors, dict_only=dict_only))
 
 
+def read_jsonl_fields(
+        path: str | Path,
+        fields: tuple[str, ...] | list[str] | None = None,
+        *,
+        errors: JsonlErrorMode = "skip",
+        missing_ok: bool = True,
+        gzip_fallback: bool = False,
+        ) -> list[dict[str, Any]]:
+    jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
+    if missing_ok and not jsonl_path.exists():
+        return []
+    wanted = tuple(fields or ())
+    rows: list[dict[str, Any]] = []
+    for row in iter_jsonl(jsonl_path, errors=errors, dict_only=True):
+        if wanted:
+            rows.append({key: row[key] for key in wanted if key in row})
+        else:
+            rows.append(dict(row))
+    return rows
+
+
+def read_jsonl_xy(
+        path: str | Path,
+        x_field: str,
+        y_field: str,
+        *,
+        errors: JsonlErrorMode = "skip",
+        missing_ok: bool = True,
+        gzip_fallback: bool = False,
+        ) -> tuple[list[float], list[float]]:
+    jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
+    if missing_ok and not jsonl_path.exists():
+        return [], []
+    xs: list[float] = []
+    ys: list[float] = []
+    for row in iter_jsonl(jsonl_path, errors=errors, dict_only=True):
+        xs.append(float(row.get(x_field, 0.0)))
+        ys.append(float(row.get(y_field, 0.0)))
+    return xs, ys
+
+
 def missing_required_fields(payload: dict[str, Any], required_fields: tuple[str, ...]) -> tuple[str, ...] | None:
     missing = tuple(field for field in required_fields if field not in payload)
     return missing or None

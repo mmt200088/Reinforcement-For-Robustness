@@ -67,6 +67,12 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from jsonl_utils import read_jsonl_fields, read_jsonl_xy
+
 # ---------------------------------------------------------------------------
 # Style setup
 # ---------------------------------------------------------------------------
@@ -132,45 +138,6 @@ class RunData:
     action_histogram: Optional[np.ndarray]   # shape (num_slots, max_levels)
 
 
-def _read_jsonl(path: str, fields: Sequence[str] | None = None) -> List[Dict[str, Any]]:
-    if not os.path.isfile(path):
-        return []
-    out: List[Dict[str, Any]] = []
-    wanted = tuple(fields or ())
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            if not line or line.isspace():
-                continue
-            try:
-                row = json.loads(line)
-            except Exception:
-                pass
-            else:
-                if wanted:
-                    out.append({key: row[key] for key in wanted if key in row})
-                else:
-                    out.append(row)
-    return out
-
-
-def _read_jsonl_xy(path: str, x_field: str, y_field: str) -> Tuple[List[float], List[float]]:
-    if not os.path.isfile(path):
-        return [], []
-    xs: List[float] = []
-    ys: List[float] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            if not line or line.isspace():
-                continue
-            try:
-                row = json.loads(line)
-            except Exception:
-                continue
-            xs.append(float(row.get(x_field, 0.0)))
-            ys.append(float(row.get(y_field, 0.0)))
-    return xs, ys
-
-
 def _read_json(path: str) -> Dict[str, Any]:
     if not os.path.isfile(path):
         return {}
@@ -210,8 +177,8 @@ def load_run(
             progress_dir = run_dir
 
     diag = os.path.join(progress_dir, "diagnostics")
-    episodes = _read_jsonl(os.path.join(diag, "episodes.jsonl"), fields=("total_reward",)) if include_episodes else []
-    ppo_updates = _read_jsonl(
+    episodes = read_jsonl_fields(os.path.join(diag, "episodes.jsonl"), fields=("total_reward",)) if include_episodes else []
+    ppo_updates = read_jsonl_fields(
         os.path.join(diag, "ppo_updates.jsonl"),
         fields=("policy_loss", "value_loss", "entropy", "clip_fraction"),
     ) if include_ppo_updates else []
@@ -512,7 +479,7 @@ def fig_cost_vs_accuracy(
     has_points = False
     for i, run in enumerate(runs):
         top_path = os.path.join(run.progress_dir, "diagnostics", "top_candidates.jsonl")
-        xs, ys = _read_jsonl_xy(top_path, "total_bits", "total_reward")
+        xs, ys = read_jsonl_xy(top_path, "total_bits", "total_reward")
         if not xs:
             continue
         has_points = True

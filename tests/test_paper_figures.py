@@ -32,7 +32,7 @@ class PaperFiguresTest(unittest.TestCase):
             diag.mkdir(parents=True)
             out_dir = root / "figures"
 
-            def guarded_read_jsonl(path):
+            def guarded_read_jsonl_fields(path, **_kwargs):
                 name = Path(path).name
                 if name in {"episodes.jsonl", "ppo_updates.jsonl"}:
                     raise AssertionError(f"should not load {name} for cost_vs_accuracy-only")
@@ -47,7 +47,7 @@ class PaperFiguresTest(unittest.TestCase):
                 self.assertEqual(runs[0].ppo_updates, [])
                 return []
 
-            with mock.patch.object(paper, "_read_jsonl", guarded_read_jsonl):
+            with mock.patch.object(paper, "read_jsonl_fields", guarded_read_jsonl_fields):
                 with mock.patch.object(paper, "_read_json", guarded_read_json):
                     with mock.patch.object(paper, "fig_cost_vs_accuracy", fake_cost_vs_accuracy):
                         rc = paper.main([
@@ -112,10 +112,10 @@ class PaperFiguresTest(unittest.TestCase):
             with mock.patch.object(paper, "_save_fig", return_value=[]):
                 with mock.patch.object(
                     paper,
-                    "_read_jsonl",
+                    "read_jsonl_fields",
                     side_effect=AssertionError("cost_vs_accuracy should stream x/y points directly"),
                 ):
-                    with mock.patch.object(paper, "_read_jsonl_xy", fake_read_jsonl_xy, create=True):
+                    with mock.patch.object(paper, "read_jsonl_xy", fake_read_jsonl_xy):
                         paper.fig_cost_vs_accuracy([run], out_path_no_ext="/tmp/out", formats=("png",))
 
         self.assertEqual(len(read_paths), 1)
@@ -158,74 +158,6 @@ class PaperFiguresTest(unittest.TestCase):
             run.ppo_updates,
             [{"policy_loss": 0.1, "value_loss": 0.2, "entropy": 0.3, "clip_fraction": 0.4}],
         )
-
-    def test_read_jsonl_passes_unstripped_lines_to_json_loader(self):
-        paper = _load_paper_figures_module()
-
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "rows.jsonl"
-            path.write_text('{"total_reward": 1.25, "unused": "x"}\n', encoding="utf-8")
-            seen = []
-            original_loads = paper.json.loads
-
-            def recording_loads(value):
-                seen.append(value)
-                return original_loads(value)
-
-            with mock.patch.object(paper.json, "loads", recording_loads):
-                rows = paper._read_jsonl(str(path), fields=("total_reward",))
-
-        self.assertEqual(rows, [{"total_reward": 1.25}])
-        self.assertTrue(seen[0].endswith("\n"))
-
-    def test_read_jsonl_skips_whitespace_lines_without_json_exception(self):
-        paper = _load_paper_figures_module()
-
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "rows.jsonl"
-            path.write_text(
-                "   \n"
-                + json.dumps({"total_reward": 1.25, "unused": "x"})
-                + "\n\t\n",
-                encoding="utf-8",
-            )
-            original_loads = paper.json.loads
-            seen = []
-
-            def guarded_loads(value):
-                seen.append(value)
-                return original_loads(value)
-
-            with mock.patch.object(paper.json, "loads", guarded_loads):
-                rows = paper._read_jsonl(str(path), fields=("total_reward",))
-                xs, ys = paper._read_jsonl_xy(str(path), "total_reward", "total_reward")
-
-        self.assertEqual(rows, [{"total_reward": 1.25}])
-        self.assertEqual(xs, [1.25])
-        self.assertEqual(ys, [1.25])
-        self.assertFalse(any(value.isspace() for value in seen))
-
-    def test_read_jsonl_xy_projects_points_without_row_dicts(self):
-        paper = _load_paper_figures_module()
-
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "top_candidates.jsonl"
-            path.write_text(
-                "\n".join(
-                    [
-                        json.dumps({"total_bits": 10, "total_reward": 1.5, "large_debug": "x" * 128}),
-                        "{bad-json",
-                        json.dumps({"total_bits": 12, "total_reward": 1.75, "large_debug": "y" * 128}),
-                    ]
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-
-            xs, ys = paper._read_jsonl_xy(str(path), "total_bits", "total_reward")
-
-        self.assertEqual(xs, [10.0, 12.0])
-        self.assertEqual(ys, [1.5, 1.75])
 
 
 if __name__ == "__main__":

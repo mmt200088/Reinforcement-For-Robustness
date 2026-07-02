@@ -133,7 +133,9 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   scripts that should report `path:line`, and `read_jsonl(..., missing_ok=True)`
   for optional artifacts. Use `gzip_fallback=True` when a canonical
   `*.jsonl` artifact may also be stored as `*.jsonl.gz`; do not write
-  script-local gzip/open fallback logic. Use `count_jsonl_with_required_fields()`
+  script-local gzip/open fallback logic. Use `read_jsonl_fields()` for report
+  tools that need only a small projection from large rows, `read_jsonl_xy()` for
+  direct scatter/curve point projections, and `count_jsonl_with_required_fields()`
   for verifier row counts with required-field diagnostics. Do not add new
   script-local `_read_jsonl`, `_count_jsonl`, `_count_jsonl_with_required_fields`,
   or raw `for line in handle: json.loads(line)` loops in report scripts; extend

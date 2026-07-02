@@ -3,11 +3,14 @@ import gzip
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 from jsonl_utils import (
     count_jsonl_with_required_fields,
     iter_jsonl,
     iter_jsonl_records,
+    read_jsonl_fields,
+    read_jsonl_xy,
     read_jsonl,
     resolve_jsonl_path,
 )
@@ -69,6 +72,72 @@ class JsonlUtilsTest(unittest.TestCase):
         self.assertEqual(rows, [{"a": 1}])
         self.assertEqual(resolved_name, "rows.jsonl.gz")
 
+    def test_read_jsonl_fields_passes_unstripped_lines_to_json_loader(self):
+        import jsonl_utils
+
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "rows.jsonl"
+            path.write_text('{"total_reward": 1.25, "unused": "x"}\n', encoding="utf-8")
+            seen = []
+            original_loads = jsonl_utils.json.loads
+
+            def recording_loads(value):
+                seen.append(value)
+                return original_loads(value)
+
+            with mock.patch.object(jsonl_utils.json, "loads", recording_loads):
+                rows = read_jsonl_fields(path, fields=("total_reward",))
+
+        self.assertEqual(rows, [{"total_reward": 1.25}])
+        self.assertTrue(seen[0].endswith("\n"))
+
+    def test_read_jsonl_fields_and_xy_skip_whitespace_lines(self):
+        import jsonl_utils
+
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "rows.jsonl"
+            path.write_text(
+                "   \n"
+                '{"total_reward": 1.25, "unused": "x"}'
+                "\n\t\n",
+                encoding="utf-8",
+            )
+            original_loads = jsonl_utils.json.loads
+            seen = []
+
+            def guarded_loads(value):
+                seen.append(value)
+                return original_loads(value)
+
+            with mock.patch.object(jsonl_utils.json, "loads", guarded_loads):
+                rows = read_jsonl_fields(path, fields=("total_reward",))
+                xs, ys = read_jsonl_xy(path, "total_reward", "total_reward")
+
+        self.assertEqual(rows, [{"total_reward": 1.25}])
+        self.assertEqual(xs, [1.25])
+        self.assertEqual(ys, [1.25])
+        self.assertFalse(any(value.isspace() for value in seen))
+
+    def test_read_jsonl_xy_projects_points_without_row_dicts(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "top_candidates.jsonl"
+            path.write_text(
+                "\n".join(
+                    [
+                        '{"total_bits": 10, "total_reward": 1.5, "large_debug": "x"}',
+                        "{bad-json",
+                        '{"total_bits": 12, "total_reward": 1.75, "large_debug": "y"}',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            xs, ys = read_jsonl_xy(path, "total_bits", "total_reward")
+
+        self.assertEqual(xs, [10.0, 12.0])
+        self.assertEqual(ys, [1.5, 1.75])
+
     def test_count_jsonl_with_required_fields(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "rows.jsonl"
@@ -102,6 +171,7 @@ class JsonlUtilsStaticGuardTest(unittest.TestCase):
             "scripts/verify_stage2_persistent_outputs.py": (
                 "from jsonl_utils import count_jsonl_with_required_fields"
             ),
+            "tools/paper_figures.py": "from jsonl_utils import read_jsonl_fields, read_jsonl_xy",
         }
         forbidden = {"_read_jsonl", "_open_jsonl", "_count_jsonl", "_count_jsonl_with_required_fields"}
         for rel_path, needle in expected.items():
