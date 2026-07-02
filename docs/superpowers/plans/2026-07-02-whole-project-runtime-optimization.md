@@ -311,6 +311,13 @@ list only for exact median. A local 100k-row parity benchmark reduced report
 post-processing from `1.282s`/`7.21MB` to `1.074s`/`4.14MB` (`1.74x` lower
 peak memory).
 
+Progress 2026-07-02: `scripts/stage2_reward_probe_scaling_report.py`
+`render_html()` now iterates the summary `runs` collection directly instead of
+wrapping it with `list()` before rendering rows. This preserves HTML output and
+lets future streaming callers avoid one full run-list materialization. A local
+100k-row render benchmark had comparable wall time (`1.530112s` vs
+`1.540720s`) while reducing traced peak memory from `29.26MB` to `28.50MB`.
+
 Progress 2026-07-02: `scripts/gpu_utilization_report.py` and
 `scripts/stage2_reward_probe_scaling_report.py` now parse JSONL episode lines
 directly instead of allocating `line.strip()` copies before `json.loads()`,

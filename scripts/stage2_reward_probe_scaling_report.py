@@ -166,7 +166,7 @@ def _fmt(value: object) -> str:
 
 
 def render_html(summary: Mapping[str, Any]) -> str:
-    rows = list(summary.get("runs") or [])
+    rows = summary.get("runs") or ()
     best = summary.get("best")
     trs: list[str] = []
     for row in rows:

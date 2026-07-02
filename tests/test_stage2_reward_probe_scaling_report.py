@@ -160,6 +160,31 @@ class Stage2RewardProbeScalingReportTest(unittest.TestCase):
         self.assertEqual(rows["bs256_g4"]["max_gpu_util_pct"], {"0": 91.0, "1": 88.0})
         self.assertEqual(rows["bs256_g4"]["max_gpu_mem_mib"], {"0": 12000.0, "1": 11800.0})
 
+    def test_render_html_iterates_runs_without_materializing_list(self):
+        report = _load_report_module()
+
+        class StreamingRuns:
+            def __iter__(self):
+                return iter([
+                    {
+                        "label": "bs128_g1",
+                        "batch_size": 128,
+                        "gpu_count": 1,
+                        "rc": 0,
+                        "mean_wall": 2.0,
+                    }
+                ])
+
+            def __length_hint__(self):
+                raise AssertionError("render_html should not materialize runs with list()")
+
+        html = report.render_html({
+            "runs": StreamingRuns(),
+            "best": {"label": "bs128_g1", "mean_wall": 2.0},
+        })
+
+        self.assertIn("bs128_g1", html)
+
     def test_main_writes_summary_html_and_best_batch_size(self):
         report = _load_report_module()
 
