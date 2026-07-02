@@ -17,7 +17,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from typing import Any, Dict, List
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from stats_utils import fraction_true, mean_from_total, mean_or_default, ratio_or_default  # noqa: E402
 
 LOSS_CAP = 100.0  # terminal_loss_mean sentinel for an accuracy-collapse episode
 
@@ -88,22 +95,6 @@ def _scan_and_window_ordered_path(path: str, anchor: int, window: int) -> tuple[
     return {"ordered": ordered, "n_total": n_total, "n_post": n_post}, windows
 
 
-def _mean(xs: List[float]) -> float:
-    return float(sum(xs) / len(xs)) if xs else 0.0
-
-
-def _frac(flags: List[bool]) -> float:
-    return float(sum(1 for x in flags if x) / len(flags)) if flags else 0.0
-
-
-def _frac_counts(count: int, total: int) -> float:
-    return float(count / total) if total else 0.0
-
-
-def _mean_counts(total: float, count: int) -> float:
-    return float(total / count) if count else 0.0
-
-
 def window_stats(eps: List[Dict[str, Any]], window: int) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for i in range(0, len(eps), window):
@@ -146,16 +137,16 @@ def _window_stats_chunk(chunk: List[Dict[str, Any]], fallback_offset: int) -> Di
         "ep_lo": int(chunk[0].get("episode", fallback_offset)),
         "ep_hi": int(chunk[-1].get("episode", fallback_offset + len(chunk) - 1)),
         "n": n,
-        "reward": _mean_counts(reward_sum, n),
-        "p1": _frac_counts(p1, n),
-        "p2": _frac_counts(p2, n),
-        "p3": _frac_counts(p3, n),
-        "fusion": _mean_counts(fusion_sum, n),
-        "loss_cap": _frac_counts(loss_cap, n),
-        "m1": _mean_counts(m1_sum, n),
-        "sn_active": _frac_counts(sn_active, n),
-        "sn_radius": _mean_counts(sn_radius_sum, n),
-        "invalid": _mean_counts(invalid_sum, n),
+        "reward": mean_from_total(reward_sum, n),
+        "p1": ratio_or_default(p1, n),
+        "p2": ratio_or_default(p2, n),
+        "p3": ratio_or_default(p3, n),
+        "fusion": mean_from_total(fusion_sum, n),
+        "loss_cap": ratio_or_default(loss_cap, n),
+        "m1": mean_from_total(m1_sum, n),
+        "sn_active": ratio_or_default(sn_active, n),
+        "sn_radius": mean_from_total(sn_radius_sum, n),
+        "invalid": mean_from_total(invalid_sum, n),
     }
 
 
@@ -182,18 +173,18 @@ def summarize(eps: List[Dict[str, Any]], anchor: int) -> Dict[str, Any]:
         "best_reward": max(rewards) if rewards else 0.0,
         "best_p3_reward": float(best_p3_reward),
         "best_p3_episode": int(best_p3_episode),
-        "post_p1": _frac([p == 1 for p in pr]),
-        "post_p2": _frac([p == 2 for p in pr]),
-        "post_p3": _frac([p == 3 for p in pr]),
-        "post_loss_cap": _frac([float(r.get("terminal_loss_mean", 0.0) or 0.0) >= LOSS_CAP for r in post]),
-        "post_mean_reward": _mean([float(r.get("total_reward", 0.0) or 0.0) for r in post]),
-        "post_mean_fusion": _mean([float(r.get("fusion_count", 0) or 0) for r in post]),
-        "tail_p1": _frac([p == 1 for p in tail_pr]),
-        "tail_p2": _frac([p == 2 for p in tail_pr]),
-        "tail_p3": _frac([p == 3 for p in tail_pr]),
-        "tail_mean_reward": _mean([float(r.get("total_reward", 0.0) or 0.0) for r in tail]),
-        "tail_mean_fusion": _mean([float(r.get("fusion_count", 0) or 0) for r in tail]),
-        "tail_mean_m1": _mean([float(r.get("terminal_metric1_mean", 0.0) or 0.0) for r in tail]),
+        "post_p1": fraction_true(p == 1 for p in pr),
+        "post_p2": fraction_true(p == 2 for p in pr),
+        "post_p3": fraction_true(p == 3 for p in pr),
+        "post_loss_cap": fraction_true(float(r.get("terminal_loss_mean", 0.0) or 0.0) >= LOSS_CAP for r in post),
+        "post_mean_reward": mean_or_default(float(r.get("total_reward", 0.0) or 0.0) for r in post),
+        "post_mean_fusion": mean_or_default(float(r.get("fusion_count", 0) or 0) for r in post),
+        "tail_p1": fraction_true(p == 1 for p in tail_pr),
+        "tail_p2": fraction_true(p == 2 for p in tail_pr),
+        "tail_p3": fraction_true(p == 3 for p in tail_pr),
+        "tail_mean_reward": mean_or_default(float(r.get("total_reward", 0.0) or 0.0) for r in tail),
+        "tail_mean_fusion": mean_or_default(float(r.get("fusion_count", 0) or 0) for r in tail),
+        "tail_mean_m1": mean_or_default(float(r.get("terminal_metric1_mean", 0.0) or 0.0) for r in tail),
     }
 
 
@@ -265,18 +256,18 @@ def _summarize_ordered_path(path: str, anchor: int, n_post: int) -> Dict[str, An
         "best_reward": best_reward if best_reward is not None else 0.0,
         "best_p3_reward": float(best_p3_reward),
         "best_p3_episode": int(best_p3_episode),
-        "post_p1": _frac_counts(post_p1, n_post),
-        "post_p2": _frac_counts(post_p2, n_post),
-        "post_p3": _frac_counts(post_p3, n_post),
-        "post_loss_cap": _frac_counts(post_loss_cap, n_post),
-        "post_mean_reward": _mean_counts(post_reward_sum, n_post),
-        "post_mean_fusion": _mean_counts(post_fusion_sum, n_post),
-        "tail_p1": _frac_counts(tail_p1, tail_n),
-        "tail_p2": _frac_counts(tail_p2, tail_n),
-        "tail_p3": _frac_counts(tail_p3, tail_n),
-        "tail_mean_reward": _mean_counts(tail_reward_sum, tail_n),
-        "tail_mean_fusion": _mean_counts(tail_fusion_sum, tail_n),
-        "tail_mean_m1": _mean_counts(tail_m1_sum, tail_n),
+        "post_p1": ratio_or_default(post_p1, n_post),
+        "post_p2": ratio_or_default(post_p2, n_post),
+        "post_p3": ratio_or_default(post_p3, n_post),
+        "post_loss_cap": ratio_or_default(post_loss_cap, n_post),
+        "post_mean_reward": mean_from_total(post_reward_sum, n_post),
+        "post_mean_fusion": mean_from_total(post_fusion_sum, n_post),
+        "tail_p1": ratio_or_default(tail_p1, tail_n),
+        "tail_p2": ratio_or_default(tail_p2, tail_n),
+        "tail_p3": ratio_or_default(tail_p3, tail_n),
+        "tail_mean_reward": mean_from_total(tail_reward_sum, tail_n),
+        "tail_mean_fusion": mean_from_total(tail_fusion_sum, tail_n),
+        "tail_mean_m1": mean_from_total(tail_m1_sum, tail_n),
     }
 
 

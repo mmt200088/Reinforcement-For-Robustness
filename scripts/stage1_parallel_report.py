@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_int_list_text, split_int_tokens  # noqa: E402
+from stats_utils import safe_div_or_none  # noqa: E402
 
 ROLLOUT_RE = re.compile(
     r"\[stage1-rollout\]\s+"
@@ -62,12 +63,6 @@ def _split_csv(text: str) -> list[str]:
 
 def _parse_int_list(text: str) -> list[int]:
     return parse_int_list_text(text, allow_semicolon=False)
-
-
-def _safe_div(numer: float, denom: float) -> float | None:
-    if denom <= 0.0:
-        return None
-    return float(numer) / float(denom)
 
 
 def _worker_counts_imbalanced(counts: Iterable[int]) -> bool:
@@ -147,7 +142,7 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
                 component_seconds[key] += float(total_match.group(key))
 
     component_share = {
-        key: _safe_div(value, total_wall_seconds)
+        key: safe_div_or_none(value, total_wall_seconds)
         for key, value in component_seconds.items()
     }
     throughput = (

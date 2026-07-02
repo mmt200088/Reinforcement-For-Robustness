@@ -9,8 +9,15 @@ import html
 import json
 import math
 from pathlib import Path
+import sys
 import time
 from typing import Any, Dict, Iterable, List
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from stats_utils import mean_or_none, median_sorted  # noqa: E402
 
 
 def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -41,21 +48,6 @@ def _is_nonfinite(value: Any) -> bool:
         return not math.isfinite(float(value))
     except Exception:
         return False
-
-
-def _mean_or_none(values: List[float]) -> float | None:
-    if not values:
-        return None
-    return float(math.fsum(values)) / float(len(values))
-
-
-def _median_sorted(values: List[float]) -> float:
-    if not values:
-        return 0.0
-    mid = len(values) // 2
-    if len(values) % 2:
-        return float(values[mid])
-    return float(values[mid - 1] + values[mid]) / 2.0
 
 
 def _window(values: List[float], size: int) -> Dict[str, float] | None:
@@ -139,7 +131,7 @@ def _gpu_stats(path: Path) -> Dict[str, Any]:
         utils.sort()
         summary["by_gpu"][idx] = {
             "max_util": float(utils[-1]) if utils else 0.0,
-            "p50_util": _median_sorted(utils) if utils else 0.0,
+            "p50_util": median_sorted(utils) if utils else 0.0,
             "active_sample_rate": (
                 int(bucket["active_count"]) / float(len(utils))
                 if utils else 0.0
@@ -311,11 +303,11 @@ def build_summary(
         for row in ppo_recent
         if "entropy_recovery_delta" in row
     ]
-    ppo_entropy_recent_mean = _mean_or_none(ppo_entropy_recent)
-    ppo_clip_recent_mean = _mean_or_none(ppo_clip_recent)
-    ppo_kl_recent_mean = _mean_or_none(ppo_kl_recent)
-    ppo_lr_scale_recent_mean = _mean_or_none(ppo_lr_scale_recent)
-    ppo_entropy_recovery_recent_mean = _mean_or_none(ppo_entropy_recovery_recent)
+    ppo_entropy_recent_mean = mean_or_none(ppo_entropy_recent)
+    ppo_clip_recent_mean = mean_or_none(ppo_clip_recent)
+    ppo_kl_recent_mean = mean_or_none(ppo_kl_recent)
+    ppo_lr_scale_recent_mean = mean_or_none(ppo_lr_scale_recent)
+    ppo_entropy_recovery_recent_mean = mean_or_none(ppo_entropy_recovery_recent)
 
     hard_failures: List[str] = []
     warnings: List[str] = []
@@ -457,8 +449,8 @@ def build_summary(
             "best_reward": best_reward,
             "best_episode": best_episode,
             "episodes_since_best": episodes_since_best,
-            "mean": _mean_or_none(returns),
-            "post_anchor_mean": _mean_or_none(post_returns),
+            "mean": mean_or_none(returns),
+            "post_anchor_mean": mean_or_none(post_returns),
             "rolling": rolling,
         },
         "terminal_reward": {"rolling": terminal_rolling},

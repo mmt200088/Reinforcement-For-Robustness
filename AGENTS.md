@@ -107,6 +107,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   report/experiment scripts; extend `report_format_utils.py` and
   `tests/test_report_format_utils.py` when a report needs a new shared
   formatting convention.
+- Shared report-stat helper rule, added 2026-07-03: lightweight report,
+  monitor, and benchmark scripts must use `stats_utils.py` for simple
+  means, sorted medians, fractions, count-based ratios, and safe division.
+  Do not add new script-local `_mean`, `_mean_or_none`, `_mean_seconds`,
+  `_median_sorted`, `_frac`, `_frac_counts`, `_mean_counts`, or `_safe_div`
+  helpers; extend `stats_utils.py` and `tests/test_stats_utils.py` when a
+  report needs another small reusable statistic. Keep core model/reward
+  semantics in their owning modules rather than moving domain-specific
+  metrics into this generic helper.
 - Fusion-count fixed-action experiment helper rule, added 2026-07-03:
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and

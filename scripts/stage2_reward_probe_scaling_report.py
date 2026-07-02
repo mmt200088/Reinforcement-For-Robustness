@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from report_format_utils import format_float  # noqa: E402
+from stats_utils import median_sorted  # noqa: E402
 
 FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 
@@ -109,14 +110,6 @@ def _first_present_by_index(
     return None
 
 
-def _median_sorted(values: Sequence[float]) -> float:
-    count = len(values)
-    mid = count // 2
-    if count % 2:
-        return float(values[mid])
-    return float(values[mid - 1] + values[mid]) / 2.0
-
-
 def _summarize_episodes(path: Path) -> dict[str, Any]:
     probe_walls: list[float] = []
     wall_total = 0.0
@@ -158,7 +151,7 @@ def _summarize_episodes(path: Path) -> dict[str, Any]:
     median_wall = None
     if probe_walls:
         probe_walls.sort()
-        median_wall = _median_sorted(probe_walls)
+        median_wall = median_sorted(probe_walls)
 
     return {
         "probe_calls": len(probe_walls),

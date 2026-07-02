@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import json
-import math
 import os
 import random
 import sys
@@ -39,6 +38,7 @@ from transformers import BertConfig, BertForSequenceClassification
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from function_handler import ReversibleLayerHandler  # noqa: E402
+from stats_utils import mean_or_default  # noqa: E402
 
 # Degrees the Stage-1 policy can actually select (mirror GELU_MAP / SOFTMAX_MAP
 # value sets in layer_importance_evaluator.py).
@@ -110,20 +110,16 @@ def _timed_episode(handler, model, batch, gelu, softmax, device):
     return logits, (t1 - t0), (t2 - t1)
 
 
-def _mean_seconds(values: Sequence[float]) -> float:
-    return float(math.fsum(values)) / float(len(values)) if values else float("nan")
-
-
 def _summarize_timings(
         fast_install: Sequence[float],
         fast_fwd: Sequence[float],
         slow_install: Sequence[float],
         slow_fwd: Sequence[float],
 ) -> dict:
-    fast_install_mean = _mean_seconds(fast_install)
-    fast_fwd_mean = _mean_seconds(fast_fwd)
-    slow_install_mean = _mean_seconds(slow_install)
-    slow_fwd_mean = _mean_seconds(slow_fwd)
+    fast_install_mean = mean_or_default(fast_install, default=float("nan"))
+    fast_fwd_mean = mean_or_default(fast_fwd, default=float("nan"))
+    slow_install_mean = mean_or_default(slow_install, default=float("nan"))
+    slow_fwd_mean = mean_or_default(slow_fwd, default=float("nan"))
 
     fast_total_sum = 0.0
     slow_total_sum = 0.0
