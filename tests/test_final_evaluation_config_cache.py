@@ -184,6 +184,53 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertTrue(all(cfg is not None for cfg in configs))
         self.assertEqual(key_scan_count, 1)
 
+    def test_stage2_only_random_generation_skips_stage1_solution_enumeration(self):
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        runner.final_eval_only = False
+        runner.stage1_budget_trials = 0
+        runner.stage2_budget_trials = 1
+        runner.permutation_trials = 0
+        runner.cost_equivalent_trials = 0
+        runner.budget_equivalent_trials = 0
+        runner.allowed_gelu_random = [1, 2]
+        runner.allowed_softmax = [6]
+        runner.input_noise_allowed = [1]
+        runner.weight_noise_allowed = [1]
+        runner.wffn1_noise_allowed = [1]
+        runner.evaluator = SimpleNamespace(
+            log=lambda *_args, **_kwargs: None,
+            GELU_COST_MAP={1: 0.5, 2: 1.0},
+            SOFTMAX_COST_MAP={6: 0.0},
+            INPUT_NOISE_COST_MAP={1: 1.0 / 40.0},
+            WEIGHT_NOISE_COST_MAP={1: 1.0 / 40.0},
+            WFFN1_NOISE_COST_MAP={1: 1.0 / 40.0},
+        )
+        opt_gelu = np.array([1, 1], dtype=int)
+        opt_softmax = np.array([6, 6], dtype=int)
+        opt_noise_cfg = {
+            full: np.array([1, 1], dtype=int)
+            for full in fem.NOISE_SCALING_FACTOR_KEYS
+        }
+
+        def build_result(*_args, **_kwargs):
+            return {}, None
+
+        with mock.patch.object(
+            runner,
+            "_enumerate_cost_solutions",
+            side_effect=AssertionError("stage1 maps should not be built"),
+        ):
+            runner._generate_random_results(
+                opt_gelu,
+                opt_softmax,
+                opt_noise_cfg,
+                opt_stage1_tot_c=1.0,
+                opt_stage2_tot_c=len(fem.BREAKDOWN_KEYS) * 2.0 / 40.0,
+                opt_breakdown={short: 2.0 / 40.0 for short in fem.BREAKDOWN_KEYS},
+                total_layers=2,
+                build_result=build_result,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

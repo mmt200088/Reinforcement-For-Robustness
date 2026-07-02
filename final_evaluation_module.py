@@ -803,15 +803,30 @@ class UnifiedFinalEvaluationModule:
             rng = np.random.default_rng()
         results: List[dict] = []
 
-        # Pre-enumerate stage1 cost solutions for budget/equiv.
-        gelu_solution_map = self._enumerate_cost_solutions(
-            self.allowed_gelu_random, ev.GELU_COST_MAP, total_layers
-        )
-        softmax_solution_map = self._enumerate_cost_solutions(
-            self.allowed_softmax, ev.SOFTMAX_COST_MAP, total_layers
-        )
-        opt_g_cost = float(np.sum([ev.GELU_COST_MAP[int(d)] for d in opt_gelu]))
-        opt_s_cost = float(np.sum([ev.SOFTMAX_COST_MAP[int(d)] for d in opt_softmax]))
+        gelu_solution_map = None
+        softmax_solution_map = None
+        opt_g_cost = None
+        opt_s_cost = None
+
+        def stage1_solution_maps():
+            nonlocal gelu_solution_map, softmax_solution_map
+            if gelu_solution_map is None:
+                gelu_solution_map = self._enumerate_cost_solutions(
+                    self.allowed_gelu_random, ev.GELU_COST_MAP, total_layers
+                )
+                softmax_solution_map = self._enumerate_cost_solutions(
+                    self.allowed_softmax, ev.SOFTMAX_COST_MAP, total_layers
+                )
+            return gelu_solution_map, softmax_solution_map
+
+        def stage1_exact_costs():
+            nonlocal opt_g_cost, opt_s_cost
+            if opt_g_cost is None:
+                opt_g_cost = float(np.sum([ev.GELU_COST_MAP[int(d)] for d in opt_gelu]))
+                opt_s_cost = float(
+                    np.sum([ev.SOFTMAX_COST_MAP[int(d)] for d in opt_softmax])
+                )
+            return opt_g_cost, opt_s_cost
 
         seen = {self._full_signature(opt_gelu, opt_softmax, opt_noise_cfg)}
 
@@ -829,6 +844,7 @@ class UnifiedFinalEvaluationModule:
         # --- Stage1Budget: random stage1 @ stage1 total cost, stage2 = optimized ---
         if self.stage1_budget_trials > 0 and not np.any(opt_gelu == 0):
             ev.log(f"Generating {self.stage1_budget_trials} Stage1Budget configs...")
+            gelu_solution_map, softmax_solution_map = stage1_solution_maps()
             for idx in range(self.stage1_budget_trials):
                 pair = self._sample_stage1_total_cost(
                     rng, gelu_solution_map, softmax_solution_map, opt_stage1_tot_c
@@ -864,6 +880,8 @@ class UnifiedFinalEvaluationModule:
         # --- Equiv: per-type cost match on stage1 (gelu,softmax) + stage2 (7 types) ---
         if self.cost_equivalent_trials > 0 and not np.any(opt_gelu == 0):
             ev.log(f"Generating {self.cost_equivalent_trials} Equiv configs...")
+            gelu_solution_map, softmax_solution_map = stage1_solution_maps()
+            opt_g_cost, opt_s_cost = stage1_exact_costs()
             for idx in range(self.cost_equivalent_trials):
                 pair = self._sample_stage1_equiv(
                     rng,
@@ -881,6 +899,7 @@ class UnifiedFinalEvaluationModule:
         # --- Budget: stage1 total match + stage2 total match (separately) ---
         if self.budget_equivalent_trials > 0 and not np.any(opt_gelu == 0):
             ev.log(f"Generating {self.budget_equivalent_trials} Budget configs...")
+            gelu_solution_map, softmax_solution_map = stage1_solution_maps()
             for idx in range(self.budget_equivalent_trials):
                 pair = self._sample_stage1_total_cost(
                     rng, gelu_solution_map, softmax_solution_map, opt_stage1_tot_c

@@ -364,6 +364,11 @@ the feasible GELU/Softmax total-cost pair list for a reused solution-map pair
 and target. Repeated Stage-1 budget samples no longer rescan the GELU cost-key
 domain for every random control.
 
+Progress 2026-07-02: final-eval random comparison generation now builds
+Stage-1 GELU/Softmax solution maps lazily. Stage2Budget-only runs and other
+paths that do not need Stage-1 budget/equivalence controls skip the Stage-1
+cost-solution enumeration entirely.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
