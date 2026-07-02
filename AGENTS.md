@@ -162,6 +162,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   constants or `_float_value` helpers in report scripts; extend
   `numeric_parse_utils.py` and `tests/test_numeric_parse_utils.py` if another
   tolerant numeric parsing convention is needed.
+- Shared text-line iterator rule, added 2026-07-03: report and monitor scripts
+  that need to feed an in-memory command-output string into an existing
+  line-oriented parser must use `text_utils.iter_text_lines()`. It preserves
+  file-handle-style trailing `\n` and intentionally splits only on `\n`, not
+  all Unicode line separators. Do not add script-local `_iter_text_lines`
+  helpers; extend `text_utils.py` and `tests/test_text_utils.py` if another
+  in-memory text iteration convention is needed.
 - Fusion-count fixed-action experiment helper rule, added 2026-07-03:
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and

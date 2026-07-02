@@ -18,6 +18,12 @@ import subprocess
 import sys
 from typing import Any, Iterable, Sequence
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from text_utils import iter_text_lines  # noqa: E402
+
 
 def _int_from_text(value: object, default: int = 0) -> int:
     text = str(value or "").strip()
@@ -157,19 +163,8 @@ def parse_nvidia_smi_lines(lines: Iterable[str]) -> list[dict[str, Any]]:
     return [rows_by_index[index] for index in sorted(rows_by_index)]
 
 
-def _iter_text_lines(text: str) -> Iterable[str]:
-    start = 0
-    while start < len(text):
-        end = text.find("\n", start)
-        if end < 0:
-            yield text[start:]
-            return
-        yield text[start:end + 1]
-        start = end + 1
-
-
 def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
-    return parse_nvidia_smi_lines(_iter_text_lines(str(text or "")))
+    return parse_nvidia_smi_lines(iter_text_lines(text))
 
 
 def _run_command(cmd: Sequence[str], *, cwd: Path | None = None, timeout: float = 5.0) -> str:

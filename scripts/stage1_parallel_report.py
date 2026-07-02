@@ -23,6 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from cli_parse_utils import parse_int_list_text, split_int_tokens  # noqa: E402
 from stats_utils import safe_div_or_none  # noqa: E402
+from text_utils import iter_text_lines  # noqa: E402
 
 ROLLOUT_RE = re.compile(
     r"\[stage1-rollout\]\s+"
@@ -174,19 +175,8 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
     }
 
 
-def _iter_text_lines(text: str) -> Iterable[str]:
-    start = 0
-    while start < len(text):
-        end = text.find("\n", start)
-        if end < 0:
-            yield text[start:]
-            return
-        yield text[start:end + 1]
-        start = end + 1
-
-
 def parse_log_text(text: str) -> dict[str, Any]:
-    return parse_log_lines(_iter_text_lines(str(text or "")))
+    return parse_log_lines(iter_text_lines(text))
 
 
 def _iter_log_lines(paths: Sequence[str]) -> Iterable[str]:
