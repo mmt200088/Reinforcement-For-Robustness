@@ -482,6 +482,13 @@ sampler cases kept outputs identical and improved runtime by `1.48x` to
 `2.26x`; the common all-degree-1 case reduced traced peak memory from
 `0.782MB` to `0.024MB`.
 
+Progress 2026-07-02: the same sampler now short-circuits unique min/max GELU
+cost extremes, where the selected vector is the only possible same-cost vector
+and peers must be empty. This avoids burning `max_attempts` on impossible
+final-eval controls. Same-process benchmarks kept outputs identical and reduced
+all-degree-4 from `0.2044s` to `0.00014s` and all-degree-0 from `0.1829s` to
+`0.00011s`.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

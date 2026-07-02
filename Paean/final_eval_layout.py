@@ -120,6 +120,20 @@ def _gelu_choice_costs_q(gelu_choices: Sequence[int]) -> np.ndarray:
     )
 
 
+def _unique_extreme_cost_has_no_peer(
+    target_q: int,
+    num_layers: int,
+    choice_costs_q: np.ndarray,
+) -> bool:
+    min_cost_q = int(choice_costs_q.min())
+    max_cost_q = int(choice_costs_q.max())
+    if int(target_q) == int(num_layers) * min_cost_q:
+        return int(np.count_nonzero(choice_costs_q == min_cost_q)) == 1
+    if int(target_q) == int(num_layers) * max_cost_q:
+        return int(np.count_nonzero(choice_costs_q == max_cost_q)) == 1
+    return False
+
+
 def build_cost_matched_stage1_configs(
     selected_gelu: Sequence[int],
     selected_softmax: Sequence[int],
@@ -145,6 +159,8 @@ def build_cost_matched_stage1_configs(
     target_q = _cost_q(sel_gelu)
     choices = np.asarray([int(c) for c in gelu_choices], dtype=np.int64)
     choice_costs_q = _gelu_choice_costs_q(choices)
+    if _unique_extreme_cost_has_no_peer(target_q, int(num_layers), choice_costs_q):
+        return [], max(0, int(count))
 
     accepted: List[Tuple[List[int], List[int]]] = []
     seen = {tuple(sel_gelu)}  # exclude the selected config
