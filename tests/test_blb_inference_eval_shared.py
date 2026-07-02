@@ -1,10 +1,55 @@
 from __future__ import annotations
 
 import importlib.util
+import pathlib
 import types
 import unittest
 
 import numpy as np
+
+
+def _function_region_from_source(source: str, name: str) -> str:
+    marker = f"def {name}("
+    start = source.index(marker)
+    next_def = source.find("\ndef ", start + len(marker))
+    next_class = source.find("\nclass ", start + len(marker))
+    candidates = [pos for pos in (next_def, next_class) if pos != -1]
+    end = min(candidates) if candidates else len(source)
+    return source[start:end]
+
+
+class InstalledInferenceEvalSourceTest(unittest.TestCase):
+    def test_full_eval_defers_per_batch_tensor_cpu_syncs(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(
+            encoding="utf-8"
+        )
+        region = _function_region_from_source(
+            source, "run_installed_model_on_dataloader"
+        )
+        loop_region = region[
+            region.index("with torch.inference_mode():"):region.index("avg_loss =")
+        ]
+
+        self.assertIn("loss_tensors.append(loss_t.detach()", loop_region)
+        self.assertIn("normalize_logits_tensor_for_metrics", loop_region)
+        self.assertNotIn("loss_t.detach().item()", loop_region)
+        self.assertNotIn("normalize_logits_for_metrics(\n                logits_t", loop_region)
+
+    def test_probe_trial_defers_per_batch_tensor_cpu_syncs(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(
+            encoding="utf-8"
+        )
+        region = _function_region_from_source(source, "run_installed_probe_trial")
+        loop_region = region[
+            region.index("with torch.inference_mode():"):region.index("finally:")
+        ]
+
+        self.assertIn("loss_tensors.append(loss_t.detach()", loop_region)
+        self.assertIn("trial_pred_tensors.append", loop_region)
+        self.assertNotIn("compute_probe_batch_metrics(", loop_region)
+        self.assertNotIn(".cpu().numpy()", loop_region)
 
 
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")

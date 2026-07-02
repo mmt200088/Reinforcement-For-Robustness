@@ -61,6 +61,22 @@ def normalize_logits_for_metrics(logits: Any, expected_batch_size: int) -> np.nd
     return logits_arr
 
 
+def normalize_logits_tensor_for_metrics(
+        logits: torch.Tensor,
+        expected_batch_size: int,
+        ) -> torch.Tensor:
+    logits_t = logits.detach()
+    if logits_t.dim() == 0:
+        logits_t = logits_t.reshape(1)
+    if logits_t.shape[0] != expected_batch_size:
+        logits_t = logits_t.reshape(expected_batch_size, -1)
+    elif expected_batch_size == 1 and logits_t.dim() == 1:
+        logits_t = logits_t.reshape(1, -1)
+    if logits_t.dim() == 2 and logits_t.shape[1] == 1:
+        return logits_t.reshape(-1)
+    return logits_t
+
+
 def output_loss_and_logits(outputs: Any) -> Tuple[Optional[torch.Tensor], torch.Tensor]:
     loss = getattr(outputs, "loss", None)
     logits = getattr(outputs, "logits", None)
@@ -69,8 +85,11 @@ def output_loss_and_logits(outputs: Any) -> Tuple[Optional[torch.Tensor], torch.
     return loss, logits
 
 
-def concatenate_logits_for_metrics(batch_logits: Sequence[np.ndarray]) -> np.ndarray:
-    arrays = [np.asarray(x) for x in batch_logits]
+def concatenate_logits_for_metrics(batch_logits: Sequence[Any]) -> np.ndarray:
+    arrays = [
+        np.asarray(x.detach().cpu().numpy()) if isinstance(x, torch.Tensor) else np.asarray(x)
+        for x in batch_logits
+    ]
     if not arrays:
         return np.asarray([])
     if all(arr.ndim == 1 for arr in arrays):
@@ -79,6 +98,32 @@ def concatenate_logits_for_metrics(batch_logits: Sequence[np.ndarray]) -> np.nda
         [arr.reshape(-1, 1) if arr.ndim == 1 else arr for arr in arrays],
         axis=0,
     )
+
+
+def concatenate_labels_for_metrics(batch_labels: Sequence[Any]) -> np.ndarray:
+    arrays = [
+        np.asarray(x.detach().cpu().numpy()).reshape(-1)
+        if isinstance(x, torch.Tensor)
+        else np.asarray(x).reshape(-1)
+        for x in batch_labels
+    ]
+    if not arrays:
+        return np.asarray([])
+    return np.concatenate(arrays, axis=0)
+
+
+def tensor_scalar_values_to_float_list(values: Sequence[torch.Tensor]) -> List[float]:
+    if not values:
+        return []
+    stacked = torch.stack([v.reshape(()) for v in values], dim=0)
+    return [float(x) for x in stacked.detach().cpu().numpy().reshape(-1)]
+
+
+def tensor_values_to_numpy_arrays(values: Sequence[Any]) -> List[np.ndarray]:
+    return [
+        np.asarray(x.detach().cpu().numpy()) if isinstance(x, torch.Tensor) else np.asarray(x)
+        for x in values
+    ]
 
 
 def run_installed_model_on_dataloader(
@@ -98,14 +143,20 @@ def run_installed_model_on_dataloader(
     """
     del split_name  # Kept in the signature so call sites can pass their context.
     model.eval()
-    loss_values: List[float] = []
+    loss_tensors: List[torch.Tensor] = []
     loss_counts: List[int] = []
-    batch_logits: List[np.ndarray] = []
-    batch_labels: List[np.ndarray] = []
+    batch_logits: List[Any] = []
+    batch_labels: List[Any] = []
     t0 = time.time()
     with torch.inference_mode():
         for batch in dataloader:
-            labels = normalize_labels_for_metrics(batch["labels"])
+            raw_labels = batch["labels"]
+            if isinstance(raw_labels, torch.Tensor):
+                labels = raw_labels.detach().reshape(-1)
+                expected_batch_size = int(labels.numel())
+            else:
+                labels = normalize_labels_for_metrics(raw_labels)
+                expected_batch_size = int(labels.size)
             moved = {
                 k: v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
@@ -113,29 +164,37 @@ def run_installed_model_on_dataloader(
             outputs = model(**moved)
             loss_t, logits_t = output_loss_and_logits(outputs)
             if loss_t is not None:
-                loss_values.append(float(loss_t.detach().item()))
-                loss_counts.append(int(labels.size))
-            logits = normalize_logits_for_metrics(
-                logits_t,
-                expected_batch_size=int(labels.size),
-            )
+                loss_tensors.append(loss_t.detach().reshape(()))
+                loss_counts.append(expected_batch_size)
+            if isinstance(logits_t, torch.Tensor):
+                logits = normalize_logits_tensor_for_metrics(
+                    logits_t,
+                    expected_batch_size=expected_batch_size,
+                )
+            else:
+                logits = normalize_logits_for_metrics(
+                    logits_t,
+                    expected_batch_size=expected_batch_size,
+                )
             batch_logits.append(logits)
             batch_labels.append(labels)
 
+    loss_values = tensor_scalar_values_to_float_list(loss_tensors)
     avg_loss = sample_weighted_mean(loss_values, loss_counts) if loss_values else 0.0
+    all_logits = concatenate_logits_for_metrics(batch_logits)
+    all_labels = concatenate_labels_for_metrics(batch_labels)
     n_batches = max(1, len(dataloader))
     avg_time = (time.time() - t0) * 1000.0 / n_batches
-    all_logits = concatenate_logits_for_metrics(batch_logits)
-    all_labels = (
-        np.concatenate([np.asarray(x).reshape(-1) for x in batch_labels], axis=0)
-        if batch_labels else np.asarray([])
-    )
 
     ds = str(metric_profile or "").lower()
     if ds == "mnli":
         pred_classes = logits_to_classes(all_logits)
         metric1 = float(np.mean(pred_classes == all_labels)) if all_labels.size else 0.0
-        metric2 = float(mnli_metric2_fn()) if (not use_train and mnli_metric2_fn is not None) else metric1
+        metric2 = (
+            float(mnli_metric2_fn())
+            if (not use_train and mnli_metric2_fn is not None)
+            else metric1
+        )
     else:
         metric1, metric2 = metric_pair_for_dataset(ds, all_labels, all_logits)
     return InstalledModelEvalResult(
@@ -195,12 +254,12 @@ def run_installed_probe_trial(
         restore_training: bool = True,
         ) -> Tuple[float, float, float]:
     """Run one already-installed noisy probe trial over probe batches."""
-    losses: List[float] = []
-    m1s: List[float] = []
-    m2s: List[float] = []
+    loss_tensors: List[torch.Tensor] = []
+    m1_tensors: List[torch.Tensor] = []
+    m2_tensors: List[torch.Tensor] = []
     counts: List[int] = []
-    trial_preds: List[np.ndarray] = []
-    trial_labels: List[np.ndarray] = []
+    trial_pred_tensors: List[Any] = []
+    trial_label_tensors: List[Any] = []
     was_training = bool(model.training)
     model.eval()
     try:
@@ -208,26 +267,36 @@ def run_installed_probe_trial(
             for batch in probe_batches:
                 outputs = model(**probe_batch_to_model_kwargs(batch))
                 _loss_t, logits = output_loss_and_logits(outputs)
-                loss, m1, m2 = compute_probe_batch_metrics(
-                    logits,
-                    batch.labels,
-                    is_regression=bool(is_regression),
-                )
-                losses.append(loss)
-                m1s.append(m1)
-                m2s.append(m2)
                 counts.append(probe_batch_sample_count(batch.labels))
-                preds = (
-                    logits.view(-1).detach().cpu().numpy()
-                    if is_regression
-                    else logits_to_classes_tensor(logits.detach()).detach().cpu().numpy()
-                )
-                trial_preds.append(preds)
-                trial_labels.append(batch.labels.detach().cpu().numpy())
+                if is_regression:
+                    preds = logits.view(-1).float()
+                    targets = batch.labels.view(-1).float()
+                    loss_t = torch.nn.functional.mse_loss(preds, targets)
+                    m1_t = -loss_t
+                    m2_t = -loss_t
+                    trial_pred_tensors.append(preds.detach())
+                else:
+                    loss_t = torch.nn.functional.cross_entropy(
+                        logits.float(), batch.labels.long(), reduction="mean",
+                    )
+                    preds = logits_to_classes_tensor(logits.detach())
+                    labels = batch.labels.detach()
+                    m1_t = (preds.long() == labels.long()).float().mean()
+                    m2_t = m1_t
+                    trial_pred_tensors.append(preds.detach())
+                loss_tensors.append(loss_t.detach().reshape(()))
+                m1_tensors.append(m1_t.detach().reshape(()))
+                m2_tensors.append(m2_t.detach().reshape(()))
+                trial_label_tensors.append(batch.labels.detach().reshape(-1))
     finally:
         if restore_training and was_training:
             model.train()
 
+    losses = tensor_scalar_values_to_float_list(loss_tensors)
+    m1s = tensor_scalar_values_to_float_list(m1_tensors)
+    m2s = tensor_scalar_values_to_float_list(m2_tensors)
+    trial_preds = tensor_values_to_numpy_arrays(trial_pred_tensors)
+    trial_labels = tensor_values_to_numpy_arrays(trial_label_tensors)
     trial_metrics = finalize_probe_trial_metrics(
         losses,
         m1s,
