@@ -22,6 +22,8 @@ import csv
 import gc
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Dict, List, Sequence
 
 import matplotlib
@@ -31,6 +33,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from json_utils import json_default as _json_default  # noqa: E402
 from experiment.scripts.noise.noise_scaling_sweep import (
     build_evaluator,
     maybe_limit_eval_split,
@@ -119,14 +126,6 @@ def parse_args() -> argparse.Namespace:
 def _ensure_dir(path: str) -> str:
     os.makedirs(path, exist_ok=True)
     return path
-
-
-def _json_default(obj):
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, np.generic):
-        return obj.item()
-    raise TypeError(f"Unsupported type for JSON serialization: {type(obj)!r}")
 
 
 def _resolve_random_control_seed(seed_value):

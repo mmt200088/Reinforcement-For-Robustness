@@ -39,6 +39,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from json_utils import to_jsonable  # noqa: E402
+
 _NOISE_VARIANCE_TABLE_CACHE: Dict[int, Dict[int, Dict[str, float]]] | None = None
 
 
@@ -54,19 +59,7 @@ def _html_escape(s: Any) -> str:
 
 
 def _json_safe(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, tuple):
-        return [_json_safe(v) for v in value]
-    if isinstance(value, list):
-        return [_json_safe(v) for v in value]
-    item = getattr(value, "item", None)
-    if callable(item):
-        try:
-            return item()
-        except Exception:
-            return value
-    return value
+    return to_jsonable(value, preserve_native=True)
 
 
 # ---------------------------------------------------------------------------

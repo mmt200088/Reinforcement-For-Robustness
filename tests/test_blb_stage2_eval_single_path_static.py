@@ -84,6 +84,9 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
         final_eval = (repo / "final_evaluation_module.py").read_text(encoding="utf-8")
         persistence = (repo / "blb_stage2_rl" / "persistence.py").read_text(encoding="utf-8")
+        noise_install = (repo / "scripts" / "blb_verify_noise_install.py").read_text(encoding="utf-8")
+        layer_noise = (repo / "scripts" / "bert_mrpc_layer_noise_experiment.py").read_text(encoding="utf-8")
+        rl_ga = (repo / "rl_ga_compare_runner.py").read_text(encoding="utf-8")
 
         for text in (paean, final_eval):
             self.assertIn("from json_utils import to_jsonable", text)
@@ -91,6 +94,27 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             self.assertNotIn("def _json_ready", text)
         self.assertIn("from json_utils import to_jsonable as _to_jsonable", persistence)
         self.assertNotIn("def _to_jsonable", persistence)
+        for text in (noise_install, layer_noise):
+            self.assertIn("from json_utils import to_jsonable", text)
+            self.assertIn("return to_jsonable(value", text)
+            self.assertNotIn("return {str(k): _json_safe", text)
+            self.assertNotIn("return {str(key): _json_safe", text)
+        self.assertIn("from json_utils import to_jsonable", rl_ga)
+        self.assertNotIn("def to_jsonable(value)", rl_ga)
+
+    def test_json_default_scripts_use_shared_adapter(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        stage2_probe = (
+            repo / "experiment" / "scripts" / "noise" / "stage2_probe_subset_size_experiment.py"
+        ).read_text(encoding="utf-8")
+        softmax_sweep = (
+            repo / "experiment" / "scripts" / "noise" / "softmax_v_noise_sweep.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("from json_utils import json_default as _json_default", stage2_probe)
+        self.assertNotIn("def _json_default", stage2_probe)
+        self.assertIn("from json_utils import json_default", softmax_sweep)
+        self.assertNotIn("def json_default", softmax_sweep)
 
 
 if __name__ == "__main__":

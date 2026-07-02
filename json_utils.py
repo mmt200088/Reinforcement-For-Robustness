@@ -112,3 +112,11 @@ def to_jsonable(
     if stringify_unknown:
         return str(value)
     return value
+
+
+def json_default(value: Any) -> Any:
+    """``json.dump(s, default=...)`` adapter for project scalar/container values."""
+    converted = to_jsonable(value)
+    if converted is value:
+        raise TypeError(f"Object of type {type(value)!r} is not JSON serializable")
+    return converted

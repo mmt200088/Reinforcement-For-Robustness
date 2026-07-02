@@ -27,6 +27,11 @@ DEFAULT_TASK = "mrpc"
 DEFAULT_SPLIT = "validation"
 DEFAULT_OUTPUT_DIR = Path("reports/transformer_noise_mrpc")
 DEFAULT_SEED = 20260514
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from json_utils import to_jsonable  # noqa: E402
 
 
 def _nice_float(value: float) -> float:
@@ -322,22 +327,7 @@ def write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequenc
 
 
 def _json_safe(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(key): _json_safe(val) for key, val in value.items()}
-    if isinstance(value, list):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, tuple):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, Path):
-        return str(value)
-    try:
-        import numpy as np
-
-        if isinstance(value, np.generic):
-            return value.item()
-    except Exception:
-        pass
-    return value
+    return to_jsonable(value, preserve_native=True)
 
 
 def save_results(output_dir: Path, results: Mapping[str, Any]) -> Path:

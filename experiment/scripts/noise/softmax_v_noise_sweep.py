@@ -22,6 +22,8 @@ import csv
 import gc
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import matplotlib
@@ -31,6 +33,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from json_utils import json_default  # noqa: E402
 from experiment.scripts.noise.noise_scaling_sweep import (
     ALL_TASKS,
     TASK_REGISTRY,
@@ -120,14 +127,6 @@ def resolve_scaling_factors(raw_values: Sequence[int]) -> Tuple[int, ...]:
             f"Allowed values: {list(SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS)}"
         )
     return tuple(sorted(dict.fromkeys(values)))
-
-
-def json_default(obj):
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, np.generic):
-        return obj.item()
-    raise TypeError(f"Object of type {type(obj)!r} is not JSON serializable")
 
 
 def make_trial_seed(

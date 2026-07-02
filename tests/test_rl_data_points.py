@@ -9,7 +9,7 @@ from unittest import mock
 
 import numpy as np
 
-from json_utils import to_jsonable as shared_to_jsonable
+from json_utils import json_default, to_jsonable as shared_to_jsonable
 from rl_data_points import RLDataPointWriter, make_unique_run_id, to_jsonable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +87,14 @@ class RLDataPointWriterTest(unittest.TestCase):
             to_jsonable(Payload(Path("reports/out.html"), np.int64(7))),
             {"path": "reports/out.html", "value": 7},
         )
+
+    def test_json_default_is_shared_json_dump_adapter(self):
+        payload = {"array": np.array([1, 2]), "scalar": np.float32(1.25), "path": Path("x/y")}
+        encoded = json.dumps(payload, default=json_default, sort_keys=True)
+        self.assertEqual(json.loads(encoded), {"array": [1, 2], "path": "x/y", "scalar": 1.25})
+
+        with self.assertRaises(TypeError):
+            json.dumps({"bad": object()}, default=json_default)
 
     def test_to_jsonable_does_not_import_torch_for_json_native_scalars(self):
         import builtins

@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+from json_utils import to_jsonable
 from runtime_error_reporter import (
     clear_error_summary,
     write_error_summary,
@@ -156,24 +157,6 @@ def _build_parent_death_preexec_fn():
             return
 
     return _preexec
-
-
-def to_jsonable(value):
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, (np.integer,)):
-        return int(value)
-    if isinstance(value, (np.floating,)):
-        return float(value)
-    if isinstance(value, (np.bool_,)):
-        return bool(value)
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, dict):
-        return {str(k): to_jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [to_jsonable(v) for v in value]
-    return value
 
 
 def write_json(path: Path, payload: dict) -> None:
