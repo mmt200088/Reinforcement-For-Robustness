@@ -876,6 +876,24 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         ):
             self.assertNotIn(old_pattern, policy_src, msg=f"old multi-pass pack remains: {old_pattern!r}")
 
+    def test_legacy_rollout_buffer_packs_numpy_arrays_in_single_pass(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
+        to_tensors_region = _method_region_from_source(policy_src, "to_tensors")
+        for needle in (
+            "def _pack_rollout_samples",
+            "for i, sample in enumerate(samples):",
+            "states, actions, log_probs, rewards, values = _pack_rollout_samples(",
+        ):
+            self.assertIn(needle, policy_src, msg=f"policy.py missing: {needle!r}")
+        for old_pattern in (
+            "states = np.stack([s.state for s in self._samples])",
+            "actions = np.stack([s.action for s in self._samples])",
+            "log_probs = np.array([s.log_prob for s in self._samples], dtype=np.float32)",
+            "rewards = np.array([s.reward for s in self._samples], dtype=np.float32)",
+            "values = np.array([s.value for s in self._samples], dtype=np.float32)",
+        ):
+            self.assertNotIn(old_pattern, to_tensors_region, msg=f"old multi-pass pack remains: {old_pattern!r}")
+
     def test_action_dist_avoids_gpu_sync_for_zero_exploration_floor(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
         action_dist_region = _method_region_from_source(policy_src, "_action_dist")

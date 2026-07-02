@@ -381,6 +381,27 @@ class RolloutSample:
     value: float
 
 
+def _pack_rollout_samples(
+        samples: Sequence[RolloutSample],
+        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    if not samples:
+        raise RuntimeError("RolloutBuffer is empty")
+    first = samples[0]
+    n = len(samples)
+    states = np.empty((n, *first.state.shape), dtype=np.float32)
+    actions = np.empty((n, *first.action.shape), dtype=np.int64)
+    log_probs = np.empty(n, dtype=np.float32)
+    rewards = np.empty(n, dtype=np.float32)
+    values = np.empty(n, dtype=np.float32)
+    for i, sample in enumerate(samples):
+        states[i] = sample.state
+        actions[i] = sample.action
+        log_probs[i] = sample.log_prob
+        rewards[i] = sample.reward
+        values[i] = sample.value
+    return states, actions, log_probs, rewards, values
+
+
 class RolloutBuffer:
     """单步 episode（horizon=1）的轻量级 rollout buffer。
 
@@ -424,11 +445,9 @@ class RolloutBuffer:
         """
         if not self._samples:
             raise RuntimeError("RolloutBuffer is empty")
-        states = np.stack([s.state for s in self._samples])
-        actions = np.stack([s.action for s in self._samples])
-        log_probs = np.array([s.log_prob for s in self._samples], dtype=np.float32)
-        rewards = np.array([s.reward for s in self._samples], dtype=np.float32)
-        values = np.array([s.value for s in self._samples], dtype=np.float32)
+        states, actions, log_probs, rewards, values = _pack_rollout_samples(
+            self._samples,
+        )
 
         returns = rewards.copy()
         advantages = returns - values
