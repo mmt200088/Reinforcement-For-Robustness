@@ -187,6 +187,20 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertNotIn("critic_value = float(value.item())", fallback_region)
         self.assertNotIn("gelu_probs.cpu().numpy().tolist()", fallback_region)
 
+    def test_stage1_parallel_replay_stash_uses_deque(self):
+        source = _source(LAYER_EVALUATOR)
+        marker = "# Stage-1 multi-GPU rollout pre-fetch"
+        parallel_region = source.split(marker, 1)[1].split(
+            "if not _handled_via_parallel:",
+            1,
+        )[0]
+
+        self.assertIn("from collections import deque", source)
+        self.assertIn("_stage1_parallel_stash = deque()", source)
+        self.assertIn("_stage1_parallel_stash.extend(_rollouts)", parallel_region)
+        self.assertIn("rollout = _stage1_parallel_stash.popleft()", parallel_region)
+        self.assertNotIn("_stage1_parallel_stash.pop(0)", source)
+
 
 if __name__ == "__main__":
     unittest.main()

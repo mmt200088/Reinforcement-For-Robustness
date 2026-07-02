@@ -26,6 +26,7 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
+from collections import deque
 import time
 import copy
 import itertools
@@ -6276,7 +6277,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     f"devices={[str(w.device) for w in _stage1_parallel_runner.workers]} "
                     f"episodes_per_worker={PPO_UPDATE_INTERVAL // _stage1_parallel_runner.num_workers}"
                 )
-            _stage1_parallel_stash: List[Any] = []  # Filled per PPO update window
+            _stage1_parallel_stash = deque()  # Filled per PPO update window
             _stage1_parallel_window_t0 = None
             _stage1_parallel_window_idx = None
             _stage1_parallel_collect_seconds = 0.0
@@ -6487,7 +6488,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                                 f"  [stage1-rollout] window={_window_idx_for_runner} "
                                 + _shared_eval_cache.stats_line()
                             )
-                    rollout = _stage1_parallel_stash.pop(0)
+                    rollout = _stage1_parallel_stash.popleft()
                     _stage1_parallel_replay_t0 = time.time()
                     # Replay rollout into the central RecurrentRolloutBuffer.
                     buffer.start_episode()

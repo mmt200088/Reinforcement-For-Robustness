@@ -362,6 +362,11 @@ callers reach the same Stage-1 plaintext configuration through equivalent
 `use_train=False` / `split="validation_full"` entrypoints, while preserving the
 existing install/forward semantics.
 
+Progress 2026-07-03: Stage-1 parallel rollout replay now keeps prefetched
+rollouts in a `deque` and consumes them with `popleft()` instead of repeatedly
+calling `list.pop(0)`. This preserves global rollout order while avoiding
+per-episode list shifting in every PPO update window.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:
