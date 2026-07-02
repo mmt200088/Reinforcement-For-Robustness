@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from function_handler import ReversibleLayerHandler
+from json_utils import write_json_file
 from layer_importance_evaluator import LayerImportanceEvaluator
 
 
@@ -160,8 +161,7 @@ def main() -> int:
     }
 
     out = Path(args.output_json)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_json_file(out, summary)
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     if not summary["no_stage2_noise_hooks_installed"] or not summary["identical_metrics"]:
         return 1

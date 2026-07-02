@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import ast
 import html
-import json
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from json_utils import read_json_file  # noqa: E402
+
 REPORT_DIR = ROOT / "reports"
 ACTION_SPACE = ROOT / "blb_stage2_rl" / "action_space.py"
 BRIDGE = ROOT / "rescale_optimizer_bridge.py"
@@ -267,7 +272,7 @@ def local_fields(block_specs: Mapping[int, List[Tuple[str, str, int]]]) -> List[
 
 
 def static_entries() -> Dict[str, dict]:
-    data = json.loads(STATIC_SKELETONS.read_text(encoding="utf-8"))
+    data = read_json_file(STATIC_SKELETONS)
     return {str(e["config_name"]): e for e in data.get("results", []) if e.get("success")}
 
 
