@@ -64,6 +64,55 @@ class BLBF0ScanTests(unittest.TestCase):
 
         self.assertEqual([row["action_hash"] for row in best], ["a", "b", "d"])
 
+    def test_per_slot_summary_scans_rows_once(self):
+        from scripts.blb_f0_scan_feasible_domain import _build_per_slot_summary_rows
+
+        class SinglePassRows:
+            def __init__(self, rows):
+                self.rows = list(rows)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                if self.iterations > 1:
+                    raise AssertionError("per-slot summary should not rescan all rows per slot")
+                return iter(self.rows)
+
+        rows = SinglePassRows([
+            {
+                "slot_global_index": 0,
+                "optimizer_valid": True,
+                "delta_total_bits": -2,
+                "delta_fusion_count": 0,
+            },
+            {
+                "slot_global_index": 0,
+                "optimizer_valid": False,
+                "delta_total_bits": 0,
+                "delta_fusion_count": 0,
+            },
+            {
+                "slot_global_index": 1,
+                "optimizer_valid": True,
+                "delta_total_bits": 3,
+                "delta_fusion_count": -1,
+            },
+        ])
+
+        summary = _build_per_slot_summary_rows(
+            baseline_action=[1, 2],
+            records=self._records(),
+            rows=rows,
+        )
+
+        self.assertEqual(rows.iterations, 1)
+        self.assertEqual(summary[0]["candidate_count"], 2)
+        self.assertEqual(summary[0]["valid_count"], 1)
+        self.assertEqual(summary[0]["improving_valid_count"], 1)
+        self.assertEqual(summary[0]["best_delta_total_bits"], -2)
+        self.assertEqual(summary[1]["candidate_count"], 1)
+        self.assertEqual(summary[1]["best_delta_fusion_count"], -1)
+
     def test_scan_stops_when_baseline_is_invalid(self):
         from scripts.blb_f0_scan_feasible_domain import run_scan_core
 

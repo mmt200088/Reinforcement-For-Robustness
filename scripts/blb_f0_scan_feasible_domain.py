@@ -185,6 +185,64 @@ def _smallest_cost_rows(rows: Iterable[Mapping[str, Any]], limit: int) -> List[M
     )
 
 
+def _build_per_slot_summary_rows(
+        *,
+        baseline_action: Sequence[int],
+        records: Sequence[Mapping[str, Any]],
+        rows: Iterable[Mapping[str, Any]],
+        ) -> List[Dict[str, Any]]:
+    summaries: List[Dict[str, Any]] = []
+    best_bits: List[int | None] = []
+    best_fusion: List[int | None] = []
+    for slot_idx, baseline_idx in enumerate(baseline_action):
+        record = records[slot_idx] if slot_idx < len(records) else {}
+        summaries.append({
+            "slot_global_index": int(slot_idx),
+            "layer": record.get("layer", ""),
+            "block": record.get("block", ""),
+            "field": record.get("field", ""),
+            "kind": record.get("kind", ""),
+            "baseline_index": int(baseline_idx),
+            "candidate_count": 0,
+            "valid_count": 0,
+            "valid_rate": 1.0,
+            "improving_valid_count": 0,
+            "best_delta_total_bits": 0,
+            "best_delta_fusion_count": 0,
+        })
+        best_bits.append(None)
+        best_fusion.append(None)
+
+    for row in rows:
+        try:
+            slot_idx = int(row["slot_global_index"])
+        except Exception:
+            continue
+        if slot_idx < 0 or slot_idx >= len(summaries):
+            continue
+        summary = summaries[slot_idx]
+        summary["candidate_count"] = int(summary["candidate_count"]) + 1
+        if not bool(row.get("optimizer_valid")):
+            continue
+        delta_bits = int(row["delta_total_bits"])
+        delta_fusion = int(row["delta_fusion_count"])
+        summary["valid_count"] = int(summary["valid_count"]) + 1
+        if delta_bits < 0 or delta_fusion < 0:
+            summary["improving_valid_count"] = int(summary["improving_valid_count"]) + 1
+        best_bits[slot_idx] = delta_bits if best_bits[slot_idx] is None else min(best_bits[slot_idx], delta_bits)
+        best_fusion[slot_idx] = (
+            delta_fusion if best_fusion[slot_idx] is None else min(best_fusion[slot_idx], delta_fusion)
+        )
+
+    for slot_idx, summary in enumerate(summaries):
+        candidate_count = int(summary["candidate_count"])
+        valid_count = int(summary["valid_count"])
+        summary["valid_rate"] = float(valid_count / candidate_count) if candidate_count else 1.0
+        summary["best_delta_total_bits"] = int(best_bits[slot_idx]) if best_bits[slot_idx] is not None else 0
+        summary["best_delta_fusion_count"] = int(best_fusion[slot_idx]) if best_fusion[slot_idx] is not None else 0
+    return summaries
+
+
 def _build_mask(
         *,
         baseline_action: Sequence[int],
@@ -518,29 +576,11 @@ def run_scan_core(
             rows.append(row)
     _write_jsonl(out / "per_slot_scan.jsonl", rows)
 
-    summary_rows = []
-    for slot_idx, baseline_idx in enumerate(baseline_action):
-        slot_rows = [row for row in rows if int(row["slot_global_index"]) == int(slot_idx)]
-        valid_rows = [row for row in slot_rows if bool(row["optimizer_valid"])]
-        improving = [
-            row for row in valid_rows
-            if int(row["delta_total_bits"]) < 0 or int(row["delta_fusion_count"]) < 0
-        ]
-        record = records[slot_idx] if slot_idx < len(records) else {}
-        summary_rows.append({
-            "slot_global_index": int(slot_idx),
-            "layer": record.get("layer", ""),
-            "block": record.get("block", ""),
-            "field": record.get("field", ""),
-            "kind": record.get("kind", ""),
-            "baseline_index": int(baseline_idx),
-            "candidate_count": int(len(slot_rows)),
-            "valid_count": int(len(valid_rows)),
-            "valid_rate": float(len(valid_rows) / len(slot_rows)) if slot_rows else 1.0,
-            "improving_valid_count": int(len(improving)),
-            "best_delta_total_bits": min([int(row["delta_total_bits"]) for row in valid_rows], default=0),
-            "best_delta_fusion_count": min([int(row["delta_fusion_count"]) for row in valid_rows], default=0),
-        })
+    summary_rows = _build_per_slot_summary_rows(
+        baseline_action=baseline_action,
+        records=records,
+        rows=rows,
+    )
     summary_fields = [
         "slot_global_index", "layer", "block", "field", "kind", "baseline_index",
         "candidate_count", "valid_count", "valid_rate", "improving_valid_count",

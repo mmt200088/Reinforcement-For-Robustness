@@ -384,6 +384,12 @@ benchmark, the summary selection stayed identical while median time dropped
 from `0.280s` to `0.069s` and traced peak memory dropped from `22.76MB` to
 near zero.
 
+Progress 2026-07-02: `scripts/blb_f0_scan_feasible_domain.py` now builds the
+per-slot summary rows with one pass over `per_slot_scan` rows instead of
+rescanning all rows once per slot. A local 16k-row / 800-slot synthetic
+benchmark preserved the summary output and reduced this step from `1.8017s` to
+`0.0195s`.
+
 Progress 2026-07-02: `scripts/blb_build_fusion_count_map.py` now consumes golden
 enumeration shard results with `Pool.imap_unordered()` and merges the result
 stream directly, instead of `Pool.map()` batching every shard result before
