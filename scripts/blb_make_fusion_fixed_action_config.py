@@ -23,6 +23,7 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
         sys.path.insert(0, _p)
 
 from cli_parse_utils import parse_exact_json_int_list
+from json_utils import write_json_file
 from blb_stage2_rl.fusion_fixed_action import build_fusion_fixed_config
 
 
@@ -76,8 +77,7 @@ def main() -> None:
         source_path=str(input_path),
     )
     output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_file(output_path, cfg, trailing_newline=False)
     summary = cfg["summary"]
     print(
         f"wrote {output_path} "

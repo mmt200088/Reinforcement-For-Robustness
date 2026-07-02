@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from blb_stage2_rl.action_space import action_dims_for_config, per_layer_field_offsets  # noqa: E402
+from json_utils import write_json_file  # noqa: E402
 
 
 def _run_git(args: Sequence[str]) -> str | None:
@@ -312,7 +313,7 @@ def write_manifest(manifest: Dict[str, Any], output_dir: str | Path) -> Dict[str
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / "run_manifest.json"
     md_path = out / "run_manifest.md"
-    json_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_file(json_path, manifest)
     lines = [
         "# BLB Trust-0 Run Manifest",
         "",

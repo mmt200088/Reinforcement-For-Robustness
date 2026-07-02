@@ -29,6 +29,8 @@ for p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimiz
     if p not in sys.path:
         sys.path.insert(0, p)
 
+from json_utils import write_json_file  # noqa: E402
+
 # (graph_key, block_idx, gelu_degree, attn_degree) for each boostable block-type.
 # Mirrors scripts/blb_build_fusion_count_map.py's block_types_for_profile degrees.
 # block5_n1 gets NO phase-1 boost (its fused chain is already all-q_max) but DOES get
@@ -99,7 +101,7 @@ def main() -> int:
             meta = payload.setdefault("build_meta", {})
             meta["precision_boost_applied"] = True
             meta["precision_boost_phase2_applied"] = True
-            path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            write_json_file(path, payload, ensure_ascii=True)
             print(f"  wrote {path}")
     print("\n[done] precision boost applied" + (" (dry-run)" if args.dry_run else ""))
     return rc
