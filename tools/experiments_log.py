@@ -90,6 +90,7 @@ def _git_info() -> Dict[str, Any]:
         sha = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
             stderr=subprocess.DEVNULL,
+            timeout=5,
         ).decode().strip()
         out["git_commit"] = sha
     except Exception:
@@ -98,6 +99,7 @@ def _git_info() -> Dict[str, Any]:
         status = subprocess.check_output(
             ["git", "status", "--porcelain"],
             stderr=subprocess.DEVNULL,
+            timeout=5,
         ).decode()
         out["git_dirty"] = bool(status.strip())
     except Exception:

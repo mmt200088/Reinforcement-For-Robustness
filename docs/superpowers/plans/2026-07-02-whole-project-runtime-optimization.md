@@ -488,6 +488,11 @@ tree glob once per seed. A local synthetic tree with 5000 persistent dirs and
 discovery wall time from `4.5251s` to `0.0379s` and traced peak memory from
 `0.11MB` to `0.05MB`.
 
+Progress 2026-07-02: `tools/experiments_log.py` now bounds both best-effort
+git provenance subprocesses in `_git_info()` with a 5-second timeout. This
+prevents run registration/index rebuild from hanging indefinitely on a slow or
+wedged git command while preserving the existing fallback behavior.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
