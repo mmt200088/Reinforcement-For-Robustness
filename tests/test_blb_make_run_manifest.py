@@ -180,6 +180,27 @@ class BlbMakeRunManifestTest(unittest.TestCase):
 
         self.assertEqual(digest, expected.hexdigest())
 
+    def test_dir_sha256_prunes_skip_dirs_before_iterating_them(self):
+        manifest = _load_manifest_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "keep.py").write_text("keep\n", encoding="utf-8")
+            (root / ".git").mkdir()
+            (root / ".git" / "large-object").write_text("ignored\n", encoding="utf-8")
+
+            original_iterdir = Path.iterdir
+
+            def guarded_iterdir(path):
+                if Path(path).name == ".git":
+                    raise AssertionError("skip directories should not be traversed")
+                return original_iterdir(path)
+
+            with mock.patch.object(Path, "iterdir", guarded_iterdir):
+                digest = manifest._dir_sha256(root)
+
+        self.assertRegex(digest or "", r"^[0-9a-f]{64}$")
+
 
 if __name__ == "__main__":
     unittest.main()

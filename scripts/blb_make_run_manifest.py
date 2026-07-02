@@ -52,7 +52,7 @@ def _dir_sha256(path: Path) -> str | None:
         return None
     h = hashlib.sha256()
     skip_dirs = {".git", "__pycache__", ".pytest_cache", ".mypy_cache"}
-    for file_path in _iter_sorted_tree_paths([path]):
+    for file_path in _iter_sorted_tree_paths([path], skip_dir_names=skip_dirs):
         if not file_path.is_file() or any(part in skip_dirs for part in file_path.parts):
             continue
         rel = file_path.relative_to(path).as_posix()
@@ -81,16 +81,21 @@ def _resolve_path(path_text: str | None) -> Path | None:
     return path if path.is_absolute() else (REPO_ROOT / path)
 
 
-def _iter_sorted_tree_paths(paths: Iterable[Path]) -> Iterable[Path]:
+def _iter_sorted_tree_paths(
+        paths: Iterable[Path],
+        *,
+        skip_dir_names: Iterable[str] = (),
+        ) -> Iterable[Path]:
+    skip_names = {str(name) for name in skip_dir_names}
     heap: list[tuple[str, Path]] = []
     for path in paths:
         heapq.heappush(heap, (path.as_posix(), path))
     while heap:
         _key, path = heapq.heappop(heap)
         if path.is_dir():
-            children = list(path.iterdir())
-            children.sort(key=lambda child: child.as_posix())
-            for child in children:
+            if path.name in skip_names:
+                continue
+            for child in path.iterdir():
                 heapq.heappush(heap, (child.as_posix(), child))
         else:
             yield path

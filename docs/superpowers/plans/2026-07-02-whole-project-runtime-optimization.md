@@ -694,6 +694,13 @@ keeps Trust-0 manifest generation from stalling a server command indefinitely
 if git status/diff/upstream resolution hangs, while preserving the existing
 `None` fallback on failure.
 
+Progress 2026-07-02: `_dir_sha256()` in `scripts/blb_make_run_manifest.py` now
+prunes skip directories such as `.git`, `__pycache__`, `.pytest_cache`, and
+`.mypy_cache` before calling `iterdir()` on them, while preserving the existing
+full-tree hash for included files. A local synthetic tree with 30 kept files and
+3600 skipped `.git` files preserved the digest and reduced hash time from
+`0.3584s` to `0.0105s`.
+
 Progress 2026-07-02: `scripts/blb_phase0_preflight.py` now scans source/config
 files line by line when building `blb_entrypoints_grep.txt` instead of
 materializing each file with `read_text().splitlines()`. A local 100k-line
