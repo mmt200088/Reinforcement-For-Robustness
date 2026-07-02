@@ -95,6 +95,32 @@ def near_baseline_k_indices(
     return list(_cached_near_baseline_k_indices(k_values, baseline_idx, radius))
 
 
+@lru_cache(maxsize=1024)
+def _cached_fusion_step_level_mask(
+        n_opts: int,
+        n_k: int,
+        k_level_values: Tuple[int, ...],
+        mutable: bool,
+        radius: int,
+        baseline_k_index: int,
+        max_step_dim: int,
+        max_num_levels: int,
+        ) -> np.ndarray:
+    mask = np.zeros((int(max_step_dim), int(max_num_levels)), dtype=bool)
+    mask[0, 0] = True
+    mask[1, int(baseline_k_index)] = True
+    if mutable:
+        opt_hi = min(int(n_opts) - 1, int(radius))
+        for o in range(0, opt_hi + 1):
+            mask[0, o] = True
+        for k in _cached_near_baseline_k_indices(
+                k_level_values, int(baseline_k_index), int(radius)):
+            if 0 <= int(k) < int(n_k):
+                mask[1, int(k)] = True
+    mask.setflags(write=False)
+    return mask
+
+
 def build_fusion_step_level_mask(
         *,
         fusion_num_options: int,
@@ -115,27 +141,28 @@ def build_fusion_step_level_mask(
     every block and ``radius`` covers all option/K widths, the result equals the
     unrestricted open mask — so the curriculum never permanently hides a config.
     """
-    mask = np.zeros((int(max_step_dim), int(max_num_levels)), dtype=bool)
-    n_opts = min(int(fusion_num_options), int(max_num_levels))
-    n_k = min(int(k_num_levels), int(max_num_levels))
+    max_step_dim = int(max_step_dim)
+    max_num_levels = int(max_num_levels)
+    n_opts = min(int(fusion_num_options), max_num_levels)
+    n_k = min(int(k_num_levels), max_num_levels)
     base_k = int(baseline_k_index)
     if n_opts <= 0 or n_k <= 0:
         raise ValueError("fusion step has no option/K levels")
     if base_k < 0 or base_k >= n_k:
         raise ValueError(f"baseline K index {base_k} out of width {n_k}")
-    # Baseline action — always feasible (option 0 is the all-max baseline option).
-    mask[0, 0] = True
-    mask[1, base_k] = True
-    if not mutable:
-        return mask
-    opt_hi = min(n_opts - 1, max(0, int(radius)))
-    for o in range(0, opt_hi + 1):
-        mask[0, o] = True
-    for k in near_baseline_k_indices(
-            k_level_values=k_level_values, baseline_idx=base_k, dim=n_k, radius=int(radius)):
-        if 0 <= int(k) < n_k:
-            mask[1, int(k)] = True
-    return mask
+    mutable = bool(mutable)
+    radius = max(0, int(radius)) if mutable else 0
+    k_values = tuple(int(k_level_values[idx]) for idx in range(n_k)) if mutable else ()
+    return _cached_fusion_step_level_mask(
+        int(n_opts),
+        int(n_k),
+        k_values,
+        mutable,
+        int(radius),
+        int(base_k),
+        int(max_step_dim),
+        int(max_num_levels),
+    ).copy()
 
 
 def select_mutable_step_indices(

@@ -137,6 +137,18 @@ class FusionStepLevelMaskTest(unittest.TestCase):
                 max_step_dim=2, max_num_levels=6,
             )
 
+    def test_reuses_cached_mask_template_without_sharing_returned_array(self):
+        cache = fcur._cached_fusion_step_level_mask
+        cache.cache_clear()
+
+        first = self._mask(n_opts=3, mutable=True, radius=1)
+        first[0, 0] = False
+        second = self._mask(n_opts=3, mutable=True, radius=1)
+
+        self.assertTrue(second[0, 0])
+        self.assertEqual({int(i) for i in np.where(second[1])[0]}, {2, 3, 5})
+        self.assertGreaterEqual(cache.cache_info().hits, 1)
+
 
 class NearBaselineKTest(unittest.TestCase):
     def test_includes_baseline_and_size(self):
