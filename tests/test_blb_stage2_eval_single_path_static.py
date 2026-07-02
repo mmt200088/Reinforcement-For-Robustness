@@ -35,6 +35,13 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             )
         self.assertEqual(offenders, [])
 
+    def test_paean_final_eval_does_not_forward_unapplied_replan_cfgs(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        text = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
+        self.assertIn("optimizer_invalid_chain", text)
+        self.assertIn("replan_config_not_fully_applied", text)
+        self.assertIn("skipped_forward:{skip_reason}", text)
+
 
 if __name__ == "__main__":
     unittest.main()

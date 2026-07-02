@@ -505,8 +505,27 @@ class BLBActionFinalEvaluationModule:
             cfgs_dict=cfgs_dict,
             opt_outputs=opt_outputs,
         )
-        skipped_forward = False
-        single, repeat = self._run_blb_eval(decoded, gelu=gelu, softmax=softmax)
+        skip_reason = ""
+        if bool(opt_signals.any_invalid):
+            skip_reason = "optimizer_invalid_chain"
+        elif not bool(replan_application.get("model_uses_replan_config", False)):
+            skip_reason = "replan_config_not_fully_applied"
+        skipped_forward = bool(skip_reason)
+        if skipped_forward:
+            single = {
+                "loss": float("inf"),
+                "p": 0.0,
+                "s": 0.0,
+                "time_ms": 0.0,
+                "install_verification": {
+                    "model_will_use_selected_cfg": False,
+                    "skipped": True,
+                    "skip_reason": skip_reason,
+                },
+            }
+            repeat = None
+        else:
+            single, repeat = self._run_blb_eval(decoded, gelu=gelu, softmax=softmax)
         if repeat is not None:
             stats = repeat["stats"]
             loss = float(stats["loss_mean"])
@@ -560,6 +579,8 @@ class BLBActionFinalEvaluationModule:
             "install_verification": single.get("install_verification", {}),
             "skipped_forward": bool(skipped_forward),
         }
+        if skip_reason:
+            result["forward_skipped_reason"] = skip_reason
         if repeat is not None:
             stats = repeat["stats"]
             result.update(
@@ -576,7 +597,12 @@ class BLBActionFinalEvaluationModule:
             result["loss_std"] = 0.0
             result["p_std"] = 0.0
             result["s_std"] = 0.0
-            result["evaluation_protocol"] = "single_validation_full"
+            result["evaluation_n"] = 0 if skipped_forward else 1
+            result["evaluation_protocol"] = (
+                f"skipped_forward:{skip_reason}"
+                if skipped_forward
+                else "single_validation_full"
+            )
         feasibility = self._build_feasibility_report(
             result=result,
             report_constraints=report_constraints,
