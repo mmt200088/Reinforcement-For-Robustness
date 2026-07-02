@@ -1205,10 +1205,11 @@ def sequential_ppo_update(
 
     for _ in range(int(cfg.n_epochs)):
         np.random.shuffle(indices)
+        epoch_indices = torch.from_numpy(indices).long().to(device)
         mb_size = max(1, int(cfg.minibatch_size))
         for start in range(0, n, mb_size):
             end = min(n, start + mb_size)
-            mb = torch.from_numpy(indices[start:end]).long().to(device)
+            mb = epoch_indices[start:end]
             eval_out = policy.evaluate_action(
                 states.index_select(0, mb),
                 actions.index_select(0, mb),

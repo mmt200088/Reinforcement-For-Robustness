@@ -873,7 +873,7 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("policy_rollout_wall_seconds", runner_src)
 
     def test_sequential_rollout_buffer_packs_numpy_arrays_in_single_pass(self):
-        policy_src = open("blb_stage2_rl/sequential_policy.py", encoding="utf-8").read()
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
         for needle in (
             "def _pack_numpy_arrays",
             "for i, t in enumerate(buf):",
@@ -887,6 +887,15 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "returns, advantages = self.compute_gae(gamma=gamma, lam=lam)",
         ):
             self.assertNotIn(old_pattern, policy_src, msg=f"old multi-pass pack remains: {old_pattern!r}")
+
+    def test_sequential_ppo_update_reuses_device_minibatch_indices_per_epoch(self):
+        policy_src = (REPO_ROOT / "blb_stage2_rl/sequential_policy.py").read_text(encoding="utf-8")
+        update_region = _method_region_from_source(policy_src, "sequential_ppo_update")
+
+        self.assertIn("np.random.shuffle(indices)", update_region)
+        self.assertIn("epoch_indices = torch.from_numpy(indices).long().to(device)", update_region)
+        self.assertIn("mb = epoch_indices[start:end]", update_region)
+        self.assertNotIn("mb = torch.from_numpy(indices[start:end]).long().to(device)", update_region)
 
     def test_legacy_rollout_buffer_packs_numpy_arrays_in_single_pass(self):
         policy_src = (REPO_ROOT / "blb_stage2_rl/policy.py").read_text(encoding="utf-8")
