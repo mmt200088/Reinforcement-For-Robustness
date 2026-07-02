@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -183,8 +184,15 @@ def _default_artifact_roots(root: Path) -> list[Path]:
 
 def _iter_files(root: Path) -> Iterable[Path]:
     if not root.exists():
-        return []
-    return (path for path in root.rglob("*") if path.is_file())
+        return
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        filenames.sort()
+        current = Path(dirpath)
+        for filename in filenames:
+            path = current / filename
+            if path.is_file():
+                yield path
 
 
 def summarize_artifacts(

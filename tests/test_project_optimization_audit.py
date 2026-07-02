@@ -168,6 +168,23 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
         self.assertEqual(artifacts["counts"]["html_reports"], 1)
         self.assertEqual(artifacts["counts"]["npz_curves"], 1)
 
+    def test_artifact_summary_streams_tree_without_path_rglob(self):
+        audit = _load_audit_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run = root / "run"
+            _touch(run / "diagnostics" / "episodes.jsonl", '{"episode": 0}\n')
+
+            with mock.patch.object(
+                Path,
+                "rglob",
+                side_effect=AssertionError("artifact scan should use streaming os.walk"),
+            ):
+                artifacts = audit.summarize_artifacts(root, artifact_roots=[run])
+
+        self.assertEqual(artifacts["counts"]["episodes_jsonl"], 1)
+
     def test_cli_writes_json_and_markdown(self):
         audit = _load_audit_module()
 

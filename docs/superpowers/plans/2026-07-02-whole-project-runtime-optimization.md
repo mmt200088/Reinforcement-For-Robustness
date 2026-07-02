@@ -581,6 +581,12 @@ materializing each file with `read_text().splitlines()`. A local 100k-line
 source-file benchmark preserved the same 10 entrypoint matches and reduced
 traced peak memory from `8.36MB` to `0.02MB`.
 
+Progress 2026-07-02: `scripts/project_optimization_audit.py` now walks
+artifact roots with a streaming sorted `os.walk()` iterator instead of
+`Path.rglob("*")`. A local synthetic 3400-file artifact tree preserved the same
+evidence counts and reduced scan cost from `0.1523s`/`1.89MB` to
+`0.1270s`/`0.58MB`.
+
 - [ ] **Step 3: Commit/push source and evidence**
 
 Never leave canonical source changes only on the server.
