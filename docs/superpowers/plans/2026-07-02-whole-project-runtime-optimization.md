@@ -468,6 +468,12 @@ top-candidate scatter. A local 100k-episode synthetic run comparison reduced
 run loading for that path from `0.464s`/`39.39MB` to effectively `0.000s`/
 `0.00MB`.
 
+Progress 2026-07-02: `tools/paper_figures.py` no longer rereads each
+`top_candidates.jsonl` only to decide whether the cost-vs-accuracy scatter
+needs a legend; it reuses a loop-local `has_points` flag. A local 100k-row
+top-candidate benchmark reduced that figure's candidate-read path from
+`0.9476s`/`78.58MB` to `0.4444s`/`39.28MB`.
+
 Progress 2026-07-02: `tools/aggregate_seeds.py` now finds the latest Paean
 `blb_action_final_eval_results_*.json` by streaming `os.walk()` and retaining
 only the newest path, instead of recursive `glob` plus sorting a materialized

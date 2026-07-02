@@ -62,6 +62,57 @@ class PaperFiguresTest(unittest.TestCase):
 
         self.assertEqual(rc, 0)
 
+    def test_cost_vs_accuracy_reads_top_candidates_once_per_run(self):
+        paper = _load_paper_figures_module()
+        run = paper.RunData(
+            run_dir="/tmp/run",
+            label="r1",
+            progress_dir="/tmp/run/progress",
+            episodes=[],
+            ppo_updates=[],
+            best_action_vec=[],
+            best_slots=[],
+            baseline_slots=[],
+            diff_vs_baseline=[],
+            first_invalid_counts={},
+            action_histogram=None,
+        )
+        read_paths = []
+
+        class FakeAxes:
+            def scatter(self, *_args, **_kwargs):
+                pass
+
+            def set_xlabel(self, *_args, **_kwargs):
+                pass
+
+            def set_ylabel(self, *_args, **_kwargs):
+                pass
+
+            def set_title(self, *_args, **_kwargs):
+                pass
+
+            def grid(self, *_args, **_kwargs):
+                pass
+
+            def legend(self, *_args, **_kwargs):
+                pass
+
+        class FakePlt:
+            def subplots(self, **_kwargs):
+                return object(), FakeAxes()
+
+        def fake_read_jsonl(path):
+            read_paths.append(path)
+            return [{"total_bits": 10, "total_reward": 1.5}]
+
+        with mock.patch.object(paper, "_setup_matplotlib", return_value=FakePlt()):
+            with mock.patch.object(paper, "_save_fig", return_value=[]):
+                with mock.patch.object(paper, "_read_jsonl", fake_read_jsonl):
+                    paper.fig_cost_vs_accuracy([run], out_path_no_ext="/tmp/out", formats=("png",))
+
+        self.assertEqual(len(read_paths), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

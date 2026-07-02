@@ -484,11 +484,13 @@ def fig_cost_vs_accuracy(
     plt = _setup_matplotlib()
     fig_w = 3.5 if single_column else 7.0
     fig, ax = plt.subplots(figsize=(fig_w, 2.4))
+    has_points = False
     for i, run in enumerate(runs):
         top_path = os.path.join(run.progress_dir, "diagnostics", "top_candidates.jsonl")
         rows = _read_jsonl(top_path)
         if not rows:
             continue
+        has_points = True
         xs = [float(r.get("total_bits", 0.0)) for r in rows]
         ys = [float(r.get("total_reward", 0.0)) for r in rows]
         ax.scatter(xs, ys, color=PALETTE[i % len(PALETTE)],
@@ -497,7 +499,7 @@ def fig_cost_vs_accuracy(
     ax.set_ylabel("Training reward")
     ax.set_title("Top-K candidates: cost vs reward")
     ax.grid(True, alpha=0.25, linewidth=0.5)
-    if any(_read_jsonl(os.path.join(r.progress_dir, "diagnostics", "top_candidates.jsonl")) for r in runs):
+    if has_points:
         ax.legend(loc="best", frameon=False, fontsize=7)
     return _save_fig(fig, out_path_no_ext, formats)
 
