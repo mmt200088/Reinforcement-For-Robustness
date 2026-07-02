@@ -10,6 +10,70 @@
 
 ---
 
+## Current Execution Spine
+
+This plan is executed as one main chain, not as isolated micro-optimizations.
+Each optimization must either reduce time/memory in the active training/eval
+flow, improve hardware utilization evidence, or remove overhead from required
+post-run artifacts without weakening the validation protocol.
+
+### Main Chain Order
+
+1. **Keep runs launchable and observable.** Launcher/preset/resource snapshot
+   work comes first because every server run depends on correct device flags,
+   source identity, and artifact roots.
+2. **Keep required artifact writes cheap.** JSON/JSONL/NPZ data that is needed
+   for paper figures remains mandatory, but expensive HTML/PNG/PDF rendering
+   should happen after training unless live rendering is explicitly requested.
+3. **Reduce shared GPU forward overhead.** `function_handler.py`,
+   `layer_importance_evaluator.py`, Paean final eval, and Stage-2 probe
+   installs are shared by Stage-1, Stage-2, and final-eval paths; safe tensor
+   allocation and synchronization reductions here have broad effect.
+4. **Optimize pure-Python cost/replan/report loops.** Rescale/fusion-map and
+   report tools stay CPU-bound; use streaming, session reuse, bounded heaps,
+   and exact-cache keys rather than GPU rewrites.
+5. **Promote hardware defaults only with server evidence.** Any change that
+   claims better GPU utilization, worker assignment, or batch/device defaults
+   needs 1GPU-vs-NGPU parity plus wall-clock evidence before becoming a
+   default.
+
+### Current Priority Queue
+
+| Priority | Flow | Next concrete work | Verification gate |
+| --- | --- | --- | --- |
+| P0 | Plan and audit | Keep this plan synchronized with real commits and missing gates. | `python3 -m unittest tests.test_project_optimization_audit -v` and plan self-review. |
+| P1 | Shared GPU forward | Continue removing redundant full-shape allocations, scalar syncs, and repeated install work in `function_handler.py` and `layer_importance_evaluator.py` without changing noise/reward semantics. | Source/behavior tests in `tests/test_stage1_eval_accel.py`, `tests/test_stage1_approx_reuse.py`, and server torch parity when available. |
+| P1 | Stage-2/Paean evaluation | Reuse parsed action/config metadata and avoid retaining large unused action payloads while final-eval groups are scheduled. | `tests/test_paean_action_grid.py`, `tests/test_run_fusion_count_action_eval.py`, `tests/test_run_fusion_count_action_eval_rlpath.py`, and a fixed-action server smoke before default changes. |
+| P1 | Structured artifacts | Keep required `rl_training_data_points/`, `episodes.jsonl`, PPO diagnostics, and manifests complete while streaming verification/report generation. | `tests/test_rl_data_points.py`, `tests/test_stage2_persistent_output_verifier.py`, and generated evidence bundle checks. |
+| P2 | Rescale/fusion maps | Reuse session-loaded graph/baseline data, stream large map builds and summaries, and avoid parsing sidecars as maps. | `tests/test_rescale_optimizer_bridge_cache.py`, `tests/test_blb_fusion_count_map.py`, fusion-map report tests, and server build logs for large maps. |
+| P2 | Stage-1 rollout | Add or consume timing fields for per-worker rollout, cache hit rate, forward wall, and report write wall before changing worker defaults. | Stage-1 local semantics tests plus server 1GPU/4GPU speed and deterministic-result evidence. |
+| P2 | Stage-2 GPU scheduling | Leave core Stage-2 RL algorithm changes to the active Stage-2 agent; optimize only tooling/gates unless a handoff is explicit. | `stage2_ngpu_ab_compare.py`, GPU utilization reports, rollout signatures, and PPO-visible equality gates. |
+
+### Recent Cross-Flow Runtime Commits
+
+- `ed77481` batched installed inference metric transfers, reducing repeated
+  CPU/GPU scalar transfers in installed-model evaluation.
+- `edbd766` and `794be01` cached Stage-1 GELU and Stage-2 fusion action masks.
+- `63b8f22`, `66ee403`, `990a89c`, `ebeddae`, and related commits deferred or
+  batched scalar synchronization in Stage-1/Stage-2 PPO paths.
+- `980ca8d`, `50c9907`, and `70a2655` removed unnecessary full-shape tensor
+  allocations in shared GELU/LN/softmax noisy forward paths.
+- `9468f58`, `51cd4a0`, `58c6666`, `9273440`, and `b0a8697` centralized JSON
+  artifact read/write helpers so report/final-eval code avoids duplicated
+  parsing and formatting paths.
+
+### Standing Verification Rules
+
+- Local tests can prove pure-Python parsing, caching, and source-level
+  allocation constraints.
+- Local torch-less skips are not hardware evidence; any GPU utilization claim
+  requires a server run with visible GPU inventory and sampled utilization.
+- Result-equivalence claims for Stage-1/Stage-2 require the validation_full
+  protocol to remain unchanged and must not use train data or proxies.
+- When a concurrent agent owns Stage-2 RL logic, restrict this optimization
+  work to shared tooling, forward-path allocation, report/artifact paths, and
+  explicit handoff-safe files.
+
 ## File Structure
 
 - Create `scripts/project_optimization_audit.py`: dependency-free whole-flow inventory and artifact summary.
