@@ -58,6 +58,19 @@ def _nonempty_file(path):
     return bool(path) and os.path.isfile(path) and os.path.getsize(path) > 0
 
 
+class _CountingSequence:
+    def __init__(self, values):
+        self.values = list(values)
+        self.iterations = 0
+
+    def __len__(self):
+        return len(self.values)
+
+    def __iter__(self):
+        self.iterations += 1
+        return iter(self.values)
+
+
 class UpgradedCurvesTest(unittest.TestCase):
     def _full_kwargs(self, n=400):
         return dict(
@@ -115,6 +128,25 @@ class UpgradedCurvesTest(unittest.TestCase):
         finally:
             persistence.save_stage1_style_training_curve = old
         self.assertEqual(calls, [])
+
+    def test_render_plots_false_iterates_each_npz_series_once(self):
+        seqs = {
+            "episode_returns": _CountingSequence([1.0, 2.0, 3.0]),
+            "best_reward_curve": _CountingSequence([1.0, 2.0, 3.0]),
+            "ppo_loss_curve": _CountingSequence([0.2, 0.1]),
+            "episode_losses": _CountingSequence([0.3, 0.2, 0.1]),
+            "episode_metric1s": _CountingSequence([0.8, 0.81, 0.82]),
+            "episode_metric2s": _CountingSequence([0.7, 0.71, 0.72]),
+            "episode_fusion_counts": _CountingSequence([0, 1, 2]),
+            "episode_avg_ks": _CountingSequence([13, 12, 11]),
+            "entropy_series": _CountingSequence([1.0, 0.9]),
+            "entropy_episodes": _CountingSequence([120, 240]),
+        }
+        with tempfile.TemporaryDirectory() as d:
+            out = persistence.write_training_curves(d, **seqs, render_plots=False)
+            self.assertTrue(_nonempty_file(out["npz"]))
+        for name, seq in seqs.items():
+            self.assertLessEqual(seq.iterations, 1, name)
 
     def test_env_can_disable_stage2_plot_rendering_without_callsite_change(self):
         old_env = os.environ.get("RFR_STAGE2_RENDER_PLOTS")
