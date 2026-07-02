@@ -525,6 +525,13 @@ needs a legend; it reuses a loop-local `has_points` flag. A local 100k-row
 top-candidate benchmark reduced that figure's candidate-read path from
 `0.9476s`/`78.58MB` to `0.4444s`/`39.28MB`.
 
+Progress 2026-07-02: `tools/paper_figures.py` now projects JSONL rows to the
+fields each figure needs while loading run data: `episodes.jsonl` keeps only
+`total_reward`, `ppo_updates.jsonl` keeps the four plotted PPO metrics, and
+`top_candidates.jsonl` keeps only `total_bits`/`total_reward` for the scatter.
+A local 100k-row synthetic episode log with 20 unused debug fields preserved
+row count and reduced traced peak memory from `368.41MB` to `25.19MB`.
+
 Progress 2026-07-02: `tools/aggregate_seeds.py` now finds the latest Paean
 `blb_action_final_eval_results_*.json` by streaming `os.walk()` and retaining
 only the newest path, instead of recursive `glob` plus sorting a materialized

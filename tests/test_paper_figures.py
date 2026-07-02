@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -102,8 +103,9 @@ class PaperFiguresTest(unittest.TestCase):
             def subplots(self, **_kwargs):
                 return object(), FakeAxes()
 
-        def fake_read_jsonl(path):
+        def fake_read_jsonl(path, fields=None):
             read_paths.append(path)
+            self.assertEqual(tuple(fields or ()), ("total_bits", "total_reward"))
             return [{"total_bits": 10, "total_reward": 1.5}]
 
         with mock.patch.object(paper, "_setup_matplotlib", return_value=FakePlt()):
@@ -112,6 +114,45 @@ class PaperFiguresTest(unittest.TestCase):
                     paper.fig_cost_vs_accuracy([run], out_path_no_ext="/tmp/out", formats=("png",))
 
         self.assertEqual(len(read_paths), 1)
+
+    def test_load_run_projects_large_jsonl_rows_to_needed_fields(self):
+        paper = _load_paper_figures_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            diag = root / "run" / "blb_stage2" / "progress" / "diagnostics"
+            diag.mkdir(parents=True)
+            (diag / "episodes.jsonl").write_text(
+                json.dumps({"episode": 1, "total_reward": 2.5, "large_debug": "x" * 1000}) + "\n",
+                encoding="utf-8",
+            )
+            (diag / "ppo_updates.jsonl").write_text(
+                json.dumps(
+                    {
+                        "policy_loss": 0.1,
+                        "value_loss": 0.2,
+                        "entropy": 0.3,
+                        "clip_fraction": 0.4,
+                        "large_debug": "y" * 1000,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            run = paper.load_run(
+                str(root / "run"),
+                include_best_action=False,
+                include_baseline_action=False,
+                include_first_invalid=False,
+                include_action_histogram=False,
+            )
+
+        self.assertEqual(run.episodes, [{"total_reward": 2.5}])
+        self.assertEqual(
+            run.ppo_updates,
+            [{"policy_loss": 0.1, "value_loss": 0.2, "entropy": 0.3, "clip_fraction": 0.4}],
+        )
 
 
 if __name__ == "__main__":

@@ -133,19 +133,25 @@ class RunData:
     action_histogram: Optional[np.ndarray]   # shape (num_slots, max_levels)
 
 
-def _read_jsonl(path: str) -> List[Dict[str, Any]]:
+def _read_jsonl(path: str, fields: Sequence[str] | None = None) -> List[Dict[str, Any]]:
     if not os.path.isfile(path):
         return []
     out: List[Dict[str, Any]] = []
+    wanted = tuple(fields or ())
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             t = line.strip()
             if not t:
                 continue
             try:
-                out.append(json.loads(t))
+                row = json.loads(t)
             except Exception:
                 pass
+            else:
+                if wanted:
+                    out.append({key: row[key] for key in wanted if key in row})
+                else:
+                    out.append(row)
     return out
 
 
@@ -188,8 +194,11 @@ def load_run(
             progress_dir = run_dir
 
     diag = os.path.join(progress_dir, "diagnostics")
-    episodes = _read_jsonl(os.path.join(diag, "episodes.jsonl")) if include_episodes else []
-    ppo_updates = _read_jsonl(os.path.join(diag, "ppo_updates.jsonl")) if include_ppo_updates else []
+    episodes = _read_jsonl(os.path.join(diag, "episodes.jsonl"), fields=("total_reward",)) if include_episodes else []
+    ppo_updates = _read_jsonl(
+        os.path.join(diag, "ppo_updates.jsonl"),
+        fields=("policy_loss", "value_loss", "entropy", "clip_fraction"),
+    ) if include_ppo_updates else []
     best_blob = _read_json(os.path.join(diag, "best_action_vec.json")) if include_best_action else {}
     baseline_blob = _read_json(os.path.join(diag, "baseline_action_vec.json")) if include_baseline_action else {}
     first_inv = _read_json(os.path.join(diag, "first_invalid_counts.json")) if include_first_invalid else {}
@@ -487,7 +496,7 @@ def fig_cost_vs_accuracy(
     has_points = False
     for i, run in enumerate(runs):
         top_path = os.path.join(run.progress_dir, "diagnostics", "top_candidates.jsonl")
-        rows = _read_jsonl(top_path)
+        rows = _read_jsonl(top_path, fields=("total_bits", "total_reward"))
         if not rows:
             continue
         has_points = True
