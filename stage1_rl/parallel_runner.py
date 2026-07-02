@@ -121,9 +121,9 @@ class EpisodeRollout:
     layer_indices: List[int]
     prev_g_actions: List[int]
     actions_g: List[int]
-    logprobs: List[torch.Tensor]
+    logprobs: List[float]
     rewards: List[float]
-    values: List[torch.Tensor]
+    values: List[float]
     dones: List[float]
     gelu_masks: List[np.ndarray]
     # Per-episode summary used by the central loop's bookkeeping

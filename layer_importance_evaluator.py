@@ -5745,14 +5745,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             # per-episode work that this entire runner exists to parallelize.
             gelu_action_idx = int(gelu_action.item())
             next_state, reward, done, info = env.step(gelu_action_idx)
+            logprob_value = float(logprob.detach().cpu().item())
+            critic_value = float(value.item())
 
             rollout.cont_features.append(cont_feat_record)
             rollout.layer_indices.append(layer_idx)
             rollout.prev_g_actions.append(prev_g_idx)
             rollout.actions_g.append(gelu_action_idx)
-            rollout.logprobs.append(logprob.detach().cpu())
+            rollout.logprobs.append(logprob_value)
             rollout.rewards.append(float(reward))
-            rollout.values.append(value.detach().cpu())
+            rollout.values.append(critic_value)
             rollout.dones.append(float(done))
             rollout.gelu_masks.append(gelu_mask_np)
             rollout.step_infos.append({
@@ -5763,11 +5765,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "gelu_action_degree": int(GELU_MAP[gelu_action_idx]),
                 "step_reward": float(reward),
                 "done": bool(done),
-                "logprob": float(logprob.detach().cpu().item()),
+                "logprob": logprob_value,
                 "curr_gelu_degree": info["curr_gelu_degree"],
                 "curr_softmax_degree": info["curr_softmax_degree"],
                 "gelu_prob_dist": gelu_probs.detach().cpu().numpy().tolist(),
-                "critic_value": float(value.item()),
+                "critic_value": critic_value,
                 "accumulated_cost": info["accumulated_cost"],
                 "gelu_config": info["gelu_config"],
                 "softmax_config": info["softmax_config"],
@@ -6531,6 +6533,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         # 执行动作
                         gelu_action_idx = int(gelu_action.item())
                         next_state, reward, done, info = env.step(gelu_action_idx)
+                        logprob_value = float(logprob.detach().cpu().item())
+                        critic_value = float(value.item())
 
                         # 记录中间结果
                         step_info = {
@@ -6542,11 +6546,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                             'gelu_action_degree': int(GELU_MAP[gelu_action_idx]),
                             'step_reward': float(reward),
                             'done': bool(done),
-                            'logprob': float(logprob.detach().cpu().item()),
+                            'logprob': logprob_value,
                             'curr_gelu_degree': info['curr_gelu_degree'],
                             'curr_softmax_degree': info['curr_softmax_degree'],
                             'gelu_prob_dist': gelu_probs.cpu().numpy().tolist(),
-                            'critic_value': value.item(),
+                            'critic_value': critic_value,
                             'accumulated_cost': info['accumulated_cost'],
                             'gelu_config': info['gelu_config'],
                             'softmax_config': info['softmax_config'],
@@ -6561,9 +6565,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                             layer_idx=layer_idx,
                             prev_g=prev_g_idx,
                             action_g=gelu_action_idx,
-                            logprob=logprob.cpu(),
+                            logprob=logprob_value,
                             reward=reward,
-                            value=value.cpu(),
+                            value=critic_value,
                             done=float(done),
                             gelu_mask=gelu_mask_np
                         )

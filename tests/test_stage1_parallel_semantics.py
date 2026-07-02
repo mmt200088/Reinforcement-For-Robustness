@@ -19,12 +19,12 @@ def _method_region(source: str, method_name: str) -> str:
 
 
 class Stage1ParallelSemanticsTest(unittest.TestCase):
-    def test_parallel_worker_uses_serial_sos_tokens_for_initial_previous_actions(self):
+    def test_parallel_worker_uses_serial_sos_token_for_initial_previous_action(self):
         region = _method_region(_source(LAYER_EVALUATOR), "_stage1_collect_episode_in_worker")
 
         self.assertIn("SOS_TOKEN_GELU", region)
-        self.assertIn("SOS_TOKEN_SOFTMAX", region)
         self.assertNotIn("prev_g = torch.zeros", region)
+        self.assertNotIn("seq_prev_s", region)
         self.assertNotIn("prev_s = torch.zeros", region)
 
     def test_parallel_rollout_logs_per_window_timing_diagnostics(self):
@@ -121,6 +121,27 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("cont_feat=cont_feat_record", source)
         self.assertIn("cont_features: List[np.ndarray]", runner_source)
         self.assertNotIn("torch.tensor(cont_feat_np", source)
+
+    def test_stage1_rollout_records_logprob_value_without_cpu_tensor_roundtrip(self):
+        source = _source(LAYER_EVALUATOR)
+        worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
+        runner_source = _source(PARALLEL_RUNNER)
+
+        self.assertIn("logprob_value = float(logprob.detach().cpu().item())", worker_region)
+        self.assertIn("critic_value = float(value.item())", worker_region)
+        self.assertIn("rollout.logprobs.append(logprob_value)", worker_region)
+        self.assertIn("rollout.values.append(critic_value)", worker_region)
+        self.assertIn('"logprob": logprob_value', worker_region)
+        self.assertIn('"critic_value": critic_value', worker_region)
+
+        self.assertIn("logprob=logprob_value", source)
+        self.assertIn("value=critic_value", source)
+        self.assertIn("logprobs: List[float]", runner_source)
+        self.assertIn("values: List[float]", runner_source)
+        self.assertNotIn("rollout.logprobs.append(logprob.detach().cpu())", source)
+        self.assertNotIn("rollout.values.append(value.detach().cpu())", source)
+        self.assertNotIn("logprob=logprob.cpu()", source)
+        self.assertNotIn("value=value.cpu()", source)
 
 
 if __name__ == "__main__":
