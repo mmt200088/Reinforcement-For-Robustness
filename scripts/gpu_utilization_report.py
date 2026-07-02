@@ -25,6 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
 from device_utils import split_device_spec_tokens  # noqa: E402
 from jsonl_utils import iter_jsonl  # noqa: E402
+from numeric_parse_utils import parse_first_float  # noqa: E402
 
 LOW_UTIL_THRESHOLD_PCT = 10.0
 HOT_PATH_TIMING_FIELDS = (
@@ -39,7 +40,6 @@ REPLAN_TIMING_FIELDS = (
     "rejection_optimizer_wall_seconds",
     "terminal_cost_eval_wall_seconds",
 )
-FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
 
 
 @functools.lru_cache(maxsize=256)
@@ -98,26 +98,12 @@ def _iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
     yield from iter_jsonl(episodes_path, errors="raise")
 
 
-def _float_value(value: object) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value).strip()
-    if not text:
-        return None
-    match = FLOAT_RE.search(text)
-    if not match:
-        return None
-    return float(match.group(0))
-
-
 def _int_list(value: object) -> list[int]:
     if not isinstance(value, list):
         return []
     out: list[int] = []
     for item in value:
-        parsed = _float_value(item)
+        parsed = parse_first_float(item)
         if parsed is not None:
             out.append(int(parsed))
     return out
@@ -162,7 +148,7 @@ def _per_device_probe_walls(
         out: dict[str, float] = {}
         for raw_device, raw_value in mapped.items():
             device = normalize_device_token(raw_device)
-            value = _float_value(raw_value)
+            value = parse_first_float(raw_value)
             if device and value is not None:
                 out[device] = value
         if out:
@@ -172,7 +158,7 @@ def _per_device_probe_walls(
     if isinstance(listed, list) and len(listed) == len(devices):
         out = {}
         for device, raw_value in zip(devices, listed):  # noqa: B905 - lengths checked above for py39.
-            value = _float_value(raw_value)
+            value = parse_first_float(raw_value)
             if value is not None:
                 out[device] = value
         if out:
@@ -185,7 +171,7 @@ def _per_device_probe_walls(
 
 def _first_float(row: Mapping[str, Any], keys: Sequence[str]) -> float | None:
     for key in keys:
-        value = _float_value(row.get(key))
+        value = parse_first_float(row.get(key))
         if value is not None:
             return value
     return None
@@ -238,8 +224,8 @@ def _load_nvidia_smi_csv(path: str | Path | None) -> dict[str, dict[str, float |
                 ],
             )
             device = normalize_device_token(idx) if idx is not None else ""
-            util_pct = _float_value(util)
-            mem_mib = _float_value(mem)
+            util_pct = parse_first_float(util)
+            mem_mib = parse_first_float(mem)
             if device and util_pct is not None:
                 stats = samples[device]
                 stats["samples"] = int(stats["samples"]) + 1
@@ -304,20 +290,20 @@ def summarize_rows(
             else:
                 mismatched_trial_rows += 1
 
-        probe_s = _float_value(row.get("terminal_probe_wall_seconds"))
+        probe_s = parse_first_float(row.get("terminal_probe_wall_seconds"))
         if probe_s is not None:
             terminal_probe_wall.add(probe_s)
         if devices:
             for device, wall_s in _per_device_probe_walls(row, devices, probe_s).items():
                 probe_wall_by_device[device].add(wall_s)
-        policy_s = _float_value(row.get("policy_rollout_wall_seconds"))
+        policy_s = parse_first_float(row.get("policy_rollout_wall_seconds"))
         if policy_s is not None:
             policy_rollout_wall.add(policy_s)
         replan_s = _first_float(row, REPLAN_TIMING_FIELDS)
         if replan_s is not None:
             replan_wall.add(replan_s)
         for field in HOT_PATH_TIMING_FIELDS:
-            value = _float_value(row.get(field))
+            value = parse_first_float(row.get(field))
             if value is not None:
                 hot_path_timings[field].add(value)
 

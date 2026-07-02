@@ -13,7 +13,6 @@ import csv
 import html
 import json
 from pathlib import Path
-import re
 import sys
 from typing import Any, Mapping, Sequence
 
@@ -23,21 +22,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from csv_field_utils import first_present_by_index, normalized_field_index  # noqa: E402
 from jsonl_utils import iter_jsonl  # noqa: E402
+from numeric_parse_utils import parse_first_float  # noqa: E402
 from report_format_utils import format_float  # noqa: E402
 from stats_utils import median_sorted  # noqa: E402
-
-FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)")
-
-
-def _float_value(value: object) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    match = FLOAT_RE.search(str(value))
-    if not match:
-        return None
-    return float(match.group(0))
 
 
 def _summarize_episodes(path: Path) -> dict[str, Any]:
@@ -58,11 +45,11 @@ def _summarize_episodes(path: Path) -> dict[str, Any]:
         }
 
     for rec in iter_jsonl(path, errors="raise"):
-        wall = _float_value(rec.get("terminal_probe_wall_seconds")) or 0.0
+        wall = parse_first_float(rec.get("terminal_probe_wall_seconds")) or 0.0
         if wall > 0.0:
             probe_walls.append(float(wall))
             wall_total += float(wall)
-        speedup = _float_value(rec.get("terminal_probe_speedup")) or 0.0
+        speedup = parse_first_float(rec.get("terminal_probe_speedup")) or 0.0
         if speedup > 0.0:
             speedup_total += float(speedup)
             speedup_count += 1
@@ -72,7 +59,7 @@ def _summarize_episodes(path: Path) -> dict[str, Any]:
         if isinstance(counts, list) and counts:
             parsed_counts = []
             for item in counts:
-                value = _float_value(item)
+                value = parse_first_float(item)
                 if value is not None:
                     parsed_counts.append(int(value))
             if parsed_counts:
@@ -122,8 +109,8 @@ def _summarize_gpu_samples(path: Path) -> tuple[dict[str, float], dict[str, floa
             if idx is None:
                 continue
             key = str(idx).strip()
-            mem_value = _float_value(mem)
-            util_value = _float_value(util)
+            mem_value = parse_first_float(mem)
+            util_value = parse_first_float(util)
             if mem_value is not None:
                 gpu_mem[key] = max(gpu_mem.get(key, 0.0), float(mem_value))
             if util_value is not None:

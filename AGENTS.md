@@ -135,6 +135,12 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `for line in handle: json.loads(line)` loops in report scripts; extend
   `jsonl_utils.py` and `tests/test_jsonl_utils.py` if another JSONL convention
   is needed.
+- Shared numeric parser rule, added 2026-07-03: report scripts that need to
+  pull a number out of a metric string must use
+  `numeric_parse_utils.parse_first_float()`. Do not add local `FLOAT_RE`
+  constants or `_float_value` helpers in report scripts; extend
+  `numeric_parse_utils.py` and `tests/test_numeric_parse_utils.py` if another
+  tolerant numeric parsing convention is needed.
 - Fusion-count fixed-action experiment helper rule, added 2026-07-03:
   Paean-path and RL-path fixed-action evaluation scripts must share action
   config directory scanning, JSON-list parsing, stable JSON hashes/keys, and
