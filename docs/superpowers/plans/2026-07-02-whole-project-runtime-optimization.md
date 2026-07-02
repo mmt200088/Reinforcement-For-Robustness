@@ -363,6 +363,14 @@ counts while reducing traced peak memory from `69.60MB` to `59.74MB` and median
 merge wall time from `0.718s` to `0.644s`; the real benefit is avoiding a second
 parent-process copy of large golden fallback shard payloads.
 
+Progress 2026-07-02: `blb_stage2_rl/fusion_enum.py` golden
+`enumerate_shard()` now decodes only the product ranks assigned to the shard,
+instead of iterating the entire Cartesian product in every worker and skipping
+`num_shards - 1` out of every `num_shards` combos. The shard partition is
+unchanged (`rank % num_shards == shard_idx`) and a 1,000,000-combo / 64-shard
+local iterator benchmark produced identical assigned combos while reducing one
+worker's pure iteration time from `0.0646s` to `0.0253s` (`2.55x`).
+
 - [ ] **Step 3: Verify**
 
 Run:
