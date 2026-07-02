@@ -1116,7 +1116,7 @@ class UnifiedFinalEvaluationModule:
             for key in key_options[idx]:
                 for rest in suffix_possible[idx + 1]:
                     suffix_possible[idx].add(key + rest)
-        return key_options, tuple(frozenset(values) for values in suffix_possible)
+        return key_options, tuple(frozenset(values) for values in suffix_possible), {}
 
     @staticmethod
     def _sample_stage2_count_combo(rng, solution_maps, target_key, combo_plan=None):
@@ -1124,18 +1124,26 @@ class UnifiedFinalEvaluationModule:
             combo_plan = UnifiedFinalEvaluationModule._build_stage2_count_combo_plan(
                 solution_maps
             )
-        key_options, suffix_possible = combo_plan
+        if len(combo_plan) == 2:
+            key_options, suffix_possible = combo_plan
+            feasible_key_cache = {}
+        else:
+            key_options, suffix_possible, feasible_key_cache = combo_plan
         if target_key not in suffix_possible[0]:
             return None
 
         remaining = target_key
         choices = []
         for idx, solution_map in enumerate(solution_maps):
-            feasible_keys = [
-                key
-                for key in key_options[idx]
-                if remaining - key in suffix_possible[idx + 1]
-            ]
+            cache_key = (int(idx), int(remaining))
+            feasible_keys = feasible_key_cache.get(cache_key)
+            if feasible_keys is None:
+                feasible_keys = tuple(
+                    key
+                    for key in key_options[idx]
+                    if remaining - key in suffix_possible[idx + 1]
+                )
+                feasible_key_cache[cache_key] = feasible_keys
             if not feasible_keys:
                 return None
             key = feasible_keys[int(rng.integers(0, len(feasible_keys)))]
