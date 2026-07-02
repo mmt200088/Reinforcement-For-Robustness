@@ -39,6 +39,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from device_utils import parse_device_ids
 from function_handler import ReversibleLayerHandler
 
 from .action_space import ActionDecodeResult
@@ -476,55 +477,6 @@ class ProbeRunner:
                 )
             ordered.append(result)
         return ordered
-
-
-# ---------------------------------------------------------------------------
-# Factory: build_probe_runner
-# ---------------------------------------------------------------------------
-
-def parse_device_ids(spec: Any) -> List[int]:
-    """Parse reward-probe device ids into ``[0, 1]`` style integers.
-
-    The launcher passes ``--blb_v3_reward_devices 0,1`` through Python Fire.
-    Fire eagerly parses that value as the tuple ``(0, 1)``; downstream code may
-    then preserve the tuple or stringify it to ``"(0, 1)"``. Accept all of
-    those forms so the server does not silently fall back to single-GPU mode.
-    """
-    if spec is None:
-        return []
-
-    if isinstance(spec, bool):
-        raise ValueError(
-            f"invalid device id {spec!r}; expected comma-separated ints"
-        )
-
-    if isinstance(spec, int):
-        tokens = [spec]
-    elif isinstance(spec, (list, tuple)):
-        tokens = list(spec)
-    else:
-        s = str(spec).strip()
-        if not s:
-            return []
-        if (s.startswith("(") and s.endswith(")")) or (
-            s.startswith("[") and s.endswith("]")
-        ):
-            s = s[1:-1].strip()
-        tokens = [tok.strip() for tok in s.split(",") if tok.strip()]
-
-    out: List[int] = []
-    for tok in tokens:
-        if isinstance(tok, bool):
-            raise ValueError(
-                f"invalid device id {tok!r} in spec {spec!r}; expected ints"
-            )
-        try:
-            out.append(int(tok))
-        except ValueError as exc:
-            raise ValueError(
-                f"invalid device id {tok!r} in spec {spec!r}; expected comma-separated ints"
-            ) from exc
-    return out
 
 
 def build_probe_runner(

@@ -43,6 +43,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from device_utils import parse_device_ids
 from .seed_utils import assign_global_episodes, derive_episode_seed
 
 # Defer the heavy import so this module is importable in torch-free CI without
@@ -58,49 +59,6 @@ except Exception as _exc:  # pragma: no cover — only matters on import-broken 
 # Seed derivation + global-episode assignment live in the torch-free
 # ``seed_utils`` module (imported above) so the GPU-count-independence contract
 # is unit-testable without torch. See ``stage1_rl/seed_utils.py``.
-
-
-# ---------------------------------------------------------------------------
-# Device-id parsing (cloned from Stage-2's probe_runner for consistency)
-# ---------------------------------------------------------------------------
-
-def parse_device_ids(spec: Any) -> List[int]:
-    """Parse rollout device ids into a clean ``[0, 1, 2, 3]`` integer list.
-
-    Accepts None, int, list/tuple, or comma-separated string. Mirrors
-    ``blb_stage2_rl.probe_runner.parse_device_ids`` so the launcher's
-    ``--stage1-rl-devices`` flag behaves the same as
-    ``--blb-v3-reward-devices``.
-    """
-    if spec is None:
-        return []
-    if isinstance(spec, bool):
-        raise ValueError(f"invalid device id {spec!r}; expected ints")
-    if isinstance(spec, int):
-        tokens: List[Any] = [spec]
-    elif isinstance(spec, (list, tuple)):
-        tokens = list(spec)
-    else:
-        s = str(spec).strip()
-        if not s:
-            return []
-        if (s.startswith("(") and s.endswith(")")) or (
-            s.startswith("[") and s.endswith("]")
-        ):
-            s = s[1:-1].strip()
-        tokens = [tok.strip() for tok in s.split(",") if tok.strip()]
-
-    out: List[int] = []
-    for tok in tokens:
-        if isinstance(tok, bool):
-            raise ValueError(f"invalid device id {tok!r} in spec {spec!r}; expected ints")
-        try:
-            out.append(int(tok))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"invalid device id {tok!r} in spec {spec!r}; expected comma-separated ints"
-            ) from exc
-    return out
 
 
 # ---------------------------------------------------------------------------

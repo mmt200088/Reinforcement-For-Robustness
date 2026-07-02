@@ -99,6 +99,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `_load_action_configs`, `_json_int_list`, `_group_key`, or `_unique_configs`
   only as compatibility wrappers; do not reintroduce recursive loaders or
   per-script hash/key implementations when adding a new fusion-count experiment.
+- Shared device-list parsing rule, added 2026-07-03: Stage-1 and Stage-2 GPU
+  device flags must use `device_utils.parse_device_ids()` for int/list/tuple,
+  comma-separated string, and Python Fire tuple-string forms. `stage1_rl` and
+  `blb_stage2_rl.probe_runner` may re-export the helper for compatibility, but
+  do not clone new parser variants in launchers, runners, or reports.
 - All Stage-1 and Stage-2 RL runs must mirror raw training data points to the
   project-root `rl_training_data_points/` tree, classified by stage, model,
   dataset, and run id. Persist enough structured JSON/JSONL to redraw paper
