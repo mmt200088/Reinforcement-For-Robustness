@@ -97,22 +97,32 @@ def _write_lines(path: Path, lines: Iterable[str]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _grep_entrypoints(repo_root: Path) -> List[str]:
-    pattern = re.compile("|".join(re.escape(item) for item in ENTRYPOINT_PATTERNS))
+def _grep_entrypoint_file(repo_root: Path, path: Path, pattern: re.Pattern[str]) -> List[str]:
+    if path.suffix.lower() not in CODE_CONFIG_SUFFIXES:
+        return []
+    rel = _relative(path, repo_root)
+    try:
+        handle = path.open("r", encoding="utf-8", errors="ignore")
+    except OSError:
+        return []
     matches: List[str] = []
-    for path in iter_repo_files(repo_root):
-        if path.suffix.lower() not in CODE_CONFIG_SUFFIXES:
-            continue
-        rel = _relative(path, repo_root)
-        try:
-            handle = path.open("r", encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        with handle:
-            for lineno, line in enumerate(handle, start=1):
-                if pattern.search(line):
-                    matches.append(f"{rel}:{lineno}:{line.strip()}")
+    with handle:
+        for lineno, line in enumerate(handle, start=1):
+            if pattern.search(line):
+                matches.append(f"{rel}:{lineno}:{line.strip()}")
     return matches
+
+
+def _grep_entrypoint_paths(repo_root: Path, paths: Iterable[Path]) -> List[str]:
+    pattern: re.Pattern[str] = re.compile("|".join(re.escape(item) for item in ENTRYPOINT_PATTERNS))
+    matches: List[str] = []
+    for path in paths:
+        matches.extend(_grep_entrypoint_file(repo_root, path, pattern))
+    return matches
+
+
+def _grep_entrypoints(repo_root: Path) -> List[str]:
+    return _grep_entrypoint_paths(repo_root, iter_repo_files(repo_root))
 
 
 def write_phase0_reports(
@@ -126,14 +136,21 @@ def write_phase0_reports(
     for dirname in REPORT_PHASE_DIRS:
         (blb_root / dirname).mkdir(parents=True, exist_ok=True)
 
-    files = sorted(_relative(path, root) for path in iter_repo_files(root))
-    code_config = [
-        item for item in files
-        if Path(item).suffix.lower() in CODE_CONFIG_SUFFIXES
-    ]
+    pattern: re.Pattern[str] = re.compile("|".join(re.escape(item) for item in ENTRYPOINT_PATTERNS))
+    files: List[str] = []
+    code_config: List[str] = []
+    grep_matches: List[str] = []
+    for path in iter_repo_files(root):
+        rel = _relative(path, root)
+        files.append(rel)
+        if path.suffix.lower() in CODE_CONFIG_SUFFIXES:
+            code_config.append(rel)
+            grep_matches.extend(_grep_entrypoint_file(root, path, pattern))
+    files.sort()
+    code_config.sort()
     _write_lines(reports / "repo_file_list.txt", files)
     _write_lines(reports / "repo_code_config_files.txt", code_config)
-    _write_lines(reports / "blb_entrypoints_grep.txt", _grep_entrypoints(root))
+    _write_lines(reports / "blb_entrypoints_grep.txt", grep_matches)
     phase0_path = reports / "phase0_entrypoints.md"
     phase0_path.write_text(build_phase0_entrypoint_report(root), encoding="utf-8")
     return {

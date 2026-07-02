@@ -713,6 +713,13 @@ materializing each file with `read_text().splitlines()`. A local 100k-line
 source-file benchmark preserved the same 10 entrypoint matches and reduced
 traced peak memory from `8.36MB` to `0.02MB`.
 
+Progress 2026-07-02: `scripts/blb_phase0_preflight.py` now reuses the same
+repository walk to generate `repo_file_list.txt`, `repo_code_config_files.txt`,
+and `blb_entrypoints_grep.txt`, instead of walking the tree once for file lists
+and again for grep. A local synthetic 2400-file repo preserved all three report
+outputs and reduced Phase-0 report generation from `0.1505s` / `0.78MB` to
+`0.1234s` / `0.30MB`.
+
 Progress 2026-07-02: `scripts/project_optimization_audit.py` now walks
 artifact roots with a streaming sorted `os.walk()` iterator instead of
 `Path.rglob("*")`. A local synthetic 3400-file artifact tree preserved the same
