@@ -89,6 +89,12 @@ python3 -m ruff check scripts/project_optimization_audit.py tests/test_project_o
 
 Expected: all pass.
 
+Progress 2026-07-02: `scripts/project_optimization_audit.py` now classifies
+artifact evidence filenames with direct deterministic rules instead of running
+every file through every glob pattern. A local 200k-name parity benchmark kept
+the same counts and reduced classification time from `0.622s` to `0.093s`
+(`6.69x`).
+
 - [x] **Step 4: Commit**
 
 ```bash

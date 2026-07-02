@@ -9,7 +9,6 @@ whether available artifacts contain timing/GPU evidence.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -130,6 +129,23 @@ ARTIFACT_PATTERNS = {
 }
 
 
+def _classify_artifact_name(name: str) -> tuple[str, ...]:
+    out: list[str] = []
+    if name == "episodes.jsonl":
+        out.append("episodes_jsonl")
+    if name == "ppo_updates.jsonl":
+        out.append("ppo_updates_jsonl")
+    if name.startswith("nvidia") and name.endswith(".csv"):
+        out.append("nvidia_smi_csv")
+    if "status" in name and name.endswith(".json"):
+        out.append("status_json")
+    if name.endswith(".html"):
+        out.append("html_reports")
+    if name.endswith(".npz"):
+        out.append("npz_curves")
+    return tuple(out)
+
+
 def _file_entry(root: Path, relative_path: str) -> dict[str, Any]:
     path = root / relative_path
     present = path.exists()
@@ -188,9 +204,7 @@ def summarize_artifacts(
             if not Path(path).is_file():
                 continue
             name = Path(path).name
-            for key, pattern in ARTIFACT_PATTERNS.items():
-                if not fnmatch.fnmatch(name, pattern):
-                    continue
+            for key in _classify_artifact_name(name):
                 counts[key] += 1
                 if len(examples[key]) < int(example_limit):
                     examples[key].append(str(path))

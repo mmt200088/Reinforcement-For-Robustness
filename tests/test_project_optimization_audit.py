@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AUDIT_PATH = REPO_ROOT / "scripts" / "project_optimization_audit.py"
@@ -128,6 +130,37 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
             )
 
         self.assertEqual(calls, [run])
+        self.assertEqual(artifacts["counts"]["episodes_jsonl"], 1)
+        self.assertEqual(artifacts["counts"]["ppo_updates_jsonl"], 1)
+        self.assertEqual(artifacts["counts"]["nvidia_smi_csv"], 1)
+        self.assertEqual(artifacts["counts"]["status_json"], 1)
+        self.assertEqual(artifacts["counts"]["html_reports"], 1)
+        self.assertEqual(artifacts["counts"]["npz_curves"], 1)
+
+    def test_artifact_summary_uses_direct_name_classification(self):
+        audit = _load_audit_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run = root / "run"
+            files = [
+                run / "diagnostics" / "episodes.jsonl",
+                run / "diagnostics" / "ppo_updates.jsonl",
+                run / "nvidia_smi.csv",
+                run / "worker_status.json",
+                run / "report.html",
+                run / "curve.npz",
+                run / "large_unrelated.log",
+            ]
+            for path in files:
+                _touch(path, "{}\n")
+
+            def fail_fnmatch(_name, _pattern):
+                raise AssertionError("artifact classification should not use per-pattern fnmatch")
+
+            with mock.patch.object(fnmatch, "fnmatch", fail_fnmatch):
+                artifacts = audit.summarize_artifacts(root, artifact_roots=[run])
+
         self.assertEqual(artifacts["counts"]["episodes_jsonl"], 1)
         self.assertEqual(artifacts["counts"]["ppo_updates_jsonl"], 1)
         self.assertEqual(artifacts["counts"]["nvidia_smi_csv"], 1)
