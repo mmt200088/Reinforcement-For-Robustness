@@ -506,6 +506,61 @@ class RegeneratorEndToEndTest(unittest.TestCase):
         ):
             self.assertEqual(ep[key], [], key)
 
+    def test_jsonl_readers_skip_blank_lines_without_strip_copy(self):
+        regen = _load_standalone("blb_regen_no_strip_test", "scripts/blb_regen_stage2_outputs.py")
+
+        class NoStripLine(str):
+            def strip(self, *_args, **_kwargs):
+                raise AssertionError("regenerator JSONL readers should not allocate strip() copies")
+
+        class FakeHandle:
+            def __init__(self, lines):
+                self._lines = list(lines)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return iter(self._lines)
+
+        episode_lines = [
+            NoStripLine(
+                json.dumps({
+                    "per_step_sum": -1.0,
+                    "terminal_reward": 2.0,
+                    "terminal_loss_mean": 0.3,
+                    "terminal_metric1_mean": 0.87,
+                    "terminal_metric2_mean": 0.86,
+                    "fusion_count": 1,
+                    "terminal_k_gain": 1.0,
+                    "terminal_priority": 3,
+                }) + "\n"
+            ),
+            NoStripLine("   \n"),
+        ]
+        entropy_lines = [
+            NoStripLine(json.dumps({"entropy": 1.5, "completed_episodes": 120}) + "\n"),
+            NoStripLine("   \n"),
+        ]
+
+        def fake_open_jsonl(_progress_dir, name):
+            if name == "episodes.jsonl":
+                return FakeHandle(episode_lines)
+            if name == "ppo_updates.jsonl":
+                return FakeHandle(entropy_lines)
+            raise AssertionError(name)
+
+        with mock.patch.object(regen, "_open_jsonl", fake_open_jsonl):
+            ep = regen._read_episodes("unused")
+            ent, ent_eps = regen._read_entropy("unused")
+
+        self.assertEqual(ep["returns"], [1.0])
+        self.assertEqual(ent, [1.5])
+        self.assertEqual(ent_eps, [120.0])
+
     def test_baseline_parser_streams_report_and_summary(self):
         regen = _load_standalone("blb_regen_baseline_test", "scripts/blb_regen_stage2_outputs.py")
         with tempfile.TemporaryDirectory() as d:

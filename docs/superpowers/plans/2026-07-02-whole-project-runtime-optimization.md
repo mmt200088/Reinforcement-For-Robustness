@@ -802,6 +802,13 @@ all-zero lists before plotting. A local 100k-row legacy-log benchmark preserved
 the base reward/loss/metric series and reduced parsing from `1.068s` /
 `25.97MB` to `0.973s` / `19.10MB`.
 
+Progress 2026-07-02: the same offline regenerator now skips blank
+`episodes.jsonl` and `ppo_updates.jsonl` lines with `isspace()` and passes
+nonblank rows directly to `json.loads()` instead of allocating stripped copies.
+Local 80k-row long-line benchmarks preserved parsed row counts and reduced
+episode parsing from `0.776086s` to `0.755639s` (`1.03x`) and entropy parsing
+from `0.300351s` to `0.283807s` (`1.06x`).
+
 Progress 2026-07-02: `scripts/blb_regen_stage2_outputs.py` now parses
 baseline reference values from `blb_stage2_report.md` and
 `diagnostics_summary.md` by scanning lines and stopping once the needed values

@@ -111,8 +111,7 @@ def _read_episodes(progress_dir: str):
     row_count = 0
     with f:
         for line in f:
-            line = line.strip()
-            if not line:
+            if not line or line.isspace():
                 continue
             try:
                 d = json.loads(line)
@@ -148,8 +147,7 @@ def _read_entropy(progress_dir: str):
         return ent, eps
     with f:
         for line in f:
-            line = line.strip()
-            if not line:
+            if not line or line.isspace():
                 continue
             try:
                 d = json.loads(line)
