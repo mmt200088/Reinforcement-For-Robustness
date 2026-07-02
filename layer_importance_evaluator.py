@@ -6536,6 +6536,10 @@ class LayerImportanceEvaluator(TrainerCallback):
 
                     episode_reward = 0
                     step_infos = []
+                    transition_records = []
+                    logprob_tensors = []
+                    value_tensors = []
+                    gelu_prob_tensors = []
                     buffer.start_episode()
 
                     for step in range(self.total_layers):
@@ -6578,8 +6582,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                         # 执行动作
                         gelu_action_idx = int(gelu_action.item())
                         next_state, reward, done, info = env.step(gelu_action_idx)
-                        logprob_value = float(logprob.detach().cpu().item())
-                        critic_value = float(value.item())
+                        logprob_tensors.append(logprob.detach())
+                        value_tensors.append(value.detach())
+                        gelu_prob_tensors.append(gelu_probs.detach())
 
                         # 记录中间结果
                         step_info = {
@@ -6591,11 +6596,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                             'gelu_action_degree': int(GELU_MAP[gelu_action_idx]),
                             'step_reward': float(reward),
                             'done': bool(done),
-                            'logprob': logprob_value,
+                            'logprob': None,
                             'curr_gelu_degree': info['curr_gelu_degree'],
                             'curr_softmax_degree': info['curr_softmax_degree'],
-                            'gelu_prob_dist': gelu_probs.cpu().numpy().tolist(),
-                            'critic_value': critic_value,
+                            'gelu_prob_dist': None,
+                            'critic_value': None,
                             'accumulated_cost': info['accumulated_cost'],
                             'gelu_config': info['gelu_config'],
                             'softmax_config': info['softmax_config'],
@@ -6604,17 +6609,16 @@ class LayerImportanceEvaluator(TrainerCallback):
                         }
                         step_infos.append(step_info)
 
-                        # 存入RecurrentRolloutBuffer（与LSTM使用相同的Buffer格式）
-                        buffer.add_step(
-                            cont_feat=cont_feat_record,
-                            layer_idx=layer_idx,
-                            prev_g=prev_g_idx,
-                            action_g=gelu_action_idx,
-                            logprob=logprob_value,
-                            reward=reward,
-                            value=critic_value,
-                            done=float(done),
-                            gelu_mask=gelu_mask_np
+                        transition_records.append(
+                            (
+                                cont_feat_record,
+                                layer_idx,
+                                prev_g_idx,
+                                gelu_action_idx,
+                                reward,
+                                float(done),
+                                gelu_mask_np,
+                            )
                         )
 
                         # 更新前一步动作（自回归输入下一步）
@@ -6623,6 +6627,35 @@ class LayerImportanceEvaluator(TrainerCallback):
                         episode_reward += reward
                         state = next_state
                 
+                    logprob_values = _stage1_scalar_tensors_to_float_list(logprob_tensors)
+                    critic_values = _stage1_scalar_tensors_to_float_list(value_tensors)
+                    gelu_prob_dists = _stage1_prob_tensors_to_nested_lists(gelu_prob_tensors)
+                    for idx, step_info in enumerate(step_infos):
+                        step_info["logprob"] = logprob_values[idx]
+                        step_info["critic_value"] = critic_values[idx]
+                        step_info["gelu_prob_dist"] = gelu_prob_dists[idx]
+
+                    # 存入RecurrentRolloutBuffer（与LSTM使用相同的Buffer格式）
+                    for idx, (
+                        cont_feat_record,
+                        layer_idx,
+                        prev_g_record,
+                        action_g_record,
+                        reward_record,
+                        done_record,
+                        gelu_mask_record,
+                    ) in enumerate(transition_records):
+                        buffer.add_step(
+                            cont_feat=cont_feat_record,
+                            layer_idx=layer_idx,
+                            prev_g=prev_g_record,
+                            action_g=action_g_record,
+                            logprob=logprob_values[idx],
+                            reward=reward_record,
+                            value=critic_values[idx],
+                            done=done_record,
+                            gelu_mask=gelu_mask_record,
+                        )
                     buffer.end_episode()
                 episode_rewards.append(episode_reward)
                 stage1_completed_episodes = episode + 1

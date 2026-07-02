@@ -79,6 +79,8 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
     def test_stage1_rollout_reuses_action_scalar_and_builds_device_tensors_directly(self):
         source = _source(LAYER_EVALUATOR)
         worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
+        marker = "if not _handled_via_parallel:\n                    # GTrXL Rollout"
+        fallback_region = source.split(marker, 1)[1].split("buffer.end_episode()", 1)[0]
 
         self.assertIn("prev_g_idx = SOS_TOKEN_GELU", worker_region)
         self.assertIn("gelu_action_idx = int(gelu_action.item())", worker_region)
@@ -89,8 +91,10 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("seq_prev_g[0, step] = int(prev_g_idx)", worker_region)
 
         self.assertIn("prev_g_idx = SOS_TOKEN_GELU", source)
-        self.assertIn("action_g=gelu_action_idx", source)
-        self.assertIn("prev_g=prev_g_idx", source)
+        self.assertIn("gelu_action_idx,", fallback_region)
+        self.assertIn("prev_g_idx,", fallback_region)
+        self.assertIn("action_g=action_g_record", fallback_region)
+        self.assertIn("prev_g=prev_g_record", fallback_region)
         self.assertNotIn("env.step(gelu_action.item())", source)
         self.assertNotIn("GELU_MAP[int(gelu_action.item())]", source)
         self.assertNotIn("prev_g=prev_g.squeeze().item()", source)
@@ -114,11 +118,15 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
     def test_stage1_rollout_records_cont_features_without_cpu_tensor_roundtrip(self):
         source = _source(LAYER_EVALUATOR)
         worker_region = _method_region(source, "_stage1_collect_episode_in_worker")
+        marker = "if not _handled_via_parallel:\n                    # GTrXL Rollout"
+        fallback_region = source.split(marker, 1)[1].split("buffer.end_episode()", 1)[0]
         runner_source = _source(PARALLEL_RUNNER)
 
         self.assertIn("cont_feat_record = np.asarray(cont_feat_np, dtype=np.float32)", worker_region)
         self.assertIn("rollout.cont_features.append(cont_feat_record)", worker_region)
-        self.assertIn("cont_feat=cont_feat_record", source)
+        self.assertIn("transition_records.append(", fallback_region)
+        self.assertIn("cont_feat_record,", fallback_region)
+        self.assertIn("cont_feat=cont_feat_record", fallback_region)
         self.assertIn("cont_features: List[np.ndarray]", runner_source)
         self.assertNotIn("torch.tensor(cont_feat_np", source)
 
@@ -142,6 +150,23 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertNotIn("rollout.values.append(value.detach().cpu())", source)
         self.assertNotIn("logprob=logprob.cpu()", source)
         self.assertNotIn("value=value.cpu()", source)
+
+    def test_stage1_single_gpu_rollout_defers_logprob_value_sync_until_episode_end(self):
+        source = _source(LAYER_EVALUATOR)
+        marker = "if not _handled_via_parallel:\n                    # GTrXL Rollout"
+        fallback_region = source.split(marker, 1)[1].split("buffer.end_episode()", 1)[0]
+
+        self.assertIn("logprob_tensors.append(logprob.detach()", fallback_region)
+        self.assertIn("value_tensors.append(value.detach()", fallback_region)
+        self.assertIn("gelu_prob_tensors.append(gelu_probs.detach()", fallback_region)
+        self.assertIn("transition_records.append(", fallback_region)
+        self.assertIn("_stage1_scalar_tensors_to_float_list(logprob_tensors)", fallback_region)
+        self.assertIn("_stage1_prob_tensors_to_nested_lists(gelu_prob_tensors)", fallback_region)
+        self.assertIn("for idx, step_info in enumerate(step_infos):", fallback_region)
+        self.assertIn("buffer.add_step(", fallback_region)
+        self.assertNotIn("logprob_value = float(logprob.detach().cpu().item())", fallback_region)
+        self.assertNotIn("critic_value = float(value.item())", fallback_region)
+        self.assertNotIn("gelu_probs.cpu().numpy().tolist()", fallback_region)
 
 
 if __name__ == "__main__":
