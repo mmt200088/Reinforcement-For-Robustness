@@ -354,6 +354,11 @@ same cached exact count-solution maps instead of running iterative random
 cost-matching searches for every noise type and trial. It still falls back to
 the old matcher if an exact target key is unavailable.
 
+Progress 2026-07-02: Stage2Budget/Budget random final-eval sampling now caches
+the Stage-2 total-cost combination plan for a reused solution-map set. Repeated
+samples no longer rebuild the same suffix reachability table or rescan cost
+keys for every noise domain.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

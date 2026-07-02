@@ -113,6 +113,44 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertIsNotNone(cfg)
         self.assertEqual(runner._stage2_config_cost_key(cfg), len(fem.BREAKDOWN_KEYS) * 2)
 
+    def test_stage2_total_cost_sampling_reuses_count_combo_plan(self):
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        runner.input_noise_allowed = [1, 2]
+        runner.weight_noise_allowed = [1, 2]
+        runner.wffn1_noise_allowed = [1, 2]
+        runner.evaluator = SimpleNamespace(
+            INPUT_NOISE_COST_MAP={1: 1.0 / 40.0, 2: 2.0 / 40.0},
+            WEIGHT_NOISE_COST_MAP={1: 1.0 / 40.0, 2: 2.0 / 40.0},
+            WFFN1_NOISE_COST_MAP={1: 1.0 / 40.0, 2: 2.0 / 40.0},
+        )
+        key_scan_count = 0
+
+        class CountingSolutionMap(dict):
+            def keys(self):
+                nonlocal key_scan_count
+                key_scan_count += 1
+                return super().keys()
+
+        original = runner._enumerate_stage2_count_solutions
+
+        def counting_enumerate(*args, **kwargs):
+            return CountingSolutionMap(original(*args, **kwargs))
+
+        rng = np.random.default_rng(123)
+        target_total = len(fem.BREAKDOWN_KEYS) * 2.0 / 40.0
+        with mock.patch.object(
+            runner,
+            "_enumerate_stage2_count_solutions",
+            side_effect=counting_enumerate,
+        ):
+            configs = [
+                runner._sample_stage2_total_cost(rng, target_total, total_layers=2)
+                for _ in range(3)
+            ]
+
+        self.assertTrue(all(cfg is not None for cfg in configs))
+        self.assertEqual(key_scan_count, len(fem.BREAKDOWN_KEYS))
+
 
 if __name__ == "__main__":
     unittest.main()

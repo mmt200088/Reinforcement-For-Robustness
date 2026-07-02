@@ -990,7 +990,13 @@ class UnifiedFinalEvaluationModule:
         target_key = self._stage2_cost_key(target_total)
         specs, solution_maps = self._stage2_total_cost_solution_maps(total_layers)
 
-        count_choices = self._sample_stage2_count_combo(rng, solution_maps, target_key)
+        combo_plan = self._stage2_count_combo_plan(solution_maps)
+        count_choices = self._sample_stage2_count_combo(
+            rng,
+            solution_maps,
+            target_key,
+            combo_plan,
+        )
         if count_choices is None:
             return None
 
@@ -1050,14 +1056,35 @@ class UnifiedFinalEvaluationModule:
         backtrack(0, total_layers, 0)
         return solution_map
 
+    def _stage2_count_combo_plan(self, solution_maps):
+        cache_key = tuple((id(solution_map), len(solution_map)) for solution_map in solution_maps)
+        cache = getattr(self, "_stage2_count_combo_plan_cache", {})
+        if cache_key in cache:
+            return cache[cache_key]
+
+        plan = self._build_stage2_count_combo_plan(solution_maps)
+        cache[cache_key] = plan
+        self._stage2_count_combo_plan_cache = cache
+        return plan
+
     @staticmethod
-    def _sample_stage2_count_combo(rng, solution_maps, target_key):
+    def _build_stage2_count_combo_plan(solution_maps):
+        key_options = tuple(tuple(solution_map.keys()) for solution_map in solution_maps)
         suffix_possible = [set() for _ in range(len(solution_maps) + 1)]
         suffix_possible[-1].add(0)
-        for idx in range(len(solution_maps) - 1, -1, -1):
-            for key in solution_maps[idx].keys():
+        for idx in range(len(key_options) - 1, -1, -1):
+            for key in key_options[idx]:
                 for rest in suffix_possible[idx + 1]:
                     suffix_possible[idx].add(key + rest)
+        return key_options, tuple(frozenset(values) for values in suffix_possible)
+
+    @staticmethod
+    def _sample_stage2_count_combo(rng, solution_maps, target_key, combo_plan=None):
+        if combo_plan is None:
+            combo_plan = UnifiedFinalEvaluationModule._build_stage2_count_combo_plan(
+                solution_maps
+            )
+        key_options, suffix_possible = combo_plan
         if target_key not in suffix_possible[0]:
             return None
 
@@ -1066,7 +1093,7 @@ class UnifiedFinalEvaluationModule:
         for idx, solution_map in enumerate(solution_maps):
             feasible_keys = [
                 key
-                for key in solution_map.keys()
+                for key in key_options[idx]
                 if remaining - key in suffix_possible[idx + 1]
             ]
             if not feasible_keys:
@@ -2157,4 +2184,3 @@ class UnifiedFinalEvaluationModule:
 
     def _ensure_results_dir(self):
         os.makedirs(self.results_dir, exist_ok=True)
-
