@@ -1,0 +1,36 @@
+test_load_run_projects_large_jsonl_rows_to_needed_fields (tests.test_paper_figures.PaperFiguresTest.test_load_run_projects_large_jsonl_rows_to_needed_fields) ... FAIL
+test_load_run_streams_episode_rewards_as_float_column (tests.test_paper_figures.PaperFiguresTest.test_load_run_streams_episode_rewards_as_float_column) ... FAIL
+
+======================================================================
+FAIL: test_load_run_projects_large_jsonl_rows_to_needed_fields (tests.test_paper_figures.PaperFiguresTest.test_load_run_projects_large_jsonl_rows_to_needed_fields)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_paper_episode_column_red_86a60a3_20260703_224715/src_py_86a60a3/tests/test_paper_figures.py", line 156, in test_load_run_projects_large_jsonl_rows_to_needed_fields
+    self.assertEqual(run.episodes, [2.5])
+AssertionError: Lists differ: [{'total_reward': 2.5}] != [2.5]
+
+First differing element 0:
+{'total_reward': 2.5}
+2.5
+
+- [{'total_reward': 2.5}]
++ [2.5]
+
+======================================================================
+FAIL: test_load_run_streams_episode_rewards_as_float_column (tests.test_paper_figures.PaperFiguresTest.test_load_run_streams_episode_rewards_as_float_column)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_paper_episode_column_red_86a60a3_20260703_224715/src_py_86a60a3/tests/test_paper_figures.py", line 191, in test_load_run_streams_episode_rewards_as_float_column
+    run = paper.load_run(
+          ^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_paper_episode_column_red_86a60a3_20260703_224715/src_py_86a60a3/tools/paper_figures.py", line 170, in load_run
+    episodes = read_jsonl_fields(os.path.join(diag, "episodes.jsonl"), fields=("total_reward",)) if include_episodes else []
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_paper_episode_column_red_86a60a3_20260703_224715/src_py_86a60a3/tests/test_paper_figures.py", line 177, in guarded_read_jsonl_fields
+    raise AssertionError("episode rewards should stream as one float column")
+AssertionError: episode rewards should stream as one float column
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.063s
+
+FAILED (failures=2)
