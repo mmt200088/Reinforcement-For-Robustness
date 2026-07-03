@@ -1159,23 +1159,26 @@ class UnifiedFinalEvaluationModule:
 
     @staticmethod
     def _stage2_cost_matched_array(rng, target_cost, cost_map, allowed, length):
-        values = list(allowed)
+        values = tuple(int(v) for v in allowed)
+        cost_by_value = {value: cost_map[value] for value in values}
         for _ in range(2000):
             cfg = np.array(rng.choice(values, size=length), dtype=int)
+            curr_cost = sum(cost_by_value[int(d)] for d in cfg)
             for _ in range(500):
-                curr = sum(cost_map[int(d)] for d in cfg)
-                diff = curr - target_cost
+                diff = curr_cost - target_cost
                 if abs(diff) < 1e-6:
                     return cfg
                 idx = int(rng.integers(0, length))
                 old_v = int(cfg[idx])
-                moves = [
-                    d
-                    for d in values
-                    if abs((curr - cost_map[old_v] + cost_map[int(d)]) - target_cost)
-                    < abs(diff)
-                ]
-                cfg[idx] = int(rng.choice(moves if moves else values))
+                old_cost = cost_by_value[old_v]
+                moves = []
+                for value in values:
+                    candidate_cost = curr_cost - old_cost + cost_by_value[value]
+                    if abs(candidate_cost - target_cost) < abs(diff):
+                        moves.append(value)
+                new_v = int(rng.choice(moves if moves else values))
+                cfg[idx] = new_v
+                curr_cost = curr_cost - old_cost + cost_by_value[new_v]
         return None
 
     def _stage2_allowed(self, short_key):

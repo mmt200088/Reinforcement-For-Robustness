@@ -1,4 +1,5 @@
 import builtins
+import inspect
 import unittest
 from unittest import mock
 
@@ -60,6 +61,13 @@ class FinalEvalNormalizeArrayTests(unittest.TestCase):
             )
 
         self.assertEqual(arr.tolist(), [30, 32, 34, 30])
+
+    def test_stage2_cost_matched_array_tracks_cost_incrementally(self):
+        source = inspect.getsource(UnifiedFinalEvaluationModule._stage2_cost_matched_array)
+        update_loop = source.split("for _ in range(500):", 1)[1]
+
+        self.assertIn("curr_cost", source)
+        self.assertNotIn("sum(", update_loop)
 
 
 if __name__ == "__main__":
