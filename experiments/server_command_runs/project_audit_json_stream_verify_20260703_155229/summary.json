@@ -1,0 +1,9 @@
+{
+  "phase": "green",
+  "run_id": "project_audit_json_stream_verify_20260703_155229",
+  "server_confirmed_remote_head": "cf9afe2708af80804755602c026457ab6ec354f2",
+  "source_commit": "cf9afe2708af80804755602c026457ab6ec354f2",
+  "source_transport": "git_bundle_minimal_after_remote_head_confirmed",
+  "test_command": "python3 -m unittest tests.test_project_optimization_audit -v",
+  "test_rc": 0
+}
