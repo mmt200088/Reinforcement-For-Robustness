@@ -153,11 +153,52 @@ class PaperFiguresTest(unittest.TestCase):
                 include_action_histogram=False,
             )
 
-        self.assertEqual(run.episodes, [{"total_reward": 2.5}])
+        self.assertEqual(run.episodes, [2.5])
         self.assertEqual(
             run.ppo_updates,
             [{"policy_loss": 0.1, "value_loss": 0.2, "entropy": 0.3, "clip_fraction": 0.4}],
         )
+
+    def test_load_run_streams_episode_rewards_as_float_column(self):
+        paper = _load_paper_figures_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            diag = root / "run" / "blb_stage2" / "progress" / "diagnostics"
+            diag.mkdir(parents=True)
+            (diag / "episodes.jsonl").write_text(
+                json.dumps({"episode": 1, "total_reward": 2.5, "large_debug": "x" * 1000}) + "\n",
+                encoding="utf-8",
+            )
+            seen = []
+
+            def guarded_read_jsonl_fields(path, **kwargs):
+                if Path(path).name == "episodes.jsonl":
+                    raise AssertionError("episode rewards should stream as one float column")
+                return []
+
+            def fake_read_jsonl_float_field(path, field, **kwargs):
+                seen.append((Path(path).name, field, kwargs))
+                return [2.5]
+
+            with mock.patch.object(paper, "read_jsonl_fields", guarded_read_jsonl_fields):
+                with mock.patch.object(
+                    paper,
+                    "read_jsonl_float_field",
+                    fake_read_jsonl_float_field,
+                    create=True,
+                ):
+                    run = paper.load_run(
+                        str(root / "run"),
+                        include_ppo_updates=False,
+                        include_best_action=False,
+                        include_baseline_action=False,
+                        include_first_invalid=False,
+                        include_action_histogram=False,
+                    )
+
+        self.assertEqual(run.episodes, [2.5])
+        self.assertEqual(seen, [("episodes.jsonl", "total_reward", {})])
 
 
 if __name__ == "__main__":
