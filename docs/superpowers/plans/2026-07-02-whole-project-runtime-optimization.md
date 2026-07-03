@@ -90,6 +90,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `b2a7325` | `experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/` | Cache `load_max_sfs(profile)` per final-eval module instance. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
+| Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Rescale bridge | `dab3b8b` | `experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/` | Cache static-skeleton archive parses by path, mtime, and size while returning fresh caller lists. |
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
 
@@ -442,6 +443,19 @@ under
 `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/`.
 The scope is the worker-side `_stage1_evaluate_on_model()` install path, not a
 claim about end-to-end 4GPU speedup.
+
+Progress 2026-07-03: `BertSelfAttentionWithAproximation.forward()` now consumes
+legacy positional tail arguments with a head index cursor instead of
+`list.pop(0)`. Tail-end `pop()` handling for `cache_position` and
+`output_attentions` stays unchanged, while encoder masks and past-key values no
+longer shift the remaining argument list during attention forward parsing.
+
+Server evidence 2026-07-03: source commit `a416d46` has red/green verification
+under
+`experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/`.
+The green gate compiles `function_handler.py` and verifies the source-level
+performance guard that this parsing region contains `tail_pos = 0` and no
+`pop(0)`.
 
 - [ ] **Step 3: Optimize only proven redundant work**
 
@@ -1702,6 +1716,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   in the `stage1_apply_config_reuse_dca7526_20260703_210000` run directory.
 - `5d15e6c` Stage-1 worker install reuse, evidence committed in the
   `stage1_worker_apply_config_reuse_5d15e6c_20260703_211000` run directory.
+- `a416d46` shared attention tail cursor parsing, evidence committed in the
+  `attention_tail_cursor_a416d46_20260703_214800` run directory.
 - `dab3b8b` static-skeleton archive cache, evidence committed in the
   `baseline_archive_cache_dab3b8b_20260703_212500` run directory.
 - `cb215bd` skeleton profile config discovery, evidence committed in the
