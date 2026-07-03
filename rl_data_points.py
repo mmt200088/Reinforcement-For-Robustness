@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 from typing import Any, Dict, Optional, TextIO
 
-from json_utils import to_jsonable
+from json_utils import json_default, read_json_file, to_jsonable, write_json_file
 
 
 def _safe_slug(raw: str) -> str:
@@ -62,6 +62,11 @@ class RLDataPointWriter:
         self.dataset = str(dataset)
         self._jsonl_buffer_size = max(1, int(jsonl_buffer_size))
         self._jsonl_flush_interval = max(1, int(jsonl_flush_interval))
+        self._jsonl_encoder = json.JSONEncoder(
+            ensure_ascii=False,
+            sort_keys=True,
+            default=json_default,
+        )
         self.run_id = _safe_slug(run_id)
         self.run_dir = (
             self.root_dir
@@ -79,7 +84,7 @@ class RLDataPointWriter:
         doc: Dict[str, Any] = {}
         if path.is_file():
             try:
-                loaded = json.loads(path.read_text(encoding="utf-8"))
+                loaded = read_json_file(path)
                 if isinstance(loaded, dict):
                     doc.update(loaded)
             except Exception:
@@ -94,11 +99,7 @@ class RLDataPointWriter:
                 "run_dir": str(self.run_dir),
             }
         )
-        path.write_text(
-            json.dumps(to_jsonable(doc), ensure_ascii=False, indent=2, sort_keys=True)
-            + "\n",
-            encoding="utf-8",
-        )
+        write_json_file(path, doc, sort_keys=True)
 
     def write_step(self, payload: Dict[str, Any]) -> None:
         self._write_jsonl("steps.jsonl", payload)
@@ -110,11 +111,7 @@ class RLDataPointWriter:
         self._write_jsonl("ppo_updates.jsonl", payload)
 
     def write_summary(self, payload: Dict[str, Any]) -> None:
-        (self.run_dir / "summary.json").write_text(
-            json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2, sort_keys=True)
-            + "\n",
-            encoding="utf-8",
-        )
+        write_json_file(self.run_dir / "summary.json", payload, sort_keys=True)
 
     def close(self) -> None:
         for fh in self._files.values():
@@ -131,7 +128,8 @@ class RLDataPointWriter:
             ).open("a", encoding="utf-8", buffering=self._jsonl_buffer_size)
             self._files[name] = fh
             self._line_counts[name] = 0
-        fh.write(json.dumps(to_jsonable(payload), ensure_ascii=False, sort_keys=True) + "\n")
+        fh.writelines(self._jsonl_encoder.iterencode(to_jsonable(payload, preserve_native=True)))
+        fh.write("\n")
         self._line_counts[name] = self._line_counts.get(name, 0) + 1
         if self._line_counts[name] % self._jsonl_flush_interval == 0:
             fh.flush()

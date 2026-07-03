@@ -9,6 +9,7 @@ from unittest import mock
 
 import numpy as np
 
+import rl_data_points
 from json_utils import (
     json_default,
     read_json_file,
@@ -76,7 +77,10 @@ class RLDataPointWriterTest(unittest.TestCase):
 
             open_mock.assert_called_once()
             self.assertEqual(open_mock.call_args.kwargs["buffering"], 4096)
-            self.assertEqual(fake_handle.write.call_count, 2)
+            newline_writes = [
+                call for call in fake_handle.write.call_args_list if call.args == ("\n",)
+            ]
+            self.assertEqual(len(newline_writes), 2)
             fake_handle.flush.assert_called_once()
 
     def test_to_jsonable_handles_nested_numpy_values(self):
@@ -142,6 +146,69 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertEqual(written, path)
         self.assertEqual(json.loads(text), {"a": 1})
         self.assertTrue(text.endswith("\n"))
+
+    def test_training_data_manifest_and_summary_use_streaming_json_helpers(self):
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=Path(td),
+                run_id="stream-json-test",
+                stage="stage1",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            writer.write_manifest({"first": np.int64(1)})
+            manifest_path = writer.run_dir / "manifest.json"
+            summary_path = writer.run_dir / "summary.json"
+            original_read_text = Path.read_text
+            original_write_text = Path.write_text
+
+            def fail_read_text(path, *args, **kwargs):
+                if Path(path) == manifest_path:
+                    raise AssertionError("manifest merge should stream existing JSON")
+                return original_read_text(path, *args, **kwargs)
+
+            def fail_write_text(path, *args, **kwargs):
+                if Path(path) in {manifest_path, summary_path}:
+                    raise AssertionError("training data JSON artifacts should stream writes")
+                return original_write_text(path, *args, **kwargs)
+
+            with (
+                mock.patch.object(Path, "read_text", fail_read_text),
+                mock.patch.object(Path, "write_text", fail_write_text),
+            ):
+                writer.write_manifest({"second": np.float32(2.5)})
+                writer.write_summary({"done": True})
+            writer.close()
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest["first"], 1)
+        self.assertEqual(manifest["second"], 2.5)
+        self.assertEqual(summary, {"done": True})
+
+    def test_training_data_jsonl_writer_streams_rows_without_json_dumps(self):
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=Path(td),
+                run_id="stream-jsonl-test",
+                stage="stage1",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+
+            with mock.patch.object(
+                rl_data_points.json,
+                "dumps",
+                side_effect=AssertionError("JSONL writer should stream through iterencode"),
+            ):
+                writer.write_episode({"episode": np.int64(1), "reward": np.float32(0.5)})
+            writer.close()
+
+            rows = (writer.run_dir / "episodes.jsonl").read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(json.loads(rows[0]), {"episode": 1, "reward": 0.5})
 
     def test_read_json_file_reads_artifact_payload(self):
         with tempfile.TemporaryDirectory() as td:

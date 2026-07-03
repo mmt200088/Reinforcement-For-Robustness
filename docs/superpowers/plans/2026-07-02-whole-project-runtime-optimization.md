@@ -1399,6 +1399,13 @@ open append handle. The online watchdog keeps the same summary/event schema and
 exit-code behavior while avoiding full-document string copies on every monitor
 poll.
 
+Progress 2026-07-03: `rl_data_points.py` now uses shared streaming JSON
+helpers for manifest merge/write and summary write, and appends Stage-1/Stage-2
+training JSONL rows with a reused `JSONEncoder.iterencode()` into the existing
+buffered file handle. Required `rl_training_data_points/` schemas and flush
+cadence stay unchanged while long RL runs avoid one full JSON string allocation
+per manifest, summary, step, episode, and PPO diagnostic row.
+
 - [ ] **Step 3: Verify**
 
 Run:
