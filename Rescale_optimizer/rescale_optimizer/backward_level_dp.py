@@ -139,6 +139,9 @@ def build_dp_table(
 
     DP: Dict[Tuple[int, int], float] = {(sink, 0): 0.0}
     NEXT: Dict[Tuple[int, int], Tuple[str, int, int]] = {}
+    stage_successor_edges: Dict[int, List[Tuple[int, StageEdge]]] = {}
+    for (ii, j), edge in graph.stage_edges.items():
+        stage_successor_edges.setdefault(ii, []).append((j, edge))
 
     # Process cut points in reverse topological order for every l.
     for i in range(M, -1, -1):
@@ -148,9 +151,7 @@ def build_dp_table(
 
             # stage edges
             if l >= 1:
-                for (ii, j), edge in graph.stage_edges.items():
-                    if ii != i:
-                        continue
+                for j, edge in stage_successor_edges.get(i, ()):
                     if not reach.feas_stage(i, j, l):
                         continue
                     if (forbidden_edge_at_state is not None and

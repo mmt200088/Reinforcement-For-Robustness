@@ -107,6 +107,9 @@ def compute_reachability(graph: RescaleGraph) -> Reachability:
     """
     M = graph.M
     sink = graph.dummy_sink_index
+    stage_successors: Dict[int, List[int]] = {}
+    for ii, v in graph.stage_edges:
+        stage_successors.setdefault(ii, []).append(v)
 
     # --------------------------------------------------------------
     # Forward: FwdSteps
@@ -119,10 +122,9 @@ def compute_reachability(graph: RescaleGraph) -> Reachability:
             continue
         # Try every outgoing edge (j -> v) — stage or tail
         if j <= M:
-            for (ii, v) in graph.stage_edges.keys():
-                if ii == j:
-                    for r in fwd[j]:
-                        fwd[v].add(r + 1)
+            for v in stage_successors.get(j, ()):
+                for r in fwd[j]:
+                    fwd[v].add(r + 1)
             if j in graph.tail_edges:
                 for r in fwd[j]:
                     fwd[sink].add(r)    # tail does not add a rescale
@@ -136,8 +138,8 @@ def compute_reachability(graph: RescaleGraph) -> Reachability:
     for j in range(M, -1, -1):
         out_sets = bwd[j]
         # stage edges j -> v
-        for (ii, v) in graph.stage_edges.keys():
-            if ii == j and bwd[v]:
+        for v in stage_successors.get(j, ()):
+            if bwd[v]:
                 for r in bwd[v]:
                     out_sets.add(r + 1)
         # tail edges j -> sink
