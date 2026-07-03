@@ -41,6 +41,22 @@ class SharedEvalMetricsTest(unittest.TestCase):
         self.assertAlmostEqual(metric1, 0.8)
         self.assertAlmostEqual(metric2, 0.4)
 
+    def test_accuracy_from_labels_uses_direct_match_count(self):
+        labels = np.asarray([0, 1, 1, 0, 1], dtype=int)
+        preds = np.asarray([0, 1, 0, 0, 1], dtype=int)
+        original_mean = eval_metrics.np.mean
+
+        def fail_if_called(_values, *args, **kwargs):
+            raise AssertionError("accuracy should use direct match count")
+
+        eval_metrics.np.mean = fail_if_called
+        try:
+            metric = eval_metrics.accuracy_from_labels(labels, preds)
+        finally:
+            eval_metrics.np.mean = original_mean
+
+        self.assertAlmostEqual(metric, 0.8)
+
     def test_mrpc_metric2_is_weighted_f1_from_complete_trial(self):
         labels = np.asarray([0, 1, 1, 1, 1], dtype=int)
         preds = np.asarray([0, 1, 0, 0, 1], dtype=int)

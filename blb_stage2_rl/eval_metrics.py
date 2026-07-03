@@ -33,7 +33,7 @@ def accuracy_from_labels(labels: Any, preds: Any) -> float:
     preds_arr = np.asarray(preds).reshape(-1)
     if labels_arr.size == 0:
         return 0.0
-    return float(np.mean(preds_arr == labels_arr))
+    return float(np.count_nonzero(preds_arr == labels_arr) / labels_arr.size)
 
 
 def _is_zero_one_array(arr: np.ndarray) -> bool:
