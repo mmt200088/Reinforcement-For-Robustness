@@ -709,6 +709,13 @@ def _graph_occurrences(schedule: Sequence[Mapping[str, Any]]) -> Dict[str, List[
     return {k: sorted(set(v)) for k, v in sorted(out.items())}
 
 
+def _int_slot_mapping(slots: Any) -> Dict[str, int]:
+    if not slots:
+        return {}
+    items = slots.items() if hasattr(slots, "items") else dict(slots).items()
+    return {str(k): int(v) for k, v in items}
+
+
 def _option_slot_summary(
     graph: Mapping[str, Any],
     fields: Sequence[Tuple[str, str, int]],
@@ -721,9 +728,9 @@ def _option_slot_summary(
     action = [int(v) for v in option.get("action_indices", [])]
     if base_action is None:
         base_action = [int(v) for v in base_option.get("action_indices", [])]
-    slots = {str(k): int(v) for k, v in dict(option.get("slots", {})).items()}
+    slots = _int_slot_mapping(option.get("slots", {}))
     if base_slots is None:
-        base_slots = {str(k): int(v) for k, v in dict(base_option.get("slots", {})).items()}
+        base_slots = _int_slot_mapping(base_option.get("slots", {}))
     rows = []
     changed_raw = []
     changed_real = []
@@ -829,7 +836,7 @@ def _build_report_payload(
         options = _options_in_id_order(graph.get("options", []))
         base = _base_option_from_ordered_options(graph, options)
         base_action = [int(v) for v in base.get("action_indices", [])]
-        base_slots = {str(k): int(v) for k, v in dict(base.get("slots", {})).items()}
+        base_slots = _int_slot_mapping(base.get("slots", {}))
         available_fusion_counts = set()
         option_summaries = []
         for option in options:

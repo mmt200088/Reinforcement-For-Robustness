@@ -1,3 +1,4 @@
+import inspect
 import json
 from pathlib import Path
 import tempfile
@@ -516,6 +517,37 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertEqual(out["x_centered_fresh_sf"], 11)
         self.assertEqual(out["wq_sf"], 12)
         self.assertEqual(out["q_mask1_sf"], 13)
+
+    def test_option_slot_summary_uses_mapping_items_without_dict_copy(self):
+        graph = {"block_idx": 2}
+        fields = [("rescale_sf", "F", 14), ("output_truncation_k", "K", 0)]
+        option = {
+            "option_id": 1,
+            "fusion_count": 1,
+            "action_indices": [3, 5],
+            "slots": {"rescale_sf": 11},
+        }
+        base = {
+            "option_id": 0,
+            "fusion_count": 0,
+            "action_indices": [0, 0],
+            "slots": {"rescale_sf": 10},
+        }
+
+        with mock.patch(
+            "builtins.dict",
+            side_effect=AssertionError("option slot summary should not copy mapping through dict()"),
+        ):
+            summary = report._option_slot_summary(graph, fields, option, base)
+
+        self.assertEqual(summary["real_slots"], {"rescale_sf": 11})
+        self.assertEqual(summary["changed_real_slots_vs_fusion0"][0]["base_value"], 10)
+        self.assertEqual(summary["changed_real_slots_vs_fusion0"][0]["value"], 11)
+
+    def test_build_report_payload_normalizes_base_slots_without_dict_copy(self):
+        source = inspect.getsource(report._build_report_payload)
+
+        self.assertNotIn('dict(base.get("slots"', source)
 
 
 if __name__ == "__main__":
