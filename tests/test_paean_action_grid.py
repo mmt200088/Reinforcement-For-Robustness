@@ -132,6 +132,14 @@ class PaeanActionGridTest(unittest.TestCase):
         self.assertEqual(out.tolist(), [1, 2, 3])
         self.assertIsNot(out, base)
 
+    def test_parse_base_action_vec_accepts_list_without_extra_list_materialization(self):
+        action_grid = _load_action_grid_module()
+
+        with mock.patch("builtins.list", side_effect=AssertionError("legacy action_vec list should pass directly to numpy")):
+            out = action_grid._parse_base_action_vec([1, 2, 3], num_layers_hint=1)
+
+        self.assertEqual(out.tolist(), [1, 2, 3])
+
     def test_cost_matched_sampling_reuses_parsed_fixed_specs(self):
         action_grid = _load_action_grid_module()
         action_grid.action_dims_for_config = lambda _num_layers: [5]

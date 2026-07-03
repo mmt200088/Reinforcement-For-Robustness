@@ -576,7 +576,7 @@ def _parse_base_action_vec(base_raw, num_layers_hint: int) -> Optional[np.ndarra
             return np.asarray(json.loads(text), dtype=int)
         return np.asarray([int(v.strip()) for v in text.split(",") if v.strip()], dtype=int)
     if isinstance(base_raw, Sequence):
-        return np.asarray(list(base_raw), dtype=int)
+        return np.asarray(base_raw, dtype=int)
     raise ValueError("action config base_action must be 'max', 'min', or an integer list")
 
 
