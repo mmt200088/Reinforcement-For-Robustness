@@ -206,6 +206,50 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         self.assertAlmostEqual(result.metric1, 0.75)
         self.assertAlmostEqual(result.metric2, 0.75)
 
+    def test_probe_trial_skips_prediction_array_transfer_for_accuracy_profiles(self):
+        import torch
+        import torch.nn.functional as F
+
+        import blb_stage2_rl.inference_eval as inference_eval
+
+        class LogitEchoModel(torch.nn.Module):
+            def forward(self, input_ids, attention_mask=None, labels=None, token_type_ids=None):
+                del attention_mask, token_type_ids
+                logits = input_ids.float()
+                loss = F.cross_entropy(logits, labels.long()) if labels is not None else None
+                return types.SimpleNamespace(loss=loss, logits=logits)
+
+        class ProbeBatch:
+            def __init__(self, logits, labels):
+                self.input_ids = torch.tensor(logits, dtype=torch.float32)
+                self.attention_mask = torch.ones(len(labels), 2, dtype=torch.long)
+                self.labels = torch.tensor(labels, dtype=torch.long)
+                self.token_type_ids = None
+
+        batches = [
+            ProbeBatch([[3.0, 0.0], [0.0, 3.0]], [0, 1]),
+            ProbeBatch([[0.0, 3.0], [3.0, 0.0]], [1, 0]),
+        ]
+        original = inference_eval.tensor_values_to_numpy_arrays
+
+        def fail_if_called(_values):
+            raise AssertionError("accuracy-only probe should not transfer prediction arrays")
+
+        inference_eval.tensor_values_to_numpy_arrays = fail_if_called
+        try:
+            loss, metric1, metric2 = inference_eval.run_installed_probe_trial(
+                LogitEchoModel(),
+                batches,
+                is_regression=False,
+                metric_profile="sst2",
+            )
+        finally:
+            inference_eval.tensor_values_to_numpy_arrays = original
+
+        self.assertGreater(loss, 0.0)
+        self.assertAlmostEqual(metric1, 1.0)
+        self.assertAlmostEqual(metric2, 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

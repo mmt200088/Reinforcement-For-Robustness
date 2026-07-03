@@ -20,6 +20,7 @@ from .eval_metrics import (
     metric_pair_for_dataset,
     probe_batch_sample_count,
     sample_weighted_mean,
+    uses_weighted_f1_metric2,
 )
 
 
@@ -302,6 +303,9 @@ def run_installed_probe_trial(
     trial_pred_tensors: List[Any] = []
     trial_label_tensors: List[Any] = []
     was_training = bool(model.training)
+    need_prediction_arrays = (
+        bool(is_regression) or uses_weighted_f1_metric2(metric_profile)
+    )
     model.eval()
     try:
         with torch.inference_mode():
@@ -315,7 +319,8 @@ def run_installed_probe_trial(
                     loss_t = torch.nn.functional.mse_loss(preds, targets)
                     m1_t = -loss_t
                     m2_t = -loss_t
-                    trial_pred_tensors.append(preds.detach())
+                    if need_prediction_arrays:
+                        trial_pred_tensors.append(preds.detach())
                 else:
                     loss_t = torch.nn.functional.cross_entropy(
                         logits.float(), batch.labels.long(), reduction="mean",
@@ -324,11 +329,13 @@ def run_installed_probe_trial(
                     labels = batch.labels.detach()
                     m1_t = (preds.long() == labels.long()).float().mean()
                     m2_t = m1_t
-                    trial_pred_tensors.append(preds.detach())
+                    if need_prediction_arrays:
+                        trial_pred_tensors.append(preds.detach())
                 loss_tensors.append(loss_t.detach().reshape(()))
                 m1_tensors.append(m1_t.detach().reshape(()))
                 m2_tensors.append(m2_t.detach().reshape(()))
-                trial_label_tensors.append(batch.labels.detach().reshape(-1))
+                if need_prediction_arrays:
+                    trial_label_tensors.append(batch.labels.detach().reshape(-1))
     finally:
         if restore_training and was_training:
             model.train()
@@ -338,8 +345,16 @@ def run_installed_probe_trial(
         m1_tensors,
         m2_tensors,
     )
-    trial_preds = tensor_values_to_numpy_arrays(trial_pred_tensors)
-    trial_labels = tensor_values_to_numpy_arrays(trial_label_tensors)
+    trial_preds = (
+        tensor_values_to_numpy_arrays(trial_pred_tensors)
+        if need_prediction_arrays
+        else None
+    )
+    trial_labels = (
+        tensor_values_to_numpy_arrays(trial_label_tensors)
+        if need_prediction_arrays
+        else None
+    )
     trial_metrics = finalize_probe_trial_metrics(
         losses,
         m1s,
