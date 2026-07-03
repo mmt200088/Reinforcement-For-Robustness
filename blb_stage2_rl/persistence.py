@@ -952,8 +952,8 @@ def write_training_curves(
         def _arr(seq):
             if seq is None:
                 return _np.array([], dtype=float)
-            values = list(seq)
-            return _np.asarray(values, dtype=float) if values else _np.array([], dtype=float)
+            arr = _float_array(seq)
+            return arr if arr.size else _np.array([], dtype=float)
 
         npz_path = os.path.join(persistence_dir, BLB_TRAINING_CURVE_NPZ)
         _np.savez(

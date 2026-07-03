@@ -168,6 +168,32 @@ class UpgradedCurvesTest(unittest.TestCase):
         for name, seq in seqs.items():
             self.assertLessEqual(seq.iterations, 1, name)
 
+    def test_npz_writer_accepts_ndarray_without_list_materialization(self):
+        import numpy as np
+
+        values = np.asarray([1.0, 2.0, 3.0], dtype=float)
+        captured = {}
+
+        def fake_savez(path, **series):
+            captured["series"] = series
+            with open(path, "wb") as f:
+                f.write(b"npz")
+
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch("numpy.savez", side_effect=fake_savez), \
+                 mock.patch("builtins.list", side_effect=AssertionError("npz ndarray series should not be copied through list")):
+                out = persistence.write_training_curves(
+                    d,
+                    episode_returns=values,
+                    render_plots=False,
+                )
+
+            self.assertTrue(_nonempty_file(out["npz"]))
+
+        written = captured["series"]["episode_returns"]
+        self.assertIsInstance(written, np.ndarray)
+        self.assertEqual(written.tolist(), [1.0, 2.0, 3.0])
+
     def test_curve_helpers_accept_ndarray_without_list_materialization(self):
         import numpy as np
 
