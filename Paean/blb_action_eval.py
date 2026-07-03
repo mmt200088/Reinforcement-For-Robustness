@@ -1580,14 +1580,29 @@ class BLBActionFinalEvaluationModule:
             self.evaluator.log(f"  [plot][warning] matplotlib unavailable: {exc}")
             return None
 
-        labels = [self._unique_truncation_label(r.get("config_details", {}).get("truncation", {})) for r in candidate_results]
-        x = np.arange(len(candidate_results))
-        loss = np.asarray([float(r["loss"]) for r in candidate_results], dtype=float)
-        loss_std = np.asarray([float(r.get("loss_std", 0.0)) for r in candidate_results], dtype=float)
-        p = np.asarray([float(r["p"]) for r in candidate_results], dtype=float)
-        p_std = np.asarray([float(r.get("p_std", 0.0)) for r in candidate_results], dtype=float)
-        bits = np.asarray([float(r["total_bits_sum"]) for r in candidate_results], dtype=float)
-        time_ms = np.asarray([float(r["time_ms"]) for r in candidate_results], dtype=float)
+        labels = []
+        loss_values = []
+        loss_std_values = []
+        p_values = []
+        p_std_values = []
+        bits_values = []
+        time_ms_values = []
+        for result in candidate_results:
+            labels.append(self._unique_truncation_label(result.get("config_details", {}).get("truncation", {})))
+            loss_values.append(float(result["loss"]))
+            loss_std_values.append(float(result.get("loss_std", 0.0)))
+            p_values.append(float(result["p"]))
+            p_std_values.append(float(result.get("p_std", 0.0)))
+            bits_values.append(float(result["total_bits_sum"]))
+            time_ms_values.append(float(result["time_ms"]))
+
+        x = np.arange(len(labels))
+        loss = np.asarray(loss_values, dtype=float)
+        loss_std = np.asarray(loss_std_values, dtype=float)
+        p = np.asarray(p_values, dtype=float)
+        p_std = np.asarray(p_std_values, dtype=float)
+        bits = np.asarray(bits_values, dtype=float)
+        time_ms = np.asarray(time_ms_values, dtype=float)
 
         fig, axes = plt.subplots(2, 2, figsize=(13, 8))
         axes = axes.reshape(-1)

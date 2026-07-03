@@ -121,6 +121,18 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         self.assertNotIn("loss_rows = [", source)
         self.assertNotIn("metric2_rows = [", source)
 
+    def test_results_plot_scans_candidate_rows_once(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        source = inspect.getsource(BLBActionFinalEvaluationModule._save_results_plot)
+
+        self.assertNotIn('np.asarray([float(r["loss"]) for r in candidate_results]', source)
+        self.assertNotIn("np.asarray([float(r.get(\"loss_std\", 0.0)) for r in candidate_results]", source)
+        self.assertNotIn('np.asarray([float(r["p"]) for r in candidate_results]', source)
+        self.assertNotIn("np.asarray([float(r.get(\"p_std\", 0.0)) for r in candidate_results]", source)
+        self.assertNotIn('np.asarray([float(r["total_bits_sum"]) for r in candidate_results]', source)
+        self.assertNotIn('np.asarray([float(r["time_ms"]) for r in candidate_results]', source)
+
 
 if __name__ == "__main__":
     unittest.main()
