@@ -645,6 +645,7 @@ def train(
         blb_v3_guarded_radius2_episode_fraction: float = None,
         blb_v3_guarded_radius2_cooldown_episodes: int = None,
         blb_v3_static_invalid_level_mask_enabled: bool = None,
+        blb_v3_warmstart_baseline_bias: bool = None,
         blb_v3_warmstart_bias_gain: float = None,
         blb_v3_ent_coef: float = None,
         blb_v3_ent_coef_anchor: float = None,
@@ -657,7 +658,7 @@ def train(
         # Per-block sequential RL (DEFAULT path since 2026-05-15)
         blb_v3_sequential_rl: bool = True,
         blb_v3_sequential_invalid_penalty: float = 1.0,
-        blb_v3_sequential_cost_shaping_coeff: float = 0.05,
+        blb_v3_sequential_cost_shaping_coeff: float = 0.0,
         blb_v3_sequential_fusion_shaping_coeff: float = 0.0,
         blb_v3_sequential_early_terminate_on_invalid: bool = False,
         # Multi-seed support (2026-05-16): when None, BLBStage2TrainConfig
@@ -683,9 +684,11 @@ def train(
         # Mutually exclusive with blb_v3_reward_devices. Empty → legacy loop.
         stage2_rl_devices: str = "",
         blb_v3_fast_reward_mode_enabled: bool = False,
-        blb_v3_online_k_trials: int = 1,
+        blb_v3_online_k_trials: int = 5,
         blb_v3_terminal_eval_batch_size: int = 4,
         blb_v3_promotion_validation_trials: int = 4,
+        blb_v3_final_selection_top_n: int = 20,
+        blb_v3_final_selection_validation_trials: int = 20,
         blb_v3_promotion_margin_window: float = 0.25,
         # 2026-05-27: 4-sub-stage Stage-2 RL (opt-in). When True, trains one
         # block per sub-stage in --blb_v3_substage_block_order; blocks listed
@@ -693,9 +696,9 @@ def train(
         # (block 3 by design). See blb_stage2_rl/substage_runner.py.
         blb_v3_substage_mode: bool = False,
         blb_v3_fusion_count_action: bool = False,
-        blb_v3_fusion_neighbor_curriculum: bool = True,
-        blb_v3_fusion_probe_interval: int = 200,
-        blb_v3_fusion_exploration_epsilon: float = 0.05,
+        blb_v3_fusion_neighbor_curriculum: bool = False,
+        blb_v3_fusion_probe_interval: int = 0,
+        blb_v3_fusion_exploration_epsilon: float = 0.0,
         stage2_workers_per_device: int = 1,
         blb_v3_substage_block_order: str = "1,2,4,5",
         blb_v3_substage_frozen_blocks: str = "3",
@@ -900,6 +903,7 @@ def train(
         f"blb_v3_guarded_radius2_episode_fraction: {blb_v3_guarded_radius2_episode_fraction}\n"
         f"blb_v3_guarded_radius2_cooldown_episodes: {blb_v3_guarded_radius2_cooldown_episodes}\n"
         f"blb_v3_static_invalid_level_mask_enabled: {blb_v3_static_invalid_level_mask_enabled}\n"
+        f"blb_v3_warmstart_baseline_bias: {blb_v3_warmstart_baseline_bias}\n"
         f"blb_v3_warmstart_bias_gain: {blb_v3_warmstart_bias_gain}\n"
         f"blb_v3_ent_coef: {blb_v3_ent_coef}\n"
         f"blb_v3_ent_coef_anchor: {blb_v3_ent_coef_anchor}\n"
@@ -1326,6 +1330,7 @@ def train(
             blb_v3_guarded_radius2_episode_fraction=blb_v3_guarded_radius2_episode_fraction,
             blb_v3_guarded_radius2_cooldown_episodes=blb_v3_guarded_radius2_cooldown_episodes,
             blb_v3_static_invalid_level_mask_enabled=blb_v3_static_invalid_level_mask_enabled,
+            blb_v3_warmstart_baseline_bias=blb_v3_warmstart_baseline_bias,
             blb_v3_warmstart_bias_gain=blb_v3_warmstart_bias_gain,
             blb_v3_ent_coef=blb_v3_ent_coef,
             blb_v3_ent_coef_anchor=blb_v3_ent_coef_anchor,
@@ -1348,6 +1353,8 @@ def train(
             blb_v3_online_k_trials=blb_v3_online_k_trials,
             blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,
             blb_v3_promotion_validation_trials=blb_v3_promotion_validation_trials,
+            blb_v3_final_selection_top_n=blb_v3_final_selection_top_n,
+            blb_v3_final_selection_validation_trials=blb_v3_final_selection_validation_trials,
             blb_v3_promotion_margin_window=blb_v3_promotion_margin_window,
             blb_v3_substage_mode=blb_v3_substage_mode,
             blb_v3_fusion_count_action=blb_v3_fusion_count_action,

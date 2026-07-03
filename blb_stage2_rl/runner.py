@@ -178,7 +178,10 @@ def _baseline_derived_metric_threshold(
         all_max_blb_metric: Any,
         allowed_drop: Any,
         ) -> BaselineMetricThreshold:
-    """Resolve a metric limit from the all-max BLB baseline unless explicit."""
+    """Resolve a metric limit from the all-max BLB baseline unless explicit.
+
+    ``allowed_drop`` is a relative tolerance: 0.001 means a 0.1% metric drop.
+    """
     current = _selection_float(current_threshold, 0.0)
     raw_metric = _selection_float(raw_baseline_metric, 0.0)
     blb_metric = _selection_float(all_max_blb_metric, raw_metric)
@@ -192,7 +195,7 @@ def _baseline_derived_metric_threshold(
             all_max_blb_metric=float(blb_metric),
         )
     return BaselineMetricThreshold(
-        threshold=max(0.0, float(blb_metric) - float(drop)),
+        threshold=max(0.0, float(blb_metric) * (1.0 - float(drop))),
         source="baseline_derived_all_max_blb",
         allowed_drop=float(drop),
         raw_baseline_metric=float(raw_metric),
@@ -614,14 +617,14 @@ class BLBStage2TrainConfig:
     inproc_profile: Optional[str] = None                 # e.g. "mrpc"；用于自动定位 configs/<profile>
     inproc_configs: Optional[Mapping[str, str]] = None   # {config_name: graph_json_path}；不传则按 profile 自动扫
     inproc_baseline_archive: Optional[str] = None        # 不传则 <root>/configs/<profile>/static_skeletons_<profile>.json
-    warmstart_baseline_bias: bool = True
+    warmstart_baseline_bias: bool = False
     warmstart_bias_gain: float = 1.2
     # Per-slot baseline prior is now external and decays per episode in the
     # sequential GTrXL path. 1.2 is only the fresh/anchor prior; it falls to a
     # weak 0.15 safety prior after episode 2000 so policy learning and
     # empirical Pareto proposals can leave the baseline neighborhood.
-    warmstart_anchor_episodes: Optional[int] = None
-    warmstart_neighbor_sampling: bool = True
+    warmstart_anchor_episodes: Optional[int] = 0
+    warmstart_neighbor_sampling: bool = False
     warmstart_neighbor_ramp_episodes: Optional[int] = None
     warmstart_neighbor_max_mutations: int = 12
     warmstart_neighbor_max_radius: int = 1
@@ -633,7 +636,7 @@ class BLBStage2TrainConfig:
     guarded_radius2_episode_fraction: float = 0.15
     guarded_radius2_cooldown_episodes: int = 300
     guarded_radius2_min_radius1_successes: int = 3
-    static_invalid_level_mask_enabled: bool = True
+    static_invalid_level_mask_enabled: bool = False
     disable_warmstart_on_resume: bool = False
     action_mask_enabled: bool = False
     action_mask_mode: str = "none"
@@ -648,7 +651,7 @@ class BLBStage2TrainConfig:
     2026-05-15 -- the single-shot path now requires explicit opt-out via
     ``--blb-v3-sequential-rl false`` in the launcher."""
     sequential_invalid_penalty: float = 1.0
-    sequential_cost_shaping_coeff: float = 0.05
+    sequential_cost_shaping_coeff: float = 0.0
     sequential_fusion_shaping_coeff: float = 0.0
     sequential_early_terminate_on_invalid: bool = False
     # 2026-05-18 (sampling-collapse hotfix): the PPO entropy bonus was
@@ -658,12 +661,9 @@ class BLBStage2TrainConfig:
     # docstring in blb_stage2_rl/sequential_runner.py for full rationale.
     ent_coef_anchor: float = 0.0
     ent_coef_ramp_episodes: int = 600
-    # ADR-015 (2026-06-14): continuous bounded reward + Stage-1 cosine entropy
-    # (the rebuild defaults). reward_design="continuous" gates off the ADR-011/012
-    # exploration patches; ent_coef_schedule="cosine" replaces the low→high
-    # anchor+ramp with Stage-1's high→low cosine. Set reward_design="tiered" +
-    # ent_coef_schedule="anchor_ramp" to restore the ADR-014 path (A/B / rollback).
-    reward_design: str = "continuous"
+    # ADR-015/Stage-1 alignment: Stage-1-style reward plus Stage-2 stability,
+    # with Stage-1's high→low cosine entropy schedule.
+    reward_design: str = "stage1_aligned"
     ent_coef_schedule: str = "cosine"
     ent_coef_cosine_start: float = 0.05
     ent_coef_cosine_end: float = 0.001
@@ -689,14 +689,16 @@ class BLBStage2TrainConfig:
     # the same card. Results stay byte-identical for any value (per-device RNG
     # atomic-unit locks; episode results depend only on the global index).
     stage2_workers_per_device: int = 1
-    # Fast online reward mode: collect terminal actions with K=1 online and
-    # evaluate distinct actions concurrently across reward_devices. Promotion
-    # validation keeps the old repeated-trial path available near the boundary.
+    # Fast online reward mode: collect terminal actions and evaluate distinct
+    # actions concurrently across reward_devices. Default online K mirrors the
+    # normal K=5 training reward; CLI can still override it explicitly.
     fast_reward_mode_enabled: bool = False
-    online_num_trials_per_step: int = 1
+    online_num_trials_per_step: int = 5
     terminal_eval_batch_size: int = 4
     promotion_validation_trials: int = 4
     promotion_margin_window: float = 0.25
+    final_selection_top_n: int = 20
+    final_selection_validation_trials: int = 20
     # ---- 4-sub-stage mode (opt-in 2026-05-27) -----------------------------
     # When ``substage_mode`` is True, ``BLBStage2RLRunner.run`` dispatches to
     # ``substage_runner.run_substage_via_runner`` instead of the legacy
@@ -722,17 +724,17 @@ class BLBStage2TrainConfig:
     # baseline K) each episode, dissolving to the unrestricted open mask after the
     # ramp (so the full action space stays reachable). Set False for the A/B
     # control group (unrestricted from the start, the pre-2026-06-05 behaviour).
-    fusion_neighbor_curriculum_enabled: bool = True
+    fusion_neighbor_curriculum_enabled: bool = False
     fusion_neighbor_ramp_episodes: int = 0
     fusion_neighbor_max_radius: int = 6
     # Scheduled forced-fusion probes (ADR-011 2026-06-11): every N post-anchor
     # episodes one episode forces fusion option 1 on one rotating block type
     # (block2 -> block5 -> block4) at baseline K, keeping fresh on-policy
     # fusion evidence flowing after the curriculum dissolves. 0 disables.
-    fusion_probe_interval: int = 200
+    fusion_probe_interval: int = 0
     # ADR-012 exploration floor for the fusion option / K slots (0 disables).
-    fusion_exploration_epsilon: float = 0.05
-    fusion_exploration_epsilon_k: float = 0.02
+    fusion_exploration_epsilon: float = 0.0
+    fusion_exploration_epsilon_k: float = 0.0
     # ---- COINN-style OSR pre-prune (opt-in 2026-05-27) ---------------------
     # Empty osr_results_path → no OSR layer (legacy behaviour). When set, the
     # runner loads existing results from PATH, or runs a fresh scan saving to
@@ -988,6 +990,7 @@ class BLBStage2RLRunner:
                 layers_attribute="model." + ev.layers_attribute,
                 is_regression=bool(getattr(ev, "is_regression", False)),
                 device_ids=list(train_cfg.reward_devices),
+                metric_profile=str(train_cfg.profile),
                 log_fn=lambda m: log(f"  {bullet} {m}"),
             )
 
@@ -2532,8 +2535,14 @@ class BLBStage2RLRunner:
             if acc_threshold_resolution is not None:
                 limit_p = float(acc_threshold_resolution.threshold)
             else:
-                limit_p = max(0.0, float(preflight_metric1) - stage2_metric_allowed_drop)
-            limit_s = max(0.0, float(preflight_metric2) - stage2_metric_allowed_drop)
+                limit_p = max(
+                    0.0,
+                    float(preflight_metric1) * (1.0 - stage2_metric_allowed_drop),
+                )
+            limit_s = max(
+                0.0,
+                float(preflight_metric2) * (1.0 - stage2_metric_allowed_drop),
+            )
             limit_dict = {
                 "loss": float(limit_loss),
                 "metric1": float(limit_p),
@@ -2553,7 +2562,7 @@ class BLBStage2RLRunner:
             "k_trials": int(train_cfg.num_trials_per_step),
             "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
             "limit_computation_method": (
-                "all_max_blb_baseline_absolute_drop"
+                "all_max_blb_baseline_relative_tolerance"
                 if baseline_preflight_metrics else "raw_baseline_tolerance_percentage"
             ),
             "limit_tolerance": float(getattr(ev, "stage2_limit_tolerance", 0.05)),
@@ -2566,6 +2575,7 @@ class BLBStage2RLRunner:
                 "all_max_blb_preflight" if baseline_preflight_metrics else "raw_model_fallback"
             ),
             "threshold_allowed_drop": float(stage2_metric_allowed_drop),
+            "threshold_tolerance": float(stage2_metric_allowed_drop),
             "raw_model_baseline_metrics": {
                 "loss": float(base_loss),
                 "metric1": float(base_p),
@@ -2622,7 +2632,8 @@ class BLBStage2RLRunner:
                     "all_max_blb_preflight" if baseline_preflight_metrics else "raw_model_fallback"
                 ),
                 "blb_v3_threshold_allowed_drop": float(stage2_metric_allowed_drop),
-                "blb_v3_reward_design": "v2-style rdv2",
+                "blb_v3_threshold_tolerance": float(stage2_metric_allowed_drop),
+                "blb_v3_reward_design": str(getattr(weights, "reward_design", "stage1_aligned")),
                 "blb_v3_cost_weight": float(weights.cost_weight),
                 "blb_v3_lambda_stab": float(weights.lambda_stab),
                 "blb_v3_invalid_penalty": float(weights.invalid_penalty),
@@ -2743,6 +2754,8 @@ class BLBStage2RLRunner:
                 ("online_num_trials_per_step", "blb_v3_online_k_trials"),
                 ("terminal_eval_batch_size", "blb_v3_terminal_eval_batch_size"),
                 ("promotion_validation_trials", "blb_v3_promotion_validation_trials"),
+                ("final_selection_top_n", "blb_v3_final_selection_top_n"),
+                ("final_selection_validation_trials", "blb_v3_final_selection_validation_trials"),
                 ("seed", "final_eval_random_seed"),
         ):
             v = getattr(ev, attr_name, None)
@@ -2961,38 +2974,17 @@ class BLBStage2RLRunner:
 
         cfg.rollout_size = max(1, min(int(cfg.rollout_size), int(cfg.total_episodes)))
         if cfg.warmstart_anchor_episodes is None:
-            # Bug #5 fix: previous default ``rollout_size * 0.25`` produced
-            # ~30 anchor episodes for the default 120 rollout — only 0.04%
-            # of an 80k-episode run. After the anchor closed, the actor was
-            # not yet stable enough to stay near the all-max baseline and
-            # diverged into all-invalid actions for the rest of training.
-            # Guarantee at least two rollouts of pure anchor and a 200-ep
-            # floor to cover small-rollout setups.
-            cfg.warmstart_anchor_episodes = max(200, int(cfg.rollout_size) * 2)
-            cfg.warmstart_anchor_episodes = min(
-                cfg.warmstart_anchor_episodes, int(cfg.total_episodes)
-            )
+            cfg.warmstart_anchor_episodes = 0
         else:
             cfg.warmstart_anchor_episodes = max(
                 0,
                 min(int(cfg.warmstart_anchor_episodes), int(cfg.total_episodes)),
             )
         if cfg.warmstart_neighbor_ramp_episodes is None:
-            # Bug #5 fix: previous default ``rollout_size * 10`` produced
-            # ~1200 neighbor episodes for an 80k-ep run (1.5%). Make the
-            # default a fraction of the training budget so the guided ramp
-            # is meaningful at any total_episodes; cap so it doesn't eat
-            # the whole training in tiny budgets.
-            cfg.warmstart_neighbor_ramp_episodes = max(
-                int(cfg.rollout_size) * 10,
-                int(cfg.total_episodes) // 5,
-            )
-            cfg.warmstart_neighbor_ramp_episodes = min(
-                cfg.warmstart_neighbor_ramp_episodes, int(cfg.total_episodes)
-            )
+            cfg.warmstart_neighbor_ramp_episodes = 0
         else:
             cfg.warmstart_neighbor_ramp_episodes = max(
-                1,
+                0,
                 min(int(cfg.warmstart_neighbor_ramp_episodes), int(cfg.total_episodes)),
             )
         cfg.warmstart_neighbor_max_mutations = max(
@@ -3019,6 +3011,8 @@ class BLBStage2RLRunner:
         cfg.online_num_trials_per_step = max(1, int(cfg.online_num_trials_per_step))
         cfg.terminal_eval_batch_size = max(1, int(cfg.terminal_eval_batch_size))
         cfg.promotion_validation_trials = max(1, int(cfg.promotion_validation_trials))
+        cfg.final_selection_top_n = max(1, int(cfg.final_selection_top_n))
+        cfg.final_selection_validation_trials = max(1, int(cfg.final_selection_validation_trials))
         cfg.promotion_margin_window = max(0.0, float(cfg.promotion_margin_window))
         cfg.ent_coef_ramp_episodes = max(
             0, min(int(cfg.ent_coef_ramp_episodes), int(cfg.total_episodes))

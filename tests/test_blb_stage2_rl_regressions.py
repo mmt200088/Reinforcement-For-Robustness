@@ -307,9 +307,8 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertEqual(result["install_verification"], {"ok": True})
         self.assertEqual(result["p"], 0.875)
 
-    def test_full_noise_config_uses_training_first_input_N(self):
+    def test_full_noise_config_excludes_deprecated_first_input(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
-        from blb_stage2_rl.action_space import BLB_FIRST_INPUT_N
 
         decoded = type(
             "Decoded",
@@ -326,7 +325,9 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
         config = BLBActionFinalEvaluationModule._full_noise_config(decoded)
 
-        self.assertEqual(config["entries"][0]["N"], BLB_FIRST_INPUT_N)
+        self.assertFalse(
+            any(entry.get("block") == "first_input" for entry in config["entries"])
+        )
 
 
 class BLBPolicyWarmstartRegressionTests(unittest.TestCase):
@@ -420,7 +421,11 @@ class BLBPolicyWarmstartRegressionTests(unittest.TestCase):
         state = torch.zeros(1, 7)
         action, _log_prob, _value = policy.sample_action(state, deterministic=True)
 
-        self.assertEqual(action.squeeze(0).tolist(), preferred.tolist())
+        expected = preferred.copy()
+        # The deprecated first_input tail is a fixed compatibility placeholder,
+        # not a sampled policy head.
+        expected[-1] = 0
+        self.assertEqual(action.squeeze(0).tolist(), expected.tolist())
 
 
 class BLBTraceWriterRegressionTests(unittest.TestCase):
@@ -706,17 +711,11 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
 
 class BLBRewardRegressionTests(unittest.TestCase):
     def test_optimizer_invalid_is_cost_layer_after_accuracy_and_stability(self):
-        """Priority semantics from ADR-002 preserved under ADR-007 v2-style reward.
+        """Priority semantics are preserved under bounded continuous reward.
 
-        The implementation switched from -50/-100/-200 hard penalties to
-        clipped shaping [-5,+5] + tier_bonus (+20/+40), but the priority
-        ordering remains:
-          P1: acc_violation OR invalid → metric_ok=False → no tier_bonus →
-              total ∈ [-5, 0]
-          P2: acc OK + invalid=False but stab fail → metric_ok=True →
-              tier_bonus=+20 → total ∈ [+15, +25]
-          P3: everything OK → tier_bonus=+40 → total ∈ [+35, +45]
-        See ADR-007 for design rationale.
+        Current Stage-2 reward no longer uses the old +20/+40 tier bonuses by
+        default. The regression invariant is the gate order: P1 blocks metric
+        feasibility, P2 blocks cost reward, and only P3 can receive cost.
         """
         from blb_stage2_rl.reward import (
             BaselineCostStats,
@@ -769,9 +768,8 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertEqual(cost_breakdown.invalid_term, -5.0)
 
         # --- Case 3: nonfinite stability, acc OK, no invalid ---
-        # metric_ok=True (acc OK + not invalid). stab_excess=1.0 → stab_penalty=-5.
-        # shaping ≈ margin_acc + cost_score - 5  → clipped to [-5, +5]
-        # tier_bonus = +20 (metric_ok only). total ∈ [+15, +25].
+        # metric_ok=True (acc OK + not invalid), but nonfinite std is a hard P2
+        # stability failure. It receives no tier bonus and no cost reward.
         nonfinite_stability = compute_reward(
             EpisodeMetrics(metric1_mean=0.9, loss_mean=0.2, loss_std=float("inf")),
             type("Signals", (), {"any_invalid": False, "total_bits_sum": 200, "total_fusion_count": 0})(),
@@ -785,11 +783,9 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertEqual(nonfinite_stability.priority, 2)
         self.assertTrue(nonfinite_stability.metric_ok)
         self.assertFalse(nonfinite_stability.stab_ok)
-        self.assertEqual(nonfinite_stability.tier_bonus, 20.0)
-        # Reward in [+15, +25] — well above any P1/invalid candidate (≤ +5)
-        # so priority ordering is preserved.
-        self.assertGreaterEqual(nonfinite_stability.reward, 14.9)
-        self.assertLessEqual(nonfinite_stability.reward, 25.1)
+        self.assertEqual(nonfinite_stability.tier_bonus, 0.0)
+        self.assertEqual(nonfinite_stability.cost_score, 0.0)
+        self.assertLessEqual(nonfinite_stability.reward, 0.0)
 
         # --- Case 4: everything OK → both tier bonuses ---
         all_ok = compute_reward(
@@ -805,10 +801,10 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertEqual(all_ok.priority, 3)
         self.assertTrue(all_ok.metric_ok)
         self.assertTrue(all_ok.stab_ok)
-        self.assertEqual(all_ok.tier_bonus, 40.0)
-        # Total in [+35, +45] — strictly above any P2 candidate (≤ +25).
-        self.assertGreaterEqual(all_ok.reward, 34.9)
-        self.assertLessEqual(all_ok.reward, 45.1)
+        self.assertEqual(all_ok.tier_bonus, 0.0)
+        self.assertGreater(all_ok.cost_score, 0.0)
+        self.assertGreater(all_ok.reward, nonfinite_stability.reward)
+        self.assertLessEqual(all_ok.reward, 5.0)
 
     def test_metric_std_sampling_jitter_does_not_drop_stability_tier(self):
         """5-trial MRPC metric std jitter should not masquerade as instability.
@@ -862,8 +858,7 @@ class BLBRewardRegressionTests(unittest.TestCase):
         )
         self.assertEqual(jitter.priority, 3)
         self.assertTrue(jitter.stab_ok)
-        self.assertEqual(jitter.tier_bonus, 40.0)
-        self.assertGreaterEqual(jitter.reward, 35.0)
+        self.assertEqual(jitter.tier_bonus, 0.0)
 
         material_instability = compute_reward(
             EpisodeMetrics(
@@ -884,7 +879,8 @@ class BLBRewardRegressionTests(unittest.TestCase):
         )
         self.assertEqual(material_instability.priority, 2)
         self.assertFalse(material_instability.stab_ok)
-        self.assertEqual(material_instability.tier_bonus, 20.0)
+        self.assertEqual(material_instability.tier_bonus, 0.0)
+        self.assertLess(material_instability.reward, jitter.reward)
 
     def test_runner_best_selection_uses_hard_constraints_before_reward(self):
         from blb_stage2_rl.runner import is_better_blb_candidate
@@ -1106,11 +1102,9 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertFalse(info["reward_breakdown"].invalid)
         # The all-max action matches the test baseline (same total_bits, fusion,
         # avg_k), so cost_score / k_drop / bits_drop must be zero. v2-style
-        # reward (ADR-007, 2026-05-18) still emits the metric+stab tier bonus
-        # (=+40) when both gates pass, so reward sits in the top tier (~+40)
-        # rather than 0. The legacy "reward == 0 at baseline" pre-dates ADR-007
-        # and no longer matches the design; only the cost-side equality
-        # assertions remain — they are what this regression actually guards.
+        # Current bounded reward does not emit the historical +40 tier bonus.
+        # This regression guards the optimizer-baseline scoring path: the
+        # baseline action has zero cost-side gain while still passing the gates.
         breakdown = info["reward_breakdown"]
         self.assertEqual(breakdown.k_drop, 0.0)
         self.assertEqual(breakdown.bits_drop, 0.0)
@@ -1118,8 +1112,9 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertEqual(breakdown.cost_score, 0.0)
         self.assertTrue(breakdown.metric_ok)
         self.assertTrue(breakdown.stab_ok)
-        self.assertGreaterEqual(reward, 35.0)
-        self.assertLessEqual(reward, 45.0)
+        self.assertEqual(breakdown.priority, 3)
+        self.assertGreaterEqual(reward, -5.0)
+        self.assertLessEqual(reward, 5.0)
 
     def test_env_runs_forward_even_when_optimizer_invalid(self):
         from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector

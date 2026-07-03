@@ -33,7 +33,7 @@ TORCH NOTES
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
@@ -176,6 +176,99 @@ def reconstruct_fusion_group(
             "k_values": k_values,
         },
     }
+
+
+def build_boosted_overrides_from_group(
+        action_vec: Sequence[int],
+        *,
+        group: Mapping[str, Any],
+        fusion_map: Any,
+        num_layers: int,
+        profile: str,
+        gelu: Sequence[int],
+        softmax: Sequence[int],
+        ) -> Dict[Tuple[int, int], Dict[str, int]]:
+    """Return terminal-probe SF-direct overrides for boosted fusion options.
+
+    The legacy full action vector carries map ``action_indices`` and the selected
+    K index, but it cannot carry above-baseline precision-boost SFs. This helper
+    is the shared handoff for any path that wants to replay a fusion-count action
+    through :func:`optimizer_cost.evaluate_action_for_cost`: it recovers the
+    chosen option per step from ``group``, inserts the K value selected in
+    ``action_vec`` into that option's explicit field values, and returns the
+    ``{(block, layer): field_values}`` override map consumed by the canonical cost
+    / replan / model-install path.
+    """
+    if not isinstance(group, Mapping):
+        raise ValueError("build_boosted_overrides_from_group requires group metadata")
+    raw_option_by_graph = group.get("option_by_graph")
+    raw_option_by_step = group.get("option_by_step")
+    if not isinstance(raw_option_by_graph, Mapping) and not isinstance(raw_option_by_step, Mapping):
+        raise ValueError("fusion group requires option_by_step or option_by_graph")
+
+    try:  # torch-free test lane (blb_stage2_rl on sys.path)
+        from action_space import K_LEVELS, step_schedule
+    except ImportError:  # package context
+        from .action_space import K_LEVELS, step_schedule
+
+    action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)
+    softmax_arr = np.asarray(softmax, dtype=int).reshape(-1)
+    option_by_graph = {
+        str(k): int(v)
+        for k, v in dict(raw_option_by_graph or {}).items()
+    }
+    option_by_step = {
+        str(k): int(v)
+        for k, v in dict(raw_option_by_step or {}).items()
+    }
+    schedule = step_schedule(
+        int(num_layers),
+        profile=str(profile),
+        attn_degree_per_layer=softmax_arr.tolist(),
+        gelu_degree_per_layer=gelu_arr.tolist(),
+    )
+
+    overrides: Dict[Tuple[int, int], Dict[str, int]] = {}
+    for step in schedule:
+        graph_key = str(step.graph_key_suffix)
+        step_key = str(int(step.step_idx))
+        if step_key in option_by_step:
+            option_id = int(option_by_step[step_key])
+        elif graph_key in option_by_graph:
+            option_id = int(option_by_graph[graph_key])
+        else:
+            continue
+        graph = fusion_map.graphs.get(graph_key)
+        if graph is None:
+            raise KeyError(f"fusion map missing graph {graph_key!r}")
+        option = None
+        for candidate in graph.options:
+            if int(candidate.option_id) == option_id:
+                option = candidate
+                break
+        if option is None:
+            raise KeyError(f"fusion map graph {graph_key!r} has no option {option_id}")
+        if not (bool(getattr(option, "boosted", False)) and option.explicit_field_values):
+            continue
+
+        action_slice = action_arr[list(step.full_vec_offsets)]
+        k_slot = int(graph.k_slot_index)
+        if not (0 <= k_slot < action_slice.size):
+            raise ValueError(f"graph {graph_key!r} K slot {k_slot} out of action slice")
+        k_index = int(action_slice[k_slot])
+        if not (0 <= k_index < len(K_LEVELS)):
+            raise ValueError(f"graph {graph_key!r} has invalid K index {k_index}")
+        if not (0 <= k_slot < len(step.slot_field_names)):
+            raise ValueError(f"graph {graph_key!r} K slot {k_slot} has no field name")
+
+        field_values = {
+            str(k): int(v)
+            for k, v in dict(option.explicit_field_values).items()
+        }
+        field_values[str(step.slot_field_names[k_slot])] = int(K_LEVELS[k_index])
+        overrides[(int(step.block_idx), int(step.layer_idx))] = field_values
+    return overrides
 
 
 def select_fusion_eval_metadata(

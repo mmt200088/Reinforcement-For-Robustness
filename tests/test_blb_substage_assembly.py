@@ -66,8 +66,8 @@ class BudgetAllocatorTests(unittest.TestCase):
             num_substages=4,
             probe_size=256,
         )
-        # Threshold = max(0.86 - 0.04/4, 0.86 - 0.04) - 1/256
-        expected = max(0.86 - 0.01, 0.86 - 0.04) - 1.0 / 256
+        # Threshold = max(0.86 * (1 - 0.04/4), 0.86 * (1 - 0.04))
+        expected = max(0.86 * (1.0 - 0.01), 0.86 * (1.0 - 0.04))
         self.assertAlmostEqual(t, expected, places=6)
 
     def test_progressive_rebaseline_carries_unused_budget_forward(self):
@@ -75,9 +75,9 @@ class BudgetAllocatorTests(unittest.TestCase):
         compute_substage_acc_threshold = sr.compute_substage_acc_threshold
 
         # Sub-stage 1 only used 0.005 (instead of allowed 0.01). Sub-stage 2's
-        # acc_after_prev is 0.855; its budget = max(0.855 - 0.01, 0.86 - 0.04).
-        # The progressive arm 0.845 wins, so 0.005 of unused budget effectively
-        # flows forward (next stage can drop to 0.845 instead of 0.84).
+        # acc_after_prev is 0.855; its budget =
+        # max(0.855 * 0.99, 0.86 * 0.96). The progressive arm wins, so unused
+        # budget effectively flows forward.
         t = compute_substage_acc_threshold(
             acc_orig=0.86,
             acc_after_prev=0.855,
@@ -85,10 +85,10 @@ class BudgetAllocatorTests(unittest.TestCase):
             num_substages=4,
             probe_size=256,
         )
-        expected = max(0.855 - 0.01, 0.86 - 0.04) - 1.0 / 256
+        expected = max(0.855 * (1.0 - 0.01), 0.86 * (1.0 - 0.04))
         self.assertAlmostEqual(t, expected, places=6)
-        # Sanity: 0.845 > 0.82 (hard floor 0.86 - 0.04)
-        self.assertGreater(t + 1.0 / 256, 0.86 - 0.04)
+        # Sanity: progressive arm beats hard floor.
+        self.assertGreater(t, 0.86 * (1.0 - 0.04))
 
     def test_hard_floor_caps_aggressive_progressive_arm(self):
         sr = _load_substage_runner_module()
@@ -104,12 +104,12 @@ class BudgetAllocatorTests(unittest.TestCase):
             num_substages=4,
             probe_size=256,
         )
-        # max(0.80 - 0.01, 0.82) = 0.82; minus 1/256
-        expected = max(0.80 - 0.01, 0.86 - 0.04) - 1.0 / 256
+        # max(0.80 * 0.99, 0.86 * 0.96) = hard floor.
+        expected = max(0.80 * (1.0 - 0.01), 0.86 * (1.0 - 0.04))
         self.assertAlmostEqual(t, expected, places=6)
-        self.assertAlmostEqual(t, 0.82 - 1.0 / 256, places=6)
+        self.assertAlmostEqual(t, 0.86 * (1.0 - 0.04), places=6)
 
-    def test_threshold_is_lower_when_probe_size_is_smaller(self):
+    def test_threshold_is_independent_of_probe_size(self):
         sr = _load_substage_runner_module()
         compute_substage_acc_threshold = sr.compute_substage_acc_threshold
 
@@ -121,8 +121,7 @@ class BudgetAllocatorTests(unittest.TestCase):
             acc_orig=0.86, acc_after_prev=0.86,
             stage2_limit_tolerance=0.04, num_substages=4, probe_size=256,
         )
-        # Bigger probe → smaller guard → higher threshold
-        self.assertGreater(t_big, t_small)
+        self.assertAlmostEqual(t_big, t_small, places=12)
 
 
 class RankKeyTests(unittest.TestCase):

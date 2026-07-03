@@ -83,7 +83,7 @@ class BLBCostSemanticsTests(unittest.TestCase):
         self.assertEqual(f0_sort_key(invalid_low_cost), (1.0, 1.0, 0.0))
         self.assertGreater(f0_sort_key(invalid_low_cost), f0_sort_key(valid_high_cost))
 
-    def test_candidate_rank_key_uses_unbounded_p3_cost_rank_without_breaking_priority(self):
+    def test_candidate_rank_key_uses_stage1_reward_before_cost_rank_without_breaking_priority(self):
         candidate_rank_key = load_candidate_store_module().candidate_rank_key
 
         p3_capped_low = {
@@ -96,6 +96,8 @@ class BLBCostSemanticsTests(unittest.TestCase):
             "terminal_fusion_gain": 8.0,
             "terminal_k_gain": 0.5,
             "terminal_bits_gain": 300.0,
+            "terminal_reward": 45.0,
+            "total_reward": 42.2,
         }
         p3_capped_high = {
             "valid": True,
@@ -107,6 +109,8 @@ class BLBCostSemanticsTests(unittest.TestCase):
             "terminal_fusion_gain": 14.0,
             "terminal_k_gain": 1.2,
             "terminal_bits_gain": 500.0,
+            "terminal_reward": 45.0,
+            "total_reward": 42.0,
         }
         p2_huge_cost = {
             "valid": True,
@@ -117,7 +121,10 @@ class BLBCostSemanticsTests(unittest.TestCase):
             "terminal_cost_rank_score": 999.0,
         }
 
-        self.assertLess(candidate_rank_key(p3_capped_high), candidate_rank_key(p3_capped_low))
+        self.assertLess(candidate_rank_key(p3_capped_low), candidate_rank_key(p3_capped_high))
+        p3_same_reward_higher_cost = dict(p3_capped_high)
+        p3_same_reward_higher_cost["total_reward"] = p3_capped_low["total_reward"]
+        self.assertLess(candidate_rank_key(p3_same_reward_higher_cost), candidate_rank_key(p3_capped_low))
         self.assertLess(candidate_rank_key(p3_capped_low), candidate_rank_key(p2_huge_cost))
 
     def test_f0_record_splits_rescale_cost_debug_and_mpc_truncation(self):

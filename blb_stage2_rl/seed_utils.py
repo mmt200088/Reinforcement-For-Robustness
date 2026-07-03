@@ -13,8 +13,9 @@ and the PPO-update shuffle can never alias each other:
   device's CUDA Philox generator right before ``policy.sample_action``.
 * probe   — per ``global_episode``; the per-trial offset is the same
   ``seed XOR trial_idx * KNUTH`` mix as ``probe_runner._trial_seed`` and
-  reseeds the device's dedicated noise generator
-  (``function_handler.reseed_noise_rng_for_device``).
+  reseeds the worker-local scoped noise generator
+  (``function_handler.noise_rng_scope`` +
+  ``function_handler.reseed_noise_rng_for_device``).
 * update  — per PPO update index; reseeds the global numpy / torch RNGs
   before ``sequential_ppo_update`` (its minibatch shuffle uses
   ``np.random.shuffle``).
@@ -95,3 +96,17 @@ def assign_global_episodes(total_episodes: int, num_workers: int) -> List[List[i
         out.append(list(range(cursor, cursor + count)))
         cursor += count
     return out
+
+
+def assign_global_episodes_interleaved(total_episodes: int, num_workers: int) -> List[List[int]]:
+    """Deterministic round-robin episode assignment for parallel rollout.
+
+    This covers ``range(total_episodes)`` exactly once while preserving the
+    global episode index as the sole RNG key.  Unlike contiguous chunks, it
+    spreads deterministic episode-to-episode probe latency variance across
+    workers, reducing window long-tail stalls without changing PPO assembly
+    order.
+    """
+    total = max(0, int(total_episodes))
+    n = max(1, int(num_workers))
+    return [list(range(w, total, n)) for w in range(n)]

@@ -129,6 +129,20 @@ class SequentialArtifactContractsTest(unittest.TestCase):
                     terminal_cost_truncation_bonus=0.30,
                     terminal_cost_bits_tiebreaker=0.04,
                     terminal_cost_truncation_step_gain=1.0,
+                    fusion_action_steps=[
+                        {
+                            "step_idx": 0,
+                            "layer_idx": 0,
+                            "block_idx": 2,
+                            "graph_key": "block2_mrpc",
+                            "option_id": int(ep % 2),
+                            "fusion_count": int(ep % 2),
+                            "max_fusion": 1,
+                            "k_index": 0,
+                            "k_value": 13,
+                            "valid": True,
+                        }
+                    ],
                     terminal_pareto_event_kind="frontier_expansion",
                     first_invalid_step=(5 if invalid else None),
                     first_invalid_block=(3 if invalid else None),
@@ -219,6 +233,10 @@ class SequentialArtifactContractsTest(unittest.TestCase):
             self.assertIn("episode", r)
             self.assertIn("total_reward", r)
             self.assertIn("invalid_steps", r)
+            self.assertIn("fusion_action_steps", r)
+            self.assertEqual(r["fusion_action_steps"][0]["block_idx"], 2)
+            self.assertIn("option_id", r["fusion_action_steps"][0])
+            self.assertIn("k_value", r["fusion_action_steps"][0])
 
     def test_pareto_frontier_artifacts_and_dominance(self):
         run_dir = os.path.join(self.tmp, "run_pareto")
@@ -252,7 +270,7 @@ class SequentialArtifactContractsTest(unittest.TestCase):
                     msg=f"frontier row {i} dominates row {j}",
                 )
 
-    def test_top_candidates_use_unbounded_p3_cost_rank(self):
+    def test_top_candidates_use_stage1_reward_before_unbounded_p3_cost_rank(self):
         import numpy as np
 
         run_dir = os.path.join(self.tmp, "run_ranked_top")
@@ -305,8 +323,8 @@ class SequentialArtifactContractsTest(unittest.TestCase):
             for line in Path(top_path).read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-        self.assertEqual(rows[0]["episode"], 2)
-        self.assertGreater(rows[0]["terminal_cost_rank_score"], rows[1]["terminal_cost_rank_score"])
+        self.assertEqual(rows[0]["episode"], 1)
+        self.assertGreater(rows[0]["total_reward"], rows[1]["total_reward"])
 
     # ----------------------------------------------------------------
     # 4. summary.md contains the auto-flag section and at least one auto-flag
@@ -835,16 +853,20 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertIn("policy_rollout_wall_seconds", runner_src)
 
     def test_truncated_policy_forward_matches_full_causal_prefix(self):
+        for name in ("torch", "torch.cuda", "torch.nn", "torch.nn.functional"):
+            sys.modules.pop(name, None)
         try:
             import numpy as np
             import torch
         except Exception as exc:
             self.skipTest(f"torch/numpy unavailable: {exc}")
 
-        from blb_stage2_rl.sequential_policy import (
-            BLBStage2SequentialPolicy,
-            SequentialPolicyConfig,
+        policy_mod = _load_module_standalone(
+            "blb_stage2_rl/sequential_policy.py",
+            "sequential_policy_truncated_forward_test",
         )
+        BLBStage2SequentialPolicy = policy_mod.BLBStage2SequentialPolicy
+        SequentialPolicyConfig = policy_mod.SequentialPolicyConfig
 
         torch.manual_seed(7)
         horizon = 10
@@ -926,17 +948,19 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
         self.assertIn("DEFAULT_TIER_METRIC_BONUS = 20.0", src)
         self.assertIn("DEFAULT_TIER_STABILITY_BONUS = 20.0", src)
 
-    def test_runner_stab_threshold_uses_v2_formula(self):
-        """stab_threshold = noisy_baseline_loss_std × (1 + tol). The previous
-        attempted dynamic calibration (sampling random valid actions for
-        loss_std P90) failed because 577-dim uniform-random actions are
-        almost always invalid_chain; see
-        reports/stage2_rl/failed_runs/2026-05-18_dynamic_stab_calibration_fallback/
+    def test_runner_stability_logs_all_three_std_thresholds(self):
+        """Stability gates must be visible for loss, m1, and m2.
+
+        The reward path already combines metric1_std, metric2_std, and loss_std.
+        Keep the runner metadata/log contract aligned so reports do not imply
+        that stability is loss-only.
         """
         src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
-        # New formula present
-        self.assertIn("v2 formula:", src)
-        self.assertIn("noisy_baseline_loss_std * (1.0 + stability_tol)", src)
+        self.assertIn("stab_threshold_m1", src)
+        self.assertIn("stab_threshold_m2", src)
+        self.assertIn("std_thresholds(loss/m1/m2)", src)
+        self.assertIn("metric1_std_threshold", src)
+        self.assertIn("metric2_std_threshold", src)
         # Old failed random-action calibration removed
         self.assertNotIn("random_loss_stds", src)
         self.assertNotIn("target_calib_samples", src)
@@ -965,14 +989,15 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
             )
 
     def test_stage2_stability_tolerance_allows_large_slack(self):
-        """ADR-011 uses --stage2-stability-tolerance 5.0 for 500% std slack.
+        """ADR-011 uses --stage2-stability-tolerance 5.0 for a 5x std gate.
 
         Unlike metric degradation tolerances, stability tolerance is a
-        multiplier in threshold = baseline_std * (1 + tol), so values above 1
+        multiplier in threshold = baseline_std * tol, so values above 1
         are valid and must pass launcher validation.
         """
         src = open("llama_7B_LayerImportance.sh", encoding="utf-8").read()
-        self.assertIn("可设 5.0 表示 500%", src)
+        self.assertIn("可设 5.0 表示 5×/500%", src)
+        self.assertIn("Stage-2 稳定性约束倍率", src)
         self.assertIn(
             'is_pos_num "$STAGE2_STABILITY_TOLERANCE"',
             src,
@@ -1203,7 +1228,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         exec(compile(mod, "<sequential_runner_items>", "exec"), ns)
         return ns
 
-    def test_sequential_force_anchor_honors_warmstart_config(self):
+    def test_sequential_force_anchor_honors_explicit_warmstart_only(self):
         ns = self._exec_runner_helpers("_resolve_sequential_force_baseline_episodes")
         helper = ns["_resolve_sequential_force_baseline_episodes"]
 
@@ -1220,30 +1245,56 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
 
         Cfg.force_baseline_episodes = 0
         Cfg.warmstart_anchor_episodes = None
-        self.assertEqual(helper(Cfg()), 60)
+        self.assertEqual(helper(Cfg()), 0)
 
-    def test_noisy_accuracy_threshold_has_probe_granularity_guard(self):
-        ns = self._exec_runner_helpers("_noisy_accuracy_threshold_with_probe_guard")
-        helper = ns["_noisy_accuracy_threshold_with_probe_guard"]
+    def test_continuous_reward_does_not_bypass_force_anchor(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        self.assertNotIn(
+            "0 if _continuous else _resolve_sequential_force_baseline_episodes",
+            src,
+        )
+        self.assertIn(
+            "_force_baseline_episodes = _resolve_sequential_force_baseline_episodes(train_cfg)",
+            src,
+        )
+
+    def test_stage1_aligned_reward_bypasses_fusion_scaffolds(self):
+        src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+        self.assertIn(
+            "_fc_curriculum_on = False if _continuous else",
+            src,
+        )
+        self.assertIn(
+            "fusion_probe_interval=(0 if _continuous else",
+            src,
+        )
+        self.assertIn(
+            "fusion_exploration_epsilon=(0.0 if _continuous else",
+            src,
+        )
+
+    def test_noisy_metric_threshold_uses_relative_tolerance_without_probe_guard(self):
+        ns = self._exec_runner_helpers("_noisy_metric_threshold_from_baseline")
+        helper = ns["_noisy_metric_threshold_from_baseline"]
 
         threshold = helper(
-            noisy_baseline_metric1=0.8727,
-            allowed_acc_drop=0.005,
-            probe_size=256,
+            noisy_baseline_metric=0.8727,
+            tolerance=0.001,
         )
-        self.assertAlmostEqual(threshold, 0.8727 - 0.005 - (1.0 / 256.0), places=7)
-        self.assertLess(threshold, 0.8648)
+        self.assertAlmostEqual(threshold, 0.8727 * 0.999, places=7)
+        self.assertGreater(threshold, 0.8718)
         self.assertGreater(threshold, 0.31)
 
-    def test_baseline_prior_schedule_decays_to_weak_prior(self):
+    def test_baseline_prior_schedule_decays_to_zero(self):
         ns = self._exec_runner_helpers("_resolve_baseline_prior_scale")
         helper = ns["_resolve_baseline_prior_scale"]
 
-        self.assertAlmostEqual(helper(0, anchor_episodes=60), 1.2)
-        self.assertAlmostEqual(helper(60, anchor_episodes=60), 1.0)
-        self.assertAlmostEqual(helper(600, anchor_episodes=60), 0.45)
-        self.assertAlmostEqual(helper(2000, anchor_episodes=60), 0.15)
-        self.assertAlmostEqual(helper(8000, anchor_episodes=60), 0.15)
+        self.assertAlmostEqual(helper(0, anchor_episodes=120), 8.0)
+        self.assertAlmostEqual(helper(120, anchor_episodes=120), 8.0)
+        self.assertAlmostEqual(helper(1000, anchor_episodes=120), 6.0)
+        self.assertAlmostEqual(helper(5000, anchor_episodes=120), 3.0)
+        self.assertAlmostEqual(helper(15000, anchor_episodes=120), 0.0)
+        self.assertAlmostEqual(helper(60000, anchor_episodes=120), 0.0)
 
     def test_step_level_mask_keeps_unselected_slots_at_baseline(self):
         ns = self._exec_runner_helpers(
@@ -1519,7 +1570,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         ):
             self.assertIn(needle, diagnostics + runner_src, msg=f"missing JSONL health field: {needle!r}")
 
-    def test_p3_best_rank_uses_unbounded_cost_rank_before_total_reward(self):
+    def test_p3_best_rank_uses_stage1_reward_before_unbounded_cost_rank(self):
         ns = self._exec_runner_items(
             "EpisodeRecord",
             "_episode_best_rank_key",
@@ -1571,12 +1622,141 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         )
 
         self.assertGreater(
+            rank_key(capped_lower_cost),
             rank_key(capped_higher_cost),
+        )
+        capped_same_reward_higher_cost = Record(
+            episode_idx=4,
+            total_reward=42.20,
+            terminal_reward=45.0,
+            per_step_reward_sum=-2.80,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=3,
+            terminal_cost_score=4.5,
+            terminal_cost_rank_score=10.0,
+            terminal_fusion_gain=14.0,
+            terminal_k_gain=1.2,
+            terminal_bits_gain=500.0,
+        )
+        self.assertGreater(
+            rank_key(capped_same_reward_higher_cost),
             rank_key(capped_lower_cost),
         )
         self.assertGreater(
             rank_key(capped_lower_cost),
             rank_key(p2_high_cost),
+        )
+
+    def test_final_strict_selection_uses_next_feasible_top_candidate(self):
+        ns = self._exec_runner_items(
+            "EpisodeRecord",
+            "_episode_best_rank_key",
+            "_stage2_record_loss_ok",
+            "_stage2_record_strict_feasible",
+            "_select_stage2_strict_feasible_best_record",
+        )
+        Record = ns["EpisodeRecord"]
+        select = ns["_select_stage2_strict_feasible_best_record"]
+
+        loss_threshold = 0.3661778037
+        rank_best_loss_fail = Record(
+            episode_idx=10,
+            total_reward=0.497,
+            terminal_reward=0.497,
+            per_step_reward_sum=0.0,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=3,
+            terminal_loss_mean=0.3662689477,
+            terminal_cost_rank_score=3930.0,
+            terminal_fusion_gain=23.0,
+        )
+        next_feasible = Record(
+            episode_idx=11,
+            total_reward=0.494,
+            terminal_reward=0.494,
+            per_step_reward_sum=0.0,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=3,
+            terminal_loss_mean=0.3655472547,
+            terminal_cost_rank_score=3900.0,
+            terminal_fusion_gain=22.0,
+        )
+        p2_candidate = Record(
+            episode_idx=12,
+            total_reward=0.8,
+            terminal_reward=0.8,
+            per_step_reward_sum=0.0,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=2,
+            terminal_loss_mean=0.360,
+            terminal_cost_rank_score=9999.0,
+        )
+
+        selected = select(
+            [p2_candidate, next_feasible, rank_best_loss_fail],
+            loss_threshold=loss_threshold,
+            top_n=20,
+        )
+        self.assertIs(selected, next_feasible)
+
+    def test_final_strict_selection_respects_top_n(self):
+        ns = self._exec_runner_items(
+            "EpisodeRecord",
+            "_episode_best_rank_key",
+            "_stage2_record_loss_ok",
+            "_stage2_record_strict_feasible",
+            "_select_stage2_strict_feasible_best_record",
+        )
+        Record = ns["EpisodeRecord"]
+        select = ns["_select_stage2_strict_feasible_best_record"]
+
+        failing_top = Record(
+            episode_idx=1,
+            total_reward=1.0,
+            terminal_reward=1.0,
+            per_step_reward_sum=0.0,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=3,
+            terminal_loss_mean=0.40,
+            terminal_cost_rank_score=100.0,
+        )
+        feasible_outside_top1 = Record(
+            episode_idx=2,
+            total_reward=0.5,
+            terminal_reward=0.5,
+            per_step_reward_sum=0.0,
+            invalid_steps=0,
+            early_terminated=False,
+            steps_taken=59,
+            terminal_priority=3,
+            terminal_loss_mean=0.35,
+            terminal_cost_rank_score=90.0,
+        )
+
+        self.assertIsNone(
+            select(
+                [failing_top, feasible_outside_top1],
+                loss_threshold=0.36,
+                top_n=1,
+            )
+        )
+        self.assertIs(
+            select(
+                [failing_top, feasible_outside_top1],
+                loss_threshold=0.36,
+                top_n=2,
+            ),
+            feasible_outside_top1,
         )
 
     def test_first10k_server_defaults_avoid_radius2_collapse_region(self):

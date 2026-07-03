@@ -180,6 +180,104 @@ def _compute_metrics_on_batch_local(
     return (loss, acc, acc)
 
 
+def _logits_to_classes_local(preds: torch.Tensor) -> torch.Tensor:
+    if preds.dim() == 1:
+        return (preds > 0.5).long()
+    return preds.argmax(dim=-1)
+
+
+def _uses_weighted_f1_metric2_local(metric_profile: str) -> bool:
+    key = str(metric_profile or "").lower().replace("-", "_")
+    return key in {"mrpc", "qqp"} or key.startswith("mrpc_") or key.startswith("qqp_")
+
+
+def _weighted_f1_from_labels_local(
+        labels: Sequence[int],
+        preds: Sequence[int],
+        ) -> float:
+    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
+    preds_arr = np.asarray(preds, dtype=np.int64).reshape(-1)
+    if labels_arr.size == 0 or preds_arr.size == 0:
+        return 0.0
+    n = min(int(labels_arr.size), int(preds_arr.size))
+    labels_arr = labels_arr[:n]
+    preds_arr = preds_arr[:n]
+    total = float(n)
+    out = 0.0
+    for cls in np.union1d(labels_arr, preds_arr):
+        support = float(np.sum(labels_arr == cls))
+        if support <= 0.0:
+            continue
+        tp = float(np.sum((labels_arr == cls) & (preds_arr == cls)))
+        fp = float(np.sum((labels_arr != cls) & (preds_arr == cls)))
+        fn = float(np.sum((labels_arr == cls) & (preds_arr != cls)))
+        denom = (2.0 * tp) + fp + fn
+        f1 = (2.0 * tp / denom) if denom > 0.0 else 0.0
+        out += (support / total) * f1
+    return float(out)
+
+
+def _probe_batch_sample_count_local(labels: torch.Tensor) -> int:
+    try:
+        return max(1, int(labels.reshape(-1).numel()))
+    except Exception:
+        return 1
+
+
+def _weighted_probe_batch_means_local(
+        losses: Sequence[float],
+        metric1s: Sequence[float],
+        metric2s: Sequence[float],
+        sample_counts: Sequence[int],
+        ) -> Tuple[float, float, float]:
+    if not losses:
+        return (float("nan"), float("nan"), float("nan"))
+    counts = np.asarray([max(1, int(x)) for x in sample_counts], dtype=float)
+    if counts.size != len(losses) or not np.isfinite(counts).all() or float(counts.sum()) <= 0.0:
+        return (
+            float(np.mean(losses)),
+            float(np.mean(metric1s)),
+            float(np.mean(metric2s)),
+        )
+    weights = counts / float(counts.sum())
+    return (
+        float(np.dot(np.asarray(losses, dtype=float), weights)),
+        float(np.dot(np.asarray(metric1s, dtype=float), weights)),
+        float(np.dot(np.asarray(metric2s, dtype=float), weights)),
+    )
+
+
+def _finalize_probe_trial_metrics_local(
+        losses: Sequence[float],
+        metric1s: Sequence[float],
+        metric2s: Sequence[float],
+        sample_counts: Sequence[int],
+        *,
+        preds: Sequence[int],
+        labels: Sequence[int],
+        metric_profile: str,
+        is_regression: bool,
+        ) -> Tuple[float, float, float]:
+    loss, m1, m2 = _weighted_probe_batch_means_local(
+        losses, metric1s, metric2s, sample_counts,
+    )
+    if is_regression or not labels:
+        return loss, m1, m2
+    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
+    preds_arr = np.asarray(preds, dtype=np.int64).reshape(-1)
+    if labels_arr.size and preds_arr.size:
+        n = min(int(labels_arr.size), int(preds_arr.size))
+        labels_arr = labels_arr[:n]
+        preds_arr = preds_arr[:n]
+        m1 = float(np.mean(preds_arr == labels_arr))
+        m2 = (
+            _weighted_f1_from_labels_local(labels_arr, preds_arr)
+            if _uses_weighted_f1_metric2_local(metric_profile)
+            else m1
+        )
+    return float(loss), float(m1), float(m2)
+
+
 # ---------------------------------------------------------------------------
 # ProbeWorker — one per device
 # ---------------------------------------------------------------------------
@@ -193,6 +291,7 @@ class ProbeWorker:
     bridge: Any   # BLBNoiseRLBridge
     probe_batches: List[Any]
     is_regression: bool
+    metric_profile: str = ""
     role: str = "primary"  # "primary" (worker 0, reuses env model) or "replica"
 
     def install(self, decoded: ActionDecodeResult) -> None:
@@ -229,6 +328,9 @@ class ProbeWorker:
             losses: List[float] = []
             m1s: List[float] = []
             m2s: List[float] = []
+            counts: List[int] = []
+            trial_preds: List[int] = []
+            trial_labels: List[int] = []
             was_training = self.model.training
             self.model.eval()
             try:
@@ -248,16 +350,27 @@ class ProbeWorker:
                             logits, batch.labels, is_regression=self.is_regression,
                         )
                         losses.append(loss); m1s.append(m1); m2s.append(m2)
+                        counts.append(_probe_batch_sample_count_local(batch.labels))
+                        if not self.is_regression:
+                            preds = _logits_to_classes_local(logits.detach())
+                            trial_preds.extend(
+                                int(x) for x in preds.detach().cpu().reshape(-1).tolist()
+                            )
+                            trial_labels.extend(
+                                int(x) for x in batch.labels.detach().cpu().reshape(-1).tolist()
+                            )
             finally:
                 if was_training:
                     self.model.train()
 
             if not losses:
                 return (float("nan"), float("nan"), float("nan"))
-            return (
-                float(np.mean(losses)),
-                float(np.mean(m1s)),
-                float(np.mean(m2s)),
+            return _finalize_probe_trial_metrics_local(
+                losses, m1s, m2s, counts,
+                preds=trial_preds,
+                labels=trial_labels,
+                metric_profile=str(self.metric_profile),
+                is_regression=bool(self.is_regression),
             )
 
 
@@ -596,6 +709,7 @@ def build_probe_runner(
         layers_attribute: str,
         is_regression: bool,
         device_ids: Sequence[int],
+        metric_profile: str = "",
         log_fn: Optional[Callable[[str], None]] = None,
         ) -> ProbeRunner:
     """Construct a ProbeRunner with one worker per device id.
@@ -640,6 +754,7 @@ def build_probe_runner(
         bridge=primary_bridge,
         probe_batches=list(primary_probe_batches),
         is_regression=bool(is_regression),
+        metric_profile=str(metric_profile),
         role="primary",
     ))
     log(f"[probe-runner] worker 0: {primary_device} (primary, reusing env.bridge)")
@@ -671,6 +786,7 @@ def build_probe_runner(
             bridge=replica_bridge,
             probe_batches=replica_batches,
             is_regression=bool(is_regression),
+            metric_profile=str(metric_profile),
             role="replica",
         ))
         log(f"[probe-runner] worker {len(workers)-1}: {device} (deepcopy replica)")

@@ -109,6 +109,116 @@ def _compute_metrics_on_batch(
     return float(loss), -float(loss), -float(loss)   # metric=-mse 越大越好
 
 
+def _uses_weighted_f1_metric2(metric_profile: str) -> bool:
+    key = str(metric_profile or "").lower().replace("-", "_")
+    return key in {"mrpc", "qqp"} or key.startswith("mrpc_") or key.startswith("qqp_")
+
+
+def _weighted_f1_from_labels(
+        labels: Sequence[int],
+        preds: Sequence[int],
+        ) -> float:
+    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
+    preds_arr = np.asarray(preds, dtype=np.int64).reshape(-1)
+    if labels_arr.size == 0 or preds_arr.size == 0:
+        return 0.0
+    n = min(int(labels_arr.size), int(preds_arr.size))
+    labels_arr = labels_arr[:n]
+    preds_arr = preds_arr[:n]
+    total = float(n)
+    out = 0.0
+    for cls in np.union1d(labels_arr, preds_arr):
+        support = float(np.sum(labels_arr == cls))
+        if support <= 0.0:
+            continue
+        tp = float(np.sum((labels_arr == cls) & (preds_arr == cls)))
+        fp = float(np.sum((labels_arr != cls) & (preds_arr == cls)))
+        fn = float(np.sum((labels_arr == cls) & (preds_arr != cls)))
+        denom = (2.0 * tp) + fp + fn
+        f1 = (2.0 * tp / denom) if denom > 0.0 else 0.0
+        out += (support / total) * f1
+    return float(out)
+
+
+def _probe_batch_sample_count(labels: torch.Tensor) -> int:
+    """Number of examples represented by one probe batch."""
+    try:
+        return max(1, int(labels.reshape(-1).numel()))
+    except Exception:
+        return 1
+
+
+def _weighted_probe_batch_means(
+        losses: Sequence[float],
+        metric1s: Sequence[float],
+        metric2s: Sequence[float],
+        sample_counts: Sequence[int],
+        *,
+        preds: Optional[Sequence[int]] = None,
+        labels: Optional[Sequence[int]] = None,
+        metric_profile: str = "",
+        is_regression: bool = False,
+        ) -> Tuple[float, float, float]:
+    """Aggregate batch metrics as sample-weighted means within one trial.
+
+    Probe batches are usually full-sized except for the final validation batch.
+    Treating every batch equally overweights that small tail batch and can move
+    candidate gates relative to full-validation metrics.
+    """
+    if not losses:
+        return float("nan"), float("nan"), float("nan")
+    counts = np.asarray([max(1, int(x)) for x in sample_counts], dtype=float)
+    if counts.size != len(losses) or not np.isfinite(counts).all() or float(counts.sum()) <= 0.0:
+        return float(np.mean(losses)), float(np.mean(metric1s)), float(np.mean(metric2s))
+    weights = counts / float(counts.sum())
+    return (
+        float(np.dot(np.asarray(losses, dtype=float), weights)),
+        float(np.dot(np.asarray(metric1s, dtype=float), weights)),
+        float(np.dot(np.asarray(metric2s, dtype=float), weights)),
+    )
+
+
+def _finalize_probe_trial_metrics(
+        losses: Sequence[float],
+        metric1s: Sequence[float],
+        metric2s: Sequence[float],
+        sample_counts: Sequence[int],
+        *,
+        preds: Sequence[int],
+        labels: Sequence[int],
+        metric_profile: str,
+        is_regression: bool,
+        ) -> Tuple[float, float, float]:
+    loss, m1, m2 = _weighted_probe_batch_means(
+        losses,
+        metric1s,
+        metric2s,
+        sample_counts,
+        metric_profile=metric_profile,
+        is_regression=is_regression,
+    )
+    if is_regression or not labels:
+        return loss, m1, m2
+    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
+    preds_arr = np.asarray(preds, dtype=np.int64).reshape(-1)
+    if labels_arr.size and preds_arr.size:
+        n = min(int(labels_arr.size), int(preds_arr.size))
+        labels_arr = labels_arr[:n]
+        preds_arr = preds_arr[:n]
+        m1 = float(np.mean(preds_arr == labels_arr))
+        m2 = (
+            _weighted_f1_from_labels(labels_arr, preds_arr)
+            if _uses_weighted_f1_metric2(metric_profile)
+            else m1
+        )
+    return float(loss), float(m1), float(m2)
+
+
+def _env_metric_profile(env: Any) -> str:
+    env_cfg = getattr(env, "env_cfg", None)
+    return str(getattr(env_cfg, "profile", "") or "")
+
+
 # ---------------------------------------------------------------------------
 # Env 主类
 # ---------------------------------------------------------------------------
@@ -262,11 +372,25 @@ class BLBStage2Env:
         # mutation, identical results for any GPU count / trial scheduling.
         # None (default) keeps the legacy true-random behavior bit-for-bit.
         self.probe_noise_seed: Optional[int] = None
-        # Per-DEVICE lock shared by same-device episode-parallel workers
-        # (workers-per-device > 1, 2026-06-12): each probe trial's
-        # (reseed_noise -> full forward) is an RNG-consuming atomic unit on
-        # the device's dedicated noise generator. None / uncontended = no-op.
+        # Per-device lock fallback for deterministic probes that still share
+        # the legacy per-device noise generator. Episode-parallel workers set
+        # probe_noise_scope below, which gives same-device siblings separate
+        # generators and avoids this lock on the hot path.
         self.probe_device_lock: Optional[Any] = None
+        # Only needed when multiple episode workers share one CUDA device and
+        # no scoped noise generator is set. In that legacy fallback case CUDA
+        # kernels are asynchronous, so the worker must finish the forward
+        # before a sibling can reseed the same device noise stream.
+        self.probe_device_lock_requires_sync: bool = False
+        # Optional thread-local noise RNG scope. Episode-parallel workers set
+        # this to a unique value so same-device siblings use separate
+        # deterministic noise generators while keeping the same per-trial seed
+        # stream. None keeps the legacy per-device generator behavior.
+        self.probe_noise_scope: Optional[str] = None
+        # Optional worker-local CUDA stream for same-device episode workers.
+        # It is set only by the episode-parallel runner when multiple workers
+        # share a GPU; single-worker/device runs keep the default stream.
+        self.probe_cuda_stream: Optional[Any] = None
 
         self.action_dims = action_dims_for_config(self.num_layers)
         self.total_action_dim = len(self.action_dims)
@@ -504,7 +628,12 @@ class BLBStage2Env:
             metric2_min=placeholder_metric2,
         )
 
-    def prepare_action_for_terminal_probe(self, action_vec: np.ndarray) -> Dict[str, Any]:
+    def prepare_action_for_terminal_probe(
+            self,
+            action_vec: np.ndarray,
+            *,
+            boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
+            ) -> Dict[str, Any]:
         """Prepare optimizer-adjusted cfgs for a terminal reward probe.
 
         This mirrors the pre-forward part of :meth:`step` and exists so the
@@ -531,6 +660,7 @@ class BLBStage2Env:
             rescale_bridge=self.rescale_bridge,
             gelu_degree=self.gelu_degree,
             attn_degree=self.attn_degree,
+            boosted_overrides=boosted_overrides,
         )
         timing["cost_eval_wall_seconds"] = float(time.perf_counter() - cost_t0)
         decoded = cost_eval.decoded
@@ -652,6 +782,7 @@ class BLBStage2Env:
             any_invalid=any_invalid,
             pareto_archive=self.pareto_cost_archive,
             action_hash=action_vec_hash,
+            loss_threshold=self.loss_threshold,
         )
         info["reward_breakdown"] = breakdown
         info["action_hash"] = action_vec_hash
@@ -1015,6 +1146,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
+                loss_threshold=self.loss_threshold,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1074,6 +1206,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
+                loss_threshold=self.loss_threshold,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1118,6 +1251,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
+                loss_threshold=self.loss_threshold,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1160,6 +1294,7 @@ class BLBStage2Env:
             action_hash=action_vec_hash,
             external_cost_score=external_cost_score,
             external_cost_rank=external_cost_rank,
+            loss_threshold=self.loss_threshold,
         )
 
         info["reward_breakdown"] = breakdown
@@ -1340,7 +1475,9 @@ class BLBStage2Env:
                             if torch.cuda.is_available():
                                 torch.cuda.manual_seed_all(seed)
 
-                            losses, m1s, m2s = [], [], []
+                            losses, m1s, m2s, counts = [], [], [], []
+                            trial_preds: List[int] = []
+                            trial_labels: List[int] = []
                             for batch in self.probe_batches:
                                 kwargs: Dict[str, torch.Tensor] = {
                                     "input_ids": batch.input_ids,
@@ -1357,11 +1494,27 @@ class BLBStage2Env:
                                 losses.append(loss)
                                 m1s.append(m1)
                                 m2s.append(m2)
+                                counts.append(_probe_batch_sample_count(batch.labels))
+                                if not self.is_regression:
+                                    preds = _logits_to_classes(logits.detach())
+                                    trial_preds.extend(
+                                        int(x) for x in preds.detach().cpu().reshape(-1).tolist()
+                                    )
+                                    trial_labels.extend(
+                                        int(x) for x in batch.labels.detach().cpu().reshape(-1).tolist()
+                                    )
 
                             if losses:
-                                per_trial_loss.append(float(np.mean(losses)))
-                                per_trial_metric1.append(float(np.mean(m1s)))
-                                per_trial_metric2.append(float(np.mean(m2s)))
+                                loss, m1, m2 = _finalize_probe_trial_metrics(
+                                    losses, m1s, m2s, counts,
+                                    preds=trial_preds,
+                                    labels=trial_labels,
+                                    metric_profile=_env_metric_profile(self),
+                                    is_regression=bool(self.is_regression),
+                                )
+                                per_trial_loss.append(loss)
+                                per_trial_metric1.append(m1)
+                                per_trial_metric2.append(m2)
                     wall_elapsed = time.perf_counter() - probe_wall_start
                     self._last_probe_diagnostics = {
                         "k": int(k),
@@ -1409,49 +1562,95 @@ class BLBStage2Env:
         trial granularity with identical per-trial noise streams regardless
         of interleaving order.
         """
-        from function_handler import reseed_noise_rng_for_device
+        from function_handler import noise_rng_scope, reseed_noise_rng_for_device
 
+        scope = getattr(self, "probe_noise_scope", None)
         lock = self.probe_device_lock
+        if scope is not None:
+            lock = _NULL_CTX
         if lock is None:
             lock = _NULL_CTX
+        sync_before_unlock = (
+            bool(getattr(self, "probe_device_lock_requires_sync", False))
+            and getattr(self._device, "type", None) == "cuda"
+            and scope is None
+        )
+        probe_stream = getattr(self, "probe_cuda_stream", None)
+        use_probe_stream = (
+            probe_stream is not None
+            and getattr(self._device, "type", None) == "cuda"
+        )
         base_seed = int(self.probe_noise_seed)
         per_trial_loss: List[float] = []
         per_trial_metric1: List[float] = []
         per_trial_metric2: List[float] = []
         probe_wall_start = time.perf_counter()
         was_training = self.model.training
-        self.model.eval()
+        if was_training:
+            self.model.eval()
         try:
             with torch.inference_mode():
                 for trial_idx in range(int(k)):
                     seed = int(
                         (base_seed ^ (trial_idx * 2654435761)) & 0x7FFFFFFFFFFFFFFF
                     )
-                    with lock:
-                        reseed_noise_rng_for_device(self._device, seed)
-
-                        losses, m1s, m2s = [], [], []
-                        for batch in self.probe_batches:
-                            kwargs: Dict[str, torch.Tensor] = {
-                                "input_ids": batch.input_ids,
-                                "attention_mask": batch.attention_mask,
-                                "labels": batch.labels,
-                            }
-                            if batch.token_type_ids is not None:
-                                kwargs["token_type_ids"] = batch.token_type_ids
-                            outputs = self.model(**kwargs)
-                            logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
-                            loss, m1, m2 = _compute_metrics_on_batch(
-                                logits, batch.labels, is_regression=self.is_regression,
+                    trial_outputs: List[Tuple[torch.Tensor, torch.Tensor]] = []
+                    with noise_rng_scope(scope):
+                        with lock:
+                            reseed_noise_rng_for_device(self._device, seed)
+                            stream_ctx = (
+                                torch.cuda.stream(probe_stream)
+                                if use_probe_stream else _NULL_CTX
                             )
-                            losses.append(loss)
-                            m1s.append(m1)
-                            m2s.append(m2)
+                            with stream_ctx:
+                                for batch in self.probe_batches:
+                                    kwargs: Dict[str, torch.Tensor] = {
+                                        "input_ids": batch.input_ids,
+                                        "attention_mask": batch.attention_mask,
+                                        "labels": batch.labels,
+                                    }
+                                    if batch.token_type_ids is not None:
+                                        kwargs["token_type_ids"] = batch.token_type_ids
+                                    outputs = self.model(**kwargs)
+                                    logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
+                                    trial_outputs.append((logits, batch.labels))
+                            if use_probe_stream:
+                                torch.cuda.current_stream(self._device).wait_stream(
+                                    probe_stream
+                                )
+                            if sync_before_unlock:
+                                torch.cuda.synchronize(self._device)
 
+                    losses, m1s, m2s, counts = [], [], [], []
+                    trial_preds: List[int] = []
+                    trial_labels: List[int] = []
+                    for logits, labels in trial_outputs:
+                        loss, m1, m2 = _compute_metrics_on_batch(
+                            logits, labels, is_regression=self.is_regression,
+                        )
+                        losses.append(loss)
+                        m1s.append(m1)
+                        m2s.append(m2)
+                        counts.append(_probe_batch_sample_count(labels))
+                        if not self.is_regression:
+                            preds = _logits_to_classes(logits.detach())
+                            trial_preds.extend(
+                                int(x) for x in preds.detach().cpu().reshape(-1).tolist()
+                            )
+                            trial_labels.extend(
+                                int(x) for x in labels.detach().cpu().reshape(-1).tolist()
+                            )
                     if losses:
-                        per_trial_loss.append(float(np.mean(losses)))
-                        per_trial_metric1.append(float(np.mean(m1s)))
-                        per_trial_metric2.append(float(np.mean(m2s)))
+                        loss, m1, m2 = _finalize_probe_trial_metrics(
+                            losses, m1s, m2s, counts,
+                            preds=trial_preds,
+                            labels=trial_labels,
+                            metric_profile=_env_metric_profile(self),
+                            is_regression=bool(self.is_regression),
+                        )
+                        per_trial_loss.append(loss)
+                        per_trial_metric1.append(m1)
+                        per_trial_metric2.append(m2)
         finally:
             if was_training:
                 self.model.train()

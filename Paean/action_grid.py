@@ -583,13 +583,10 @@ def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
     slots: List[Dict[str, object]] = []
 
     if name in ("first_input", "firstinput"):
-        return [{
-            "offset": int(num_layers) * layer_dim,
-            "block_idx": 0,
-            "layer_idx": None,
-            "field_name": "first_input",
-            "kind": "F",
-        }]
+        raise ValueError(
+            "first_input is deprecated and is not selectable; the first HE "
+            "config is treated as lossless and no first_input noise is installed"
+        )
 
     for layer_idx in range(int(num_layers)):
         if target_layers is not None and layer_idx not in target_layers:
@@ -621,12 +618,10 @@ def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
 
 def _value_to_action_index(*, value: int, block_idx: int, field_name: str, kind: str, max_sfs) -> int:
     if field_name == "first_input":
-        levels = 5
-        max_sf = 30
-        for idx in range(levels):
-            if int(sf_from(idx, max_sf, levels)) == int(value):
-                return idx
-        raise ValueError(f"first_input={value} is not selectable; expected one of 22,24,26,28,30")
+        raise ValueError(
+            "first_input is deprecated and is not selectable; the first HE "
+            "config is treated as lossless and no first_input noise is installed"
+        )
 
     if kind == "K":
         if int(value) not in K_LEVELS:

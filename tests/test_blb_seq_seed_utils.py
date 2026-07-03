@@ -38,6 +38,30 @@ class AssignGlobalEpisodesTest(unittest.TestCase):
         self.assertEqual(sorted(len(c) for c in chunks), [12, 12, 12, 12, 13])
 
 
+class AssignGlobalEpisodesInterleavedTest(unittest.TestCase):
+    def test_one_worker_is_identity(self):
+        self.assertEqual(
+            seed_utils.assign_global_episodes_interleaved(7, 1),
+            [list(range(7))],
+        )
+
+    def test_covers_every_index_once_with_balanced_counts(self):
+        for total in (0, 1, 47, 60, 61):
+            for nw in (1, 2, 4, 5, 7, 10):
+                chunks = seed_utils.assign_global_episodes_interleaved(total, nw)
+                self.assertEqual(len(chunks), nw)
+                flat = [g for c in chunks for g in c]
+                self.assertEqual(sorted(flat), list(range(total)), (total, nw))
+                counts = [len(c) for c in chunks]
+                self.assertLessEqual(max(counts, default=0) - min(counts, default=0), 1)
+
+    def test_round_robin_shape_spreads_adjacent_episodes(self):
+        self.assertEqual(
+            seed_utils.assign_global_episodes_interleaved(12, 5),
+            [[0, 5, 10], [1, 6, 11], [2, 7], [3, 8], [4, 9]],
+        )
+
+
 class GpuCountIndependenceTest(unittest.TestCase):
     def _window_probe_seeds(self, base, start, total, num_workers):
         """Per-episode probe seeds reassembled in GLOBAL order (what the

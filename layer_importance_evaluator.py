@@ -2214,6 +2214,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_guarded_radius2_episode_fraction=None,
                   blb_v3_guarded_radius2_cooldown_episodes=None,
                   blb_v3_static_invalid_level_mask_enabled=None,
+                  blb_v3_warmstart_baseline_bias=None,
                   blb_v3_warmstart_bias_gain=None,
                   blb_v3_ent_coef=None,
                   blb_v3_ent_coef_anchor=None,
@@ -2225,16 +2226,18 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_action_mask_source='',
                   blb_v3_sequential_rl=True,
                   blb_v3_sequential_invalid_penalty=1.0,
-                  blb_v3_sequential_cost_shaping_coeff=0.05,
+                  blb_v3_sequential_cost_shaping_coeff=0.0,
                   blb_v3_sequential_fusion_shaping_coeff=0.0,
                   blb_v3_sequential_early_terminate_on_invalid=False,
                   blb_v3_seed=None,
                   blb_v3_reward_devices="",
                   stage2_rl_devices="",
                   blb_v3_fast_reward_mode_enabled=False,
-                  blb_v3_online_k_trials=1,
+                  blb_v3_online_k_trials=5,
                   blb_v3_terminal_eval_batch_size=4,
                   blb_v3_promotion_validation_trials=4,
+                  blb_v3_final_selection_top_n=20,
+                  blb_v3_final_selection_validation_trials=20,
                   blb_v3_promotion_margin_window=0.25,
                   blb_v3_substage_mode=False,
                   blb_v3_substage_block_order="1,2,4,5",
@@ -2243,9 +2246,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_substage_promotion_top_k=5,
                   blb_v3_substage_promotion_trials=8,
                   blb_v3_fusion_count_action=False,
-                  blb_v3_fusion_neighbor_curriculum=True,
-                  blb_v3_fusion_probe_interval=200,
-                  blb_v3_fusion_exploration_epsilon=0.05,
+                  blb_v3_fusion_neighbor_curriculum=False,
+                  blb_v3_fusion_probe_interval=0,
+                  blb_v3_fusion_exploration_epsilon=0.0,
                   stage2_workers_per_device=1,
                   blb_v3_osr_results_path="",
                   blb_v3_osr_scan_only=False,
@@ -2816,6 +2819,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                 'blb_v3_static_invalid_level_mask_enabled',
             )
         )
+        self.blb_v3_warmstart_baseline_bias = (
+            None if blb_v3_warmstart_baseline_bias in (None, "") else
+            self._coerce_bool_flag(
+                blb_v3_warmstart_baseline_bias,
+                'blb_v3_warmstart_baseline_bias',
+            )
+        )
         self.blb_v3_warmstart_bias_gain = (
             float(blb_v3_warmstart_bias_gain)
             if blb_v3_warmstart_bias_gain not in (None, "") else None
@@ -2868,7 +2878,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             self.blb_v3_sequential_cost_shaping_coeff = float(blb_v3_sequential_cost_shaping_coeff)
         except Exception:
-            self.blb_v3_sequential_cost_shaping_coeff = 0.05
+            self.blb_v3_sequential_cost_shaping_coeff = 0.0
         try:
             self.blb_v3_sequential_fusion_shaping_coeff = float(blb_v3_sequential_fusion_shaping_coeff)
         except Exception:
@@ -2917,7 +2927,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             self.blb_v3_online_k_trials = max(1, int(blb_v3_online_k_trials))
         except Exception:
-            self.blb_v3_online_k_trials = 1
+            self.blb_v3_online_k_trials = 5
         try:
             self.blb_v3_terminal_eval_batch_size = max(1, int(blb_v3_terminal_eval_batch_size))
         except Exception:
@@ -2926,6 +2936,16 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.blb_v3_promotion_validation_trials = max(1, int(blb_v3_promotion_validation_trials))
         except Exception:
             self.blb_v3_promotion_validation_trials = 4
+        try:
+            self.blb_v3_final_selection_top_n = max(1, int(blb_v3_final_selection_top_n))
+        except Exception:
+            self.blb_v3_final_selection_top_n = 20
+        try:
+            self.blb_v3_final_selection_validation_trials = max(
+                1, int(blb_v3_final_selection_validation_trials)
+            )
+        except Exception:
+            self.blb_v3_final_selection_validation_trials = 20
         try:
             self.blb_v3_promotion_margin_window = max(0.0, float(blb_v3_promotion_margin_window))
         except Exception:
@@ -2944,11 +2964,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             self.blb_v3_fusion_probe_interval = int(blb_v3_fusion_probe_interval)
         except Exception:
-            self.blb_v3_fusion_probe_interval = 200
+            self.blb_v3_fusion_probe_interval = 0
         try:
             self.blb_v3_fusion_exploration_epsilon = float(blb_v3_fusion_exploration_epsilon)
         except Exception:
-            self.blb_v3_fusion_exploration_epsilon = 0.05
+            self.blb_v3_fusion_exploration_epsilon = 0.0
         try:
             self.stage2_workers_per_device = max(1, int(stage2_workers_per_device))
         except Exception:

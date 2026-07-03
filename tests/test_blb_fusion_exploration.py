@@ -94,6 +94,121 @@ class ExplorationEpsilonMixtureTest(unittest.TestCase):
                     float(lp_s.item()), float(lp_e.item()), places=4,
                 )
 
+    def test_explicit_generator_sampling_is_global_rng_independent(self):
+        """Parallel workers can seed sampling without locking global CUDA RNG."""
+        pol = self._policy(eps=(0.2, 0.1))
+        obs, slot_mask, levels = self._inputs()
+        with torch.no_grad():
+            for seed in range(20):
+                torch.manual_seed(10_000 + seed)
+                gen_a = torch.Generator(device=obs.device)
+                gen_a.manual_seed(seed)
+                a, lp_a, _ = pol.sample_action(
+                    obs, slot_mask, levels, deterministic=False,
+                    generator=gen_a,
+                )
+
+                torch.manual_seed(20_000 + seed)
+                gen_b = torch.Generator(device=obs.device)
+                gen_b.manual_seed(seed)
+                b, lp_b, _ = pol.sample_action(
+                    obs, slot_mask, levels, deterministic=False,
+                    generator=gen_b,
+                )
+
+                self.assertTrue(torch.equal(a, b))
+                self.assertAlmostEqual(float(lp_a.item()), float(lp_b.item()), places=6)
+                lp_eval, _, _ = pol.evaluate_action(obs, a, slot_mask, levels)
+                self.assertAlmostEqual(float(lp_a.item()), float(lp_eval.item()), places=4)
+
+    def test_explicit_generator_sampling_matches_manual_seed_path(self):
+        """The thread-safe generator path preserves the old single-worker stream."""
+        pol = self._policy(eps=(0.2, 0.1))
+        obs, slot_mask, levels = self._inputs()
+        with torch.no_grad():
+            for seed in range(20):
+                torch.manual_seed(seed)
+                expected, lp_expected, _ = pol.sample_action(
+                    obs, slot_mask, levels, deterministic=False,
+                )
+                gen = torch.Generator(device=obs.device)
+                gen.manual_seed(seed)
+                actual, lp_actual, _ = pol.sample_action(
+                    obs, slot_mask, levels, deterministic=False,
+                    generator=gen,
+                )
+                self.assertTrue(torch.equal(expected, actual))
+                self.assertAlmostEqual(
+                    float(lp_expected.item()), float(lp_actual.item()), places=6,
+                )
+
+    def test_reseeded_generator_matches_fresh_generator(self):
+        """Workers can reuse one generator object without changing samples."""
+        pol = self._policy(eps=(0.2, 0.1))
+        obs, slot_mask, levels = self._inputs()
+        reusable = torch.Generator(device=obs.device)
+        with torch.no_grad():
+            for seed in range(20):
+                fresh = torch.Generator(device=obs.device)
+                fresh.manual_seed(seed)
+                expected, lp_expected, _ = pol.sample_action(
+                    obs, slot_mask, levels, deterministic=False,
+                    generator=fresh,
+                )
+                reusable.manual_seed(seed)
+                actual, lp_actual, _ = pol.sample_action(
+                    obs, slot_mask, levels, deterministic=False,
+                    generator=reusable,
+                )
+                self.assertTrue(torch.equal(expected, actual))
+                self.assertAlmostEqual(
+                    float(lp_expected.item()), float(lp_actual.item()), places=6,
+                )
+
+    def test_precomputed_logit_mask_matches_action_level_mask_path(self):
+        """Rollout can cache additive masks without changing policy math."""
+        pol = self._policy(eps=(0.2, 0.1))
+        obs, slot_mask, levels = self._inputs()
+        action_level_mask = torch.zeros(1, 2, 6, dtype=torch.bool, device=obs.device)
+        action_level_mask[0, 0, :2] = True
+        action_level_mask[0, 1, :5] = True
+        logit_mask = pol._build_logit_mask(
+            slot_mask,
+            levels,
+            pol.cfg.max_num_levels,
+            action_level_mask=action_level_mask,
+            level_indices=pol._level_indices,
+        )
+        with torch.no_grad():
+            gen_a = torch.Generator(device=obs.device)
+            gen_a.manual_seed(123)
+            action_a, lp_a, value_a = pol.sample_action(
+                obs, slot_mask, levels,
+                generator=gen_a,
+                action_level_mask=action_level_mask,
+            )
+            gen_b = torch.Generator(device=obs.device)
+            gen_b.manual_seed(123)
+            action_b, lp_b, value_b = pol.sample_action(
+                obs, slot_mask, levels,
+                generator=gen_b,
+                logit_mask=logit_mask,
+            )
+            self.assertTrue(torch.equal(action_a, action_b))
+            self.assertAlmostEqual(float(lp_a.item()), float(lp_b.item()), places=6)
+            self.assertAlmostEqual(float(value_a.item()), float(value_b.item()), places=6)
+
+            eval_a = pol.evaluate_action(
+                obs, action_a, slot_mask, levels,
+                action_level_mask=action_level_mask,
+            )
+            eval_b = pol.evaluate_action(
+                obs, action_a, slot_mask, levels,
+                logit_mask=logit_mask,
+            )
+            for ta, tb in zip(eval_a, eval_b):
+                self.assertTrue(torch.allclose(ta, tb, atol=1e-6, rtol=0.0))
+
     def test_mask_respected_by_uniform_component(self):
         """Masked levels must keep probability 0 even under the mixture."""
         pol = self._policy(eps=(0.9, 0.9))

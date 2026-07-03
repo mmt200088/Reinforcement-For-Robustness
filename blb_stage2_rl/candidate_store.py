@@ -286,12 +286,12 @@ def candidate_rank_key(record: Mapping[str, Any]) -> Tuple[float, ...]:
         if priority == 3 and valid and invalid_steps == 0:
             return (
                 0.0,
+                -terminal_reward,
+                -total_reward,
                 -max(0.0, _finite_float(record.get("terminal_cost_rank_score", 0.0), 0.0)),
                 -_finite_float(record.get("terminal_fusion_gain", 0.0), 0.0),
                 -_finite_float(record.get("terminal_k_gain", 0.0), 0.0),
                 -_finite_float(record.get("terminal_bits_gain", 0.0), 0.0),
-                -terminal_reward,
-                -total_reward,
             )
         if priority == 2:
             return (

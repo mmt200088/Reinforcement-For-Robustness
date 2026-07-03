@@ -166,6 +166,7 @@ class EpisodeStats:
     terminal_probe_trial_counts: List[int] = field(default_factory=list)
     terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
     terminal_probe_speedup: float = 1.0
+    fusion_action_steps: List[Dict[str, Any]] = field(default_factory=list)
     per_step_optimizer_wall_seconds: float = 0.0
     policy_rollout_wall_seconds: float = 0.0
     terminal_cost_eval_wall_seconds: float = 0.0
@@ -341,12 +342,12 @@ class RLDiagnosticsRecorder:
         if priority == 3 and invalid_steps == 0:
             return (
                 3.0,
+                terminal_reward,
+                total_reward,
                 float(payload.get("terminal_cost_rank_score", 0.0) or 0.0),
                 float(payload.get("terminal_fusion_gain", 0.0) or 0.0),
                 float(payload.get("terminal_k_gain", 0.0) or 0.0),
                 float(payload.get("terminal_bits_gain", 0.0) or 0.0),
-                terminal_reward,
-                total_reward,
             )
         if priority == 2:
             return (2.0, -max(0.0, stab), metric1, metric2, terminal_reward, total_reward)
@@ -367,7 +368,10 @@ class RLDiagnosticsRecorder:
         self._meta = dict(meta or {})
         if self._data_point_writer is not None:
             try:
-                self._data_point_writer.write_manifest({
+                baseline_preflight = self._meta.get("baseline_preflight_metrics")
+                if not isinstance(baseline_preflight, Mapping):
+                    baseline_preflight = self._meta.get("trainer_gate_baseline")
+                manifest_payload = {
                     "source_diagnostics_dir": self.output_dir,
                     "num_layers": int(self.num_layers),
                     "num_action_slots": int(self.num_slots),
@@ -383,7 +387,42 @@ class RLDiagnosticsRecorder:
                         "summary": self.summary_md_path,
                         "health_log": self.health_log_path,
                     },
-                })
+                }
+                if isinstance(baseline_preflight, Mapping):
+                    baseline_preflight_dict = dict(baseline_preflight)
+                    manifest_payload["trainer_gate_baseline"] = baseline_preflight_dict
+                    manifest_payload["baseline_preflight_metrics"] = baseline_preflight_dict
+                    manifest_payload["baseline_preflight_trial_count"] = int(
+                        baseline_preflight_dict.get("trial_count", 0) or 0
+                    )
+                    manifest_payload["stage2_k_trials"] = int(
+                        self._meta.get(
+                            "stage2_k_trials",
+                            baseline_preflight_dict.get("trial_count", 0),
+                        )
+                        or 0
+                    )
+                    for src, dst in (
+                        ("limit_tolerance", "precision_tolerance"),
+                        ("stability_tolerance", "stability_tolerance"),
+                        ("loss_threshold", "loss_threshold"),
+                        ("metric1_threshold", "metric1_threshold"),
+                        ("metric2_threshold", "metric2_threshold"),
+                        ("loss_std_threshold", "loss_std_threshold"),
+                        ("metric1_std_threshold", "metric1_std_threshold"),
+                        ("metric2_std_threshold", "metric2_std_threshold"),
+                    ):
+                        if src in baseline_preflight_dict:
+                            manifest_payload[dst] = baseline_preflight_dict[src]
+                if "reward_design" in self._meta:
+                    manifest_payload["reward_design"] = self._meta["reward_design"]
+                for key in (
+                    "borderline_retest_enabled",
+                    "borderline_retest_trials_multiplier",
+                ):
+                    if key in self._meta:
+                        manifest_payload[key] = self._meta[key]
+                self._data_point_writer.write_manifest(manifest_payload)
             except Exception as exc:
                 self.log(f"  [diag][warning] structured data manifest write failed: {exc}")
 

@@ -60,7 +60,9 @@ For K kind:
     "level_values":    [8, 9, 10, 11, 12, 13]
   }
 
-For the legacy ``first_input`` slot (last element of action_vec, layer 0, no block):
+The legacy ``first_input`` slot (last element of action_vec, layer 0, no block)
+is deprecated. It may appear in old descriptions for compatibility, but new
+slot-list overrides must not select it.
 ::
 
   {
@@ -455,28 +457,11 @@ def slots_list_to_action_vec(
             block_idx = int(label.split(".")[1][1:])
 
         if label == "L0.first_input.F" or field_name == "first_input_sf":
-            sf_value = entry.get("scaling_factor")
-            if sf_value is None:
-                raise ValueError(
-                    f"slot {label}: first_input requires scaling_factor in "
-                    f"{{22,24,26,28,30}}"
-                )
-            new_idx = _coerce_first_input_index(int(sf_value))
-            old_idx = int(vec[global_index])
-            vec[global_index] = int(new_idx)
-            decoded_after = int(_snap_to_table(
-                sf_from(new_idx, 30, int(LEVELS_FIRST_INPUT)), BLB_FIRST_INPUT_N,
-            ))
-            if int(decoded_after) != int(sf_value):
-                coercion_notes.append({
-                    "label": label,
-                    "requested_scaling_factor": int(sf_value),
-                    "applied_scaling_factor": decoded_after,
-                    "old_action_index": old_idx,
-                    "new_action_index": new_idx,
-                    "reason": "snapped to nearest first_input level",
-                })
-            continue
+            raise ValueError(
+                f"slot {label}: first_input is deprecated and is not selectable; "
+                "the first HE config is treated as lossless and no first_input "
+                "noise is installed"
+            )
 
         if kind == "K":
             if "truncation_bits" not in entry:

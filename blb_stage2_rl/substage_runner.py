@@ -9,7 +9,7 @@ baseline for the entire run. Each sub-stage:
      validated picks (and baseline values for blocks not yet trained).
   2. Calibrates a noisy preflight against the frozen base to measure
      ``acc_{k-1}``, then sets
-     ``acc_threshold = max(acc_{k-1} - tol/N, acc_orig - tol)``.
+     ``acc_threshold = max(acc_{k-1} * (1 - tol/N), acc_orig * (1 - tol))``.
      This is the "progressive re-baseline" budget allocation chosen during
      grilling: earlier sub-stages get a tighter threshold so they leave
      accuracy budget for later sub-stages.
@@ -111,21 +111,19 @@ def compute_substage_acc_threshold(
         ) -> float:
     """Threshold for sub-stage k.
 
-    ``threshold = max(acc_after_prev - tol/N, acc_orig - tol) - one_sample_guard``
+    ``threshold = max(acc_after_prev * (1 - tol/N), acc_orig * (1 - tol))``
 
-    The ``one_sample_guard = 1/probe_size`` matches the same probe-quantisation
-    guard the legacy sequential path uses in
-    ``_noisy_accuracy_threshold_with_probe_guard``: a single sample landing on
-    the wrong side of an exact-match probe shouldn't trip P1.
+    ``stage2_limit_tolerance`` is a relative fraction, so 0.001 means 0.1%.
+    ``probe_size`` is kept in the signature for compatibility with older
+    callers, but it no longer relaxes the gate.
     """
+    _ = probe_size
     n = max(1, int(num_substages))
     tol = max(0.0, float(stage2_limit_tolerance))
     per_stage = tol / n
-    hard_floor = float(acc_orig) - tol
-    progressive = float(acc_after_prev) - per_stage
-    threshold = max(progressive, hard_floor)
-    guard = 1.0 / max(1, int(probe_size))
-    return float(threshold - guard)
+    hard_floor = float(acc_orig) * (1.0 - tol)
+    progressive = float(acc_after_prev) * (1.0 - per_stage)
+    return float(max(progressive, hard_floor))
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +291,6 @@ def run_substage_via_runner(
     from .sequential_runner import (
         SequentialTrainConfig,
         train_sequential,
-        _noisy_accuracy_threshold_with_probe_guard,
     )
     from .substage_env import BLBStage2SubstageEnv
 
@@ -385,6 +382,7 @@ def run_substage_via_runner(
             layers_attribute="model." + ev.layers_attribute,
             is_regression=bool(getattr(ev, "is_regression", False)),
             device_ids=reward_devices,
+            metric_profile=str(train_cfg.profile),
             log_fn=lambda m: log(f"  [multi-gpu] {m}"),
         )
 
@@ -578,7 +576,7 @@ def run_substage_via_runner(
         log(
             f"  [substage {k+1}] threshold → acc_prev={acc_prev:.4f}  "
             f"tol/{n_substages}={stage2_limit_tolerance/n_substages:.4f}  "
-            f"hard_floor={acc_orig - stage2_limit_tolerance:.4f}  "
+            f"hard_floor={acc_orig * (1.0 - stage2_limit_tolerance):.4f}  "
             f"acc_threshold={new_threshold:.4f}"
         )
 
@@ -673,7 +671,7 @@ def run_substage_via_runner(
             # Per-substage anchor: short forced-baseline so the fresh policy
             # has a warm start. Keep modest (default 30) since horizon=12.
             fast_reward_mode_enabled=bool(getattr(train_cfg, "fast_reward_mode_enabled", False)),
-            online_num_trials_per_step=int(getattr(train_cfg, "online_num_trials_per_step", 1)),
+            online_num_trials_per_step=int(getattr(train_cfg, "online_num_trials_per_step", 5)),
             terminal_eval_batch_size=int(getattr(train_cfg, "terminal_eval_batch_size", 1)),
             promotion_validation_trials=int(promotion_trials),
         )

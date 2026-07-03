@@ -1,5 +1,7 @@
 import math
 import os as _os
+import threading as _threading
+from contextlib import contextmanager
 import torch
 import torch.nn as nn
 from transformers import AutoModel
@@ -47,11 +49,48 @@ def _print_blb_install(message: str) -> None:
 _NOISE_GENERATORS: dict = {}     # str(device) -> torch.Generator
 _NOISE_RNG_SEED_MODE: str = "os"  # "os" / "fixed"
 _NOISE_RNG_FIXED_SEED: Optional[int] = None
+_NOISE_RNG_LOCAL = _threading.local()
 
 
 def _fresh_os_seed() -> int:
     """返回 64-bit 整数，从 OS 熵源派生（每次都不一样）。"""
     return int.from_bytes(_os.urandom(8), "little")
+
+
+def _noise_generator_key(device, scope: Optional[str] = None) -> str:
+    key = str(device)
+    if scope is None:
+        scope = getattr(_NOISE_RNG_LOCAL, "scope", None)
+    if scope is not None:
+        key = f"{key}|scope={str(scope)}"
+    return key
+
+
+@contextmanager
+def noise_rng_scope(scope: Optional[str]):
+    """Temporarily route noise samples on this thread to a scoped generator.
+
+    The generated values are still controlled only by the manual seed. The
+    scope just gives same-device workers separate ``torch.Generator`` objects,
+    so one worker can reseed its deterministic probe stream without racing a
+    sibling on the same CUDA device.
+    """
+    if scope is None:
+        yield
+        return
+    sentinel = object()
+    previous = getattr(_NOISE_RNG_LOCAL, "scope", sentinel)
+    _NOISE_RNG_LOCAL.scope = str(scope)
+    try:
+        yield
+    finally:
+        if previous is sentinel:
+            try:
+                delattr(_NOISE_RNG_LOCAL, "scope")
+            except AttributeError:
+                pass
+        else:
+            _NOISE_RNG_LOCAL.scope = previous
 
 
 def _get_noise_generator(device) -> torch.Generator:
@@ -62,7 +101,7 @@ def _get_noise_generator(device) -> torch.Generator:
     - 后续直接复用已有 generator。
     - 与 ``torch.default_generator`` 完全隔离，不被 ``torch.manual_seed`` 影响。
     """
-    key = str(device)
+    key = _noise_generator_key(device)
     g = _NOISE_GENERATORS.get(key)
     if g is None:
         g = torch.Generator(device=device)
@@ -139,7 +178,11 @@ def reseed_noise_rng(seed: Optional[int] = None) -> None:
             g.manual_seed(int(seed))
 
 
-def reseed_noise_rng_for_device(device, seed: int) -> None:
+def reseed_noise_rng_for_device(
+        device,
+        seed: int,
+        scope: Optional[str] = None,
+        ) -> None:
     """只重播种 ``device`` 自己的噪声 generator（不动其它 device、不动全局模式）。
 
     Stage-2 确定性 probe 路径（2026-06-10）用它在每个 trial 开始前把本卡的
@@ -148,7 +191,7 @@ def reseed_noise_rng_for_device(device, seed: int) -> None:
     与 N 卡（以及任何 trial→卡 的调度）逐位一致。worker 线程各自持有不同
     device，只触碰自己的 generator —— 与并发的其它 worker 无竞态。
     """
-    key = str(device)
+    key = _noise_generator_key(device, scope)
     g = _NOISE_GENERATORS.get(key)
     if g is None:
         g = torch.Generator(device=device)
