@@ -1,0 +1,20 @@
+test_accuracy_from_labels_uses_direct_match_count (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_accuracy_from_labels_uses_direct_match_count) ... FAIL
+
+======================================================================
+FAIL: test_accuracy_from_labels_uses_direct_match_count (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_accuracy_from_labels_uses_direct_match_count)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_accuracy_count_red_8bf11a1_20260704_041000/tests/test_blb_eval_metrics_shared.py", line 54, in test_accuracy_from_labels_uses_direct_match_count
+    metric = eval_metrics.accuracy_from_labels(labels, preds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_accuracy_count_red_8bf11a1_20260704_041000/blb_stage2_rl/eval_metrics.py", line 36, in accuracy_from_labels
+    return float(np.mean(preds_arr == labels_arr))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_accuracy_count_red_8bf11a1_20260704_041000/tests/test_blb_eval_metrics_shared.py", line 50, in fail_if_called
+    raise AssertionError("accuracy should use direct match count")
+AssertionError: accuracy should use direct match count
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)

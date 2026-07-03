@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `d0e8b8c`, the conservative
-completion estimate is about 70% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `211ca50`, the conservative
+completion estimate is about 71% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -108,6 +108,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared eval metrics | `1a6969a` | `experiments/server_command_runs/eval_single_array_1a6969a_20260704_031145/` | Reuse single packed reward-probe prediction/label arrays directly instead of copying them through `np.concatenate()`. |
 | Shared eval metrics | `f9bbb29` | `experiments/server_command_runs/eval_binary_f1_f9bbb29_20260704_034430/` | Compute 0/1 binary weighted F1 with direct count reductions instead of sorting a class union for every MRPC/QQP reward-probe trial. |
 | Shared eval metrics | `d0e8b8c` | `experiments/server_command_runs/eval_binary_mcc_d0e8b8c_20260704_035430/` | Compute 0/1 binary Matthews correlation with direct count reductions instead of sorting a class union for CoLA-style evals. |
+| Shared eval metrics | `211ca50` | `experiments/server_command_runs/eval_accuracy_count_211ca50_20260704_041100/` | Compute classification accuracy with `np.count_nonzero()` match counts instead of generic `np.mean()` over a boolean mask. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
 | Stage-2 artifacts | `0aa212a` | `experiments/server_command_runs/candidate_store_ndarray_0aa212a_20260704_024050/` | Normalize ndarray-backed candidate action vectors through a direct reshape iterator instead of copying through `.tolist()`. |
@@ -577,6 +578,18 @@ The red test proved the old binary MCC path called `np.union1d()`. The green
 gate passed `py_compile`, all nine `tests.test_blb_eval_metrics_shared` tests,
 and a source guard confirming the binary MCC fast path precedes the
 class-union fallback.
+
+Progress 2026-07-04: `accuracy_from_labels()` now computes classification
+accuracy with a direct `np.count_nonzero(preds == labels) / n` match count
+instead of calling generic `np.mean()` on the boolean match mask. This trims a
+shared metric hot path used by MRPC/QQP/SST-2/RTE-style probes.
+
+Server evidence 2026-07-04: source commit `211ca50` has red/green verification
+under
+`experiments/server_command_runs/eval_accuracy_count_211ca50_20260704_041100/`.
+The red test proved the old accuracy path called `np.mean()`. The green gate
+passed `py_compile`, all ten `tests.test_blb_eval_metrics_shared` tests, and a
+source guard confirming the direct count path without `np.mean()`.
 
 Progress 2026-07-03: Stage-1 plaintext repeat evaluation and the MRPC
 layer-output noise experiment now use pinned DataLoader memory with
@@ -2084,6 +2097,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   committed in the `eval_binary_f1_f9bbb29_20260704_034430` run directory.
 - `d0e8b8c` shared reward-probe binary MCC fast path, evidence committed in the
   `eval_binary_mcc_d0e8b8c_20260704_035430` run directory.
+- `211ca50` shared reward-probe direct accuracy count path, evidence committed
+  in the `eval_accuracy_count_211ca50_20260704_041100` run directory.
 - `a416d46` shared attention tail cursor parsing, evidence committed in the
   `attention_tail_cursor_a416d46_20260703_214800` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
