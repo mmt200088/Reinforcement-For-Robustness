@@ -1,0 +1,13 @@
+test_cli_writes_json_and_markdown (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_cli_writes_json_and_markdown) ... ok
+test_parse_log_lines_accepts_single_pass_iterable (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_lines_accepts_single_pass_iterable) ... ok
+test_parse_log_lines_dispatches_total_lines_without_worker_regex (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_lines_dispatches_total_lines_without_worker_regex) ... ok
+test_parse_log_lines_skips_regex_for_unrelated_lines (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_lines_skips_regex_for_unrelated_lines) ... ok
+test_parse_log_lines_uses_running_speedup_aggregate (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_lines_uses_running_speedup_aggregate) ... ok
+test_parse_log_text_streams_text_lines_without_list (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_text_streams_text_lines_without_list) ... ok
+test_parse_log_text_summarizes_parallel_windows (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_text_summarizes_parallel_windows) ... ok
+test_worker_balance_check_streams_counts_without_list (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_worker_balance_check_streams_counts_without_list) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.060s
+
+OK

@@ -1,0 +1,20 @@
+test_parse_log_lines_dispatches_total_lines_without_worker_regex (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_lines_dispatches_total_lines_without_worker_regex) ... FAIL
+
+======================================================================
+FAIL: test_parse_log_lines_dispatches_total_lines_without_worker_regex (tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_lines_dispatches_total_lines_without_worker_regex)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_stage1_report_regex_dispatch_red_d96cf43_20260704_002317/src_py_d96cf43_red/tests/test_stage1_parallel_report.py", line 147, in test_parse_log_lines_dispatches_total_lines_without_worker_regex
+    summary = report.parse_log_lines([total_line])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_stage1_report_regex_dispatch_red_d96cf43_20260704_002317/src_py_d96cf43_red/scripts/stage1_parallel_report.py", line 108, in parse_log_lines
+    rollout_match = ROLLOUT_RE.search(line)
+                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_stage1_report_regex_dispatch_red_d96cf43_20260704_002317/src_py_d96cf43_red/tests/test_stage1_parallel_report.py", line 136, in search
+    raise AssertionError("total lines should not hit worker/cache regex")
+AssertionError: total lines should not hit worker/cache regex
+
+----------------------------------------------------------------------
+Ran 1 test in 0.058s
+
+FAILED (failures=1)
