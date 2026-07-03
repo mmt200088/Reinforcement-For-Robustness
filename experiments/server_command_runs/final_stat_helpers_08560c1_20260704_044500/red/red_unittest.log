@@ -1,0 +1,26 @@
+test_float_stat_helpers_stream_values_without_clean_lists (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_float_stat_helpers_stream_values_without_clean_lists) ... FAIL
+
+======================================================================
+FAIL: test_float_stat_helpers_stream_values_without_clean_lists (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_float_stat_helpers_stream_values_without_clean_lists)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_final_stat_helpers_red_da91903_20260704_044000/tests/test_final_evaluation_config_cache.py", line 390, in test_float_stat_helpers_stream_values_without_clean_lists
+    mean = fem.UnifiedFinalEvaluationModule._mean_float_or_none(values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_final_stat_helpers_red_da91903_20260704_044000/final_evaluation_module.py", line 1359, in _mean_float_or_none
+    return float(np.mean(clean))
+                 ^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: mean helper should stream finite values
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

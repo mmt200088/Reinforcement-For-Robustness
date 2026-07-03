@@ -1,0 +1,6 @@
+source_commit=08560c1
+base_commit=da91903
+branch=jk_standard_rl
+red_dir=/hy-tmp/rfr_final_stat_helpers_red_da91903_20260704_044000
+green_dir=/hy-tmp/rfr_final_stat_helpers_green_da91903_20260704_044500
+workflow=local_edit_git_push_server_temp_verify_artifact_return
