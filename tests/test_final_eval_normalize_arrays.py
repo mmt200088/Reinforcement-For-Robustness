@@ -5,7 +5,7 @@ from unittest import mock
 
 import numpy as np
 
-from final_evaluation_module import UnifiedFinalEvaluationModule
+from final_evaluation_module import NOISE_SCALING_FACTOR_KEYS, UnifiedFinalEvaluationModule
 
 
 class _DummyEvaluator:
@@ -70,6 +70,33 @@ class FinalEvalNormalizeArrayTests(unittest.TestCase):
             source = inspect.getsource(method)
             self.assertIn("_unsupported_int_values(", source)
             self.assertNotIn("arr.tolist()", source)
+
+    def test_full_signature_avoids_tolist_materialization(self):
+        source = inspect.getsource(UnifiedFinalEvaluationModule._full_signature)
+        self.assertIn("_int_tuple", source)
+        self.assertNotIn(".tolist()", source)
+
+        run_source = inspect.getsource(UnifiedFinalEvaluationModule.run)
+        noise_region = run_source.split("def _noise_eval(", 1)[1].split(
+            "if sig in eval_cache", 1
+        )[0]
+        self.assertIn("self._full_signature(", noise_region)
+        self.assertNotIn(".tolist()", noise_region)
+
+        noise_cfg = {
+            key: np.array([idx, idx + 1], dtype=np.int64)
+            for idx, key in enumerate(NOISE_SCALING_FACTOR_KEYS)
+        }
+        sig = UnifiedFinalEvaluationModule._full_signature(
+            np.array([1, 2], dtype=np.int64),
+            np.array([6, 6], dtype=np.int64),
+            noise_cfg,
+        )
+
+        self.assertEqual(sig[0], (1, 2))
+        self.assertEqual(sig[1], (6, 6))
+        self.assertEqual(sig[2][0], (0, 1))
+        self.assertEqual(sig[2][-1], (6, 7))
 
     def test_stage2_cost_matched_array_tracks_cost_incrementally(self):
         source = inspect.getsource(UnifiedFinalEvaluationModule._stage2_cost_matched_array)

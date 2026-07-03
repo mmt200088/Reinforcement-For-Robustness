@@ -247,14 +247,7 @@ class UnifiedFinalEvaluationModule:
             )
 
         def _noise_eval(gelu, softmax, noise_cfg, label, want_repeat):
-            sig = (
-                tuple(np.asarray(gelu, dtype=int).tolist()),
-                tuple(np.asarray(softmax, dtype=int).tolist()),
-                tuple(
-                    tuple(np.asarray(noise_cfg[k], dtype=int).tolist())
-                    for k in NOISE_SCALING_FACTOR_KEYS
-                ),
-            )
+            sig = self._full_signature(gelu, softmax, noise_cfg)
             if sig in eval_cache:
                 return eval_cache[sig], repeat_cache.get(sig), variance_cache.get(sig)
 
@@ -2226,14 +2219,16 @@ class UnifiedFinalEvaluationModule:
         return int(round(float(value) * 40.0))
 
     @staticmethod
+    def _int_tuple(values):
+        return tuple(int(value) for value in np.asarray(values, dtype=int).reshape(-1))
+
+    @staticmethod
     def _full_signature(gelu, softmax, noise_cfg):
+        int_tuple = UnifiedFinalEvaluationModule._int_tuple
         return (
-            tuple(np.asarray(gelu, dtype=int).tolist()),
-            tuple(np.asarray(softmax, dtype=int).tolist()),
-            tuple(
-                tuple(np.asarray(noise_cfg[k], dtype=int).tolist())
-                for k in NOISE_SCALING_FACTOR_KEYS
-            ),
+            int_tuple(gelu),
+            int_tuple(softmax),
+            tuple(int_tuple(noise_cfg[k]) for k in NOISE_SCALING_FACTOR_KEYS),
         )
 
     @staticmethod
