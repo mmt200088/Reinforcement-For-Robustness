@@ -871,6 +871,11 @@ clean-baseline Stage-1 install and one BLB bridge install per candidate when
 repeat. This removes repeated configuration/noise installation work from
 repeat measurements without adding an evaluation-result cache.
 
+Progress 2026-07-03: `BLBActionFinalEvaluationModule` now caches
+`load_max_sfs(profile)` results per module instance. Candidate decoding,
+cost-matched sampling, and GLUE action export reuse the same max-SF table for
+the same profile instead of reopening/parsing it at each call site.
+
 Progress 2026-07-02: `UnifiedFinalEvaluationModule` now caches the Stage-2
 total-cost count-solution maps used by random final-eval groups. Repeated
 Stage2Budget/Budget sampling in one final-eval run reuses the same per-noise

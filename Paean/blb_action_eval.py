@@ -95,6 +95,17 @@ class BLBActionFinalEvaluationModule:
         self.action_ranges = coerce_spec_list(action_ranges)
         self.action_fixed = coerce_spec_list(action_fixed)
         self.rescale_optimizer_mode = self._load_rescale_optimizer_mode()
+        self._max_sfs_cache: Dict[str, Any] = {}
+
+    def _load_max_sfs(self, profile: str):
+        key = str(profile or "default")
+        cache = getattr(self, "_max_sfs_cache", None)
+        if cache is None:
+            cache = {}
+            self._max_sfs_cache = cache
+        if key not in cache:
+            cache[key] = load_max_sfs(key)
+        return cache[key]
 
     def run(
         self,
@@ -264,7 +275,7 @@ class BLBActionFinalEvaluationModule:
                 f"  target: {self.cost_match_count} matched configs, "
                 f"max {self.cost_match_max_attempts} attempts"
             )
-            max_sfs_table = load_max_sfs(profile)
+            max_sfs_table = self._load_max_sfs(profile)
             random_candidates, cost_match_diagnostics = (
                 build_cost_matched_random_action_candidates(
                     num_layers=total_layers,
@@ -485,7 +496,7 @@ class BLBActionFinalEvaluationModule:
         ev = self.evaluator
         total_layers = int(ev.total_layers)
         profile = str(getattr(ev, "dataset_key", "default") or "default")
-        max_sfs = load_max_sfs(profile)
+        max_sfs = self._load_max_sfs(profile)
         metadata = dict(metadata or {})
         decoded = self._decode_action_candidate(
             action_vec=action_vec,
@@ -2015,7 +2026,7 @@ class BLBActionFinalEvaluationModule:
             from blb_stage2_rl.action_space import describe_action_vector
         except ImportError:
             return
-        max_sfs = load_max_sfs(profile)
+        max_sfs = self._load_max_sfs(profile)
         num_layers = int(self.evaluator.total_layers)
         slots = action_vec_to_slots_list(
             np.asarray(action_vec, dtype=int),
