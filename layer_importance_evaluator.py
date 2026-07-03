@@ -1684,42 +1684,45 @@ def _stage1_prob_tensors_to_nested_lists(values):
     return stacked.detach().cpu().numpy().tolist()
 
 
-def _stage1_scalar_episode_values_to_numpy(episodes, field):
+def _stage1_scalar_rows_to_numpy(rows):
+    return np.asarray([
+        [
+            float(value.detach().cpu().item()) if hasattr(value, "detach") else float(value)
+            for value in row
+        ]
+        for row in rows
+    ], dtype=np.float32)
+
+
+def _stage1_scalar_episode_values_to_tensor(episodes, field, device):
     rows = [ep[field] for ep in episodes]
+    device = torch.device(device)
     if not rows:
-        return np.empty((0, 0), dtype=np.float32)
+        return torch.empty((0, 0), dtype=torch.float32, device=device)
     expected_len = len(rows[0])
     if any(len(row) != expected_len for row in rows):
-        return np.asarray([
-            [
-                float(value.detach().cpu().item()) if hasattr(value, "detach") else float(value)
-                for value in row
-            ]
-            for row in rows
-        ], dtype=np.float32)
+        return torch.as_tensor(
+            _stage1_scalar_rows_to_numpy(rows),
+            dtype=torch.float32,
+            device=device,
+        )
 
     flat_values = [value for row in rows for value in row]
     if not flat_values:
-        return np.empty((len(rows), 0), dtype=np.float32)
+        return torch.empty((len(rows), 0), dtype=torch.float32, device=device)
     if all(hasattr(value, "detach") for value in flat_values):
         stacked = torch.stack(
             [value.detach().reshape(()) for value in flat_values],
             dim=0,
-        )
-        return (
-            stacked.detach().cpu().numpy()
-            .astype(np.float32, copy=False)
-            .reshape(len(episodes), expected_len)
-        )
+        ).reshape(len(episodes), expected_len)
+        return stacked.to(device=device, dtype=torch.float32)
     if any(hasattr(value, "detach") for value in flat_values):
-        return np.asarray([
-            [
-                float(value.detach().cpu().item()) if hasattr(value, "detach") else float(value)
-                for value in row
-            ]
-            for row in rows
-        ], dtype=np.float32)
-    return np.asarray(rows, dtype=np.float32)
+        return torch.as_tensor(
+            _stage1_scalar_rows_to_numpy(rows),
+            dtype=torch.float32,
+            device=device,
+        )
+    return torch.as_tensor(rows, dtype=torch.float32, device=device)
 
 
 _stage1_gelu_mask_template_cache: Dict[Tuple[str, Tuple[bool, ...]], Tuple[np.ndarray, torch.Tensor]] = {}
@@ -1742,16 +1745,16 @@ def _get_stage1_gelu_mask_templates(device):
     return cached
 
 
-def _pack_recurrent_rollout_tensor_arrays(episodes):
+def _pack_recurrent_rollout_tensor_arrays(episodes, device):
     if not episodes:
         raise RuntimeError("RecurrentRolloutBuffer is empty")
     cont_features_np = np.asarray([
         [_rollout_tensor_to_numpy(t, np.float32) for t in ep['cont_features']]
         for ep in episodes
     ], dtype=np.float32)
-    logprobs_np = _stage1_scalar_episode_values_to_numpy(episodes, 'logprobs')
-    values_np = _stage1_scalar_episode_values_to_numpy(episodes, 'values')
-    return cont_features_np, logprobs_np, values_np
+    logprobs = _stage1_scalar_episode_values_to_tensor(episodes, 'logprobs', device)
+    values = _stage1_scalar_episode_values_to_tensor(episodes, 'values', device)
+    return cont_features_np, logprobs, values
 
 
 class RecurrentRolloutBuffer:
@@ -1822,8 +1825,9 @@ class RecurrentRolloutBuffer:
             values: (N_eps, 12) float
             dones: (N_eps, 12) float
         """
-        cont_features_np, logprobs_np, values_np = _pack_recurrent_rollout_tensor_arrays(
+        cont_features_np, logprobs, values = _pack_recurrent_rollout_tensor_arrays(
             self.episodes,
+            device,
         )
         cont_features = torch.from_numpy(cont_features_np).to(device)
 
@@ -1842,12 +1846,8 @@ class RecurrentRolloutBuffer:
 
         actions_g = torch.from_numpy(actions_g_np).to(device)
 
-        logprobs = torch.from_numpy(logprobs_np).to(device)
-        
         rewards = torch.from_numpy(rewards_np).to(device)
-        
-        values = torch.from_numpy(values_np).to(device)
-        
+
         dones = torch.from_numpy(dones_np).to(device)
         
         # GELU动作掩码: (N_eps, 12, 4) bool

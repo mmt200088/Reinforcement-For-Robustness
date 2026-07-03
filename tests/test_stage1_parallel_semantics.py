@@ -63,15 +63,19 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertNotIn("torch.tensor(ep['actions_g'], dtype=torch.long)", region)
         self.assertNotIn("torch.tensor([", region)
 
-    def test_recurrent_rollout_buffer_packs_tensor_fields_before_transfer(self):
+    def test_recurrent_rollout_buffer_packs_scalar_tensor_fields_directly_to_device(self):
         source = _source(LAYER_EVALUATOR)
         region = _method_region(source, "get_batch")
 
         self.assertIn("def _pack_recurrent_rollout_tensor_arrays", source)
-        self.assertIn("cont_features_np, logprobs_np, values_np", region)
+        if "def _stage1_scalar_episode_values_to_tensor" not in source:
+            self.fail("Stage-1 rollout scalar tensor fields must pack directly to target device")
+        self.assertIn("cont_features_np, logprobs, values", region)
         self.assertIn("torch.from_numpy(cont_features_np).to(device)", region)
-        self.assertIn("torch.from_numpy(logprobs_np).to(device)", region)
-        self.assertIn("torch.from_numpy(values_np).to(device)", region)
+        self.assertIn("_stage1_scalar_episode_values_to_tensor(episodes, 'logprobs', device)", source)
+        self.assertIn("_stage1_scalar_episode_values_to_tensor(episodes, 'values', device)", source)
+        self.assertNotIn("torch.from_numpy(logprobs_np).to(device)", region)
+        self.assertNotIn("torch.from_numpy(values_np).to(device)", region)
         self.assertNotIn("cont_features = torch.stack([", region)
         self.assertNotIn("logprobs = torch.stack([", region)
         self.assertNotIn("values = torch.stack([", region)

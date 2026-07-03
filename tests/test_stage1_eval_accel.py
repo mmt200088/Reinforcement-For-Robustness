@@ -310,13 +310,13 @@ class Stage1EvaluateModelCacheSourceTest(unittest.TestCase):
 
 
 class Stage1RolloutPackingSourceTest(unittest.TestCase):
-    def test_recurrent_rollout_tensor_pack_batches_scalar_transfers(self):
+    def test_recurrent_rollout_tensor_pack_batches_scalar_transfers_to_target_device(self):
         source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
-        if "def _stage1_scalar_episode_values_to_numpy(" not in source:
-            self.fail("Stage-1 recurrent rollout scalar tensor packing must use a batched helper")
+        if "def _stage1_scalar_episode_values_to_tensor(" not in source:
+            self.fail("Stage-1 recurrent rollout scalar tensors must batch directly to target device")
         helper_region = _source_region(
             source,
-            "def _stage1_scalar_episode_values_to_numpy(",
+            "def _stage1_scalar_episode_values_to_tensor(",
             "def _pack_recurrent_rollout_tensor_arrays(",
         )
         pack_region = _source_region(
@@ -326,9 +326,10 @@ class Stage1RolloutPackingSourceTest(unittest.TestCase):
         )
 
         self.assertIn("torch.stack", helper_region)
-        self.assertIn("stacked.detach().cpu().numpy()", helper_region)
-        self.assertIn("_stage1_scalar_episode_values_to_numpy(episodes, 'logprobs')", pack_region)
-        self.assertIn("_stage1_scalar_episode_values_to_numpy(episodes, 'values')", pack_region)
+        self.assertIn("stacked.to(device=device, dtype=torch.float32)", helper_region)
+        self.assertIn("_stage1_scalar_episode_values_to_tensor(episodes, 'logprobs', device)", pack_region)
+        self.assertIn("_stage1_scalar_episode_values_to_tensor(episodes, 'values', device)", pack_region)
+        self.assertNotIn("_stage1_scalar_episode_values_to_numpy", pack_region)
         self.assertNotIn("_rollout_scalar_to_float", pack_region)
 
 
