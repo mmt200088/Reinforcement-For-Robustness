@@ -709,6 +709,38 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         )
         self.assertEqual(random_point.total_cost_gets, 3)
 
+    def test_numeric_axis_limits_stream_float_values_once(self):
+        class FakeAxis:
+            def __init__(self):
+                self.xlim = None
+
+            def set_xlim(self, left, right):
+                self.xlim = (left, right)
+
+        class LimitedFloat:
+            def __init__(self, value):
+                self.value = value
+                self.float_calls = 0
+
+            def __float__(self):
+                self.float_calls += 1
+                if self.float_calls > 1:
+                    raise AssertionError("axis limit helper should convert each value once")
+                return float(self.value)
+
+        lo = LimitedFloat(2.0)
+        hi = LimitedFloat(4.0)
+        ax = FakeAxis()
+
+        fem.UnifiedFinalEvaluationModule._set_numeric_axis_limits(
+            ax,
+            [None, lo, float("nan"), hi],
+        )
+
+        self.assertEqual(lo.float_calls, 1)
+        self.assertEqual(hi.float_calls, 1)
+        self.assertEqual(ax.xlim, (1.84, 4.16))
+
 
 if __name__ == "__main__":
     unittest.main()

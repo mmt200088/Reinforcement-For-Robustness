@@ -1872,11 +1872,22 @@ class UnifiedFinalEvaluationModule:
 
     @staticmethod
     def _set_numeric_axis_limits(ax, values):
-        clean = [float(value) for value in values if value is not None and np.isfinite(float(value))]
-        if not clean:
+        lo = None
+        hi = None
+        for value in values:
+            if value is None:
+                continue
+            value = float(value)
+            if not np.isfinite(value):
+                continue
+            if lo is None:
+                lo = value
+                hi = value
+            else:
+                lo = min(lo, value)
+                hi = max(hi, value)
+        if lo is None:
             return
-        lo = min(clean)
-        hi = max(clean)
         if lo == hi:
             pad = max(0.5, abs(lo) * 0.01)
             ax.set_xlim(lo - pad, hi + pad)
