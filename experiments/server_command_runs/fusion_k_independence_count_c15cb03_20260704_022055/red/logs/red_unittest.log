@@ -1,0 +1,14 @@
+test_counts_streamed_sample_configs_without_list_materialization (tests.test_blb_fusion_count_map.CheckKIndependenceTest.test_counts_streamed_sample_configs_without_list_materialization) ... FAIL
+
+======================================================================
+FAIL: test_counts_streamed_sample_configs_without_list_materialization (tests.test_blb_fusion_count_map.CheckKIndependenceTest.test_counts_streamed_sample_configs_without_list_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_fusion_k_independence_count_red2_98868fb_20260704_022005/tests/test_blb_fusion_count_map.py", line 282, in test_counts_streamed_sample_configs_without_list_materialization
+    self.assertEqual(result["samples_checked"], 2)
+AssertionError: 0 != 2
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

@@ -1,0 +1,11 @@
+test_counts_streamed_sample_configs_without_list_materialization (tests.test_blb_fusion_count_map.CheckKIndependenceTest.test_counts_streamed_sample_configs_without_list_materialization) ... ok
+test_baseline_is_option0 (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest.test_baseline_is_option0) ... ok
+test_baseline_not_min_noise_raises (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest.test_baseline_not_min_noise_raises) ... ok
+test_cheaper_tie_member_ranks_first (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest.test_cheaper_tie_member_ranks_first) ... ok
+test_fusion_tie_pairs (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest.test_fusion_tie_pairs) ... ok
+test_higher_variance_dropped_and_dups_removed (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest.test_higher_variance_dropped_and_dups_removed) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK

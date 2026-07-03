@@ -1,0 +1,6 @@
+source_commit=c15cb03
+base_commit=98868fb
+red_run=/hy-tmp/rfr_fusion_k_independence_count_red2_98868fb_20260704_022005
+green_run=/hy-tmp/rfr_fusion_k_independence_count_green_98868fb_20260704_022055
+red_command=python -m unittest tests.test_blb_fusion_count_map.CheckKIndependenceTest.test_counts_streamed_sample_configs_without_list_materialization -v
+green_commands=python -m py_compile blb_stage2_rl/fusion_enum.py; python -m unittest tests.test_blb_fusion_count_map.CheckKIndependenceTest tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest -v; source guard for streaming sample count
