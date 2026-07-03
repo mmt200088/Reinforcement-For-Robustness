@@ -44,6 +44,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from json_utils import read_json_file  # noqa: E402
 from json_utils import to_jsonable  # noqa: E402
+from report_format_utils import html_table  # noqa: E402
 
 _NOISE_VARIANCE_TABLE_CACHE: Dict[int, Dict[int, Dict[str, float]]] | None = None
 
@@ -242,29 +243,30 @@ def write_smoke_html(
     parts.append("</ul></section>")
 
     parts.append("<section><h2>Per (block, layer)</h2>")
-    parts.append("<table><thead><tr>")
-    for col in [
+    summary_headers = [
         "config_name", "graph_key", "block", "layer",
         "status", "valid", "fusion", "total_bits",
         "cut points", "rotations",
-    ]:
-        parts.append(f"<th>{col}</th>")
-    parts.append("</tr></thead><tbody>")
+    ]
+    summary_rows = []
     for r in results:
         cls = "ok" if r.get("valid") else "bad"
-        parts.append(f"<tr class='{cls}'>")
-        parts.append(f"<td><code>{_html_escape(r.get('config_name'))}</code></td>")
-        parts.append(f"<td><code>{_html_escape(r.get('graph_key'))}</code></td>")
-        parts.append(f"<td>{int(r.get('block', 0))}</td>")
-        parts.append(f"<td>{int(r.get('layer', 0))}</td>")
-        parts.append(f"<td>{_html_escape(r.get('status'))}</td>")
-        parts.append(f"<td>{bool(r.get('valid'))}</td>")
-        parts.append(f"<td>{r.get('fusion_count', '—')}</td>")
-        parts.append(f"<td>{r.get('total_bits', '—')}</td>")
-        parts.append(f"<td>{len(r.get('cut_point_sf', []))}</td>")
-        parts.append(f"<td>{len(r.get('effective_rotations', []))}</td>")
-        parts.append("</tr>")
-    parts.append("</tbody></table></section>")
+        summary_rows.append([
+            f"<code>{_html_escape(r.get('config_name'))}</code>",
+            f"<code>{_html_escape(r.get('graph_key'))}</code>",
+            int(r.get('block', 0)),
+            int(r.get('layer', 0)),
+            _html_escape(r.get('status')),
+            bool(r.get('valid')),
+            r.get('fusion_count', '—'),
+            r.get('total_bits', '—'),
+            len(r.get('cut_point_sf', [])),
+            len(r.get('effective_rotations', [])),
+        ])
+    parts.append(html_table(summary_headers, summary_rows, row_classes=[
+        "ok" if r.get("valid") else "bad" for r in results
+    ], allow_html_cells=True))
+    parts.append("</section>")
 
     parts.append("<section><h2>Per-config details</h2>")
     for r in results:
@@ -285,50 +287,55 @@ def write_smoke_html(
 
         cut_pts = r.get("cut_point_sf") or []
         if cut_pts:
-            parts.append("<h4>cut_point_sf</h4><table><thead><tr>")
-            for col in ["i", "node", "type", "sf / sf_post", "sf_pre", "drop"]:
-                parts.append(f"<th>{col}</th>")
-            parts.append("</tr></thead><tbody>")
-            for cp in cut_pts:
-                sf = cp.get("sf_post", cp.get("sf"))
-                parts.append("<tr>")
-                parts.append(f"<td>{cp.get('i', '')}</td>")
-                parts.append(f"<td><code>{_html_escape(cp.get('name', ''))}</code></td>")
-                parts.append(f"<td>{_html_escape(cp.get('type', ''))}</td>")
-                parts.append(f"<td>{sf if sf is not None else '—'}</td>")
-                parts.append(f"<td>{cp.get('sf_pre', '—')}</td>")
-                parts.append(f"<td>{cp.get('drop', '—')}</td>")
-                parts.append("</tr>")
-            parts.append("</tbody></table>")
+            parts.append("<h4>cut_point_sf</h4>")
+            parts.append(html_table(
+                ["i", "node", "type", "sf / sf_post", "sf_pre", "drop"],
+                [
+                    [
+                        cp.get('i', ''),
+                        f"<code>{_html_escape(cp.get('name', ''))}</code>",
+                        _html_escape(cp.get('type', '')),
+                        cp.get("sf_post", cp.get("sf")) if cp.get("sf_post", cp.get("sf")) is not None else '—',
+                        cp.get('sf_pre', '—'),
+                        cp.get('drop', '—'),
+                    ]
+                    for cp in cut_pts
+                ],
+                allow_html_cells=True,
+            ))
         rotations = r.get("effective_rotations") or []
         if rotations:
-            parts.append("<h4>effective_rotations</h4><table><thead><tr>")
-            for col in ["node_id", "name", "after_cut_point", "sf", "count"]:
-                parts.append(f"<th>{col}</th>")
-            parts.append("</tr></thead><tbody>")
-            for rot in rotations:
-                parts.append("<tr>")
-                parts.append(f"<td>{rot.get('node_id', '')}</td>")
-                parts.append(f"<td><code>{_html_escape(rot.get('name', ''))}</code></td>")
-                parts.append(f"<td>{rot.get('after_cut_point', '')}</td>")
-                parts.append(f"<td>{rot.get('sf', '')}</td>")
-                parts.append(f"<td>{rot.get('count', '')}</td>")
-                parts.append("</tr>")
-            parts.append("</tbody></table>")
+            parts.append("<h4>effective_rotations</h4>")
+            parts.append(html_table(
+                ["node_id", "name", "after_cut_point", "sf", "count"],
+                [
+                    [
+                        rot.get('node_id', ''),
+                        f"<code>{_html_escape(rot.get('name', ''))}</code>",
+                        rot.get('after_cut_point', ''),
+                        rot.get('sf', ''),
+                        rot.get('count', ''),
+                    ]
+                    for rot in rotations
+                ],
+                allow_html_cells=True,
+            ))
         prop_deltas = r.get("propagation_deltas") or []
         if prop_deltas:
-            parts.append("<h4>propagation_deltas</h4><table><thead><tr>")
-            for col in ["node_id", "name", "type", "delta"]:
-                parts.append(f"<th>{col}</th>")
-            parts.append("</tr></thead><tbody>")
-            for pd in prop_deltas:
-                parts.append("<tr>")
-                parts.append(f"<td>{pd.get('node_id', '')}</td>")
-                parts.append(f"<td><code>{_html_escape(pd.get('name', ''))}</code></td>")
-                parts.append(f"<td>{_html_escape(pd.get('type', ''))}</td>")
-                parts.append(f"<td>{_html_escape(pd.get('delta', ''))}</td>")
-                parts.append("</tr>")
-            parts.append("</tbody></table>")
+            parts.append("<h4>propagation_deltas</h4>")
+            parts.append(html_table(
+                ["node_id", "name", "type", "delta"],
+                [
+                    [
+                        pd.get('node_id', ''),
+                        f"<code>{_html_escape(pd.get('name', ''))}</code>",
+                        _html_escape(pd.get('type', '')),
+                        _html_escape(pd.get('delta', '')),
+                    ]
+                    for pd in prop_deltas
+                ],
+                allow_html_cells=True,
+            ))
         parts.append("</details>")
     parts.append("</section>")
     parts.append("</main></body></html>")
@@ -568,39 +575,41 @@ def write_full_html(
 
         ovs = r.get("overrides") or []
         if ovs:
-            parts.append("<h4>Optimizer overrides on cfg</h4><table><thead><tr>")
-            for col in ["cfg_attr", "graph_node", "source", "old", "new"]:
-                parts.append(f"<th>{col}</th>")
-            parts.append("</tr></thead><tbody>")
-            for ov in ovs:
-                parts.append("<tr>")
-                parts.append(f"<td><code>{_html_escape(ov.cfg_attr)}</code></td>")
-                parts.append(f"<td><code>{_html_escape(ov.graph_node or '')}</code></td>")
-                parts.append(f"<td>{_html_escape(ov.source)}</td>")
-                parts.append(f"<td>{_html_escape(ov.old_value)}</td>")
-                parts.append(f"<td>{_html_escape(ov.new_value)}</td>")
-                parts.append("</tr>")
-            parts.append("</tbody></table>")
+            parts.append("<h4>Optimizer overrides on cfg</h4>")
+            parts.append(html_table(
+                ["cfg_attr", "graph_node", "source", "old", "new"],
+                [
+                    [
+                        f"<code>{_html_escape(ov.cfg_attr)}</code>",
+                        f"<code>{_html_escape(ov.graph_node or '')}</code>",
+                        _html_escape(ov.source),
+                        _html_escape(ov.old_value),
+                        _html_escape(ov.new_value),
+                    ]
+                    for ov in ovs
+                ],
+                allow_html_cells=True,
+            ))
         else:
             parts.append("<p><i>No optimizer overrides applied (action == optimizer outcome).</i></p>")
 
         nps = r.get("noise_points") or []
         if nps:
-            parts.append("<h4>Noise points to install (post-override)</h4><table><thead><tr>")
-            for col in ["cfg field", "distribution", "scaling_factor", "N", "σ² (variance)"]:
-                parts.append(f"<th>{col}</th>")
-            parts.append("</tr></thead><tbody>")
-            for p in nps:
-                var = p.get("variance")
-                var_str = f"{var:.4e}" if isinstance(var, float) else "—"
-                parts.append("<tr>")
-                parts.append(f"<td><code>{_html_escape(p['field'])}</code></td>")
-                parts.append(f"<td>{_html_escape(p['distribution'])}</td>")
-                parts.append(f"<td>{p.get('scaling_factor', '—')}</td>")
-                parts.append(f"<td>{p.get('N', '—')}</td>")
-                parts.append(f"<td>{var_str}</td>")
-                parts.append("</tr>")
-            parts.append("</tbody></table>")
+            parts.append("<h4>Noise points to install (post-override)</h4>")
+            parts.append(html_table(
+                ["cfg field", "distribution", "scaling_factor", "N", "σ² (variance)"],
+                [
+                    [
+                        f"<code>{_html_escape(p['field'])}</code>",
+                        _html_escape(p['distribution']),
+                        p.get('scaling_factor', '—'),
+                        p.get('N', '—'),
+                        f"{p.get('variance'):.4e}" if isinstance(p.get("variance"), float) else "—",
+                    ]
+                    for p in nps
+                ],
+                allow_html_cells=True,
+            ))
         else:
             parts.append("<p><i>No noise points to install for this config.</i></p>")
 

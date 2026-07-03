@@ -42,6 +42,7 @@ def html_table(
         rows: Iterable[Sequence[Any]],
         *,
         allow_html_cells: bool = False,
+        row_classes: Sequence[str] | None = None,
         table_attrs: str = "",
         ) -> str:
     """Render a small escaped HTML table.
@@ -55,8 +56,13 @@ def html_table(
     for header in headers:
         parts.append(f"<th>{html.escape(str(header))}</th>")
     parts.append("</tr></thead><tbody>")
-    for row in rows:
-        parts.append("<tr>")
+    for idx, row in enumerate(rows):
+        row_class = ""
+        if row_classes is not None and idx < len(row_classes):
+            row_class_value = str(row_classes[idx] or "").strip()
+            if row_class_value:
+                row_class = f' class="{html.escape(row_class_value, quote=True)}"'
+        parts.append(f"<tr{row_class}>")
         for cell in row:
             if allow_html_cells and isinstance(cell, str) and cell.startswith("<"):
                 parts.append(f"<td>{cell}</td>")

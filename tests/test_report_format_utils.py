@@ -18,6 +18,12 @@ class ReportFormatUtilsTest(unittest.TestCase):
 
         self.assertIn("<td><span class='changed'>ok</span></td>", out)
 
+    def test_html_table_can_render_row_classes(self):
+        out = html_table(["name"], [["a"], ["b"]], row_classes=["ok", "bad"])
+
+        self.assertIn('<tr class="ok">', out)
+        self.assertIn('<tr class="bad">', out)
+
     def test_format_float_preserves_report_conventions(self):
         self.assertEqual(format_float(None), "")
         self.assertEqual(format_float(1.2345678), "1.234568")
@@ -48,6 +54,7 @@ class ReportFormatStaticGuardTest(unittest.TestCase):
             "scripts/report_fusion_count_map.py": "from report_format_utils import html_table",
             "scripts/blb_fusion_ab_compare.py": "from report_format_utils import html_table",
             "scripts/render_fusion_count_slots_eval_report.py": "from report_format_utils import html_table",
+            "scripts/blb_verify_noise_install.py": "from report_format_utils import html_table",
             "scripts/stage2_reward_probe_scaling_report.py": "from report_format_utils import format_float",
             "genetic_search_module.py": "from report_format_utils import format_elapsed as _fmt_elapsed",
             "general_policy_module.py": "from report_format_utils import progress_bar as _progress_bar",
