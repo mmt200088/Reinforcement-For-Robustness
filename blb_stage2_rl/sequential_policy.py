@@ -617,7 +617,9 @@ class BLBStage2SequentialPolicy(nn.Module):
             per_slot_num_levels: torch.Tensor,
             *,
             deterministic: bool = False,
+            generator: Optional[torch.Generator] = None,
             action_level_mask: Optional[torch.Tensor] = None,
+            logit_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
             truncate_to_current: bool = False,
             truncate_seq_len: Optional[int] = None,
@@ -635,11 +637,13 @@ class BLBStage2SequentialPolicy(nn.Module):
             truncate_to_current=bool(truncate_to_current),
             truncate_seq_len=truncate_seq_len,
         )
-        logits = logits + self._build_logit_mask(
-            slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
-            action_level_mask=action_level_mask,
-            level_indices=self._level_indices,
-        )
+        if logit_mask is None:
+            logit_mask = self._build_logit_mask(
+                slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
+                action_level_mask=action_level_mask,
+                level_indices=self._level_indices,
+            )
+        logits = logits + logit_mask
         # collapse padding rows by setting them to a single dummy distribution
         # so torch.distributions doesn't NaN. We then mask-out their log_prob
         # contribution at the end.
@@ -651,6 +655,15 @@ class BLBStage2SequentialPolicy(nn.Module):
         dist = self._action_dist(logits, safe_logits)
         if deterministic:
             actions = torch.argmax(safe_logits, dim=-1)
+        elif generator is not None:
+            probs = dist.probs
+            flat_probs = probs.reshape(-1, probs.shape[-1])
+            actions = torch.multinomial(
+                flat_probs,
+                num_samples=1,
+                replacement=True,
+                generator=generator,
+            ).reshape(probs.shape[:-1])
         else:
             actions = dist.sample()
         log_prob_per_slot = dist.log_prob(actions)            # [B, max_step_dim]
@@ -666,6 +679,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             slot_mask: torch.Tensor,
             per_slot_num_levels: torch.Tensor,
             action_level_mask: Optional[torch.Tensor] = None,
+            logit_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
             return_per_slot_entropy: bool = False,
             truncate_to_current: bool = False,
@@ -680,11 +694,13 @@ class BLBStage2SequentialPolicy(nn.Module):
             truncate_to_current=bool(truncate_to_current),
             truncate_seq_len=truncate_seq_len,
         )
-        logits = logits + self._build_logit_mask(
-            slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
-            action_level_mask=action_level_mask,
-            level_indices=self._level_indices,
-        )
+        if logit_mask is None:
+            logit_mask = self._build_logit_mask(
+                slot_mask, per_slot_num_levels, self.cfg.max_num_levels,
+                action_level_mask=action_level_mask,
+                level_indices=self._level_indices,
+            )
+        logits = logits + logit_mask
         safe_logits = torch.where(
             torch.isfinite(logits).any(dim=-1, keepdim=True),
             logits,
@@ -1122,26 +1138,26 @@ class SequentialRolloutBuffer:
 
 @dataclass
 class SequentialPPOConfig:
-    lr: float = 3e-4
+    lr: float = 5e-5
     clip_range: float = 0.2
     n_epochs: int = 4
     minibatch_size: int = 2048
     ent_coef: float = 0.01
     value_coef: float = 0.5
-    max_grad_norm: float = 1.0
+    max_grad_norm: float = 0.5
     gamma: float = 0.99
     gae_lambda: float = 0.95
-    value_clip_range: float = 1.0
+    value_clip_range: float = 0.2
     normalize_returns: bool = True
-    robust_advantage_norm: bool = True
+    robust_advantage_norm: bool = False
     adv_outlier_clip: float = 6.0
     use_kl_early_stop: bool = True
     kl_target: float = 0.02
-    adaptive_lr_kl: bool = True
+    adaptive_lr_kl: bool = False
     kl_adaptive_min_ratio: float = 0.25
     kl_adaptive_max_ratio: float = 1.25
     nonfinite_lr_backoff: float = 0.5
-    per_slot_entropy_recovery: bool = True
+    per_slot_entropy_recovery: bool = False
     per_slot_entropy_floor_frac: float = 0.22
     per_slot_entropy_recovery_multiplier: float = 6.0
 

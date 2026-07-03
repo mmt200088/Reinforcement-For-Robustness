@@ -181,7 +181,7 @@ class BLBStage2Policy(nn.Module):
 
         layer_linear = self._last_linear(self.layer_head)
         with torch.no_grad():
-            if layer_linear.bias is None or self.first_input_head.bias is None:
+            if layer_linear.bias is None:
                 return
             offsets = np.cumsum([0] + self.per_layer_dims[:-1]).astype(int)
             for dim_idx, (offset, dim) in enumerate(zip(offsets, self.per_layer_dims)):
@@ -201,16 +201,6 @@ class BLBStage2Policy(nn.Module):
                     layer_linear.bias[start:end].zero_()
                 layer_linear.bias[start + preferred_idx] += float(gain)
 
-            first_idx = int(arr[-1])
-            if first_idx < 0 or first_idx >= int(self.first_input_levels):
-                raise ValueError(
-                    f"preferred first_input index {first_idx} out of range "
-                    f"for dim {self.first_input_levels}"
-                )
-            if clear_existing:
-                self.first_input_head.bias.zero_()
-            self.first_input_head.bias[first_idx] += float(gain)
-
     def _layer_indices(self, batch: int, device: torch.device) -> torch.Tensor:
         return torch.arange(self.num_layers, device=device).unsqueeze(0).expand(batch, -1)
 
@@ -220,7 +210,7 @@ class BLBStage2Policy(nn.Module):
             state = state.unsqueeze(0)
         batch = state.shape[0]
         h = self.encoder(state)                                    # [B, d_hidden]
-        first_input_logits = self.first_input_head(h)              # [B, 5]
+        first_input_logits = h.new_zeros((batch, self.first_input_levels))
         value = self.value_head(h).squeeze(-1)                     # [B]
 
         layer_idx = self._layer_indices(batch, state.device)       # [B, L]
@@ -251,6 +241,11 @@ class BLBStage2Policy(nn.Module):
             out.append(split)
         return out
 
+    @staticmethod
+    def _fixed_first_input_action(batch: int, device: torch.device) -> torch.Tensor:
+        """Deprecated first_input slot: fixed compatibility placeholder."""
+        return torch.zeros(int(batch), dtype=torch.long, device=device)
+
     def sample_action(
             self,
             state: torch.Tensor,
@@ -266,8 +261,6 @@ class BLBStage2Policy(nn.Module):
         """
         out = self.forward(state)
         per_layer_split = self._split_layer_logits(out.layer_logits_flat)
-        # first_input
-        fi_logits = out.first_input_logits                         # [B, 5]
 
         actions: List[torch.Tensor] = []     # 收集每个分量的 [B] 整数 tensor
         batch = int(out.value.shape[0])
@@ -289,15 +282,9 @@ class BLBStage2Policy(nn.Module):
                 actions.append(action)
                 cursor += 1
 
-        # first_input
-        fi_logits = _adjust_logits_for_slot(fi_logits, action_mask, action_bias, cursor)
-        fi_dist = torch.distributions.Categorical(logits=fi_logits)
-        if deterministic:
-            fi_action = torch.argmax(fi_logits, dim=-1)
-        else:
-            fi_action = fi_dist.sample()
-        log_prob_total = log_prob_total + fi_dist.log_prob(fi_action)
-        actions.append(fi_action)
+        # first_input is deprecated and never sampled. Keep a fixed tail column
+        # only so legacy full action vectors retain their width.
+        actions.append(self._fixed_first_input_action(batch, state.device))
 
         action_vec = torch.stack(actions, dim=-1)     # [B, total_dim]
         return action_vec, log_prob_total, out.value
@@ -321,7 +308,6 @@ class BLBStage2Policy(nn.Module):
             state = state.unsqueeze(0)
         out = self.forward(state)
         per_layer_split = self._split_layer_logits(out.layer_logits_flat)
-        fi_logits = out.first_input_logits
 
         entropies: List[torch.Tensor] = []
         cursor = 0
@@ -333,9 +319,8 @@ class BLBStage2Policy(nn.Module):
                 dist = torch.distributions.Categorical(logits=logits)
                 entropies.append(dist.entropy().mean(dim=0))   # scalar over batch
                 cursor += 1
-        fi_logits = _adjust_logits_for_slot(fi_logits, action_mask, action_bias, cursor)
-        fi_dist = torch.distributions.Categorical(logits=fi_logits)
-        entropies.append(fi_dist.entropy().mean(dim=0))
+        # Deprecated first_input placeholder has no policy support and no entropy.
+        entropies.append(torch.zeros((), device=state.device))
         return torch.stack(entropies)
 
     def evaluate_action(
@@ -353,7 +338,6 @@ class BLBStage2Policy(nn.Module):
             action = action.long()
         out = self.forward(state)
         per_layer_split = self._split_layer_logits(out.layer_logits_flat)
-        fi_logits = out.first_input_logits
 
         log_prob_total = torch.zeros(state.shape[0], device=state.device)
         entropy_total = torch.zeros(state.shape[0], device=state.device)
@@ -370,12 +354,9 @@ class BLBStage2Policy(nn.Module):
                 entropy_total = entropy_total + dist.entropy()
                 cursor += 1
 
-        # first_input
-        fi_action = action[:, cursor]
-        fi_logits = _adjust_logits_for_slot(fi_logits, action_mask, action_bias, cursor)
-        fi_dist = torch.distributions.Categorical(logits=fi_logits)
-        log_prob_total = log_prob_total + fi_dist.log_prob(fi_action)
-        entropy_total = entropy_total + fi_dist.entropy()
+        # first_input is a fixed compatibility tail, not a sampled PPO variable.
+        # Ignore any legacy non-zero value here; action_vector_to_cfgs also
+        # returns first_input_sf=0 and model installation never consumes it.
         cursor += 1
 
         if cursor != action.shape[1]:
@@ -515,13 +496,13 @@ class RolloutBuffer:
 @dataclass
 class PPOConfig:
     """PPO 训练超参（spec §7.3 起步建议）。"""
-    lr: float = 3e-4
+    lr: float = 5e-5
     clip_range: float = 0.2
     n_epochs: int = 4
     minibatch_size: int = 64
     ent_coef: float = 0.02
     value_coef: float = 0.5
-    max_grad_norm: float = 1.0
+    max_grad_norm: float = 0.5
 
 
 def ppo_update(

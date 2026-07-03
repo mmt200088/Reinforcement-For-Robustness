@@ -76,8 +76,9 @@ def _reward(m1, *, std=0.002, fusion=0, cost=0.0, invalid=False, k=13.0, weights
 
 
 class ContinuousDefaultTest(unittest.TestCase):
-    def test_default_is_continuous(self):
-        self.assertEqual(R.RewardWeights().reward_design, "continuous")
+    def test_default_is_stage1_aligned_but_continuous_remains_available(self):
+        self.assertEqual(R.RewardWeights().reward_design, "stage1_aligned")
+        self.assertEqual(R.RewardWeights(reward_design="continuous").reward_design, "continuous")
 
 
 class BoundedAndContinuousTest(unittest.TestCase):

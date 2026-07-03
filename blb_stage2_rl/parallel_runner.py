@@ -17,10 +17,11 @@ GPU-count-independence contract (the user's hard requirement):
   ``blb_stage2_rl/seed_utils.py`` — policy sampling per (episode, step,
   attempt) on the worker device's CUDA Philox generator (device-independent
   streams), probe noise per (episode, trial) via
-  ``function_handler.reseed_noise_rng_for_device`` (replacing the legacy
-  wall-clock/eval-counter seed that made runs irreproducible);
-* episode→worker assignment is balanced contiguous chunks of global indices
-  (``assign_global_episodes``) and results are returned in GLOBAL order, so
+  ``function_handler.reseed_noise_rng_for_device`` plus a worker-local noise
+  scope (replacing the legacy wall-clock/eval-counter seed that made runs
+  irreproducible);
+* episode→worker assignment is deterministic interleaving of global indices
+  (``assign_global_episodes_interleaved``) and results are returned in GLOBAL order, so
   the PPO update sees the same buffer for any worker count;
 * fusion mode has no cross-episode mask / frontier-seed state (the offline
   fusion map is all-valid; per-slot masks are disabled), which is what makes
@@ -37,23 +38,22 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-import contextlib
 import hashlib
+import os
+import queue
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 import torch
 
 from function_handler import ReversibleLayerHandler
 
-# Reusable no-op context for the uncontended (1 worker/device) path.
-_NULL_LOCK = contextlib.nullcontext()
-
-from .action_space import _baseline_k_index_for_block
+from .action_space import K_LEVELS, _baseline_k_index_for_block
 from .env import BLBStage2Env
 from .fusion_curriculum import (
+    build_fusion_step_level_mask,
     fusion_block_curriculum,
     fusion_probe_target_block,
     select_mutable_step_indices,
@@ -63,15 +63,15 @@ from .probe_runner import (
     enable_cuda_reward_probe_fast_math,
 )
 from .seed_utils import (
-    assign_global_episodes,
+    assign_global_episodes_interleaved,
     derive_policy_step_seed,
     derive_probe_seed,
 )
 from .sequential_env import BLBStage2SequentialEnv
+from .sequential_policy import step_to_mask_and_levels
 from .sequential_runner import (
     EpisodeRecord,
-    _get_cached_fusion_action_level_mask,
-    _get_cached_step_static_tensors,
+    _open_step_level_mask,
     _resolve_baseline_prior_scale,
 )
 
@@ -159,6 +159,11 @@ def _update_terminal_snapshot(snapshot: Dict[str, Any], info: Dict[str, Any]) ->
         snapshot["fusion_count_b2"] = int(term_info_dict.get("fusion_count_b2", 0) or 0)
         snapshot["fusion_count_b4"] = int(term_info_dict.get("fusion_count_b4", 0) or 0)
         snapshot["fusion_count_b5"] = int(term_info_dict.get("fusion_count_b5", 0) or 0)
+    if isinstance(term_info_dict.get("fusion_action_steps"), list):
+        snapshot["fusion_action_steps"] = [
+            dict(x) for x in term_info_dict.get("fusion_action_steps", [])
+            if isinstance(x, Mapping)
+        ]
     # ADR-014 DEBUG: fusion cost shape (raw vs saturated), mirror of serial path.
     if "fusion_cost_fusion_norm" in term_info_dict:
         snapshot["terminal_fusion_norm_raw"] = float(
@@ -227,6 +232,7 @@ def _default_terminal_snapshot() -> Dict[str, Any]:
         terminal_probe_clear_wall_seconds=0.0,
         terminal_probe_install_skipped=False,
         terminal_probe_clear_skipped=False,
+        fusion_action_steps=[],
         fusion_count_b2=0,
         fusion_count_b4=0,
         fusion_count_b5=0,
@@ -236,44 +242,152 @@ def _default_terminal_snapshot() -> Dict[str, Any]:
     return snap
 
 
-def _materialize_transition_scalar_tensors(
-        transitions: List[Dict[str, Any]],
-        ) -> List[Dict[str, Any]]:
-    tensor_rows: List[torch.Tensor] = []
-    tensor_indices: List[int] = []
-    for idx, transition in enumerate(transitions):
-        log_prob = transition.get("log_prob", 0.0)
-        value = transition.get("value", 0.0)
-        if not (torch.is_tensor(log_prob) or torch.is_tensor(value)):
-            continue
-        device = (
-            log_prob.device if torch.is_tensor(log_prob)
-            else value.device
-        )
-        log_prob_t = (
-            log_prob.detach().reshape(())
-            if torch.is_tensor(log_prob)
-            else torch.as_tensor(float(log_prob), device=device)
-        )
-        value_t = (
-            value.detach().reshape(())
-            if torch.is_tensor(value)
-            else torch.as_tensor(float(value), device=device)
-        )
-        tensor_rows.append(torch.stack((log_prob_t, value_t)))
-        tensor_indices.append(int(idx))
-    if not tensor_rows:
-        return transitions
-    packed = torch.stack(tensor_rows).detach().cpu().numpy()
-    for row_idx, transition_idx in enumerate(tensor_indices):
-        transitions[transition_idx]["log_prob"] = float(packed[row_idx, 0])
-        transitions[transition_idx]["value"] = float(packed[row_idx, 1])
-    return transitions
-
-
 # ---------------------------------------------------------------------------
 # Worker-side fusion episode collection
 # ---------------------------------------------------------------------------
+
+def _parallel_tensor_cache(env: BLBStage2SequentialEnv) -> Dict[Any, Any]:
+    cache = getattr(env, "_parallel_runner_tensor_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(env, "_parallel_runner_tensor_cache", cache)
+    return cache
+
+
+def _step_cache_key(
+        spec: Any,
+        *,
+        device: torch.device,
+        max_step_dim: int,
+        max_num_levels: int,
+        prefix: str,
+        extra: Tuple[Any, ...] = (),
+        ) -> Tuple[Any, ...]:
+    return (
+        str(prefix),
+        str(device),
+        int(max_step_dim),
+        int(max_num_levels),
+        int(getattr(spec, "step_idx", -1)),
+        int(getattr(spec, "layer_idx", -1)),
+        int(getattr(spec, "block_idx", -1)),
+        int(getattr(spec, "fusion_num_options", -1)),
+        int(getattr(spec, "k_num_levels", -1)),
+        tuple(extra),
+    )
+
+
+def _cached_slot_tensors(
+        *,
+        env: BLBStage2SequentialEnv,
+        spec: Any,
+        policy: Any,
+        device: torch.device,
+        ) -> Tuple[np.ndarray, np.ndarray, torch.Tensor, torch.Tensor, int]:
+    cache = _parallel_tensor_cache(env)
+    key = _step_cache_key(
+        spec,
+        device=device,
+        max_step_dim=int(policy.cfg.max_step_dim),
+        max_num_levels=int(policy.cfg.max_num_levels),
+        prefix="slot",
+    )
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    slot_mask_np, levels_np = step_to_mask_and_levels(
+        spec, policy.cfg.max_step_dim, policy.cfg.max_num_levels,
+    )
+    slot_mask_np = np.asarray(slot_mask_np, dtype=bool)
+    levels_np = np.asarray(levels_np, dtype=np.int64)
+    slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
+    levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
+    slot_mask_np.setflags(write=False)
+    levels_np.setflags(write=False)
+    cached = (slot_mask_np, levels_np, slot_mask_t, levels_t, int(slot_mask_np.sum()))
+    cache[key] = cached
+    return cached
+
+
+def _cached_action_level_mask(
+        *,
+        env: BLBStage2SequentialEnv,
+        spec: Any,
+        policy: Any,
+        device: torch.device,
+        slot_mask_t: torch.Tensor,
+        levels_t: torch.Tensor,
+        mutable: Optional[bool],
+        radius: int,
+        ) -> Tuple[np.ndarray, torch.Tensor, torch.Tensor]:
+    cache = _parallel_tensor_cache(env)
+    if mutable is None:
+        key = _step_cache_key(
+            spec,
+            device=device,
+            max_step_dim=int(policy.cfg.max_step_dim),
+            max_num_levels=int(policy.cfg.max_num_levels),
+            prefix="open_mask",
+        )
+        cached = cache.get(key)
+        if cached is None:
+            mask_np = _open_step_level_mask(
+                spec=spec,
+                max_step_dim=policy.cfg.max_step_dim,
+                max_num_levels=policy.cfg.max_num_levels,
+            )
+            mask_np = np.asarray(mask_np, dtype=bool)
+            mask_t = torch.from_numpy(mask_np).to(device).unsqueeze(0)
+            logit_mask_t = policy._build_logit_mask(
+                slot_mask_t,
+                levels_t,
+                policy.cfg.max_num_levels,
+                action_level_mask=mask_t,
+                level_indices=policy._level_indices,
+            )
+            mask_np.setflags(write=False)
+            cached = (mask_np, mask_t, logit_mask_t)
+            cache[key] = cached
+        return cached
+
+    key = _step_cache_key(
+        spec,
+        device=device,
+        max_step_dim=int(policy.cfg.max_step_dim),
+        max_num_levels=int(policy.cfg.max_num_levels),
+        prefix="fusion_mask",
+        extra=(
+            bool(mutable),
+            int(radius),
+            int(_baseline_k_index_for_block(int(spec.block_idx))),
+        ),
+    )
+    cached = cache.get(key)
+    if cached is None:
+        mask_np = build_fusion_step_level_mask(
+            fusion_num_options=int(spec.fusion_num_options),
+            k_num_levels=int(spec.k_num_levels),
+            k_level_values=list(K_LEVELS),
+            mutable=bool(mutable),
+            radius=int(radius),
+            baseline_k_index=int(_baseline_k_index_for_block(int(spec.block_idx))),
+            max_step_dim=policy.cfg.max_step_dim,
+            max_num_levels=policy.cfg.max_num_levels,
+        )
+        mask_np = np.asarray(mask_np, dtype=bool)
+        mask_t = torch.from_numpy(mask_np).to(device).unsqueeze(0)
+        logit_mask_t = policy._build_logit_mask(
+            slot_mask_t,
+            levels_t,
+            policy.cfg.max_num_levels,
+            action_level_mask=mask_t,
+            level_indices=policy._level_indices,
+        )
+        mask_np.setflags(write=False)
+        cached = (mask_np, mask_t, logit_mask_t)
+        cache[key] = cached
+    return cached
+
 
 def collect_fusion_episode(
         *,
@@ -306,12 +420,6 @@ def collect_fusion_episode(
     )
 
     obs = env.reset(seed=None)
-    step_static_tensors = _get_cached_step_static_tensors(
-        env,
-        max_step_dim=policy.cfg.max_step_dim,
-        max_num_levels=policy.cfg.max_num_levels,
-        device=device,
-    )
     env.base.probe_noise_seed = derive_probe_seed(int(base_seed), int(absolute_ep))
 
     per_step_sum = 0.0
@@ -334,6 +442,10 @@ def collect_fusion_episode(
     snapshot = _default_terminal_snapshot()
     transitions: List[Dict[str, Any]] = []
 
+    stage1_aligned = (
+        str(getattr(train_cfg, "reward_design", "")).strip().lower()
+        == "stage1_aligned"
+    )
     baseline_prior_scale = _resolve_baseline_prior_scale(
         int(absolute_ep),
         anchor_episodes=int(force_baseline_episodes),
@@ -349,11 +461,11 @@ def collect_fusion_episode(
     # under the normal curriculum mask (target option level injected into the
     # mask) — a clean "what if you ALSO fused block-type T" counterfactual.
     fusion_probe_block: Optional[int] = None
-    if not force_this_ep:
+    if (not stage1_aligned) and not force_this_ep:
         fusion_probe_block = fusion_probe_target_block(
             int(absolute_ep),
             anchor_episodes=int(force_baseline_episodes),
-            interval=int(getattr(train_cfg, "fusion_probe_interval", 200)),
+            interval=int(getattr(train_cfg, "fusion_probe_interval", 0)),
         )
 
     # --- fusion block-granularity safe-neighbor curriculum (mirror of the
@@ -363,7 +475,8 @@ def collect_fusion_episode(
     fusion_mutable_steps: set = set()
     fusion_neighbor_radius = 1
     if (
-            bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
+            (not stage1_aligned)
+            and bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", False))
             and not force_this_ep
     ):
         fc_seed = int(train_cfg.seed) if train_cfg.seed is not None else 0
@@ -388,43 +501,76 @@ def collect_fusion_episode(
                 rng=fc_rng, horizon=int(env.horizon), num_mutable=int(fc_num_mutable),
             )
 
+    sample_generator: Optional[torch.Generator] = None
+    if not force_this_ep:
+        sample_generator = torch.Generator(
+            device=device if device.type == "cuda" else "cpu"
+        )
+    obs_t_buf: Optional[torch.Tensor] = None
+
     while True:
         spec = env.current_spec()
-        step_static = step_static_tensors[int(spec.step_idx)]
-        slot_mask_np = step_static.slot_mask_np
-        levels_np = step_static.levels_np
-        obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
-        slot_mask_t = step_static.slot_mask_t
-        levels_t = step_static.levels_t
-        n_active = int(slot_mask_np.sum())
-
-        mask_mode = (
-            "curriculum"
-            if fusion_curriculum_active and not fusion_curriculum_open
-            else "open"
-        )
-        force_option_one = (
-            fusion_probe_block is not None
-            and int(spec.block_idx) == int(fusion_probe_block)
-            and int(spec.fusion_num_options) > 1
-        )
-        cached_action_mask = _get_cached_fusion_action_level_mask(
-            env,
+        slot_mask_np, levels_np, slot_mask_t, levels_t, n_active = _cached_slot_tensors(
+            env=env,
             spec=spec,
-            mode=mask_mode,
-            mutable=(int(spec.step_idx) in fusion_mutable_steps),
-            radius=int(fusion_neighbor_radius),
-            force_option_one=bool(force_option_one),
-            max_step_dim=policy.cfg.max_step_dim,
-            max_num_levels=policy.cfg.max_num_levels,
+            policy=policy,
             device=device,
         )
-        action_level_mask_np = cached_action_mask.mask_np
-        action_level_mask_t = cached_action_mask.mask_t
+        obs_np = np.asarray(obs, dtype=np.float32)
+        if obs_t_buf is None or int(obs_t_buf.shape[1]) != int(obs_np.shape[0]):
+            obs_t_buf = torch.empty(
+                (1, int(obs_np.shape[0])),
+                device=device,
+                dtype=torch.float32,
+            )
+        obs_t_buf[0].copy_(torch.from_numpy(obs_np))
+        obs_t = obs_t_buf
+
+        if fusion_curriculum_active and not fusion_curriculum_open:
+            action_level_mask_np, action_level_mask_t, logit_mask_t = _cached_action_level_mask(
+                env=env,
+                spec=spec,
+                policy=policy,
+                device=device,
+                slot_mask_t=slot_mask_t,
+                levels_t=levels_t,
+                mutable=(int(spec.step_idx) in fusion_mutable_steps),
+                radius=int(fusion_neighbor_radius),
+            )
+        else:
+            action_level_mask_np, action_level_mask_t, logit_mask_t = _cached_action_level_mask(
+                env=env,
+                spec=spec,
+                policy=policy,
+                device=device,
+                slot_mask_t=slot_mask_t,
+                levels_t=levels_t,
+                mutable=None,
+                radius=0,
+            )
+        if (
+                fusion_probe_block is not None
+                and int(spec.block_idx) == int(fusion_probe_block)
+                and int(spec.fusion_num_options) > 1
+        ):
+            # ADR-012 probe: make the forced option level legal even when the
+            # curriculum pins this block to baseline.
+            action_level_mask_np = np.array(action_level_mask_np, dtype=bool, copy=True)
+            action_level_mask_np[0, 1] = True
+            action_level_mask_t = (
+                torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
+            )
+            logit_mask_t = policy._build_logit_mask(
+                slot_mask_t,
+                levels_t,
+                policy.cfg.max_num_levels,
+                action_level_mask=action_level_mask_t,
+                level_indices=policy._level_indices,
+            )
 
         chosen_action_np: Optional[np.ndarray] = None
-        chosen_log_prob: Any = 0.0
-        chosen_value: Any = 0.0
+        chosen_log_prob = 0.0
+        chosen_value = 0.0
         chosen_eval_info: Optional[Dict[str, Any]] = None
 
         if force_this_ep:
@@ -440,15 +586,15 @@ def collect_fusion_episode(
                 lp_t, _, val_t = policy.evaluate_action(
                     obs_t, actions_t, slot_mask_t, levels_t,
                     action_level_mask=action_level_mask_t,
+                    logit_mask=logit_mask_t,
                     baseline_prior_scale=baseline_prior_scale,
                     truncate_to_current=True,
-                    truncate_seq_len=int(spec.step_idx) + 1,
                 )
             policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
             chosen_eval_info = env.evaluate_step(forced_action.tolist())
             chosen_action_np = forced_padded
-            chosen_log_prob = lp_t.detach().reshape(())
-            chosen_value = val_t.detach().reshape(())
+            chosen_log_prob = float(lp_t.item())
+            chosen_value = float(val_t.item())
         else:
             action_np_try: Optional[np.ndarray] = None
             log_prob_t = value_t = None
@@ -458,24 +604,18 @@ def collect_fusion_episode(
                     int(base_seed), int(absolute_ep), int(spec.step_idx), int(attempt),
                 )
                 policy_t0 = time.perf_counter()
-                # (manual_seed -> sample) must be atomic per DEVICE: with
-                # workers-per-device > 1 a sibling worker's reseed between our
-                # seed and our categorical draw would corrupt determinism.
-                lock_ctx = device_lock if device_lock is not None else _NULL_LOCK
-                with lock_ctx:
-                    if device.type == "cuda":
-                        torch.cuda.manual_seed(int(seed))
-                    else:
-                        torch.manual_seed(int(seed))
-                    with torch.inference_mode():
-                        action_t, log_prob_t, value_t = policy.sample_action(
-                            obs_t, slot_mask_t, levels_t,
-                            deterministic=False,
-                            action_level_mask=action_level_mask_t,
-                            baseline_prior_scale=baseline_prior_scale,
-                            truncate_to_current=True,
-                            truncate_seq_len=int(spec.step_idx) + 1,
-                        )
+                assert sample_generator is not None
+                sample_generator.manual_seed(int(seed))
+                with torch.inference_mode():
+                    action_t, log_prob_t, value_t = policy.sample_action(
+                        obs_t, slot_mask_t, levels_t,
+                        deterministic=False,
+                        generator=sample_generator,
+                        action_level_mask=action_level_mask_t,
+                        logit_mask=logit_mask_t,
+                        baseline_prior_scale=baseline_prior_scale,
+                        truncate_to_current=True,
+                    )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
                 if (
@@ -498,9 +638,9 @@ def collect_fusion_episode(
                         log_prob_t, _probe_ent, value_t = policy.evaluate_action(
                             obs_t, actions_fix_t, slot_mask_t, levels_t,
                             action_level_mask=action_level_mask_t,
+                            logit_mask=logit_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
-                            truncate_seq_len=int(spec.step_idx) + 1,
                         )
                     policy_rollout_wall_seconds_val += float(
                         time.perf_counter() - policy_t1
@@ -516,8 +656,8 @@ def collect_fusion_episode(
                 eval_info = env.evaluate_step(step_action_try)
                 if eval_info["valid"]:
                     chosen_action_np = action_np_try
-                    chosen_log_prob = log_prob_t.detach().reshape(())
-                    chosen_value = value_t.detach().reshape(())
+                    chosen_log_prob = float(log_prob_t.item())
+                    chosen_value = float(value_t.item())
                     chosen_eval_info = eval_info
                     break
 
@@ -550,15 +690,15 @@ def collect_fusion_episode(
                     lp_t, _, val_t = policy.evaluate_action(
                         obs_t, actions_t, slot_mask_t, levels_t,
                         action_level_mask=action_level_mask_t,
+                        logit_mask=logit_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
-                        truncate_seq_len=int(spec.step_idx) + 1,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(fallback_action.tolist())
                 chosen_action_np = fallback_padded
-                chosen_log_prob = lp_t.detach().reshape(())
-                chosen_value = val_t.detach().reshape(())
+                chosen_log_prob = float(lp_t.item())
+                chosen_value = float(val_t.item())
                 steps_fallen_back_to_baseline += 1
 
         assert chosen_action_np is not None and chosen_eval_info is not None
@@ -602,8 +742,8 @@ def collect_fusion_episode(
             slot_mask=slot_mask_np,
             per_slot_num_levels=levels_np,
             action_level_mask=action_level_mask_np,
-            log_prob=chosen_log_prob,
-            value=chosen_value,
+            log_prob=float(chosen_log_prob),
+            value=float(chosen_value),
             reward=float(reward),
             done=bool(done),
             baseline_prior_scale=float(baseline_prior_scale),
@@ -683,6 +823,10 @@ def collect_fusion_episode(
         terminal_probe_clear_wall_seconds=float(snapshot["terminal_probe_clear_wall_seconds"]),
         terminal_probe_install_skipped=bool(snapshot["terminal_probe_install_skipped"]),
         terminal_probe_clear_skipped=bool(snapshot["terminal_probe_clear_skipped"]),
+        fusion_action_steps=[
+            dict(x) for x in snapshot["fusion_action_steps"]
+            if isinstance(x, Mapping)
+        ],
         safe_neighbor_active=bool(fusion_curriculum_active and not fusion_curriculum_open),
         safe_neighbor_mutation_count=int(len(fusion_mutable_steps)),
         safe_neighbor_radius=int(
@@ -692,7 +836,7 @@ def collect_fusion_episode(
         exploration_mode=(
             "forced_baseline" if force_this_ep else
             (f"forced_fusion_probe_b{int(fusion_probe_block)}"
-             if fusion_probe_block is not None else "radius1")
+             if fusion_probe_block is not None else "policy")
         ),
         guarded_radius2_active=False,
         guarded_radius2_recent_frontier_expansions=0,
@@ -716,7 +860,8 @@ def collect_fusion_episode(
         rejection_optimizer_wall_seconds=float(rejection_optimizer_wall_seconds_val),
         baseline_prior_scale=float(baseline_prior_scale),
         base_action_source=(
-            "fusion_probe" if fusion_probe_block is not None else "baseline"
+            "baseline" if force_this_ep else
+            ("fusion_probe" if fusion_probe_block is not None else "policy")
         ),
         proposal_direction=(
             "anchor" if force_this_ep else
@@ -731,7 +876,7 @@ def collect_fusion_episode(
     return FusionEpisodeOutcome(
         rel_ep=int(rel_ep),
         absolute_ep=int(absolute_ep),
-        transitions=_materialize_transition_scalar_tensors(transitions),
+        transitions=transitions,
         record=record,
         pending_full_vec=(
             None if pending_full_vec is None
@@ -751,14 +896,16 @@ class Stage2FusionWorker:
     device: torch.device
     seq_env: BLBStage2SequentialEnv
     role: str = "primary"  # "primary" (worker 0, reuses the env) or "replica"
+    # Policy inference can run on a separate device from the reward-probe model.
+    # Keeping the tiny GTrXL policy on CPU avoids competing with terminal probe
+    # forwards on the worker GPU while preserving 1GPU==NGPU when both sides use
+    # the same policy device mode.
+    policy_device: Optional[torch.device] = None
     policy_replica: Optional[Any] = None  # eval-mode copy, refreshed per window
-    # Shared per-DEVICE lock (2026-06-12 workers-per-device): two workers on
-    # the same GPU share that device's default CUDA generator (policy
-    # sampling) and its dedicated noise generator (probe trials), so the two
-    # RNG-consuming atomic units — (manual_seed -> sample) and
-    # (reseed_noise -> one full probe trial forward) — are serialized through
-    # this lock. With one worker per device the lock is uncontended and the
-    # behavior is bit-identical to before.
+    # Shared per-DEVICE lock fallback. Current episode-parallel workers set a
+    # unique probe noise scope, so same-device siblings no longer share a noise
+    # generator and do not need to serialize the probe forward for RNG safety.
+    # Policy sampling uses an explicit per-step torch.Generator.
     device_lock: Optional[threading.Lock] = None
 
 
@@ -767,9 +914,11 @@ class Stage2ParallelRunner:
 
     ``run_window`` collects ``num_episodes`` complete episodes split across
     workers in balanced contiguous chunks of GLOBAL indices and returns the
-    outcomes in GLOBAL order, plus a per-window ``rollout_sig`` (sha1 over
-    every episode's actions/rewards/terminal metrics) for the 1-vs-N
-    determinism harness.
+    outcomes in GLOBAL order.  A per-window ``rollout_sig`` (sha1 over every
+    episode's actions/rewards/terminal metrics) can be enabled for debugging
+    with ``BLB_STAGE2_ROLLOUT_SIG=1``; it is off by default because it is
+    main-thread serial work and the episode JSONL comparator is the stronger
+    equality oracle.
     """
 
     def __init__(
@@ -777,11 +926,26 @@ class Stage2ParallelRunner:
             *,
             workers: List[Stage2FusionWorker],
             log_fn: Optional[Callable[[str], None]] = None,
+            emit_rollout_signature: Optional[bool] = None,
+            dynamic_assignment: Optional[bool] = None,
             ):
         if not workers:
             raise ValueError("Stage2ParallelRunner requires at least one worker")
         self.workers = workers
         self.log = log_fn or (lambda _m: None)
+        if emit_rollout_signature is None:
+            emit_rollout_signature = str(
+                os.environ.get("BLB_STAGE2_ROLLOUT_SIG", "")
+            ).strip().lower() in {"1", "true", "yes", "on"}
+        self.emit_rollout_signature = bool(emit_rollout_signature)
+        if dynamic_assignment is None:
+            raw_dynamic = os.environ.get("BLB_STAGE2_DYNAMIC_ASSIGNMENT")
+            dynamic_assignment = (
+                True
+                if raw_dynamic is None
+                else str(raw_dynamic).strip().lower() in {"1", "true", "yes", "on"}
+            )
+        self.dynamic_assignment = bool(dynamic_assignment)
 
     @property
     def num_workers(self) -> int:
@@ -789,14 +953,43 @@ class Stage2ParallelRunner:
 
     def _sync_policy_replicas(self, policy: Any) -> None:
         primary_device = next(policy.parameters()).device
+        policy.eval()
+        policy_state = policy.state_dict()
+        cpu_policy_state: Optional[Dict[str, torch.Tensor]] = None
+        policy_aux_state = (
+            policy.ppo_aux_state_dict()
+            if hasattr(policy, "ppo_aux_state_dict")
+            else None
+        )
         for w in self.workers:
-            if w.device == primary_device:
-                replica = copy.deepcopy(policy)
+            target_device = w.policy_device or w.device
+            if target_device == primary_device and w.role == "primary":
+                w.policy_replica = policy
+                continue
+            replica = w.policy_replica
+            if replica is None:
+                if target_device.type == "cuda":
+                    with torch.cuda.device(target_device):
+                        replica = copy.deepcopy(policy).to(target_device)
+                else:
+                    replica = copy.deepcopy(policy).to(target_device)
+                w.policy_replica = replica
             else:
-                with torch.cuda.device(w.device):
-                    replica = copy.deepcopy(policy).to(w.device)
+                state_to_load = policy_state
+                if target_device.type == "cpu":
+                    if cpu_policy_state is None:
+                        cpu_policy_state = {
+                            key: value.detach().to("cpu")
+                            for key, value in policy_state.items()
+                        }
+                    state_to_load = cpu_policy_state
+                replica.load_state_dict(state_to_load)
+                if (
+                        policy_aux_state is not None
+                        and hasattr(replica, "load_ppo_aux_state_dict")
+                ):
+                    replica.load_ppo_aux_state_dict(policy_aux_state)
             replica.eval()
-            w.policy_replica = replica
 
     def run_window(
             self,
@@ -812,35 +1005,58 @@ class Stage2ParallelRunner:
             forbidden_mask: Any,
             max_rejection_retries: int = 32,
             ) -> List[FusionEpisodeOutcome]:
+        sync_t0 = time.perf_counter()
         self._sync_policy_replicas(policy)
+        sync_wall = float(time.perf_counter() - sync_t0)
         n = int(num_episodes)
-        assignments = assign_global_episodes(n, self.num_workers)
+        assignments = assign_global_episodes_interleaved(n, self.num_workers)
+        dynamic_assignment = bool(self.dynamic_assignment and self.num_workers > 1)
+        work_queue: Optional["queue.Queue[int]"] = None
+        if dynamic_assignment:
+            work_queue = queue.Queue()
+            for g in range(n):
+                work_queue.put(int(g))
         results: List[Optional[FusionEpisodeOutcome]] = [None] * n
         errors: List[BaseException] = []
+
+        def _collect_global_episode(worker: Stage2FusionWorker, g: int) -> None:
+            rel_ep = int(window_rel_start + g)
+            absolute_ep = int(absolute_episode_start + rel_ep)
+            results[g] = collect_fusion_episode(
+                seq_env=worker.seq_env,
+                policy=worker.policy_replica,
+                device=worker.policy_device or worker.device,
+                train_cfg=train_cfg,
+                rel_ep=rel_ep,
+                absolute_ep=absolute_ep,
+                base_seed=int(base_seed),
+                baseline_action_vec=baseline_action_vec,
+                force_baseline_episodes=int(force_baseline_episodes),
+                forbidden_mask=forbidden_mask,
+                max_rejection_retries=int(max_rejection_retries),
+                log_fn=self.log,
+                device_lock=worker.device_lock,
+            )
 
         def _worker_main(w_idx: int) -> None:
             worker = self.workers[w_idx]
             try:
                 if worker.device.type == "cuda":
                     torch.cuda.set_device(worker.device)
-                for g in assignments[w_idx]:
-                    rel_ep = int(window_rel_start + g)
-                    absolute_ep = int(absolute_episode_start + rel_ep)
-                    results[g] = collect_fusion_episode(
-                        seq_env=worker.seq_env,
-                        policy=worker.policy_replica,
-                        device=worker.device,
-                        train_cfg=train_cfg,
-                        rel_ep=rel_ep,
-                        absolute_ep=absolute_ep,
-                        base_seed=int(base_seed),
-                        baseline_action_vec=baseline_action_vec,
-                        force_baseline_episodes=int(force_baseline_episodes),
-                        forbidden_mask=forbidden_mask,
-                        max_rejection_retries=int(max_rejection_retries),
-                        log_fn=self.log,
-                        device_lock=worker.device_lock,
-                    )
+                if dynamic_assignment:
+                    assert work_queue is not None
+                    while True:
+                        try:
+                            g = work_queue.get_nowait()
+                        except queue.Empty:
+                            break
+                        try:
+                            _collect_global_episode(worker, int(g))
+                        finally:
+                            work_queue.task_done()
+                else:
+                    for g in assignments[w_idx]:
+                        _collect_global_episode(worker, int(g))
             except BaseException as exc:  # surface worker crashes to the main thread
                 errors.append(exc)
 
@@ -848,10 +1064,12 @@ class Stage2ParallelRunner:
             threading.Thread(target=_worker_main, args=(i,), daemon=True)
             for i in range(self.num_workers)
         ]
+        collect_t0 = time.perf_counter()
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+        collect_wall = float(time.perf_counter() - collect_t0)
         if errors:
             raise RuntimeError(
                 f"stage2 parallel rollout worker failed: {errors[0]!r}"
@@ -862,25 +1080,38 @@ class Stage2ParallelRunner:
                 f"stage2 parallel rollout lost episodes: got {len(flat)}/{n}"
             )
 
-        sig_payload = [
-            (
-                oc.absolute_ep,
-                [t["action"].tolist() for t in oc.transitions],
-                [t["reward"] for t in oc.transitions],
-                float(oc.record.terminal_reward),
-                int(oc.record.terminal_priority),
-                float(oc.record.terminal_loss_mean),
-                float(oc.record.terminal_metric1_mean),
+        if self.emit_rollout_signature:
+            sig_payload = [
+                (
+                    oc.absolute_ep,
+                    [t["action"].tolist() for t in oc.transitions],
+                    [t["reward"] for t in oc.transitions],
+                    float(oc.record.terminal_reward),
+                    int(oc.record.terminal_priority),
+                    float(oc.record.terminal_loss_mean),
+                    float(oc.record.terminal_metric1_mean),
+                )
+                for oc in flat
+            ]
+            sig = hashlib.sha1(repr(sig_payload).encode("utf-8")).hexdigest()[:16]
+            # ``workers=`` goes LAST so the 1-vs-N harness can grep the
+            # worker-count-independent prefix ``window_start=.. episodes=..
+            # rollout_sig=..`` and diff it byte-for-byte across GPU counts.
+            self.log(
+                f"[stage2-rollout] window_start={int(window_rel_start)} "
+                f"episodes={n} rollout_sig={sig} workers={self.num_workers}"
             )
-            for oc in flat
-        ]
-        sig = hashlib.sha1(repr(sig_payload).encode("utf-8")).hexdigest()[:16]
-        # ``workers=`` goes LAST so the 1-vs-N harness can grep the
-        # worker-count-independent prefix ``window_start=.. episodes=..
-        # rollout_sig=..`` and diff it byte-for-byte across GPU counts.
+        else:
+            self.log(
+                f"[stage2-rollout] window_start={int(window_rel_start)} "
+                f"episodes={n} workers={self.num_workers} "
+                f"assignment={'dynamic_queue' if dynamic_assignment else 'interleaved'} "
+                f"rollout_sig=disabled"
+            )
         self.log(
-            f"[stage2-rollout] window_start={int(window_rel_start)} "
-            f"episodes={n} rollout_sig={sig} workers={self.num_workers}"
+            f"[stage2-rollout-timing] window_start={int(window_rel_start)} "
+            f"episodes={n} sync_s={sync_wall:.3f} collect_s={collect_wall:.3f} "
+            f"assignment={'dynamic_queue' if dynamic_assignment else 'interleaved'}"
         )
         return flat
 
@@ -922,8 +1153,10 @@ def build_stage2_parallel_runner(
     ``workers_per_device > 1`` runs multiple workers per GPU to overlap one
     worker's CPU-side rollout/bookkeeping with a sibling's GPU-bound probe
     (the 60k profile: probe 2.69s = 78%% of episode wall, rollout 0.74s = 21%%).
-    RNG-consuming atomic units are serialized through a shared per-device
-    lock, so results stay byte-identical for any worker count.
+    Each worker owns a thread-local deterministic noise scope while policy
+    sampling uses per-step torch.Generators, so results stay byte-identical for
+    any worker count without serializing same-device probe forwards for RNG
+    safety.
 
     Must be called AFTER baseline cost calibration + noisy preflight so the
     replicated ``BLBStage2Env``s inherit the final thresholds / baseline /
@@ -941,20 +1174,41 @@ def build_stage2_parallel_runner(
     enable_cuda_reward_probe_fast_math()
 
     assignment = expand_device_ids_for_workers(device_ids, workers_per_device)
+    policy_device_mode = str(
+        os.environ.get("BLB_STAGE2_POLICY_DEVICE", "worker")
+    ).strip().lower()
+    if policy_device_mode in {"", "worker", "gpu", "cuda", "probe"}:
+        policy_device_mode = "worker"
+    elif policy_device_mode != "cpu":
+        raise ValueError(
+            "BLB_STAGE2_POLICY_DEVICE must be 'worker' or 'cpu', "
+            f"got {policy_device_mode!r}"
+        )
     device_locks: Dict[int, threading.Lock] = {
         int(d): threading.Lock() for d in set(assignment)
     }
 
+    per_dev = {d: assignment.count(d) for d in sorted(set(assignment))}
     primary_base = primary_seq_env.base
+    primary_base.probe_noise_scope = "stage2_parallel_worker_0"
+    if per_dev[int(assignment[0])] > 1:
+        with torch.cuda.device(torch.device(f"cuda:{int(assignment[0])}")):
+            primary_base.probe_cuda_stream = torch.cuda.Stream()
     workers: List[Stage2FusionWorker] = [
         Stage2FusionWorker(
             device=torch.device(f"cuda:{int(assignment[0])}"),
             seq_env=primary_seq_env,
             role="primary",
+            policy_device=(
+                torch.device("cpu") if policy_device_mode == "cpu" else None
+            ),
             device_lock=device_locks[int(assignment[0])],
         )
     ]
     primary_base.probe_device_lock = device_locks[int(assignment[0])]
+    primary_base.probe_device_lock_requires_sync = bool(
+        per_dev[int(assignment[0])] > 1
+    )
     log(f"[stage2-parallel] worker 0: cuda:{int(assignment[0])} (primary, reusing env)")
 
     for d in assignment[1:]:
@@ -992,9 +1246,18 @@ def build_stage2_parallel_runner(
             replica_seq = BLBStage2SequentialEnv(
                 base_env=replica_env, env_cfg=seq_env_cfg, fusion_map=fusion_map,
             )
+            if per_dev[int(d)] > 1:
+                replica_env.probe_cuda_stream = torch.cuda.Stream()
         replica_env.probe_device_lock = device_locks[int(d)]
+        replica_env.probe_device_lock_requires_sync = bool(per_dev[int(d)] > 1)
+        replica_env.probe_noise_scope = f"stage2_parallel_worker_{len(workers)}"
         workers.append(Stage2FusionWorker(
-            device=device, seq_env=replica_seq, role="replica",
+            device=device,
+            seq_env=replica_seq,
+            role="replica",
+            policy_device=(
+                torch.device("cpu") if policy_device_mode == "cpu" else None
+            ),
             device_lock=device_locks[int(d)],
         ))
         log(
@@ -1002,11 +1265,16 @@ def build_stage2_parallel_runner(
             f"(deepcopy replica, {time.perf_counter() - t0:.1f}s)"
         )
 
-    per_dev = {d: assignment.count(d) for d in sorted(set(assignment))}
     if int(workers_per_device) > 1:
         log(
             f"[stage2-parallel] workers-per-device={int(workers_per_device)} -> "
             f"{len(assignment)} workers, per-device counts {per_dev} "
-            f"(per-device RNG atomic-unit locks active)"
+            f"(worker-local probe noise scopes active; "
+            f"worker-local CUDA probe streams active)"
+        )
+    if policy_device_mode == "cpu":
+        log(
+            "[stage2-parallel] policy_device=cpu "
+            "(GTrXL rollout kept off reward-probe GPUs)"
         )
     return Stage2ParallelRunner(workers=workers, log_fn=log)

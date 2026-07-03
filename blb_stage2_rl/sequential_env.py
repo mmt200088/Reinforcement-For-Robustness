@@ -13,10 +13,10 @@ Decision schedule (L=12):
     ...
     step 46:  layer 11, block 5      (terminal)
 
-Reward: dense per-block ReplanSession-derived cost signal at every step,
-plus the full base-env reward (accuracy + stability + total cost) at the
-terminal step. Invalid chain at any per-block step yields a large penalty
-and (optionally) early termination.
+Reward: optional per-block dense cost shaping (disabled by default) plus the
+full base-env reward (precision + stability + cost) at the terminal step.
+Invalid chain at any per-block step yields a large penalty and (optionally)
+early termination.
 
 State at step t: static (degrees, num_layers) + step-position one-hot +
 prev-step action history + prev-step optimizer signals (valid, total_bits,
@@ -55,6 +55,7 @@ from .reward import (
     FUSION_COST_W,
     FUSION_SATURATION_TAU,
     TRUNC_COST_W,
+    stage1_dense_cost_reward,
 )
 
 
@@ -72,9 +73,12 @@ class SequentialEnvConfig:
     per-step cost shaping so the policy quickly learns to avoid invalid
     sub-actions."""
 
-    cost_shaping_coeff: float = 0.05
-    """Coefficient on the per-block (this_block_total_bits / baseline_block_total_bits)
-    ratio. Subtracted from per-step reward so cheaper blocks earn more."""
+    cost_shaping_coeff: float = 0.0
+    """Optional per-step dense cost scale.
+
+    Stage-2 constrained boundary search keeps this disabled by default so cost
+    only contributes after terminal precision and stability constraints pass.
+    """
 
     fusion_shaping_coeff: float = 0.0
     """Optional coefficient on per-block fusion_count. Default 0 (fusion is
@@ -138,12 +142,17 @@ class BLBStage2SequentialEnv:
         self._step_idx: int = 0
         self._prev_actions: List[List[int]] = []
         self._prev_signals: List[Dict[str, float]] = []
+        self._prev_actions_obs_buf = np.zeros(
+            (self.horizon, self._max_step_dim), dtype=np.float32,
+        )
+        self._prev_signals_obs_buf = np.zeros((self.horizon, 3), dtype=np.float32)
         self._prev_per_step_overrides: List[Dict[str, Any]] = []
         self._terminated_early: bool = False
         # Fusion-count mode: per-block (option, K) choices accumulated across the
         # episode, consumed at the terminal step to compute the per-block weighted
         # P3 cost saving (reward.FUSION_COST_W / TRUNC_COST_W). Empty in per-slot mode.
         self._fusion_choices: List[BlockChoice] = []
+        self._fusion_action_steps: List[Dict[str, Any]] = []
         # 加大精度: per-(block_idx, layer_idx) explicit boosted field_values (incl. the
         # decided K) for committed boosted fusion options. Passed to the terminal
         # model-forward so the noise install uses the BOOSTED SFs, not the
@@ -186,9 +195,14 @@ class BLBStage2SequentialEnv:
         self._step_idx = 0
         self._prev_actions = []
         self._prev_signals = []
+        self._prev_actions_obs_buf = np.zeros(
+            (self.horizon, self._max_step_dim), dtype=np.float32,
+        )
+        self._prev_signals_obs_buf = np.zeros((self.horizon, 3), dtype=np.float32)
         self._prev_per_step_overrides = []
         self._terminated_early = False
         self._fusion_choices = []
+        self._fusion_action_steps = []
         self._boosted_overrides = {}
         return self._build_obs()
 
@@ -398,6 +412,20 @@ class BLBStage2SequentialEnv:
         _fc = eval_info.get("fusion_choice")
         if _fc is not None:
             self._fusion_choices.append(_fc)
+            _action = np.asarray(action, dtype=int).reshape(-1)
+            self._fusion_action_steps.append({
+                "step_idx": int(spec.step_idx),
+                "layer_idx": int(spec.layer_idx),
+                "block_idx": int(spec.block_idx),
+                "graph_key": str(config_name),
+                "option_id": int(_action[0]) if _action.size > 0 else 0,
+                "fusion_count": int(getattr(_fc, "fusion_count", 0)),
+                "max_fusion": int(getattr(_fc, "max_fusion", 0)),
+                "k_index": int(_action[1]) if _action.size > 1 else 0,
+                "k_value": int(getattr(_fc, "k_value", 0)),
+                "valid": bool(valid),
+                "total_bits": int(total_bits),
+            })
         # 加大精度: if this committed block chose a boosted fusion option, remember its
         # explicit boosted SFs so the terminal model forward installs noise at the
         # BOOSTED SFs (the index-only _pending_full_vec can't represent them).
@@ -411,8 +439,11 @@ class BLBStage2SequentialEnv:
         else:
             baseline_total = self._lookup_baseline_block_total_bits(spec.graph_key_suffix)
             if baseline_total and baseline_total > 0:
-                cost_ratio = float(total_bits) / float(baseline_total)
-                per_step_reward -= float(self.cfg.cost_shaping_coeff) * (cost_ratio - 1.0)
+                per_step_reward += stage1_dense_cost_reward(
+                    float(total_bits),
+                    float(baseline_total),
+                    scale=float(self.cfg.cost_shaping_coeff),
+                )
             if self.cfg.fusion_shaping_coeff != 0.0:
                 per_step_reward -= float(self.cfg.fusion_shaping_coeff) * float(fusion_count)
 
@@ -501,12 +532,9 @@ class BLBStage2SequentialEnv:
                     fusion_saturation_tau=fusion_tau,
                 )
                 budget = float(getattr(self.base.reward_weights, "p3_cost_budget", 4.5))
-                # ADR-011 (2026-06-11): split the budget so the K pot cannot
-                # dilute the fusion signal — each component normalized over its
-                # own maximum. Old shared form (cost_norm * budget) made one
-                # block5 fusion worth +0.029: invisible to PPO, and the 60k run
-                # collapsed to fusion=0 despite block2/block5 fusion being
-                # metric-free in offline group eval.
+                # Split the budget evenly between fusion and truncation/K. Each
+                # component is normalized over its own maximum; fusion keeps the
+                # per-block-type weights, and lower K increases the K component.
                 fusion_budget = budget * float(FUSION_COST_BUDGET_FRACTION)
                 trunc_budget = budget - fusion_budget
                 ext_score = (
@@ -557,6 +585,9 @@ class BLBStage2SequentialEnv:
                     term_info["fusion_cost_fusion_norm_saturated"] = float(
                         info["fusion_cost_fusion_norm_saturated"]
                     )
+                term_info["fusion_action_steps"] = [
+                    dict(x) for x in self._fusion_action_steps
+                ]
             info["terminal_info"] = term_info
             info["terminal_reward"] = float(term_reward)
             return term_state, per_step_reward + float(term_reward), True, info
@@ -632,8 +663,16 @@ class BLBStage2SequentialEnv:
             error: Optional[str] = None,
             ) -> None:
         # Pad the action to max_step_dim for fixed-shape obs concatenation.
+        idx = len(self._prev_actions)
         padded = list(action.tolist()) + [0] * (self._max_step_dim - len(action))
         self._prev_actions.append(padded[: self._max_step_dim])
+        if idx < self.horizon:
+            self._prev_actions_obs_buf[idx, :] = (
+                np.asarray(padded[: self._max_step_dim], dtype=np.float32) / 8.0
+            )
+            self._prev_signals_obs_buf[idx, 0] = 1.0 if valid else 0.0
+            self._prev_signals_obs_buf[idx, 1] = float(total_bits) / 1000.0
+            self._prev_signals_obs_buf[idx, 2] = float(fusion_count) / 10.0
         self._prev_signals.append({
             "valid": 1.0 if valid else 0.0,
             "total_bits": float(total_bits),
@@ -701,18 +740,10 @@ class BLBStage2SequentialEnv:
         # prev actions, padded to (horizon, max_step_dim) and filled with zeros
         # for steps we haven't reached yet
         if self.cfg.expose_prev_actions_in_obs:
-            buf = np.zeros((self.horizon, self._max_step_dim), dtype=np.float32)
-            for i, a in enumerate(self._prev_actions):
-                buf[i, : len(a)] = np.asarray(a, dtype=np.float32) / 8.0  # rough normalisation
-            parts.append(buf.reshape(-1))
+            parts.append(self._prev_actions_obs_buf.reshape(-1))
 
         # prev signals: (valid, total_bits_norm, fusion_count_norm) per step
         if self.cfg.expose_prev_optimizer_signals_in_obs:
-            buf = np.zeros((self.horizon, 3), dtype=np.float32)
-            for i, s in enumerate(self._prev_signals):
-                buf[i, 0] = float(s["valid"])
-                buf[i, 1] = float(s["total_bits"]) / 1000.0
-                buf[i, 2] = float(s["fusion_count"]) / 10.0
-            parts.append(buf.reshape(-1))
+            parts.append(self._prev_signals_obs_buf.reshape(-1))
 
         return np.concatenate(parts).astype(np.float32)

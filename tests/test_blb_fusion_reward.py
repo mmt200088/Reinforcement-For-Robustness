@@ -51,8 +51,8 @@ def _baseline():
 
 
 def _weights():
-    # ADR-015 flipped the default reward to "continuous"; these tests assert the
-    # TIERED P3≈40 behavior, so pin tiered (continuous has its own test file).
+    # The active default is Stage-1-aligned; these tests assert the historical
+    # TIERED P3≈40 behavior, so pin tiered.
     return rwd.RewardWeights(baseline_metric1=0.85, baseline_metric2=0.85,
                              reward_design="tiered")
 
@@ -301,8 +301,9 @@ class BudgetSplitComponentsTest(unittest.TestCase):
 
     def test_split_budget_marginal_fusion_visible(self):
         # mrpc-47-like schedule: 12x block2 + 12x block4 + 12x block5 fusable,
-        # 11x block1 K-only (47 blocks). With budget 4.5 split 2/3 fusion:
-        # one block5 flip must be worth >= 0.03 and one block2 flip >= 0.1.
+        # 11x block1 K-only (47 blocks). With budget 4.5 split equally between
+        # fusion and K, one block5 flip must stay visible and block2 must be
+        # larger by the configured block-type weight ratio.
         baseline = (
             [_bc(2, 0, 1, 13) for _ in range(12)]
             + [_bc(4, 0, 1, 13) for _ in range(12)]
@@ -315,15 +316,31 @@ class BudgetSplitComponentsTest(unittest.TestCase):
         one_b2[0] = _bc(2, 1, 1, 13)
         budget = 4.5
         frac = rwd.FUSION_COST_BUDGET_FRACTION
+        self.assertAlmostEqual(frac, 0.5)
         def score(ch):
             r = fusion_cost.compute_fusion_cost_saving(ch, fusion_w=FW, trunc_w=TW)
             return r.fusion_norm * budget * frac + r.trunc_norm * budget * (1 - frac)
         self.assertAlmostEqual(score(baseline), 0.0)
         # fusion max = 12*150 + 12*130 + 12*40 = 3840
-        self.assertAlmostEqual(score(one_b5), 40.0 / 3840.0 * 3.0)
-        self.assertGreaterEqual(score(one_b5), 0.03)
-        self.assertAlmostEqual(score(one_b2), 150.0 / 3840.0 * 3.0)
-        self.assertGreaterEqual(score(one_b2), 0.1)
+        self.assertAlmostEqual(score(one_b5), 40.0 / 3840.0 * 2.25)
+        self.assertGreaterEqual(score(one_b5), 0.02)
+        self.assertAlmostEqual(score(one_b2), 150.0 / 3840.0 * 2.25)
+        self.assertGreater(score(one_b2), score(one_b5))
+
+    def test_fusion_and_truncation_have_equal_budget(self):
+        budget = 4.5
+        frac = rwd.FUSION_COST_BUDGET_FRACTION
+        self.assertAlmostEqual(frac, 0.5)
+
+        full_fusion = [_bc(2, 1, 1, 13), _bc(5, 1, 1, 13)]
+        full_trunc = [_bc(2, 0, 1, 8), _bc(5, 0, 1, 8)]
+
+        def score(ch):
+            r = fusion_cost.compute_fusion_cost_saving(ch, fusion_w=FW, trunc_w=TW)
+            return r.fusion_norm * budget * frac + r.trunc_norm * budget * (1 - frac)
+
+        self.assertAlmostEqual(score(full_fusion), budget / 2.0)
+        self.assertAlmostEqual(score(full_trunc), budget / 2.0)
 
 
 class ExternalCostThreadingTest(unittest.TestCase):

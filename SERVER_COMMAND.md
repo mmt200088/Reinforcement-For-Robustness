@@ -469,21 +469,17 @@ run_ab () {   # $1 = tag (off/on), $2 = kv flag (0/1)
   local rundir="${CANON_STAGE2_GROUP}/s1t0.001_s2t0.001_s2st3.0__${run_tag}"
   echo "==================== [A/B] $tag : --blb-v3-kv-cache-rollout $kv ===================="
   CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
-    --preset mrpc-blb-stage2-rl \
-    --run-tag "ab_${tag}_${TS}" \
-    --blb-v3-fusion-count-action 1 \
-    --blb-v3-fusion-neighbor-curriculum 1 \
-    --stage2-search-episodes "$EPISODES_AB" \
-    --stage2-k-trials "$KTRIALS" --stage2-probe-size 256 --batch-size 512 \
-    --stage2-rl-devices "$DEVS" \
-    --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-    --stage2-fixed-config-source json --stage2-fixed-config glue_final_configs_best_ppo.json \
-    --stage2-stability-tolerance 3.0 --stage2-limit-tolerance 0.001 \
-    --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
-    --blb-v3-fusion-exploration-epsilon 0.05 \
-    --stage2-workers-per-device 1 \
-    --blb-v3-kv-cache-rollout "$kv" \
-    --fresh 2>&1 | tee "$OUT/${tag}_launch.log"
+	    --preset mrpc-blb-stage2-rl \
+	    --run-tag "ab_${tag}_${TS}" \
+	    --blb-v3-fusion-count-action 1 \
+	    --stage2-search-episodes "$EPISODES_AB" \
+	    --stage2-k-trials "$KTRIALS" --stage2-probe-size 256 --batch-size 512 \
+	    --stage2-rl-devices "$DEVS" \
+	    --stage2-fixed-config-source json --stage2-fixed-config glue_final_configs_best_ppo.json \
+	    --stage2-stability-tolerance 3.0 --stage2-limit-tolerance 0.001 \
+	    --stage2-workers-per-device 1 \
+	    --blb-v3-kv-cache-rollout "$kv" \
+	    --fresh 2>&1 | tee "$OUT/${tag}_launch.log"
   sleep 12
   local pid; pid="$(cat "${rundir}/run.pid" 2>/dev/null || cat "${rundir}/rl.pid" 2>/dev/null || true)"
   echo "[A/B] $tag pid=$pid — waiting for completion…"
@@ -904,24 +900,20 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
   echo "-------- [gate] $tag CUDA_VISIBLE_DEVICES=$vis stage2-rl-devices=$devspec wpd=$wpd episodes=$GATE_EPISODES --------"
   BLB_STAGE2_POLICY_DEVICE=worker BLB_STAGE2_DYNAMIC_ASSIGNMENT=1 \
   CUDA_VISIBLE_DEVICES="$vis" bash llama_7B_LayerImportance.sh run rl \
-    --preset mrpc-blb-stage2-rl \
-    --run-tag "gate_${tag}_${TS}" \
-    --blb-v3-fusion-count-action 1 \
-    --blb-v3-fusion-neighbor-curriculum 1 \
-    --stage2-workers-per-device "$wpd" \
-    --stage2-search-episodes "$GATE_EPISODES" \
-    --stage2-k-trials "$KTRIALS" \
-    --stage2-probe-size 256 \
-    --batch-size 512 \
-    --stage2-rl-devices "$devspec" \
-    --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-    --stage2-fixed-config-source json \
-    --stage2-fixed-config glue_final_configs_best_ppo.json \
-    --stage2-stability-tolerance 3.0 \
-    --stage2-limit-tolerance 0.001 \
-    --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
-    --blb-v3-fusion-exploration-epsilon 0.05 \
-    --fresh 2>&1 | tee "$GOUT/${tag}_launch.log"
+	    --preset mrpc-blb-stage2-rl \
+	    --run-tag "gate_${tag}_${TS}" \
+	    --blb-v3-fusion-count-action 1 \
+	    --stage2-workers-per-device "$wpd" \
+	    --stage2-search-episodes "$GATE_EPISODES" \
+	    --stage2-k-trials "$KTRIALS" \
+	    --stage2-probe-size 256 \
+	    --batch-size 512 \
+	    --stage2-rl-devices "$devspec" \
+	    --stage2-fixed-config-source json \
+	    --stage2-fixed-config glue_final_configs_best_ppo.json \
+	    --stage2-stability-tolerance 3.0 \
+	    --stage2-limit-tolerance 0.001 \
+	    --fresh 2>&1 | tee "$GOUT/${tag}_launch.log"
   sleep 12
   pid="$(cat "${rundir}/run.pid" 2>/dev/null || cat "${rundir}/rl.pid" 2>/dev/null || true)"
   [ -z "$pid" ] && { echo "[gate][FATAL] $tag 没拿到 PID"; return 1; }
@@ -1001,26 +993,22 @@ if [ "$GATE_PASS" != 1 ]; then
   echo "[STOP] 门禁未通过——不启动 60k。请回传 $OUT 全部产物供本地诊断。"; exit 1
 fi
 
-echo "==================== [phase60k] 门禁 PASS → 启动 ${LONG_EPISODES}-episode curriculum-ON fusion 长跑 ===================="
+echo "==================== [phase60k] 门禁 PASS → 启动 ${LONG_EPISODES}-episode stage1-aligned fusion 长跑 ===================="
 BLB_STAGE2_POLICY_DEVICE=worker BLB_STAGE2_DYNAMIC_ASSIGNMENT=1 \
 CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
-  --preset mrpc-blb-stage2-rl \
-  --blb-v3-fusion-count-action 1 \
-  --blb-v3-fusion-neighbor-curriculum 1 \
-  --stage2-search-episodes "$LONG_EPISODES" \
-  --stage2-k-trials "$KTRIALS" \
-  --stage2-probe-size 256 \
-  --batch-size 512 \
-  --stage2-rl-devices "$DEVS" \
-  --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-  --stage2-fixed-config-source json \
-  --stage2-fixed-config glue_final_configs_best_ppo.json \
-  --stage2-stability-tolerance 3.0 \
-  --stage2-limit-tolerance 0.001 \
-  --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
-  --blb-v3-fusion-exploration-epsilon 0.05 \
-  --stage2-workers-per-device 1 \
-  --fresh 2>&1 | tee "$OUT/long60k_launch.log"
+	  --preset mrpc-blb-stage2-rl \
+	  --blb-v3-fusion-count-action 1 \
+	  --stage2-search-episodes "$LONG_EPISODES" \
+	  --stage2-k-trials "$KTRIALS" \
+	  --stage2-probe-size 256 \
+	  --batch-size 512 \
+	  --stage2-rl-devices "$DEVS" \
+	  --stage2-fixed-config-source json \
+	  --stage2-fixed-config glue_final_configs_best_ppo.json \
+	  --stage2-stability-tolerance 3.0 \
+	  --stage2-limit-tolerance 0.001 \
+	  --stage2-workers-per-device 1 \
+	  --fresh 2>&1 | tee "$OUT/long60k_launch.log"
 sleep 12
 PID60="$(cat "${CANON_STAGE2_GROUP}/LATEST_PID" 2>/dev/null || true)"
 RUN60="$(cat "${CANON_STAGE2_GROUP}/LATEST_RUN_DIR" 2>/dev/null || true)"

@@ -11,17 +11,11 @@ import numpy as np
 from blb_rl_bridge import BLBNoiseRLBridge
 from blb_stage2_rl.action_space import (
     ActionDecodeResult,
-    _build_block1_action,
-    _build_block2_action,
-    _build_block4_action,
-    _build_block5_action,
+    _block_default_N,
     _decode_block_field_values,
     action_vector_to_cfgs,
     avg_truncation_k_in_action,
-    build_block1_cfg_from_action,
-    build_block2_cfg_from_action,
-    build_block4_cfg_from_action,
-    build_block5_cfg_from_action,
+    build_block_cfg_from_field_values,
     build_optimizer_requests,
     load_max_sfs,
     step_schedule,
@@ -814,31 +808,19 @@ class BLBActionFinalEvaluationModule:
                 if isinstance(layer_values, dict):
                     layer_values[f"block{block_idx}"] = dict(field_values)
 
-            if block_idx == 1:
-                decoded.block1_cfgs[layer_idx] = build_block1_cfg_from_action(
-                    _build_block1_action(
-                        layer_idx,
-                        field_values,
-                        is_first_layer=(layer_idx == 0),
-                    )
-                )
-            elif block_idx == 2:
-                decoded.block2_cfgs[layer_idx] = build_block2_cfg_from_action(
-                    _build_block2_action(layer_idx, field_values, profile=str(profile))
-                )
-            elif block_idx == 4:
-                decoded.block4_cfgs[layer_idx] = build_block4_cfg_from_action(
-                    _build_block4_action(layer_idx, field_values, profile=str(profile))
-                )
-            elif block_idx == 5:
-                decoded.block5_cfgs[layer_idx] = build_block5_cfg_from_action(
-                    _build_block5_action(
-                        layer_idx,
-                        field_values,
-                        gelu_degree=gelu_degree,
-                        profile=str(profile),
-                    )
-                )
+            block_cfg = build_block_cfg_from_field_values(
+                block_idx,
+                layer_idx,
+                field_values,
+                N=int(_block_default_N(
+                    block_idx,
+                    gelu_degree=gelu_degree,
+                    attn_degree=softmax_degree,
+                )),
+                gelu_degree=gelu_degree,
+                attn_degree=softmax_degree,
+            )
+            getattr(decoded, f"block{block_idx}_cfgs")[layer_idx] = block_cfg
         return decoded
 
     def _apply_optimizer_outputs_to_decoded(

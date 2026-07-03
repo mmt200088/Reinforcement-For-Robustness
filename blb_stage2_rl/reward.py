@@ -120,14 +120,10 @@ FUSION_COST_W = {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0}
 TRUNC_COST_W = 50.0
 K_MAX_BITS = 13
 K_MIN_BITS = 8
-# 2026-06-11 (ADR-011): the P3 cost budget is SPLIT between the fusion and
-# truncation components, each normalized over its OWN maximum, instead of one
-# shared normalization. The 60k fusion run proved the shared pot lets K savings
-# (47 blocks x 50) dilute the fusion signal to invisibility (one block5 fusion
-# = +0.029 of a 4.5 budget) while the zero-noise baseline wins P3 outright —
-# the policy then rationally collapses to fusion=0. Fusion gets the larger
-# slice because harvesting fusion IS the point of the fusion-count action.
-FUSION_COST_BUDGET_FRACTION = 2.0 / 3.0
+# The P3 cost budget is split equally between fusion and truncation/K, each
+# normalized over its own maximum. Fusion still keeps the per-block-type ratio
+# in FUSION_COST_W, while K contributes through TRUNC_COST_W with lower K better.
+FUSION_COST_BUDGET_FRACTION = 0.5
 
 # ADR-014 (2026-06-14): STRUCTURAL anti-runaway. The 4th 60k (ADR-013 barrier,
 # 4e3aec0) STILL collapsed HOT — fusion marched monotonically 8 -> 35, all P1,
@@ -159,8 +155,10 @@ FUSION_SATURATION_TAU = 0.15
 # the threshold → P2 (not P3) → no cost reward → fusion cannot run away (retires
 # the ADR-014 saturation hack). ``reward_design="tiered"`` restores the ADR-014
 # path (kept for A/B + rollback). Constants mirror Stage-1
-# (layer_importance_evaluator.py:480-396).
-DEFAULT_REWARD_DESIGN = "continuous"
+# (layer_importance_evaluator.py:480-396). The active/default Stage-2 objective
+# is the stricter Stage-1-aligned variant below: precision barriers first,
+# stability barriers second, then cost reward.
+DEFAULT_REWARD_DESIGN = "stage1_aligned"
 CONT_BARRIER_VIOLATION_SCALE = 10.0    # invalid-case diagnostic magnitude (line ~826)
 # ADR-016 (2026-06-16): the violated barrier is now LINEAR in the violation depth,
 # not -VIO*exp(-m*STEEP). The exponential exploded → the reward clip flattened it to
@@ -185,6 +183,15 @@ CONT_W_COST = 4.0
 # Calibrated by the offline reward-landscape replay so the peak lands at a healthy
 # moderate fusion.
 CONT_COST_HEADROOM_MARGIN_REF = 1.0
+
+# Stage-1 exact reward constants. These mirror layer_importance_evaluator.py:
+# log barriers over hard constraints, cost_saving * 20, divide by 20, clip [-5,5].
+STAGE1_REWARD_COST_WEIGHT = 20.0
+STAGE1_REWARD_DENSE_SCALE = 0.1
+STAGE1_REWARD_NORMALIZATION_SCALE = 20.0
+STAGE1_LOG_BARRIER_VIOLATION_SCALE = 10.0
+STAGE1_LOG_BARRIER_VIOLATION_STEEPNESS = 20.0
+STAGE1_LOG_BARRIER_SATISFACTION_SCALE = 0.5
 
 # ---------------------------------------------------------------------------
 # ADR-013 (2026-06-13): Stage-1-style two-piece log-barrier on the accuracy
@@ -377,9 +384,9 @@ class RewardWeights:
     # reward), so the saturation hack is no longer needed. The saturate_fusion
     # code stays dormant (tau=0 = identity) for the tiered A/B rollback path.
     fusion_saturation_tau: float = 0.0
-    # ADR-015 (2026-06-14): continuous bounded reward (Stage-1 design + std
-    # stability). "continuous" (default) = smooth log-barrier reward clipped to
-    # [-5,+5], NO tiers; "tiered" = the ADR-014 path (kept for A/B + rollback).
+    # ADR-015/Stage-1 alignment: the active default is "stage1_aligned".
+    # "continuous" remains available for historical A/B; "tiered" restores the
+    # ADR-014 path.
     reward_design: str = DEFAULT_REWARD_DESIGN
     cont_barrier_violation_scale: float = CONT_BARRIER_VIOLATION_SCALE
     cont_barrier_violation_slope: float = CONT_BARRIER_VIOLATION_SLOPE
@@ -673,6 +680,44 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     return v
 
 
+def stage1_dense_cost_reward(
+        total_bits: float,
+        baseline_total_bits: float,
+        *,
+        scale: float = STAGE1_REWARD_DENSE_SCALE,
+        ) -> float:
+    """Stage-1-style positive dense cost reward for one Stage-2 block step."""
+    base = _safe_float(baseline_total_bits, 0.0)
+    if base <= 0.0:
+        return 0.0
+    saving = max(0.0, base - _safe_float(total_bits, base)) / base
+    return float(scale) * float(saving)
+
+
+def stage1_exact_log_barrier(
+        curr_value: float,
+        limit_value: float,
+        *,
+        is_upper_bound: bool,
+        ) -> float:
+    """Exact Stage-1 log-barrier shape from layer_importance_evaluator.py."""
+    limit = _safe_float(limit_value, 0.0)
+    try:
+        curr = float(curr_value)
+    except (TypeError, ValueError):
+        curr = float("inf") if bool(is_upper_bound) else float("-inf")
+    if not math.isfinite(curr):
+        curr = float("inf") if bool(is_upper_bound) else float("-inf")
+    margin = (limit - curr) if bool(is_upper_bound) else (curr - limit)
+    if margin < 0.0:
+        exponent = min(
+            60.0,
+            -float(margin) * STAGE1_LOG_BARRIER_VIOLATION_STEEPNESS,
+        )
+        return -STAGE1_LOG_BARRIER_VIOLATION_SCALE * math.exp(exponent)
+    return STAGE1_LOG_BARRIER_SATISFACTION_SCALE * math.log(margin + 1.0e-5)
+
+
 def _positive_step_bonus(value: float, *, step_size: float, step_bonus: float) -> float:
     """Interval bonus for a positive cost gain.
 
@@ -870,6 +915,133 @@ def _continuous_reward(
     return float(np.clip(scalar, clip_min, clip_max)), float(acc_b), float(stab_b)
 
 
+def _stage1_aligned_cost_fraction(
+        *,
+        external_cost_score: Optional[float],
+        baseline: BaselineCostStats,
+        opt_total_bits: float,
+        action_avg_k: float,
+        weights: RewardWeights,
+        ) -> float:
+    """Resolve Stage-2 cost savings to the Stage-1 ``cost_saving`` coordinate."""
+    if external_cost_score is not None:
+        return float(np.clip(
+            _safe_float(external_cost_score, 0.0)
+            / max(_safe_float(weights.p3_cost_budget, 4.5), 1.0e-8),
+            0.0,
+            1.0,
+        ))
+    bits_frac = 0.0
+    base_bits = _safe_float(baseline.total_bits_sum, 0.0)
+    if base_bits > 0.0:
+        bits_frac = max(0.0, base_bits - _safe_float(opt_total_bits, base_bits)) / base_bits
+    k_frac = 0.0
+    base_k = _safe_float(baseline.avg_k, DEFAULT_BASELINE_AVG_K)
+    k_denom = max(base_k - K_MIN_BITS, 1.0e-8)
+    if base_k > K_MIN_BITS:
+        k_frac = max(0.0, base_k - _safe_float(action_avg_k, base_k)) / k_denom
+    return float(np.clip(max(bits_frac, k_frac), 0.0, 1.0))
+
+
+def _stage1_aligned_terminal_reward(
+        *,
+        metrics: EpisodeMetrics,
+        baseline: BaselineCostStats,
+        weights: RewardWeights,
+        thr_m1: float,
+        thr_m2: float,
+        m1_active: bool,
+        m2_active: bool,
+        stab_thr_m1: float,
+        stab_thr_m2: float,
+        stab_thr_loss: float,
+        loss_threshold: Optional[float] = None,
+        invalid: bool,
+        cost_fraction: float,
+        ) -> tuple:
+    """Stage-1 terminal reward plus Stage-2 std stability barriers."""
+    if invalid:
+        return (
+            float(weights.reward_clip_min),
+            0.0,
+            0.0,
+            False,
+            False,
+            False,
+            0.0,
+            0.0,
+        )
+
+    baseline_loss = _safe_float(baseline.loss_mean, 0.0)
+    if loss_threshold is not None and math.isfinite(float(loss_threshold)):
+        loss_limit = float(loss_threshold)
+        loss_active = True
+    else:
+        loss_limit = baseline_loss * (1.0 + float(weights.acc_tolerance))
+        loss_active = baseline_loss > float(weights.margin_denom_floor)
+    constraint_terms = []
+    if loss_active:
+        constraint_terms.append(stage1_exact_log_barrier(
+            metrics.loss_mean, loss_limit, is_upper_bound=True,
+        ))
+    if m1_active:
+        constraint_terms.append(stage1_exact_log_barrier(
+            metrics.metric1_mean, thr_m1, is_upper_bound=False,
+        ))
+    if m2_active:
+        constraint_terms.append(stage1_exact_log_barrier(
+            metrics.metric2_mean, thr_m2, is_upper_bound=False,
+        ))
+
+    stability_terms = [
+        stage1_exact_log_barrier(metrics.metric1_std, stab_thr_m1, is_upper_bound=True),
+        stage1_exact_log_barrier(metrics.metric2_std, stab_thr_m2, is_upper_bound=True),
+        stage1_exact_log_barrier(metrics.loss_std, stab_thr_loss, is_upper_bound=True),
+    ]
+    constraint_barrier = (
+        float(sum(constraint_terms) / len(constraint_terms))
+        if constraint_terms else 0.0
+    )
+    stability_barrier = float(sum(stability_terms) / len(stability_terms))
+
+    loss_ok = (not loss_active) or (_safe_float(metrics.loss_mean, float("inf")) <= loss_limit)
+    metric_ok = bool(loss_ok)
+    if m1_active:
+        metric_ok = metric_ok and (_safe_float(metrics.metric1_mean, 0.0) >= float(thr_m1))
+    if m2_active:
+        metric_ok = metric_ok and (_safe_float(metrics.metric2_mean, 0.0) >= float(thr_m2))
+    stab_ok = (
+        math.isfinite(float(metrics.metric1_std))
+        and math.isfinite(float(metrics.metric2_std))
+        and math.isfinite(float(metrics.loss_std))
+        and float(metrics.metric1_std) <= float(stab_thr_m1)
+        and float(metrics.metric2_std) <= float(stab_thr_m2)
+        and float(metrics.loss_std) <= float(stab_thr_loss)
+    )
+    cost_reward = (
+        STAGE1_REWARD_COST_WEIGHT * float(np.clip(cost_fraction, 0.0, 1.0))
+        if (metric_ok and stab_ok)
+        else 0.0
+    )
+    if not metric_ok:
+        raw = constraint_barrier
+    elif not stab_ok:
+        raw = constraint_barrier + stability_barrier
+    else:
+        raw = constraint_barrier + stability_barrier + cost_reward
+    scalar = raw / STAGE1_REWARD_NORMALIZATION_SCALE
+    return (
+        float(np.clip(scalar, float(weights.reward_clip_min), float(weights.reward_clip_max))),
+        float(constraint_barrier),
+        float(stability_barrier),
+        bool(loss_ok),
+        bool(metric_ok),
+        bool(stab_ok),
+        float(cost_reward),
+        float(raw - cost_reward),
+    )
+
+
 def _resolve_metric_for_threshold(
         metrics: EpisodeMetrics,
         prefer_metric: str = "accuracy",
@@ -913,8 +1085,9 @@ def compute_reward(
         action_hash: Optional[str] = None,
         external_cost_score: Optional[float] = None,
         external_cost_rank: Optional[float] = None,
+        loss_threshold: Optional[float] = None,
         ) -> RewardBreakdown:
-    """v3 clipped-shaping + tier-bonus reward with m1+m2 hard gates.
+    """v3 reward with loss/m1/m2 precision gates and std stability gates.
 
     Args:
         metrics:           本步 K trials 评估指标（v3 期望 metric1_std / metric2_std
@@ -993,14 +1166,9 @@ def compute_reward(
         margin_m2 = 0.0
         acc_violation_m2 = 0.0
 
-    # loss_mean (LOWER-better) diagnostic — 2026-06-15. The user wants loss as a
-    # hard constraint, but the NOISY loss reference is not byte-identical across GPU
-    # counts (unlike DISCRETE accuracy), so a continuous loss term in the per-episode
-    # reward/priority breaks 1==N. The hard loss constraint is therefore enforced at
-    # strict feasibility SELECTION (sequential_runner, vs the per-run noisy
-    # loss_threshold). Here ``loss_ok`` is only a DETERMINISTIC diagnostic computed
-    # against the CLEAN baseline (byte-identical across GPU counts → safe to log),
-    # and it does NOT feed metric_ok / priority / the reward scalar.
+    # loss_mean (LOWER-better) diagnostic for legacy continuous mode. The active
+    # stage1_aligned branch below folds loss_threshold into the per-episode
+    # precision barrier and gate, matching Stage-1's loss/m1/m2 objective.
     _continuous_design = str(getattr(weights, "reward_design", "tiered")) == "continuous"
     baseline_loss_mean = _safe_float(getattr(baseline, "loss_mean", 0.0), 0.0)
     loss_mean_active = _continuous_design and (
@@ -1020,12 +1188,8 @@ def compute_reward(
         # Neither baseline calibrated; fall back to "no margin signal" so
         # legacy callers that just want the tier_bonus path still work.
         margin_acc = 0.0
-    # 2026-06-15 (determinism): loss_mean is NOT folded into the per-episode gate.
-    # The noisy preflight loss reference is not byte-identical across GPU counts
-    # (unlike DISCRETE accuracy), so a continuous loss margin in the per-episode
-    # reward/priority breaks 1==N. loss_mean is enforced at strict feasibility
-    # SELECTION instead (sequential_runner), using the recorded byte-identical
-    # episode loss vs the per-run loss_threshold. loss_mean_ok stays a diagnostic.
+    # Legacy tiered/continuous code below uses m1/m2 for priority. The active
+    # stage1_aligned branch recomputes metric_ok with loss_ok included.
     combined_acc_violation = max(acc_violation_m1, acc_violation_m2)
     # ADR-012: worst per-channel deficit normalized by that channel's
     # |baseline - threshold| width — the near-miss grading coordinate.
@@ -1343,6 +1507,67 @@ def compute_reward(
         near_miss = False
         tier_bonus = 0.0
         shaping_raw = float(_scalar)
+        shaping_clipped = float(_scalar)
+        total = float(_scalar)
+
+    if str(getattr(weights, "reward_design", "tiered")) == "stage1_aligned":
+        cost_fraction = _stage1_aligned_cost_fraction(
+            external_cost_score=external_cost_score,
+            baseline=baseline,
+            opt_total_bits=opt_total_bits,
+            action_avg_k=action_avg_k,
+            weights=weights,
+        )
+        (
+            _scalar,
+            _constraint_barrier,
+            _stab_barrier,
+            _loss_ok,
+            _metric_ok,
+            _stab_ok,
+            _stage1_cost_reward,
+            _stage1_combined_barrier,
+        ) = _stage1_aligned_terminal_reward(
+            metrics=metrics,
+            baseline=baseline,
+            weights=weights,
+            thr_m1=thr_m1,
+            thr_m2=thr_m2,
+            m1_active=m1_active,
+            m2_active=m2_active,
+            stab_thr_m1=stab_thr_m1,
+            stab_thr_m2=stab_thr_m2,
+            stab_thr_loss=stab_thr_loss,
+            loss_threshold=loss_threshold,
+            invalid=invalid,
+            cost_fraction=cost_fraction,
+        )
+        loss_mean_ok = bool(_loss_ok)
+        metric_ok = bool(_metric_ok) and not invalid
+        stab_ok = bool(_stab_ok)
+        if invalid or not metric_ok:
+            priority = 1
+        elif not stab_ok:
+            priority = 2
+        else:
+            priority = 3
+        effective_cost_score = float(cost_fraction) if (metric_ok and stab_ok) else 0.0
+        effective_cost_rank_score = (
+            float(external_cost_rank)
+            if (external_cost_rank is not None and metric_ok and stab_ok)
+            else float(cost_fraction)
+            if (metric_ok and stab_ok)
+            else 0.0
+        )
+        effective_cost_rank_fusion = 0.0
+        effective_cost_rank_truncation = 0.0
+        effective_cost_rank_bits = 0.0
+        acc_barrier_sat = float(_constraint_barrier) if metric_ok else 0.0
+        acc_barrier_vio = float(_constraint_barrier) if not metric_ok else 0.0
+        stab_barrier = float(_stab_barrier)
+        near_miss = False
+        tier_bonus = 0.0
+        shaping_raw = float(_stage1_combined_barrier + _stage1_cost_reward)
         shaping_clipped = float(_scalar)
         total = float(_scalar)
 

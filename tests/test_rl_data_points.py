@@ -224,6 +224,25 @@ class RLDataPointWriterTest(unittest.TestCase):
 
         self.assertEqual(torch_imports, 0)
 
+    def test_manifest_writes_merge_instead_of_replace(self):
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=Path(td),
+                run_id="merge test",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+
+            writer.write_manifest({"baseline_preflight_trial_count": 5})
+            writer.write_manifest({"schema_version": 2})
+            writer.close()
+
+            manifest = json.loads((writer.run_dir / "manifest.json").read_text())
+            self.assertEqual(manifest["baseline_preflight_trial_count"], 5)
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["stage"], "stage2")
+
     def test_make_unique_run_id_preserves_base_and_separates_invocations(self):
         first = make_unique_run_id(
             "Parting Chapter/stage1/bert large mrpc",
@@ -281,6 +300,29 @@ class RLDataPointWriterTest(unittest.TestCase):
                 num_action_slots=3,
                 data_point_writer=writer,
             )
+            recorder.set_meta({
+                "stage2_k_trials": 5,
+                "reward_design": "stage1_aligned",
+                "borderline_retest_enabled": False,
+                "borderline_retest_trials_multiplier": 1,
+                "baseline_preflight_metrics": {
+                    "trial_count": 5,
+                    "limit_tolerance": 0.001,
+                    "stability_tolerance": 3.5,
+                    "loss_mean": 0.365,
+                    "loss_std": 0.002,
+                    "metric1_mean": 0.864,
+                    "metric1_std": 0.001,
+                    "metric2_mean": 0.864,
+                    "metric2_std": 0.001,
+                    "loss_threshold": 0.366,
+                    "metric1_threshold": 0.863,
+                    "metric2_threshold": 0.863,
+                    "loss_std_threshold": 0.01,
+                    "metric1_std_threshold": 0.01,
+                    "metric2_std_threshold": 0.01,
+                },
+            })
 
             recorder.record_episode(
                 episode_stats=module.EpisodeStats(
@@ -324,6 +366,15 @@ class RLDataPointWriterTest(unittest.TestCase):
             self.assertTrue((stage2_dir / "episodes.jsonl").is_file())
             self.assertTrue((stage2_dir / "ppo_updates.jsonl").is_file())
             self.assertTrue((stage2_dir / "summary.json").is_file())
+            manifest = json.loads((stage2_dir / "manifest.json").read_text())
+            self.assertEqual(manifest["stage2_k_trials"], 5)
+            self.assertEqual(manifest["baseline_preflight_trial_count"], 5)
+            self.assertEqual(manifest["precision_tolerance"], 0.001)
+            self.assertEqual(manifest["stability_tolerance"], 3.5)
+            self.assertEqual(manifest["reward_design"], "stage1_aligned")
+            self.assertIs(manifest["borderline_retest_enabled"], False)
+            self.assertEqual(manifest["borderline_retest_trials_multiplier"], 1)
+            self.assertEqual(manifest["trainer_gate_baseline"]["trial_count"], 5)
             episode = json.loads((stage2_dir / "episodes.jsonl").read_text().splitlines()[0])
             self.assertEqual(episode["fusion_count"], 1)
             self.assertEqual(episode["full_action_vec"], [0, 1, 2])

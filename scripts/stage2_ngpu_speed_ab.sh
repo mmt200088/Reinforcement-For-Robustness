@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Real Stage-2 1-GPU vs N-GPU throughput gate.
+#
+# This script intentionally compares full end-to-end short runs, not isolated
+# policy-forward timings. The verdict is strict on episode equality and uses
+# wrapper wall time for speed. Run only when no long training job owns the GPUs.
+
+export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
+export HF_HOME="${HF_HOME:-/hy-tmp/hf_cache}"
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
+export GLUE_LOCAL_DATASET_DIR="${GLUE_LOCAL_DATASET_DIR:-/hy-tmp/glue_data}"
+
+# Keep PyTorch CPU helper pools from multiplying across rollout workers. This
+# does not change RL sampling/probe seeds; the comparator still verifies output
+# equality before accepting any speed result.
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+
+TS="$(date +%Y%m%d_%H%M%S)"
+RUN_ID="${RUN_ID:-stage2_ngpu_speed_ab_${TS}}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-experiments/server_command_runs/${RUN_ID}}"
+RUN_STAGE2="${RUN_STAGE2:-${ARTIFACT_DIR}/stage2}"
+STAGE1_RECORD_SOURCE="${STAGE1_RECORD_SOURCE:-Parting Chapter/stage1/record}"
+EPISODES_AB="${EPISODES_AB:-600}"
+KTRIALS="${KTRIALS:-5}"
+PROBE_SIZE="${PROBE_SIZE:-256}"
+ROLLOUT_SIZE="${ROLLOUT_SIZE:-60}"
+PPO_UPDATE_INTERVAL="${PPO_UPDATE_INTERVAL:-120}"
+ANCHOR_EPISODES="${ANCHOR_EPISODES:-80}"
+FUSION_PROBE_INTERVAL="${FUSION_PROBE_INTERVAL:-200}"
+FUSION_EPS="${FUSION_EPS:-0.05}"
+ONE_DEVS="${ONE_DEVS:-0}"
+MANY_DEVS="${MANY_DEVS:-0,1,2,3,4}"
+ONE_WORKERS_PER_DEVICE="${ONE_WORKERS_PER_DEVICE:-1}"
+MANY_WORKERS_PER_DEVICE="${MANY_WORKERS_PER_DEVICE:-1}"
+POLICY_DEVICE="${POLICY_DEVICE:-worker}"
+DYNAMIC_ASSIGNMENT="${DYNAMIC_ASSIGNMENT:-1}"
+MIN_SPEEDUP="${MIN_SPEEDUP:-3.4}"
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-14400}"
+GPU_SAMPLE_INTERVAL_SECONDS="${GPU_SAMPLE_INTERVAL_SECONDS:-2}"
+REQUIRE_IDLE_GPUS="${REQUIRE_IDLE_GPUS:-1}"
+IDLE_MEM_MIB="${IDLE_MEM_MIB:-2048}"
+CANON_STAGE2="${CANON_STAGE2:-Parting Chapter/stage2}"
+REUSE_ONE_EPISODES="${REUSE_ONE_EPISODES:-}"
+REUSE_ONE_WALL="${REUSE_ONE_WALL:-}"
+REUSE_ONE_LOG="${REUSE_ONE_LOG:-}"
+REUSE_ONE_PPO="${REUSE_ONE_PPO:-}"
+
+mkdir -p "$ARTIFACT_DIR"
+exec > >(tee "${ARTIFACT_DIR}/stage2_ngpu_speed_ab_stdout.log") 2>&1
+
+echo "[ab] artifact_dir=${ARTIFACT_DIR}"
+echo "[ab] episodes=${EPISODES_AB} rollout_size=${ROLLOUT_SIZE} ppo_update=${PPO_UPDATE_INTERVAL}"
+echo "[ab] one=${ONE_DEVS} wpd=${ONE_WORKERS_PER_DEVICE}; many=${MANY_DEVS} wpd=${MANY_WORKERS_PER_DEVICE}"
+echo "[ab] policy_device=${POLICY_DEVICE}"
+echo "[ab] dynamic_assignment=${DYNAMIC_ASSIGNMENT}"
+echo "[ab] cpu_threads OMP=${OMP_NUM_THREADS} MKL=${MKL_NUM_THREADS} OPENBLAS=${OPENBLAS_NUM_THREADS}"
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git rev-parse HEAD > "${ARTIFACT_DIR}/HEAD.txt"
+  git status --short > "${ARTIFACT_DIR}/git_status_short.txt" || true
+fi
+
+nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv \
+  | tee "${ARTIFACT_DIR}/gpu_inventory_pre.csv"
+
+if [ "$REQUIRE_IDLE_GPUS" = "1" ]; then
+  busy="$(
+    nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits \
+      | awk -F, -v lim="$IDLE_MEM_MIB" '{gsub(/ /,"",$1); gsub(/ /,"",$2); if ($2+0 > lim) print $1 ":" $2 "MiB"}'
+  )"
+  if [ -n "$busy" ]; then
+    echo "[FATAL] GPUs are not idle enough for a clean A/B (limit ${IDLE_MEM_MIB}MiB):"
+    printf '%s\n' "$busy"
+    echo "[FATAL] Set REQUIRE_IDLE_GPUS=0 only for an intentionally contaminated diagnostic run."
+    exit 20
+  fi
+fi
+
+sample_gpu_usage() {
+  local out_file="$1"
+  printf 'timestamp,index,name,memory_used_mib,utilization_gpu_pct\n' > "$out_file"
+  while true; do
+    nvidia-smi \
+      --query-gpu=timestamp,index,name,memory.used,utilization.gpu \
+      --format=csv,noheader,nounits >> "$out_file" 2>/dev/null || true
+    sleep "$GPU_SAMPLE_INTERVAL_SECONDS"
+  done
+}
+
+wait_for_background_run() {
+  local pid="$1"
+  local timeout_seconds="$2"
+  local elapsed=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$elapsed" -ge "$timeout_seconds" ]; then
+      echo "[ab] pid=${pid} exceeded ${timeout_seconds}s; sending SIGINT"
+      kill -INT "$pid" 2>/dev/null || true
+      sleep 10
+      kill -TERM "$pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep 10
+    elapsed=$((elapsed + 10))
+  done
+  return 0
+}
+
+background_pid_exists() {
+  local pid="$1"
+  if [ -z "$pid" ]; then
+    return 1
+  fi
+  kill -0 "$pid" 2>/dev/null
+}
+
+prepare_stage1_record() {
+  local target="${ARTIFACT_DIR}/stage1/record"
+  if [ -e "$target" ]; then
+    return 0
+  fi
+  if [ ! -e "$STAGE1_RECORD_SOURCE" ]; then
+    echo "[ab][warning] Stage-1 record source not found: ${STAGE1_RECORD_SOURCE}"
+    return 0
+  fi
+  local source_parent source_abs
+  source_parent="$(cd "$(dirname "$STAGE1_RECORD_SOURCE")" && pwd -P)"
+  source_abs="${source_parent}/$(basename "$STAGE1_RECORD_SOURCE")"
+  mkdir -p "$(dirname "$target")"
+  ln -s "$source_abs" "$target"
+  echo "[ab] linked Stage-1 record: ${target} -> ${source_abs}"
+}
+
+find_episodes_jsonl() {
+  local persistent_root="$1"
+  local candidate=""
+  candidate="$(find "$persistent_root" -path '*/diagnostics/episodes.jsonl' -type f 2>/dev/null \
+    | sort | tail -1 || true)"
+  if [ -n "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  local run_latest_dir=""
+  run_latest_dir="$(cat "${RUN_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
+  if [ -n "$run_latest_dir" ] && [ -f "${run_latest_dir}/diagnostics/episodes.jsonl" ]; then
+    printf '%s\n' "${run_latest_dir}/diagnostics/episodes.jsonl"
+    return 0
+  fi
+  candidate="$(find "$RUN_STAGE2" -path '*/diagnostics/episodes.jsonl' -type f 2>/dev/null \
+    | sort | tail -1 || true)"
+  if [ -n "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  local latest_run_dir=""
+  latest_run_dir="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
+  if [ -n "$latest_run_dir" ] && [ -f "${latest_run_dir}/diagnostics/episodes.jsonl" ]; then
+    printf '%s\n' "${latest_run_dir}/diagnostics/episodes.jsonl"
+    return 0
+  fi
+  candidate="$(find "$CANON_STAGE2" -path '*/diagnostics/episodes.jsonl' -type f 2>/dev/null \
+    | sort | tail -1 || true)"
+  if [ -n "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  return 1
+}
+
+find_ppo_updates_jsonl() {
+  local persistent_root="$1"
+  local candidate=""
+  candidate="$(find "$persistent_root" -path '*/diagnostics/ppo_updates.jsonl' -type f 2>/dev/null \
+    | sort | tail -1 || true)"
+  if [ -n "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  local run_latest_dir=""
+  run_latest_dir="$(cat "${RUN_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
+  if [ -n "$run_latest_dir" ] && [ -f "${run_latest_dir}/diagnostics/ppo_updates.jsonl" ]; then
+    printf '%s\n' "${run_latest_dir}/diagnostics/ppo_updates.jsonl"
+    return 0
+  fi
+  candidate="$(find "$RUN_STAGE2" -path '*/diagnostics/ppo_updates.jsonl' -type f 2>/dev/null \
+    | sort | tail -1 || true)"
+  if [ -n "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  local latest_run_dir=""
+  latest_run_dir="$(cat "${CANON_STAGE2}/LATEST_RUN_DIR" 2>/dev/null || true)"
+  if [ -n "$latest_run_dir" ] && [ -f "${latest_run_dir}/diagnostics/ppo_updates.jsonl" ]; then
+    printf '%s\n' "${latest_run_dir}/diagnostics/ppo_updates.jsonl"
+    return 0
+  fi
+  candidate="$(find "$CANON_STAGE2" -path '*/diagnostics/ppo_updates.jsonl' -type f 2>/dev/null \
+    | sort | tail -1 || true)"
+  if [ -n "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  return 1
+}
+
+run_case() {
+  local label="$1"
+  local devices="$2"
+  local workers_per_device="$3"
+  local persistent_root="${ARTIFACT_DIR}/persistent_${label}"
+  local launch_log="${ARTIFACT_DIR}/${label}_launch.log"
+  local gpu_sample_file="${ARTIFACT_DIR}/${label}_nvidia_smi.csv"
+  local latest_pid_file="${persistent_root}/rl/bert-base/mrpc/LATEST_PID"
+  local wall_file="${ARTIFACT_DIR}/${label}_wall_seconds.txt"
+  local episodes_out="${ARTIFACT_DIR}/${label}_episodes.jsonl"
+  local ppo_out="${ARTIFACT_DIR}/${label}_ppo_updates.jsonl"
+
+  echo ""
+  echo "================================================================================"
+  echo "[ab] ${label}: CUDA_VISIBLE_DEVICES=${devices} --stage2-rl-devices ${devices}"
+  echo "================================================================================"
+
+  mkdir -p "$persistent_root"
+  prepare_stage1_record
+  sample_gpu_usage "$gpu_sample_file" &
+  local sampler_pid=$!
+  local start_s end_s launch_rc wait_rc rc job_pid ep_path ppo_path
+  start_s="$(date +%s)"
+  set +e
+  BLB_STAGE2_POLICY_DEVICE="$POLICY_DEVICE" \
+  BLB_STAGE2_DYNAMIC_ASSIGNMENT="$DYNAMIC_ASSIGNMENT" \
+  CUDA_VISIBLE_DEVICES="$devices" timeout "$TIMEOUT_SECONDS" \
+    bash llama_7B_LayerImportance.sh run rl \
+      --preset mrpc-blb-stage2-rl \
+      --persistent-root "$persistent_root" \
+      --blb-v3-fusion-count-action 1 \
+      --blb-v3-fusion-neighbor-curriculum 1 \
+      --stage2-search-episodes "$EPISODES_AB" \
+      --ppo-update-interval "$PPO_UPDATE_INTERVAL" \
+      --stage2-rollout-size "$ROLLOUT_SIZE" \
+      --stage2-k-trials "$KTRIALS" \
+      --stage2-probe-size "$PROBE_SIZE" \
+      --batch-size 512 \
+      --stage2-rl-devices "$devices" \
+      --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
+      --stage2-stability-tolerance 5.0 \
+      --stage2-limit-tolerance 0.005 \
+      --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
+      --blb-v3-fusion-exploration-epsilon "$FUSION_EPS" \
+      --stage2-workers-per-device "$workers_per_device" \
+      --blb-v3-batched-rollout 0 \
+      --blb-v3-rollout-profile 0 \
+      --stage2-save-interval 1000 \
+      --stage2-eval-interval 1000 \
+      --skip-final-eval \
+      --fresh 2>&1 | tee "$launch_log"
+  launch_rc=${PIPESTATUS[0]}
+  rc=$launch_rc
+  job_pid="$(cat "$latest_pid_file" 2>/dev/null || true)"
+  if [ "$launch_rc" -eq 0 ] && ! background_pid_exists "$job_pid"; then
+    local fallback_pid=""
+    for pid_file in \
+      "${RUN_STAGE2}/LATEST_PID" \
+      "${RUN_STAGE2}/bert base mrpc/run.pid" \
+      "${RUN_STAGE2}/bert base mrpc/rl.pid" \
+      "${CANON_STAGE2}/LATEST_PID"; do
+      fallback_pid="$(cat "$pid_file" 2>/dev/null || true)"
+      if background_pid_exists "$fallback_pid"; then
+        break
+      fi
+    done
+    if background_pid_exists "$fallback_pid"; then
+      job_pid="$fallback_pid"
+      echo "[ab][warning] ${label} used fallback PID=${job_pid}; expected ${latest_pid_file}"
+    else
+      echo "[FATAL] ${label} could not identify its background PID under ${persistent_root}"
+      echo "[FATAL] latest_pid_file=${latest_pid_file} pid=${job_pid:-<missing>} run_stage2=${RUN_STAGE2} fallback=${fallback_pid:-<missing>}"
+      rc=125
+    fi
+  fi
+  if [ "$launch_rc" -eq 0 ] && [ "$rc" -eq 0 ] && [ -n "$job_pid" ]; then
+    echo "[ab] ${label} launched pid=${job_pid}; waiting for completion"
+    wait_for_background_run "$job_pid" "$TIMEOUT_SECONDS"
+    wait_rc=$?
+    rc=$wait_rc
+  fi
+  end_s="$(date +%s)"
+  kill "$sampler_pid" 2>/dev/null || true
+  wait "$sampler_pid" 2>/dev/null || true
+  set -e
+  printf '%s\n' "$((end_s - start_s))" > "$wall_file"
+  printf '{"label":"%s","devices":"%s","workers_per_device":%s,"launch_rc":%s,"rc":%s,"wall_seconds":%s}\n' \
+    "$label" "$devices" "$workers_per_device" "$launch_rc" "$rc" "$((end_s - start_s))" \
+    >> "${ARTIFACT_DIR}/runs.jsonl"
+  if [ "$rc" -ne 0 ]; then
+    echo "[FATAL] ${label} failed rc=${rc}; see ${launch_log}"
+    exit "$rc"
+  fi
+  ep_path="$(find_episodes_jsonl "$persistent_root")"
+  cp "$ep_path" "$episodes_out"
+  local episode_lines
+  episode_lines="$(wc -l < "$episodes_out")"
+  echo "[ab] ${label} episodes -> ${episodes_out} (${episode_lines} lines), wall=$(cat "$wall_file")s"
+  if [ "$episode_lines" -ne "$EPISODES_AB" ]; then
+    echo "[FATAL] ${label} wrote ${episode_lines}/${EPISODES_AB} episodes; refusing to compare partial runs"
+    exit 127
+  fi
+  if ppo_path="$(find_ppo_updates_jsonl "$persistent_root")"; then
+    cp "$ppo_path" "$ppo_out"
+    echo "[ab] ${label} PPO updates -> ${ppo_out} ($(wc -l < "$ppo_out") lines)"
+  else
+    echo "[ab][warning] ${label} PPO updates not found; equality gate will compare episodes only"
+  fi
+}
+
+reuse_one_case() {
+  if [ -z "$REUSE_ONE_EPISODES" ] || [ -z "$REUSE_ONE_WALL" ]; then
+    echo "[FATAL] REUSE_ONE_EPISODES and REUSE_ONE_WALL must be set together"
+    exit 2
+  fi
+  if [ ! -f "$REUSE_ONE_EPISODES" ]; then
+    echo "[FATAL] REUSE_ONE_EPISODES not found: $REUSE_ONE_EPISODES"
+    exit 2
+  fi
+  if [ ! -f "$REUSE_ONE_WALL" ]; then
+    echo "[FATAL] REUSE_ONE_WALL not found: $REUSE_ONE_WALL"
+    exit 2
+  fi
+  cp "$REUSE_ONE_EPISODES" "${ARTIFACT_DIR}/one_episodes.jsonl"
+  cp "$REUSE_ONE_WALL" "${ARTIFACT_DIR}/one_wall_seconds.txt"
+  local episode_lines
+  episode_lines="$(wc -l < "${ARTIFACT_DIR}/one_episodes.jsonl")"
+  if [ "$episode_lines" -ne "$EPISODES_AB" ]; then
+    echo "[FATAL] reused one baseline has ${episode_lines}/${EPISODES_AB} episodes; refusing to compare partial runs"
+    exit 127
+  fi
+  if [ -n "$REUSE_ONE_LOG" ] && [ -f "$REUSE_ONE_LOG" ]; then
+    cp "$REUSE_ONE_LOG" "${ARTIFACT_DIR}/one_launch.log"
+  else
+    printf '[ab] one launch log reused; source log unavailable\n' > "${ARTIFACT_DIR}/one_launch.log"
+  fi
+  if [ -n "$REUSE_ONE_PPO" ] && [ -f "$REUSE_ONE_PPO" ]; then
+    cp "$REUSE_ONE_PPO" "${ARTIFACT_DIR}/one_ppo_updates.jsonl"
+  elif [ -f "$(dirname "$REUSE_ONE_EPISODES")/one_ppo_updates.jsonl" ]; then
+    cp "$(dirname "$REUSE_ONE_EPISODES")/one_ppo_updates.jsonl" "${ARTIFACT_DIR}/one_ppo_updates.jsonl"
+  elif [ -f "$(dirname "$REUSE_ONE_EPISODES")/ppo_updates.jsonl" ]; then
+    cp "$(dirname "$REUSE_ONE_EPISODES")/ppo_updates.jsonl" "${ARTIFACT_DIR}/one_ppo_updates.jsonl"
+  else
+    echo "[ab][warning] reused one PPO updates not found; equality gate will compare episodes only"
+  fi
+  printf '{"label":"one","reused":true,"episodes":"%s","wall":"%s"}\n' \
+    "$REUSE_ONE_EPISODES" "$REUSE_ONE_WALL" >> "${ARTIFACT_DIR}/runs.jsonl"
+  echo "[ab] one baseline reused from ${REUSE_ONE_EPISODES}; wall=$(cat "${ARTIFACT_DIR}/one_wall_seconds.txt")s"
+}
+
+if [ -n "$REUSE_ONE_EPISODES" ] || [ -n "$REUSE_ONE_WALL" ]; then
+  reuse_one_case
+else
+  run_case one "$ONE_DEVS" "$ONE_WORKERS_PER_DEVICE"
+fi
+run_case many "$MANY_DEVS" "$MANY_WORKERS_PER_DEVICE"
+
+echo ""
+echo "================================================================================"
+echo "[ab] strict equality + speed verdict"
+echo "================================================================================"
+compare_extra=()
+if [ -f "${ARTIFACT_DIR}/one_ppo_updates.jsonl" ] && [ -f "${ARTIFACT_DIR}/many_ppo_updates.jsonl" ]; then
+  compare_extra+=(--one-ppo "${ARTIFACT_DIR}/one_ppo_updates.jsonl")
+  compare_extra+=(--many-ppo "${ARTIFACT_DIR}/many_ppo_updates.jsonl")
+elif [ -f "${ARTIFACT_DIR}/one_ppo_updates.jsonl" ] || [ -f "${ARTIFACT_DIR}/many_ppo_updates.jsonl" ]; then
+  echo "[FATAL] PPO update artifact presence differs; refusing to downgrade equality gate"
+  ls -l "${ARTIFACT_DIR}/"*"_ppo_updates.jsonl" 2>/dev/null || true
+  exit 126
+fi
+python3 scripts/stage2_ngpu_ab_compare.py \
+  --one "${ARTIFACT_DIR}/one_episodes.jsonl" \
+  --many "${ARTIFACT_DIR}/many_episodes.jsonl" \
+  --one-wall "${ARTIFACT_DIR}/one_wall_seconds.txt" \
+  --many-wall "${ARTIFACT_DIR}/many_wall_seconds.txt" \
+  "${compare_extra[@]}" \
+  --one-log "${ARTIFACT_DIR}/one_launch.log" \
+  --many-log "${ARTIFACT_DIR}/many_launch.log" \
+  --require-equal \
+  --min-speedup "$MIN_SPEEDUP" \
+  --require-speedup \
+  --out "${ARTIFACT_DIR}/stage2_ngpu_gate_verdict.txt"
+
+echo "[DONE] Stage-2 N-GPU A/B gate passed: ${ARTIFACT_DIR}/stage2_ngpu_gate_verdict.txt"

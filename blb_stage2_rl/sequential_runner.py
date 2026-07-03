@@ -26,8 +26,6 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 import numpy as np
 import torch
 
-from report_format_utils import format_elapsed as _seq_fmt_elapsed
-from report_format_utils import progress_bar as _seq_progress_bar
 from rl_data_points import RLDataPointWriter, make_unique_run_id
 
 from .action_mask import (
@@ -102,14 +100,11 @@ class SequentialTrainConfig:
     ent_coef_cosine_end: float = 0.001
     ent_coef_cosine_plateau: float = 0.25
     ent_coef_cosine_lower_bound: float = 0.012
-    # ADR-015: reward design. "continuous" (Stage-1-style bounded log-barrier +
-    # std stability, no tiers) gates off the ADR-011/012 exploration patches
-    # (baseline anchor / warmstart prior / fusion probes / epsilon floor /
-    # neighbor curriculum) which were tuned for the tiered reward. "tiered"
-    # restores the ADR-014 path + those patches.
-    reward_design: str = "continuous"
+    # ADR-015/Stage-1 alignment: "stage1_aligned" is the active default.
+    # "continuous" and "tiered" remain for historical A/B only.
+    reward_design: str = "stage1_aligned"
     absolute_episode_start: int = 0
-    warmstart_neighbor_sampling: bool = True
+    warmstart_neighbor_sampling: bool = False
     warmstart_neighbor_ramp_episodes: int = 0
     warmstart_neighbor_max_mutations: int = 12
     warmstart_neighbor_max_radius: int = 1
@@ -121,7 +116,7 @@ class SequentialTrainConfig:
     # It reaches "all blocks, full radius" (== unrestricted open mask) by the end of
     # the ramp, so it is a pure warmup that dissolves — the full action space stays
     # reachable. ``fusion_neighbor_ramp_episodes`` 0 → derive 0.5 * total_episodes.
-    fusion_neighbor_curriculum_enabled: bool = True
+    fusion_neighbor_curriculum_enabled: bool = False
     fusion_neighbor_ramp_episodes: int = 0
     fusion_neighbor_max_radius: int = 6
     # Scheduled forced-fusion probes (ADR-011): every N post-anchor episodes,
@@ -130,14 +125,14 @@ class SequentialTrainConfig:
     # evidence of fusion's true value even after the policy's fusion logits
     # collapse. 0 disables. Decision is a pure function of the absolute
     # episode index (deterministic; identical across episode-parallel workers).
-    fusion_probe_interval: int = 200
+    fusion_probe_interval: int = 0
     # ADR-012 exploration floor (fusion mode): mixture sampling on the fusion
     # OPTION slot (and a smaller floor on the K slot) so the policy can never
     # become deterministic on the 2-way fusion choice — the 2nd 60k ended with
     # entropy 0.000 / clip 0.000 (frozen policy) and zero on-policy fusion
     # samples for the last 43.5k episodes. 0 disables.
-    fusion_exploration_epsilon: float = 0.05
-    fusion_exploration_epsilon_k: float = 0.02
+    fusion_exploration_epsilon: float = 0.0
+    fusion_exploration_epsilon_k: float = 0.0
     guarded_radius2_enabled: bool = False
     guarded_radius2_min_episode: int = 1060
     guarded_radius2_stall_window: int = 600
@@ -146,16 +141,18 @@ class SequentialTrainConfig:
     guarded_radius2_episode_fraction: float = 0.15
     guarded_radius2_cooldown_episodes: int = 300
     guarded_radius2_min_radius1_successes: int = 3
-    static_invalid_level_mask_enabled: bool = True
-    empirical_invalid_level_mask_enabled: bool = True
+    static_invalid_level_mask_enabled: bool = False
+    empirical_invalid_level_mask_enabled: bool = False
     empirical_invalid_level_min_samples: int = 3
     empirical_invalid_level_min_rate: float = 0.80
     empirical_invalid_level_max_valid: int = 0
     fast_reward_mode_enabled: bool = False
-    online_num_trials_per_step: int = 1
+    online_num_trials_per_step: int = 5
     terminal_eval_batch_size: int = 4
     promotion_validation_trials: int = 4
     promotion_margin_window: float = 0.25
+    final_selection_top_n: int = 20
+    final_selection_validation_trials: int = 20
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +215,21 @@ def _seq_log_rounded_box(log_fn, lines, indent: str = "  ", min_inner_width: int
     for s in stripped:
         log_fn(f"{indent}· {s}")
     log_fn(f"{indent}{sep}")
+
+
+def _seq_progress_bar(current: int, total: int, width: int = 30) -> str:
+    ratio = min(float(current) / max(float(total), 1.0), 1.0)
+    filled = int(round(ratio * width))
+    bar = "█" * filled + "░" * (width - filled)
+    return f"[{bar}] {ratio:6.1%}"
+
+
+def _seq_fmt_elapsed(seconds: float) -> str:
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h{m:02d}m{s:02d}s"
+    return f"{m}m{s:02d}s"
 
 
 def _seq_fmt_eta_finish(eta_seconds: float) -> str:
@@ -322,15 +334,18 @@ def _resolve_baseline_prior_scale(
     ep = int(absolute_episode_idx)
     anchor = max(0, int(anchor_episodes))
     if ep < anchor:
-        return 1.2
-    if ep < 600:
-        denom = max(1, 600 - anchor)
+        return 8.0
+    if ep < 1000:
+        denom = max(1, 1000 - anchor)
         t = max(0.0, min(1.0, float(ep - anchor) / float(denom)))
-        return 1.0 + (0.45 - 1.0) * t
-    if ep < 2000:
-        t = max(0.0, min(1.0, float(ep - 600) / 1400.0))
-        return 0.45 + (0.15 - 0.45) * t
-    return 0.15
+        return 8.0 + (6.0 - 8.0) * t
+    if ep < 5000:
+        t = max(0.0, min(1.0, float(ep - 1000) / 4000.0))
+        return 6.0 + (3.0 - 6.0) * t
+    if ep < 15000:
+        t = max(0.0, min(1.0, float(ep - 5000) / 10000.0))
+        return 3.0 + (0.0 - 3.0) * t
+    return 0.0
 
 
 def _compute_per_slot_mode_preferred(
@@ -385,7 +400,7 @@ def _resolve_sequential_force_baseline_episodes(train_cfg: Any) -> int:
     warmstart_anchor = getattr(train_cfg, "warmstart_anchor_episodes", None)
     if warmstart_anchor is not None:
         return max(0, min(int(warmstart_anchor), int(total)))
-    return max(0, min(60, int(total)))
+    return 0
 
 
 def _near_baseline_level_indices(
@@ -468,167 +483,6 @@ def _open_step_level_mask(
         if width > 0:
             mask[slot_idx, :width] = True
     return mask
-
-
-@dataclass(frozen=True)
-class _StepStaticTensors:
-    slot_mask_np: np.ndarray
-    levels_np: np.ndarray
-    slot_mask_t: torch.Tensor
-    levels_t: torch.Tensor
-
-
-@dataclass(frozen=True)
-class _CachedFusionActionLevelMask:
-    mask_np: np.ndarray
-    mask_t: torch.Tensor
-
-
-def _step_static_cache_key(
-        *,
-        schedule: Sequence[Any],
-        max_step_dim: int,
-        max_num_levels: int,
-        device: torch.device,
-        ) -> Tuple[str, int, int, Tuple[Tuple[Any, ...], ...]]:
-    items: List[Tuple[Any, ...]] = []
-    for pos, spec in enumerate(schedule):
-        step_idx = int(getattr(spec, "step_idx", pos))
-        if hasattr(spec, "fusion_num_options"):
-            items.append((
-                "fusion",
-                step_idx,
-                int(spec.fusion_num_options),
-                int(spec.k_num_levels),
-            ))
-        else:
-            items.append((
-                "per_slot",
-                step_idx,
-                tuple(int(d) for d in getattr(spec, "slot_dims", ())),
-            ))
-    return (
-        str(torch.device(device)),
-        int(max_step_dim),
-        int(max_num_levels),
-        tuple(items),
-    )
-
-
-def _get_cached_step_static_tensors(
-        env: BLBStage2SequentialEnv,
-        *,
-        max_step_dim: int,
-        max_num_levels: int,
-        device: torch.device,
-        ) -> List[_StepStaticTensors]:
-    schedule = env.schedule
-    key = _step_static_cache_key(
-        schedule=schedule,
-        max_step_dim=int(max_step_dim),
-        max_num_levels=int(max_num_levels),
-        device=torch.device(device),
-    )
-    cached = getattr(env, "_stage2_static_step_tensor_cache", None)
-    if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == key:
-        return cached[1]
-
-    by_step: Dict[int, _StepStaticTensors] = {}
-    for pos, spec in enumerate(schedule):
-        step_idx = int(getattr(spec, "step_idx", pos))
-        if step_idx in by_step:
-            raise ValueError(f"duplicate sequential step index {step_idx}")
-        slot_mask_np, levels_np = step_to_mask_and_levels(
-            spec, int(max_step_dim), int(max_num_levels),
-        )
-        by_step[step_idx] = _StepStaticTensors(
-            slot_mask_np=slot_mask_np,
-            levels_np=levels_np,
-            slot_mask_t=torch.as_tensor(slot_mask_np, device=device).unsqueeze(0),
-            levels_t=torch.as_tensor(levels_np, device=device).unsqueeze(0),
-        )
-    step_static_tensors = [by_step[i] for i in range(len(schedule))]
-    setattr(env, "_stage2_static_step_tensor_cache", (key, step_static_tensors))
-    return step_static_tensors
-
-
-def _get_cached_fusion_action_level_mask(
-        env: BLBStage2SequentialEnv,
-        *,
-        spec: Any,
-        mode: str,
-        mutable: bool,
-        radius: int,
-        force_option_one: bool,
-        max_step_dim: int,
-        max_num_levels: int,
-        device: torch.device,
-        ) -> _CachedFusionActionLevelMask:
-    """Return cached numpy + device tensors for repeated fusion action masks."""
-    mode_key = str(mode)
-    if mode_key not in {"curriculum", "open"}:
-        raise ValueError(f"unknown fusion action-level mask mode: {mode!r}")
-    device = torch.device(device)
-    n_opts = int(spec.fusion_num_options)
-    n_k = int(spec.k_num_levels)
-    baseline_k_index = int(_baseline_k_index_for_block(int(spec.block_idx)))
-    effective_mutable = bool(mutable) if mode_key == "curriculum" else True
-    effective_radius = max(0, int(radius)) if mode_key == "curriculum" else 0
-    effective_force = bool(force_option_one and n_opts > 1)
-    key = (
-        str(device),
-        mode_key,
-        int(getattr(spec, "step_idx", 0)),
-        int(spec.block_idx),
-        int(n_opts),
-        int(n_k),
-        bool(effective_mutable),
-        int(effective_radius),
-        int(baseline_k_index),
-        bool(effective_force),
-        int(max_step_dim),
-        int(max_num_levels),
-        tuple(int(x) for x in K_LEVELS[:n_k]),
-    )
-    cache = getattr(env, "_stage2_fusion_action_level_mask_cache", None)
-    if isinstance(cache, dict):
-        cached = cache.get(key)
-        if cached is not None:
-            return cached
-    else:
-        cache = {}
-
-    if mode_key == "curriculum":
-        mask_np = build_fusion_step_level_mask(
-            fusion_num_options=n_opts,
-            k_num_levels=n_k,
-            k_level_values=list(K_LEVELS),
-            mutable=bool(effective_mutable),
-            radius=int(effective_radius),
-            baseline_k_index=int(baseline_k_index),
-            max_step_dim=int(max_step_dim),
-            max_num_levels=int(max_num_levels),
-        )
-    else:
-        mask_np = _open_step_level_mask(
-            spec=spec,
-            max_step_dim=int(max_step_dim),
-            max_num_levels=int(max_num_levels),
-        )
-    if effective_force:
-        mask_np = np.array(mask_np, dtype=bool, copy=True)
-        mask_np[0, 1] = True
-    else:
-        mask_np = np.asarray(mask_np, dtype=bool)
-    mask_t = torch.as_tensor(mask_np, device=device).unsqueeze(0)
-    mask_np.setflags(write=False)
-    cached = _CachedFusionActionLevelMask(
-        mask_np=mask_np,
-        mask_t=mask_t,
-    )
-    cache[key] = cached
-    setattr(env, "_stage2_fusion_action_level_mask_cache", cache)
-    return cached
 
 
 def _build_step_level_mask(
@@ -1047,24 +901,55 @@ def _sample_episode_neighbor_offsets(
     return {int(x) for x in np.asarray(chosen, dtype=np.int64).reshape(-1).tolist()}
 
 
+def _noisy_metric_threshold_from_baseline(
+        *,
+        noisy_baseline_metric: float,
+        tolerance: float,
+        ) -> float:
+    """Relative metric gate from the noisy baseline.
+
+    ``tolerance`` is a fraction, so ``0.001`` means a strict 0.1% relative drop
+    from the noisy all-max BLB baseline. Older code subtracted one probe sample
+    (``1 / probe_size``), which made a configured 0.1% gate materially looser
+    on MRPC-sized probes.
+    """
+    baseline = float(noisy_baseline_metric)
+    tol = max(0.0, float(tolerance))
+    return max(0.0, baseline * (1.0 - tol))
+
+
 def _noisy_accuracy_threshold_with_probe_guard(
         *,
         noisy_baseline_metric1: float,
         allowed_acc_drop: float,
         probe_size: int,
         ) -> float:
-    """Accuracy gate with one-probe-sample guard for noisy online probes.
+    """Compatibility wrapper for the old helper name.
 
-    MRPC probe accuracy is discrete. With the default 256-example online probe,
-    one example is ~0.0039 accuracy. A K=5 noisy baseline can therefore jitter
-    just below ``baseline - tolerance`` even when the action is exactly the
-    static-skeleton baseline. The guard prevents false P1(acc) points for the
-    baseline while leaving real collapses (e.g. m1≈0.31) far below threshold.
+    ``probe_size`` is intentionally ignored. The trainer gate now uses the
+    strict relative tolerance requested by the CLI/config.
     """
+    _ = probe_size
     baseline = float(noisy_baseline_metric1)
-    drop = max(0.0, float(allowed_acc_drop))
-    sample_guard = 1.0 / float(max(1, int(probe_size)))
-    return max(0.0, baseline - drop - sample_guard)
+    tol = max(0.0, float(allowed_acc_drop))
+    return max(0.0, baseline * (1.0 - tol))
+
+
+def _noisy_std_threshold_from_baseline(
+        *,
+        noisy_baseline_std: float,
+        stability_multiplier: float,
+        floor: float,
+        ) -> float:
+    """Per-channel stability threshold used by reward.py.
+
+    Stability tolerance is a multiplier on the noisy baseline std. The floor is
+    only an absolute minimum for degenerate near-zero baseline variance.
+    """
+    raw = float(noisy_baseline_std)
+    if not np.isfinite(raw):
+        raw = 0.0
+    return float(max(raw * max(0.0, float(stability_multiplier)), float(floor)))
 
 
 @dataclass
@@ -1145,6 +1030,7 @@ class EpisodeRecord:
     terminal_probe_trial_counts: List[int] = field(default_factory=list)
     terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
     terminal_probe_speedup: float = 1.0
+    fusion_action_steps: List[Dict[str, Any]] = field(default_factory=list)
     per_step_optimizer_wall_seconds: float = 0.0
     policy_rollout_wall_seconds: float = 0.0
     terminal_cost_eval_wall_seconds: float = 0.0
@@ -1218,7 +1104,12 @@ def _record_full_vec_for_callback(
 
 
 def _episode_best_rank_key(record: Any) -> Tuple[float, ...]:
-    """Hard-priority best-action ranking with unbounded P3 cost tie-breaks."""
+    """Stage-1-aligned best-action ranking.
+
+    Hard gates still order P3 > P2 > P1. Inside P3, use the same bounded
+    Stage-1-style reward that PPO optimizes first, then use the unbounded cost
+    rank as a deterministic tie-breaker after the log-barrier signal.
+    """
     try:
         priority = int(getattr(record, "terminal_priority", 0) or 0)
     except Exception:
@@ -1237,12 +1128,12 @@ def _episode_best_rank_key(record: Any) -> Tuple[float, ...]:
     if priority == 3 and invalid_steps == 0:
         return (
             3.0,
+            terminal_reward,
+            total_reward,
             float(getattr(record, "terminal_cost_rank_score", 0.0) or 0.0),
             float(getattr(record, "terminal_fusion_gain", 0.0) or 0.0),
             float(getattr(record, "terminal_k_gain", 0.0) or 0.0),
             float(getattr(record, "terminal_bits_gain", 0.0) or 0.0),
-            terminal_reward,
-            total_reward,
         )
     if priority == 2:
         return (
@@ -1263,6 +1154,53 @@ def _episode_best_rank_key(record: Any) -> Tuple[float, ...]:
             total_reward,
         )
     return (0.0, terminal_reward, total_reward)
+
+
+def _stage2_record_loss_ok(record: Any, loss_threshold: Optional[float]) -> bool:
+    if loss_threshold is None:
+        return True
+    try:
+        loss = float(getattr(record, "terminal_loss_mean", float("inf")))
+        threshold = float(loss_threshold)
+    except Exception:
+        return False
+    return bool(math.isfinite(loss) and loss <= threshold + 1e-12)
+
+
+def _stage2_record_strict_feasible(
+        record: Any,
+        loss_threshold: Optional[float],
+        ) -> bool:
+    try:
+        priority = int(getattr(record, "terminal_priority", 0) or 0)
+        invalid_steps = int(getattr(record, "invalid_steps", 0) or 0)
+    except Exception:
+        return False
+    return bool(
+        priority == 3
+        and invalid_steps == 0
+        and _stage2_record_loss_ok(record, loss_threshold)
+    )
+
+
+def _select_stage2_strict_feasible_best_record(
+        records: Sequence[Any],
+        *,
+        loss_threshold: Optional[float],
+        top_n: int = 20,
+        ) -> Optional[Any]:
+    """Return the best strict-feasible record among the ranked top-N.
+
+    Ranking remains the training rank key; strict feasibility is applied as a
+    final filter. This prevents one slightly loss-failed rank-best from forcing
+    a baseline fallback when a lower-ranked candidate satisfies the constraints.
+    """
+    limit = max(1, int(top_n or 1))
+    ranked = sorted(records, key=_episode_best_rank_key, reverse=True)[:limit]
+    for record in ranked:
+        if _stage2_record_strict_feasible(record, loss_threshold):
+            return record
+    return None
 
 
 def _format_invalid_chain_reason(invalid_chain: Any) -> str:
@@ -1309,6 +1247,11 @@ def _apply_terminal_info_to_record(
         record.fusion_count_b2 = int(term_info_dict.get("fusion_count_b2", 0) or 0)
         record.fusion_count_b4 = int(term_info_dict.get("fusion_count_b4", 0) or 0)
         record.fusion_count_b5 = int(term_info_dict.get("fusion_count_b5", 0) or 0)
+    if isinstance(term_info_dict.get("fusion_action_steps"), list):
+        record.fusion_action_steps = [
+            dict(x) for x in term_info_dict.get("fusion_action_steps", [])
+            if isinstance(x, Mapping)
+        ]
     # ADR-014 DEBUG: fusion cost shape (raw vs saturated) mirrored from the env.
     if "fusion_cost_fusion_norm" in term_info_dict:
         record.terminal_fusion_norm_raw = float(term_info_dict.get("fusion_cost_fusion_norm", 0.0) or 0.0)
@@ -1584,13 +1527,13 @@ def train_sequential(
     if forbidden_mask is None:
         forbidden_mask = ForbiddenActionMask()
     static_invalid_enabled = bool(
-        getattr(train_cfg, "static_invalid_level_mask_enabled", True)
+        getattr(train_cfg, "static_invalid_level_mask_enabled", False)
     )
     if not static_invalid_enabled:
         static_invalid_mask = None
     static_invalid_scan_summary = dict(static_invalid_scan_summary or {})
     empirical_invalid_enabled = bool(
-        getattr(train_cfg, "empirical_invalid_level_mask_enabled", True)
+        getattr(train_cfg, "empirical_invalid_level_mask_enabled", False)
     )
     if empirical_invalid_enabled and empirical_invalid_mask is None:
         empirical_invalid_mask = EmpiricalInvalidLevelMask(
@@ -1656,7 +1599,7 @@ def train_sequential(
         getattr(train_cfg, "fast_reward_mode_enabled", False)
     )
     online_num_trials_per_step = max(
-        1, int(getattr(train_cfg, "online_num_trials_per_step", 1) or 1)
+        1, int(getattr(train_cfg, "online_num_trials_per_step", 5) or 5)
     )
     terminal_eval_batch_size = max(
         1, int(getattr(train_cfg, "terminal_eval_batch_size", 1) or 1)
@@ -2083,12 +2026,6 @@ def train_sequential(
             else None
         )
         obs = env.reset(seed=seed_for_this_ep)
-        step_static_tensors = _get_cached_step_static_tensors(
-            env,
-            max_step_dim=policy.cfg.max_step_dim,
-            max_num_levels=policy.cfg.max_num_levels,
-            device=device,
-        )
         per_step_sum = 0.0
         terminal_reward = 0.0
         invalid_steps = 0
@@ -2137,6 +2074,7 @@ def train_sequential(
         terminal_probe_trial_counts_val: List[int] = []
         terminal_probe_trial_indices_val: List[List[int]] = []
         terminal_probe_speedup_val = 1.0
+        fusion_action_steps_val: List[Dict[str, Any]] = []
         terminal_cost_eval_wall_seconds_val = 0.0
         terminal_probe_install_wall_seconds_val = 0.0
         terminal_probe_clear_wall_seconds_val = 0.0
@@ -2149,9 +2087,16 @@ def train_sequential(
         rejection_optimizer_wall_seconds_val = 0.0
         static_invalid_level_applied_val = 0
         empirical_invalid_level_applied_val = 0
-        baseline_prior_scale = _resolve_baseline_prior_scale(
-            int(absolute_ep),
-            anchor_episodes=int(force_baseline_episodes),
+        _baseline_prior_enabled = (
+            bool(getattr(train_cfg, "warmstart_baseline_bias", False))
+            or int(force_baseline_episodes) > 0
+        )
+        baseline_prior_scale = (
+            _resolve_baseline_prior_scale(
+                int(absolute_ep),
+                anchor_episodes=int(force_baseline_episodes),
+            )
+            if _baseline_prior_enabled else 0.0
         )
 
         # 2026-05-18 (rdv2 hotfix): forced-baseline anchor episodes. The
@@ -2184,7 +2129,7 @@ def train_sequential(
         proposal_direction = "none"
         if (
                 (not force_this_ep)
-                and bool(getattr(train_cfg, "warmstart_neighbor_sampling", True))
+                and bool(getattr(train_cfg, "warmstart_neighbor_sampling", False))
                 and baseline_action_vec is not None
         ):
             neighbor_mutations, neighbor_radius = _sequential_neighbor_curriculum(
@@ -2291,7 +2236,7 @@ def train_sequential(
             fusion_probe_block = fusion_probe_target_block(
                 int(absolute_ep),
                 anchor_episodes=int(force_baseline_episodes),
-                interval=int(getattr(train_cfg, "fusion_probe_interval", 200)),
+                interval=int(getattr(train_cfg, "fusion_probe_interval", 0)),
             )
         fusion_curriculum_active = False
         fusion_curriculum_open = False
@@ -2299,7 +2244,7 @@ def train_sequential(
         fusion_neighbor_radius = 1
         if (
                 episode_fusion_mode
-                and bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
+                and bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", False))
                 and not force_this_ep
         ):
             fc_seed = int(train_cfg.seed) if train_cfg.seed is not None else 0
@@ -2327,12 +2272,12 @@ def train_sequential(
         while True:
             spec = env.current_spec()
             fusion_mode = hasattr(spec, "fusion_num_options")
-            step_static = step_static_tensors[int(spec.step_idx)]
-            slot_mask_np = step_static.slot_mask_np
-            levels_np = step_static.levels_np
+            slot_mask_np, levels_np = step_to_mask_and_levels(
+                spec, policy.cfg.max_step_dim, policy.cfg.max_num_levels,
+            )
             obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
-            slot_mask_t = step_static.slot_mask_t
-            levels_t = step_static.levels_t
+            slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
+            levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
             n_active = int(slot_mask_np.sum())
             action_level_mask_np: Optional[np.ndarray] = None
             action_level_mask_t = None
@@ -2343,29 +2288,32 @@ def train_sequential(
                 # active (and not yet fully open), most blocks are pinned to baseline
                 # and only the episode's selected blocks may move within a widening
                 # neighborhood; the curriculum dissolves to the open mask after ramp.
-                mask_mode = (
-                    "curriculum"
-                    if fusion_curriculum_active and not fusion_curriculum_open
-                    else "open"
-                )
-                force_option_one = (
-                    fusion_probe_block is not None
-                    and int(spec.block_idx) == int(fusion_probe_block)
-                    and int(spec.fusion_num_options) > 1
-                )
-                cached_action_mask = _get_cached_fusion_action_level_mask(
-                    env,
-                    spec=spec,
-                    mode=mask_mode,
-                    mutable=(int(spec.step_idx) in fusion_mutable_steps),
-                    radius=int(fusion_neighbor_radius),
-                    force_option_one=bool(force_option_one),
-                    max_step_dim=policy.cfg.max_step_dim,
-                    max_num_levels=policy.cfg.max_num_levels,
-                    device=device,
-                )
-                action_level_mask_np = cached_action_mask.mask_np
-                action_level_mask_t = cached_action_mask.mask_t
+                if fusion_curriculum_active and not fusion_curriculum_open:
+                    action_level_mask_np = build_fusion_step_level_mask(
+                        fusion_num_options=int(spec.fusion_num_options),
+                        k_num_levels=int(spec.k_num_levels),
+                        k_level_values=list(K_LEVELS),
+                        mutable=(int(spec.step_idx) in fusion_mutable_steps),
+                        radius=int(fusion_neighbor_radius),
+                        baseline_k_index=int(_baseline_k_index_for_block(int(spec.block_idx))),
+                        max_step_dim=policy.cfg.max_step_dim,
+                        max_num_levels=policy.cfg.max_num_levels,
+                    )
+                else:
+                    action_level_mask_np = _open_step_level_mask(
+                        spec=spec,
+                        max_step_dim=policy.cfg.max_step_dim,
+                        max_num_levels=policy.cfg.max_num_levels,
+                    )
+                if (
+                        fusion_probe_block is not None
+                        and int(spec.block_idx) == int(fusion_probe_block)
+                        and int(spec.fusion_num_options) > 1
+                        and action_level_mask_np is not None
+                ):
+                    # ADR-012 probe: make the forced option level legal even
+                    # when the curriculum pins this block to baseline.
+                    action_level_mask_np[0, 1] = True
             elif neighbor_mask_active and base_action_vec_for_mask is not None:
                 action_level_mask_np = _build_step_level_mask(
                     spec=spec,
@@ -2418,6 +2366,11 @@ def train_sequential(
                 action_level_mask_t = (
                     torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
                 )
+            elif action_level_mask_np is not None:
+                # fusion mode: open mask passes straight through (no pruning)
+                action_level_mask_t = (
+                    torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
+                )
 
             # -- Forced-baseline anchor short-circuit --
             # Skip sampling + rejection-loop entirely; commit the baseline
@@ -2442,7 +2395,6 @@ def train_sequential(
                         action_level_mask=action_level_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
-                        truncate_seq_len=int(spec.step_idx) + 1,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(forced_action.tolist())
@@ -2456,8 +2408,8 @@ def train_sequential(
                             spec.layer_idx, spec.block_idx, forced_action.tolist()
                         )
                 chosen_action_np = forced_padded
-                chosen_log_prob = lp_t.detach().reshape(())
-                chosen_value = val_t.detach().reshape(())
+                chosen_log_prob = float(lp_t.item())
+                chosen_value = float(val_t.item())
                 rejection_counters["steps_forced_to_baseline_anchor"] += 1
 
                 action_np = chosen_action_np
@@ -2523,6 +2475,11 @@ def train_sequential(
                 term_breakdown = term_info_dict.get("reward_breakdown")
                 term_metrics = term_info_dict.get("metrics")
                 term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
+                if isinstance(term_info_dict.get("fusion_action_steps"), list):
+                    fusion_action_steps_val = [
+                        dict(x) for x in term_info_dict.get("fusion_action_steps", [])
+                        if isinstance(x, Mapping)
+                    ]
                 if term_breakdown is not None:
                     terminal_priority_int = int(getattr(term_breakdown, "priority", 0) or 0)
                     terminal_stab_excess_m1_val = float(getattr(term_breakdown, "stab_excess_m1", 0.0) or 0.0)
@@ -2616,8 +2573,8 @@ def train_sequential(
             #      is available, commit the last sampled action even though
             #      it failed — caller will see invalid=True in the info dict.
             chosen_action_np: Optional[np.ndarray] = None
-            chosen_log_prob: Any = 0.0
-            chosen_value: Any = 0.0
+            chosen_log_prob: float = 0.0
+            chosen_value: float = 0.0
             chosen_eval_info: Optional[Dict[str, Any]] = None
             attempts_this_step = 0
 
@@ -2631,7 +2588,6 @@ def train_sequential(
                         action_level_mask=action_level_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
-                        truncate_seq_len=int(spec.step_idx) + 1,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
@@ -2658,7 +2614,6 @@ def train_sequential(
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
-                            truncate_seq_len=int(spec.step_idx) + 1,
                         )
                     policy_rollout_wall_seconds_val += float(
                         time.perf_counter() - policy_t1
@@ -2684,8 +2639,8 @@ def train_sequential(
                             spec.layer_idx, spec.block_idx, tup
                         )
                     chosen_action_np = action_np_try
-                    chosen_log_prob = log_prob_t.detach().reshape(())
-                    chosen_value = value_t.detach().reshape(())
+                    chosen_log_prob = float(log_prob_t.item())
+                    chosen_value = float(value_t.item())
                     chosen_eval_info = eval_info
                     break
 
@@ -2721,7 +2676,6 @@ def train_sequential(
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
-                            truncate_seq_len=int(spec.step_idx) + 1,
                         )
                     policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                     chosen_eval_info = env.evaluate_step(fallback_action.tolist())
@@ -2735,16 +2689,16 @@ def train_sequential(
                                 spec.layer_idx, spec.block_idx, fallback_action.tolist()
                             )
                     chosen_action_np = fallback_padded
-                    chosen_log_prob = lp_t.detach().reshape(())
-                    chosen_value = val_t.detach().reshape(())
+                    chosen_log_prob = float(lp_t.item())
+                    chosen_value = float(val_t.item())
                     rejection_counters["steps_fallen_back_to_baseline"] += 1
                 else:
                     # Last-resort: commit the most-recently sampled action even
                     # though it failed. Should not happen in production because
                     # the runner always provides baseline_action_vec.
                     chosen_action_np = action_np_try
-                    chosen_log_prob = log_prob_t.detach().reshape(())
-                    chosen_value = value_t.detach().reshape(())
+                    chosen_log_prob = float(log_prob_t.item())
+                    chosen_value = float(value_t.item())
                     chosen_eval_info = eval_info
 
             assert chosen_action_np is not None and chosen_eval_info is not None
@@ -2850,6 +2804,11 @@ def train_sequential(
             term_breakdown = term_info_dict.get("reward_breakdown")
             term_metrics = term_info_dict.get("metrics")
             term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
+            if isinstance(term_info_dict.get("fusion_action_steps"), list):
+                fusion_action_steps_val = [
+                    dict(x) for x in term_info_dict.get("fusion_action_steps", [])
+                    if isinstance(x, Mapping)
+                ]
             if term_breakdown is not None:
                 terminal_priority_int = int(getattr(term_breakdown, "priority", 0) or 0)
                 terminal_stab_excess_m1_val = float(getattr(term_breakdown, "stab_excess_m1", 0.0) or 0.0)
@@ -2985,6 +2944,7 @@ def train_sequential(
             terminal_probe_trial_counts=list(terminal_probe_trial_counts_val),
             terminal_probe_trial_indices=[list(x) for x in terminal_probe_trial_indices_val],
             terminal_probe_speedup=float(terminal_probe_speedup_val),
+            fusion_action_steps=list(fusion_action_steps_val),
             per_step_optimizer_wall_seconds=float(per_step_optimizer_wall_seconds_val),
             policy_rollout_wall_seconds=float(policy_rollout_wall_seconds_val),
             terminal_cost_eval_wall_seconds=float(terminal_cost_eval_wall_seconds_val),
@@ -3389,6 +3349,8 @@ def run_sequential_via_runner(
             profile=train_cfg.profile,
             num_trials_per_step=train_cfg.num_trials_per_step,
             probe_batch_count=train_cfg.probe_batch_count,
+            borderline_retest_enabled=False,
+            borderline_retest_trials_multiplier=1,
         ),
     )
     base_env.pareto_cost_archive = None
@@ -3407,7 +3369,7 @@ def run_sequential_via_runner(
             layers_attribute="model." + ev.layers_attribute,
             is_regression=bool(getattr(ev, "is_regression", False)),
             device_ids=reward_devices,
-            metric_profile=train_cfg.profile,
+            metric_profile=str(train_cfg.profile),
             log_fn=lambda m: log(f"  [multi-gpu] {m}"),
         )
 
@@ -3532,14 +3494,11 @@ def run_sequential_via_runner(
     # not just the env-level loss_std gate below.
     weights.stab_tolerance = float(stability_tol)
 
-    # ADR-015: continuous bounded reward (Stage-1 design + std stability). The
-    # reward_design flows from train_cfg (default "continuous"); when on, it gates
-    # OFF the ADR-011/012 exploration patches (baseline anchor / warmstart prior /
-    # fusion probes / epsilon floor / neighbor curriculum) that were tuned for the
-    # tiered reward and replaced by cosine-entropy + strict-stability + strict
-    # selection. saturation is already off (tau=0).
-    weights.reward_design = str(getattr(train_cfg, "reward_design", "continuous"))
-    _continuous = weights.reward_design == "continuous"
+    # ADR-015/Stage-1 alignment: Stage-1 reward shape plus std stability. The
+    # active default gates off the ADR-011/012 exploration patches that were
+    # tuned for the old tiered reward. Saturation is already off (tau=0).
+    weights.reward_design = str(getattr(train_cfg, "reward_design", "stage1_aligned"))
+    _continuous = weights.reward_design in ("continuous", "stage1_aligned")
     log(
         f"  {bullet} [ADR-015] reward_design={weights.reward_design}"
         + ("（连续有界 reward + 严格稳定性刹车 + Stage-1 cosine 熵 + 严格可行性选择；"
@@ -3548,26 +3507,23 @@ def run_sequential_via_runner(
 
     user_acc_threshold = float(base_env.acc_threshold)
     if not (np.isfinite(user_acc_threshold) and user_acc_threshold > 0.0):
-        # Default: floor the gate at (noisy baseline accuracy − tolerance) so
-        # actions that wreck accuracy get caught by priority 1 instead of
-        # masquerading as cost-priority candidates. The probe-size guard avoids
-        # false P1(acc) episodes where the all-max baseline itself lands one
-        # discrete probe sample below the nominal threshold.
-        new_acc_threshold = _noisy_accuracy_threshold_with_probe_guard(
-            noisy_baseline_metric1=float(noisy_baseline_metric1),
-            allowed_acc_drop=float(allowed_acc_drop),
-            probe_size=int(getattr(ev, "stage2_probe_size", 256)),
+        # Default: floor the gate at noisy_baseline × (1 - tolerance), so a
+        # configured 0.001 is exactly a 0.1% relative drop. Do not subtract a
+        # one-sample probe guard here: that made the true trainer gate looser
+        # than the CLI/config value.
+        new_acc_threshold = _noisy_metric_threshold_from_baseline(
+            noisy_baseline_metric=float(noisy_baseline_metric1),
+            tolerance=float(allowed_acc_drop),
         )
         base_env.acc_threshold = new_acc_threshold
 
     # v3: derive a separate m2 threshold from the noisy m2 baseline. Same
-    # tolerance / probe-size guard as m1 — user spec (2026-05-20) confirms the
-    # per-metric thresholds differ only because baseline.m1 ≠ baseline.m2.
+    # relative tolerance as m1; the thresholds differ only because
+    # baseline.m1 != baseline.m2.
     if base_env.acc_threshold_m2 is None:
-        base_env.acc_threshold_m2 = _noisy_accuracy_threshold_with_probe_guard(
-            noisy_baseline_metric1=float(noisy_baseline_metric2),
-            allowed_acc_drop=float(allowed_acc_drop),
-            probe_size=int(getattr(ev, "stage2_probe_size", 256)),
+        base_env.acc_threshold_m2 = _noisy_metric_threshold_from_baseline(
+            noisy_baseline_metric=float(noisy_baseline_metric2),
+            tolerance=float(allowed_acc_drop),
         )
 
     # 2026-06-15 (user spec): loss_mean is also a hard constraint (LOWER-better),
@@ -3579,38 +3535,92 @@ def run_sequential_via_runner(
     if base_env.loss_threshold is None:
         base_env.loss_threshold = float(noisy_baseline_loss_mean) * (1.0 + float(allowed_acc_drop))
 
+    stab_floor = float(getattr(weights, "stab_floor", 0.01) or 0.01)
+    stab_threshold_m1 = _noisy_std_threshold_from_baseline(
+        noisy_baseline_std=float(noisy_baseline_metric1_std),
+        stability_multiplier=float(stability_tol),
+        floor=stab_floor,
+    )
+    stab_threshold_m2 = _noisy_std_threshold_from_baseline(
+        noisy_baseline_std=float(noisy_baseline_metric2_std),
+        stability_multiplier=float(stability_tol),
+        floor=stab_floor,
+    )
+    stab_threshold_loss = _noisy_std_threshold_from_baseline(
+        noisy_baseline_std=float(noisy_baseline_loss_std),
+        stability_multiplier=float(stability_tol),
+        floor=stab_floor,
+    )
+
     user_stab_threshold = float(base_env.stab_threshold)
     stab_calib_summary = ""
     if not np.isfinite(user_stab_threshold):
-        # 2026-06-15 (user spec): stab_tolerance 是 baseline std 的**倍率**
-        # （MULTIPLIER），不是 fractional slack。stab_threshold = noisy baseline
-        # loss_std × tol（tol=1.2 → 1.2×，对齐原始 Stage-2；tol=5.0 → 5×，宽松但
-        # 仍是真门，不会变空）。曾用 ×(1+tol) 的 fractional-slack 口径，既把宽松
-        # 的 6× 误标成"空门"，又破坏了"× 值"的语义。
-        derived = noisy_baseline_loss_std * stability_tol
-        base_env.stab_threshold = float(max(derived, 0.01))
+        # Loss channel is still passed as the legacy env-level override; m1/m2
+        # derive from baseline.metric{1,2}_std inside compute_reward through the
+        # same weights.stab_tolerance multiplier.
+        base_env.stab_threshold = float(stab_threshold_loss)
         stab_calib_summary = (
-            f"multiplier formula: noisy_baseline_loss_std={noisy_baseline_loss_std:.4f} × "
-            f"tol={stability_tol:.4f} → stab_threshold = {base_env.stab_threshold:.4f}  "
-            f"(ADR-015 continuous reward + strict-stability brake)"
+            f"multiplier formula: "
+            f"loss_std={noisy_baseline_loss_std:.4f} × tol={stability_tol:.4f} "
+            f"→ loss_std_threshold={base_env.stab_threshold:.4f}; "
+            f"m1_std={noisy_baseline_metric1_std:.4f} × tol={stability_tol:.4f} "
+            f"→ m1_std_threshold={stab_threshold_m1:.4f}; "
+            f"m2_std={noisy_baseline_metric2_std:.4f} × tol={stability_tol:.4f} "
+            f"→ m2_std_threshold={stab_threshold_m2:.4f} "
+            f"(floor={stab_floor:.4f})"
         )
+    else:
+        stab_threshold_loss = float(base_env.stab_threshold)
+
+    baseline_preflight_metrics = {
+        "ok": bool(preflight_ok),
+        "trial_count": int(getattr(train_cfg, "num_trials_per_step", 1) or 1),
+        "metric1_mean": float(noisy_baseline_metric1),
+        "metric2_mean": float(noisy_baseline_metric2),
+        "loss_mean": float(noisy_baseline_loss_mean),
+        "metric1_std": float(noisy_baseline_metric1_std),
+        "metric2_std": float(noisy_baseline_metric2_std),
+        "loss_std": float(noisy_baseline_loss_std),
+        "metric1_threshold": float(base_env.acc_threshold),
+        "metric2_threshold": float(base_env.acc_threshold_m2),
+        "loss_threshold": (
+            float(base_env.loss_threshold) if base_env.loss_threshold is not None else None
+        ),
+        "metric1_std_threshold": float(stab_threshold_m1),
+        "metric2_std_threshold": float(stab_threshold_m2),
+        "loss_std_threshold": float(stab_threshold_loss),
+        "limit_tolerance": float(allowed_acc_drop),
+        "stability_tolerance": float(stability_tol),
+        "stability_floor": float(stab_floor),
+        "threshold_source": "noisy_all_max_blb_baseline",
+    }
 
     log(
         f"  {bullet} 基线噪声预热（noisy baseline preflight）："
-        f"acc(noisy)={noisy_baseline_metric1:.4f}  "
-        f"loss_std(noisy)={noisy_baseline_loss_std:.4f}  "
-        f"loss_mean(noisy)={noisy_baseline_loss_mean:.4f}"
+        f"K={baseline_preflight_metrics['trial_count']}  "
+        f"m1(noisy)={noisy_baseline_metric1:.4f}  "
+        f"m2(noisy)={noisy_baseline_metric2:.4f}  "
+        f"loss_mean(noisy)={noisy_baseline_loss_mean:.4f}  "
+        f"std(loss/m1/m2)="
+        f"{noisy_baseline_loss_std:.4f}/"
+        f"{noisy_baseline_metric1_std:.4f}/"
+        f"{noisy_baseline_metric2_std:.4f}"
     )
     _loss_thr_disp = (
         f"{base_env.loss_threshold:.4f}" if base_env.loss_threshold is not None else "None"
     )
     log(
         f"  {bullet} 校准后硬约束阈值（calibrated gates）："
-        f"acc_threshold={base_env.acc_threshold:.4f}  "
+        f"m1_threshold={base_env.acc_threshold:.4f}  "
+        f"m2_threshold={float(base_env.acc_threshold_m2):.4f}  "
         f"loss_threshold={_loss_thr_disp}  "
-        f"stab_threshold={base_env.stab_threshold:.4f}  "
+        f"std_thresholds(loss/m1/m2)="
+        f"{stab_threshold_loss:.4f}/"
+        f"{stab_threshold_m1:.4f}/"
+        f"{stab_threshold_m2:.4f}  "
         f"(limit_tol={allowed_acc_drop:.4f}, stab_tol={stability_tol:.4f}; "
-        f"loss 越低越好，允许上浮 limit_tol；m1/m2 越高越好，允许下降 limit_tol；std 越低越好，× stab_tol)"
+        f"loss 越低越好，允许相对上浮 limit_tol；"
+        f"m1/m2 越高越好，允许相对下降 limit_tol；std 越低越好，× stab_tol)"
     )
     if stab_calib_summary:
         log(f"  {bullet} 稳定阈值校准来源（stab calibration source）：{stab_calib_summary}")
@@ -3641,7 +3651,11 @@ def run_sequential_via_runner(
         f"tier=[{weights.tier_metric_bonus:.1f}, +{weights.tier_stability_bonus:.1f}], "
         f"baseline_metric1={weights.baseline_metric1:.4f}",
         f"硬约束阈值（acc=hard, stab=soft cap for excess penalty）："
-        f"acc_threshold={base_env.acc_threshold:.4f}, stab_threshold={base_env.stab_threshold:.4f}",
+        f"m1_threshold={base_env.acc_threshold:.4f}, "
+        f"m2_threshold={float(base_env.acc_threshold_m2):.4f}, "
+        f"loss_threshold={_loss_thr_disp}, "
+        f"std_thresholds(loss/m1/m2)="
+        f"{stab_threshold_loss:.4f}/{stab_threshold_m1:.4f}/{stab_threshold_m2:.4f}",
         f"static_skeletons archive：{ss_baseline_obj.archive_path}",
     ])
 
@@ -3657,7 +3671,7 @@ def run_sequential_via_runner(
     # ---------- 5) sequential env + policy ----------
     seq_env_cfg = SequentialEnvConfig(
         invalid_penalty=float(getattr(train_cfg, "sequential_invalid_penalty", 1.0)),
-        cost_shaping_coeff=float(getattr(train_cfg, "sequential_cost_shaping_coeff", 0.05)),
+        cost_shaping_coeff=float(getattr(train_cfg, "sequential_cost_shaping_coeff", 0.0)),
         fusion_shaping_coeff=float(getattr(train_cfg, "sequential_fusion_shaping_coeff", 0.0)),
         early_terminate_on_invalid=bool(getattr(train_cfg, "sequential_early_terminate_on_invalid", False)),
     )
@@ -3667,12 +3681,11 @@ def run_sequential_via_runner(
     # the map holds only valid configs so invalid masks are unnecessary.
     # Resolve the fusion block-curriculum ramp once (0 → 0.5 * total_episodes) so
     # both the console banner and seq_train_cfg below use the same concrete value.
-    _fc_curriculum_on = (
-        False if _continuous
-        else bool(getattr(train_cfg, "fusion_neighbor_curriculum_enabled", True))
+    _fc_curriculum_on = False if _continuous else bool(
+        getattr(train_cfg, "fusion_neighbor_curriculum_enabled", False)
     )
     _fc_ramp = int(getattr(train_cfg, "fusion_neighbor_ramp_episodes", 0) or 0)
-    if _fc_ramp <= 0:
+    if _fc_curriculum_on and _fc_ramp <= 0:
         _fc_ramp = max(1, int(FUSION_NEIGHBOR_RAMP_FRACTION * int(train_cfg.total_episodes)))
     fusion_map = None
     if bool(getattr(train_cfg, "fusion_count_action", False)):
@@ -3780,10 +3793,10 @@ def run_sequential_via_runner(
         # ADR-015: OFF under the continuous reward (cosine entropy is the
         # exploration mechanism now; the ε floor was a tiered-reward patch).
         _eps_opt = 0.0 if _continuous else float(
-            getattr(train_cfg, "fusion_exploration_epsilon", 0.05) or 0.0
+            getattr(train_cfg, "fusion_exploration_epsilon", 0.0) or 0.0
         )
         _eps_k = 0.0 if _continuous else float(
-            getattr(train_cfg, "fusion_exploration_epsilon_k", FUSION_EXPLORATION_EPSILON_K)
+            getattr(train_cfg, "fusion_exploration_epsilon_k", 0.0)
             or 0.0
         )
         if _eps_opt > 0.0 or _eps_k > 0.0:
@@ -3822,13 +3835,12 @@ def run_sequential_via_runner(
             from .action_space import LEVELS_F
             if fusion_map is not None:
                 # fusion: slot 0 = option, slot 1 = K (baseline index).
-                # ADR-011 (2026-06-11): the option slot gets NO prior (-1). The
-                # old preferred=0 prior never fully decayed (0.15 floor x 2.5
-                # gain) and kept pulling the 2-way fusion choice back to
-                # option 0 forever — one of the three causes of the 60k
-                # fusion=0 collapse. The forced anchor episodes alone provide
-                # the cold-start baseline grounding; K keeps its prior.
-                preferred = [-1, int(_baseline_k_index_for_block(1))]
+                # Cold-start near the verified baseline, then decay the prior to
+                # zero via _resolve_baseline_prior_scale. Leaving the option slot
+                # unbiased makes a fresh 47-step policy sample too many fusion=1
+                # choices before it has evidence, which collapses the first
+                # post-anchor window to loss caps.
+                preferred = [0, int(_baseline_k_index_for_block(1))]
             else:
                 preferred = _compute_per_slot_mode_preferred(
                     schedule=seq_env.schedule,
@@ -3838,11 +3850,12 @@ def run_sequential_via_runner(
                 )
             warmstart_gain = float(train_cfg.warmstart_bias_gain)
             if _continuous:
-                # ADR-015: no baseline warmstart prior — the policy starts from
-                # high-entropy (cosine) exploration over the small all-valid
-                # (option,K) space, NOT anchored to fusion=0 (the baseline anchor
-                # was a root of the cold-collapse / "初始策略" problem).
-                warmstart_gain = 0.0
+                # Stage-1-aligned reward keeps the policy algorithm simple, but
+                # still needs a schedulable cold-start prior when the user enables
+                # warmstart_baseline_bias. The explicit baseline_prior_scale stored
+                # per episode controls the decay and reaches zero, so this default
+                # gain is only a fallback for calls that omit the explicit scale.
+                warmstart_gain = max(warmstart_gain, 1.0)
             elif fusion_map is not None:
                 # Tiny fusion action space (<=2 options x 6 K per block): pull the
                 # baseline (fusion=0 / K=max) prior up so cold-start sits at baseline
@@ -3926,7 +3939,7 @@ def run_sequential_via_runner(
         f"{preferred_summary}",
         f"Baseline prior schedule：anchor=1.20; ep60..600: 1.00→0.45; "
         f"ep600..2000: 0.45→0.15; after ep2000: 0.15",
-        f"Safe neighbor curriculum：enabled={bool(getattr(train_cfg, 'warmstart_neighbor_sampling', True))}    "
+        f"Safe neighbor curriculum：enabled={bool(getattr(train_cfg, 'warmstart_neighbor_sampling', False))}    "
         f"mutable_offsets={len(mutable_neighbor_offsets)}    "
         f"ramp={int(getattr(train_cfg, 'warmstart_neighbor_ramp_episodes', 0) or train_cfg.total_episodes)}    "
         f"max_mutations={int(getattr(train_cfg, 'warmstart_neighbor_max_mutations', 8))}    "
@@ -3937,16 +3950,18 @@ def run_sequential_via_runner(
         f"max_mutations={int(getattr(train_cfg, 'guarded_radius2_max_mutations', 4))}    "
         f"fraction={float(getattr(train_cfg, 'guarded_radius2_episode_fraction', 0.15)):.3g}    "
         f"cooldown={int(getattr(train_cfg, 'guarded_radius2_cooldown_episodes', 300))}",
-        f"Static invalid-level pre-mask：enabled={bool(getattr(train_cfg, 'static_invalid_level_mask_enabled', True))}    "
+        f"Static invalid-level pre-mask：enabled={bool(getattr(train_cfg, 'static_invalid_level_mask_enabled', False))}    "
         "scan=baseline-prefix one-slot optimizer feasibility",
-        f"Empirical invalid-level mask：enabled={bool(getattr(train_cfg, 'empirical_invalid_level_mask_enabled', True))}    "
+        f"Empirical invalid-level mask：enabled={bool(getattr(train_cfg, 'empirical_invalid_level_mask_enabled', False))}    "
         f"min_invalid={int(getattr(train_cfg, 'empirical_invalid_level_min_samples', 3))}    "
         f"min_rate={float(getattr(train_cfg, 'empirical_invalid_level_min_rate', 0.80)):.2f}    "
         f"max_valid={int(getattr(train_cfg, 'empirical_invalid_level_max_valid', 0))}",
         f"Fast reward mode：enabled={bool(getattr(train_cfg, 'fast_reward_mode_enabled', False))}    "
-        f"online_k={int(getattr(train_cfg, 'online_num_trials_per_step', 1))}    "
+        f"online_k={int(getattr(train_cfg, 'online_num_trials_per_step', 5))}    "
         f"terminal_eval_batch_size={int(getattr(train_cfg, 'terminal_eval_batch_size', 4))}    "
         f"promotion_validation_trials={int(getattr(train_cfg, 'promotion_validation_trials', 4))}    "
+        f"final_selection_top_n={int(getattr(train_cfg, 'final_selection_top_n', 20))}    "
+        f"final_selection_validation_trials={int(getattr(train_cfg, 'final_selection_validation_trials', 20))}    "
         f"promotion_margin_window={float(getattr(train_cfg, 'promotion_margin_window', 0.25)):.3g}",
         "Non-monotonic cost-boundary exploration：SF/K move 是 proposal；真实方向只由 F1 metric/stability、"
         "Rescale_optimizer cost signals、adaptive scalar cost 和 diagnostic archive 确认。",
@@ -4046,11 +4061,11 @@ def run_sequential_via_runner(
         ent_coef_anchor=float(getattr(train_cfg, "ent_coef_anchor", 0.0)),
         ent_coef_ramp_episodes=int(getattr(train_cfg, "ent_coef_ramp_episodes", 600)),
         absolute_episode_start=int(start_episode),
-        warmstart_neighbor_sampling=bool(getattr(train_cfg, "warmstart_neighbor_sampling", True)),
-        warmstart_neighbor_ramp_episodes=int(
-            getattr(train_cfg, "warmstart_neighbor_ramp_episodes", 0)
-            or int(train_cfg.total_episodes)
-            or 1
+        warmstart_neighbor_sampling=bool(getattr(train_cfg, "warmstart_neighbor_sampling", False)),
+        warmstart_neighbor_ramp_episodes=(
+            int(getattr(train_cfg, "warmstart_neighbor_ramp_episodes", 0) or 0)
+            if bool(getattr(train_cfg, "warmstart_neighbor_sampling", False))
+            else 0
         ),
         warmstart_neighbor_max_mutations=int(
             getattr(train_cfg, "warmstart_neighbor_max_mutations", 8)
@@ -4063,12 +4078,12 @@ def run_sequential_via_runner(
         fusion_neighbor_ramp_episodes=int(_fc_ramp),
         fusion_neighbor_max_radius=int(getattr(train_cfg, "fusion_neighbor_max_radius", 6)),
         # ADR-015: probes / ε floor OFF under the continuous reward (tiered patches).
-        fusion_probe_interval=(0 if _continuous else int(getattr(train_cfg, "fusion_probe_interval", 200))),
+        fusion_probe_interval=(0 if _continuous else int(getattr(train_cfg, "fusion_probe_interval", 0))),
         fusion_exploration_epsilon=(0.0 if _continuous else float(
-            getattr(train_cfg, "fusion_exploration_epsilon", 0.05)
+            getattr(train_cfg, "fusion_exploration_epsilon", 0.0)
         )),
         fusion_exploration_epsilon_k=(0.0 if _continuous else float(
-            getattr(train_cfg, "fusion_exploration_epsilon_k", FUSION_EXPLORATION_EPSILON_K)
+            getattr(train_cfg, "fusion_exploration_epsilon_k", 0.0)
         )),
         # ADR-015: Stage-1 cosine entropy schedule + continuous reward design.
         ent_coef_schedule=str(getattr(train_cfg, "ent_coef_schedule", "cosine")),
@@ -4076,7 +4091,7 @@ def run_sequential_via_runner(
         ent_coef_cosine_end=float(getattr(train_cfg, "ent_coef_cosine_end", 0.001)),
         ent_coef_cosine_plateau=float(getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)),
         ent_coef_cosine_lower_bound=float(getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012)),
-        reward_design=str(getattr(train_cfg, "reward_design", "continuous")),
+        reward_design=str(getattr(train_cfg, "reward_design", "stage1_aligned")),
         guarded_radius2_enabled=bool(getattr(train_cfg, "guarded_radius2_enabled", False)),
         guarded_radius2_min_episode=int(getattr(train_cfg, "guarded_radius2_min_episode", 1060)),
         guarded_radius2_stall_window=int(getattr(train_cfg, "guarded_radius2_stall_window", 600)),
@@ -4092,13 +4107,21 @@ def run_sequential_via_runner(
             getattr(train_cfg, "guarded_radius2_min_radius1_successes", 3)
         ),
         static_invalid_level_mask_enabled=bool(
-            getattr(train_cfg, "static_invalid_level_mask_enabled", True)
+            getattr(train_cfg, "static_invalid_level_mask_enabled", False)
         ),
         fast_reward_mode_enabled=bool(getattr(train_cfg, "fast_reward_mode_enabled", False)),
-        online_num_trials_per_step=int(getattr(train_cfg, "online_num_trials_per_step", 1)),
+        online_num_trials_per_step=int(getattr(
+            train_cfg,
+            "online_num_trials_per_step",
+            getattr(train_cfg, "num_trials_per_step", 5),
+        )),
         terminal_eval_batch_size=int(getattr(train_cfg, "terminal_eval_batch_size", 4)),
         promotion_validation_trials=int(getattr(train_cfg, "promotion_validation_trials", 4)),
         promotion_margin_window=float(getattr(train_cfg, "promotion_margin_window", 0.25)),
+        final_selection_top_n=int(getattr(train_cfg, "final_selection_top_n", 20)),
+        final_selection_validation_trials=int(
+            getattr(train_cfg, "final_selection_validation_trials", 20)
+        ),
     )
 
     episode_returns: List[float] = []
@@ -4172,9 +4195,13 @@ def run_sequential_via_runner(
         "fixed_label": str(fixed_label),
         "fixed_source": str(fixed_source),
         "rl_variant": seq_rl_variant,
+        "reward_design": str(getattr(train_cfg, "reward_design", "stage1_aligned")),
         "total_episodes_planned": int(total_episodes_planned),
         "rollout_size": int(train_cfg.rollout_size),
         "save_interval": int(train_cfg.save_interval),
+        "stage2_k_trials": int(getattr(train_cfg, "num_trials_per_step", 0) or 0),
+        "stage2_limit_tolerance": float(allowed_acc_drop),
+        "stage2_stability_tolerance": float(stability_tol),
         "ppo_lr": float(train_cfg.ppo.lr),
         "ppo_clip_range": float(train_cfg.ppo.clip_range),
         "ppo_ent_coef": float(train_cfg.ppo.ent_coef),
@@ -4184,15 +4211,31 @@ def run_sequential_via_runner(
         "fusion_shaping_coeff": float(seq_env_cfg.fusion_shaping_coeff),
         "early_terminate_on_invalid": bool(seq_env_cfg.early_terminate_on_invalid),
         "static_invalid_level_mask_enabled": bool(
-            getattr(train_cfg, "static_invalid_level_mask_enabled", True)
+            getattr(train_cfg, "static_invalid_level_mask_enabled", False)
         ),
         "acc_threshold": float(base_env.acc_threshold),
+        "acc_threshold_m2": float(base_env.acc_threshold_m2),
+        "loss_threshold": (
+            float(base_env.loss_threshold) if base_env.loss_threshold is not None else None
+        ),
         "stab_threshold": float(base_env.stab_threshold),
+        "stab_threshold_loss": float(stab_threshold_loss),
+        "stab_threshold_m1": float(stab_threshold_m1),
+        "stab_threshold_m2": float(stab_threshold_m2),
+        "baseline_preflight_metrics": dict(baseline_preflight_metrics),
+        "borderline_retest_enabled": bool(base_env.env_cfg.borderline_retest_enabled),
+        "borderline_retest_trials_multiplier": int(
+            base_env.env_cfg.borderline_retest_trials_multiplier
+        ),
         "static_skeletons_archive": str(ss_baseline_obj.archive_path),
         "fast_reward_mode_enabled": bool(getattr(train_cfg, "fast_reward_mode_enabled", False)),
-        "online_num_trials_per_step": int(getattr(train_cfg, "online_num_trials_per_step", 1)),
+        "online_num_trials_per_step": int(getattr(train_cfg, "online_num_trials_per_step", 5)),
         "terminal_eval_batch_size": int(getattr(train_cfg, "terminal_eval_batch_size", 4)),
         "promotion_validation_trials": int(getattr(train_cfg, "promotion_validation_trials", 4)),
+        "final_selection_top_n": int(getattr(train_cfg, "final_selection_top_n", 20)),
+        "final_selection_validation_trials": int(
+            getattr(train_cfg, "final_selection_validation_trials", 20)
+        ),
         "promotion_margin_window": float(getattr(train_cfg, "promotion_margin_window", 0.25)),
     })
     try:
@@ -4473,9 +4516,9 @@ def run_sequential_via_runner(
                 f"{'-' if record.first_invalid_step is None else f'step{record.first_invalid_step} (L{record.first_invalid_layer}-B{record.first_invalid_block})'}"
             )
 
-        # Track best. ``best_reward`` remains the bounded PPO scalar for
-        # continuity, while the best action is selected by a hard-priority rank
-        # key that can keep separating P3 candidates after cost_score clips.
+        # Track best with the same bounded Stage-1-style reward PPO optimizes.
+        # Hard gates still keep P3 > P2 > P1; unbounded cost rank is only the
+        # tie-breaker inside P3.
         current_rank_key = _episode_best_rank_key(record)
         is_new_best = (not best_rank_key) or current_rank_key > best_rank_key
         if is_new_best:
@@ -4716,6 +4759,10 @@ def run_sequential_via_runner(
                         list(x) for x in record.terminal_probe_trial_indices
                     ],
                     terminal_probe_speedup=float(record.terminal_probe_speedup),
+                    fusion_action_steps=[
+                        dict(x) for x in (record.fusion_action_steps or [])
+                        if isinstance(x, Mapping)
+                    ],
                     per_step_optimizer_wall_seconds=float(record.per_step_optimizer_wall_seconds),
                     policy_rollout_wall_seconds=float(record.policy_rollout_wall_seconds),
                     terminal_cost_eval_wall_seconds=float(record.terminal_cost_eval_wall_seconds),
@@ -5032,7 +5079,7 @@ def run_sequential_via_runner(
     # both unnecessary and incompatible — disable them.
     static_invalid_mask = (
         StaticInvalidLevelMask()
-        if (bool(getattr(seq_train_cfg, "static_invalid_level_mask_enabled", True)) and fusion_map is None)
+        if (bool(getattr(seq_train_cfg, "static_invalid_level_mask_enabled", False)) and fusion_map is None)
         else None
     )
     static_invalid_scan_summary: Dict[str, Any] = {
@@ -5055,7 +5102,7 @@ def run_sequential_via_runner(
         max_valid_samples=int(
             getattr(seq_train_cfg, "empirical_invalid_level_max_valid", 0)
         ),
-    ) if (bool(getattr(seq_train_cfg, "empirical_invalid_level_mask_enabled", True)) and fusion_map is None) else None
+    ) if (bool(getattr(seq_train_cfg, "empirical_invalid_level_mask_enabled", False)) and fusion_map is None) else None
     if effective_resume_path and os.path.isfile(effective_resume_path):
         try:
             _ckpt = torch.load(effective_resume_path, map_location=device)
@@ -5122,12 +5169,10 @@ def run_sequential_via_runner(
     # `reports/stage2_rl/bug_reports/2026-05-18_stage2_rl_rdv2_negative_reward_startup/`.
     # The fallback is now exactly 60 episodes, matching the non-monotonic
     # boundary-search curriculum.
-    # ADR-015: no baseline anchor under the continuous reward — the small
-    # all-valid (option,K) space wants high-entropy cosine exploration from
-    # episode 1, not a forced-baseline (fusion=0) warmup that biases the policy.
-    _force_baseline_episodes = (
-        0 if _continuous else _resolve_sequential_force_baseline_episodes(train_cfg)
-    )
+    # Continuous reward still needs the configured baseline anchor. The
+    # fusion-count action space can otherwise spend the first PPO windows in
+    # P1/loss-cap candidates before the policy has seen a feasible return.
+    _force_baseline_episodes = _resolve_sequential_force_baseline_episodes(train_cfg)
     log(
         f"  {bullet} 强制 baseline 锚点（forced-baseline anchor）: "
         f"前 {_force_baseline_episodes} 个 episode 直接执行 baseline action，"
@@ -5208,37 +5253,200 @@ def run_sequential_via_runner(
     # both files use the SF/K-first schema.
     from .action_space import describe_action_vector as _describe_action_vector
     from .persistence import write_action_description_files as _write_action_description_files
-    # ADR-015: STRICT feasibility selection (port of Stage-1's
-    # _select_stage1_reward_best_config). The reported best must STRICTLY satisfy
-    # accuracy AND stability (terminal_priority == 3 under the strict std gate). If
-    # the search never found a feasible candidate, fall back to the baseline (which
-    # is feasible by construction: fusion=0, no added instability) rather than
-    # reporting an infeasible "best" — exactly what Stage-1 does. This is what the
-    # user means by "找出的最优配置严格满足精度+稳定性约束".
+    # ADR-015: STRICT feasibility selection. Revalidate the ranked top-N before
+    # publishing the best action, then choose the first strict-feasible candidate.
+    # This keeps a slightly loss-failed rank-best from forcing a baseline fallback
+    # when a lower-ranked candidate satisfies the constraints.
     best_fallback_to_baseline = False
-    _best_priority = int(getattr(best_record, "terminal_priority", 0)) if best_record is not None else 0
-    # 2026-06-15: loss_mean is enforced HERE (strict selection), not in the
-    # per-episode reward — its noisy reference is not cross-GPU-deterministic, so
-    # gating it per-episode breaks 1==N. At selection the recorded loss is
-    # byte-identical and the per-run loss_threshold is fixed, so this check is
-    # deterministic within a run. The reported best must satisfy loss ≤ baseline×(1+tol).
     _loss_thr = getattr(base_env, "loss_threshold", None)
-    _best_loss = float(getattr(best_record, "terminal_loss_mean", float("inf"))) if best_record is not None else float("inf")
-    _best_loss_ok = (_loss_thr is None) or (np.isfinite(_best_loss) and _best_loss <= float(_loss_thr) + 1e-12)
-    if _best_priority != 3 or not _best_loss_ok:
-        best_fallback_to_baseline = True
-        _why = "无 P3（严格 acc+stab 可行）候选" if _best_priority != 3 else (
-            f"best loss_mean={_best_loss:.4f} > loss_threshold={float(_loss_thr):.4f}（loss 越低越好硬约束）"
-        )
+    _final_top_n = max(1, int(getattr(train_cfg, "final_selection_top_n", 20) or 20))
+    _final_trials = max(
+        int(getattr(train_cfg, "promotion_validation_trials", 1) or 1),
+        int(getattr(train_cfg, "final_selection_validation_trials", 20) or 20),
+    )
+    _selection_records = list(live_episode_records)
+    if best_record is not None and all(r is not best_record for r in _selection_records):
+        _selection_records.append(best_record)
+    def _final_selection_record_vec(record: Any) -> Optional[np.ndarray]:
+        raw = getattr(record, "_pending_full_vec_for_callback", None)
+        if raw is None:
+            return None
+        return np.asarray(raw, dtype=np.int64).copy()
+
+    _selection_records = [
+        r for r in _selection_records
+        if _final_selection_record_vec(r) is not None
+    ]
+    _selection_candidates = sorted(
+        _selection_records, key=_episode_best_rank_key, reverse=True,
+    )[:_final_top_n]
+    if _selection_candidates:
         log(
-            f"  {bullet} [ADR-015] {_why}（best priority="
-            f"{_best_priority}）→ best 回退 baseline（baseline 按构造可行）"
+            f"  {bullet} [ADR-015] final strict selection: "
+            f"revalidate top-{len(_selection_candidates)} with K={_final_trials} trials"
+        )
+
+    def _fusion_group_from_record_or_vec(record: Any, action_vec: np.ndarray) -> Optional[Dict[str, Any]]:
+        if fusion_map is None:
+            return None
+        raw_steps = getattr(record, "fusion_action_steps", None) or []
+        option_by_step: Dict[str, int] = {}
+        choices_by_step: List[Dict[str, Any]] = []
+        for item in raw_steps:
+            if not isinstance(item, Mapping):
+                continue
+            if "step_idx" not in item or "option_id" not in item:
+                continue
+            step_key = str(int(item["step_idx"]))
+            option_by_step[step_key] = int(item["option_id"])
+            choices_by_step.append(dict(item))
+        if option_by_step:
+            return {
+                "option_by_step": option_by_step,
+                "choices_by_step": choices_by_step,
+                "source": "episode_record_fusion_action_steps",
+            }
+
+        from .fusion_fixed_action import build_fusion_fixed_config
+        cfg = build_fusion_fixed_config(
+            np.asarray(action_vec, dtype=int),
+            profile=str(train_cfg.profile),
+            num_layers=int(ev.total_layers),
+            gelu=np.asarray(fixed_gelu, dtype=int),
+            softmax=np.asarray(fixed_softmax, dtype=int),
+            fusion_map=fusion_map,
+            source="final_strict_revalidation",
+        )
+        group = cfg.get("group")
+        return group if isinstance(group, Mapping) else None
+
+    for _rank, _candidate in enumerate(_selection_candidates, start=1):
+        _candidate_vec = _final_selection_record_vec(_candidate)
+        if _candidate_vec is None:
+            log(
+                f"  {bullet} [ADR-015] final candidate rank {_rank} "
+                f"ep={getattr(_candidate, 'episode_idx', '?')} skipped: no action vec"
+            )
+            continue
+        try:
+            _candidate_boosted_overrides = None
+            if fusion_map is not None:
+                from .fusion_fixed_action import build_boosted_overrides_from_group
+                _candidate_group = _fusion_group_from_record_or_vec(_candidate, _candidate_vec)
+                if _candidate_group is not None:
+                    _candidate_boosted_overrides = (
+                        build_boosted_overrides_from_group(
+                            np.asarray(_candidate_vec, dtype=np.int64),
+                            group=_candidate_group,
+                            fusion_map=fusion_map,
+                            num_layers=int(ev.total_layers),
+                            profile=str(train_cfg.profile),
+                            gelu=np.asarray(fixed_gelu, dtype=int),
+                            softmax=np.asarray(fixed_softmax, dtype=int),
+                        ) or None
+                    )
+            _prepared = base_env.prepare_action_for_terminal_probe(
+                np.asarray(_candidate_vec, dtype=np.int64),
+                boosted_overrides=_candidate_boosted_overrides,
+            )
+            _result = base_env.evaluate_prepared_terminal_batch(
+                [_prepared],
+                num_trials_per_action=int(_final_trials),
+                validation_required=True,
+            )[0]
+            _state, _terminal_reward, _done, _term_info = _result
+            _apply_terminal_info_to_record(
+                _candidate,
+                float(_terminal_reward),
+                _term_info,
+                cached_reward_hit=False,
+                validation_required=True,
+            )
+            log(
+                f"  {bullet} [ADR-015] final candidate rank {_rank} "
+                f"ep={int(start_episode + int(getattr(_candidate, 'episode_idx', 0)) + 1)} "
+                f"P{int(getattr(_candidate, 'terminal_priority', 0) or 0)} "
+                f"loss={float(getattr(_candidate, 'terminal_loss_mean', float('nan'))):.6f} "
+                f"m1={float(getattr(_candidate, 'terminal_metric1_mean', float('nan'))):.6f} "
+                f"m2={float(getattr(_candidate, 'terminal_metric2_mean', float('nan'))):.6f} "
+                f"loss_std={float(getattr(_candidate, 'terminal_loss_std', float('nan'))):.6f} "
+                f"rank_score={float(getattr(_candidate, 'terminal_cost_rank_score', 0.0) or 0.0):+.4f}"
+            )
+        except Exception as exc:
+            log(
+                f"  [ADR-015][warning] final candidate rank {_rank} "
+                f"revalidation failed: {exc}"
+            )
+
+    _selected_record = _select_stage2_strict_feasible_best_record(
+        _selection_candidates,
+        loss_threshold=_loss_thr,
+        top_n=len(_selection_candidates) if _selection_candidates else 1,
+    )
+    if _selected_record is not None:
+        best_record = _selected_record
+        best_rank_key = tuple(_episode_best_rank_key(best_record))
+        best_reward = float(getattr(best_record, "total_reward", 0.0) or 0.0)
+        _selected_vec = _final_selection_record_vec(best_record)
+        best_action_vec = (
+            None if _selected_vec is None
+            else np.asarray(_selected_vec, dtype=np.int64).copy()
+        )
+        _loss_thr_disp = "None" if _loss_thr is None else f"{float(_loss_thr):.6f}"
+        log(
+            f"  {bullet} [ADR-015] final strict best selected: "
+            f"ep={int(start_episode + int(getattr(best_record, 'episode_idx', 0)) + 1)} "
+            f"reward={best_reward:+.4f} "
+            f"loss={float(getattr(best_record, 'terminal_loss_mean', float('nan'))):.6f} "
+            f"threshold={_loss_thr_disp} "
+            f"rank_score={float(getattr(best_record, 'terminal_cost_rank_score', 0.0) or 0.0):+.4f}"
+        )
+    else:
+        best_fallback_to_baseline = True
+        log(
+            f"  {bullet} [ADR-015] top-{_final_top_n} after K={_final_trials} "
+            f"contains no strict-feasible candidate → best 回退 baseline"
         )
         if baseline_action_vec is not None:
             best_action_vec = np.asarray(baseline_action_vec, dtype=np.int64).copy()
         best_record = None
         best_rank_key = tuple()
         best_reward = 0.0  # baseline harvests no cost saving in the continuous reward
+
+    if best_action_vec is not None:
+        try:
+            _final_best_vec = np.asarray(best_action_vec, dtype=np.int64)
+            _final_slots = (
+                None if diag_recorder._slots_view_builder is None
+                else list(diag_recorder._slots_view_builder(_final_best_vec))
+            )
+            _final_best_payload = {
+                "schema_version": diag_recorder.schema_version,
+                "num_layers": int(ev.total_layers),
+                "source": "blb_v3_sequential_final_strict_best",
+                "selection": {
+                    "method": "top_n_strict_feasible_after_revalidation",
+                    "top_n": int(_final_top_n),
+                    "validation_trials": int(_final_trials),
+                    "fallback_to_baseline": bool(best_fallback_to_baseline),
+                },
+                "best_reward": float(best_reward),
+                "best_rank_key": [float(x) for x in best_rank_key],
+                "meta": dict(getattr(diag_recorder, "_meta", {}) or {}),
+                "slots": _final_slots,
+                "diff_vs_baseline": diag_recorder._diff_against_baseline(_final_slots),
+                "action_vec": _final_best_vec.tolist(),
+            }
+            _tmp_best = diag_recorder.best_json_path + ".tmp"
+            with open(_tmp_best, "w", encoding="utf-8") as _fh:
+                json.dump(_final_best_payload, _fh, ensure_ascii=False, indent=2)
+            os.replace(_tmp_best, diag_recorder.best_json_path)
+            log(
+                f"  {bullet} [ADR-015] diagnostics best_action_vec.json updated "
+                f"to final strict best → {diag_recorder.best_json_path}"
+            )
+        except Exception as exc:
+            log(f"  [diag][warning] final strict best JSON update failed: {exc}")
 
     best_action_description_paths: Dict[str, str] = {}
     baseline_action_description_paths: Dict[str, str] = {}
@@ -5640,7 +5848,11 @@ def run_sequential_via_runner(
                         "loss_mean": float(getattr(baseline, "loss_mean", 0.0)),
                         "metric1_mean": float(getattr(baseline, "metric1_mean", 0.0)),
                         "metric2_mean": float(getattr(baseline, "metric2_mean", 0.0)),
+                        "loss_std": float(getattr(baseline, "loss_std", 0.0)),
+                        "metric1_std": float(getattr(baseline, "metric1_std", 0.0)),
+                        "metric2_std": float(getattr(baseline, "metric2_std", 0.0)),
                     },
+                    "trainer_gate_baseline": dict(baseline_preflight_metrics),
                     "breakdown": _bd,
                 }
                 _metadata = {
@@ -5653,6 +5865,8 @@ def run_sequential_via_runner(
                     "stage1_run_id": getattr(ev, "stage1_run_id", ""),
                     "stage2_limit_tolerance": getattr(ev, "stage2_limit_tolerance", None),
                     "stage2_stability_tolerance": getattr(ev, "stage2_stability_tolerance", None),
+                    "stage2_k_trials": int(getattr(train_cfg, "num_trials_per_step", 0) or 0),
+                    "trainer_gate_baseline": dict(baseline_preflight_metrics),
                 }
                 _report_md = (
                     f"# Stage-2 record: {_combo}\n\n"
@@ -5706,6 +5920,7 @@ def run_sequential_via_runner(
                     _existing["stage2_stability_tolerance"] = getattr(ev, "stage2_stability_tolerance", None)
                     _existing["stage2_k_trials"] = int(getattr(train_cfg, "num_trials_per_step", 0) or 0)
                     _existing["stage2_probe_size"] = int(getattr(ev, "stage2_probe_size", 256) or 256)
+                    _existing["trainer_gate_baseline"] = dict(baseline_preflight_metrics)
                     _ss = _existing.setdefault("stage_status", {})
                     _ss["stage2_search"] = "completed"
                     _sd = _existing.setdefault("stage_detail", {})
@@ -5734,6 +5949,7 @@ def run_sequential_via_runner(
                             "stage2_stability_tolerance": getattr(ev, "stage2_stability_tolerance", None),
                             "stage2_k_trials": int(getattr(train_cfg, "num_trials_per_step", 0) or 0),
                             "stage2_probe_size": int(getattr(ev, "stage2_probe_size", 256) or 256),
+                            "trainer_gate_baseline": dict(baseline_preflight_metrics),
                             "search_algorithm": "rl",
                             "rl_variant": str(getattr(train_cfg, "rl_variant", "") or ""),
                         }, _bf, ensure_ascii=False, indent=2)
@@ -5770,9 +5986,20 @@ def run_sequential_via_runner(
         split=ev.get_reward_reference_split_name(),
     )
     limit_dict = ev.build_constraint_limits_from_metrics(base_loss, base_p, base_s)
-    limit_loss = float(limit_dict["loss"])
-    limit_p = float(limit_dict["metric1"])
-    limit_s = float(limit_dict["metric2"])
+    clean_limit_loss = float(limit_dict["loss"])
+    clean_limit_p = float(limit_dict["metric1"])
+    clean_limit_s = float(limit_dict["metric2"])
+    search_limit_loss = (
+        float(base_env.loss_threshold)
+        if base_env.loss_threshold is not None
+        else float(clean_limit_loss)
+    )
+    search_limit_p = float(base_env.acc_threshold)
+    search_limit_s = float(
+        base_env.acc_threshold_m2
+        if base_env.acc_threshold_m2 is not None
+        else base_env.acc_threshold
+    )
 
     result: Dict[str, Any] = {
         "fixed_gelu": fixed_gelu.copy(),
@@ -5786,12 +6013,12 @@ def run_sequential_via_runner(
         "performance_baseline_source": "stage1_fixed_low_risk_noise",
         "k_trials": int(train_cfg.num_trials_per_step),
         "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
-        "limit_loss": float(limit_loss),
-        "limit_p": float(limit_p),
-        "limit_s": float(limit_s),
-        "proxy_limit_loss": float(limit_loss),
-        "proxy_limit_p": float(limit_p),
-        "proxy_limit_s": float(limit_s),
+        "limit_loss": float(search_limit_loss),
+        "limit_p": float(search_limit_p),
+        "limit_s": float(search_limit_s),
+        "proxy_limit_loss": float(search_limit_loss),
+        "proxy_limit_p": float(search_limit_p),
+        "proxy_limit_s": float(search_limit_s),
         "proxy_base_loss": float(base_loss),
         "proxy_base_p": float(base_p),
         "proxy_base_s": float(base_s),
@@ -5800,14 +6027,27 @@ def run_sequential_via_runner(
             "metric1": float(base_p),
             "metric2": float(base_s),
         },
-        "search_limits": {"loss": float(limit_loss), "metric1": float(limit_p), "metric2": float(limit_s)},
+        "raw_model_constraint_limits": {
+            "loss": float(clean_limit_loss),
+            "metric1": float(clean_limit_p),
+            "metric2": float(clean_limit_s),
+        },
+        "all_max_blb_baseline_metrics": dict(baseline_preflight_metrics),
+        "search_limits": {
+            "loss": float(search_limit_loss),
+            "metric1": float(search_limit_p),
+            "metric2": float(search_limit_s),
+            "loss_std": float(stab_threshold_loss),
+            "metric1_std": float(stab_threshold_m1),
+            "metric2_std": float(stab_threshold_m2),
+        },
         "status": "completed",
         "training_eval_split": str(ev.get_reward_reference_split_name()),
         "best_noise_config": {k: v.copy() for k, v in legacy_best.items()},
         "stable_search_best_noise_config": {k: v.copy() for k, v in legacy_best.items()},
         "stable_joint_best_noise_config": {k: v.copy() for k, v in legacy_best.items()},
         "selection_diagnostics": {
-            "selection_mode": "blb_v3_sequential_hard_priority_unbounded_cost_rank",
+            "selection_mode": "blb_v3_sequential_stage1_reward_then_cost_rank",
             "best_reward": float(best_reward),
             "best_rank_key": [float(x) for x in best_rank_key],
             "best_action_vec": (
@@ -5867,6 +6107,17 @@ def run_sequential_via_runner(
             ),
             "k_trials": int(train_cfg.num_trials_per_step),
             "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
+            "baseline_preflight_trial_count": int(
+                baseline_preflight_metrics.get("trial_count", train_cfg.num_trials_per_step)
+            ),
+            "stage2_limit_tolerance": float(allowed_acc_drop),
+            "stage2_stability_tolerance": float(stability_tol),
+            "metric1_threshold": float(search_limit_p),
+            "metric2_threshold": float(search_limit_s),
+            "loss_threshold": float(search_limit_loss),
+            "std_threshold_loss": float(stab_threshold_loss),
+            "std_threshold_metric1": float(stab_threshold_m1),
+            "std_threshold_metric2": float(stab_threshold_m2),
         },
         "reward_diagnostics": {
             "episode_return_mean": (

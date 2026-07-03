@@ -75,7 +75,16 @@ class RLDataPointWriter:
         self._line_counts: Dict[str, int] = {}
 
     def write_manifest(self, payload: Dict[str, Any]) -> None:
-        doc = dict(payload)
+        path = self.run_dir / "manifest.json"
+        doc: Dict[str, Any] = {}
+        if path.is_file():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    doc.update(loaded)
+            except Exception:
+                doc = {}
+        doc.update(dict(payload))
         doc.update(
             {
                 "stage": self.stage,
@@ -85,7 +94,7 @@ class RLDataPointWriter:
                 "run_dir": str(self.run_dir),
             }
         )
-        (self.run_dir / "manifest.json").write_text(
+        path.write_text(
             json.dumps(to_jsonable(doc), ensure_ascii=False, indent=2, sort_keys=True)
             + "\n",
             encoding="utf-8",

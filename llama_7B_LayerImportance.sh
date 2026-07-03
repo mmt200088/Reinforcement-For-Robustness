@@ -172,16 +172,19 @@ GA / Greedy：
                                           训练前用 Rescale optimizer 预扫描并屏蔽本地 invalid level
   --blb-v3-fast-reward-mode-enabled true|false
                                           在线 K=1、按 terminal batch 把不同 action 分配到多 GPU
-  --blb-v3-online-k-trials N              fast reward mode 在线每 action trial 数（默认 1）
+  --blb-v3-online-k-trials N              fast reward mode 在线每 action trial 数（默认 5）
   --blb-v3-terminal-eval-batch-size N     fast reward mode 每批 terminal action 数
   --blb-v3-promotion-validation-trials N  边界/优秀候选的重复验证 trial 数
+  --blb-v3-final-selection-top-n N        训练结束 final selector 复核的候选数
+  --blb-v3-final-selection-validation-trials N
+                                          训练结束 final selector 每候选复核 trial 数
   --blb-v3-promotion-margin-window FLOAT  触发 promotion validation 的 best reward 窗口
   --blb-v3-sequential-rl true|false       BLB Stage-2 RL 序列决策模式（默认 true，每层每 block 单独决策；
                                             横长 horizon=59；想回退到旧的 577 维单步可传 false 或
                                             --blb-v3-no-sequential-rl）
   --blb-v3-no-sequential-rl                等价于 --blb-v3-sequential-rl false
   --blb-v3-sequential-invalid-penalty FLOAT  每个 invalid 子步骤的负奖励（默认 1.0）
-  --blb-v3-sequential-cost-shaping-coeff FLOAT  每个有效 block 的 cost shaping 系数（默认 0.05）
+  --blb-v3-sequential-cost-shaping-coeff FLOAT  每个有效 block 的 cost shaping 系数（默认 0.0）
   --blb-v3-sequential-fusion-shaping-coeff FLOAT  fusion 数 shaping 系数（默认 0.0；通常不开）
   --blb-v3-sequential-early-terminate-on-invalid  invalid 时立即终止 episode（默认 false）
   --blb-v3-action-mask-baseline-logit-bonus FLOAT
@@ -534,15 +537,17 @@ BLB_V3_ACTION_MASK_FILE=""; S_BLB_V3_ACTION_MASK_FILE="false"
 BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="0"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="false"
 BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED=""; S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED="false"
 BLB_V3_FAST_REWARD_MODE_ENABLED="false"; S_BLB_V3_FAST_REWARD_MODE_ENABLED="false"
-BLB_V3_ONLINE_K_TRIALS="1"; S_BLB_V3_ONLINE_K_TRIALS="false"
+BLB_V3_ONLINE_K_TRIALS="5"; S_BLB_V3_ONLINE_K_TRIALS="false"
 BLB_V3_TERMINAL_EVAL_BATCH_SIZE="4"; S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE="false"
 BLB_V3_PROMOTION_VALIDATION_TRIALS="4"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="false"
+BLB_V3_FINAL_SELECTION_TOP_N="20"; S_BLB_V3_FINAL_SELECTION_TOP_N="false"
+BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="20"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="false"
 BLB_V3_PROMOTION_MARGIN_WINDOW="0.25"; S_BLB_V3_PROMOTION_MARGIN_WINDOW="false"
 # Per-block sequential RL (default ON since 2026-05-15). Pass --blb-v3-sequential-rl=false to
 # get back the legacy single-shot 577-dim path.
 BLB_V3_SEQUENTIAL_RL="true"; S_BLB_V3_SEQUENTIAL_RL="false"
 BLB_V3_SEQUENTIAL_INVALID_PENALTY="1.0"; S_BLB_V3_SEQUENTIAL_INVALID_PENALTY="false"
-BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="0.05"; S_BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="false"
+BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="0.0"; S_BLB_V3_SEQUENTIAL_COST_SHAPING_COEFF="false"
 BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="0.0"; S_BLB_V3_SEQUENTIAL_FUSION_SHAPING_COEFF="false"
 BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="false"; S_BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="false"
 # 2026-05-27: 4-sub-stage Stage-2 RL (opt-in). When --blb-v3-substage-mode=true,
@@ -754,6 +759,8 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-online-k-trials) needv "$@"; BLB_V3_ONLINE_K_TRIALS="$2"; S_BLB_V3_ONLINE_K_TRIALS="true"; shift 2 ;;
     --blb-v3-terminal-eval-batch-size) needv "$@"; BLB_V3_TERMINAL_EVAL_BATCH_SIZE="$2"; S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE="true"; shift 2 ;;
     --blb-v3-promotion-validation-trials) needv "$@"; BLB_V3_PROMOTION_VALIDATION_TRIALS="$2"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="true"; shift 2 ;;
+    --blb-v3-final-selection-top-n) needv "$@"; BLB_V3_FINAL_SELECTION_TOP_N="$2"; S_BLB_V3_FINAL_SELECTION_TOP_N="true"; shift 2 ;;
+    --blb-v3-final-selection-validation-trials) needv "$@"; BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="$2"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="true"; shift 2 ;;
     --blb-v3-promotion-margin-window) needv "$@"; BLB_V3_PROMOTION_MARGIN_WINDOW="$2"; S_BLB_V3_PROMOTION_MARGIN_WINDOW="true"; shift 2 ;;
     # Per-block sequential RL knobs (default sequential_rl=true since 2026-05-15)
     --blb-v3-sequential-rl) needv "$@"; BLB_V3_SEQUENTIAL_RL="$2"; S_BLB_V3_SEQUENTIAL_RL="true"; shift 2 ;;
@@ -981,6 +988,8 @@ is_pos_int "$BLB_V3_ROLLOUT_SIZE" || err "--stage2-rollout-size 必须是正整�
 [ "$S_BLB_V3_ONLINE_K_TRIALS" = "false" ] || is_pos_int "$BLB_V3_ONLINE_K_TRIALS" || err "--blb-v3-online-k-trials 必须是正整数，当前为：$BLB_V3_ONLINE_K_TRIALS"
 [ "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE" = "false" ] || is_pos_int "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE" || err "--blb-v3-terminal-eval-batch-size 必须是正整数，当前为：$BLB_V3_TERMINAL_EVAL_BATCH_SIZE"
 [ "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS" = "false" ] || is_pos_int "$BLB_V3_PROMOTION_VALIDATION_TRIALS" || err "--blb-v3-promotion-validation-trials 必须是正整数，当前为：$BLB_V3_PROMOTION_VALIDATION_TRIALS"
+[ "$S_BLB_V3_FINAL_SELECTION_TOP_N" = "false" ] || is_pos_int "$BLB_V3_FINAL_SELECTION_TOP_N" || err "--blb-v3-final-selection-top-n 必须是正整数，当前为：$BLB_V3_FINAL_SELECTION_TOP_N"
+[ "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" = "false" ] || is_pos_int "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" || err "--blb-v3-final-selection-validation-trials 必须是正整数，当前为：$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS"
 [ "$S_BLB_V3_PROMOTION_MARGIN_WINDOW" = "false" ] || is_nonneg_num "$BLB_V3_PROMOTION_MARGIN_WINDOW" || err "--blb-v3-promotion-margin-window 必须是非负数，当前为：$BLB_V3_PROMOTION_MARGIN_WINDOW"
 case "$BLB_V3_ACTION_MASK_MODE" in
   ""|none|off|disabled) BLB_V3_ACTION_MASK_MODE="none" ;;
@@ -1718,6 +1727,8 @@ else
     [ "$S_BLB_V3_ONLINE_K_TRIALS" = "true" ] && CMD+=(--blb_v3_online_k_trials "$BLB_V3_ONLINE_K_TRIALS")
     [ "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE" = "true" ] && CMD+=(--blb_v3_terminal_eval_batch_size "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE")
     [ "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS" = "true" ] && CMD+=(--blb_v3_promotion_validation_trials "$BLB_V3_PROMOTION_VALIDATION_TRIALS")
+    [ "$S_BLB_V3_FINAL_SELECTION_TOP_N" = "true" ] && CMD+=(--blb_v3_final_selection_top_n "$BLB_V3_FINAL_SELECTION_TOP_N")
+    [ "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" = "true" ] && CMD+=(--blb_v3_final_selection_validation_trials "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS")
     [ "$S_BLB_V3_PROMOTION_MARGIN_WINDOW" = "true" ] && CMD+=(--blb_v3_promotion_margin_window "$BLB_V3_PROMOTION_MARGIN_WINDOW")
     # Sequential RL: default ON. Always pass the boolean so users can flip via
     # --blb-v3-no-sequential-rl. Shaping coeffs / early-terminate are only
@@ -1782,7 +1793,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARC
   show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
   show "Stage-1 准确度约束" "$STAGE1_ACCURACY_TOLERANCE" "$S_STAGE1_ACCURACY_TOLERANCE"
   show "Stage-2 指标约束百分比" "$STAGE2_LIMIT_TOLERANCE" "$S_STAGE2_LIMIT_TOLERANCE"
-  show "Stage-2 稳定性约束百分比" "$STAGE2_STABILITY_TOLERANCE" "$S_STAGE2_STABILITY_TOLERANCE"
+  show "Stage-2 稳定性约束倍率" "$STAGE2_STABILITY_TOLERANCE" "$S_STAGE2_STABILITY_TOLERANCE"
   show "Stage-2 K 次噪声试验" "$STAGE2_K_TRIALS" "$S_STAGE2_K_TRIALS"
   show "Stage-2 探针子集大小" "$STAGE2_PROBE_SIZE" "$S_STAGE2_PROBE_SIZE"
 fi
@@ -1817,6 +1828,8 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     show "BLB online K trials" "$BLB_V3_ONLINE_K_TRIALS" "$S_BLB_V3_ONLINE_K_TRIALS"
     show "BLB terminal eval batch" "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE" "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE"
     show "BLB promotion validation trials" "$BLB_V3_PROMOTION_VALIDATION_TRIALS" "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS"
+    show "BLB final selection top N" "$BLB_V3_FINAL_SELECTION_TOP_N" "$S_BLB_V3_FINAL_SELECTION_TOP_N"
+    show "BLB final selection validation trials" "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS"
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && show "BLB checkpoint 间隔" "$BLB_V3_SAVE_INTERVAL" "$S_BLB_V3_SAVE_INTERVAL"
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && show "BLB 日志评估间隔" "$BLB_V3_EVAL_INTERVAL" "$S_BLB_V3_EVAL_INTERVAL"
   fi

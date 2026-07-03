@@ -38,9 +38,8 @@ rwd = _load_reward_module()
 
 
 def _weights(**kw):
-    # ADR-013/014 tests exercise the TIERED reward path; ADR-015 flipped the
-    # default to "continuous", so pin tiered here (the continuous path has its
-    # own coverage in test_blb_continuous_reward.py).
+    # ADR-013/014 tests exercise the TIERED reward path; the active default is
+    # Stage-1-aligned, so pin tiered here.
     base = dict(baseline_metric1=0.871, baseline_metric2=0.871, acc_tolerance=0.005,
                 reward_design="tiered")
     base.update(kw)

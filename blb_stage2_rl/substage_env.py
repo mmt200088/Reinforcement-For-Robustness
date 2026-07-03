@@ -110,10 +110,9 @@ class BLBStage2SubstageEnv(BLBStage2SequentialEnv):
             attn_degree_per_layer=attn,
             gelu_degree_per_layer=gelu,
         )
-        # first_input fresh is folded into step 0 (layer 0, block 2). When
-        # the active block is block 2, the substage takes ownership of that
-        # extra slot. When the active block is something else, first_input
-        # belongs to the frozen base (it's deprecated/effective=False anyway).
+        # first_input fresh is deprecated and no longer appears in any substage
+        # action. It stays frozen in the legacy full action vector and is ignored
+        # by model installation/final eval.
         active_specs = [s for s in full if s.block_idx == self._active_block_idx]
         if not active_specs:
             raise RuntimeError(
@@ -133,9 +132,7 @@ class BLBStage2SubstageEnv(BLBStage2SequentialEnv):
         # override here so _build_obs sees the substage horizon.
         self.horizon = n
         # _max_step_dim controls policy actor-head width and prev_actions
-        # padding. Substage's max is over its own specs only -- block 2 step 0
-        # has one extra slot (first_input fresh) so this can still be > the
-        # other block-2 steps.
+        # padding. Substage's max is over its own specs only.
         self._max_step_dim = max(len(s.slot_dims) for s in renumbered)
 
     def reset(self, *, seed: Optional[int] = None) -> np.ndarray:

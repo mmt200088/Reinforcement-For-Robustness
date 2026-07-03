@@ -22,7 +22,14 @@ _NULL_CTX = contextlib.nullcontext()
 from blb_rl_bridge import BLBNoiseRLBridge
 from rescale_optimizer_bridge import (
     RescaleOptimizerBridge,
+    _strip_layer_suffix,
     aggregate_optimizer_signals,
+    apply_optimizer_output_to_cfg,
+    apply_rotation_flags_to_cfg,
+    sync_block2_aux_fresh_binding,
+    sync_block2_qk_binding,
+    sync_block4_v_mask_binding,
+    sync_block5_aux_fresh_binding,
 )
 
 from .action_space import (
@@ -36,11 +43,11 @@ from .action_space import (
     build_optimizer_requests,
     layer_dims,
     make_all_max_action_vector,
+    parse_config_name,
 )
 from .candidate_store import action_hash
-from .inference_eval import run_installed_probe_trial
-from .optimizer_cost import apply_optimizer_outputs_to_cfgs, evaluate_action_for_cost
-from .probe_runner import ProbeRunner, diagnostics_payload
+from .optimizer_cost import evaluate_action_for_cost
+from .probe_runner import ProbeRunner, format_diagnostics_line
 from .reward import (
     BaselineCostStats,
     EpisodeMetrics,
@@ -70,6 +77,146 @@ class ProbeBatch:
         tt = batch.get("token_type_ids")
         tt = tt.to(device, non_blocking=True) if tt is not None else None
         return cls(input_ids=ii, attention_mask=am, labels=lb, token_type_ids=tt)
+
+
+def _logits_to_classes(preds: torch.Tensor) -> torch.Tensor:
+    if preds.dim() == 1:
+        return (preds > 0.5).long()
+    return preds.argmax(dim=-1)
+
+
+def _compute_metrics_on_batch(
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        is_regression: bool = False,
+        ) -> Tuple[float, float, float]:
+    """返回 (loss, metric1, metric2)。
+
+    跑 cross-entropy loss + 简单 accuracy；用于 RL 评估子集（不追求与最终 final-eval
+    完全相同的指标，只要差分单调即可指导 RL）。
+    """
+    if labels.dtype == torch.long and not is_regression:
+        loss = torch.nn.functional.cross_entropy(
+            logits.float(), labels.long(), reduction="mean"
+        ).item()
+        preds = _logits_to_classes(logits.detach())
+        acc = (preds.detach().long() == labels.detach().long()).float().mean().item()
+        return float(loss), float(acc), float(acc)
+    # 回归 / STSB
+    pred_flat = logits.float().reshape(-1)
+    label_flat = labels.float().reshape(-1)
+    loss = torch.nn.functional.mse_loss(pred_flat, label_flat).item()
+    return float(loss), -float(loss), -float(loss)   # metric=-mse 越大越好
+
+
+def _uses_weighted_f1_metric2(metric_profile: str) -> bool:
+    key = str(metric_profile or "").lower().replace("-", "_")
+    return key in {"mrpc", "qqp"} or key.startswith("mrpc_") or key.startswith("qqp_")
+
+
+def _weighted_f1_from_labels(
+        labels: Sequence[int],
+        preds: Sequence[int],
+        ) -> float:
+    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
+    preds_arr = np.asarray(preds, dtype=np.int64).reshape(-1)
+    if labels_arr.size == 0 or preds_arr.size == 0:
+        return 0.0
+    n = min(int(labels_arr.size), int(preds_arr.size))
+    labels_arr = labels_arr[:n]
+    preds_arr = preds_arr[:n]
+    total = float(n)
+    out = 0.0
+    for cls in np.union1d(labels_arr, preds_arr):
+        support = float(np.sum(labels_arr == cls))
+        if support <= 0.0:
+            continue
+        tp = float(np.sum((labels_arr == cls) & (preds_arr == cls)))
+        fp = float(np.sum((labels_arr != cls) & (preds_arr == cls)))
+        fn = float(np.sum((labels_arr == cls) & (preds_arr != cls)))
+        denom = (2.0 * tp) + fp + fn
+        f1 = (2.0 * tp / denom) if denom > 0.0 else 0.0
+        out += (support / total) * f1
+    return float(out)
+
+
+def _probe_batch_sample_count(labels: torch.Tensor) -> int:
+    """Number of examples represented by one probe batch."""
+    try:
+        return max(1, int(labels.reshape(-1).numel()))
+    except Exception:
+        return 1
+
+
+def _weighted_probe_batch_means(
+        losses: Sequence[float],
+        metric1s: Sequence[float],
+        metric2s: Sequence[float],
+        sample_counts: Sequence[int],
+        *,
+        preds: Optional[Sequence[int]] = None,
+        labels: Optional[Sequence[int]] = None,
+        metric_profile: str = "",
+        is_regression: bool = False,
+        ) -> Tuple[float, float, float]:
+    """Aggregate batch metrics as sample-weighted means within one trial.
+
+    Probe batches are usually full-sized except for the final validation batch.
+    Treating every batch equally overweights that small tail batch and can move
+    candidate gates relative to full-validation metrics.
+    """
+    if not losses:
+        return float("nan"), float("nan"), float("nan")
+    counts = np.asarray([max(1, int(x)) for x in sample_counts], dtype=float)
+    if counts.size != len(losses) or not np.isfinite(counts).all() or float(counts.sum()) <= 0.0:
+        return float(np.mean(losses)), float(np.mean(metric1s)), float(np.mean(metric2s))
+    weights = counts / float(counts.sum())
+    return (
+        float(np.dot(np.asarray(losses, dtype=float), weights)),
+        float(np.dot(np.asarray(metric1s, dtype=float), weights)),
+        float(np.dot(np.asarray(metric2s, dtype=float), weights)),
+    )
+
+
+def _finalize_probe_trial_metrics(
+        losses: Sequence[float],
+        metric1s: Sequence[float],
+        metric2s: Sequence[float],
+        sample_counts: Sequence[int],
+        *,
+        preds: Sequence[int],
+        labels: Sequence[int],
+        metric_profile: str,
+        is_regression: bool,
+        ) -> Tuple[float, float, float]:
+    loss, m1, m2 = _weighted_probe_batch_means(
+        losses,
+        metric1s,
+        metric2s,
+        sample_counts,
+        metric_profile=metric_profile,
+        is_regression=is_regression,
+    )
+    if is_regression or not labels:
+        return loss, m1, m2
+    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
+    preds_arr = np.asarray(preds, dtype=np.int64).reshape(-1)
+    if labels_arr.size and preds_arr.size:
+        n = min(int(labels_arr.size), int(preds_arr.size))
+        labels_arr = labels_arr[:n]
+        preds_arr = preds_arr[:n]
+        m1 = float(np.mean(preds_arr == labels_arr))
+        m2 = (
+            _weighted_f1_from_labels(labels_arr, preds_arr)
+            if _uses_weighted_f1_metric2(metric_profile)
+            else m1
+        )
+    return float(loss), float(m1), float(m2)
+
+
+def _env_metric_profile(env: Any) -> str:
+    env_cfg = getattr(env, "env_cfg", None)
+    return str(getattr(env_cfg, "profile", "") or "")
 
 
 # ---------------------------------------------------------------------------
@@ -225,11 +372,25 @@ class BLBStage2Env:
         # mutation, identical results for any GPU count / trial scheduling.
         # None (default) keeps the legacy true-random behavior bit-for-bit.
         self.probe_noise_seed: Optional[int] = None
-        # Per-DEVICE lock shared by same-device episode-parallel workers
-        # (workers-per-device > 1, 2026-06-12): each probe trial's
-        # (reseed_noise -> full forward) is an RNG-consuming atomic unit on
-        # the device's dedicated noise generator. None / uncontended = no-op.
+        # Per-device lock fallback for deterministic probes that still share
+        # the legacy per-device noise generator. Episode-parallel workers set
+        # probe_noise_scope below, which gives same-device siblings separate
+        # generators and avoids this lock on the hot path.
         self.probe_device_lock: Optional[Any] = None
+        # Only needed when multiple episode workers share one CUDA device and
+        # no scoped noise generator is set. In that legacy fallback case CUDA
+        # kernels are asynchronous, so the worker must finish the forward
+        # before a sibling can reseed the same device noise stream.
+        self.probe_device_lock_requires_sync: bool = False
+        # Optional thread-local noise RNG scope. Episode-parallel workers set
+        # this to a unique value so same-device siblings use separate
+        # deterministic noise generators while keeping the same per-trial seed
+        # stream. None keeps the legacy per-device generator behavior.
+        self.probe_noise_scope: Optional[str] = None
+        # Optional worker-local CUDA stream for same-device episode workers.
+        # It is set only by the episode-parallel runner when multiple workers
+        # share a GPU; single-worker/device runs keep the default stream.
+        self.probe_cuda_stream: Optional[Any] = None
 
         self.action_dims = action_dims_for_config(self.num_layers)
         self.total_action_dim = len(self.action_dims)
@@ -467,7 +628,12 @@ class BLBStage2Env:
             metric2_min=placeholder_metric2,
         )
 
-    def prepare_action_for_terminal_probe(self, action_vec: np.ndarray) -> Dict[str, Any]:
+    def prepare_action_for_terminal_probe(
+            self,
+            action_vec: np.ndarray,
+            *,
+            boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
+            ) -> Dict[str, Any]:
         """Prepare optimizer-adjusted cfgs for a terminal reward probe.
 
         This mirrors the pre-forward part of :meth:`step` and exists so the
@@ -494,6 +660,7 @@ class BLBStage2Env:
             rescale_bridge=self.rescale_bridge,
             gelu_degree=self.gelu_degree,
             attn_degree=self.attn_degree,
+            boosted_overrides=boosted_overrides,
         )
         timing["cost_eval_wall_seconds"] = float(time.perf_counter() - cost_t0)
         decoded = cost_eval.decoded
@@ -507,20 +674,42 @@ class BLBStage2Env:
 
         bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
         invoker_baselines: Mapping[str, Any] = getattr(bridge_invoker, "baselines", {}) or {}
-
-        def _rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
-            return (self.env_cfg.rotation_name_map or {}).get(
-                (int(block_idx), str(profile)), {}
-            )
-
-        replan_application = apply_optimizer_outputs_to_cfgs(
-            profile=str(self.env_cfg.profile),
-            cfgs_dict=cfgs_dict,
-            opt_outputs=opt_outputs,
-            invoker_baselines=invoker_baselines,
-            rotation_name_map_provider=_rotation_provider,
-        )
-        per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
+        per_config_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
+        if not any_invalid:
+            for cn, out in opt_outputs.items():
+                try:
+                    block_idx, _profile, layer_idx = parse_config_name(cn)
+                except Exception:
+                    continue
+                if layer_idx < 0:
+                    continue
+                target_cfg = cfgs_dict[f"block{block_idx}"][int(layer_idx)]
+                graph_key, _ = _strip_layer_suffix(cn)
+                baseline_entry = invoker_baselines.get(graph_key)
+                baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
+                rotation_name_map = (self.env_cfg.rotation_name_map or {}).get(
+                    (int(block_idx), str(self.env_cfg.profile)), {}
+                )
+                overrides = apply_optimizer_output_to_cfg(
+                    target_cfg,
+                    output_raw=out.raw,
+                    block_idx=int(block_idx),
+                    graph_key=graph_key,
+                    baseline_skeleton=baseline_skeleton,
+                    rotation_name_map=rotation_name_map,
+                )
+                if int(block_idx) == 2:
+                    overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
+                    overrides = list(overrides) + sync_block2_aux_fresh_binding(target_cfg)
+                elif int(block_idx) == 4:
+                    overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
+                elif int(block_idx) == 5:
+                    overrides = list(overrides) + sync_block5_aux_fresh_binding(target_cfg)
+                if overrides:
+                    per_config_overrides[cn] = [
+                        (e.cfg_attr, e.source, e.old_value, e.new_value)
+                        for e in overrides
+                    ]
 
         info: Dict[str, Any] = {
             "decoded": decoded,
@@ -540,7 +729,6 @@ class BLBStage2Env:
             info["model_degree_sync"] = degree_sync
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
-        info["replan_application"] = replan_application
 
         return {
             "action_vec": action_vec,
@@ -594,6 +782,7 @@ class BLBStage2Env:
             any_invalid=any_invalid,
             pareto_archive=self.pareto_cost_archive,
             action_hash=action_vec_hash,
+            loss_threshold=self.loss_threshold,
         )
         info["reward_breakdown"] = breakdown
         info["action_hash"] = action_vec_hash
@@ -648,7 +837,22 @@ class BLBStage2Env:
                 diag_obj = self.probe_runner.last_diagnostics
                 diag = {}
                 if diag_obj is not None:
-                    diag = diagnostics_payload(diag_obj)
+                    diag = {
+                        "k": int(diag_obj.k),
+                        "wall_seconds": float(diag_obj.wall_seconds),
+                        "per_worker_seconds": [float(x) for x in diag_obj.per_worker_seconds],
+                        "per_worker_trial_counts": [int(x) for x in diag_obj.per_worker_trial_counts],
+                        "per_worker_trial_indices": [
+                            list(map(int, x)) for x in diag_obj.per_worker_trial_indices
+                        ],
+                        "per_worker_trial_seeds": [
+                            list(map(int, x)) for x in diag_obj.per_worker_trial_seeds
+                        ],
+                        "devices": [str(x) for x in diag_obj.devices],
+                        "speedup_vs_sequential": float(diag_obj.speedup_vs_sequential),
+                        "multi_action": bool(getattr(diag_obj, "multi_action", False)),
+                        "line": format_diagnostics_line(diag_obj),
+                    }
                 diag.update({
                     "fast_reward_mode": True,
                     "online_num_trials_per_step": int(k),
@@ -798,25 +1002,74 @@ class BLBStage2Env:
             summarize_optimizer_invalid_outputs(opt_outputs) if any_invalid else ""
         )
 
-        # 2) Optimizer-driven cfg override: shared canonical write-back.
-        #    This must stay identical to Paean final eval and fixed-action
-        #    experiments; keep the block-specific binding sync in
-        #    optimizer_cost.apply_optimizer_outputs_to_cfgs.
+        # 2) Optimizer-driven cfg override: rewrite every (block, layer) cfg in
+        #    place so that the noise actually installed below reflects
+        #    Rescale_optimizer's chosen SFs / fused rescales / effective
+        #    rotations, rather than only the RL action's raw proposal.
         bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
         invoker_baselines: Mapping[str, Any] = getattr(bridge_invoker, "baselines", {}) or {}
-        def _rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
-            return (self.env_cfg.rotation_name_map or {}).get(
-                (int(block_idx), str(profile)), {}
-            )
-
-        replan_application = apply_optimizer_outputs_to_cfgs(
-            profile=str(self.env_cfg.profile),
-            cfgs_dict=cfgs_dict,
-            opt_outputs=opt_outputs,
-            invoker_baselines=invoker_baselines,
-            rotation_name_map_provider=_rotation_provider,
-        )
-        per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
+        per_config_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
+        if not any_invalid:
+            for cn, out in opt_outputs.items():
+                try:
+                    block_idx, _profile, layer_idx = parse_config_name(cn)
+                except Exception:
+                    continue
+                if layer_idx < 0:
+                    continue
+                target_cfg = cfgs_dict[f"block{block_idx}"][int(layer_idx)]
+                graph_key, _ = _strip_layer_suffix(cn)
+                baseline_entry = invoker_baselines.get(graph_key)
+                # invoker.baselines is the InProcessInvoker tuple form
+                # (skeleton, t_baseline, q_bits_baseline)
+                baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
+                rotation_name_map = (self.env_cfg.rotation_name_map or {}).get(
+                    (int(block_idx), str(self.env_cfg.profile)), {}
+                )
+                overrides = apply_optimizer_output_to_cfg(
+                    target_cfg,
+                    output_raw=out.raw,
+                    block_idx=int(block_idx),
+                    graph_key=graph_key,
+                    baseline_skeleton=baseline_skeleton,
+                    rotation_name_map=rotation_name_map,
+                )
+                # Block 2 has Q/K binding (action_space writes wk_sf to both
+                # wk_encode and wq_encode). The optimizer-driven override above
+                # only refreshes the K-side encodes (those are the names in
+                # GRAPH_NODE_TO_CFG_ATTR[2]); without this sync the model would
+                # install Q-channel noise at the pre-override RL SF while
+                # K-channel uses the optimizer-snapped SF.
+                if int(block_idx) == 2:
+                    # Q/K mask binding (action_space writes wk_sf to both
+                    # K-side and Q-side encodes; optimizer write-back only
+                    # refreshes K-side).
+                    overrides = list(overrides) + sync_block2_qk_binding(target_cfg)
+                    # x_centered_fresh / inv_std_fresh "x2" binding (action_space
+                    # writes inv_std_fresh.sf to both; optimizer write-back only
+                    # refreshes inv_std_fresh — apply_optimizer_output_to_cfg's
+                    # SOURCE entry for block2 is cfg.inv_std_fresh).
+                    overrides = list(overrides) + sync_block2_aux_fresh_binding(target_cfg)
+                # Block 4 has mask2 binding (action_space writes the shared
+                # softmax_out_mask SF to both softmax_out_mask_encode and
+                # v_mask_encode). The optimizer-driven override only refreshes
+                # softmax_out_mask_encode (the entry in GRAPH_NODE_TO_CFG_ATTR[4]
+                # for ``ctpt_mask2``); without this sync, V-side install + the
+                # ``ctct_rot_softmax_mul_v`` delta computation (which reads
+                # cfg.v_mask_encode.scaling_factor) would drift from the
+                # softmax_out side.
+                elif int(block_idx) == 4:
+                    overrides = list(overrides) + sync_block4_v_mask_binding(target_cfg)
+                # Block 5 mirror of Block 2: x_centered_fresh / inv_std_fresh
+                # "x2" binding. The SOURCE entry for block5 is cfg.x_centered_fresh,
+                # so the optimizer refreshes that and we mirror onto inv_std_fresh.
+                elif int(block_idx) == 5:
+                    overrides = list(overrides) + sync_block5_aux_fresh_binding(target_cfg)
+                if overrides:
+                    per_config_overrides[cn] = [
+                        (e.cfg_attr, e.source, e.old_value, e.new_value)
+                        for e in overrides
+                    ]
 
         # 3) 基础诊断信息。Rescale_optimizer 的 invalid 是成本/可行性信号，
         #    但不能再作为跳过模型 forward 的理由；终端 reward 必须看到
@@ -839,7 +1092,6 @@ class BLBStage2Env:
             info["model_degree_sync"] = degree_sync
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
-        info["replan_application"] = replan_application
 
         # 3.5) Short-circuit: if Rescale_optimizer already marked any block as
         # invalid_chain, the assembled cfg is incoherent — installing it would
@@ -894,6 +1146,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
+                loss_threshold=self.loss_threshold,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -953,6 +1206,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
+                loss_threshold=self.loss_threshold,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -997,6 +1251,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 pareto_archive=self.pareto_cost_archive,
                 action_hash=action_vec_hash,
+                loss_threshold=self.loss_threshold,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1039,6 +1294,7 @@ class BLBStage2Env:
             action_hash=action_vec_hash,
             external_cost_score=external_cost_score,
             external_cost_rank=external_cost_rank,
+            loss_threshold=self.loss_threshold,
         )
 
         info["reward_breakdown"] = breakdown
@@ -1185,7 +1441,17 @@ class BLBStage2Env:
                 results = self.probe_runner.run_trials(k, base_seed=base_seed)
                 diag = self.probe_runner.last_diagnostics
                 if diag is not None:
-                    self._last_probe_diagnostics = diagnostics_payload(diag)
+                    self._last_probe_diagnostics = {
+                        "k": int(diag.k),
+                        "wall_seconds": float(diag.wall_seconds),
+                        "per_worker_seconds": [float(x) for x in diag.per_worker_seconds],
+                        "per_worker_trial_counts": [int(x) for x in diag.per_worker_trial_counts],
+                        "per_worker_trial_indices": [list(map(int, x)) for x in diag.per_worker_trial_indices],
+                        "per_worker_trial_seeds": [list(map(int, x)) for x in diag.per_worker_trial_seeds],
+                        "devices": [str(x) for x in diag.devices],
+                        "speedup_vs_sequential": float(diag.speedup_vs_sequential),
+                        "line": format_diagnostics_line(diag),
+                    }
                 for (loss, m1, m2) in results:
                     if loss is None or (isinstance(loss, float) and not math.isfinite(loss)):
                         # NaN/inf from a probe trial is kept and handled below
@@ -1209,16 +1475,46 @@ class BLBStage2Env:
                             if torch.cuda.is_available():
                                 torch.cuda.manual_seed_all(seed)
 
-                            loss, m1, m2 = run_installed_probe_trial(
-                                self.model,
-                                self.probe_batches,
-                                is_regression=bool(self.is_regression),
-                                metric_profile=str(self.env_cfg.profile),
-                                restore_training=False,
-                            )
-                            per_trial_loss.append(loss)
-                            per_trial_metric1.append(m1)
-                            per_trial_metric2.append(m2)
+                            losses, m1s, m2s, counts = [], [], [], []
+                            trial_preds: List[int] = []
+                            trial_labels: List[int] = []
+                            for batch in self.probe_batches:
+                                kwargs: Dict[str, torch.Tensor] = {
+                                    "input_ids": batch.input_ids,
+                                    "attention_mask": batch.attention_mask,
+                                    "labels": batch.labels,
+                                }
+                                if batch.token_type_ids is not None:
+                                    kwargs["token_type_ids"] = batch.token_type_ids
+                                outputs = self.model(**kwargs)
+                                logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
+                                loss, m1, m2 = _compute_metrics_on_batch(
+                                    logits, batch.labels, is_regression=self.is_regression,
+                                )
+                                losses.append(loss)
+                                m1s.append(m1)
+                                m2s.append(m2)
+                                counts.append(_probe_batch_sample_count(batch.labels))
+                                if not self.is_regression:
+                                    preds = _logits_to_classes(logits.detach())
+                                    trial_preds.extend(
+                                        int(x) for x in preds.detach().cpu().reshape(-1).tolist()
+                                    )
+                                    trial_labels.extend(
+                                        int(x) for x in batch.labels.detach().cpu().reshape(-1).tolist()
+                                    )
+
+                            if losses:
+                                loss, m1, m2 = _finalize_probe_trial_metrics(
+                                    losses, m1s, m2s, counts,
+                                    preds=trial_preds,
+                                    labels=trial_labels,
+                                    metric_profile=_env_metric_profile(self),
+                                    is_regression=bool(self.is_regression),
+                                )
+                                per_trial_loss.append(loss)
+                                per_trial_metric1.append(m1)
+                                per_trial_metric2.append(m2)
                     wall_elapsed = time.perf_counter() - probe_wall_start
                     self._last_probe_diagnostics = {
                         "k": int(k),
@@ -1266,37 +1562,95 @@ class BLBStage2Env:
         trial granularity with identical per-trial noise streams regardless
         of interleaving order.
         """
-        from function_handler import reseed_noise_rng_for_device
+        from function_handler import noise_rng_scope, reseed_noise_rng_for_device
 
+        scope = getattr(self, "probe_noise_scope", None)
         lock = self.probe_device_lock
+        if scope is not None:
+            lock = _NULL_CTX
         if lock is None:
             lock = _NULL_CTX
+        sync_before_unlock = (
+            bool(getattr(self, "probe_device_lock_requires_sync", False))
+            and getattr(self._device, "type", None) == "cuda"
+            and scope is None
+        )
+        probe_stream = getattr(self, "probe_cuda_stream", None)
+        use_probe_stream = (
+            probe_stream is not None
+            and getattr(self._device, "type", None) == "cuda"
+        )
         base_seed = int(self.probe_noise_seed)
         per_trial_loss: List[float] = []
         per_trial_metric1: List[float] = []
         per_trial_metric2: List[float] = []
         probe_wall_start = time.perf_counter()
         was_training = self.model.training
-        self.model.eval()
+        if was_training:
+            self.model.eval()
         try:
             with torch.inference_mode():
                 for trial_idx in range(int(k)):
                     seed = int(
                         (base_seed ^ (trial_idx * 2654435761)) & 0x7FFFFFFFFFFFFFFF
                     )
-                    with lock:
-                        reseed_noise_rng_for_device(self._device, seed)
+                    trial_outputs: List[Tuple[torch.Tensor, torch.Tensor]] = []
+                    with noise_rng_scope(scope):
+                        with lock:
+                            reseed_noise_rng_for_device(self._device, seed)
+                            stream_ctx = (
+                                torch.cuda.stream(probe_stream)
+                                if use_probe_stream else _NULL_CTX
+                            )
+                            with stream_ctx:
+                                for batch in self.probe_batches:
+                                    kwargs: Dict[str, torch.Tensor] = {
+                                        "input_ids": batch.input_ids,
+                                        "attention_mask": batch.attention_mask,
+                                        "labels": batch.labels,
+                                    }
+                                    if batch.token_type_ids is not None:
+                                        kwargs["token_type_ids"] = batch.token_type_ids
+                                    outputs = self.model(**kwargs)
+                                    logits = outputs.logits if hasattr(outputs, "logits") else outputs[1]
+                                    trial_outputs.append((logits, batch.labels))
+                            if use_probe_stream:
+                                torch.cuda.current_stream(self._device).wait_stream(
+                                    probe_stream
+                                )
+                            if sync_before_unlock:
+                                torch.cuda.synchronize(self._device)
 
-                        loss, m1, m2 = run_installed_probe_trial(
-                            self.model,
-                            self.probe_batches,
-                            is_regression=bool(self.is_regression),
-                            metric_profile=str(self.env_cfg.profile),
-                            restore_training=False,
+                    losses, m1s, m2s, counts = [], [], [], []
+                    trial_preds: List[int] = []
+                    trial_labels: List[int] = []
+                    for logits, labels in trial_outputs:
+                        loss, m1, m2 = _compute_metrics_on_batch(
+                            logits, labels, is_regression=self.is_regression,
                         )
-                    per_trial_loss.append(loss)
-                    per_trial_metric1.append(m1)
-                    per_trial_metric2.append(m2)
+                        losses.append(loss)
+                        m1s.append(m1)
+                        m2s.append(m2)
+                        counts.append(_probe_batch_sample_count(labels))
+                        if not self.is_regression:
+                            preds = _logits_to_classes(logits.detach())
+                            trial_preds.extend(
+                                int(x) for x in preds.detach().cpu().reshape(-1).tolist()
+                            )
+                            trial_labels.extend(
+                                int(x) for x in labels.detach().cpu().reshape(-1).tolist()
+                            )
+                    if losses:
+                        loss, m1, m2 = _finalize_probe_trial_metrics(
+                            losses, m1s, m2s, counts,
+                            preds=trial_preds,
+                            labels=trial_labels,
+                            metric_profile=_env_metric_profile(self),
+                            is_regression=bool(self.is_regression),
+                        )
+                        per_trial_loss.append(loss)
+                        per_trial_metric1.append(m1)
+                        per_trial_metric2.append(m2)
         finally:
             if was_training:
                 self.model.train()

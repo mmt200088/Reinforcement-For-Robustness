@@ -4,14 +4,10 @@ import itertools
 import json
 import re
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-
-from cli_parse_utils import parse_int_list_text
-from json_utils import read_json_file
 
 from blb_stage2_rl.action_space import (
     K_LEVELS,
@@ -27,17 +23,6 @@ from blb_stage2_rl.action_space import (
     sf_from,
     sum_truncation_k_in_action,
 )
-
-_K_LEVEL_TO_INDEX = {int(value): int(idx) for idx, value in enumerate(K_LEVELS)}
-_K_LEVEL_CHOICES_TEXT = str(sorted(int(value) for value in K_LEVELS))
-
-
-@lru_cache(maxsize=None)
-def _sf_value_index_table(kind: str, max_sf: int) -> Tuple[Dict[int, int], str]:
-    levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[str(kind)]
-    choices = tuple(int(sf_from(idx, int(max_sf), levels)) for idx in range(levels))
-    choices_text = "[" + ", ".join(str(choice) for choice in choices) + "]"
-    return {int(choice): int(idx) for idx, choice in enumerate(choices)}, choices_text
 
 
 @dataclass(frozen=True)
@@ -131,7 +116,7 @@ def load_action_grid_config(
     path = Path(str(path_value or "").strip())
     if not path.is_file():
         raise FileNotFoundError(f"final_eval action config does not exist: {path}")
-    payload = read_json_file(path, encoding="utf-8-sig")
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, Mapping):
         raise ValueError("--action-config JSON must be an object")
 
@@ -522,7 +507,7 @@ def parse_action_spec(spec: str) -> Tuple[str, Tuple[int, ...]]:
         parsed = json.loads(raw_values)
         values = tuple(int(v) for v in parsed)
     else:
-        values = tuple(parse_int_list_text(raw_values, allow_semicolon=False))
+        values = tuple(int(v.strip()) for v in raw_values.split(",") if v.strip())
     return name, values
 
 
@@ -539,7 +524,7 @@ def _normalize_base_action(base_action_vec: Optional[Sequence[int]], num_layers:
         if text.startswith("["):
             base_action_vec = json.loads(text)
         else:
-            base_action_vec = parse_int_list_text(text, allow_semicolon=False)
+            base_action_vec = [int(v.strip()) for v in text.split(",") if v.strip()]
     arr = np.asarray(list(base_action_vec), dtype=int).reshape(-1)
     if arr.size != expected:
         raise ValueError(
@@ -567,7 +552,7 @@ def _parse_base_action_vec(base_raw, num_layers_hint: int) -> Optional[np.ndarra
             return text
         if text.startswith("["):
             return np.asarray(json.loads(text), dtype=int)
-        return np.asarray(parse_int_list_text(text, allow_semicolon=False), dtype=int)
+        return np.asarray([int(v.strip()) for v in text.split(",") if v.strip()], dtype=int)
     if isinstance(base_raw, Sequence):
         return np.asarray(list(base_raw), dtype=int)
     raise ValueError("action config base_action must be 'max', 'min', or an integer list")
@@ -588,12 +573,7 @@ def _set_selector_value(vec, num_layers, max_sfs, selector: str, value: int) -> 
         vec[int(slot["offset"])] = int(idx)
 
 
-def _selector_slots(num_layers: int, selector: str) -> Tuple[Dict[str, object], ...]:
-    return _selector_slots_cached(int(num_layers), str(selector))
-
-
-@lru_cache(maxsize=None)
-def _selector_slots_cached(num_layers: int, selector: str) -> Tuple[Dict[str, object], ...]:
+def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
     parsed = _parse_selector(selector, num_layers)
     name = parsed["field_name"]
     exact_block = parsed["block_idx"]
@@ -603,13 +583,10 @@ def _selector_slots_cached(num_layers: int, selector: str) -> Tuple[Dict[str, ob
     slots: List[Dict[str, object]] = []
 
     if name in ("first_input", "firstinput"):
-        return ({
-            "offset": int(num_layers) * layer_dim,
-            "block_idx": 0,
-            "layer_idx": None,
-            "field_name": "first_input",
-            "kind": "F",
-        },)
+        raise ValueError(
+            "first_input is deprecated and is not selectable; the first HE "
+            "config is treated as lossless and no first_input noise is installed"
+        )
 
     for layer_idx in range(int(num_layers)):
         if target_layers is not None and layer_idx not in target_layers:
@@ -636,35 +613,30 @@ def _selector_slots_cached(num_layers: int, selector: str) -> Tuple[Dict[str, ob
                     "field_name": str(field_name),
                     "kind": str(kind),
                 })
-    return tuple(slots)
+    return slots
 
 
 def _value_to_action_index(*, value: int, block_idx: int, field_name: str, kind: str, max_sfs) -> int:
     if field_name == "first_input":
-        levels = 5
-        max_sf = 30
-        for idx in range(levels):
-            if int(sf_from(idx, max_sf, levels)) == int(value):
-                return idx
-        raise ValueError(f"first_input={value} is not selectable; expected one of 22,24,26,28,30")
+        raise ValueError(
+            "first_input is deprecated and is not selectable; the first HE "
+            "config is treated as lossless and no first_input noise is installed"
+        )
 
     if kind == "K":
-        try:
-            return _K_LEVEL_TO_INDEX[int(value)]
-        except KeyError as exc:
-            raise ValueError(
-                f"truncation={value} is not selectable; expected one of {_K_LEVEL_CHOICES_TEXT}"
-            ) from exc
+        if int(value) not in K_LEVELS:
+            raise ValueError(f"truncation={value} is not selectable; expected one of {sorted(K_LEVELS)}")
+        return list(K_LEVELS).index(int(value))
 
+    levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[str(kind)]
     max_sf = max_sfs.get(int(block_idx), str(field_name))
-    index_by_value, choices_text = _sf_value_index_table(str(kind), int(max_sf))
-    try:
-        return index_by_value[int(value)]
-    except KeyError as exc:
+    choices = [int(sf_from(idx, max_sf, levels)) for idx in range(levels)]
+    if int(value) not in choices:
         raise ValueError(
             f"{field_name}={value} is not selectable for block{block_idx}; "
-            f"expected one of {choices_text}"
-        ) from exc
+            f"expected one of {choices}"
+        )
+    return choices.index(int(value))
 
 
 def _canonical_selector_name(selector: str) -> str:
