@@ -153,6 +153,16 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
 
         self.assertNotIn("entries = list(", source)
 
+    def test_fusion_fixed_action_decode_avoids_step_copy_wrappers(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        source = inspect.getsource(BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action)
+
+        self.assertNotIn("dict(raw_option_by_graph", source)
+        self.assertNotIn("dict(raw_option_by_step", source)
+        self.assertNotIn("base_arr[list(block_offsets)]", source)
+        self.assertNotIn("dict(option_fields).items()", source)
+
 
 if __name__ == "__main__":
     unittest.main()

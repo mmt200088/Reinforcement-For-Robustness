@@ -755,14 +755,16 @@ class BLBActionFinalEvaluationModule:
                 f"failed to load fusion-count map for profile={profile!r}: {exc}"
             ) from exc
 
-        option_by_graph = {
-            str(k): int(v)
-            for k, v in dict(raw_option_by_graph or {}).items()
-        }
-        option_by_step = {
-            str(k): int(v)
-            for k, v in dict(raw_option_by_step or {}).items()
-        }
+        option_by_graph = (
+            {str(k): int(v) for k, v in raw_option_by_graph.items()}
+            if isinstance(raw_option_by_graph, Mapping)
+            else {}
+        )
+        option_by_step = (
+            {str(k): int(v) for k, v in raw_option_by_step.items()}
+            if isinstance(raw_option_by_step, Mapping)
+            else {}
+        )
         schedule = step_schedule(
             int(num_layers),
             profile=str(profile),
@@ -794,7 +796,7 @@ class BLBActionFinalEvaluationModule:
                 if bool(step.includes_first_input)
                 else step.full_vec_offsets
             )
-            action_slice = base_arr[list(block_offsets)]
+            action_slice = np.take(base_arr, block_offsets)
             layer_idx = int(step.layer_idx)
             block_idx = int(step.block_idx)
             gelu_degree = int(gelu_arr[layer_idx] if gelu_arr.size > 1 else gelu_arr[0])
@@ -802,7 +804,7 @@ class BLBActionFinalEvaluationModule:
             field_values = _decode_block_field_values(
                 layer_idx,
                 block_idx,
-                np.asarray(action_slice, dtype=int),
+                action_slice,
                 max_sfs,
                 attn_degree=softmax_degree,
                 gelu_degree=gelu_degree,
@@ -824,7 +826,7 @@ class BLBActionFinalEvaluationModule:
                 if bool(getattr(option, "boosted", False)) and option.explicit_field_values
                 else option.slots
             )
-            for field_name, value in dict(option_fields).items():
+            for field_name, value in option_fields.items():
                 field_values[str(field_name)] = int(value)
             if k_field_name is not None and selected_k_value is not None:
                 field_values[str(k_field_name)] = int(selected_k_value)
