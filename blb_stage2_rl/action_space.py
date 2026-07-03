@@ -1907,12 +1907,14 @@ def make_all_min_action_vector(num_layers: int) -> np.ndarray:
     return np.zeros(len(dims), dtype=int)
 
 
-def _gather_effective_k_values_in_action(
-        action_vec: np.ndarray,
-        num_layers: int,
-        ) -> List[int]:
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
-    layer_dim = len(layer_dims())
+_K_POSITIONS_IN_LAYER: Optional[Tuple[int, ...]] = None
+
+
+def _k_positions_in_layer() -> Tuple[int, ...]:
+    global _K_POSITIONS_IN_LAYER
+    cached = _K_POSITIONS_IN_LAYER
+    if cached is not None:
+        return cached
     k_positions: List[int] = []
     cursor_in_layer = 0
     for b in (1, 2, 3, 4, 5):
@@ -1921,10 +1923,40 @@ def _gather_effective_k_values_in_action(
             if kind == "K":
                 k_positions.append(cursor_in_layer)
             cursor_in_layer += 1
+    _K_POSITIONS_IN_LAYER = tuple(k_positions)
+    return _K_POSITIONS_IN_LAYER
+
+
+def _sum_count_effective_k_values_in_action(
+        action_vec: np.ndarray,
+        num_layers: int,
+        ) -> Tuple[int, int]:
+    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    layer_dim = len(layer_dims())
+    total = 0
+    count = 0
+    for li in range(int(num_layers)):
+        # 首层 Block 1 K 被强制 None；其它 block 的 K 仍生效
+        for j, p in enumerate(_k_positions_in_layer()):
+            if li == 0 and j == 0:
+                continue
+            slot = li * layer_dim + p
+            idx = int(arr[slot])
+            total += int(K_LEVELS[idx])
+            count += 1
+    return total, count
+
+
+def _gather_effective_k_values_in_action(
+        action_vec: np.ndarray,
+        num_layers: int,
+        ) -> List[int]:
+    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    layer_dim = len(layer_dims())
     ks: List[int] = []
     for li in range(int(num_layers)):
         # 首层 Block 1 K 被强制 None；其它 block 的 K 仍生效
-        for j, p in enumerate(k_positions):
+        for j, p in enumerate(_k_positions_in_layer()):
             if li == 0 and j == 0:
                 continue
             slot = li * layer_dim + p
@@ -1941,10 +1973,10 @@ def avg_truncation_k_in_action(
 
     用于 reward 中的 ``k_drop = baseline.avg_k - avg_k``。
     """
-    ks = _gather_effective_k_values_in_action(action_vec, num_layers)
-    if not ks:
+    total, count = _sum_count_effective_k_values_in_action(action_vec, num_layers)
+    if count <= 0:
         return 0.0
-    return float(sum(ks) / len(ks))
+    return float(total / count)
 
 
 def sum_truncation_k_in_action(
@@ -1957,7 +1989,8 @@ def sum_truncation_k_in_action(
     before paying for a Rescale_optimizer call (mean comparisons would
     need an explicit tolerance).
     """
-    return int(sum(_gather_effective_k_values_in_action(action_vec, num_layers)))
+    total, _count = _sum_count_effective_k_values_in_action(action_vec, num_layers)
+    return int(total)
 
 
 # ---------------------------------------------------------------------------

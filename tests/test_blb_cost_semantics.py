@@ -29,6 +29,23 @@ class BLBCostSemanticsTests(unittest.TestCase):
 
         self.assertAlmostEqual(actual, expected)
 
+    def test_truncation_k_helpers_accumulate_without_gather_list(self):
+        from blb_stage2_rl import action_space
+
+        num_layers = 3
+        action = action_space.make_all_min_action_vector(num_layers=num_layers)
+        expected_count = num_layers * 5 - 1
+        expected_sum = action_space.sum_truncation_k_in_action(action, num_layers)
+        expected_avg = expected_sum / expected_count
+
+        with mock.patch.object(
+                action_space,
+                "_gather_effective_k_values_in_action",
+                side_effect=AssertionError("hot K helpers should not allocate a gathered list"),
+        ):
+            self.assertEqual(action_space.sum_truncation_k_in_action(action, num_layers), expected_sum)
+            self.assertAlmostEqual(action_space.avg_truncation_k_in_action(action, num_layers), expected_avg)
+
     def test_rescale_rank_key_uses_only_total_bits_and_fusion(self):
         rescale_cost_rank_key = load_candidate_store_module().rescale_cost_rank_key
 
