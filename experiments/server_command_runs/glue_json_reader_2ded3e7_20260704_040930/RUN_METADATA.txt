@@ -1,0 +1,7 @@
+source_commit=2ded3e7
+base_commit=cf0496e
+red_run=/hy-tmp/rfr_glue_json_reader_red_cf0496e_20260704_040000
+green_run=/hy-tmp/rfr_glue_json_reader_green_cf0496e_20260704_040930
+red_command=python -m unittest tests.test_rl_data_points.RLDataPointWriterTest.test_json_artifact_scripts_use_shared_reader -v
+green_commands=python -m py_compile generate_glue_submission.py; python -m unittest tests.test_rl_data_points.RLDataPointWriterTest.test_json_artifact_scripts_use_shared_reader -v; source guard for shared read_json_file action-config path
+purpose=verify generate_blb_glue_submission reads BLB action config through shared streaming JSON loader instead of json.loads(open(...).read())

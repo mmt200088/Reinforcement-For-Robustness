@@ -1,0 +1,15 @@
+./MANIFEST.txt
+./README.md
+./RUN_METADATA.txt
+./green/green_status
+./green/logs/py_compile.log
+./green/logs/source_guard.log
+./green/logs/unittest.log
+./green/py_compile_status
+./green/source_guard_status
+./green/unittest_status
+./red/generate_glue_submission_before.py
+./red/red_status.txt
+./red/red_unittest.log
+./source_snapshot/generate_glue_submission.py
+./source_snapshot/test_rl_data_points.py

@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `643ae60`, the conservative
-completion estimate is about 73% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `2ded3e7`, the conservative
+completion estimate is about 74% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -118,6 +118,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
 | Structured artifacts | `e0376a5` | `experiments/server_command_runs/jsonl_encoder_reuse_e0376a5_20260703_223743/` | Reuse one `JSONEncoder` for finite JSONL row writes instead of calling `json.dump()` for every row. |
 | Structured artifacts | `643ae60` | `experiments/server_command_runs/jsonl_resolve_once_643ae60_20260704_034331/` | Resolve JSONL paths once in shared readers and open the resolved file directly, avoiding duplicate filesystem checks in report/artifact scans. |
+| Structured artifacts | `2ded3e7` | `experiments/server_command_runs/glue_json_reader_2ded3e7_20260704_040930/` | Read BLB GLUE action configs through the shared streaming JSON loader instead of `json.loads(open(...).read())`. |
 | Structured artifacts | `d0f543b` | `experiments/server_command_runs/stage2_monitor_stream_ppo_d0f543b_20260704_000540/` | Stream Stage-2 monitor PPO updates with a bounded recent window while preserving full-file `n_samples` and non-finite-loss checks. |
 | Structured artifacts | `cdcbeca` | `experiments/server_command_runs/manifest_registry_hash_cdcbeca_20260704_003917/` | Stream Trust-0 manifest registry JSON hashing through `JSONEncoder.iterencode()` instead of materializing one canonical JSON string before sha256. |
 | Reports / paper figures | `5a75eee` | `experiments/server_command_runs/stage2_monitor_html_stream_5a75eee_20260704_005141/` | Stream Stage-2 monitor HTML report rows and nested reward-probe/GPU JSON chunks directly to the file handle instead of materializing full JSON/table strings. |
@@ -1866,6 +1867,20 @@ artifacts keep the same normalization, sorting, indentation, and trailing
 newline behavior while large manifests/reports/evidence summaries avoid one
 extra full-document string allocation.
 
+Progress 2026-07-04: `generate_blb_glue_submission()` now reads BLB action
+config JSON through shared `read_json_file(..., encoding="utf-8-sig")` instead
+of `json.loads(open(...).read())`. The GLUE submission handoff keeps BOM
+compatibility while avoiding one full-file string materialization for action
+configs and keeping the path on the same artifact reader as Paean/final-eval
+tools.
+
+Server evidence 2026-07-04: source commit `2ded3e7` has red/green verification
+under `experiments/server_command_runs/glue_json_reader_2ded3e7_20260704_040930/`.
+The red static guard proved the GLUE action-config path still used
+`json.loads(open(...).read())`. The green gate passed `py_compile`, the shared
+reader static guard, and a source guard confirming
+`payload = read_json_file(action_config_path, encoding="utf-8-sig")`.
+
 Progress 2026-07-03: shared `jsonl_utils.write_jsonl_rows()` now streams each
 bounded report/diagnostic row through `json.dump(..., handle)` and then writes
 the newline, instead of building a full per-row JSON string with
@@ -2123,6 +2138,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   run directory.
 - `643ae60` shared JSONL single path resolution, evidence committed in the
   `jsonl_resolve_once_643ae60_20260704_034331` run directory.
+- `2ded3e7` BLB GLUE action-config shared JSON reader, evidence committed in
+  the `glue_json_reader_2ded3e7_20260704_040930` run directory.
 - `da02fca` shared reward-probe count-weight reuse, evidence committed in the
   `eval_metric_weights_da02fca_20260704_030610` run directory.
 - `1a6969a` shared reward-probe single-array flatten fast path, evidence
