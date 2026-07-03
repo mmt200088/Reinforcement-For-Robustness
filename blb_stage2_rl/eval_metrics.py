@@ -63,6 +63,20 @@ def _binary_zero_one_weighted_f1(labels_arr: np.ndarray, preds_arr: np.ndarray) 
                  + ((support_pos / total) * pos_f1))
 
 
+def _binary_zero_one_mcc(labels_arr: np.ndarray, preds_arr: np.ndarray) -> float:
+    label_pos = labels_arr == 1
+    pred_pos = preds_arr == 1
+    total = float(labels_arr.size)
+    support_pos = float(np.count_nonzero(label_pos))
+    pred_pos_count = float(np.count_nonzero(pred_pos))
+    tp = float(np.count_nonzero(pred_pos & label_pos))
+    fp = pred_pos_count - tp
+    fn = support_pos - tp
+    tn = total - tp - fp - fn
+    denom = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    return float(((tp * tn) - (fp * fn)) / denom) if denom > 0.0 else 0.0
+
+
 def weighted_f1_from_labels(labels: Any, preds: Any) -> float:
     labels_arr = np.asarray(labels).reshape(-1)
     preds_arr = np.asarray(preds).reshape(-1)
@@ -92,6 +106,8 @@ def matthews_corrcoef_from_labels(labels: Any, preds: Any) -> float:
     preds_arr = np.asarray(preds).reshape(-1)
     if labels_arr.size == 0:
         return 0.0
+    if _is_zero_one_array(labels_arr) and _is_zero_one_array(preds_arr):
+        return _binary_zero_one_mcc(labels_arr, preds_arr)
     classes = np.union1d(labels_arr, preds_arr)
     if classes.size <= 1:
         return 0.0
