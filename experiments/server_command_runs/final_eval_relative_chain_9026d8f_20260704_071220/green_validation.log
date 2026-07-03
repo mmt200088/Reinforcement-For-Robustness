@@ -1,0 +1,8 @@
+PY_COMPILE_RC=0
+test_relative_metric_attach_does_not_copy_random_results (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_relative_metric_attach_does_not_copy_random_results) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.007s
+
+OK
+TEST_RC=0

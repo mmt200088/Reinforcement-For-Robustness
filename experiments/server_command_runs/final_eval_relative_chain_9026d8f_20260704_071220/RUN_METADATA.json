@@ -1,0 +1,18 @@
+{
+  "date": "2026-07-04",
+  "evidence_type": "red_green_server_validation",
+  "flow": "Unified final evaluation",
+  "green_run_dir": "/hy-tmp/rfr_final_eval_relative_chain_green_20260704_071220",
+  "optimization": "Stream relative-metric result inputs with itertools.chain instead of copying random_results through list concatenation.",
+  "red_run_dir": "/hy-tmp/rfr_final_eval_relative_chain_red_5c6920b_20260704_071030_min",
+  "source_commit": "9026d8f",
+  "verification": {
+    "green": [
+      "python3 -m py_compile final_evaluation_module.py tests/test_final_evaluation_config_cache.py",
+      "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_relative_metric_attach_does_not_copy_random_results -v"
+    ],
+    "red": [
+      "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_relative_metric_attach_does_not_copy_random_results -v"
+    ]
+  }
+}
