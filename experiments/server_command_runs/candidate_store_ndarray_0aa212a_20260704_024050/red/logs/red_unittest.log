@@ -1,0 +1,20 @@
+test_normalize_action_indices_accepts_ndarray_without_tolist_materialization (tests.test_blb_candidate_store_identity.BLBCandidateStoreIdentityTests.test_normalize_action_indices_accepts_ndarray_without_tolist_materialization) ... FAIL
+
+======================================================================
+FAIL: test_normalize_action_indices_accepts_ndarray_without_tolist_materialization (tests.test_blb_candidate_store_identity.BLBCandidateStoreIdentityTests.test_normalize_action_indices_accepts_ndarray_without_tolist_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_candidate_store_ndarray_red_5f58d60_20260704_023745/tests/test_blb_candidate_store_identity.py", line 46, in test_normalize_action_indices_accepts_ndarray_without_tolist_materialization
+    self.assertEqual(store_mod.normalize_action_indices(action), [1, 2, 3, 4])
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_candidate_store_ndarray_red_5f58d60_20260704_023745/blb_stage2_rl/candidate_store.py", line 36, in normalize_action_indices
+    action_indices = action_indices.tolist()
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_candidate_store_ndarray_red_5f58d60_20260704_023745/tests/test_blb_candidate_store_identity.py", line 43, in tolist
+    raise AssertionError("candidate action ndarray should not be copied through tolist")
+AssertionError: candidate action ndarray should not be copied through tolist
+
+----------------------------------------------------------------------
+Ran 1 test in 0.060s
+
+FAILED (failures=1)

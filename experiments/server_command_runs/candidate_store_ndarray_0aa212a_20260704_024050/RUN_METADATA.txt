@@ -1,0 +1,6 @@
+source_commit=0aa212a
+base_commit=5f58d60
+red_run=/hy-tmp/rfr_candidate_store_ndarray_red_5f58d60_20260704_023745
+green_run=/hy-tmp/rfr_candidate_store_ndarray_green2_5f58d60_20260704_024050
+red_command=python -m unittest tests.test_blb_candidate_store_identity.BLBCandidateStoreIdentityTests.test_normalize_action_indices_accepts_ndarray_without_tolist_materialization -v
+green_commands=python -m py_compile blb_stage2_rl/candidate_store.py; python -m unittest tests.test_blb_candidate_store_identity.BLBCandidateStoreIdentityTests -v; source guard for reshape fast path before tolist compatibility path
