@@ -1759,8 +1759,14 @@ class UnifiedFinalEvaluationModule:
                 panel_xs = []
                 for fam in self._ordered_families(grouped):
                     items = grouped[fam]
-                    xs = [it.get("total_cost") for it in items if it.get("total_cost") is not None]
-                    ys = [it[key] for it in items if it.get("total_cost") is not None]
+                    xs = []
+                    ys = []
+                    for it in items:
+                        cost = it.get("total_cost")
+                        if cost is None:
+                            continue
+                        xs.append(cost)
+                        ys.append(it[key])
                     if xs:
                         panel_xs.extend(xs)
                         ax.scatter(

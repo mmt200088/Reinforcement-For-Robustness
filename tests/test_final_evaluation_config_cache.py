@@ -624,6 +624,91 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         )
         self.assertEqual(random_point.total_cost_gets, 3)
 
+    def test_comparison_plot_scans_random_points_once_per_panel(self):
+        class FakeAxis:
+            def __getattr__(self, name):
+                if name.startswith("__"):
+                    raise AttributeError(name)
+                return lambda *_args, **_kwargs: None
+
+        class FakeFigure:
+            def suptitle(self, *_args, **_kwargs):
+                pass
+
+        class LimitedGetDict(dict):
+            def __init__(self, *args, max_total_cost_gets, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.max_total_cost_gets = max_total_cost_gets
+                self.total_cost_gets = 0
+
+            def get(self, key, default=None):
+                if key == "total_cost":
+                    self.total_cost_gets += 1
+                    if self.total_cost_gets > self.max_total_cost_gets:
+                        raise AssertionError("comparison plot should scan each point once per panel")
+                return super().get(key, default)
+
+        axes = np.array(
+            [[FakeAxis(), FakeAxis()], [FakeAxis(), FakeAxis()]],
+            dtype=object,
+        )
+        fake_matplotlib = ModuleType("matplotlib")
+        fake_matplotlib.__path__ = []
+        fake_matplotlib.use = lambda *_args, **_kwargs: None
+        fake_pyplot = ModuleType("matplotlib.pyplot")
+        fake_pyplot.subplots = lambda *_args, **_kwargs: (FakeFigure(), axes)
+        fake_pyplot.savefig = lambda *_args, **_kwargs: None
+        fake_pyplot.close = lambda *_args, **_kwargs: None
+
+        random_point = LimitedGetDict(
+            {
+                "family": "Budget",
+                "loss": 0.4,
+                "p": 0.8,
+                "s": 0.7,
+                "total_cost": 13.0,
+            },
+            max_total_cost_gets=3,
+        )
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        runner.results_dir = "/tmp/final-eval-test"
+        logs = []
+        runner.evaluator = SimpleNamespace(
+            dataset_key="mrpc",
+            log=lambda message, *_args, **_kwargs: logs.append(str(message)),
+        )
+
+        with mock.patch.dict(
+            "sys.modules",
+            {
+                "matplotlib": fake_matplotlib,
+                "matplotlib.pyplot": fake_pyplot,
+            },
+        ):
+            plot_path = runner._plot_results(
+                metric_short_names=["Accuracy", "F1"],
+                num_metrics=2,
+                baseline={"loss": 0.5, "p": 0.75, "s": 0.70},
+                optimized={"loss": 0.3, "p": 0.9, "s": 0.85, "total_cost": 11.0},
+                stage1_fixed_max={"loss": 0.35, "p": 0.88, "s": 0.82, "total_cost": 12.0},
+                random_results=[random_point],
+                summary={
+                    "by_family": {
+                        "Budget": {
+                            "feasible_rate": 1.0,
+                            "dominance_rate": 0.0,
+                        }
+                    }
+                },
+            )
+
+        self.assertEqual(
+            plot_path,
+            "/tmp/final-eval-test/final_eval_comparison_mrpc.png",
+            "\n".join(logs),
+        )
+        self.assertEqual(random_point.total_cost_gets, 3)
+
 
 if __name__ == "__main__":
     unittest.main()
