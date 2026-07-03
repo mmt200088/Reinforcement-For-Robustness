@@ -53,12 +53,14 @@ def normalize_action_indices(action_indices: Any) -> List[int]:
 
 @lru_cache(maxsize=8192)
 def _action_hash_from_tuple(action_indices: Tuple[int, ...]) -> str:
-    payload = json.dumps(
-        list(action_indices),
-        ensure_ascii=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    h = hashlib.sha256()
+    h.update(b"[")
+    for idx, value in enumerate(action_indices):
+        if idx:
+            h.update(b",")
+        h.update(str(int(value)).encode("ascii"))
+    h.update(b"]")
+    return h.hexdigest()
 
 
 def action_hash(action_indices: Any) -> str:
