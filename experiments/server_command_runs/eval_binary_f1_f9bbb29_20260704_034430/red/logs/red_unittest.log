@@ -1,0 +1,20 @@
+test_binary_weighted_f1_skips_union_sort (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_binary_weighted_f1_skips_union_sort) ... FAIL
+
+======================================================================
+FAIL: test_binary_weighted_f1_skips_union_sort (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_binary_weighted_f1_skips_union_sort)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_binary_f1_red_b743386_20260704_034330/tests/test_blb_eval_metrics_shared.py", line 83, in test_binary_weighted_f1_skips_union_sort
+    metric = eval_metrics.weighted_f1_from_labels(labels, preds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_binary_f1_red_b743386_20260704_034330/blb_stage2_rl/eval_metrics.py", line 44, in weighted_f1_from_labels
+    classes = np.union1d(preds_arr, labels_arr)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_binary_f1_red_b743386_20260704_034330/tests/test_blb_eval_metrics_shared.py", line 79, in fail_if_called
+    raise AssertionError("binary weighted F1 should not sort class union")
+AssertionError: binary weighted F1 should not sort class union
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
