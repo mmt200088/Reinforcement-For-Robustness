@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `9026d8f`, the conservative
+not by raw commit count. As of source head `5fe7760`, the conservative
 completion estimate is about 96% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
@@ -108,6 +108,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `32ea5f5` | `experiments/server_command_runs/paean_scatter_plot_scan_32ea5f5_20260704_063613/` | Scan BLB action final-eval selected/random scatter groups once to collect primary and secondary metric columns instead of separate per-panel list comprehensions. |
 | Paean final eval | `3f020ef` | `experiments/server_command_runs/paean_full_noise_table_stream_3f020ef_20260704_064005/` | Iterate BLB action final-eval full-noise Markdown table entries directly instead of copying every entry through `list()` before rendering. |
 | Unified final eval | `9026d8f` | `experiments/server_command_runs/final_eval_relative_chain_9026d8f_20260704_071220/` | Stream baseline/optimized/max-SF and random-result rows into relative-metric attachment with `itertools.chain()` instead of copying `random_results` through list concatenation. |
+| Paean final eval | `5fe7760` | `experiments/server_command_runs/paean_fusion_decode_copy_5fe7760_20260704_072520/` | Remove short-lived dict/list copy wrappers from fusion fixed-action decode metadata normalization, per-step block slicing, and option-field replay. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
@@ -1606,6 +1607,24 @@ verification under
 The RED source guard failed on the old `+ list(random_results)` concatenation.
 The GREEN gate passed `py_compile` and
 `test_relative_metric_attach_does_not_copy_random_results`.
+
+Progress 2026-07-04: `BLBActionFinalEvaluationModule._decode_fusion_count_fixed_action()`
+now avoids short-lived copy wrappers while replaying fusion fixed-action
+configs: option metadata mappings are iterated directly, per-step block slices
+use `np.take(base_arr, block_offsets)` instead of `base_arr[list(...)]`, and
+selected option fields are iterated directly instead of copying through
+`dict(option_fields).items()`. The normalized option maps and selected-K
+restoration path remain unchanged.
+
+Server evidence 2026-07-04: source commit `5fe7760` has focused red/green
+verification under
+`experiments/server_command_runs/paean_fusion_decode_copy_5fe7760_20260704_072520/`.
+The RED source guard failed on the old `base_arr[list(block_offsets)]` pattern.
+The GREEN gate passed `py_compile` and
+`test_fusion_fixed_action_decode_avoids_step_copy_wrappers`. A separate
+pre-change run showed the existing boosted replay functional test already
+fails on clean `62cae98` (`13 != 14`), so it is recorded as baseline evidence
+and not used as this optimization's gate.
 
 - [ ] **Step 3: Verify**
 

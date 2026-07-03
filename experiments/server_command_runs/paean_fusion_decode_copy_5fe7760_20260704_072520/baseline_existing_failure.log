@@ -1,0 +1,14 @@
+test_per_step_fusion_option_replay_preserves_rl_selected_k (tests.test_blb_final_eval_fusion_fixed_action.FusionCountFixedActionDecodeTest.test_per_step_fusion_option_replay_preserves_rl_selected_k) ... FAIL
+
+======================================================================
+FAIL: test_per_step_fusion_option_replay_preserves_rl_selected_k (tests.test_blb_final_eval_fusion_fixed_action.FusionCountFixedActionDecodeTest.test_per_step_fusion_option_replay_preserves_rl_selected_k)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_paean_fusion_decode_copy_baseline_62cae98_20260704_072430/src/tests/test_blb_final_eval_fusion_fixed_action.py", line 74, in test_per_step_fusion_option_replay_preserves_rl_selected_k
+    self.assertEqual(cfg.softmax_out_mask_encode.scaling_factor, 14)
+AssertionError: 13 != 14
+
+----------------------------------------------------------------------
+Ran 1 test in 1.890s
+
+FAILED (failures=1)

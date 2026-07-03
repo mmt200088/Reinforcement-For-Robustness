@@ -1,0 +1,8 @@
+PY_COMPILE_RC=0
+test_fusion_fixed_action_decode_avoids_step_copy_wrappers (tests.test_blb_final_eval_fusion_fixed_action.FusionCountFixedActionDecodeTest.test_fusion_fixed_action_decode_avoids_step_copy_wrappers) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.866s
+
+OK
+TEST_RC=0
