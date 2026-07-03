@@ -11,11 +11,12 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -65,13 +66,40 @@ def _load_maps(map_dir: Path | None) -> dict[str, Mapping[str, Any]]:
     if map_dir is None:
         return {}
     out: dict[str, Mapping[str, Any]] = {}
-    for path in sorted(map_dir.glob("*.json")):
-        if path.name.startswith("._") or path.name.startswith("_"):
-            continue
+    for path in _iter_map_paths(map_dir):
         payload = read_json_file(path)
         if isinstance(payload, Mapping) and payload.get("graph_key"):
             out[str(payload["graph_key"])] = payload
     return out
+
+
+def _iter_map_paths(map_dir: Path) -> Iterable[Path]:
+    try:
+        with os.scandir(map_dir) as entries:
+            names = sorted(
+                entry.name
+                for entry in entries
+                if entry.is_file() and _looks_like_map_name(entry.name)
+            )
+    except OSError:
+        names = []
+    for name in names:
+        yield map_dir / name
+
+
+def _looks_like_map_name(name: str) -> bool:
+    if name.startswith("._") or name.startswith("_"):
+        return False
+    if not name.endswith(".json"):
+        return False
+    stem = name[:-5]
+    return (
+        stem == "block4"
+        or stem.startswith("block1_")
+        or stem.startswith("block2_")
+        or stem.startswith("block3_exp_n")
+        or stem.startswith("block5_n")
+    )
 
 
 def _graph_key(block_idx: int, profile: str, gelu_degree: int, softmax_degree: int) -> str:

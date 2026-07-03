@@ -629,6 +629,13 @@ benchmark with 3000 map files plus 3000 sidecar/non-map files preserved map
 ordering and improved discovery from `0.059813s` / `3.15MB` to `0.027619s` /
 `0.86MB` (`2.17x`).
 
+Progress 2026-07-03: `scripts/render_fusion_count_slots_eval_report.py` now
+uses the same canonical block-map filename filter and `os.scandir()` discovery
+before loading fusion maps for detailed slot-eval reports. The report keeps
+deterministic map ordering while skipping post-build sidecars such as
+`map_summary.json` before JSON parsing, and a regression test patches
+`Path.glob()` out of the loader.
+
 Progress 2026-07-02: `scripts/report_fusion_count_map.py` now precomputes the
 static all-max baseline action, layer width, and block offsets once per
 action-config report instead of recomputing them for every generated group. A
