@@ -1,0 +1,6 @@
+source_commit=497ecda
+base_commit=19e675a
+red_run=/hy-tmp/rfr_probe_scalar_sync_red_19e675a_20260704_024940
+green_run=/hy-tmp/rfr_probe_scalar_sync_green2_19e675a_20260704_025145
+red_command=python -m unittest tests.test_blb_inference_eval_shared.InstalledInferenceEvalSourceTest.test_probe_trial_batches_scalar_metric_cpu_sync_once -v
+green_commands=python -m py_compile blb_stage2_rl/inference_eval.py; python -m unittest tests.test_blb_inference_eval_shared -v; source guard for batched scalar sequence helper replacing three per-field scalar sync calls

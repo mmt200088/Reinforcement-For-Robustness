@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `0aa212a`, the conservative
-completion estimate is about 63% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `497ecda`, the conservative
+completion estimate is about 64% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -101,6 +101,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `5901ffb` | `experiments/server_command_runs/stage1_report_regex_dispatch_5901ffb_20260704_002526/` | Dispatch Stage-1 report log lines by marker so `[stage1-rollout-total]` rows skip worker/cache regex parsers. |
 | Stage-1 eval | `54feaa4` | `experiments/server_command_runs/stage1_rollout_pack_batch_54feaa4_20260704_011755/` | Batch recurrent rollout `logprobs` and `values` tensor conversion before PPO updates so each field uses one stacked CPU transfer instead of per-step scalar `.item()` syncs. |
 | Stage-1 eval | `92ad0f0` | `experiments/server_command_runs/stage1_rollout_direct_tensor_92ad0f0_20260704_012541/` | Pack recurrent rollout `logprobs` and `values` directly as target-device tensors before PPO updates, avoiding the CPU numpy round trip introduced by the earlier batch path. |
+| Shared inference eval | `497ecda` | `experiments/server_command_runs/probe_scalar_sync_497ecda_20260704_025145/` | Batch reward-probe loss/metric scalar tensors into one packed CPU transfer instead of three per-field scalar sequence transfers. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
 | Stage-2 artifacts | `0aa212a` | `experiments/server_command_runs/candidate_store_ndarray_0aa212a_20260704_024050/` | Normalize ndarray-backed candidate action vectors through a direct reshape iterator instead of copying through `.tolist()`. |
@@ -469,6 +470,21 @@ The green gate compiles `layer_importance_evaluator.py`, verifies the
 direct-to-device source guards, runs all `tests.test_stage1_parallel_semantics`
 source tests, and runs a functional `RecurrentRolloutBuffer.get_batch()` script
 that returns `logprobs` and `values` on `cuda:0`.
+
+Progress 2026-07-04: `blb_stage2_rl/inference_eval.py` now converts reward-probe
+`loss`, `metric1`, and `metric2` scalar tensor sequences with one packed helper
+instead of calling the per-sequence scalar conversion helper three times. Probe
+trial metric semantics, sample weighting, prediction/label aggregation, and
+model train/eval restoration stay unchanged while the shared reward-probe path
+does one packed CPU transfer for those scalar metric fields.
+
+Server evidence 2026-07-04: source commit `497ecda` has red/green verification
+under
+`experiments/server_command_runs/probe_scalar_sync_497ecda_20260704_025145/`.
+The red test failed because `run_installed_probe_trial()` still used three
+per-field scalar conversions. The green gate passed `py_compile`, all six
+`tests.test_blb_inference_eval_shared` tests, and a source guard proving the
+batched helper replaces those three old calls.
 
 Progress 2026-07-03: Stage-1 plaintext repeat evaluation and the MRPC
 layer-output noise experiment now use pinned DataLoader memory with
@@ -1960,6 +1976,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   `stage1_worker_apply_config_reuse_5d15e6c_20260703_211000` run directory.
 - `61c8c57` Stage-1 reward history bounded deque, evidence committed in the
   `stage1_reward_history_deque_392b646_20260703_215700` run directory.
+- `497ecda` shared reward-probe scalar sync batching, evidence committed in the
+  `probe_scalar_sync_497ecda_20260704_025145` run directory.
 - `a416d46` shared attention tail cursor parsing, evidence committed in the
   `attention_tail_cursor_a416d46_20260703_214800` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the

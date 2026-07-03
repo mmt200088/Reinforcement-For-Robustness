@@ -1,0 +1,14 @@
+test_probe_trial_batches_scalar_metric_cpu_sync_once (tests.test_blb_inference_eval_shared.InstalledInferenceEvalSourceTest.test_probe_trial_batches_scalar_metric_cpu_sync_once) ... FAIL
+
+======================================================================
+FAIL: test_probe_trial_batches_scalar_metric_cpu_sync_once (tests.test_blb_inference_eval_shared.InstalledInferenceEvalSourceTest.test_probe_trial_batches_scalar_metric_cpu_sync_once)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_probe_scalar_sync_red_19e675a_20260704_024940/tests/test_blb_inference_eval_shared.py", line 83, in test_probe_trial_batches_scalar_metric_cpu_sync_once
+    self.assertIn(
+AssertionError: 'losses, m1s, m2s = tensor_scalar_sequences_to_float_lists(' not found in 'losses = tensor_scalar_values_to_float_list(loss_tensors)\n    m1s = tensor_scalar_values_to_float_list(m1_tensors)\n    m2s = tensor_scalar_values_to_float_list(m2_tensors)\n    trial_preds = tensor_values_to_numpy_arrays(trial_pred_tensors)\n    trial_labels = tensor_values_to_numpy_arrays(trial_label_tensors)\n    trial_metrics = finalize_probe_trial_metrics(\n        losses,\n        m1s,\n        m2s,\n        counts,\n        metric_profile=metric_profile,\n        is_regression=bool(is_regression),\n        preds=trial_preds,\n        labels=trial_labels,\n    )\n    if trial_metrics is None:\n        return (float("nan"), float("nan"), float("nan"))\n    return trial_metrics\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)
