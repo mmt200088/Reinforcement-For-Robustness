@@ -74,6 +74,45 @@ post-run artifacts without weakening the validation protocol.
   work to shared tooling, forward-path allocation, report/artifact paths, and
   explicit handoff-safe files.
 
+### Execution Ledger and Remaining Main Chain
+
+Progress is measured by high-impact flow coverage and verification strength,
+not by raw commit count. As of source/evidence head `d3f2b6e`, the conservative
+completion estimate is about 30% of the full goal: the plan/audit layer and
+several low-conflict hot paths have landed, but hardware-default promotion,
+long-run A/B evidence, and remaining flow-wide scheduling work are still open.
+
+Server-verified optimization commits currently in the execution ledger:
+
+| Flow | Source commit | Evidence directory | Optimization |
+| --- | --- | --- | --- |
+| Paean final eval | `567ad75` | `experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/` | Reuse one clean-baseline install and one BLB bridge install across `repeat_n > 1` forwards. |
+| Paean final eval | `b2a7325` | `experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/` | Cache `load_max_sfs(profile)` per final-eval module instance. |
+| Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
+| Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
+| Rescale bridge | `dab3b8b` | `experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/` | Cache static-skeleton archive parses by path, mtime, and size while returning fresh caller lists. |
+| Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
+
+Remaining main-chain gates before this goal can be complete:
+
+1. **Evidence loop:** every new source optimization must have a red/green or
+   parity evidence directory committed back from the server.
+2. **Stage-1 throughput:** finish timing fields and collect server 1GPU vs
+   4GPU evidence before changing rollout/cache defaults.
+3. **Stage-2 scheduling:** keep core RL files out of scope while the Stage-2
+   RL agent is active; after handoff, run 1GPU vs NGPU parity and wall-clock
+   gates before promoting GPU defaults.
+4. **Rescale/fusion maps:** finish profiled session/graph/DAG reuse and verify
+   large-build behavior with server logs when the claim is about build wall
+   time or memory.
+5. **Paean final eval:** finish model/tokenizer reuse and independent-config
+   GPU scheduling only after fixed-action metric parity evidence.
+6. **Artifacts/reports:** keep required JSON/JSONL/NPZ data complete while
+   moving remaining PNG/HTML-heavy rendering to post-run commands.
+7. **Workflow:** keep local source, git, and server evidence synchronized after
+   every optimization; server temp packages may run code but must not become
+   the canonical source.
+
 ## File Structure
 
 - Create `scripts/project_optimization_audit.py`: dependency-free whole-flow inventory and artifact summary.
@@ -386,11 +425,23 @@ while still forcing the model into eval mode on every call. This extends the
 existing `evaluate_model()` local skip to final-eval and noise-eval call sites
 that invoke `apply_configuration()` directly.
 
+Server evidence 2026-07-03: source commit `dca7526` has red/green verification
+under
+`experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/`.
+The red test proved repeated installs were not skipped; the green run verifies
+that unchanged-config installs are skipped while `model.eval()` is still called.
+
 Progress 2026-07-03: `_stage1_evaluate_on_model()` now applies the same
 unchanged-configuration install short-circuit to each Stage-1 worker handler.
 The worker still runs a validation forward for uncached evaluations, but a
 worker no longer repeats GELU/Softmax restore/replace calls when its replica is
 already on the requested configuration.
+
+Server evidence 2026-07-03: source commit `5d15e6c` has red/green verification
+under
+`experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/`.
+The scope is the worker-side `_stage1_evaluate_on_model()` install path, not a
+claim about end-to-end 4GPU speedup.
 
 - [ ] **Step 3: Optimize only proven redundant work**
 
@@ -657,6 +708,25 @@ caches parsed static-skeleton archives by absolute path, mtime, and size. The
 cache stores immutable tuples and returns fresh lists to callers, so repeated
 fallback loads avoid JSON parsing without exposing shared mutable state.
 
+Server evidence 2026-07-03: source commit `dab3b8b` has red/green verification
+under
+`experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/`.
+The green gate compiled `rescale_optimizer_bridge.py` and passed the targeted
+archive-cache unittest.
+
+Progress 2026-07-03: `blb_stage2_rl/skeleton_stage_map.py`
+`load_profile_configs()` now discovers profile config JSON files with
+`os.scandir()`, filters `static_skeletons*.json`, and skips non-file entries
+before JSON parsing. This avoids parsing `.json`-named directories and reduces
+unnecessary filesystem wrapper allocation while preserving deterministic
+filename ordering.
+
+Server evidence 2026-07-03: source commit `cb215bd` has red/green verification
+under
+`experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/`.
+The red run failed with `IsADirectoryError` on a `.json` directory; the green
+run passed `py_compile` and the targeted discovery unittest.
+
 Progress 2026-07-02: `scripts/report_fusion_count_map.py` now filters fusion
 map candidates by block-map filename before opening JSON files, so post-build
 sidecars such as `map_summary.json` are not parsed as maps. This keeps fusion
@@ -888,10 +958,21 @@ clean-baseline Stage-1 install and one BLB bridge install per candidate when
 repeat. This removes repeated configuration/noise installation work from
 repeat measurements without adding an evaluation-result cache.
 
+Server evidence 2026-07-03: source commit `567ad75` has red/green verification
+under
+`experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/`.
+The evidence validates repeated-install reuse for both clean-baseline and BLB
+action repeat paths without caching the model-forward result.
+
 Progress 2026-07-03: `BLBActionFinalEvaluationModule` now caches
 `load_max_sfs(profile)` results per module instance. Candidate decoding,
 cost-matched sampling, and GLUE action export reuse the same max-SF table for
 the same profile instead of reopening/parsing it at each call site.
+
+Server evidence 2026-07-03: source commit `b2a7325` has red/green verification
+under
+`experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/`.
+The green gate confirms one module instance reuses its profile max-SF table.
 
 Progress 2026-07-02: `UnifiedFinalEvaluationModule` now caches the Stage-2
 total-cost count-solution maps used by random final-eval groups. Repeated
@@ -1608,6 +1689,23 @@ terminal diagnostics are reused instead of being recursively cloned before
 `json.dumps()`. A local 800-group synthetic RL-path report benchmark preserved
 the converted payload semantics and reduced conversion from `2.391359s` /
 `37.62MiB` peak to `0.485470s` / near-zero traced allocation.
+
+Progress 2026-07-03: the low-conflict source/evidence loop has been exercised
+for six targeted optimizations. Each followed the local-source, git-push,
+server-temp-run, artifact-pullback, evidence-commit workflow:
+
+- `567ad75` Paean repeat-install reuse, evidence committed in the
+  `final_eval_repeat_install_reuse_567ad75_20260703_203900` run directory.
+- `b2a7325` Paean max-SF table cache, evidence committed in the
+  `final_eval_max_sfs_cache_b2a7325_20260703_205000` run directory.
+- `dca7526` Stage-1 `apply_configuration()` install reuse, evidence committed
+  in the `stage1_apply_config_reuse_dca7526_20260703_210000` run directory.
+- `5d15e6c` Stage-1 worker install reuse, evidence committed in the
+  `stage1_worker_apply_config_reuse_5d15e6c_20260703_211000` run directory.
+- `dab3b8b` static-skeleton archive cache, evidence committed in the
+  `baseline_archive_cache_dab3b8b_20260703_212500` run directory.
+- `cb215bd` skeleton profile config discovery, evidence committed in the
+  `skeleton_profile_config_discovery_cb215bd_20260703_213500` run directory.
 
 - [ ] **Step 3: Commit/push source and evidence**
 
