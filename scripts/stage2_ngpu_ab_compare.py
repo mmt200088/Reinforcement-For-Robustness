@@ -67,9 +67,18 @@ def _find_jsonl(path: str, filename: str) -> str:
 
 def _load_jsonl(path: str, *, filename: str, sort_key: str) -> List[Dict[str, Any]]:
     jsonl_path = _find_jsonl(path, filename)
-    rows = list(iter_jsonl(jsonl_path, errors="raise"))
-    rows.sort(key=lambda row: int(row.get(sort_key, 0) or 0))
-    return rows
+    rows: List[Dict[str, Any]] = []
+    previous_key: Optional[int] = None
+    ordered = True
+    for row in iter_jsonl(jsonl_path, errors="raise"):
+        key = int(row.get(sort_key, 0) or 0)
+        if previous_key is not None and key < previous_key:
+            ordered = False
+        previous_key = key
+        rows.append(row)
+    if ordered:
+        return rows
+    return sorted(rows, key=lambda row: int(row.get(sort_key, 0) or 0))
 
 
 def _load_episodes(path: str) -> List[Dict[str, Any]]:
