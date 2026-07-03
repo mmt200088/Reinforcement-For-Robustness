@@ -1,0 +1,25 @@
+{
+  "source_commit": "b9f01de",
+  "base_commit_for_red": "0afacfb",
+  "evidence_dir": "experiments/server_command_runs/final_eval_signature_tuple_b9f01de_20260704_054950",
+  "server_red_dir": "/hy-tmp/rfr_final_signature_red_0afacfb_20260704_",
+  "server_green_dir": "/hy-tmp/rfr_final_signature_green_20260704_",
+  "server_canonical_worktree_modified": false,
+  "optimization": "Paean final-eval cache signatures build integer tuples without np.asarray(...).tolist() materialization.",
+  "red": {
+    "command": "python3 -m unittest tests.test_final_eval_normalize_arrays -v",
+    "expected_rc": 1,
+    "evidence": "red_unittest.log"
+  },
+  "green": {
+    "commands": [
+      "python3 -m py_compile final_evaluation_module.py tests/test_final_eval_normalize_arrays.py",
+      "python3 -m unittest tests.test_final_eval_normalize_arrays -v",
+      "source guard for _full_signature/_noise_eval helper path and removed tolist materialization"
+    ],
+    "py_compile_rc": 0,
+    "unittest_rc": 0,
+    "source_guard_rc": 0,
+    "evidence": "green_validation.log"
+  }
+}

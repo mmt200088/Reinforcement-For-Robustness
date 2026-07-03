@@ -1,0 +1,18 @@
+test_full_signature_avoids_tolist_materialization (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_full_signature_avoids_tolist_materialization) ... FAIL
+test_invalid_value_checks_scan_arrays_without_tolist_materialization (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_invalid_value_checks_scan_arrays_without_tolist_materialization) ... ok
+test_normalize_config_array_avoids_list_materialization_for_ndarray (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_normalize_config_array_avoids_list_materialization_for_ndarray) ... ok
+test_normalize_noise_array_avoids_list_materialization_for_ndarray (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_normalize_noise_array_avoids_list_materialization_for_ndarray) ... ok
+test_stage2_cost_matched_array_tracks_cost_incrementally (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_stage2_cost_matched_array_tracks_cost_incrementally) ... ok
+
+======================================================================
+FAIL: test_full_signature_avoids_tolist_materialization (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_full_signature_avoids_tolist_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_final_signature_red_0afacfb_20260704_/src/tests/test_final_eval_normalize_arrays.py", line 76, in test_full_signature_avoids_tolist_materialization
+    self.assertIn("_int_tuple(", source)
+AssertionError: '_int_tuple(' not found in '    @staticmethod\n    def _full_signature(gelu, softmax, noise_cfg):\n        return (\n            tuple(np.asarray(gelu, dtype=int).tolist()),\n            tuple(np.asarray(softmax, dtype=int).tolist()),\n            tuple(\n                tuple(np.asarray(noise_cfg[k], dtype=int).tolist())\n                for k in NOISE_SCALING_FACTOR_KEYS\n            ),\n        )\n'
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.005s
+
+FAILED (failures=1)

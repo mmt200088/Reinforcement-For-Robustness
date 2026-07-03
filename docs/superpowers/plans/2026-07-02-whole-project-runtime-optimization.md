@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `d76cf29`, the conservative
-completion estimate is about 91% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `b9f01de`, the conservative
+completion estimate is about 92% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -102,6 +102,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `c85b896` | `experiments/server_command_runs/final_comparison_scatter_scan_c85b896_20260704_061000/` | Scan main final-eval comparison random scatter points once per family/panel instead of building separate `xs` and `ys` list comprehensions over the same rows. |
 | Paean final eval | `a1de9a3` | `experiments/server_command_runs/final_axis_limits_stream_a1de9a3_20260704_063500/` | Stream final-eval plot axis-limit min/max calculation without a `clean` list and without converting each finite value twice. |
 | Paean final eval | `d76cf29` | `experiments/server_command_runs/final_eval_invalid_values_d76cf29_20260704_054400/` | Scan normalized final-eval config arrays for unsupported values without materializing `arr.tolist()` sets. |
+| Paean final eval | `b9f01de` | `experiments/server_command_runs/final_eval_signature_tuple_b9f01de_20260704_054950/` | Build final-eval cache signature keys as direct integer tuples and reuse `_full_signature()` from `_noise_eval()` instead of materializing arrays through `.tolist()`. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
