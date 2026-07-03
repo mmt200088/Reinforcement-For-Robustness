@@ -1,0 +1,27 @@
+run_id=json_utils_stream_write_verify_20260703_151930
+server_date=2026-07-03T15:20:01+08:00
+source_commit=6223b0d1dba9ec2c0ef0bb22c66803eaccbcf031
+source_transport=git_bundle_minimal_after_server_ls_remote_timeout
+remote_head_check=ls_remote_timeout_124_before_bundle
+bundle=/hy-tmp/json_utils_stream_write_6223b0d.bundle
+Cloning into '/hy-tmp/json_utils_stream_write_verify_20260703_151930/src'...
+Note: switching to '49b32a87eba29d0020ef88fdc1c7c6a8d971c327'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+clone_rc=0
+minimal_bundle_head=49b32a87eba29d0020ef88fdc1c7c6a8d971c327
+test_rc=0

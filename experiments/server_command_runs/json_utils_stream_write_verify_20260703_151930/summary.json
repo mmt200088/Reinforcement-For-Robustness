@@ -1,0 +1,12 @@
+{
+  "clone_rc": 0,
+  "command": "python3 -m unittest tests.test_rl_data_points.RLDataPointWriterTest.test_write_json_file_creates_parent_and_normalizes_payload tests.test_rl_data_points.RLDataPointWriterTest.test_write_json_file_streams_to_file_handle -v",
+  "minimal_bundle_head": "49b32a87eba29d0020ef88fdc1c7c6a8d971c327",
+  "platform": "Linux-5.15.0-181-generic-x86_64-with-glibc2.35",
+  "python": "3.11.12",
+  "remote_head_check": "ls_remote_timeout_124_before_bundle",
+  "run_id": "json_utils_stream_write_verify_20260703_151930",
+  "source_commit": "6223b0d1dba9ec2c0ef0bb22c66803eaccbcf031",
+  "source_transport": "git_bundle_minimal_after_server_ls_remote_timeout",
+  "test_rc": 0
+}
