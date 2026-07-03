@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
+import types
 import unittest
 from unittest import mock
 
@@ -257,6 +258,30 @@ class GroupMinNoiseOptionsTest(unittest.TestCase):
         # if the passed baseline is not option 0 (here a fusion=1 config), guard fires
         with self.assertRaises(ValueError):
             fusion_enum.group_min_noise_options(self.evaluated, (1, 3, 3))
+
+
+class CheckKIndependenceTest(unittest.TestCase):
+    def test_counts_streamed_sample_configs_without_list_materialization(self):
+        fake_action_space = types.ModuleType("action_space")
+        fake_action_space.K_LEVELS = (0, 1)
+
+        class Ctx:
+            k_slot_index = 1
+
+        calls = []
+
+        def fake_eval(_ctx, block):
+            calls.append(tuple(int(x) for x in block))
+            return {"valid": True, "fusion_count": int(block[0])}
+
+        samples = (cfg for cfg in ([0, 0], [1, 0]))
+        with mock.patch.dict(sys.modules, {"action_space": fake_action_space}), \
+             mock.patch.object(fusion_enum, "_eval_block", side_effect=fake_eval):
+            result = fusion_enum.check_k_independence(Ctx(), sample_configs=samples)
+
+        self.assertEqual(result["samples_checked"], 2)
+        self.assertTrue(result["k_independent"])
+        self.assertEqual(len(calls), 4)
 
 
 class ActiveRescalePremiseTest(unittest.TestCase):

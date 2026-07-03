@@ -981,7 +981,9 @@ def check_k_independence(
     from action_space import K_LEVELS
 
     violations: List[Dict[str, Any]] = []
+    samples_checked = 0
     for cfg_indices in sample_configs:
+        samples_checked += 1
         fusion_seen = set()
         for k_idx in range(len(K_LEVELS)):
             block = np.asarray(cfg_indices, dtype=int).copy()
@@ -996,7 +998,7 @@ def check_k_independence(
                     "fusion_counts_over_k": sorted(fusion_seen),
                 }
             )
-    return {"k_independent": not violations, "violations": violations, "samples_checked": len(list(sample_configs))}
+    return {"k_independent": not violations, "violations": violations, "samples_checked": samples_checked}
 
 
 def decode_block_slots(ctx: BlockTypeBuildContext, block_indices: Sequence[int]) -> Dict[str, int]:
