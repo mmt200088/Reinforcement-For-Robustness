@@ -1,0 +1,73 @@
+test_stage2_record_and_completed_marker (tests.test_blb_stage2_outputs.DecoupledArchiveShapeTest.test_stage2_record_and_completed_marker) ... ok
+test_healthy_curve_ok (tests.test_blb_stage2_outputs.DetectionReportTest.test_healthy_curve_ok) ... ok
+test_hot_collapse_flagged (tests.test_blb_stage2_outputs.DetectionReportTest.test_hot_collapse_flagged) ... ok
+test_report_has_all_signals_and_priority (tests.test_blb_stage2_outputs.DetectionReportTest.test_report_has_all_signals_and_priority) ... /hy-tmp/rfr_diag_tuple_green_392708f_20260704_050000/src/tests/test_blb_stage2_outputs.py:427: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpxvyptwln/blb_stage2_search_log.txt' mode='r' encoding='utf-8'>
+  text = open(out, encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_diagnostic_curves_accept_tuple_series_without_list_materialization (tests.test_blb_stage2_outputs.DiagnosticCurvesTest.test_diagnostic_curves_accept_tuple_series_without_list_materialization) ... ok
+test_emits_png_with_full_series (tests.test_blb_stage2_outputs.DiagnosticCurvesTest.test_emits_png_with_full_series) ... ok
+test_no_data_is_safe (tests.test_blb_stage2_outputs.DiagnosticCurvesTest.test_no_data_is_safe) ... ok
+test_render_plots_false_skips_diagnostic_png (tests.test_blb_stage2_outputs.DiagnosticCurvesTest.test_render_plots_false_skips_diagnostic_png) ... ok
+test_trace_append_skips_rechecking_known_current_schema (tests.test_blb_stage2_outputs.EpisodeTraceMigrationTest.test_trace_append_skips_rechecking_known_current_schema) ... ok
+test_trace_schema_migration_streams_rows_without_writerows (tests.test_blb_stage2_outputs.EpisodeTraceMigrationTest.test_trace_schema_migration_streams_rows_without_writerows) ... ok
+test_episode_stats_round_trip_and_health_log (tests.test_blb_stage2_outputs.PersistedDebugFieldsTest.test_episode_stats_round_trip_and_health_log) ... /hy-tmp/rfr_diag_tuple_green_392708f_20260704_050000/src/tests/test_blb_stage2_outputs.py:968: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpjfxz97yg/diagnostics/episodes.jsonl' mode='r' encoding='utf-8'>
+  encoding="utf-8").read().strip().splitlines()[-1]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/hy-tmp/rfr_diag_tuple_green_392708f_20260704_050000/src/tests/test_blb_stage2_outputs.py:978: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpjfxz97yg/diagnostics/blb_stage2_health.log' mode='r' encoding='utf-8'>
+  line = open(hp, encoding="utf-8").read().strip()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpjfxz97yg/diagnostics/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_baseline_parser_streams_report_and_summary (tests.test_blb_stage2_outputs.RegeneratorEndToEndTest.test_baseline_parser_streams_report_and_summary) ... ok
+test_episode_reader_does_not_materialize_absent_debug_fields (tests.test_blb_stage2_outputs.RegeneratorEndToEndTest.test_episode_reader_does_not_materialize_absent_debug_fields) ... ok
+test_jsonl_readers_use_shared_iter_jsonl (tests.test_blb_stage2_outputs.RegeneratorEndToEndTest.test_jsonl_readers_use_shared_iter_jsonl) ... ok
+test_regenerator_gzip_jsonl (tests.test_blb_stage2_outputs.RegeneratorEndToEndTest.test_regenerator_gzip_jsonl) ... ok
+test_regenerator_plain_jsonl (tests.test_blb_stage2_outputs.RegeneratorEndToEndTest.test_regenerator_plain_jsonl) ... ok
+test_status_board_flushes_human_readable_live_summary (tests.test_blb_stage2_outputs.StatusBoardLiveSummaryTest.test_status_board_flushes_human_readable_live_summary) ... ok
+test_curve_helpers_accept_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_curve_helpers_accept_ndarray_without_list_materialization) ... ok
+test_entropy_curve_accepts_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_entropy_curve_accepts_ndarray_without_list_materialization) ... ok
+test_env_can_disable_stage2_plot_rendering_without_callsite_change (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_env_can_disable_stage2_plot_rendering_without_callsite_change) ... ok
+test_float_array_accepts_tuple_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_float_array_accepts_tuple_without_list_materialization) ... ok
+test_full_series_emits_all_pngs (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_full_series_emits_all_pngs) ... ok
+test_legacy_minimal_backcompat (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_legacy_minimal_backcompat) ... ok
+test_main_curve_uses_stage1_style_renderer_without_cost_panels (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_main_curve_uses_stage1_style_renderer_without_cost_panels) ... ok
+test_no_baselines_ok (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_no_baselines_ok) ... ok
+test_npz_always_written (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_npz_always_written) ... ok
+test_npz_writer_accepts_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_npz_writer_accepts_ndarray_without_list_materialization) ... ok
+test_render_plots_false_iterates_each_npz_series_once (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_render_plots_false_iterates_each_npz_series_once) ... ok
+test_render_plots_false_writes_npz_only (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_render_plots_false_writes_npz_only) ... ok
+test_stage1_style_panel_accepts_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_stage1_style_panel_accepts_ndarray_without_list_materialization) ... ok
+
+----------------------------------------------------------------------
+Ran 30 tests in 8.229s
+
+OK
+[regen] progress dir : /tmp/tmpbs54ndl5
+[regen] output  dir : /tmp/tmpbs54ndl5/preview
+[regen] episodes=300  ppo_updates(entropy)=5  baselines={'avg_k': 13.0, 'loss_mean': 0.367, 'metric1_mean': 0.871, 'metric2_mean': 0.861}
+[regen]   png         → /tmp/tmpbs54ndl5/preview/blb_stage2_training_curve.png  (175452 bytes)
+[regen]   npz         → /tmp/tmpbs54ndl5/preview/blb_stage2_training_curve.npz  (17136 bytes)
+[regen]   paper_png   → /tmp/tmpbs54ndl5/preview/blb_stage2_reward_paper.png  (50789 bytes)
+[regen]   paper_pdf   → /tmp/tmpbs54ndl5/preview/blb_stage2_reward_paper.pdf  (11937 bytes)
+[regen]   entropy_png → /tmp/tmpbs54ndl5/preview/blb_stage2_entropy_curve.png  (63667 bytes)
+[regen]   diagnostics → /tmp/tmpbs54ndl5/preview/blb_stage2_diagnostics_curve.png  (219684 bytes)
+  [检测] 局部最优检测报告 → /tmp/tmpbs54ndl5/preview/blb_stage2_search_log.txt
+  [检测] [LIKELY LOCAL-OPTIMUM] reward_plateau(cv=0.0000), best_stuck(99ep_no_improve)
+[regen]   search_log  → /tmp/tmpbs54ndl5/preview/blb_stage2_search_log.txt
+[regen] done.
+[regen] progress dir : /tmp/tmp4s680a4i
+[regen] output  dir : /tmp/tmp4s680a4i/preview
+[regen] episodes=300  ppo_updates(entropy)=5  baselines={'avg_k': 13.0, 'loss_mean': 0.367, 'metric1_mean': 0.871, 'metric2_mean': 0.861}
+[regen]   png         → /tmp/tmp4s680a4i/preview/blb_stage2_training_curve.png  (175452 bytes)
+[regen]   npz         → /tmp/tmp4s680a4i/preview/blb_stage2_training_curve.npz  (17136 bytes)
+[regen]   paper_png   → /tmp/tmp4s680a4i/preview/blb_stage2_reward_paper.png  (50789 bytes)
+[regen]   paper_pdf   → /tmp/tmp4s680a4i/preview/blb_stage2_reward_paper.pdf  (11937 bytes)
+[regen]   entropy_png → /tmp/tmp4s680a4i/preview/blb_stage2_entropy_curve.png  (63667 bytes)
+[regen]   diagnostics → /tmp/tmp4s680a4i/preview/blb_stage2_diagnostics_curve.png  (219684 bytes)
+  [检测] 局部最优检测报告 → /tmp/tmp4s680a4i/preview/blb_stage2_search_log.txt
+  [检测] [LIKELY LOCAL-OPTIMUM] reward_plateau(cv=0.0000), best_stuck(99ep_no_improve)
+[regen]   search_log  → /tmp/tmp4s680a4i/preview/blb_stage2_search_log.txt
+[regen] done.

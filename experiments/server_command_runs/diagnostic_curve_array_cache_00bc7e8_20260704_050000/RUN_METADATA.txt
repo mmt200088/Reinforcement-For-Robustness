@@ -1,0 +1,12 @@
+source_commit=00bc7e8
+base_commit=392708f
+flow=Reports / paper figures
+optimization=Stage-2 diagnostic curve array cache and sequence fast path
+red_remote=/hy-tmp/rfr_diag_tuple_red_392708f_20260704_045900
+green_remote=/hy-tmp/rfr_diag_tuple_green_392708f_20260704_050000
+red_status=1
+green_py_compile=0
+green_unittest=0
+green_source_guard=0
+local_test_policy=server-only
+canonical_source_workflow=local_edit_git_push_server_run_evidence_pullback

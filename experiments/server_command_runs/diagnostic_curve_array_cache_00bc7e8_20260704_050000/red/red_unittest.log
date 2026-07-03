@@ -1,0 +1,14 @@
+test_diagnostic_curves_accept_tuple_series_without_list_materialization (tests.test_blb_stage2_outputs.DiagnosticCurvesTest.test_diagnostic_curves_accept_tuple_series_without_list_materialization) ... FAIL
+
+======================================================================
+FAIL: test_diagnostic_curves_accept_tuple_series_without_list_materialization (tests.test_blb_stage2_outputs.DiagnosticCurvesTest.test_diagnostic_curves_accept_tuple_series_without_list_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_diag_tuple_red_392708f_20260704_045900/src/tests/test_blb_stage2_outputs.py", line 896, in test_diagnostic_curves_accept_tuple_series_without_list_materialization
+    self.fail("diagnostic render failed: " + "\n".join(logs))
+AssertionError: diagnostic render failed:   [诊断曲线][信息] 跳过（matplotlib 不可用 / 渲染失败）：diagnostic tuple series should not be copied through list
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
