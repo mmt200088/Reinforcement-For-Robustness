@@ -55,6 +55,7 @@ BLB_ERROR_TXT = "blb_stage2_error.txt"
 BLB_EPISODE_TRACE_CSV = "blb_stage2_episode_trace.csv"
 _PLOT_RENDER_FALSE_VALUES = {"0", "false", "no", "off", "skip", "none"}
 _TRACE_SCHEMA_CURRENT_PATHS: set[str] = set()
+_FLOAT_ARRAY_DIRECT_SEQUENCE_TYPES = (list, tuple, range)
 
 BLB_TRACE_FIELDNAMES = (
     "episode",
@@ -790,6 +791,8 @@ def _float_array(values):
     import numpy as _np
 
     if isinstance(values, _np.ndarray):
+        return _np.asarray(values, dtype=float)
+    if isinstance(values, _FLOAT_ARRAY_DIRECT_SEQUENCE_TYPES):
         return _np.asarray(values, dtype=float)
     return _np.asarray(list(values), dtype=float)
 

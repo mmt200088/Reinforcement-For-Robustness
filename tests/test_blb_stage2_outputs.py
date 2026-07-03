@@ -207,6 +207,14 @@ class UpgradedCurvesTest(unittest.TestCase):
         self.assertEqual(ma_x.tolist(), [2, 3, 4])
         self.assertEqual(ma_y.tolist(), [1.5, 3.0, 6.0])
 
+    def test_float_array_accepts_tuple_without_list_materialization(self):
+        values = (1.0, 2.0, 4.0)
+
+        with mock.patch("builtins.list", side_effect=AssertionError("tuple curve input should not be copied through list")):
+            arr = persistence._float_array(values)
+
+        self.assertEqual(arr.tolist(), [1.0, 2.0, 4.0])
+
     def test_stage1_style_panel_accepts_ndarray_without_list_materialization(self):
         import numpy as np
 
