@@ -1,6 +1,7 @@
 import argparse
 import builtins
 import importlib.util
+import inspect
 import pathlib
 import sys
 import tempfile
@@ -73,9 +74,11 @@ class Stage2NgpuCompareTests(unittest.TestCase):
         self.assertEqual([row["episode"] for row in rows], [1, 2])
         self.assertEqual(calls, [("/tmp/run/episodes.jsonl", {"errors": "raise"})])
 
-    def test_timestamp_span_streams_without_collecting_values(self):
-        import inspect
+    def test_load_jsonl_does_not_unconditionally_sort_ordered_logs(self):
+        source = inspect.getsource(ngpu_mod._load_jsonl)
+        self.assertNotIn(".sort(", source)
 
+    def test_timestamp_span_streams_without_collecting_values(self):
         rows = [
             {"timestamp": 10.0},
             {"timestamp": None},
