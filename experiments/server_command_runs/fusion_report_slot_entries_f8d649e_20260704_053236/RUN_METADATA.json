@@ -1,0 +1,22 @@
+{
+  "source_commit": "f8d649e",
+  "base_commit": "5c6e81b",
+  "timestamp": "20260704_053236",
+  "flow": "Rescale/fusion maps",
+  "optimization": "Cache bound slot entries per graph option for fusion report slot-form action-config splicing.",
+  "server_red_dir": "/hy-tmp/rfr_fusion_slot_entries_red_5c6e81b_20260704_053119",
+  "server_green_dir": "/hy-tmp/rfr_fusion_slot_entries_green_20260704_053236",
+  "red_expected_failure": "AssertionError: 2 not less than or equal to 1",
+  "green_checks": [
+    "python3 -m py_compile scripts/report_fusion_count_map.py tests/test_report_fusion_count_map.py",
+    "python3 -m unittest tests.test_report_fusion_count_map -v",
+    "grep -F -n 'slot_entries_by_option = _slot_entries_by_option(graphs, field_kinds_by_block)' scripts/report_fusion_count_map.py",
+    "grep -F -n 'slot_entries_by_option=slot_entries_by_option' scripts/report_fusion_count_map.py"
+  ],
+  "green_result": {
+    "py_compile_rc": 0,
+    "unittest": "13 tests OK",
+    "build_slot_guard_rc": 0,
+    "pass_slot_guard_rc": 0
+  }
+}
