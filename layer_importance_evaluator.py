@@ -3966,6 +3966,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             model = getattr(getattr(self, "reversible_handler", None), "model", None)
         if model is not None:
             model.eval()
+        cfg_sig = (
+            tuple(int(d) for d in gelu_degrees),
+            tuple(int(d) for d in softmax_degrees),
+        )
+        if getattr(self, "_last_applied_config", None) == cfg_sig:
+            return
         handler_layer_name = "model." + self.layers_attribute
         original_gelu_layers = [
             idx for idx, deg in enumerate(gelu_degrees)
@@ -3995,6 +4001,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         for d in range(2, 7):
             if softmax_map[d]:
                 self.reversible_handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
+        self._last_applied_config = cfg_sig
 
     def validate_input_noise_scaling_factors(self, scaling_factors):
         arr = np.asarray(scaling_factors, dtype=int)

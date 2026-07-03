@@ -380,6 +380,12 @@ loops also defer loss/correct or label/pred CPU synchronization until after the
 batch loop, reducing per-batch device synchronization while preserving the same
 metrics and deterministic evaluation protocol.
 
+Progress 2026-07-03: `LayerImportanceEvaluator.apply_configuration()` now
+short-circuits repeated GELU/Softmax installs for an unchanged configuration
+while still forcing the model into eval mode on every call. This extends the
+existing `evaluate_model()` local skip to final-eval and noise-eval call sites
+that invoke `apply_configuration()` directly.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:
