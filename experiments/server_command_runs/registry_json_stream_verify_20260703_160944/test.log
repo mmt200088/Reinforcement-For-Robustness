@@ -1,0 +1,6 @@
+test_registry_json_artifacts_stream_without_materializing_strings (tests.test_blb_registry_artifact_consistency.BLBRegistryArtifactConsistencyTests.test_registry_json_artifacts_stream_without_materializing_strings) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.061s
+
+OK

@@ -1,0 +1,11 @@
+{
+  "actual_head": "",
+  "command": "python3 -m unittest tests.test_blb_registry_artifact_consistency.BLBRegistryArtifactConsistencyTests.test_registry_json_artifacts_stream_without_materializing_strings -v",
+  "expected_head": "1bc96d90e2852d566145846f4da328bb45f82add",
+  "git_clone_rc": 124,
+  "git_ls_remote_rc": 0,
+  "run_id": "registry_json_stream_verify_20260703_160944",
+  "selected_url": "https://github.com/mmt200088/Reinforcement-For-Robustness.git",
+  "source_mode": "archive_fallback",
+  "test_rc": 0
+}
