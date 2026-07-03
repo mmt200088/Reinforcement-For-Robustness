@@ -70,6 +70,42 @@ class SharedEvalMetricsTest(unittest.TestCase):
         self.assertAlmostEqual(acc, 0.8)
         self.assertAlmostEqual(f1, 0.6333333333333333)
 
+    def test_finalize_probe_trial_metrics_reuses_single_packed_arrays(self):
+        labels = np.asarray([0, 1, 1, 1, 1], dtype=int)
+        preds = np.asarray([0, 1, 0, 0, 1], dtype=int)
+        original_concatenate = eval_metrics.np.concatenate
+        original_weighted_f1 = eval_metrics.weighted_f1_from_labels
+
+        def fail_if_called(_arrays, *args, **kwargs):
+            raise AssertionError("single packed arrays should not be concatenated")
+
+        def weighted_f1_stub(labels_arg, preds_arg):
+            np.testing.assert_array_equal(labels_arg, labels)
+            np.testing.assert_array_equal(preds_arg, preds)
+            return 0.6333333333333333
+
+        eval_metrics.np.concatenate = fail_if_called
+        eval_metrics.weighted_f1_from_labels = weighted_f1_stub
+        try:
+            trial = eval_metrics.finalize_probe_trial_metrics(
+                losses=[0.0],
+                m1s=[0.6],
+                m2s=[0.6],
+                counts=[5],
+                metric_profile="mrpc",
+                is_regression=False,
+                preds=[preds],
+                labels=[labels],
+            )
+        finally:
+            eval_metrics.np.concatenate = original_concatenate
+            eval_metrics.weighted_f1_from_labels = original_weighted_f1
+
+        self.assertIsNotNone(trial)
+        _loss, metric1, metric2 = trial
+        self.assertAlmostEqual(metric1, 0.6)
+        self.assertAlmostEqual(metric2, 0.6333333333333333)
+
     def test_repeat_summary_uses_population_stats(self):
         summary = eval_metrics.summarize_eval_trials([
             {"loss": 1.0, "p": 2.0, "s": 3.0, "time_ms": 10.0},

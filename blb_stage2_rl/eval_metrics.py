@@ -199,6 +199,12 @@ def weighted_probe_batch_means(
     )
 
 
+def _flatten_probe_arrays(values: Sequence[np.ndarray]) -> np.ndarray:
+    if len(values) == 1:
+        return np.asarray(values[0]).reshape(-1)
+    return np.concatenate([np.asarray(value).reshape(-1) for value in values])
+
+
 def finalize_probe_trial_metrics(
         losses: Sequence[float],
         m1s: Sequence[float],
@@ -214,8 +220,8 @@ def finalize_probe_trial_metrics(
         return None
     loss, m1, m2 = weighted_probe_batch_means(losses, m1s, m2s, counts)
     if is_regression and preds and labels:
-        all_preds = np.concatenate([np.asarray(p).reshape(-1) for p in preds])
-        all_labels = np.concatenate([np.asarray(l).reshape(-1) for l in labels])
+        all_preds = _flatten_probe_arrays(preds)
+        all_labels = _flatten_probe_arrays(labels)
         m1, m2 = metric_pair_for_dataset(metric_profile, all_labels, all_preds)
     elif (
             not is_regression
@@ -223,8 +229,8 @@ def finalize_probe_trial_metrics(
             and preds
             and labels
             ):
-        all_preds = np.concatenate([np.asarray(p).reshape(-1) for p in preds])
-        all_labels = np.concatenate([np.asarray(l).reshape(-1) for l in labels])
+        all_preds = _flatten_probe_arrays(preds)
+        all_labels = _flatten_probe_arrays(labels)
         m2 = weighted_f1_from_labels(all_labels, all_preds)
     return float(loss), float(m1), float(m2)
 
