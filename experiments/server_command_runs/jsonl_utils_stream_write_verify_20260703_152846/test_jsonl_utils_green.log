@@ -1,0 +1,7 @@
+test_write_jsonl_rows_creates_parent_and_normalizes_rows (tests.test_jsonl_utils.JsonlUtilsTest.test_write_jsonl_rows_creates_parent_and_normalizes_rows) ... ok
+test_write_jsonl_rows_streams_rows_to_file_handle (tests.test_jsonl_utils.JsonlUtilsTest.test_write_jsonl_rows_streams_rows_to_file_handle) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.002s
+
+OK
