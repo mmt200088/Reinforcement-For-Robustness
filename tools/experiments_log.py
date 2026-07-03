@@ -126,7 +126,8 @@ def _iter_records(registry_path: str) -> Iterable[Dict[str, Any]]:
 def _append_record(registry_path: str, record: Mapping[str, Any]) -> None:
     os.makedirs(os.path.dirname(registry_path) or ".", exist_ok=True)
     with open(registry_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        json.dump(record, f, ensure_ascii=False)
+        f.write("\n")
 
 
 # ---------------------------------------------------------------------------

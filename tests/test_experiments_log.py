@@ -46,6 +46,26 @@ class ExperimentsLogTest(unittest.TestCase):
 
         self.assertEqual([row["run_id"] for row in rows], ["run-a", "run-b"])
 
+    def test_append_record_streams_jsonl_without_json_dumps(self):
+        with tempfile.TemporaryDirectory() as td:
+            registry = Path(td) / "registry.jsonl"
+            record = {
+                "run_id": "run-stream",
+                "dataset": "mrpc",
+                "artifact_paths": {"large": "x" * 1000},
+            }
+
+            with mock.patch.object(
+                experiments_log.json,
+                "dumps",
+                side_effect=AssertionError("registry appends should stream JSONL rows"),
+            ):
+                experiments_log._append_record(str(registry), record)
+
+            rows = list(experiments_log._iter_records(str(registry)))
+
+        self.assertEqual(rows, [record])
+
     def test_latest_per_run_id_does_not_materialize_overwritten_records(self):
         rows = experiments_log._latest_per_run_id([
             LazyMaterializationRecord(

@@ -1257,6 +1257,13 @@ same semantics while avoiding a full dirty-status copy. A local 200k-row
 synthetic dirty-status benchmark preserved the result and improved the check
 from `0.010460s` / `11.89MB` to `0.000009s` / `520B` traced peak allocation.
 
+Progress 2026-07-03: `tools/experiments_log.py` now appends
+`experiments/registry.jsonl` records with `json.dump(..., handle)` plus a
+newline instead of materializing each registry row with `json.dumps()` before
+writing. The append-only registry schema, non-ASCII handling, and newline
+delimiting stay unchanged while each run registration avoids one full-row
+string allocation.
+
 Progress 2026-07-02: `scripts/blb_export_action_registry.py` now lazily imports
 `blb_stage2_rl.action_space` only when registry generation actually needs it,
 so dependency-light imports and help/static tooling no longer pull the torch
