@@ -1,0 +1,15 @@
+test_all_max_action_index_scans_k_levels_once_without_copy (tests.test_blb_export_action_registry_light.BLBExportActionRegistryLightTests.test_all_max_action_index_scans_k_levels_once_without_copy) ... FAIL
+
+======================================================================
+FAIL: test_all_max_action_index_scans_k_levels_once_without_copy (tests.test_blb_export_action_registry_light.BLBExportActionRegistryLightTests.test_all_max_action_index_scans_k_levels_once_without_copy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_registry_klevel_red_e2a9fd8_20260704_074716/tests/test_blb_export_action_registry_light.py", line 99, in test_all_max_action_index_scans_k_levels_once_without_copy
+    self.assertNotIn("list(k_levels).index(max(k_levels))", source)
+AssertionError: 'list(k_levels).index(max(k_levels))' unexpectedly found in 'def _all_max_action_index(record: Dict[str, Any], *, k_levels: Sequence[int] | None = None) -> int:\n    if record.get("value_type") == "truncation_k":\n        if k_levels is None:\n            k_levels = _load_action_space_deps()["K_LEVELS"]\n        return int(list(k_levels).index(max(k_levels)))\n    return int(record.get("num_levels", 1)) - 1\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.067s
+
+FAILED (failures=1)
+RED_RC=1

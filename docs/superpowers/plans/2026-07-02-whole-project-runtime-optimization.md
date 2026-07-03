@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `b0a1928`, the conservative
+not by raw commit count. As of source head `9b78854`, the conservative
 completion estimate is about 96-97% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
@@ -145,6 +145,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `2ded3e7` | `experiments/server_command_runs/glue_json_reader_2ded3e7_20260704_040930/` | Read BLB GLUE action configs through the shared streaming JSON loader instead of `json.loads(open(...).read())`. |
 | Structured artifacts | `d0f543b` | `experiments/server_command_runs/stage2_monitor_stream_ppo_d0f543b_20260704_000540/` | Stream Stage-2 monitor PPO updates with a bounded recent window while preserving full-file `n_samples` and non-finite-loss checks. |
 | Structured artifacts | `cdcbeca` | `experiments/server_command_runs/manifest_registry_hash_cdcbeca_20260704_003917/` | Stream Trust-0 manifest registry JSON hashing through `JSONEncoder.iterencode()` instead of materializing one canonical JSON string before sha256. |
+| Structured artifacts | `9b78854` | `experiments/server_command_runs/action_registry_klevel_scan_9b78854_20260704_074904/` | Find the all-max truncation-K action index for registry export with one pass over `k_levels` instead of copying the sequence and scanning twice. |
 | Reports / paper figures | `5a75eee` | `experiments/server_command_runs/stage2_monitor_html_stream_5a75eee_20260704_005141/` | Stream Stage-2 monitor HTML report rows and nested reward-probe/GPU JSON chunks directly to the file handle instead of materializing full JSON/table strings. |
 | Reports / paper figures | `dcfea75` | `experiments/server_command_runs/paper_episode_column_dcfea75_20260703_225013/` | Read paper-figure episode rewards as a direct float column instead of building one dict per episode row. |
 | Reports / paper figures | `bd4ca26` | `experiments/server_command_runs/persistence_curve_ndarray_bd4ca26_20260704_015320/` | Preserve ndarray fast paths in Stage-2 curve smoothing/moving-average helpers instead of copying curve arrays through `list()`. |
@@ -1984,6 +1985,12 @@ through shared `write_json_file()` streaming instead of materializing each
 large JSON document with `json.dumps()` before `Path.write_text()`. This keeps
 the exported artifact schema unchanged while avoiding three extra full-size
 JSON string copies during registry export.
+
+Progress 2026-07-04: `_all_max_action_index()` in
+`scripts/blb_export_action_registry.py` now finds the all-max truncation-K
+action index with one pass over `k_levels` instead of `max(k_levels)` followed
+by `list(k_levels).index(...)`. Server RED/GREEN evidence is committed under
+`experiments/server_command_runs/action_registry_klevel_scan_9b78854_20260704_074904/`.
 
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
