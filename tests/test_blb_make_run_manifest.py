@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -285,6 +286,29 @@ class BlbMakeRunManifestTest(unittest.TestCase):
                 digest = manifest._dir_sha256(root)
 
         self.assertRegex(digest or "", r"^[0-9a-f]{64}$")
+
+    def test_registry_hash_streams_parsed_json_without_json_dumps(self):
+        manifest = _load_manifest_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "registry.json"
+            payload = {
+                "z": [1, 2, {"nested": "value"}],
+                "a": {"unicode": "μ"},
+            }
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            expected = hashlib.sha256(
+                json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+
+            with mock.patch.object(
+                manifest.json,
+                "dumps",
+                side_effect=AssertionError("registry hash should stream JSON chunks"),
+            ):
+                digest = manifest._load_registry_hash(str(path))
+
+        self.assertEqual(digest, expected)
 
 
 if __name__ == "__main__":

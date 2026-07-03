@@ -32,6 +32,14 @@ def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _stable_json_sha256(payload: Any) -> str:
+    h = hashlib.sha256()
+    encoder = json.JSONEncoder(ensure_ascii=True, sort_keys=True)
+    for chunk in encoder.iterencode(payload):
+        h.update(chunk.encode("utf-8"))
+    return h.hexdigest()
+
+
 def _file_sha256(path: Path) -> str | None:
     if not path.exists() or not path.is_file():
         return None
@@ -190,7 +198,7 @@ def _load_registry_hash(path_text: str | None) -> str | None:
         return _file_sha256(path)
     if isinstance(payload, dict) and payload.get("registry_hash"):
         return str(payload["registry_hash"])
-    return _sha256_bytes(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8"))
+    return _stable_json_sha256(payload)
 
 
 def _git_diff_hash() -> str:
