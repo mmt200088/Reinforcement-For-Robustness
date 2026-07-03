@@ -167,6 +167,23 @@ class JsonlUtilsTest(unittest.TestCase):
             '{"a": "x", "b": 2}\n{"c": 3}\n',
         )
 
+    def test_write_jsonl_rows_streams_rows_to_file_handle(self):
+        import jsonl_utils
+
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "nested" / "rows.jsonl"
+
+            with mock.patch.object(
+                jsonl_utils.json,
+                "dumps",
+                side_effect=AssertionError("write_jsonl_rows should stream via json.dump"),
+            ):
+                write_jsonl_rows(path, [{"a": pathlib.Path("x"), "b": 2}])
+
+            text = path.read_text(encoding="utf-8")
+
+        self.assertEqual(text, '{"a": "x", "b": 2}\n')
+
 
 class JsonlUtilsStaticGuardTest(unittest.TestCase):
     def test_known_report_scripts_use_shared_jsonl_reader(self):

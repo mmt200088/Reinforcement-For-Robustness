@@ -1346,6 +1346,13 @@ artifacts keep the same normalization, sorting, indentation, and trailing
 newline behavior while large manifests/reports/evidence summaries avoid one
 extra full-document string allocation.
 
+Progress 2026-07-03: shared `jsonl_utils.write_jsonl_rows()` now streams each
+bounded report/diagnostic row through `json.dump(..., handle)` and then writes
+the newline, instead of building a full per-row JSON string with
+`json.dumps(...)+ "\n"`. Required JSONL artifacts keep the same normalization,
+sorting, and line-delimited output while large finite report rows avoid one
+extra full-row string allocation.
+
 - [ ] **Step 3: Verify**
 
 Run:

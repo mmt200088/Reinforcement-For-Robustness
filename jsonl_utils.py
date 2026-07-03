@@ -105,15 +105,14 @@ def write_jsonl_rows(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as handle:
         for row in rows:
-            handle.write(
-                json.dumps(
-                    to_jsonable(row, preserve_native=True),
-                    ensure_ascii=bool(ensure_ascii),
-                    sort_keys=bool(sort_keys),
-                    default=json_default,
-                )
-                + "\n"
+            json.dump(
+                to_jsonable(row, preserve_native=True),
+                handle,
+                ensure_ascii=bool(ensure_ascii),
+                sort_keys=bool(sort_keys),
+                default=json_default,
             )
+            handle.write("\n")
     return out_path
 
 
