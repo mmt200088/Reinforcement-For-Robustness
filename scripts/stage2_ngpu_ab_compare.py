@@ -258,24 +258,33 @@ def _safe_div(numer: Optional[float], denom: Optional[float]) -> Optional[float]
     return float(numer) / float(denom)
 
 
-def _log_contains(path: Optional[str], pattern: str) -> bool:
-    if not path or not os.path.isfile(path):
-        return False
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        return str(pattern) in handle.read()
-
-
 _TIMING_RE = re.compile(r"([A-Za-z0-9_]+)=([-+0-9.eE]+)")
 
+_NGPU_LOG_MARKERS = (
+    "worker-local probe noise scopes active",
+    "worker-local CUDA probe streams active",
+    "policy_device=cpu",
+)
 
-def _parse_rollout_timing_log(path: Optional[str]) -> Dict[str, float]:
+
+def _parse_rollout_log(
+        path: Optional[str],
+        *,
+        markers: Iterable[str] = (),
+        ) -> Tuple[Dict[str, float], Dict[str, bool]]:
+    marker_tuple = tuple(str(marker) for marker in markers)
+    marker_flags = {marker: False for marker in marker_tuple}
     if not path:
-        return {}
+        return {}, marker_flags
     if not os.path.isfile(path):
-        return {}
+        return {}, marker_flags
     out: Dict[str, float] = collections.defaultdict(float)
     with open(path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
+            if marker_tuple:
+                for marker in marker_tuple:
+                    if not marker_flags[marker] and marker in line:
+                        marker_flags[marker] = True
             if "stage2-rollout-timing" not in line:
                 continue
             parsed: Dict[str, float] = {}
@@ -292,7 +301,12 @@ def _parse_rollout_timing_log(path: Optional[str]) -> Dict[str, float]:
                 if key in {"window_start", "episodes"}:
                     continue
                 out[str(key)] += float(value)
-    return dict(out)
+    return dict(out), marker_flags
+
+
+def _parse_rollout_timing_log(path: Optional[str]) -> Dict[str, float]:
+    timing, _markers = _parse_rollout_log(path)
+    return timing
 
 
 def _timing_report_lines(label: str, summary: Mapping[str, float]) -> List[str]:
@@ -389,24 +403,18 @@ def build_report(args: argparse.Namespace) -> str:
     many_wall_over_component_bound = _safe_div(many_wall_for_speed, many_component_bound)
     many_probe_ceiling_utilization = _safe_div(many_eph, many_probe_bound_eph)
     many_component_ceiling_utilization = _safe_div(many_eph, many_component_bound_eph)
-    one_timing = _parse_rollout_timing_log(getattr(args, "one_log", None))
-    many_timing = _parse_rollout_timing_log(getattr(args, "many_log", None))
+    one_timing, _one_markers = _parse_rollout_log(getattr(args, "one_log", None))
+    many_timing, many_markers = _parse_rollout_log(
+        getattr(args, "many_log", None),
+        markers=_NGPU_LOG_MARKERS,
+    )
     one_probe_mean = _mean_float(one, "terminal_probe_wall_seconds")
     many_probe_mean = _mean_float(many, "terminal_probe_wall_seconds")
     one_policy_mean = _mean_float(one, "policy_rollout_wall_seconds")
     many_policy_mean = _mean_float(many, "policy_rollout_wall_seconds")
-    scoped_noise_detected = _log_contains(
-        getattr(args, "many_log", None),
-        "worker-local probe noise scopes active",
-    )
-    worker_streams_detected = _log_contains(
-        getattr(args, "many_log", None),
-        "worker-local CUDA probe streams active",
-    )
-    cpu_policy_detected = _log_contains(
-        getattr(args, "many_log", None),
-        "policy_device=cpu",
-    )
+    scoped_noise_detected = many_markers.get("worker-local probe noise scopes active", False)
+    worker_streams_detected = many_markers.get("worker-local CUDA probe streams active", False)
+    cpu_policy_detected = many_markers.get("policy_device=cpu", False)
     lines = [
         "==== Stage-2 N-GPU A/B Verdict ====",
         f"1GPU episodes: {len(one)}",

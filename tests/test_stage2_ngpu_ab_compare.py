@@ -1,4 +1,5 @@
 import argparse
+import builtins
 import importlib.util
 import pathlib
 import sys
@@ -147,6 +148,69 @@ class Stage2NgpuCompareTests(unittest.TestCase):
         self.assertIn("NGPU/1GPU policy rollout mean ratio: 1.000", report)
         self.assertIn("NGPU worker-local probe noise scopes detected: False", report)
         self.assertIn("NGPU worker-local CUDA probe streams detected: False", report)
+
+    def test_many_log_is_scanned_once_for_timing_and_marker_flags(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            one_path = root / "one.jsonl"
+            many_path = root / "many.jsonl"
+            one_path.write_text(
+                ngpu_mod.json.dumps(_row(0, timestamp=1.0, device="cuda:0", pareto_kind="")) + "\n",
+                encoding="utf-8",
+            )
+            many_path.write_text(
+                ngpu_mod.json.dumps(_row(0, timestamp=2.0, device="cuda:1", pareto_kind="")) + "\n",
+                encoding="utf-8",
+            )
+            one_log = root / "one.log"
+            many_log = root / "many.log"
+            one_log.write_text(
+                "[stage2-rollout-timing] window_start=0 episodes=1 collect_s=1.000\n",
+                encoding="utf-8",
+            )
+            many_log.write_text(
+                "[stage2-parallel] workers-per-device=2 -> 10 workers "
+                "(worker-local probe noise scopes active; "
+                "worker-local CUDA probe streams active)\n"
+                "[stage2-parallel] policy_device=cpu "
+                "(GTrXL rollout kept off reward-probe GPUs)\n"
+                "[stage2-rollout-timing] window_start=0 episodes=1 collect_s=2.000\n",
+                encoding="utf-8",
+            )
+            many_log_opens = 0
+            original_open = builtins.open
+
+            def counting_open(file, *args, **kwargs):
+                nonlocal many_log_opens
+                if str(file) == str(many_log):
+                    many_log_opens += 1
+                return original_open(file, *args, **kwargs)
+
+            with mock.patch("builtins.open", counting_open):
+                report = ngpu_mod.build_report(
+                    argparse.Namespace(
+                        one=str(one_path),
+                        many=str(many_path),
+                        one_ppo=None,
+                        many_ppo=None,
+                        one_wall=None,
+                        many_wall=None,
+                        atol=0.0,
+                        max_diffs=10,
+                        strict_diagnostics=False,
+                        require_equal=True,
+                        min_speedup=None,
+                        require_speedup=False,
+                        one_log=str(one_log),
+                        many_log=str(many_log),
+                    )
+                )
+
+        self.assertEqual(many_log_opens, 1)
+        self.assertIn("collect_s: total_s=2.000", report)
+        self.assertIn("NGPU worker-local probe noise scopes detected: True", report)
+        self.assertIn("NGPU worker-local CUDA probe streams detected: True", report)
+        self.assertIn("NGPU cpu policy mode detected: True", report)
 
     def test_rollout_timing_logs_are_summarized(self):
         with tempfile.TemporaryDirectory() as td:

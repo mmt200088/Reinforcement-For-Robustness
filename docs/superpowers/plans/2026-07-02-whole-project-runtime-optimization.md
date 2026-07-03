@@ -544,6 +544,12 @@ episode/update before equality comparison, but long-run evidence parsing now
 shares the same low-copy JSONL implementation as the other Stage-2 GPU
 diagnostic reports.
 
+Progress 2026-07-03: `scripts/stage2_ngpu_ab_compare.py` now scans each
+Stage-2 rollout log once for both `[stage2-rollout-timing]` summaries and
+N-GPU marker flags such as worker-local probe noise scopes, worker-local CUDA
+streams, and CPU policy mode. This avoids rereading the same long launch log
+three extra times while preserving the existing report fields.
+
 Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now checks common
 `blb_stage2_best_action_full.json` locations directly before falling back to a
 recursive directory walk. A local synthetic run tree with 402 directories and
