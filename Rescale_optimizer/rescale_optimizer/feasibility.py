@@ -176,45 +176,51 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
         t_i = graph.cut_points[i].target_scale_bits
         # Accumulate path from c_i outward.
         cumulative_nodes: List[ComputeNode] = []
+        cumulative_slope = 0.0
+        cumulative_intercept = 0.0
+        s_pre = int(t_i)
 
-        for v in range(i + 1, M + 2):
-            if v == M + 1:
-                # DUMMY_SINK: no delta from node, but also no multiplication.
-                break
-
+        for v in range(i + 1, M + 1):
             # extend cumulative_nodes with stage (v-1) -> ending at c_v
-            cumulative_nodes = cumulative_nodes + stage_nodes[v - 1]
-
-            s_pre = propagate_scale(t_i, cumulative_nodes)
+            stage_chunk = stage_nodes[v - 1]
+            if stage_chunk:
+                cumulative_nodes.extend(stage_chunk)
+                s_pre = propagate_scale(s_pre, stage_chunk)
+                for n in stage_chunk:
+                    cumulative_slope += n.count * n.cost_slope
+                    cumulative_intercept += n.count * n.cost_intercept
 
             t_v = graph.cut_points[v].target_scale_bits
             d = s_pre - t_v
 
             # ---- stage edge (i, v) -----
             if q_min <= d <= q_max:
-                slope = sum(n.count * n.cost_slope for n in cumulative_nodes)
-                intercept = sum(n.count * n.cost_intercept
-                                for n in cumulative_nodes)
                 edge = StageEdge(
                     start=i, end=v,
                     nodes_in_stage=list(cumulative_nodes),
                     pre_rescale_scale_bits=int(s_pre),
                     drop_bits=int(d),
-                    total_cost_slope=float(slope),
-                    total_cost_intercept=float(intercept),
+                    total_cost_slope=float(cumulative_slope),
+                    total_cost_intercept=float(cumulative_intercept),
                 )
                 graph.stage_edges[(i, v)] = edge
 
         # ---- tail edge (i, M+1) ----
         #   γ_tail(i) = max over v ∈ (i, M] of ( s_hat(i,v) + A_v^{budget} )
         #   tail nodes = union of stage_nodes[i]..stage_nodes[M-1]  (ends at c_M)
-        cum: List[ComputeNode] = []
+        tail_nodes: List[ComputeNode] = []
+        tail_intercept = 0.0
+        tail_scale = int(t_i)
         gamma_tail = -1
         for v in range(i + 1, M + 1):
-            cum = cum + stage_nodes[v - 1]
-            s_hat_iv = propagate_scale(t_i, cum)
+            stage_chunk = stage_nodes[v - 1]
+            if stage_chunk:
+                tail_nodes.extend(stage_chunk)
+                tail_scale = propagate_scale(tail_scale, stage_chunk)
+                for n in stage_chunk:
+                    tail_intercept += n.count * n.cost_intercept
             A_v = graph.cut_points[v].amplitude_budget_bits
-            val = s_hat_iv + A_v
+            val = tail_scale + A_v
             if val > gamma_tail:
                 gamma_tail = val
 
@@ -226,15 +232,11 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
             gamma_tail = 0
 
         if gamma_tail < q_max:
-            tail_cum = []
-            for v in range(i + 1, M + 1):
-                tail_cum = tail_cum + stage_nodes[v - 1]
-            intercept = sum(n.count * n.cost_intercept for n in tail_cum)
             graph.tail_edges[i] = TailEdge(
                 start=i,
-                nodes_in_tail=list(tail_cum),
+                nodes_in_tail=list(tail_nodes),
                 gamma=int(gamma_tail),
-                total_cost_intercept=float(intercept),
+                total_cost_intercept=float(tail_intercept),
             )
 
     logger.info("FeasibilityDAG: %d stage edges, %d tail edges",

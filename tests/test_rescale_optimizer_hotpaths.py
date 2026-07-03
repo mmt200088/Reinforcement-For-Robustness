@@ -27,6 +27,18 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertIn("stage_successor_edges", source)
         self.assertNotIn("graph.stage_edges.items()", dp_loop)
 
+    def test_feasibility_dag_uses_incremental_stage_accumulation(self):
+        from rescale_optimizer import feasibility
+
+        source = inspect.getsource(feasibility.build_feasibility_dag)
+
+        self.assertNotIn("cumulative_nodes = cumulative_nodes +", source)
+        self.assertNotIn("cum = cum +", source)
+        self.assertNotIn("tail_cum = tail_cum +", source)
+        self.assertNotIn("propagate_scale(t_i, cumulative_nodes)", source)
+        self.assertNotIn("propagate_scale(t_i, cum)", source)
+        self.assertNotIn("for n in cumulative_nodes)", source)
+
 
 if __name__ == "__main__":
     unittest.main()
