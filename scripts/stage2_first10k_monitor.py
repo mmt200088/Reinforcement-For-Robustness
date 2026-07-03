@@ -19,7 +19,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from device_utils import parse_logical_device_spec  # noqa: E402
 from json_utils import write_json_file  # noqa: E402
-from jsonl_utils import read_jsonl  # noqa: E402
+from jsonl_utils import read_jsonl, iter_jsonl  # noqa: E402
 from stats_utils import mean_or_none, median_sorted  # noqa: E402
 
 
@@ -150,15 +150,60 @@ def _expected_trial_split(k_trials: int, device_count: int) -> List[int]:
     return [base + (1 if idx < rem else 0) for idx in range(device_count)]
 
 
+class _PpoUpdateWindow(list):
+    __slots__ = ("first_failure", "last_update", "updates_seen")
+
+    def __init__(
+            self,
+            rows: Iterable[Dict[str, Any]] = (),
+            *,
+            updates_seen: int = 0,
+            last_update: Dict[str, Any] | None = None,
+            first_failure: str | None = None,
+            ) -> None:
+        super().__init__(rows)
+        self.updates_seen = int(updates_seen)
+        self.last_update = last_update
+        self.first_failure = first_failure
+
+
+def _stream_ppo_update_window(path: Path, expected_samples: int) -> _PpoUpdateWindow:
+    if not path.is_file():
+        return _PpoUpdateWindow()
+    recent: deque[Dict[str, Any]] = deque(maxlen=5)
+    updates_seen = 0
+    last_update = None
+    first_failure = None
+    for row in iter_jsonl(path, errors="skip"):
+        updates_seen += 1
+        last_update = row
+        recent.append(row)
+        if first_failure is None:
+            if int(row.get("n_samples", expected_samples) or expected_samples) != expected_samples:
+                first_failure = f"PPO update {row.get('update')} n_samples != {expected_samples}."
+            elif _is_nonfinite(row.get("policy_loss")) or _is_nonfinite(row.get("value_loss")):
+                first_failure = f"PPO update {row.get('update')} has non-finite loss."
+    return _PpoUpdateWindow(
+        recent,
+        updates_seen=updates_seen,
+        last_update=last_update,
+        first_failure=first_failure,
+    )
+
+
 def _load_monitor_rows(args: argparse.Namespace) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     artifact = Path(args.artifact_dir)
     stage2_noise = Path(args.stage2_noise)
     episodes = read_jsonl(artifact / "episodes.jsonl", missing_ok=True)
     if not episodes:
         episodes = read_jsonl(stage2_noise / "progress" / "diagnostics" / "episodes.jsonl", missing_ok=True)
-    ppo = read_jsonl(artifact / "ppo_updates.jsonl", missing_ok=True)
-    if not ppo:
-        ppo = read_jsonl(stage2_noise / "progress" / "diagnostics" / "ppo_updates.jsonl", missing_ok=True)
+    expected_samples = int(args.rollout) * int(args.horizon)
+    ppo = _stream_ppo_update_window(artifact / "ppo_updates.jsonl", expected_samples)
+    if not ppo.updates_seen:
+        ppo = _stream_ppo_update_window(
+            stage2_noise / "progress" / "diagnostics" / "ppo_updates.jsonl",
+            expected_samples,
+        )
     return episodes, ppo
 
 
@@ -332,13 +377,17 @@ def build_summary(
     if sum(invalid_steps) > 0:
         hard_failures.append("Invalid steps reappeared in structured episode diagnostics.")
     expected_samples = int(args.rollout) * int(args.horizon)
-    for row in ppo:
-        if int(row.get("n_samples", expected_samples) or expected_samples) != expected_samples:
-            hard_failures.append(f"PPO update {row.get('update')} n_samples != {expected_samples}.")
-            break
-        if _is_nonfinite(row.get("policy_loss")) or _is_nonfinite(row.get("value_loss")):
-            hard_failures.append(f"PPO update {row.get('update')} has non-finite loss.")
-            break
+    ppo_first_failure = getattr(ppo, "first_failure", None)
+    if ppo_first_failure:
+        hard_failures.append(str(ppo_first_failure))
+    else:
+        for row in ppo:
+            if int(row.get("n_samples", expected_samples) or expected_samples) != expected_samples:
+                hard_failures.append(f"PPO update {row.get('update')} n_samples != {expected_samples}.")
+                break
+            if _is_nonfinite(row.get("policy_loss")) or _is_nonfinite(row.get("value_loss")):
+                hard_failures.append(f"PPO update {row.get('update')} has non-finite loss.")
+                break
 
     if completed > 1000 and episodes_since_best is not None and episodes_since_best > 2000:
         warnings.append("No new best for more than 2000 episodes.")
@@ -401,6 +450,10 @@ def build_summary(
                 )
 
     status = "FAIL" if hard_failures else ("WARN" if warnings else "PASS")
+    ppo_updates_seen = int(getattr(ppo, "updates_seen", len(ppo)))
+    ppo_last_update = getattr(ppo, "last_update", None)
+    if ppo_last_update is None and ppo:
+        ppo_last_update = ppo[-1]
     return {
         "status": status,
         "hard_failures": hard_failures,
@@ -522,8 +575,8 @@ def build_summary(
             "total_bits_last": bits[-1] if bits else None,
         },
         "ppo": {
-            "updates_seen": len(ppo),
-            "last_update": ppo[-1] if ppo else None,
+            "updates_seen": ppo_updates_seen,
+            "last_update": ppo_last_update,
             "recent_entropy_mean": ppo_entropy_recent_mean,
             "recent_clip_fraction_mean": ppo_clip_recent_mean,
             "recent_approx_kl_mean": ppo_kl_recent_mean,

@@ -328,6 +328,71 @@ class Stage2First10kMonitorTest(unittest.TestCase):
             self.assertTrue((artifact / "reward_windows.csv").is_file())
             self.assertTrue((artifact / "episode_health_windows.csv").is_file())
 
+    def test_build_summary_streams_ppo_updates_without_full_read_jsonl(self):
+        monitor = _load_monitor_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            artifact = root / "artifact"
+            artifact.mkdir()
+            stage2_noise = root / "stage2_noise"
+            (artifact / "episodes.jsonl").write_text(
+                '{"episode": 0, "total_reward": 1.0, "terminal_reward": 1.0, '
+                '"terminal_priority": 3, "valid_steps": 47, "invalid_steps": 0, '
+                '"total_bits": 100}\n',
+                encoding="utf-8",
+            )
+            ppo_path = artifact / "ppo_updates.jsonl"
+            rows = []
+            for idx in range(10):
+                rows.append(
+                    {
+                        "update": idx,
+                        "n_samples": 999 if idx == 0 else 1,
+                        "policy_loss": 0.1,
+                        "value_loss": 0.2,
+                        "entropy": float(idx),
+                        "clip_fraction": 0.0,
+                    }
+                )
+            ppo_path.write_text(
+                "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n",
+                encoding="utf-8",
+            )
+
+            original_read_jsonl = monitor.read_jsonl
+
+            def guarded_read_jsonl(path, **kwargs):
+                path = Path(path)
+                if path.name == "ppo_updates.jsonl":
+                    raise AssertionError("PPO updates should be streamed, not fully materialized")
+                return original_read_jsonl(path, **kwargs)
+
+            args = argparse.Namespace(
+                artifact_dir=str(artifact),
+                stage2_noise=str(stage2_noise),
+                nvidia_log=str(root / "nvidia.csv"),
+                phase="live",
+                planned=1,
+                anchor=0,
+                rollout=1,
+                horizon=1,
+                k_trials=5,
+                probe_size=256,
+                expected_reward_devices="",
+                max_post_anchor_p12_rate=0.30,
+                min_post_anchor_p12_rate_samples=100,
+            )
+            with mock.patch.object(monitor, "read_jsonl", side_effect=guarded_read_jsonl):
+                summary = monitor.build_summary(args)
+
+        self.assertEqual(summary["ppo"]["updates_seen"], 10)
+        self.assertEqual(summary["ppo"]["last_update"]["update"], 9)
+        self.assertEqual(summary["ppo"]["recent_entropy_mean"], 7.0)
+        self.assertTrue(
+            any("PPO update 0 n_samples != 1" in item for item in summary["hard_failures"])
+        )
+
     def test_live_main_streams_monitor_json_without_json_dumps(self):
         monitor = _load_monitor_module()
 
