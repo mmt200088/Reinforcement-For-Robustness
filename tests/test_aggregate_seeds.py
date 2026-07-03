@@ -189,6 +189,50 @@ class AggregateSeedsFinalEvalTest(unittest.TestCase):
             [(1, "run_s1"), (2, "run_s2")],
         )
 
+    def test_main_writes_markdown_without_materializing_full_summary(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            seed_list = root / "seed_list.txt"
+            output_dir = root / "out"
+            seed_list.write_text("1 run_s1\n2 run_s2\n", encoding="utf-8")
+
+            def fake_gather(seed, run_tag, persistent_index=None):
+                return aggregate_seeds.SeedRow(
+                    seed=seed,
+                    run_tag=run_tag,
+                    status="complete",
+                    best_reward=0.25 * seed,
+                    final_eval_loss=0.1 * seed,
+                    final_eval_metric1=0.8,
+                    final_eval_metric2=0.7,
+                )
+
+            with (
+                mock.patch.object(aggregate_seeds, "_build_persistent_dir_index", return_value={}),
+                mock.patch.object(aggregate_seeds, "_gather_one_seed", side_effect=fake_gather),
+                mock.patch.object(
+                    aggregate_seeds,
+                    "_build_summary_md",
+                    side_effect=AssertionError("main should stream Markdown instead of materializing it"),
+                ),
+            ):
+                rc = aggregate_seeds.main(
+                    [
+                        "--run-name",
+                        "stream-md",
+                        "--seed-list",
+                        str(seed_list),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            text = (output_dir / "seed_summary.md").read_text(encoding="utf-8")
+
+        self.assertEqual(rc, 0)
+        self.assertIn("# Multi-seed summary · `stream-md`", text)
+        self.assertIn("| 2 | complete |", text)
+
     def test_persistent_dir_index_keeps_only_requested_run_tags(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

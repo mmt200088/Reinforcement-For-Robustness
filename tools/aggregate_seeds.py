@@ -29,7 +29,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from typing import AbstractSet, Any, Dict, List, Optional, Tuple
+from typing import AbstractSet, Any, Dict, Iterable, List, Optional, Tuple
 
 PERSISTENT_ROOT = os.path.join("Parting Chapter", "persistent")
 _INVALID_RATE_LAST50_RE = re.compile(r"最近 50 回合 mean invalid 子步数: \*\*([0-9.]+)\*\*")
@@ -260,45 +260,44 @@ def _mean_std_str(values: List[float], fmt: str = "+.4f") -> str:
     return f"{m:{fmt}} ± {s:{fmt}} (n={len(values)})"
 
 
-def _build_summary_md(run_name: str, rows: List[SeedRow]) -> str:
-    lines: List[str] = []
-    lines.append(f"# Multi-seed summary · `{run_name}`")
-    lines.append("")
-    lines.append(f"- 总 seed 数：{len(rows)}")
+def _iter_summary_md_lines(run_name: str, rows: List[SeedRow]) -> Iterable[str]:
+    yield f"# Multi-seed summary · `{run_name}`"
+    yield ""
+    yield f"- 总 seed 数：{len(rows)}"
     n_complete = sum(1 for r in rows if r.status == "complete")
     n_training = sum(1 for r in rows if r.status == "training_only")
     n_incomplete = sum(1 for r in rows if r.status in ("incomplete", "missing"))
-    lines.append(f"- 完成 (训练 + final-eval)：**{n_complete}**")
-    lines.append(f"- 仅训练完（无 final-eval）：{n_training}")
-    lines.append(f"- 未完成 / 缺失：{n_incomplete}")
-    lines.append("")
+    yield f"- 完成 (训练 + final-eval)：**{n_complete}**"
+    yield f"- 仅训练完（无 final-eval）：{n_training}"
+    yield f"- 未完成 / 缺失：{n_incomplete}"
+    yield ""
 
     # Aggregate
-    lines.append("## 1. 聚合指标（mean ± std，跨 complete seeds）")
-    lines.append("")
+    yield "## 1. 聚合指标（mean ± std，跨 complete seeds）"
+    yield ""
     complete = [r for r in rows if r.status == "complete"]
-    lines.append("| 指标 | 值 |")
-    lines.append("|------|------|")
-    lines.append(f"| Training best reward | {_mean_std_str([float(r.best_reward) for r in complete if r.best_reward is not None])} |")
-    lines.append(f"| Final-eval loss | {_mean_std_str([float(r.final_eval_loss) for r in complete if r.final_eval_loss is not None])} |")
-    lines.append(f"| Final-eval metric1 | {_mean_std_str([float(r.final_eval_metric1) for r in complete if r.final_eval_metric1 is not None])} |")
-    lines.append(f"| Final-eval metric2 | {_mean_std_str([float(r.final_eval_metric2) for r in complete if r.final_eval_metric2 is not None])} |")
-    lines.append(f"| Total bits sum | {_mean_std_str([float(r.total_bits_sum) for r in complete if r.total_bits_sum is not None], fmt='.0f')} |")
-    lines.append(f"| Fusion count | {_mean_std_str([float(r.fusion_count) for r in complete if r.fusion_count is not None], fmt='.1f')} |")
-    lines.append(f"| Avg truncation K | {_mean_std_str([float(r.avg_truncation_k) for r in complete if r.avg_truncation_k is not None], fmt='.2f')} |")
-    lines.append(f"| Invalid rate (last 50 ep) | {_mean_std_str([float(r.invalid_rate_last50) * 100 for r in complete if r.invalid_rate_last50 is not None], fmt='.1f')} % |")
-    lines.append("")
+    yield "| 指标 | 值 |"
+    yield "|------|------|"
+    yield f"| Training best reward | {_mean_std_str([float(r.best_reward) for r in complete if r.best_reward is not None])} |"
+    yield f"| Final-eval loss | {_mean_std_str([float(r.final_eval_loss) for r in complete if r.final_eval_loss is not None])} |"
+    yield f"| Final-eval metric1 | {_mean_std_str([float(r.final_eval_metric1) for r in complete if r.final_eval_metric1 is not None])} |"
+    yield f"| Final-eval metric2 | {_mean_std_str([float(r.final_eval_metric2) for r in complete if r.final_eval_metric2 is not None])} |"
+    yield f"| Total bits sum | {_mean_std_str([float(r.total_bits_sum) for r in complete if r.total_bits_sum is not None], fmt='.0f')} |"
+    yield f"| Fusion count | {_mean_std_str([float(r.fusion_count) for r in complete if r.fusion_count is not None], fmt='.1f')} |"
+    yield f"| Avg truncation K | {_mean_std_str([float(r.avg_truncation_k) for r in complete if r.avg_truncation_k is not None], fmt='.2f')} |"
+    yield f"| Invalid rate (last 50 ep) | {_mean_std_str([float(r.invalid_rate_last50) * 100 for r in complete if r.invalid_rate_last50 is not None], fmt='.1f')} % |"
+    yield ""
 
     # Per-seed rows
-    lines.append("## 2. Per-seed 明细")
-    lines.append("")
-    lines.append("| Seed | Status | Completed eps | Best reward | Final loss | Final metric1 | Final metric2 | Bits | Fusion | avg_k | Persistent dir |")
-    lines.append("|----:|:------|--------------:|------------:|-----------:|--------------:|--------------:|-----:|-------:|------:|:----------------|")
+    yield "## 2. Per-seed 明细"
+    yield ""
+    yield "| Seed | Status | Completed eps | Best reward | Final loss | Final metric1 | Final metric2 | Bits | Fusion | avg_k | Persistent dir |"
+    yield "|----:|:------|--------------:|------------:|-----------:|--------------:|--------------:|-----:|-------:|------:|:----------------|"
     for r in sorted(rows, key=lambda x: x.seed):
         dir_short = ""
         if r.persistent_dir:
             dir_short = r.persistent_dir.split("/")[-1]
-        lines.append(
+        yield (
             f"| {r.seed} | {r.status} | "
             f"{r.completed_episodes if r.completed_episodes is not None else ''} | "
             f"{(f'{r.best_reward:+.4f}' if r.best_reward is not None else '')} | "
@@ -310,30 +309,39 @@ def _build_summary_md(run_name: str, rows: List[SeedRow]) -> str:
             f"{(f'{r.avg_truncation_k:.2f}' if r.avg_truncation_k is not None else '')} | "
             f"`{dir_short}` |"
         )
-    lines.append("")
+    yield ""
 
     # Errors
     errs = [r for r in rows if r.error_msg]
     if errs:
-        lines.append("## 3. 错误日志")
-        lines.append("")
+        yield "## 3. 错误日志"
+        yield ""
         for r in errs:
-            lines.append(f"- seed={r.seed} run_tag=`{r.run_tag}` → {r.error_msg}")
-        lines.append("")
+            yield f"- seed={r.seed} run_tag=`{r.run_tag}` → {r.error_msg}"
+        yield ""
 
     # Significance hint (paired bootstrap suggestion)
     if n_complete >= 3:
-        lines.append("## 4. 统计建议")
-        lines.append("")
-        lines.append(
-            "- 至少有 3 个 complete seed → 可以做 paired bootstrap 跟某个外部 baseline 比。"
-        )
-        lines.append(
-            "- 论文报数最少 5 seeds；目前 complete=%d，建议补到 5 以上后再 freeze 数字。" % n_complete
-        )
-        lines.append("")
+        yield "## 4. 统计建议"
+        yield ""
+        yield "- 至少有 3 个 complete seed → 可以做 paired bootstrap 跟某个外部 baseline 比。"
+        yield "- 论文报数最少 5 seeds；目前 complete=%d，建议补到 5 以上后再 freeze 数字。" % n_complete
+        yield ""
 
-    return "\n".join(lines)
+
+def _build_summary_md(run_name: str, rows: List[SeedRow]) -> str:
+    return "\n".join(_iter_summary_md_lines(run_name, rows))
+
+
+def _write_summary_md(path: str, run_name: str, rows: List[SeedRow]) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        first = True
+        for line in _iter_summary_md_lines(run_name, rows):
+            if first:
+                first = False
+            else:
+                f.write("\n")
+            f.write(line)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -363,10 +371,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ]
 
     os.makedirs(args.output_dir, exist_ok=True)
-    md = _build_summary_md(args.run_name, seed_rows)
     md_path = os.path.join(args.output_dir, "seed_summary.md")
-    with open(md_path, "w", encoding="utf-8") as f:
-        f.write(md)
+    _write_summary_md(md_path, args.run_name, seed_rows)
 
     json_path = os.path.join(args.output_dir, "seed_summary.json")
     with open(json_path, "w", encoding="utf-8") as f:

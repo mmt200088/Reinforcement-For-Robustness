@@ -1183,6 +1183,13 @@ calculation instead of `statistics.mean()` / `statistics.stdev()`. A local
 200k-value benchmark produced identical formatted output and reduced formatting
 time from `0.909304s` to `0.036743s` (`24.75x`).
 
+Progress 2026-07-03: `tools/aggregate_seeds.py` now streams
+`seed_summary.md` rows directly to the output handle from the main aggregation
+path instead of building the complete Markdown report string before writing.
+The existing `_build_summary_md()` compatibility helper still returns the same
+joined text for callers that need it, while multi-seed report generation avoids
+one full-report string allocation.
+
 Progress 2026-07-02: `tools/experiments_log.py` now bounds both best-effort
 git provenance subprocesses in `_git_info()` with a 5-second timeout. This
 prevents run registration/index rebuild from hanging indefinitely on a slow or
