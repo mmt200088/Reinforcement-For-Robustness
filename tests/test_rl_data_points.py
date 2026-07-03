@@ -617,6 +617,7 @@ class RLDataPointWriterTest(unittest.TestCase):
                 is_new_best=False,
                 best_reward_so_far=1.0,
             )
+            recorder._close_primary_jsonl()
 
             report_paths = {
                 recorder.summary_md_path + ".tmp",
