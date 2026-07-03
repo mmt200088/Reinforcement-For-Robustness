@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -112,6 +113,19 @@ class RLDataPointWriterTest(unittest.TestCase):
         b = {"a": "x", "b": 2}
         self.assertEqual(stable_json_key(a), stable_json_key(b))
         self.assertEqual(stable_json_hash(a), stable_json_hash(b))
+
+    def test_stable_json_hash_streams_without_materializing_key(self):
+        import json_utils
+
+        payload = {"b": [np.int64(2), Path("x")], "a": {"flag": True}}
+        expected = hashlib.sha256(stable_json_key(payload).encode("utf-8")).hexdigest()
+
+        with mock.patch.object(
+            json_utils,
+            "stable_json_key",
+            side_effect=AssertionError("stable_json_hash should stream canonical JSON"),
+        ):
+            self.assertEqual(json_utils.stable_json_hash(payload), expected)
 
     def test_write_json_file_creates_parent_and_normalizes_payload(self):
         with tempfile.TemporaryDirectory() as td:
