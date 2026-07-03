@@ -1,0 +1,14 @@
+test_graph_occurrences_accumulates_unique_layers_without_list_dedupe (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_graph_occurrences_accumulates_unique_layers_without_list_dedupe) ... FAIL
+
+======================================================================
+FAIL: test_graph_occurrences_accumulates_unique_layers_without_list_dedupe (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_graph_occurrences_accumulates_unique_layers_without_list_dedupe)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_fusion_report_occurrences_red_ee490c8_20260704_072956/src/tests/test_report_fusion_count_map.py", line 555, in test_graph_occurrences_accumulates_unique_layers_without_list_dedupe
+    self.assertNotIn('append(int(step["layer_idx"]))', source)
+AssertionError: 'append(int(step["layer_idx"]))' unexpectedly found in 'def _graph_occurrences(schedule: Sequence[Mapping[str, Any]]) -> Dict[str, List[int]]:\n    out: Dict[str, List[int]] = {}\n    for step in schedule:\n        out.setdefault(str(step["graph_key"]), []).append(int(step["layer_idx"]))\n    return {k: sorted(set(v)) for k, v in sorted(out.items())}\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)

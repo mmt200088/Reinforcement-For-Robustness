@@ -1,0 +1,8 @@
+PY_COMPILE_RC=0
+test_graph_occurrences_accumulates_unique_layers_without_list_dedupe (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_graph_occurrences_accumulates_unique_layers_without_list_dedupe) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+OK
+TEST_RC=0
