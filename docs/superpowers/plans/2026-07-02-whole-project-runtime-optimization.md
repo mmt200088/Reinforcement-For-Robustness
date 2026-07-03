@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `92ad0f0`, the conservative
-completion estimate is about 52% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `2ee6de2`, the conservative
+completion estimate is about 53% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -100,6 +100,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `92ad0f0` | `experiments/server_command_runs/stage1_rollout_direct_tensor_92ad0f0_20260704_012541/` | Pack recurrent rollout `logprobs` and `values` directly as target-device tensors before PPO updates, avoiding the CPU numpy round trip introduced by the earlier batch path. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
+| Stage-2/Paean action space | `2ee6de2` | `experiments/server_command_runs/action_space_splice_no_tolist_2ee6de2_20260704_013204/` | Splice per-step and fusion-step action vectors by iterating checked numpy arrays directly instead of materializing `arr.tolist()` for every splice. |
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
 | Structured artifacts | `e0376a5` | `experiments/server_command_runs/jsonl_encoder_reuse_e0376a5_20260703_223743/` | Reuse one `JSONEncoder` for finite JSONL row writes instead of calling `json.dump()` for every row. |
 | Structured artifacts | `d0f543b` | `experiments/server_command_runs/stage2_monitor_stream_ppo_d0f543b_20260704_000540/` | Stream Stage-2 monitor PPO updates with a bounded recent window while preserving full-file `n_samples` and non-finite-loss checks. |
@@ -827,6 +828,22 @@ action-config report instead of recomputing them for every generated group. A
 local 12-layer / 5000-group splice benchmark preserved generated actions and
 reduced action splice time from `1.613343s` / `15.57MiB` peak to `0.853562s` /
 `14.08MiB`.
+
+Progress 2026-07-04: `blb_stage2_rl/action_space.py` now splices per-step and
+fusion-step action values by iterating the checked numpy array directly instead
+of materializing `arr.tolist()` before every offset write. This keeps shape and
+offset validation unchanged while removing a short Python-list allocation from
+high-frequency Stage-2/Paean action construction.
+
+Server evidence 2026-07-04: source commit `2ee6de2` has red/green verification
+under
+`experiments/server_command_runs/action_space_splice_no_tolist_2ee6de2_20260704_013204/`.
+The red source guard failed on the old `arr.tolist()` implementation. The
+focused green gate passed `py_compile`, the source guard, and an artifact-free
+functional splice test for both step and fusion helpers. One broader green
+attempt compiled and passed the functional splice check but could not run a
+fusion-map fixture test because the temp source package intentionally did not
+include canonical fusion-map JSON artifacts.
 
 Progress 2026-07-02: `scripts/blb_f0_scan_feasible_domain.py` now lazily
 imports its torch/optimizer-heavy execution dependencies and uses

@@ -1,0 +1,14 @@
+test_splice_helpers_iterate_numpy_arrays_without_tolist_materialization (tests.test_blb_fusion_count_map.ActionSpaceSpliceSourceTest.test_splice_helpers_iterate_numpy_arrays_without_tolist_materialization) ... FAIL
+
+======================================================================
+FAIL: test_splice_helpers_iterate_numpy_arrays_without_tolist_materialization (tests.test_blb_fusion_count_map.ActionSpaceSpliceSourceTest.test_splice_helpers_iterate_numpy_arrays_without_tolist_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_action_space_splice_red_c80f0e5_20260704_013036/src_py_c80f0e5_red/tests/test_blb_fusion_count_map.py", line 58, in test_splice_helpers_iterate_numpy_arrays_without_tolist_materialization
+    self.assertNotIn("arr.tolist()", region)
+AssertionError: 'arr.tolist()' unexpectedly found in 'def splice_step_action_into_full_vec(\n        full_vec: np.ndarray,\n        step: BlockStepSpec,\n        step_action: Sequence[int],\n        ) -> np.ndarray:\n    """Write the per-step action\'s slot values into the legacy 577-dim vec.\n\n    ``step_action`` length must equal ``len(step.slot_dims)``. Returns\n    ``full_vec`` for chaining.\n    """\n    arr = np.asarray(step_action, dtype=int).reshape(-1)\n    if arr.size != len(step.full_vec_offsets):\n        raise ValueError(\n            f"step {step.step_idx} expects {len(step.full_vec_offsets)} slots, got {arr.size}"\n        )\n    for offset, val in zip(step.full_vec_offsets, arr.tolist()):\n        full_vec[int(offset)] = int(val)\n    return full_vec\n\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
