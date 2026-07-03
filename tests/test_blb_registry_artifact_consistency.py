@@ -38,6 +38,25 @@ class BLBRegistryArtifactConsistencyTests(unittest.TestCase):
     def test_registry_json_artifacts_stream_without_materializing_strings(self):
         import scripts.blb_export_action_registry as registry
 
+        slot_record = {
+            "slot_id": "L0.B1.gelu_out_sf",
+            "global_index": 0,
+            "layer": 0,
+            "block_index": 1,
+            "block": "block1",
+            "field": "gelu_out_sf",
+            "kind": "F",
+            "operation": "fresh",
+            "location": "L0.B1.gelu_out_sf",
+            "semantic_type": "fresh",
+            "is_effective": True,
+            "is_required": True,
+            "all_max_action_index": 2,
+            "value_type": "scaling_factor",
+            "action_values": [28, 29, 30],
+            "level_values": [28, 29, 30],
+            "user_prompt_semantics": "GELU output fresh scaling factor.",
+        }
         payload = {
             "profile": "mrpc",
             "num_layers": 1,
@@ -55,32 +74,8 @@ class BLBRegistryArtifactConsistencyTests(unittest.TestCase):
                 "first_input_tail_slots": 0,
                 "full_action_length": 1,
             },
-            "slot_registry_full": [
-                {
-                    "slot_id": "L0.B1.gelu_out_sf",
-                    "layer": 0,
-                    "block": "block1",
-                    "field": "gelu_out_sf",
-                    "kind": "F",
-                    "operation": "fresh",
-                    "is_effective": True,
-                    "value_type": "scaling_factor",
-                    "level_values": [28, 29, 30],
-                }
-            ],
-            "slot_registry_effective": [
-                {
-                    "slot_id": "L0.B1.gelu_out_sf",
-                    "layer": 0,
-                    "block": "block1",
-                    "field": "gelu_out_sf",
-                    "kind": "F",
-                    "operation": "fresh",
-                    "is_effective": True,
-                    "value_type": "scaling_factor",
-                    "level_values": [28, 29, 30],
-                }
-            ],
+            "slot_registry_full": [slot_record],
+            "slot_registry_effective": [slot_record],
             "current_code_slot_check_markdown": "# Slot check\n",
             "action_index_mapping_markdown": "# Mapping\n",
         }
