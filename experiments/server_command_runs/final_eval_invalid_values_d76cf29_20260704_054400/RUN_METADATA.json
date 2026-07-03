@@ -1,0 +1,25 @@
+{
+  "source_commit": "d76cf29",
+  "base_commit_for_red": "8d42b41",
+  "evidence_dir": "experiments/server_command_runs/final_eval_invalid_values_d76cf29_20260704_054400",
+  "server_red_dir": "/hy-tmp/rfr_final_invalid_red_8d42b41_20260704_",
+  "server_green_dir": "/hy-tmp/rfr_final_invalid_green_20260704_",
+  "server_canonical_worktree_modified": false,
+  "optimization": "Paean final-eval unsupported-value validation scans numpy arrays without arr.tolist() materialization.",
+  "red": {
+    "command": "python3 -m unittest tests.test_final_eval_normalize_arrays -v",
+    "expected_rc": 1,
+    "evidence": "red_unittest.log"
+  },
+  "green": {
+    "commands": [
+      "python3 -m py_compile final_evaluation_module.py tests/test_final_eval_normalize_arrays.py",
+      "python3 -m unittest tests.test_final_eval_normalize_arrays -v",
+      "source guard for helper path and removed arr.tolist validation materialization"
+    ],
+    "py_compile_rc": 0,
+    "unittest_rc": 0,
+    "source_guard_rc": 0,
+    "evidence": "green_validation.log"
+  }
+}
