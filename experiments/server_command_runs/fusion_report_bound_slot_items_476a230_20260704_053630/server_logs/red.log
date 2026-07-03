@@ -1,0 +1,26 @@
+test_bound_slot_values_uses_mapping_items_without_dict_copy (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_bound_slot_values_uses_mapping_items_without_dict_copy) ... FAIL
+
+======================================================================
+FAIL: test_bound_slot_values_uses_mapping_items_without_dict_copy (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_bound_slot_values_uses_mapping_items_without_dict_copy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_bound_slot_items_red_fc85a3e_20260704_053556/tests/test_report_fusion_count_map.py", line 513, in test_bound_slot_values_uses_mapping_items_without_dict_copy
+    out = report._bound_slot_values(2, slots)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_bound_slot_items_red_fc85a3e_20260704_053556/scripts/report_fusion_count_map.py", line 420, in _bound_slot_values
+    out = {str(k): v for k, v in dict(slots or {}).items()}
+                                 ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: bound slot values should not copy mapping through dict()
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
