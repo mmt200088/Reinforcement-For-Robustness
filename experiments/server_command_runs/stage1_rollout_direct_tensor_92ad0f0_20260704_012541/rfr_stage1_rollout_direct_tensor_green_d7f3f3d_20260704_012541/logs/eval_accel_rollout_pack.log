@@ -1,0 +1,6 @@
+test_recurrent_rollout_tensor_pack_batches_scalar_transfers_to_target_device (tests.test_stage1_eval_accel.Stage1RolloutPackingSourceTest.test_recurrent_rollout_tensor_pack_batches_scalar_transfers_to_target_device) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+OK
