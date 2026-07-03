@@ -1749,7 +1749,7 @@ class UnifiedFinalEvaluationModule:
                 ),
             ]
 
-            for ax, (label, key) in zip(list(axes.flat)[:3], metric_panels):
+            for ax, (label, key) in zip(itertools.islice(axes.flat, 3), metric_panels):
                 panel_xs = []
                 for fam in self._ordered_families(grouped):
                     items = grouped[fam]
@@ -1948,7 +1948,7 @@ class UnifiedFinalEvaluationModule:
             else:
                 variance_panels.append(("Time Variance vs Total Cost", "time_var", "VarTime"))
 
-            for ax, (title, key, ylabel) in zip(list(axes.flat)[:3], variance_panels):
+            for ax, (title, key, ylabel) in zip(itertools.islice(axes.flat, 3), variance_panels):
                 panel_xs = []
                 has_data = False
                 for family in random_families:
