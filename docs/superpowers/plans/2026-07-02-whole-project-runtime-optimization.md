@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `ee8a68e`, the conservative
-completion estimate is about 95% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `54d7bf9`, the conservative
+completion estimate is about 96% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -103,6 +103,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `a1de9a3` | `experiments/server_command_runs/final_axis_limits_stream_a1de9a3_20260704_063500/` | Stream final-eval plot axis-limit min/max calculation without a `clean` list and without converting each finite value twice. |
 | Paean final eval | `d76cf29` | `experiments/server_command_runs/final_eval_invalid_values_d76cf29_20260704_054400/` | Scan normalized final-eval config arrays for unsupported values without materializing `arr.tolist()` sets. |
 | Paean final eval | `b9f01de` | `experiments/server_command_runs/final_eval_signature_tuple_b9f01de_20260704_054950/` | Build final-eval cache signature keys as direct integer tuples and reuse `_full_signature()` from `_noise_eval()` instead of materializing arrays through `.tolist()`. |
+| Paean final eval | `54d7bf9` | `experiments/server_command_runs/paean_selected_random_summary_54d7bf9_20260704_062553/` | Stream BLB action selected-vs-random final-eval summary rows once, accumulating field stats and anchor ranks without per-field numpy arrays or separate rank lists. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
@@ -1534,6 +1535,20 @@ The red test used guarded float values to prove the old axis-limit helper
 converted finite values more than once. The green gate passed `py_compile`, all
 `tests.test_final_evaluation_config_cache` tests, and a source guard confirming
 the `clean` list/min/max pattern is gone.
+
+Progress 2026-07-04: `BLBActionFinalEvaluationModule._summarize_selected_vs_random()`
+now scans final-eval random comparison rows once and accumulates loss/metric
+means, standard deviations, min/max values, and selected-anchor ranks in the
+same pass. This removes six per-field numpy-array materializations plus the
+separate metric/loss rank list builds from the BLB action final-eval report
+summary path.
+
+Server evidence 2026-07-04: source commit `54d7bf9` has focused red/green
+verification under
+`experiments/server_command_runs/paean_selected_random_summary_54d7bf9_20260704_062553/`.
+The RED target test failed on the old `np.asarray([float(...) ...])` and rank
+list patterns. The GREEN gate passed `py_compile` and the two focused
+selected-vs-random summary tests, including statistic/rank semantic parity.
 
 - [ ] **Step 3: Verify**
 
