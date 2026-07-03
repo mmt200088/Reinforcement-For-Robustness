@@ -785,6 +785,15 @@ class BLBStatusBoard:
 # ---------------------------------------------------------------------------
 # 训练曲线
 # ---------------------------------------------------------------------------
+def _float_array(values):
+    """Materialize numeric curve values, preserving ndarray fast paths."""
+    import numpy as _np
+
+    if isinstance(values, _np.ndarray):
+        return _np.asarray(values, dtype=float)
+    return _np.asarray(list(values), dtype=float)
+
+
 def _ema_smooth(values, window):
     """Symmetric exponential moving average. ``window`` controls decay.
 
@@ -792,7 +801,7 @@ def _ema_smooth(values, window):
     """
     import numpy as _np
 
-    arr = _np.asarray(list(values), dtype=float)
+    arr = _float_array(values)
     if arr.size == 0:
         return arr
     if window <= 1:
@@ -823,7 +832,7 @@ def _moving_average(values, window):
     """
     import numpy as _np
 
-    arr = _np.asarray(list(values), dtype=float)
+    arr = _float_array(values)
     n = arr.size
     w = int(max(1, window))
     if n == 0:

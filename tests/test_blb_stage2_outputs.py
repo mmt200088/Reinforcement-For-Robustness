@@ -168,6 +168,18 @@ class UpgradedCurvesTest(unittest.TestCase):
         for name, seq in seqs.items():
             self.assertLessEqual(seq.iterations, 1, name)
 
+    def test_curve_helpers_accept_ndarray_without_list_materialization(self):
+        import numpy as np
+
+        values = np.asarray([1.0, 2.0, 4.0, 8.0], dtype=float)
+        with mock.patch("builtins.list", side_effect=AssertionError("ndarray curve input should not be copied through list")):
+            smoothed = persistence._ema_smooth(values, 3)
+            ma_x, ma_y = persistence._moving_average(values, 2)
+
+        self.assertEqual(smoothed.shape, values.shape)
+        self.assertEqual(ma_x.tolist(), [2, 3, 4])
+        self.assertEqual(ma_y.tolist(), [1.5, 3.0, 6.0])
+
     def test_env_can_disable_stage2_plot_rendering_without_callsite_change(self):
         old_env = os.environ.get("RFR_STAGE2_RENDER_PLOTS")
         os.environ["RFR_STAGE2_RENDER_PLOTS"] = "0"
