@@ -79,7 +79,7 @@ def _find_episodes_path(path: str | Path) -> Path:
     raise FileNotFoundError(f"could not find episodes.jsonl under {candidate}")
 
 
-def _iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
+def _iter_episode_rows(path: str | Path) -> Iterable[dict[str, Any]]:
     episodes_path = _find_episodes_path(path)
     yield from iter_jsonl(episodes_path, errors="raise")
 
@@ -352,7 +352,7 @@ def summarize_run(
         low_util_threshold_pct: float = LOW_UTIL_THRESHOLD_PCT,
         ) -> dict[str, Any]:
     return summarize_rows(
-        _iter_jsonl(episodes),
+        _iter_episode_rows(episodes),
         gpu_utilization=_load_nvidia_smi_csv(nvidia_smi_csv),
         visible_devices=visible_devices,
         low_util_threshold_pct=low_util_threshold_pct,
