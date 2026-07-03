@@ -1,5 +1,7 @@
 import csv
 import contextlib
+import hashlib
+import inspect
 import io
 import json
 import os
@@ -1612,6 +1614,16 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
             self.assertTrue(store.should_evaluate(action, "F4"))
             store.append({"action_indices": action, "fidelity": "F4", "valid": True})
             self.assertFalse(store.should_evaluate(action, "F4"))
+
+    def test_candidate_action_hash_avoids_json_dumps_for_integer_vectors(self):
+        from blb_stage2_rl import candidate_store
+
+        action = [4, 3, 2, -1]
+        expected = hashlib.sha256(b"[4,3,2,-1]").hexdigest()
+
+        self.assertEqual(candidate_store.action_hash(action), expected)
+        source = inspect.getsource(candidate_store._action_hash_from_tuple)
+        self.assertNotIn("json.dumps", source)
 
     def test_registry_export_records_action_values_and_current_slot_count(self):
         from blb_stage2_rl.action_space import K_LEVELS
