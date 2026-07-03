@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `bd4ca26`, the conservative
-completion estimate is about 57% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `7460284`, the conservative
+completion estimate is about 58% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -111,6 +111,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Reports / paper figures | `5a75eee` | `experiments/server_command_runs/stage2_monitor_html_stream_5a75eee_20260704_005141/` | Stream Stage-2 monitor HTML report rows and nested reward-probe/GPU JSON chunks directly to the file handle instead of materializing full JSON/table strings. |
 | Reports / paper figures | `dcfea75` | `experiments/server_command_runs/paper_episode_column_dcfea75_20260703_225013/` | Read paper-figure episode rewards as a direct float column instead of building one dict per episode row. |
 | Reports / paper figures | `bd4ca26` | `experiments/server_command_runs/persistence_curve_ndarray_bd4ca26_20260704_015320/` | Preserve ndarray fast paths in Stage-2 curve smoothing/moving-average helpers instead of copying curve arrays through `list()`. |
+| Reports / paper figures | `7460284` | `experiments/server_command_runs/persistence_panel_ndarray_7460284_20260704_015635/` | Preserve ndarray fast paths in Stage-2 Stage-1-style panel plotting instead of copying panel raw series through `list()`. |
 | Stage-2 scheduling gate | `27be72e` | `experiments/server_command_runs/stage2_ab_ordered_jsonl_27be72e_20260703_225809/` | Skip sorting already ordered Stage-2 A/B JSONL logs while preserving sorted fallback for out-of-order artifacts. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
@@ -1576,6 +1577,19 @@ under
 The red test failed on `_ema_smooth()` calling `list(values)` for ndarray
 input. The green gate passed `py_compile`, all nine `UpgradedCurvesTest` tests,
 and a source guard for the ndarray fast-path helper.
+
+Progress 2026-07-04: Stage-2 Stage-1-style curve panels now reuse the same
+`_float_array()` helper for raw panel series. This avoids another full
+Python-list copy in `_stage1_style_panel()` when report regeneration or
+training-curve rendering passes ndarray-backed reward/loss/metric arrays, while
+leaving iterator inputs on the existing one-materialization path.
+
+Server evidence 2026-07-04: source commit `7460284` has red/green verification
+under
+`experiments/server_command_runs/persistence_panel_ndarray_7460284_20260704_015635/`.
+The red test failed on `_stage1_style_panel()` calling `list(raw)` for ndarray
+input. The green gate passed `py_compile`, all ten `UpgradedCurvesTest` tests,
+and a source guard confirming the panel path uses `_float_array(raw)`.
 
 Progress 2026-07-02: Stage-2 live trace CSV schema migration now streams old
 rows directly into the migrated file instead of materializing all rows in a

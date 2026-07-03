@@ -1,0 +1,25 @@
+test_stage1_style_panel_accepts_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_stage1_style_panel_accepts_ndarray_without_list_materialization) ... FAIL
+
+======================================================================
+FAIL: test_stage1_style_panel_accepts_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_stage1_style_panel_accepts_ndarray_without_list_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_persistence_panel_ndarray_red_6a741a1_20260704_015550/tests/test_blb_stage2_outputs.py", line 211, in test_stage1_style_panel_accepts_ndarray_without_list_materialization
+    persistence._stage1_style_panel(
+  File "/hy-tmp/rfr_persistence_panel_ndarray_red_6a741a1_20260704_015550/blb_stage2_rl/persistence.py", line 857, in _stage1_style_panel
+    arr = _np.asarray(list(raw), dtype=float)
+                      ^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: panel raw ndarray should not be copied through list
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)

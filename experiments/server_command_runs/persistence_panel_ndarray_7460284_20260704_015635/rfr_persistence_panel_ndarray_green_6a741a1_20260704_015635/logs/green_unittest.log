@@ -1,0 +1,15 @@
+test_curve_helpers_accept_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_curve_helpers_accept_ndarray_without_list_materialization) ... ok
+test_env_can_disable_stage2_plot_rendering_without_callsite_change (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_env_can_disable_stage2_plot_rendering_without_callsite_change) ... ok
+test_full_series_emits_all_pngs (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_full_series_emits_all_pngs) ... ok
+test_legacy_minimal_backcompat (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_legacy_minimal_backcompat) ... ok
+test_main_curve_uses_stage1_style_renderer_without_cost_panels (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_main_curve_uses_stage1_style_renderer_without_cost_panels) ... ok
+test_no_baselines_ok (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_no_baselines_ok) ... ok
+test_npz_always_written (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_npz_always_written) ... ok
+test_render_plots_false_iterates_each_npz_series_once (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_render_plots_false_iterates_each_npz_series_once) ... ok
+test_render_plots_false_writes_npz_only (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_render_plots_false_writes_npz_only) ... ok
+test_stage1_style_panel_accepts_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_stage1_style_panel_accepts_ndarray_without_list_materialization) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 4.283s
+
+OK
