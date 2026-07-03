@@ -1,0 +1,20 @@
+test_finalize_probe_trial_metrics_reuses_single_packed_arrays (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_finalize_probe_trial_metrics_reuses_single_packed_arrays) ... FAIL
+
+======================================================================
+FAIL: test_finalize_probe_trial_metrics_reuses_single_packed_arrays (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_finalize_probe_trial_metrics_reuses_single_packed_arrays)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_eval_single_array_red2_5616253_20260704_031130/tests/test_blb_eval_metrics_shared.py", line 90, in test_finalize_probe_trial_metrics_reuses_single_packed_arrays
+    trial = eval_metrics.finalize_probe_trial_metrics(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_eval_single_array_red2_5616253_20260704_031130/blb_stage2_rl/eval_metrics.py", line 226, in finalize_probe_trial_metrics
+    all_preds = np.concatenate([np.asarray(p).reshape(-1) for p in preds])
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_eval_single_array_red2_5616253_20260704_031130/tests/test_blb_eval_metrics_shared.py", line 80, in fail_if_called
+    raise AssertionError("single packed arrays should not be concatenated")
+AssertionError: single packed arrays should not be concatenated
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)
