@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `2d98907`, the conservative
-completion estimate is about 66% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `da02fca`, the conservative
+completion estimate is about 67% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -104,6 +104,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared inference eval | `497ecda` | `experiments/server_command_runs/probe_scalar_sync_497ecda_20260704_025145/` | Batch reward-probe loss/metric scalar tensors into one packed CPU transfer instead of three per-field scalar sequence transfers. |
 | Shared inference eval | `b5dfff5` | `experiments/server_command_runs/probe_skip_pred_arrays_b5dfff5_20260704_025610/` | Skip reward-probe prediction/label tensor retention and numpy transfer for accuracy-only metric profiles. |
 | Shared inference eval | `2d98907` | `experiments/server_command_runs/probe_tensor_arrays_2d98907_20260704_030105/` | Concatenate same-device reward-probe prediction/label tensors before one packed CPU/numpy transfer. |
+| Shared eval metrics | `da02fca` | `experiments/server_command_runs/eval_metric_weights_da02fca_20260704_030610/` | Reuse one count-weight array and weight sum for reward-probe loss/metric batch means instead of rebuilding weights three times. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
 | Stage-2 artifacts | `0aa212a` | `experiments/server_command_runs/candidate_store_ndarray_0aa212a_20260704_024050/` | Normalize ndarray-backed candidate action vectors through a direct reshape iterator instead of copying through `.tolist()`. |
@@ -518,6 +519,21 @@ The red test proved the old helper returned one numpy array per tensor. The
 green gate passed `py_compile`, all eight `tests.test_blb_inference_eval_shared`
 tests, and a source guard confirming the `torch.cat(...).cpu().numpy()` packed
 transfer path.
+
+Progress 2026-07-04: `blb_stage2_rl/eval_metrics.py`
+`weighted_probe_batch_means()` now converts probe batch `counts` into one
+non-negative weight array and reuses the same weight sum for loss, metric1, and
+metric2 weighted means. This keeps `sample_weighted_mean()` compatibility for
+other callers while avoiding three repeated count-list conversions in every
+reward-probe trial summary.
+
+Server evidence 2026-07-04: source commit `da02fca` has red/green verification
+under
+`experiments/server_command_runs/eval_metric_weights_da02fca_20260704_030610/`.
+The red test failed because the old `weighted_probe_batch_means()` iterated
+`counts` once per metric. The green gate passed `py_compile`, all six
+`tests.test_blb_eval_metrics_shared` tests, and a source guard confirming the
+shared weight helper replaces the three old `sample_weighted_mean()` calls.
 
 Progress 2026-07-03: Stage-1 plaintext repeat evaluation and the MRPC
 layer-output noise experiment now use pinned DataLoader memory with
@@ -2017,6 +2033,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
 - `2d98907` shared reward-probe tensor prediction-array packed transfer,
   evidence committed in the `probe_tensor_arrays_2d98907_20260704_030105` run
   directory.
+- `da02fca` shared reward-probe count-weight reuse, evidence committed in the
+  `eval_metric_weights_da02fca_20260704_030610` run directory.
 - `a416d46` shared attention tail cursor parsing, evidence committed in the
   `attention_tail_cursor_a416d46_20260703_214800` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the

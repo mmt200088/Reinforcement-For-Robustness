@@ -1,0 +1,23 @@
+test_weighted_probe_batch_means_reuses_count_weights (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_weighted_probe_batch_means_reuses_count_weights) ... FAIL
+
+======================================================================
+FAIL: test_weighted_probe_batch_means_reuses_count_weights (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_weighted_probe_batch_means_reuses_count_weights)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_eval_metric_weights_red_0b04ea3_20260704_030520/tests/test_blb_eval_metrics_shared.py", line 33, in test_weighted_probe_batch_means_reuses_count_weights
+    loss, metric1, metric2 = eval_metrics.weighted_probe_batch_means(
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_eval_metric_weights_red_0b04ea3_20260704_030520/blb_stage2_rl/eval_metrics.py", line 178, in weighted_probe_batch_means
+    sample_weighted_mean(m1s, counts),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_eval_metric_weights_red_0b04ea3_20260704_030520/blb_stage2_rl/eval_metrics.py", line 164, in sample_weighted_mean
+    weights = np.asarray([max(0, int(c)) for c in counts], dtype=float)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_eval_metric_weights_red_0b04ea3_20260704_030520/tests/test_blb_eval_metrics_shared.py", line 29, in __iter__
+    raise AssertionError("counts should be converted to weights once")
+AssertionError: counts should be converted to weights once
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

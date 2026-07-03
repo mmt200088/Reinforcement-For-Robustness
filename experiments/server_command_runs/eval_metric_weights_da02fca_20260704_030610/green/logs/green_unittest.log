@@ -1,0 +1,11 @@
+test_mrpc_metric2_is_weighted_f1_from_complete_trial (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_mrpc_metric2_is_weighted_f1_from_complete_trial) ... ok
+test_pack_repeat_evaluation_numbers_trials_and_stats (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_pack_repeat_evaluation_numbers_trials_and_stats) ... ok
+test_probe_eval_uses_the_shared_installed_inference_module (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_probe_eval_uses_the_shared_installed_inference_module) ... ok
+test_repeat_summary_uses_population_stats (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_repeat_summary_uses_population_stats) ... ok
+test_sample_weighted_mean_uses_example_counts (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_sample_weighted_mean_uses_example_counts) ... ok
+test_weighted_probe_batch_means_reuses_count_weights (tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_weighted_probe_batch_means_reuses_count_weights) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 1.300s
+
+OK
