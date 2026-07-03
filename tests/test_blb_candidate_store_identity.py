@@ -77,13 +77,19 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                     NoStripLine('{"action_indices": [2], "valid": true}\n'),
                 ])
 
-        fake_path = mock.Mock()
-        fake_path.exists.return_value = True
-        fake_path.open.return_value = FakeHandle()
-        store = CandidateStore("unused.jsonl")
-        store.path = fake_path
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            path.touch()
+            store = CandidateStore(path)
+            original_open = Path.open
 
-        records = store.read_all()
+            def guarded_open(open_path, *args, **kwargs):
+                if Path(open_path) == path:
+                    return FakeHandle()
+                return original_open(open_path, *args, **kwargs)
+
+            with mock.patch.object(Path, "open", guarded_open):
+                records = store.read_all()
 
         self.assertEqual([record["action_indices"] for record in records], [[1], [2]])
 
