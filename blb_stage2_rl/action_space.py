@@ -806,7 +806,7 @@ def splice_step_action_into_full_vec(
         raise ValueError(
             f"step {step.step_idx} expects {len(step.full_vec_offsets)} slots, got {arr.size}"
         )
-    for offset, val in zip(step.full_vec_offsets, arr.tolist()):
+    for offset, val in zip(step.full_vec_offsets, arr):
         full_vec[int(offset)] = int(val)
     return full_vec
 
@@ -930,7 +930,7 @@ def splice_fusion_step_into_full_vec(
         raise ValueError(
             f"step {spec.step_idx} expects {len(spec.block_full_vec_offsets)} block slots, got {arr.size}"
         )
-    for offset, val in zip(spec.block_full_vec_offsets, arr.tolist()):
+    for offset, val in zip(spec.block_full_vec_offsets, arr):
         full_vec[int(offset)] = int(val)
     return full_vec
 

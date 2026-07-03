@@ -36,6 +36,28 @@ except Exception:
     _ASPACE_OK = False
 
 
+def _function_region(source: str, name: str) -> str:
+    start = source.index(f"def {name}(")
+    next_def = source.find("\ndef ", start + 1)
+    next_class = source.find("\nclass ", start + 1)
+    candidates = [pos for pos in (next_def, next_class) if pos != -1]
+    end = min(candidates) if candidates else len(source)
+    return source[start:end]
+
+
+class ActionSpaceSpliceSourceTest(unittest.TestCase):
+    def test_splice_helpers_iterate_numpy_arrays_without_tolist_materialization(self):
+        source = (_BLB_DIR / "action_space.py").read_text(encoding="utf-8")
+        for name in (
+            "splice_step_action_into_full_vec",
+            "splice_fusion_step_into_full_vec",
+        ):
+            region = _function_region(source, name)
+            self.assertIn("np.asarray(", region)
+            self.assertIn("for offset, val in zip(", region)
+            self.assertNotIn("arr.tolist()", region)
+
+
 class NoiseOrderTest(unittest.TestCase):
     def test_summed_installed_variance_sums_table_values(self):
         order = fcm.SummedInstalledVariance()
