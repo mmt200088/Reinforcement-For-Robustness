@@ -1,0 +1,33 @@
+{
+  "artifact_type": "server_verification_evidence",
+  "created_at": "2026-07-04T07:12:34+08:00",
+  "source_commit": "aed348f",
+  "optimization": "reuse final-eval family color order for repeated plot family ordering",
+  "files_changed": [
+    "final_evaluation_module.py",
+    "tests/test_final_evaluation_config_cache.py"
+  ],
+  "server_runs": {
+    "red": {
+      "run_dir": "/hy-tmp/rfr_final_eval_ordered_families_red_30f18df_20260704_071148",
+      "command": "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_ordered_families_reuses_static_preferred_order -v",
+      "expected_result": "failure on old _ordered_families key-copy pattern",
+      "exit_code": 1,
+      "local_log": "red_unittest.log"
+    },
+    "green": {
+      "run_dir": "/hy-tmp/rfr_final_eval_ordered_families_green_20260704_071234",
+      "commands": [
+        "python3 -m py_compile final_evaluation_module.py tests/test_final_evaluation_config_cache.py",
+        "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_ordered_families_reuses_static_preferred_order -v"
+      ],
+      "expected_result": "py_compile and focused unittest pass",
+      "exit_code": 0,
+      "local_log": "green_validation.log"
+    }
+  },
+  "workflow": {
+    "server_code_policy": "server used a temporary source package for execution only",
+    "local_git_policy": "source commit pushed before evidence commit"
+  }
+}

@@ -1,0 +1,14 @@
+test_ordered_families_reuses_static_preferred_order (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_ordered_families_reuses_static_preferred_order) ... FAIL
+
+======================================================================
+FAIL: test_ordered_families_reuses_static_preferred_order (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_ordered_families_reuses_static_preferred_order)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_final_eval_ordered_families_red_30f18df_20260704_071148/src/tests/test_final_evaluation_config_cache.py", line 406, in test_ordered_families_reuses_static_preferred_order
+    self.assertNotIn("self._family_colors().keys()", source)
+AssertionError: 'self._family_colors().keys()' unexpectedly found in '    def _ordered_families(self, grouped):\n        preferred = list(self._family_colors().keys())\n        ordered = [family for family in preferred if family in grouped]\n        ordered.extend(sorted(family for family in grouped.keys() if family not in preferred))\n        return ordered\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)

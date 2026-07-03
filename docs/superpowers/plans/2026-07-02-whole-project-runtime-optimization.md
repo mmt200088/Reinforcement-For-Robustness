@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `22eb07e`, the conservative
+not by raw commit count. As of source head `aed348f`, the conservative
 completion estimate is about 96-97% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
@@ -111,6 +111,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `5fe7760` | `experiments/server_command_runs/paean_fusion_decode_copy_5fe7760_20260704_072520/` | Remove short-lived dict/list copy wrappers from fusion fixed-action decode metadata normalization, per-step block slicing, and option-field replay. |
 | Unified final eval reports | `7a7e9d4` | `experiments/server_command_runs/final_eval_axes_islice_7a7e9d4_20260704_073330/` | Iterate final-eval comparison and variance plot axes with `itertools.islice()` instead of materializing `list(axes.flat)[:3]`. |
 | Unified final eval reports | `22eb07e` | `experiments/server_command_runs/final_eval_summary_bar_22eb07e_20260704_074230/` | Collect final-eval summary bar chart family labels, feasibility rates, and dominance rates in one pass instead of separate scans/list comprehensions over `summary["by_family"]`. |
+| Unified final eval reports | `aed348f` | `experiments/server_command_runs/final_eval_family_order_aed348f_20260704_071234/` | Reuse a static final-eval family color order tuple in `_ordered_families()` instead of rebuilding the color map and copying keys for every plotted panel. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
@@ -1653,6 +1654,19 @@ verification under
 The RED source guard failed on the old feasible-rate list comprehension. The
 GREEN gate passed `py_compile` and
 `test_final_eval_summary_bar_chart_collects_series_once`.
+
+Progress 2026-07-04: `_ordered_families()` now reuses a module-level
+`_FAMILY_COLOR_ORDER` tuple when ordering final-eval plot families, rather than
+rebuilding the color mapping and copying `keys()` through `list()` for every
+metric panel. `_family_colors()` still returns a fresh dictionary, preserving
+caller isolation.
+
+Server evidence 2026-07-04: source commit `aed348f` has focused red/green
+verification under
+`experiments/server_command_runs/final_eval_family_order_aed348f_20260704_071234/`.
+The RED source guard failed on the old `self._family_colors().keys()` pattern.
+The GREEN gate passed `py_compile` and
+`test_ordered_families_reuses_static_preferred_order`.
 
 - [ ] **Step 3: Verify**
 

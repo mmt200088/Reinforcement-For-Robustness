@@ -1,0 +1,8 @@
+PY_COMPILE_RC=0
+test_ordered_families_reuses_static_preferred_order (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_ordered_families_reuses_static_preferred_order) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+OK
+TEST_RC=0
