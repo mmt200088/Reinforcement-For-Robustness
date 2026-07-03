@@ -1,0 +1,18 @@
+{
+  "date": "2026-07-04",
+  "evidence_type": "red_green_server_validation",
+  "flow": "Unified final evaluation reports",
+  "green_run_dir": "/hy-tmp/rfr_final_eval_axes_islice_green_20260704_073330",
+  "optimization": "Iterate final-eval plot axes through itertools.islice instead of materializing list(axes.flat) before slicing.",
+  "red_run_dir": "/hy-tmp/rfr_final_eval_axes_islice_red_ab140d2_20260704_073200",
+  "source_commit": "7a7e9d4",
+  "verification": {
+    "green": [
+      "python3 -m py_compile final_evaluation_module.py tests/test_final_evaluation_config_cache.py",
+      "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_plots_iterate_axes_without_flat_list_copy -v"
+    ],
+    "red": [
+      "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_plots_iterate_axes_without_flat_list_copy -v"
+    ]
+  }
+}
