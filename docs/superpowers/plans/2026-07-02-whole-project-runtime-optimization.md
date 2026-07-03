@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `c3db582`, the conservative
+not by raw commit count. As of source head `b0a1928`, the conservative
 completion estimate is about 96-97% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
@@ -169,6 +169,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `269ba69` | `experiments/server_command_runs/fusion_report_slot_mapping_269ba69_20260704_072557/` | Normalize fusion report option/base slot mappings by iterating mapping `.items()` directly instead of copying through `dict(...).items()` for each option summary. |
 | Rescale/fusion maps | `74d5d28` | `experiments/server_command_runs/fusion_report_occurrences_74d5d28_20260704_073030/` | Accumulate fusion report graph occurrence layers as sets during the schedule scan instead of building lists and then deduplicating with `sorted(set(v))`. |
 | Rescale/fusion maps | `c3db582` | `experiments/server_command_runs/fusion_report_action_sequence_c3db582_20260704_073447/` | Index fusion report option/base action-index sequences directly in `_option_slot_summary()` instead of copying the full sequences through integer list comprehensions. |
+| Rescale/fusion maps | `b0a1928` | `experiments/server_command_runs/fusion_report_base_action_b0a1928_20260704_073904/` | Pass the fusion report base option action-index sequence directly into option summaries instead of copying it through an integer list comprehension once per graph. |
 | Rescale bridge | `dab3b8b` | `experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/` | Cache static-skeleton archive parses by path, mtime, and size while returning fresh caller lists. |
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
 
@@ -2476,6 +2477,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
 - `c3db582` fusion report action sequence direct indexing, evidence committed
   in the `fusion_report_action_sequence_c3db582_20260704_073447` run
   directory.
+- `b0a1928` fusion report base action direct pass-through, evidence committed
+  in the `fusion_report_base_action_b0a1928_20260704_073904` run directory.
 - `dab3b8b` static-skeleton archive cache, evidence committed in the
   `baseline_archive_cache_dab3b8b_20260703_212500` run directory.
 - `cb215bd` skeleton profile config discovery, evidence committed in the
