@@ -1,0 +1,12 @@
+{
+  "clone_rc": 0,
+  "command": "python3 -m unittest tests.test_paean_action_grid -v",
+  "minimal_bundle_head": "c84207903d8a5830b9af25f8dfdda36af77a36e4",
+  "platform": "Linux-5.15.0-181-generic-x86_64-with-glibc2.35",
+  "python": "3.11.12",
+  "remote_head_check": "ls_remote_timeout_124_before_bundle",
+  "run_id": "paean_fixed_specs_verify_20260703_140548",
+  "source_commit": "a51e238de84b5bc645341d2807d24d5189452caf",
+  "source_transport": "git_bundle_minimal_after_server_ls_remote_timeout",
+  "test_rc": 0
+}
