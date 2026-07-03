@@ -835,7 +835,7 @@ def _build_report_payload(
         fields = fields_by_block[block_idx]
         options = _options_in_id_order(graph.get("options", []))
         base = _base_option_from_ordered_options(graph, options)
-        base_action = [int(v) for v in base.get("action_indices", [])]
+        base_action = base.get("action_indices", ())
         base_slots = _int_slot_mapping(base.get("slots", {}))
         available_fusion_counts = set()
         option_summaries = []

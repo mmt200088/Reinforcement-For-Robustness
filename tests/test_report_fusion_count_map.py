@@ -604,6 +604,56 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertEqual(base_action.iterations, 0)
         self.assertEqual(summary["changed_raw_slots_vs_fusion0"][0]["action_index"], 3)
 
+    def test_build_report_payload_passes_base_action_sequence_without_copy(self):
+        class CountingAction(list):
+            def __init__(self, values):
+                super().__init__(values)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                return super().__iter__()
+
+        source = inspect.getsource(report._build_report_payload)
+        self.assertNotIn('base_action = [int(v) for v in base.get("action_indices", [])]', source)
+
+        base_action = CountingAction([0, 0])
+        graphs = {
+            "block2_mrpc": {
+                "graph_key": "block2_mrpc",
+                "block_idx": 2,
+                "k_slot_index": 1,
+                "block_num_slots": 2,
+                "options": [
+                    {
+                        "option_id": 0,
+                        "fusion_count": 0,
+                        "action_indices": base_action,
+                        "slots": {},
+                    },
+                    {
+                        "option_id": 1,
+                        "fusion_count": 1,
+                        "action_indices": [3, 5],
+                        "slots": {},
+                    },
+                ],
+            }
+        }
+        payload = report._build_report_payload(
+            graphs=graphs,
+            fields_by_block={2: [("rescale_sf", "F", 14), ("output_truncation_k", "K", 0)]},
+            schedule=[],
+            group_specs=[],
+            action_config_paths={},
+            profile="mrpc",
+            gelu=[1],
+            softmax=[6],
+        )
+
+        self.assertEqual(base_action.iterations, 0)
+        self.assertEqual(payload["graphs"][0]["options"][1]["changed_raw_slots_vs_fusion0"][0]["action_index"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()
