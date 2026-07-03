@@ -1353,17 +1353,36 @@ class UnifiedFinalEvaluationModule:
 
     @staticmethod
     def _mean_float_or_none(values):
-        clean = [float(value) for value in values if value is not None and np.isfinite(float(value))]
-        if not clean:
-            return None
-        return float(np.mean(clean))
+        mean, _std = UnifiedFinalEvaluationModule._finite_float_stats(values)
+        return mean
 
     @staticmethod
     def _std_float_or_none(values):
-        clean = [float(value) for value in values if value is not None and np.isfinite(float(value))]
-        if not clean:
-            return None
-        return float(np.std(clean))
+        _mean, std = UnifiedFinalEvaluationModule._finite_float_stats(values)
+        return std
+
+    @staticmethod
+    def _finite_float_stats(values):
+        count = 0
+        total = 0.0
+        total_sq = 0.0
+        for value in values:
+            if value is None:
+                continue
+            value = float(value)
+            if not np.isfinite(value):
+                continue
+            count += 1
+            total += value
+            total_sq += value * value
+        if count == 0:
+            return None, None
+
+        mean = total / count
+        variance = total_sq / count - mean * mean
+        if np.isfinite(variance) and variance < 0.0:
+            variance = 0.0
+        return float(mean), float(variance ** 0.5)
 
     def _summarize_random_results(self, selected, random_results, num_metrics):
         summary: Dict = {"overall": {}, "by_family": {}}

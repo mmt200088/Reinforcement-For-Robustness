@@ -375,6 +375,30 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertAlmostEqual(family["loss_eval_variance_mean"], 0.03)
         self.assertAlmostEqual(summary["overall"]["dominance_rate"], 0.5)
 
+    def test_float_stat_helpers_stream_values_without_clean_lists(self):
+        values = [1.0, None, float("nan"), 3.0, float("inf")]
+
+        with mock.patch.object(
+            fem.np,
+            "mean",
+            side_effect=AssertionError("mean helper should stream finite values"),
+        ), mock.patch.object(
+            fem.np,
+            "std",
+            side_effect=AssertionError("std helper should stream finite values"),
+        ):
+            mean = fem.UnifiedFinalEvaluationModule._mean_float_or_none(values)
+            std = fem.UnifiedFinalEvaluationModule._std_float_or_none(values)
+
+        self.assertEqual(mean, 2.0)
+        self.assertEqual(std, 1.0)
+        self.assertIsNone(
+            fem.UnifiedFinalEvaluationModule._mean_float_or_none([None, float("nan")])
+        )
+        self.assertIsNone(
+            fem.UnifiedFinalEvaluationModule._std_float_or_none([None, float("nan")])
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
