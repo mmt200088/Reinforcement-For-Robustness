@@ -5,4 +5,3 @@ server_logs/red.log
 server_logs/green.log
 source_snapshot/persistence.py
 source_snapshot/test_blb_stage2_outputs.py
-

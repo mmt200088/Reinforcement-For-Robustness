@@ -26,4 +26,3 @@ items directly with `sum(1 for _ in values)` instead of materializing
 - Red: failed because old `_seq_len()` called `list(values)`.
 - Green: passed `py_compile`, all 31 `tests.test_blb_stage2_outputs` tests,
   and both source guards.
-
