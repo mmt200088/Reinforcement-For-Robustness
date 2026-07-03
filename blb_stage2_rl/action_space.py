@@ -1944,7 +1944,7 @@ def avg_truncation_k_in_action(
     ks = _gather_effective_k_values_in_action(action_vec, num_layers)
     if not ks:
         return 0.0
-    return float(np.mean(ks))
+    return float(sum(ks) / len(ks))
 
 
 def sum_truncation_k_in_action(

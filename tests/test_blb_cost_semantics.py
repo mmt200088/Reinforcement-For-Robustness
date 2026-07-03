@@ -2,6 +2,7 @@ import unittest
 import importlib.util
 import sys
 from pathlib import Path
+from unittest import mock
 
 
 def load_candidate_store_module():
@@ -15,6 +16,19 @@ def load_candidate_store_module():
 
 
 class BLBCostSemanticsTests(unittest.TestCase):
+    def test_avg_truncation_k_uses_direct_sum_without_numpy_mean(self):
+        from blb_stage2_rl import action_space
+
+        num_layers = 2
+        action = action_space.make_all_max_action_vector(num_layers=num_layers)
+        expected_count = num_layers * 5 - 1
+        expected = action_space.sum_truncation_k_in_action(action, num_layers) / expected_count
+
+        with mock.patch.object(action_space.np, "mean", side_effect=AssertionError("avg K should not call np.mean")):
+            actual = action_space.avg_truncation_k_in_action(action, num_layers)
+
+        self.assertAlmostEqual(actual, expected)
+
     def test_rescale_rank_key_uses_only_total_bits_and_fusion(self):
         rescale_cost_rank_key = load_candidate_store_module().rescale_cost_rank_key
 
