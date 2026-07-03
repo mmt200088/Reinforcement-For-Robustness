@@ -113,3 +113,47 @@ class BoostedInstallVerifierTest(unittest.TestCase):
 
         self.assertEqual((checked, problems), (1, 0))
         self.assertEqual(seen_paths, [map_path])
+
+    def test_map_loop_skips_known_degenerate_maps_before_json_read(self):
+        import scripts.blb_verify_boosted_install as verifier
+
+        map_payload = {
+            "graph_key": "block2_mrpc",
+            "block_idx": 2,
+            "options": [{"option_id": 1, "fusion_count": 1, "boosted": True}],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            map_dir = Path(td)
+            skipped_paths = {
+                map_dir / "block1_mrpc.json",
+                map_dir / "block5_n0.json",
+            }
+            for path in skipped_paths:
+                path.write_text("{not-json", encoding="utf-8")
+            map_path = map_dir / "block2_mrpc.json"
+            map_path.write_text(json.dumps(map_payload), encoding="utf-8")
+
+            original_read_text = Path.read_text
+            seen_paths = []
+
+            def guarded_read_text(path, *args, **kwargs):
+                if Path(path) in skipped_paths:
+                    raise AssertionError("known degenerate maps should not be read")
+                return original_read_text(path, *args, **kwargs)
+
+            def fake_verify(path_arg, _profile, _ro_root, _num_layers, *, payload=None):
+                seen_paths.append(path_arg)
+                self.assertEqual(payload, map_payload)
+                return 1, 0
+
+            with mock.patch.object(Path, "read_text", guarded_read_text):
+                checked, problems = verifier._verify_maps(
+                    map_dir,
+                    profile="mrpc",
+                    ro_root="RO",
+                    num_layers=12,
+                    verify_fn=fake_verify,
+                )
+
+        self.assertEqual((checked, problems), (1, 0))
+        self.assertEqual(seen_paths, [map_path])

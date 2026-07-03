@@ -724,6 +724,13 @@ verifier. A local 7-map / 3000-sidecar benchmark reduced the discover+load
 phase from `0.159301s` / `3.18MB` to `0.015133s` / `0.01MB` (`10.53x`, with
 candidate payloads dropping from `3006` to `6` after degenerate skips).
 
+Progress 2026-07-03: `scripts/blb_verify_boosted_install.py` now skips
+known degenerate/dormant fusion maps (`block1_<profile>.json` and
+`block5_n0.json`) by filename before opening JSON. The boosted-install gate
+still verifies all non-degenerate maps, but avoids parsing maps that cannot
+contain boosted fusion options; a regression test guards that corrupt skipped
+maps are not read.
+
 Progress 2026-07-02: `scripts/blb_orphan_slot_audit.py` now caches parsed ASTs
 for `function_handler.py` and `rescale_optimizer_bridge.py` across all block
 loaders in one audit process. The static slot/cfg/t_new extraction output is

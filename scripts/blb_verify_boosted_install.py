@@ -101,6 +101,10 @@ def _is_skipped_graph_key(graph_key: str) -> bool:
     return gk in _SKIP_GRAPH_KEYS or gk.startswith("block1_")
 
 
+def _is_skipped_map_filename(name: str, profile: str) -> bool:
+    return name == f"block1_{profile}.json" or name == "block5_n0.json"
+
+
 def _is_fusion_map_filename(name: str, profile: str) -> bool:
     if name.startswith("_") or not name.endswith(".json"):
         return False
@@ -320,6 +324,9 @@ def _verify_maps(
     total_checked = 0
     total_problems = 0
     for p in files:
+        if _is_skipped_map_filename(p.name, profile):
+            print(f"[skip] {p.stem}: degenerate/dormant map (no boosted fusion option)")
+            continue
         payload = None
         try:
             payload = read_json_file(p)
