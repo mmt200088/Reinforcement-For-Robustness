@@ -233,7 +233,12 @@ def render_index(manifest: dict[str, Any]) -> str:
 
 def _write_tar_gz(out_dir: Path, tar_path: Path) -> None:
     tar_path.parent.mkdir(parents=True, exist_ok=True)
+    out_dir = out_dir.resolve()
     tar_resolved = tar_path.resolve()
+    try:
+        tar_rel = tar_resolved.relative_to(out_dir)
+    except ValueError:
+        tar_rel = None
     with tarfile.open(tar_path, "w:gz") as archive:
         for dirpath, dirnames, filenames in os.walk(out_dir):
             dirnames.sort()
@@ -241,11 +246,14 @@ def _write_tar_gz(out_dir: Path, tar_path: Path) -> None:
             current_dir = Path(dirpath)
             for filename in filenames:
                 path = current_dir / filename
-                if not path.is_file() or path.resolve() == tar_resolved:
+                if not path.is_file():
+                    continue
+                rel_path = path.relative_to(out_dir)
+                if tar_rel is not None and rel_path == tar_rel:
                     continue
                 archive.add(
                     path,
-                    arcname=str(Path(out_dir.name) / path.relative_to(out_dir)),
+                    arcname=str(Path(out_dir.name) / rel_path),
                 )
 
 

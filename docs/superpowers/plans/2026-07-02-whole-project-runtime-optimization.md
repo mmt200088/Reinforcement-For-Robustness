@@ -1306,6 +1306,12 @@ keeps Stage-1/Stage-2 shared health-report generation compatible with
 one-shot iterators from offline regenerators and removes repeated full-list
 copies from long-run report paths.
 
+Progress 2026-07-03: `scripts/optimization_evidence_bundle.py` now resolves the
+bundle output directory and optional tarball path once before archive traversal,
+then skips an in-bundle tarball by relative path. Large evidence bundles no
+longer call `Path.resolve()` for every payload file while adding reports to the
+tar archive, preserving deterministic archive names and self-skip behavior.
+
 - [ ] **Step 3: Verify**
 
 Run:

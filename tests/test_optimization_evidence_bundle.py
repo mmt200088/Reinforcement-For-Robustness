@@ -166,6 +166,35 @@ class OptimizationEvidenceBundleTest(unittest.TestCase):
             },
         )
 
+    def test_tar_writer_does_not_resolve_each_payload_file(self):
+        bundle = _load_bundle_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            out_dir = root / "bundle"
+            payloads = []
+            for idx in range(20):
+                path = out_dir / "payload" / f"{idx:02d}.txt"
+                _write_text(path, f"{idx}\n")
+                payloads.append(path)
+            tar_path = root / "bundle.tgz"
+            original_resolve = bundle.Path.resolve
+            resolved_paths = []
+
+            def counting_resolve(path, *args, **kwargs):
+                resolved_paths.append(path)
+                return original_resolve(path, *args, **kwargs)
+
+            with mock.patch.object(
+                bundle.Path,
+                "resolve",
+                autospec=True,
+                side_effect=counting_resolve,
+            ):
+                bundle._write_tar_gz(out_dir, tar_path)
+
+        self.assertFalse(set(payloads).intersection(resolved_paths))
+
 
 if __name__ == "__main__":
     unittest.main()
