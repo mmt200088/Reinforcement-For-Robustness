@@ -1,0 +1,22 @@
+{
+  "source_commit": "71fbfc6",
+  "base_commit": "1d1f15d",
+  "timestamp": "20260704_052234",
+  "flow": "Rescale/fusion maps",
+  "optimization": "Reuse per-block fusion report field-kind lookups during slot-form action-config splicing.",
+  "server_red_dir": "/hy-tmp/rfr_fusion_field_kinds_red_1d1f15d_20260704_052146",
+  "server_green_dir": "/hy-tmp/rfr_fusion_field_kinds_green_20260704_052234",
+  "red_expected_failure": "AssertionError: 2 not less than or equal to 1",
+  "green_checks": [
+    "python3 -m py_compile scripts/report_fusion_count_map.py tests/test_report_fusion_count_map.py",
+    "python3 -m unittest tests.test_report_fusion_count_map -v",
+    "grep -F -n 'field_kinds_by_block = _field_kinds_by_block(fields_by_block)' scripts/report_fusion_count_map.py",
+    "grep -F -n 'field_kinds_by_block=field_kinds_by_block' scripts/report_fusion_count_map.py"
+  ],
+  "green_result": {
+    "py_compile_rc": 0,
+    "unittest": "11 tests OK",
+    "build_field_guard_rc": 0,
+    "pass_field_guard_rc": 0
+  }
+}
