@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from device_utils import parse_logical_device_spec  # noqa: E402
+from json_utils import write_json_file  # noqa: E402
 from jsonl_utils import read_jsonl  # noqa: E402
 from stats_utils import mean_or_none, median_sorted  # noqa: E402
 
@@ -726,25 +727,20 @@ def main() -> int:
     artifact.mkdir(parents=True, exist_ok=True)
     episodes, ppo = _load_monitor_rows(args)
     summary = build_summary(args, episodes=episodes, ppo=ppo)
-    (artifact / "monitor_live.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    write_json_file(artifact / "monitor_live.json", summary, trailing_newline=False)
     with (artifact / "monitor_events.jsonl").open("a", encoding="utf-8") as f:
-        f.write(json.dumps({
+        json.dump({
             "phase": args.phase,
             "status": summary["status"],
             "completed_episodes": summary["completed_episodes"],
             "hard_failure_count": len(summary["hard_failures"]),
             "warning_count": len(summary["warnings"]),
             "updated_at": summary["updated_at"],
-        }, ensure_ascii=False) + "\n")
+        }, f, ensure_ascii=False)
+        f.write("\n")
 
     if args.phase == "final":
-        (artifact / "monitor_summary.json").write_text(
-            json.dumps(summary, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        write_json_file(artifact / "monitor_summary.json", summary, trailing_newline=False)
         write_window_csv(artifact / "reward_windows.csv", episodes)
         write_health_csv(artifact / "episode_health_windows.csv", episodes)
         write_report(artifact / "server_monitor_report.html", summary)

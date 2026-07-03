@@ -327,6 +327,64 @@ class Stage2First10kMonitorTest(unittest.TestCase):
             self.assertTrue((artifact / "reward_windows.csv").is_file())
             self.assertTrue((artifact / "episode_health_windows.csv").is_file())
 
+    def test_live_main_streams_monitor_json_without_json_dumps(self):
+        monitor = _load_monitor_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            artifact = root / "artifact"
+            artifact.mkdir()
+            stage2_noise = root / "stage2_noise"
+            nvidia_log = root / "nvidia.csv"
+            (artifact / "episodes.jsonl").write_text(
+                (
+                    '{"episode": 0, "total_reward": 1.0, "terminal_reward": 1.0, '
+                    '"terminal_priority": 3, "terminal_loss_mean": 0.2, '
+                    '"terminal_metric1_mean": 0.9, "terminal_metric2_mean": 0.8, '
+                    '"valid_steps": 47, "invalid_steps": 0, "total_bits": 100}'
+                    "\n"
+                ),
+                encoding="utf-8",
+            )
+            nvidia_log.write_text("gpu_idx,util_pct,mem_used_mib\n", encoding="utf-8")
+            argv = [
+                "stage2_first10k_monitor.py",
+                "--phase",
+                "live",
+                "--artifact-dir",
+                str(artifact),
+                "--stage2-noise",
+                str(stage2_noise),
+                "--nvidia-log",
+                str(nvidia_log),
+                "--planned",
+                "1",
+                "--anchor",
+                "0",
+                "--rollout",
+                "1",
+                "--horizon",
+                "1",
+            ]
+
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                monitor.json,
+                "dumps",
+                side_effect=AssertionError("live monitor JSON should stream through file handles"),
+            ):
+                rc = monitor.main()
+
+            live = json.loads((artifact / "monitor_live.json").read_text(encoding="utf-8"))
+            events = [
+                json.loads(line)
+                for line in (artifact / "monitor_events.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(live["completed_episodes"], 1)
+        self.assertEqual(events[-1]["phase"], "live")
+        self.assertEqual(events[-1]["completed_episodes"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

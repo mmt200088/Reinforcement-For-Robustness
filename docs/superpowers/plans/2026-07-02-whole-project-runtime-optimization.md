@@ -1378,6 +1378,13 @@ the newline, instead of building a full per-row JSON string with
 sorting, and line-delimited output while large finite report rows avoid one
 extra full-row string allocation.
 
+Progress 2026-07-03: `scripts/stage2_first10k_monitor.py` now writes live and
+final monitor summary JSON files through shared `write_json_file()` streaming
+and appends `monitor_events.jsonl` rows with `json.dump()` directly into the
+open append handle. The online watchdog keeps the same summary/event schema and
+exit-code behavior while avoiding full-document string copies on every monitor
+poll.
+
 - [ ] **Step 3: Verify**
 
 Run:
