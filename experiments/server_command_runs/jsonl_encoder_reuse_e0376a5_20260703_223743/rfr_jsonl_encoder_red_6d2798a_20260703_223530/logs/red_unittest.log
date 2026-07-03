@@ -1,0 +1,24 @@
+test_write_jsonl_rows_reuses_encoder_without_json_dump_calls (tests.test_jsonl_utils.JsonlUtilsTest.test_write_jsonl_rows_reuses_encoder_without_json_dump_calls) ... FAIL
+
+======================================================================
+FAIL: test_write_jsonl_rows_reuses_encoder_without_json_dump_calls (tests.test_jsonl_utils.JsonlUtilsTest.test_write_jsonl_rows_reuses_encoder_without_json_dump_calls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_jsonl_encoder_red_6d2798a_20260703_223530/src_py_6d2798a/tests/test_jsonl_utils.py", line 198, in test_write_jsonl_rows_reuses_encoder_without_json_dump_calls
+    write_jsonl_rows(
+  File "/hy-tmp/rfr_jsonl_encoder_red_6d2798a_20260703_223530/src_py_6d2798a/jsonl_utils.py", line 108, in write_jsonl_rows
+    json.dump(
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: write_jsonl_rows should reuse one JSONEncoder
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)
