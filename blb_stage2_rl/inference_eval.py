@@ -15,6 +15,7 @@ import numpy as np
 import torch
 
 from .eval_metrics import (
+    accuracy_from_labels,
     finalize_probe_trial_metrics,
     logits_to_classes,
     metric_pair_for_dataset,
@@ -240,7 +241,7 @@ def run_installed_model_on_dataloader(
     ds = str(metric_profile or "").lower()
     if ds == "mnli":
         pred_classes = logits_to_classes(all_logits)
-        metric1 = float(np.mean(pred_classes == all_labels)) if all_labels.size else 0.0
+        metric1 = accuracy_from_labels(all_labels, pred_classes)
         metric2 = (
             float(mnli_metric2_fn())
             if (not use_train and mnli_metric2_fn is not None)

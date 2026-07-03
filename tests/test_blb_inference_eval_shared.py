@@ -206,6 +206,47 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         self.assertAlmostEqual(result.metric1, 0.75)
         self.assertAlmostEqual(result.metric2, 0.75)
 
+    def test_full_eval_mnli_accuracy_reuses_shared_helper(self):
+        import torch
+        import torch.nn.functional as F
+
+        import blb_stage2_rl.inference_eval as inference_eval
+
+        class LogitEchoModel(torch.nn.Module):
+            def forward(self, input_ids, attention_mask=None, labels=None):
+                del attention_mask
+                logits = input_ids.float()
+                loss = F.cross_entropy(logits, labels.long())
+                return types.SimpleNamespace(loss=loss, logits=logits)
+
+        dataloader = [
+            {
+                "input_ids": torch.tensor([[3.0, 0.0], [0.0, 3.0]], dtype=torch.float32),
+                "attention_mask": torch.ones(2, 2, dtype=torch.long),
+                "labels": torch.tensor([0, 1], dtype=torch.long),
+            }
+        ]
+        original_mean = inference_eval.np.mean
+
+        def fail_if_called(_values, *args, **kwargs):
+            raise AssertionError("MNLI accuracy should use shared accuracy helper")
+
+        inference_eval.np.mean = fail_if_called
+        try:
+            result = inference_eval.run_installed_model_on_dataloader(
+                LogitEchoModel(),
+                dataloader,
+                device=torch.device("cpu"),
+                metric_profile="mnli",
+                use_train=True,
+                split_name="validation_full",
+            )
+        finally:
+            inference_eval.np.mean = original_mean
+
+        self.assertAlmostEqual(result.metric1, 1.0)
+        self.assertAlmostEqual(result.metric2, 1.0)
+
     def test_probe_trial_skips_prediction_array_transfer_for_accuracy_profiles(self):
         import torch
         import torch.nn.functional as F
