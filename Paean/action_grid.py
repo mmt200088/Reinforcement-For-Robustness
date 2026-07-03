@@ -411,24 +411,23 @@ def build_cost_matched_random_action_candidates(
     prefilter_n = 0
     attempts = 0
 
-    fixed_overrides: Dict[str, int] = {}
+    parsed_fixed_specs: List[Tuple[str, int]] = []
     for spec in fixed_specs or ():
         selector, values = parse_action_spec(spec)
         if len(values) != 1:
             raise ValueError(f"fixed action spec must contain exactly one value: {spec!r}")
-        fixed_overrides[_canonical_selector_name(selector)] = int(values[0])
+        parsed_fixed_specs.append((selector, int(values[0])))
 
     def _apply_fixed(vec: np.ndarray) -> None:
-        if not fixed_overrides:
+        if not parsed_fixed_specs:
             return
-        for spec in fixed_specs or ():
-            selector, values = parse_action_spec(spec)
-            _set_selector_value(vec, num_layers, max_sfs, selector, int(values[0]))
+        for selector, value in parsed_fixed_specs:
+            _set_selector_value(vec, num_layers, max_sfs, selector, int(value))
 
     while len(accepted) < int(count) and attempts < int(max_attempts):
         attempts += 1
         vec = rng.integers(low=0, high=dims, size=dims.shape[0], dtype=np.int64)
-        if fixed_overrides:
+        if parsed_fixed_specs:
             _apply_fixed(vec)
         # Cheap pre-filter: sum_k can be computed directly from the action.
         sum_k = sum_truncation_k_in_action(vec, int(num_layers))

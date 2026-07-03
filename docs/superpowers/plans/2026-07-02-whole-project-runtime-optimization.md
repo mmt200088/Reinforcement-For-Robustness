@@ -977,6 +977,13 @@ is cached across repeated `_set_selector_value()` calls. This keeps repeated
 final-eval action config expansion from rebuilding the same small lookup
 structures.
 
+Progress 2026-07-03: `Paean/action_grid.py` cost-matched random final-eval
+sampling now parses `fixed_specs` once before the sampling loop and reuses the
+selector/value pairs for every random attempt. This preserves fixed override
+application order and cost-match filtering semantics while avoiding up to
+`max_attempts * len(fixed_specs)` duplicate CLI-spec parses in same-cost peer
+generation.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for

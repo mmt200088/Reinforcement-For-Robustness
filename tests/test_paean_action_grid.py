@@ -119,6 +119,47 @@ class PaeanActionGridTest(unittest.TestCase):
         self.assertEqual(vec[1], 3)
         self.assertEqual(vec[23], 3)
 
+    def test_cost_matched_sampling_reuses_parsed_fixed_specs(self):
+        action_grid = _load_action_grid_module()
+        action_grid.action_dims_for_config = lambda _num_layers: [5]
+        action_grid.sum_truncation_k_in_action = lambda _vec, _num_layers: 1
+        action_grid.per_layer_field_offsets = lambda: [(2, "wffn1_sf", "x")]
+
+        class MaxSfs:
+            def get(self, _block_idx, _field_name):
+                return 30
+
+        original_parse = action_grid.parse_action_spec
+        parse_calls = 0
+
+        def counting_parse(spec):
+            nonlocal parse_calls
+            parse_calls += 1
+            return original_parse(spec)
+
+        action_grid.parse_action_spec = counting_parse
+
+        candidates, diagnostics = action_grid.build_cost_matched_random_action_candidates(
+            num_layers=1,
+            profile="mrpc",
+            selected_action_vec=[0],
+            selected_total_bits=0,
+            selected_total_fusion=0,
+            selected_sum_k=0,
+            bridge=None,
+            max_sfs=MaxSfs(),
+            gelu_degree=[4],
+            attn_degree=[6],
+            seed=7,
+            count=1,
+            max_attempts=5,
+            fixed_specs=("block2.wffn1=30",),
+        )
+
+        self.assertEqual(candidates, [])
+        self.assertEqual(diagnostics.avg_k_prefilter_skipped, 5)
+        self.assertEqual(parse_calls, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
