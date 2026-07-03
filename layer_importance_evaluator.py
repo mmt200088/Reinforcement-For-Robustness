@@ -1670,12 +1670,6 @@ def _rollout_tensor_to_numpy(value, dtype):
     return np.asarray(value, dtype=dtype)
 
 
-def _rollout_scalar_to_float(value):
-    if hasattr(value, "detach"):
-        return float(value.detach().cpu().item())
-    return float(value)
-
-
 def _stage1_scalar_tensors_to_float_list(values):
     if not values:
         return []
@@ -1688,6 +1682,44 @@ def _stage1_prob_tensors_to_nested_lists(values):
         return []
     stacked = torch.stack([v.detach() for v in values], dim=0)
     return stacked.detach().cpu().numpy().tolist()
+
+
+def _stage1_scalar_episode_values_to_numpy(episodes, field):
+    rows = [ep[field] for ep in episodes]
+    if not rows:
+        return np.empty((0, 0), dtype=np.float32)
+    expected_len = len(rows[0])
+    if any(len(row) != expected_len for row in rows):
+        return np.asarray([
+            [
+                float(value.detach().cpu().item()) if hasattr(value, "detach") else float(value)
+                for value in row
+            ]
+            for row in rows
+        ], dtype=np.float32)
+
+    flat_values = [value for row in rows for value in row]
+    if not flat_values:
+        return np.empty((len(rows), 0), dtype=np.float32)
+    if all(hasattr(value, "detach") for value in flat_values):
+        stacked = torch.stack(
+            [value.detach().reshape(()) for value in flat_values],
+            dim=0,
+        )
+        return (
+            stacked.detach().cpu().numpy()
+            .astype(np.float32, copy=False)
+            .reshape(len(episodes), expected_len)
+        )
+    if any(hasattr(value, "detach") for value in flat_values):
+        return np.asarray([
+            [
+                float(value.detach().cpu().item()) if hasattr(value, "detach") else float(value)
+                for value in row
+            ]
+            for row in rows
+        ], dtype=np.float32)
+    return np.asarray(rows, dtype=np.float32)
 
 
 _stage1_gelu_mask_template_cache: Dict[Tuple[str, Tuple[bool, ...]], Tuple[np.ndarray, torch.Tensor]] = {}
@@ -1717,14 +1749,8 @@ def _pack_recurrent_rollout_tensor_arrays(episodes):
         [_rollout_tensor_to_numpy(t, np.float32) for t in ep['cont_features']]
         for ep in episodes
     ], dtype=np.float32)
-    logprobs_np = np.asarray([
-        [_rollout_scalar_to_float(t) for t in ep['logprobs']]
-        for ep in episodes
-    ], dtype=np.float32)
-    values_np = np.asarray([
-        [_rollout_scalar_to_float(t) for t in ep['values']]
-        for ep in episodes
-    ], dtype=np.float32)
+    logprobs_np = _stage1_scalar_episode_values_to_numpy(episodes, 'logprobs')
+    values_np = _stage1_scalar_episode_values_to_numpy(episodes, 'values')
     return cont_features_np, logprobs_np, values_np
 
 
