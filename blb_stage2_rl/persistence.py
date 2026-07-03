@@ -1162,11 +1162,18 @@ def write_diagnostic_curves(
         import matplotlib.pyplot as plt
         import numpy as _np
 
+        arr_cache: Dict[int, Optional[_np.ndarray]] = {}
+
         def _arr(seq):
             if seq is None:
                 return None
-            values = list(seq)
-            return _np.asarray(values, dtype=float) if values else None
+            key = id(seq)
+            if key in arr_cache:
+                return arr_cache[key]
+            values = _float_array(seq)
+            arr = values if values.size else None
+            arr_cache[key] = arr
+            return arr
 
         def _roll(seq):
             a = _arr(seq)

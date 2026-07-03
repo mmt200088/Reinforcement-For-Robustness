@@ -820,6 +820,86 @@ class DecoupledArchiveShapeTest(unittest.TestCase):
 class DiagnosticCurvesTest(unittest.TestCase):
     """ADR-014 ``write_diagnostic_curves`` (collapse diagnostics PNG)."""
 
+    def test_diagnostic_curves_accept_tuple_series_without_list_materialization(self):
+        class FakeAxis:
+            def __init__(self):
+                self.plots = 0
+
+            def plot(self, *_args, **_kwargs):
+                self.plots += 1
+
+            def set_ylim(self, *_args, **_kwargs):
+                pass
+
+            def set_ylabel(self, *_args, **_kwargs):
+                pass
+
+            def axhline(self, *_args, **_kwargs):
+                pass
+
+            def set_xlabel(self, *_args, **_kwargs):
+                pass
+
+            def set_title(self, *_args, **_kwargs):
+                pass
+
+            def grid(self, *_args, **_kwargs):
+                pass
+
+            def legend(self, *_args, **_kwargs):
+                pass
+
+        class FakeAxes:
+            def __init__(self, axes):
+                self._axes = axes
+
+            def __getitem__(self, item):
+                row, col = item
+                if col != 0:
+                    raise AssertionError(f"unexpected column index {col}")
+                return self._axes[row]
+
+        class FakeFigure:
+            def suptitle(self, *_args, **_kwargs):
+                pass
+
+            def tight_layout(self, *_args, **_kwargs):
+                pass
+
+            def savefig(self, path, *_args, **_kwargs):
+                with open(path, "wb") as f:
+                    f.write(b"png")
+
+        fake_axes = [FakeAxis() for _ in range(2)]
+        fake_matplotlib = types.ModuleType("matplotlib")
+        fake_matplotlib.use = lambda *_args, **_kwargs: None
+        fake_pyplot = types.ModuleType("matplotlib.pyplot")
+        fake_pyplot.subplots = lambda *_args, **_kwargs: (FakeFigure(), FakeAxes(fake_axes))
+        fake_pyplot.close = lambda *_args, **_kwargs: None
+        fake_matplotlib.pyplot = fake_pyplot
+
+        priority = (3, 3, 2, 1)
+        fusion = (0.0, 1.0, 2.0, 3.0)
+        logs = []
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.dict(sys.modules, {
+                    "matplotlib": fake_matplotlib,
+                    "matplotlib.pyplot": fake_pyplot,
+            }):
+                with mock.patch("builtins.list", side_effect=AssertionError("diagnostic tuple series should not be copied through list")):
+                    out = persistence.write_diagnostic_curves(
+                        d,
+                        priority=priority,
+                        fusion_count=fusion,
+                        rolling_window=2,
+                        log_fn=logs.append,
+                    )
+
+            if not _nonempty_file(out["diagnostics_png"]):
+                self.fail("diagnostic render failed: " + "\n".join(logs))
+
+        self.assertGreater(sum(axis.plots for axis in fake_axes), 0)
+
     def test_emits_png_with_full_series(self):
         if not HAVE_MPL:
             self.skipTest("matplotlib not installed")
