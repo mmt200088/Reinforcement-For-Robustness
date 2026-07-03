@@ -1,0 +1,7 @@
+test_load_maps_scans_directory_without_path_glob_or_sidecar_reads (tests.test_render_fusion_count_slots_eval_report.FusionCountSlotsEvalReportTest.test_load_maps_scans_directory_without_path_glob_or_sidecar_reads) ... ok
+test_option_lookup_indexes_graph_options_once (tests.test_render_fusion_count_slots_eval_report.FusionCountSlotsEvalReportTest.test_option_lookup_indexes_graph_options_once) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.058s
+
+OK
