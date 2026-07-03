@@ -686,6 +686,24 @@ def write_health_csv(path: Path, episodes: List[Dict[str, Any]]) -> None:
             writer.writerow({field: row.get(field, idx if field == "episode" else "") for field in fields})
 
 
+def _write_report_row(handle, key: object, value: object) -> None:
+    handle.write("<tr><th>")
+    handle.write(html.escape(str(key)))
+    handle.write("</th><td><pre>")
+    handle.write(html.escape(str(value)))
+    handle.write("</pre></td></tr>")
+
+
+def _write_report_json_row(handle, key: object, value: object) -> None:
+    handle.write("<tr><th>")
+    handle.write(html.escape(str(key)))
+    handle.write("</th><td><pre>")
+    encoder = json.JSONEncoder(ensure_ascii=False, indent=2)
+    for chunk in encoder.iterencode(value):
+        handle.write(html.escape(chunk))
+    handle.write("</pre></td></tr>")
+
+
 def write_report(path: Path, summary: Dict[str, Any]) -> None:
     reward = summary.get("reward", {})
     terminal = summary.get("terminal_metrics", {})
@@ -732,31 +750,30 @@ def write_report(path: Path, summary: Dict[str, Any]) -> None:
         ("recent_approx_kl_mean", ppo.get("recent_approx_kl_mean")),
         ("recent_lr_scale_mean", ppo.get("recent_lr_scale_mean")),
         ("recent_entropy_recovery_mean", ppo.get("recent_entropy_recovery_mean")),
-        ("reward_probe", json.dumps(reward_probe, ensure_ascii=False, indent=2)),
-        ("gpu", json.dumps(gpu, ensure_ascii=False, indent=2)),
     ]
-    table = "".join(
-        f"<tr><th>{html.escape(str(k))}</th><td><pre>{html.escape(str(v))}</pre></td></tr>"
-        for k, v in rows
-    )
     failures = summary.get("hard_failures") or []
     warnings = summary.get("warnings") or []
     failure_html = "".join(f"<li>{html.escape(str(x))}</li>" for x in failures) or "<li>None</li>"
     warning_html = "".join(f"<li>{html.escape(str(x))}</li>" for x in warnings) or "<li>None</li>"
-    path.write_text(
-        "<!doctype html><meta charset='utf-8'>"
-        "<title>Stage2 RL first-10k monitor</title>"
-        "<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;"
-        "line-height:1.45;margin:28px;color:#202124}table{border-collapse:collapse;width:100%;"
-        "margin-top:16px}th,td{border:1px solid #ddd;padding:8px;vertical-align:top}"
-        "th{text-align:left;background:#f6f6f6;width:260px}pre{white-space:pre-wrap;margin:0}"
-        ".pass{color:#137333}.fail{color:#a50e0e}.warn{color:#8a5a00}</style>"
-        f"<h1>Stage2 RL first-10k monitor: {html.escape(str(summary.get('status')))}</h1>"
-        "<h2>Hard Failures</h2><ul>" + failure_html + "</ul>"
-        "<h2>Warnings</h2><ul>" + warning_html + "</ul>"
-        "<h2>Summary</h2><table>" + table + "</table>",
-        encoding="utf-8",
-    )
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write(
+            "<!doctype html><meta charset='utf-8'>"
+            "<title>Stage2 RL first-10k monitor</title>"
+            "<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;"
+            "line-height:1.45;margin:28px;color:#202124}table{border-collapse:collapse;width:100%;"
+            "margin-top:16px}th,td{border:1px solid #ddd;padding:8px;vertical-align:top}"
+            "th{text-align:left;background:#f6f6f6;width:260px}pre{white-space:pre-wrap;margin:0}"
+            ".pass{color:#137333}.fail{color:#a50e0e}.warn{color:#8a5a00}</style>"
+            f"<h1>Stage2 RL first-10k monitor: {html.escape(str(summary.get('status')))}</h1>"
+            "<h2>Hard Failures</h2><ul>" + failure_html + "</ul>"
+            "<h2>Warnings</h2><ul>" + warning_html + "</ul>"
+            "<h2>Summary</h2><table>"
+        )
+        for key, value in rows:
+            _write_report_row(handle, key, value)
+        _write_report_json_row(handle, "reward_probe", reward_probe)
+        _write_report_json_row(handle, "gpu", gpu)
+        handle.write("</table>")
 
 
 def main() -> int:

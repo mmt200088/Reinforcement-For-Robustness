@@ -451,6 +451,42 @@ class Stage2First10kMonitorTest(unittest.TestCase):
         self.assertEqual(events[-1]["phase"], "live")
         self.assertEqual(events[-1]["completed_episodes"], 1)
 
+    def test_write_report_streams_nested_json_without_json_dumps(self):
+        monitor = _load_monitor_module()
+
+        summary = {
+            "status": "ok",
+            "completed_episodes": 1,
+            "reward": {"best_reward": 1.0},
+            "reward_probe": {
+                "devices": ["cuda:0", "cuda:1"],
+                "large_debug": [{"idx": idx, "reward": float(idx)} for idx in range(8)],
+            },
+            "gpu": {
+                "by_gpu": {
+                    "cuda:0": {"samples": 2, "max_util": 80.0},
+                    "cuda:1": {"samples": 2, "max_util": 82.0},
+                }
+            },
+            "hard_failures": [],
+            "warnings": [],
+        }
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "report.html"
+            with mock.patch.object(
+                monitor.json,
+                "dumps",
+                side_effect=AssertionError("write_report should stream nested JSON chunks"),
+            ):
+                monitor.write_report(path, summary)
+
+            html_text = path.read_text(encoding="utf-8")
+
+        self.assertIn("reward_probe", html_text)
+        self.assertIn("cuda:0", html_text)
+        self.assertIn("max_util", html_text)
+
 
 if __name__ == "__main__":
     unittest.main()
