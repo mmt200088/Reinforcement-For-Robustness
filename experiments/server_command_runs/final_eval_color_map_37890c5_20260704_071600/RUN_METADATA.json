@@ -1,0 +1,33 @@
+{
+  "artifact_type": "server_verification_evidence",
+  "created_at": "2026-07-04T07:16:00+08:00",
+  "source_commit": "37890c5",
+  "optimization": "reuse static family color map in final-eval plot rendering",
+  "files_changed": [
+    "final_evaluation_module.py",
+    "tests/test_final_evaluation_config_cache.py"
+  ],
+  "server_runs": {
+    "red": {
+      "run_dir": "/hy-tmp/rfr_final_eval_color_map_red_1edf4aa_20260704_071529",
+      "command": "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_plots_reuse_static_family_color_map -v",
+      "expected_result": "failure on old internal _family_colors copy call",
+      "exit_code": 1,
+      "local_log": "red_unittest.log"
+    },
+    "green": {
+      "run_dir": "/hy-tmp/rfr_final_eval_color_map_green_20260704_071600",
+      "commands": [
+        "python3 -m py_compile final_evaluation_module.py tests/test_final_evaluation_config_cache.py",
+        "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_plots_reuse_static_family_color_map -v"
+      ],
+      "expected_result": "py_compile and focused unittest pass",
+      "exit_code": 0,
+      "local_log": "green_validation.log"
+    }
+  },
+  "workflow": {
+    "server_code_policy": "server used a temporary source package for execution only",
+    "local_git_policy": "source commit pushed before evidence commit"
+  }
+}

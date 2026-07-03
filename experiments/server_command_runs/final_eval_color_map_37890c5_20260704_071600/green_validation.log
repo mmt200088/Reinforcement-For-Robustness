@@ -1,0 +1,8 @@
+PY_COMPILE_RC=0
+test_final_eval_plots_reuse_static_family_color_map (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_plots_reuse_static_family_color_map) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+OK
+TEST_RC=0
