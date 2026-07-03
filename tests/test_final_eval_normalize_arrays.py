@@ -62,6 +62,15 @@ class FinalEvalNormalizeArrayTests(unittest.TestCase):
 
         self.assertEqual(arr.tolist(), [30, 32, 34, 30])
 
+    def test_invalid_value_checks_scan_arrays_without_tolist_materialization(self):
+        for method in (
+            UnifiedFinalEvaluationModule._normalize_config_array,
+            UnifiedFinalEvaluationModule._normalize_noise_array,
+        ):
+            source = inspect.getsource(method)
+            self.assertIn("_unsupported_int_values(", source)
+            self.assertNotIn("arr.tolist()", source)
+
     def test_stage2_cost_matched_array_tracks_cost_incrementally(self):
         source = inspect.getsource(UnifiedFinalEvaluationModule._stage2_cost_matched_array)
         update_loop = source.split("for _ in range(500):", 1)[1]

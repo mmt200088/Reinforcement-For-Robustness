@@ -2251,6 +2251,16 @@ class UnifiedFinalEvaluationModule:
             return np.asarray(values, dtype=int).reshape(-1)
         return np.fromiter((int(value) for value in values), dtype=int)
 
+    @staticmethod
+    def _unsupported_int_values(values, allowed):
+        allowed_set = {int(value) for value in allowed}
+        invalid = set()
+        for value in np.asarray(values, dtype=int).reshape(-1):
+            int_value = int(value)
+            if int_value not in allowed_set:
+                invalid.add(int_value)
+        return sorted(invalid)
+
     def _normalize_config_array(self, values, total_layers, default_degree, allowed, label):
         arr = self._as_int_vector(values)
         if arr.size < total_layers:
@@ -2265,7 +2275,7 @@ class UnifiedFinalEvaluationModule:
                 f"[Info] {label} length {arr.size} > total_layers={total_layers}; truncating."
             )
             arr = arr[:total_layers].copy()
-        invalid = sorted(set(arr.tolist()) - set(allowed))
+        invalid = self._unsupported_int_values(arr, allowed)
         if invalid:
             raise ValueError(f"{label} contains unsupported degrees: {invalid}")
         return arr
@@ -2287,7 +2297,7 @@ class UnifiedFinalEvaluationModule:
                 f"[Info] {label} length {arr.size} > total_layers={total_layers}; truncating."
             )
             arr = arr[:total_layers].copy()
-        invalid = sorted(set(arr.tolist()) - set(allowed))
+        invalid = self._unsupported_int_values(arr, allowed)
         if invalid:
             raise ValueError(
                 f"{label} contains unsupported scaling factors {invalid}. Allowed: {list(allowed)}"
