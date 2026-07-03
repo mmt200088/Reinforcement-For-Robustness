@@ -1,0 +1,12 @@
+{
+  "clone_rc": 0,
+  "command": "python3 -m unittest tests.test_rl_data_points.RLDataPointWriterTest.test_read_json_file_reads_artifact_payload tests.test_rl_data_points.RLDataPointWriterTest.test_read_json_file_uses_streaming_json_loader tests.test_rl_data_points.RLDataPointWriterTest.test_read_json_file_default_handles_optional_sidecars -v",
+  "minimal_bundle_head": "ca80746f754db2080a852c1a835c6bcf5af29d44",
+  "platform": "Linux-5.15.0-181-generic-x86_64-with-glibc2.35",
+  "python": "3.11.12",
+  "remote_head_check": "d0c0f86672d2feceb76931d690f8f31846b54cb5",
+  "run_id": "json_utils_stream_read_verify_20260703_142121",
+  "source_commit": "d0c0f86672d2feceb76931d690f8f31846b54cb5",
+  "source_transport": "git_bundle_minimal_after_remote_head_confirmed",
+  "test_rc": 0
+}
