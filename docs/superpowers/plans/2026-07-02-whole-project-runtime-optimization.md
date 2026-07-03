@@ -1421,6 +1421,13 @@ append-only store keeps the same stable sorting, ASCII escaping, action hashes,
 candidate identity fields, and read-back behavior while reducing allocation in
 Stage-2 search candidate persistence.
 
+Progress 2026-07-03: `blb_stage2_rl/diagnostics.py` now streams generated
+`diagnostics_summary.md` and `pareto_frontier.html` lines into their temporary
+files instead of materializing a single `"\n".join(lines)` document before
+atomic replace. Report contents, file names, and refresh cadence stay unchanged
+while periodic diagnostics flushes avoid a second full Markdown/HTML string
+copy during long Stage-2 runs.
+
 - [ ] **Step 3: Verify**
 
 Run:

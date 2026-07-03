@@ -90,7 +90,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, List, Mapping, Optional, TextIO
+from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO
 
 import numpy as np
 
@@ -244,6 +244,16 @@ class PPOUpdateStats:
     return_mean: float = 0.0
     return_std: float = 1.0
     timestamp: float = field(default_factory=time.time)
+
+
+def _write_joined_lines_stream(fh: TextIO, lines: Iterable[str]) -> None:
+    first = True
+    for line in lines:
+        if first:
+            first = False
+        else:
+            fh.write("\n")
+        fh.write(str(line))
 
 
 class RLDiagnosticsRecorder:
@@ -1047,7 +1057,7 @@ class RLDiagnosticsRecorder:
         lines.extend(["</tbody></table>", "</body></html>"])
         tmp = self.pareto_html_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+            _write_joined_lines_stream(f, lines)
         os.replace(tmp, self.pareto_html_path)
 
     def _write_summary_md(self) -> None:
@@ -1421,7 +1431,7 @@ class RLDiagnosticsRecorder:
     def _dump(self, lines: List[str]) -> None:
         tmp = self.summary_md_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+            _write_joined_lines_stream(f, lines)
         os.replace(tmp, self.summary_md_path)
 
 

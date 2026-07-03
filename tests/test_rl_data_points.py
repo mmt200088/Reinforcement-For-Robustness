@@ -582,6 +582,76 @@ class RLDataPointWriterTest(unittest.TestCase):
             self.assertEqual(len(episode_newlines), 2)
             self.assertEqual(len(ppo_newlines), 2)
 
+    def test_stage2_diagnostics_streams_human_report_writes(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_report_stream_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as td:
+            recorder = module.RLDiagnosticsRecorder(
+                output_dir=str(Path(td) / "progress"),
+                num_layers=12,
+                num_action_slots=3,
+            )
+            recorder.record_episode(
+                episode_stats=module.EpisodeStats(
+                    episode=0,
+                    total_reward=1.0,
+                    terminal_reward=0.5,
+                    per_step_sum=0.5,
+                    valid_steps=47,
+                    invalid_steps=0,
+                    steps_taken=47,
+                    total_bits=123,
+                    fusion_count=1,
+                    first_invalid_step=None,
+                    first_invalid_block=None,
+                    first_invalid_layer=None,
+                    early_terminated=False,
+                ),
+                full_action_vec=None,
+                is_new_best=False,
+                best_reward_so_far=1.0,
+            )
+
+            report_paths = {
+                recorder.summary_md_path + ".tmp",
+                recorder.pareto_html_path + ".tmp",
+            }
+            handles = {}
+            original_open = open
+
+            def fake_open(path, *args, **kwargs):
+                if str(path) not in report_paths:
+                    return original_open(path, *args, **kwargs)
+                handle = mock.MagicMock()
+                handle.__enter__.return_value = handle
+                handle.__exit__.return_value = None
+
+                def reject_full_document_write(text):
+                    if isinstance(text, str) and text.count("\n") > 3:
+                        raise AssertionError("human diagnostics reports should stream lines")
+
+                handle.write.side_effect = reject_full_document_write
+                handles[str(path)] = handle
+                return handle
+
+            with (
+                mock.patch("builtins.open", side_effect=fake_open),
+                mock.patch.object(module.os, "replace") as replace_mock,
+            ):
+                recorder._write_summary_md()
+                recorder._write_pareto_html([{"episode": 0, "total_reward": 1.0}])
+
+            self.assertEqual(set(handles), report_paths)
+            for handle in handles.values():
+                self.assertGreater(handle.write.call_count, 1)
+            self.assertEqual(replace_mock.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
