@@ -53,6 +53,35 @@ class FusionCountSlotsEvalReportTest(unittest.TestCase):
 
         self.assertEqual(list(maps), ["block1_mrpc", "block2_mrpc"])
 
+    def test_option_lookup_indexes_graph_options_once(self):
+        report = _load_report_module()
+
+        class SinglePassOptions(list):
+            def __init__(self, values):
+                super().__init__(values)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                if self.iterations > 1:
+                    raise AssertionError("option lookup should reuse an index after first scan")
+                return super().__iter__()
+
+        options = SinglePassOptions(
+            [
+                {"option_id": 1, "fusion_count": 0},
+                {"option_id": 2, "fusion_count": 1},
+            ]
+        )
+        graph = {"options": options}
+
+        first = report._option_by_id(graph, 1)
+        second = report._option_by_id(graph, 2)
+
+        self.assertEqual(first["fusion_count"], 0)
+        self.assertEqual(second["fusion_count"], 1)
+        self.assertEqual(options.iterations, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

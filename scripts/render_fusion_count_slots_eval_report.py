@@ -24,6 +24,8 @@ if str(REPO_ROOT) not in sys.path:
 from json_utils import read_json_file  # noqa: E402
 from report_format_utils import html_table  # noqa: E402
 
+_OPTION_INDEX_CACHE: dict[int, tuple[object, int | None, dict[int, Mapping[str, Any]]]] = {}
+
 
 def _esc(value: Any) -> str:
     if value is None:
@@ -133,13 +135,33 @@ def _schedule_by_layer_block(action_config: Mapping[str, Any]) -> dict[tuple[int
     return out
 
 
+def _option_index_for_graph(graph: Mapping[str, Any]) -> dict[int, Mapping[str, Any]]:
+    options = graph.get("options") or []
+    cache_key = id(options)
+    try:
+        options_len: int | None = len(options)  # type: ignore[arg-type]
+    except TypeError:
+        options_len = None
+    cached = _OPTION_INDEX_CACHE.get(cache_key)
+    if cached is not None and cached[0] is options and cached[1] == options_len:
+        return cached[2]
+    index: dict[int, Mapping[str, Any]] = {}
+    for option in options:
+        if not isinstance(option, Mapping):
+            continue
+        try:
+            option_id = int(option.get("option_id", -1))
+        except Exception:
+            continue
+        index[option_id] = option
+    _OPTION_INDEX_CACHE[cache_key] = (options, options_len, index)
+    return index
+
+
 def _option_by_id(graph: Mapping[str, Any] | None, option_id: Any) -> Mapping[str, Any] | None:
     if graph is None or option_id == "":
         return None
-    for option in graph.get("options") or []:
-        if int(option.get("option_id", -1)) == int(option_id):
-            return option
-    return None
+    return _option_index_for_graph(graph).get(int(option_id))
 
 
 def _source_for_slot(
