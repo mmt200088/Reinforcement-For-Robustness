@@ -2313,13 +2313,17 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
         if tail and isinstance(tail[-1], bool):
             output_attentions = tail.pop()
 
-        if encoder_hidden_states is not None and tail:
-            first = tail[0]
-            if encoder_attention_mask is None and (first is None or self._looks_like_attention_mask(first)):
-                encoder_attention_mask = tail.pop(0)
+        tail_pos = 0
 
-        if past_key_value is None and past_key_values is None and tail:
-            candidate = tail.pop(0)
+        if encoder_hidden_states is not None and tail_pos < len(tail):
+            first = tail[tail_pos]
+            if encoder_attention_mask is None and (first is None or self._looks_like_attention_mask(first)):
+                encoder_attention_mask = first
+                tail_pos += 1
+
+        if past_key_value is None and past_key_values is None and tail_pos < len(tail):
+            candidate = tail[tail_pos]
+            tail_pos += 1
             if isinstance(candidate, bool):
                 if output_attentions in (False, None):
                     output_attentions = candidate
@@ -2332,7 +2336,11 @@ class BertSelfAttentionWithAproximation(BertSelfAttention):
                 # Some legacy positional paths may still include a placeholder
                 # encoder-attention mask slot even for encoder-only BERT.
                 encoder_attention_mask = candidate
-                candidate = tail.pop(0) if tail else None
+                if tail_pos < len(tail):
+                    candidate = tail[tail_pos]
+                    tail_pos += 1
+                else:
+                    candidate = None
             past_key_value = candidate
 
         if past_key_value is None and past_key_values is not None:
