@@ -762,6 +762,41 @@ class ForbiddenActionMaskTest(unittest.TestCase):
         reborn_level.max_valid_samples = 0
         self.assertEqual(reborn_level.total_disabled(), level_mask.total_disabled())
 
+    def test_degree_vector_accepts_ndarray_without_list_materialization(self):
+        import types
+        from unittest import mock
+
+        import numpy as np
+
+        pkg_name = "_blb_stage2_rl_degree_vector_test_pkg"
+        if pkg_name in sys.modules:
+            del sys.modules[pkg_name]
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(REPO_ROOT / "blb_stage2_rl")]
+        sys.modules[pkg_name] = pkg
+
+        action_space_stub = types.ModuleType(f"{pkg_name}.action_space")
+        action_space_stub.K_LEVELS = (8, 9, 11, 13, 10, 12)
+        action_space_stub.action_dims_for_config = lambda L: [5] * (L * 73)
+        action_space_stub.describe_action_vector = lambda *a, **kw: {"records": []}
+        action_space_stub.load_max_sfs = lambda profile: None
+        action_space_stub.make_all_max_action_vector = lambda L: [0] * (L * 73)
+        sys.modules[f"{pkg_name}.action_space"] = action_space_stub
+
+        loader = importlib.machinery.SourceFileLoader(
+            f"{pkg_name}.action_mask",
+            str(REPO_ROOT / "blb_stage2_rl/action_mask.py"),
+        )
+        spec = importlib.util.spec_from_loader(f"{pkg_name}.action_mask", loader)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[f"{pkg_name}.action_mask"] = mod
+        loader.exec_module(mod)
+
+        raw = np.asarray([1, 2, 4], dtype=int)
+        with mock.patch("builtins.list", side_effect=AssertionError("degree ndarray should not be copied through list")):
+            out = mod._degree_vector(raw, num_layers=3, default=4)
+        self.assertEqual(out, [1, 2, 4])
+
 
 class EnvEvalCommitSplitTest(unittest.TestCase):
     """Source-text smoke: sequential_env exposes both evaluate_step and

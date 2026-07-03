@@ -48,6 +48,13 @@ def _degree_vector(raw: Any, *, num_layers: int, default: int) -> Sequence[int]:
         return [int(default)] * int(num_layers)
     if isinstance(raw, (int, np.integer)):
         return [int(raw)] * int(num_layers)
+    if isinstance(raw, np.ndarray):
+        values_arr = np.asarray(raw, dtype=int).reshape(-1)
+        if values_arr.size == 1:
+            return [int(values_arr[0])] * int(num_layers)
+        if values_arr.size != int(num_layers):
+            raise ValueError(f"degree vector length {values_arr.size} must be 1 or {num_layers}")
+        return [int(v) for v in values_arr]
     values = list(raw)
     if len(values) == 1:
         return [int(values[0])] * int(num_layers)
