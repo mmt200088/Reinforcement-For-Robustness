@@ -567,6 +567,43 @@ class FusionCountMapReportTest(unittest.TestCase):
             {"block2_mrpc": [0, 2], "block4": [1]},
         )
 
+    def test_option_slot_summary_indexes_action_sequences_without_list_copy(self):
+        class CountingAction(list):
+            def __init__(self, values):
+                super().__init__(values)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                return super().__iter__()
+
+        source = inspect.getsource(report._option_slot_summary)
+        self.assertNotIn('action = [int(v) for v in option.get("action_indices", [])]', source)
+        self.assertNotIn('base_action = [int(v) for v in base_option.get("action_indices", [])]', source)
+
+        action = CountingAction([3, 5])
+        base_action = CountingAction([0, 0])
+        summary = report._option_slot_summary(
+            {"block_idx": 2},
+            [("rescale_sf", "F", 14), ("output_truncation_k", "K", 0)],
+            {
+                "option_id": 1,
+                "fusion_count": 1,
+                "action_indices": action,
+                "slots": {},
+            },
+            {
+                "option_id": 0,
+                "fusion_count": 0,
+                "action_indices": base_action,
+                "slots": {},
+            },
+        )
+
+        self.assertEqual(action.iterations, 0)
+        self.assertEqual(base_action.iterations, 0)
+        self.assertEqual(summary["changed_raw_slots_vs_fusion0"][0]["action_index"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

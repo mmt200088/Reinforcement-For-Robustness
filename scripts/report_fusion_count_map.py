@@ -725,9 +725,9 @@ def _option_slot_summary(
     base_action: Sequence[int] | None = None,
     base_slots: Mapping[str, int] | None = None,
 ) -> dict:
-    action = [int(v) for v in option.get("action_indices", [])]
+    action = option.get("action_indices", ())
     if base_action is None:
-        base_action = [int(v) for v in base_option.get("action_indices", [])]
+        base_action = base_option.get("action_indices", ())
     slots = _int_slot_mapping(option.get("slots", {}))
     if base_slots is None:
         base_slots = _int_slot_mapping(base_option.get("slots", {}))
