@@ -406,6 +406,13 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertNotIn("self._family_colors().keys()", source)
         self.assertNotIn("preferred = list(", source)
 
+    def test_final_eval_plots_reuse_static_family_color_map(self):
+        comparison_source = inspect.getsource(fem.UnifiedFinalEvaluationModule._plot_results)
+        variance_source = inspect.getsource(fem.UnifiedFinalEvaluationModule._plot_variance_results)
+
+        self.assertNotIn("self._family_colors()", comparison_source)
+        self.assertNotIn("self._family_colors()", variance_source)
+
     def test_float_stat_helpers_stream_values_without_clean_lists(self):
         values = [1.0, None, float("nan"), 3.0, float("inf")]
 

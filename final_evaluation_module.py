@@ -1746,7 +1746,7 @@ class UnifiedFinalEvaluationModule:
                 fontsize=14,
                 fontweight="bold",
             )
-            family_colors = self._family_colors()
+            family_colors = _FAMILY_COLOR_MAP
             grouped: Dict[str, list] = {}
             for r in random_results:
                 grouped.setdefault(r["family"], []).append(r)
@@ -1909,7 +1909,7 @@ class UnifiedFinalEvaluationModule:
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
 
-            family_colors = self._family_colors()
+            family_colors = _FAMILY_COLOR_MAP
             random_grouped: Dict[str, list] = {}
             for result in random_results:
                 random_grouped.setdefault(result["family"], []).append(result)
