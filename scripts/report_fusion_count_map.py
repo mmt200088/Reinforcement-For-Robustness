@@ -289,6 +289,18 @@ def _option_by_index(
         raise KeyError(f"graph {graph.get('graph_key')} has no option {option_id}") from exc
 
 
+def _field_kinds_by_block(
+    fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]]
+) -> Dict[int, Dict[str, str]]:
+    return {
+        int(block_idx): {
+            str(field): str(kind)
+            for field, kind, _max_sf in fields
+        }
+        for block_idx, fields in fields_by_block.items()
+    }
+
+
 def _option_id_for_step(step: Mapping[str, Any], option_by_graph: Mapping[str, int], option_by_step: Mapping[str, int] | None = None) -> int:
     step_key = str(step["step_idx"])
     if option_by_step and step_key in option_by_step:
@@ -399,8 +411,10 @@ def _splice_group_slots(
     option_by_graph: Mapping[str, int],
     option_by_step: Mapping[str, int] | None = None,
     option_index_by_graph: Mapping[str, Mapping[int, Mapping[str, Any]]] | None = None,
+    field_kinds_by_block: Mapping[int, Mapping[str, str]] | None = None,
 ) -> List[dict]:
     entries: List[dict] = []
+    field_kind_cache: Dict[int, Mapping[str, str]] = dict(field_kinds_by_block or {})
     for step in schedule:
         graph_key = str(step["graph_key"])
         graph = graphs[graph_key]
@@ -415,10 +429,13 @@ def _splice_group_slots(
         slot_values = _bound_slot_values(block_idx, option.get("slots", {}))
         if not slot_values:
             continue
-        field_kinds = {
-            str(field): str(kind)
-            for field, kind, _max_sf in fields_by_block[block_idx]
-        }
+        field_kinds = field_kind_cache.get(block_idx)
+        if field_kinds is None:
+            field_kinds = {
+                str(field): str(kind)
+                for field, kind, _max_sf in fields_by_block[block_idx]
+            }
+            field_kind_cache[block_idx] = field_kinds
         for field_name, value in sorted(slot_values.items()):
             kind = field_kinds.get(str(field_name))
             if kind is None:
@@ -561,6 +578,7 @@ def _write_action_configs(
     width = _layer_width(fields_by_block)
     offsets = _block_offsets(fields_by_block)
     option_index_by_graph = _option_index_by_graph(graphs)
+    field_kinds_by_block = _field_kinds_by_block(fields_by_block)
     for spec in group_specs:
         name = str(spec["name"])
         action = _splice_group_action(
@@ -582,6 +600,7 @@ def _write_action_configs(
             option_by_graph=spec["option_by_graph"],
             option_by_step=spec.get("option_by_step"),
             option_index_by_graph=option_index_by_graph,
+            field_kinds_by_block=field_kinds_by_block,
         )
         payload = {
             "schema_version": "fusion_count_fixed_action_v1",
