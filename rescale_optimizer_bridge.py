@@ -219,6 +219,21 @@ def _split_payload(payload: Any) -> Tuple[Optional[List[int]], Dict[str, Union[i
     return None, {str(k): v for k, v in payload.items()}
 
 
+_BASELINE_ARCHIVE_CACHE: Dict[
+    Tuple[str, int, int],
+    Dict[str, Tuple[Tuple[int, ...], Tuple[int, ...], Tuple[int, ...]]],
+] = {}
+
+
+def _clone_baseline_archive(
+        cached: Mapping[str, Tuple[Tuple[int, ...], Tuple[int, ...], Tuple[int, ...]]],
+) -> Dict[str, Tuple[List[int], List[int], List[int]]]:
+    return {
+        str(name): (list(skeleton), list(t_baseline), list(q_bits_baseline))
+        for name, (skeleton, t_baseline, q_bits_baseline) in cached.items()
+    }
+
+
 def load_baseline_archive(path: str) -> Dict[str, Tuple[List[int], List[int], List[int]]]:
     """读 ``static_skeletons_<profile>.json`` → ``{config_name: (skeleton, t_baseline, q_bits_baseline)}``。
 
@@ -227,9 +242,16 @@ def load_baseline_archive(path: str) -> Dict[str, Tuple[List[int], List[int], Li
       * t_baseline: 按 skeleton 取 cut_point_sf 的 ``sf_post`` (rescale 点) 或 ``sf`` (source/普通点)
       * q_bits_baseline: ``modulus_chain.drop_order[1:-1]``（去掉首尾 head/tail prime）
     """
-    with open(path, "r", encoding="utf-8") as f:
+    abs_path = os.path.abspath(str(path))
+    stat = os.stat(abs_path)
+    cache_key = (abs_path, int(stat.st_mtime_ns), int(stat.st_size))
+    cached = _BASELINE_ARCHIVE_CACHE.get(cache_key)
+    if cached is not None:
+        return _clone_baseline_archive(cached)
+
+    with open(abs_path, "r", encoding="utf-8") as f:
         archive = json.load(f)
-    out: Dict[str, Tuple[List[int], List[int], List[int]]] = {}
+    out: Dict[str, Tuple[Tuple[int, ...], Tuple[int, ...], Tuple[int, ...]]] = {}
     for entry in archive.get("results", []):
         if not entry.get("success"):
             continue
@@ -248,8 +270,9 @@ def load_baseline_archive(path: str) -> Dict[str, Tuple[List[int], List[int], Li
         mc = entry.get("modulus_chain", {}) or {}
         drop_order = list(mc.get("drop_order", []))
         q_base = [int(x) for x in drop_order[1:-1]] if len(drop_order) >= 2 else []
-        out[cname] = (skel, t_base, q_base)
-    return out
+        out[cname] = (tuple(skel), tuple(t_base), tuple(q_base))
+    _BASELINE_ARCHIVE_CACHE[cache_key] = out
+    return _clone_baseline_archive(out)
 
 
 class InProcessInvoker:
