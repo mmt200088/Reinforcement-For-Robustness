@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from json_utils import read_json_file
 from blb_stage2_rl.action_space import (
     K_LEVELS,
     NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
@@ -23,6 +24,14 @@ from blb_stage2_rl.action_space import (
     sf_from,
     sum_truncation_k_in_action,
 )
+
+_K_LEVEL_INDEX: Dict[int, int] = {int(value): idx for idx, value in enumerate(K_LEVELS)}
+_SORTED_K_LEVEL_CHOICES: Tuple[int, ...] = tuple(sorted(int(value) for value in K_LEVELS))
+_SELECTOR_SLOT_CACHE: Dict[Tuple[int, str, int], List[Dict[str, object]]] = {}
+_SF_CHOICE_CACHE: Dict[
+    Tuple[int, str, int, int],
+    Tuple[Dict[int, int], Tuple[int, ...]],
+] = {}
 
 
 @dataclass(frozen=True)
@@ -116,7 +125,7 @@ def load_action_grid_config(
     path = Path(str(path_value or "").strip())
     if not path.is_file():
         raise FileNotFoundError(f"final_eval action config does not exist: {path}")
-    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    payload = read_json_file(path, encoding="utf-8-sig")
     if not isinstance(payload, Mapping):
         raise ValueError("--action-config JSON must be an object")
 
@@ -574,6 +583,11 @@ def _set_selector_value(vec, num_layers, max_sfs, selector: str, value: int) -> 
 
 
 def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
+    cache_key = (int(num_layers), str(selector), id(per_layer_field_offsets))
+    cached = _SELECTOR_SLOT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     parsed = _parse_selector(selector, num_layers)
     name = parsed["field_name"]
     exact_block = parsed["block_idx"]
@@ -613,7 +627,20 @@ def _selector_slots(num_layers: int, selector: str) -> List[Dict[str, object]]:
                     "field_name": str(field_name),
                     "kind": str(kind),
                 })
+    _SELECTOR_SLOT_CACHE[cache_key] = slots
     return slots
+
+
+def _sf_choice_lookup(kind: str, max_sf: int, levels: int) -> Tuple[Dict[int, int], Tuple[int, ...]]:
+    cache_key = (id(sf_from), str(kind), int(max_sf), int(levels))
+    cached = _SF_CHOICE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    choices = tuple(int(sf_from(idx, max_sf, levels)) for idx in range(levels))
+    lookup = {choice: idx for idx, choice in enumerate(choices)}
+    cached = (lookup, choices)
+    _SF_CHOICE_CACHE[cache_key] = cached
+    return cached
 
 
 def _value_to_action_index(*, value: int, block_idx: int, field_name: str, kind: str, max_sfs) -> int:
@@ -624,19 +651,23 @@ def _value_to_action_index(*, value: int, block_idx: int, field_name: str, kind:
         )
 
     if kind == "K":
-        if int(value) not in K_LEVELS:
-            raise ValueError(f"truncation={value} is not selectable; expected one of {sorted(K_LEVELS)}")
-        return list(K_LEVELS).index(int(value))
+        try:
+            return _K_LEVEL_INDEX[int(value)]
+        except KeyError as exc:
+            raise ValueError(
+                f"truncation={value} is not selectable; expected one of {_SORTED_K_LEVEL_CHOICES}"
+            ) from exc
 
     levels = NUM_LEVELS_PER_DIM_BY_BLOCK_KIND[str(kind)]
     max_sf = max_sfs.get(int(block_idx), str(field_name))
-    choices = [int(sf_from(idx, max_sf, levels)) for idx in range(levels)]
-    if int(value) not in choices:
+    lookup, choices = _sf_choice_lookup(str(kind), int(max_sf), int(levels))
+    idx = lookup.get(int(value))
+    if idx is None:
         raise ValueError(
             f"{field_name}={value} is not selectable for block{block_idx}; "
             f"expected one of {choices}"
         )
-    return choices.index(int(value))
+    return int(idx)
 
 
 def _canonical_selector_name(selector: str) -> str:

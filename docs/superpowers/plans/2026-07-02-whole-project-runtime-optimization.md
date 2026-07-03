@@ -948,6 +948,13 @@ selector benchmark preserved vector writes and reduced setter time from
 `4.215663s` to `1.279825s` (`3.29x`), with traced peak allocation dropping
 from `1,576B` to `124B` over 10k calls.
 
+Progress 2026-07-03: the current source now has these Paean action-grid cache
+guards green again: K lookup uses a precomputed value map, non-K scaling-factor
+choice tables are reused across repeated values, and selector-slot resolution
+is cached across repeated `_set_selector_value()` calls. This keeps repeated
+final-eval action config expansion from rebuilding the same small lookup
+structures.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
@@ -1271,6 +1278,18 @@ are found, instead of reading the whole Markdown files. A local synthetic
 report with the baseline table followed by 200k tail lines preserved parsed
 baselines and reduced parsing from `0.0006s` / `4.20MB` to `0.0001s` /
 `0.02MB`.
+
+Progress 2026-07-03: `scripts/blb_regen_stage2_outputs.py` now reuses the
+shared `jsonl_utils.iter_jsonl(..., gzip_fallback=True)` path for offline
+episode and PPO diagnostics instead of maintaining a local JSONL iterator.
+`scripts/verify_stage2_persistent_outputs.py` also aliases the shared required
+field counter directly instead of carrying a second JSONL scan loop. This keeps
+Stage-2 offline artifact regeneration and persistent-output verification on
+the same low-copy JSONL implementation used by the rest of the reporting
+toolchain. `Paean/action_grid.py` now reads action-config JSON artifacts through
+the shared `read_json_file(..., encoding="utf-8-sig")` helper as well, keeping
+Paean final-eval config loading on the same artifact-read path while preserving
+the existing JSON spec parsing for command-line strings.
 
 Progress 2026-07-03: `rl_local_optimum.py` now materializes episode returns,
 optional entropy/best-score series, and collapse-attribution fusion/margin

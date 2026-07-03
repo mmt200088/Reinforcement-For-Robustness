@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import os
 import re
 import sys
@@ -34,7 +33,7 @@ import sys
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
-from jsonl_utils import open_jsonl  # noqa: E402
+from jsonl_utils import iter_jsonl  # noqa: E402
 import rl_local_optimum  # noqa: E402
 
 
@@ -72,24 +71,8 @@ def _resolve_progress_dir(path: str) -> str:
     )
 
 
-def _open_jsonl(progress_dir: str, name: str):
-    return open_jsonl(
-        os.path.join(progress_dir, "diagnostics", name),
-        gzip_fallback=True,
-    )
-
-
-def _iter_progress_jsonl(progress_dir: str, name: str):
-    with _open_jsonl(progress_dir, name) as handle:
-        for line in handle:
-            if not line or line.isspace():
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                yield payload
+def _progress_jsonl_path(progress_dir: str, name: str) -> str:
+    return os.path.join(progress_dir, "diagnostics", name)
 
 
 def _read_episodes(progress_dir: str):
@@ -116,7 +99,10 @@ def _read_episodes(progress_dir: str):
     )
     row_count = 0
     try:
-        for d in _iter_progress_jsonl(progress_dir, "episodes.jsonl"):
+        for d in iter_jsonl(
+            _progress_jsonl_path(progress_dir, "episodes.jsonl"),
+            gzip_fallback=True,
+        ):
             total = float(d.get("per_step_sum", 0.0) or 0.0) + float(
                 d.get("terminal_reward", 0.0) or 0.0
             )
@@ -145,7 +131,10 @@ def _read_entropy(progress_dir: str):
     """ppo_updates.jsonl → (entropy_series, completed_episodes)。"""
     ent, eps = [], []
     try:
-        for d in _iter_progress_jsonl(progress_dir, "ppo_updates.jsonl"):
+        for d in iter_jsonl(
+            _progress_jsonl_path(progress_dir, "ppo_updates.jsonl"),
+            gzip_fallback=True,
+        ):
             if d.get("entropy") is None:
                 continue
             ent.append(float(d["entropy"]))
