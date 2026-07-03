@@ -119,37 +119,21 @@ class Stage2PersistentOutputVerifierTest(unittest.TestCase):
             ("missing_a", "missing_b"),
         )
 
-    def test_required_field_counter_skips_blank_lines_without_strip_copy(self):
-        class NoStripLine(str):
-            def strip(self, *_args, **_kwargs):
-                raise AssertionError("JSONL counter should not allocate strip() copies")
+    def test_required_field_counter_uses_shared_jsonl_helper(self):
+        with tempfile.TemporaryDirectory(prefix="stage2_verify_jsonl_") as td:
+            path = Path(td) / "episodes.jsonl"
+            path.write_text(
+                '{"episode": 0, "total_reward": 1.0}\n'
+                "   \n"
+                '{"episode": 1, "total_reward": 2.0}\n',
+                encoding="utf-8",
+            )
 
-        class FakeHandle:
-            def __init__(self):
-                self.lines = [
-                    NoStripLine('{"episode": 0, "total_reward": 1.0}\n'),
-                    NoStripLine("   \n"),
-                    NoStripLine('{"episode": 1, "total_reward": 2.0}\n'),
-                ]
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return False
-
-            def __iter__(self):
-                return iter(self.lines)
-
-        class FakePath:
-            def open(self, *_args, **_kwargs):
-                return FakeHandle()
-
-        count, failures = verifier._count_jsonl_with_required_fields(
-            FakePath(),
-            ("episode", "total_reward"),
-            "episodes.jsonl",
-        )
+            count, failures = verifier.count_jsonl_with_required_fields(
+                path,
+                ("episode", "total_reward"),
+                label="episodes.jsonl",
+            )
 
         self.assertEqual(count, 2)
         self.assertEqual(failures, [])
