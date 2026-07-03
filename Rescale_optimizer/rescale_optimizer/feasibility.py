@@ -26,7 +26,7 @@ and `tail_edges` on the RescaleGraph.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 from .graph import (
     AmplitudeProfile,
@@ -142,13 +142,16 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
     #
     # We build a map stage_nodes[k] = list of ComputeNode (in topo order),
     # NOT including c_k itself but INCLUDING c_{k+1}.
+    cut_point_index_by_node_id: Dict[int, int] = {}
+    for cp in graph.cut_points:
+        cut_point_index_by_node_id.setdefault(id(cp.node), cp.index)
     stage_nodes: List[List[ComputeNode]] = [[] for _ in range(M + 1)]
     for node in graph.nodes:
         if node.node_type == NodeType.DUMMY_SINK:
             continue
         if node.is_cut_point:
             # c_{idx} belongs to stage (idx-1), as the *endpoint*.
-            idx = _cut_point_index(graph, node)
+            idx = cut_point_index_by_node_id.get(id(node))
             if idx is None:
                 continue
             if idx >= 1:
@@ -242,15 +245,3 @@ def build_feasibility_dag(graph: RescaleGraph) -> RescaleGraph:
     logger.info("FeasibilityDAG: %d stage edges, %d tail edges",
                 len(graph.stage_edges), len(graph.tail_edges))
     return graph
-
-
-# ---------------------------------------------------------------------------
-# Small helpers
-# ---------------------------------------------------------------------------
-
-def _cut_point_index(graph: RescaleGraph, node: ComputeNode) -> Optional[int]:
-    """Find cut-point index of a rescalable node (linear scan, M ≲ 100)."""
-    for cp in graph.cut_points:
-        if cp.node is node:
-            return cp.index
-    return None

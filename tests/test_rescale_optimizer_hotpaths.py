@@ -39,6 +39,14 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertNotIn("propagate_scale(t_i, cum)", source)
         self.assertNotIn("for n in cumulative_nodes)", source)
 
+    def test_feasibility_dag_precomputes_cut_point_indices(self):
+        from rescale_optimizer import feasibility
+
+        source = inspect.getsource(feasibility.build_feasibility_dag)
+
+        self.assertIn("cut_point_index_by_node_id", source)
+        self.assertNotIn("_cut_point_index(graph, node)", source)
+
 
 if __name__ == "__main__":
     unittest.main()
