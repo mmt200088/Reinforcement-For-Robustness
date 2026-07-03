@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source/evidence head `d3f2b6e`, the conservative
+not by raw commit count. As of source/evidence head `392b646`, the conservative
 completion estimate is about 30% of the full goal: the plan/audit layer and
 several low-conflict hot paths have landed, but hardware-default promotion,
 long-run A/B evidence, and remaining flow-wide scheduling work are still open.
@@ -90,6 +90,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `b2a7325` | `experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/` | Cache `load_max_sfs(profile)` per final-eval module instance. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
+| Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Rescale bridge | `dab3b8b` | `experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/` | Cache static-skeleton archive parses by path, mtime, and size while returning fresh caller lists. |
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
@@ -456,6 +457,19 @@ under
 The green gate compiles `function_handler.py` and verifies the source-level
 performance guard that this parsing region contains `tail_pos = 0` and no
 `pop(0)`.
+
+Progress 2026-07-03: Stage-1 runtime reward normalization history now uses
+`deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)` for initialization, runtime reset,
+and checkpoint resume. `update_reward_statistics()` still appends every new
+episode reward and computes the same mean/std once enough samples exist, but
+the window no longer trims overflow with list `pop(0)` on every post-window
+episode.
+
+Server evidence 2026-07-03: source commit `61c8c57`, with test-head
+`392b646`, has red/green verification under
+`experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/`.
+The first green attempt compiled but failed a too-narrow source assertion; the
+final green run verifies `py_compile=0` and the bounded-deque source guard.
 
 - [ ] **Step 3: Optimize only proven redundant work**
 
@@ -1716,6 +1730,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   in the `stage1_apply_config_reuse_dca7526_20260703_210000` run directory.
 - `5d15e6c` Stage-1 worker install reuse, evidence committed in the
   `stage1_worker_apply_config_reuse_5d15e6c_20260703_211000` run directory.
+- `61c8c57` Stage-1 reward history bounded deque, evidence committed in the
+  `stage1_reward_history_deque_392b646_20260703_215700` run directory.
 - `a416d46` shared attention tail cursor parsing, evidence committed in the
   `attention_tail_cursor_a416d46_20260703_214800` run directory.
 - `dab3b8b` static-skeleton archive cache, evidence committed in the
