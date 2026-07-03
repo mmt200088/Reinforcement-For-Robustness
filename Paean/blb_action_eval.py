@@ -1927,13 +1927,21 @@ class BLBActionFinalEvaluationModule:
         primary = metric_names[0] if metric_names else "metric1"
         num_metrics = self.evaluator.get_num_metrics()
 
-        def _xs_ys(rows: List[Dict[str, Any]]):
-            xs = [float(r.get("p", 0.0)) for r in rows]
-            ys = [float(r.get("p_std", 0.0)) for r in rows]
-            return xs, ys
+        def _scatter_columns(rows: List[Dict[str, Any]]):
+            p_x = []
+            p_y = []
+            s_x = []
+            s_y = []
+            for row in rows:
+                p_x.append(float(row.get("p", 0.0)))
+                p_y.append(float(row.get("p_std", 0.0)))
+                if num_metrics > 1:
+                    s_x.append(float(row.get("s", 0.0)))
+                    s_y.append(float(row.get("s_std", 0.0)))
+            return p_x, p_y, s_x, s_y
 
-        sel_x, sel_y = _xs_ys(selected_results)
-        rnd_x, rnd_y = _xs_ys(random_results)
+        sel_x, sel_y, sel2_x, sel2_y = _scatter_columns(selected_results)
+        rnd_x, rnd_y, rnd2_x, rnd2_y = _scatter_columns(random_results)
 
         ncols = 2 if num_metrics > 1 else 1
         fig, axes = plt.subplots(1, ncols, figsize=(6 * ncols, 5))
@@ -1954,10 +1962,6 @@ class BLBActionFinalEvaluationModule:
         if ncols > 1:
             secondary = metric_names[1]
             ax2 = axes[1]
-            rnd2_x = [float(r.get("s", 0.0)) for r in random_results]
-            rnd2_y = [float(r.get("s_std", 0.0)) for r in random_results]
-            sel2_x = [float(r.get("s", 0.0)) for r in selected_results]
-            sel2_y = [float(r.get("s_std", 0.0)) for r in selected_results]
             if rnd2_x:
                 ax2.scatter(rnd2_x, rnd2_y, c="#888888", alpha=0.6, label=f"random (n={len(rnd2_x)})", marker="o")
             if sel2_x:

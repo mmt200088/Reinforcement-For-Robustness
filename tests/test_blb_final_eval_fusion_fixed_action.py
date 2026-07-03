@@ -133,6 +133,19 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         self.assertNotIn('np.asarray([float(r["total_bits_sum"]) for r in candidate_results]', source)
         self.assertNotIn('np.asarray([float(r["time_ms"]) for r in candidate_results]', source)
 
+    def test_scatter_plot_scans_result_rows_once_per_group(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        source = inspect.getsource(BLBActionFinalEvaluationModule._save_scatter_plot)
+
+        self.assertNotIn("def _xs_ys", source)
+        self.assertNotIn('[float(r.get("p", 0.0)) for r in rows]', source)
+        self.assertNotIn('[float(r.get("p_std", 0.0)) for r in rows]', source)
+        self.assertNotIn('[float(r.get("s", 0.0)) for r in random_results]', source)
+        self.assertNotIn('[float(r.get("s_std", 0.0)) for r in random_results]', source)
+        self.assertNotIn('[float(r.get("s", 0.0)) for r in selected_results]', source)
+        self.assertNotIn('[float(r.get("s_std", 0.0)) for r in selected_results]', source)
+
 
 if __name__ == "__main__":
     unittest.main()
