@@ -1,3 +1,4 @@
+import inspect
 import unittest
 from unittest import mock
 
@@ -82,7 +83,27 @@ class BLBExportActionRegistryLightTests(unittest.TestCase):
         k_records = [r for r in payload["slot_registry_full"] if r["value_type"] == "truncation_k"]
         self.assertEqual(k_records[0]["all_max_action_index"], 2)
 
+    def test_all_max_action_index_scans_k_levels_once_without_copy(self):
+        import scripts.blb_export_action_registry as registry
+
+        class CountingLevels:
+            def __init__(self, values):
+                self.values = list(values)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                return iter(self.values)
+
+        source = inspect.getsource(registry._all_max_action_index)
+        self.assertNotIn("list(k_levels).index(max(k_levels))", source)
+
+        k_levels = CountingLevels([9, 13, 11, 13])
+        record = {"value_type": "truncation_k"}
+
+        self.assertEqual(registry._all_max_action_index(record, k_levels=k_levels), 1)
+        self.assertEqual(k_levels.iterations, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
-

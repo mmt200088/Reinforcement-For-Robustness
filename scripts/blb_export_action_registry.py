@@ -194,7 +194,15 @@ def _all_max_action_index(record: Dict[str, Any], *, k_levels: Sequence[int] | N
     if record.get("value_type") == "truncation_k":
         if k_levels is None:
             k_levels = _load_action_space_deps()["K_LEVELS"]
-        return int(list(k_levels).index(max(k_levels)))
+        max_index = None
+        max_value = None
+        for idx, value in enumerate(k_levels):
+            if max_index is None or value > max_value:
+                max_index = idx
+                max_value = value
+        if max_index is None:
+            raise ValueError("max() arg is an empty sequence")
+        return int(max_index)
     return int(record.get("num_levels", 1)) - 1
 
 
