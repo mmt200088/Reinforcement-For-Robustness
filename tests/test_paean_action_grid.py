@@ -162,6 +162,64 @@ class PaeanActionGridTest(unittest.TestCase):
         self.assertEqual(diagnostics.avg_k_prefilter_skipped, 5)
         self.assertEqual(parse_calls, 1)
 
+    def test_cost_matched_sampling_reuses_degree_arrays_across_decode_attempts(self):
+        action_grid = _load_action_grid_module()
+        action_grid.action_dims_for_config = lambda _num_layers: [2]
+        action_grid.sum_truncation_k_in_action = lambda _vec, _num_layers: 0
+        action_grid.build_optimizer_requests = lambda _profile, _cfgs: {}
+
+        gelu_ids = []
+        attn_ids = []
+
+        class Decoded:
+            def cfgs_dict(self):
+                return {}
+
+        def action_vector_to_cfgs(**kwargs):
+            gelu_ids.append(id(kwargs["gelu_degree"]))
+            attn_ids.append(id(kwargs["attn_degree"]))
+            return Decoded()
+
+        class Signals:
+            any_invalid = False
+            total_bits_sum = 0
+            total_fusion_count = 0
+
+        bridge = type("Bridge", (), {"evaluate_blocks": lambda self, _requests: {}})()
+        rescale_stub = types.ModuleType("rescale_optimizer_bridge")
+        rescale_stub.aggregate_optimizer_signals = lambda _outputs: Signals()
+
+        previous = sys.modules.get("rescale_optimizer_bridge")
+        sys.modules["rescale_optimizer_bridge"] = rescale_stub
+        try:
+            action_grid.action_vector_to_cfgs = action_vector_to_cfgs
+            candidates, diagnostics = action_grid.build_cost_matched_random_action_candidates(
+                num_layers=1,
+                profile="mrpc",
+                selected_action_vec=[0],
+                selected_total_bits=0,
+                selected_total_fusion=0,
+                selected_sum_k=0,
+                bridge=bridge,
+                max_sfs={},
+                gelu_degree=[4],
+                attn_degree=[6],
+                seed=11,
+                count=2,
+                max_attempts=3,
+            )
+        finally:
+            if previous is None:
+                sys.modules.pop("rescale_optimizer_bridge", None)
+            else:
+                sys.modules["rescale_optimizer_bridge"] = previous
+
+        self.assertEqual(len(candidates), 2)
+        self.assertEqual(diagnostics.accepted, 2)
+        self.assertEqual(len(gelu_ids), 2)
+        self.assertEqual(len(set(gelu_ids)), 1)
+        self.assertEqual(len(set(attn_ids)), 1)
+
     def test_slot_config_loading_reuses_profile_max_sfs(self):
         action_grid = _load_action_grid_module()
         load_calls = 0

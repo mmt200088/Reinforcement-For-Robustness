@@ -414,6 +414,11 @@ def build_cost_matched_random_action_candidates(
     """
     dims = np.asarray(action_dims_for_config(num_layers), dtype=int)
     rng = np.random.default_rng(int(seed))
+    gelu_arr = np.asarray(gelu_degree, dtype=int)
+    attn_arr = np.asarray(attn_degree, dtype=int)
+    target_sum_k = int(selected_sum_k)
+    target_total_bits = int(selected_total_bits)
+    target_total_fusion = int(selected_total_fusion)
     accepted: List[ActionCandidate] = []
     invalid_n = 0
     mismatch_n = 0
@@ -440,7 +445,7 @@ def build_cost_matched_random_action_candidates(
             _apply_fixed(vec)
         # Cheap pre-filter: sum_k can be computed directly from the action.
         sum_k = sum_truncation_k_in_action(vec, int(num_layers))
-        if int(sum_k) != int(selected_sum_k):
+        if int(sum_k) != target_sum_k:
             prefilter_n += 1
             continue
         # Decode + optimizer call (this is the expensive bit).
@@ -448,8 +453,8 @@ def build_cost_matched_random_action_candidates(
             action_vec=vec,
             max_sfs=max_sfs,
             num_layers=int(num_layers),
-            gelu_degree=np.asarray(gelu_degree, dtype=int),
-            attn_degree=np.asarray(attn_degree, dtype=int),
+            gelu_degree=gelu_arr,
+            attn_degree=attn_arr,
         )
         try:
             requests = build_optimizer_requests(profile, decoded.cfgs_dict())
@@ -466,10 +471,10 @@ def build_cost_matched_random_action_candidates(
         if bool(signals.any_invalid):
             invalid_n += 1
             continue
-        if int(signals.total_bits_sum) != int(selected_total_bits):
+        if int(signals.total_bits_sum) != target_total_bits:
             mismatch_n += 1
             continue
-        if int(signals.total_fusion_count) != int(selected_total_fusion):
+        if int(signals.total_fusion_count) != target_total_fusion:
             mismatch_n += 1
             continue
         accepted.append(ActionCandidate(
@@ -479,9 +484,9 @@ def build_cost_matched_random_action_candidates(
         ))
 
     diagnostics = CostMatchedSamplingDiagnostics(
-        target_total_bits=int(selected_total_bits),
-        target_total_fusion=int(selected_total_fusion),
-        target_sum_k=int(selected_sum_k),
+        target_total_bits=target_total_bits,
+        target_total_fusion=target_total_fusion,
+        target_sum_k=target_sum_k,
         accepted=int(len(accepted)),
         attempts=int(attempts),
         invalid=int(invalid_n),
