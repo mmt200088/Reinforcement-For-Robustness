@@ -373,6 +373,13 @@ rollouts in a `deque` and consumes them with `popleft()` instead of repeatedly
 calling `list.pop(0)`. This preserves global rollout order while avoiding
 per-episode list shifting in every PPO update window.
 
+Progress 2026-07-03: Stage-1 plaintext repeat evaluation and the MRPC
+layer-output noise experiment now use pinned DataLoader memory with
+`non_blocking=True` tensor transfers when CUDA is available. Their GPU eval
+loops also defer loss/correct or label/pred CPU synchronization until after the
+batch loop, reducing per-batch device synchronization while preserving the same
+metrics and deterministic evaluation protocol.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:

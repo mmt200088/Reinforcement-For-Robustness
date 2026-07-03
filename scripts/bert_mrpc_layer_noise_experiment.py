@@ -224,6 +224,7 @@ def build_dataloader(
     max_length: int,
     max_samples: Optional[int],
 ) -> Any:
+    import torch
     from torch.utils.data import DataLoader
     from transformers import DataCollatorWithPadding
 
@@ -246,7 +247,13 @@ def build_dataloader(
         [name for name in tokenized.column_names if name not in keep_columns]
     )
     collator = DataCollatorWithPadding(tokenizer=tokenizer)
-    return DataLoader(tokenized, batch_size=batch_size, shuffle=False, collate_fn=collator)
+    return DataLoader(
+        tokenized,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collator,
+        pin_memory=torch.cuda.is_available(),
+    )
 
 
 def evaluate_condition(
@@ -261,8 +268,8 @@ def evaluate_condition(
 ) -> Dict[str, float]:
     set_trial_seed(torch_module, seed)
     model.eval()
-    labels_all: List[int] = []
-    preds_all: List[int] = []
+    label_tensors: List[Any] = []
+    pred_tensors: List[Any] = []
     started = time.time()
     with temporary_layer_output_noise(
         model=model,
@@ -271,17 +278,28 @@ def evaluate_condition(
         torch_module=torch_module,
         layers_attr=layers_attr,
     ):
-        with torch_module.no_grad():
+        with torch_module.inference_mode():
             for batch in dataloader:
                 labels = batch.pop("labels", batch.pop("label", None))
                 if labels is None:
                     raise KeyError("dataloader batch does not contain labels")
-                labels = labels.to(device)
-                batch = {key: value.to(device) for key, value in batch.items()}
+                labels = labels.to(device, non_blocking=True)
+                batch = {
+                    key: value.to(device, non_blocking=True)
+                    for key, value in batch.items()
+                }
                 outputs = model(**batch)
                 preds = outputs.logits.argmax(dim=-1)
-                labels_all.extend(labels.detach().cpu().tolist())
-                preds_all.extend(preds.detach().cpu().tolist())
+                label_tensors.append(labels.detach().reshape(-1))
+                pred_tensors.append(preds.detach().reshape(-1))
+    labels_all = (
+        torch_module.cat(label_tensors, dim=0).detach().cpu().tolist()
+        if label_tensors else []
+    )
+    preds_all = (
+        torch_module.cat(pred_tensors, dim=0).detach().cpu().tolist()
+        if pred_tensors else []
+    )
     metrics = accuracy_metric(labels_all, preds_all)
     metrics["n_samples"] = float(len(labels_all))
     metrics["elapsed_sec"] = time.time() - started

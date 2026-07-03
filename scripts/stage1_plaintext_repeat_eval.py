@@ -67,24 +67,32 @@ def _build_dataloader(tokenizer, task: str, batch_size: int, max_samples: int | 
         enc["labels"] = labels
         return enc
 
-    return DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=_collate), len(dataset)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=_collate,
+        pin_memory=torch.cuda.is_available(),
+    ), len(dataset)
 
 
 def _evaluate(model, dataloader, device: torch.device) -> dict:
-    loss_sum = 0.0
     total = 0
-    correct = 0
+    loss_sum_t = torch.zeros((), dtype=torch.float64, device=device)
+    correct_t = torch.zeros((), dtype=torch.long, device=device)
     loss_fn = torch.nn.CrossEntropyLoss(reduction="sum")
     with torch.inference_mode():
         model.eval()
         for batch in dataloader:
-            labels = batch.pop("labels").to(device)
-            batch = {k: v.to(device) for k, v in batch.items()}
+            labels = batch.pop("labels").to(device, non_blocking=True)
+            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
             logits = model(**batch).logits
-            loss_sum += float(loss_fn(logits, labels).item())
+            loss_sum_t += loss_fn(logits, labels).detach().to(dtype=torch.float64)
             preds = torch.argmax(logits, dim=-1)
-            correct += int((preds == labels).sum().item())
+            correct_t += (preds == labels).sum()
             total += int(labels.numel())
+    loss_sum = float(loss_sum_t.detach().cpu().item())
+    correct = int(correct_t.detach().cpu().item())
     return {
         "loss": loss_sum / max(total, 1),
         "accuracy": correct / max(total, 1),
