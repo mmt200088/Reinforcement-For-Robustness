@@ -12,23 +12,22 @@ import argparse
 import html
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
-
-def _load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from json_utils import read_json_file  # noqa: E402
+from report_format_utils import html_table  # noqa: E402
 
 
 def _esc(value: Any) -> str:
     if value is None:
         return ""
     return html.escape(str(value))
-
-
-def _fmt_json(value: Any) -> str:
-    return html.escape(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def _fmt_num(value: Any, digits: int = 6) -> str:
@@ -40,40 +39,12 @@ def _fmt_num(value: Any, digits: int = 6) -> str:
         return str(value)
 
 
-def _table(headers: Sequence[str], rows: Iterable[Sequence[Any]], *, class_name: str = "") -> str:
-    cls = f" class='{html.escape(class_name)}'" if class_name else ""
-    parts = [f"<table{cls}>", "<thead><tr>"]
-    for header in headers:
-        parts.append(f"<th>{_esc(header)}</th>")
-    parts.append("</tr></thead><tbody>")
-    for row in rows:
-        parts.append("<tr>")
-        for cell in row:
-            if isinstance(cell, str) and cell.startswith("<"):
-                parts.append(f"<td>{cell}</td>")
-            else:
-                parts.append(f"<td>{_esc(cell)}</td>")
-        parts.append("</tr>")
-    parts.append("</tbody></table>")
-    return "\n".join(parts)
-
-
 def _scalar_rows(payload: Mapping[str, Any]) -> list[list[Any]]:
     rows: list[list[Any]] = []
     for key in sorted(payload):
         value = payload[key]
         if isinstance(value, (str, int, float, bool)) or value is None:
             rows.append([key, value])
-    return rows
-
-
-def _nested_rows(payload: Mapping[str, Any], keys: Sequence[str]) -> list[list[Any]]:
-    rows: list[list[Any]] = []
-    for key in keys:
-        value = payload.get(key)
-        if value is None:
-            continue
-        rows.append([key, f"<pre>{_fmt_json(value)}</pre>"])
     return rows
 
 
@@ -97,7 +68,7 @@ def _load_maps(map_dir: Path | None) -> dict[str, Mapping[str, Any]]:
     for path in sorted(map_dir.glob("*.json")):
         if path.name.startswith("._") or path.name.startswith("_"):
             continue
-        payload = _load_json(path)
+        payload = read_json_file(path)
         if isinstance(payload, Mapping) and payload.get("graph_key"):
             out[str(payload["graph_key"])] = payload
     return out
@@ -547,7 +518,7 @@ def render(
         "<div class='warn'>For graphs without a reachable fusion_count=1 option, the map generator clamps to the nearest available count and marks those groups as no-op/reused where applicable.</div>",
         "<div class='warn'>Precision-boost audit uses the committed map JSON. <code>boosted=True</code> means the selected fusion option stores explicit field values from the 加大精度 post-process; unboosted fc=1 options are shown explicitly. Step overrides are audited separately from graph-wide options.</div>",
         "<h2>Protocol</h2>",
-        _table(
+        html_table(
             [
                 "profile", "Stage-1 GELU", "Stage-1 Softmax", "baseline K",
                 "split", "stage2 groups", "unique action runs",
@@ -567,9 +538,9 @@ def render(
         ),
         "<h2>Schedule Graph Occurrences</h2>",
         "<p class='small muted'>Only graphs listed here are actually used to construct model noise slots for this Stage-1 GELU/Softmax schedule.</p>",
-        _table(["graph", "occurrences", "layers"], _schedule_rows(ctx)),
+        html_table(["graph", "occurrences", "layers"], _schedule_rows(ctx)),
         "<h2>Metrics Summary</h2>",
-        _table(
+        html_table(
             [
                 "group", "family", "no-op", "loss", "loss std", "Accuracy",
                 "Accuracy std", "F1", "F1 std", "repeat n", "time std ms",
@@ -579,12 +550,12 @@ def render(
             _metric_summary_rows(combined),
         ),
         "<h2>Fusion Option Mapping</h2>",
-        _table(
+        html_table(
             ["group", "canonical run", "reused", "action hash", "fusion count by graph", "option by graph", "option by step"],
             _mapping_rows(combined),
         ),
         "<h2>Precision Boost Summary</h2>",
-        _table(
+        html_table(
             [
                 "group", "realized fusion", "no-op", "boosted fc=1 graph options",
                 "unboosted fc=1 graph options", "boosted fc=1 step overrides",
@@ -602,7 +573,7 @@ def render(
     baseline_installed_entries = _active_installed_entry_map(baseline_result)
     parts.extend([
         "<h2>Baseline Scalars</h2>",
-        _table(["metric", "value"], _scalar_rows(baseline)),
+        html_table(["metric", "value"], _scalar_rows(baseline)),
     ])
 
     for result in combined.get("group_results") or []:
@@ -611,7 +582,7 @@ def render(
         action_payload: Mapping[str, Any] = {}
         action_note = ""
         if action_path is not None:
-            action_payload = _load_json(action_path)
+            action_payload = read_json_file(action_path)
             action_note = str(action_path)
         else:
             action_note = f"missing action config: {result.get('action_config_path', '')}"
@@ -629,11 +600,11 @@ def render(
         )
         parts.extend([
             "<h3>All Scalar Metrics</h3>",
-            _table(["metric", "value"], _scalar_rows(result)),
+            html_table(["metric", "value"], _scalar_rows(result)),
             "<h3>5-Repeat Trial Metrics</h3>",
-            _table(["trial", "loss", "Accuracy", "F1", "time ms"], repeat_rows),
+            html_table(["trial", "loss", "Accuracy", "F1", "time ms"], repeat_rows),
             "<h3>Selected Fusion Options</h3>",
-            _table(
+            html_table(
                 [
                     "graph", "source", "step", "option", "fusion_count",
                     "boosted", "map precision_boost_applied", "boost description",
@@ -641,7 +612,7 @@ def render(
                 selected_rows,
             ),
             "<h3>Fusion Option Precision-Boost Audit</h3>",
-            _table(
+            html_table(
                 [
                     "graph", "source", "step", "option", "fusion_count", "boosted",
                     "map precision_boost_applied", "explicit_field_values", "slots",
@@ -651,7 +622,7 @@ def render(
             ),
             "<h3>Active Model-Installed Slot Deltas vs all_fusion0</h3>",
             "<div class='slotwrap'>",
-            _table(
+            html_table(
                 [
                     "path", "change", "baseline scaling", "current scaling",
                     "baseline truncation", "current truncation", "baseline value",
@@ -663,7 +634,7 @@ def render(
             "<h3>Action Config Slots Sent Into Final-Eval</h3>",
             f"<p class='small muted'>{_esc(action_note)}</p>" if action_path is not None else f"<p class='missing'>{_esc(action_note)}</p>",
             "<div class='slotwrap'>",
-            _table(
+            html_table(
                 [
                     "#", "label", "scaling_factor", "truncation_bits",
                     "source_graph", "step", "source_option", "source_fusion_count",
@@ -674,7 +645,7 @@ def render(
             "</div>",
             "<h3>Model-Installed Slots Before Forward</h3>",
             "<div class='slotwrap'>",
-            _table(
+            html_table(
                 [
                     "#", "path", "type", "layer", "block", "point", "distribution",
                     "N", "scaling_factor", "truncation_k", "value", "active", "note",
@@ -703,7 +674,7 @@ def main() -> int:
     output_html = Path(args.output_html)
     map_dir = Path(args.map_dir) if args.map_dir else None
     run_name = args.run_name or artifact_dir.name
-    combined = _load_json(combined_path)
+    combined = read_json_file(combined_path)
     maps = _load_maps(map_dir)
     output_html.parent.mkdir(parents=True, exist_ok=True)
     output_html.write_text(

@@ -188,6 +188,7 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/blb_verify_noise_install.py": "from json_utils import read_json_file",
             "scripts/blb_orphan_slot_audit.py": "from json_utils import read_json_file",
             "reports/generate_blb_mapping_html_reports.py": "from json_utils import read_json_file",
+            "scripts/render_fusion_count_slots_eval_report.py": "from json_utils import read_json_file",
             "tools/paper_figures.py": "from json_utils import read_json_file",
             "Paean/action_grid.py": "from json_utils import read_json_file",
             "Paean/blb_action_eval.py": "from json_utils import read_json_file",
