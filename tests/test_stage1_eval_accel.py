@@ -334,7 +334,8 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
         )
 
         for region in (init_region, reset_region, resume_region):
-            self.assertIn("deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)", region)
+            self.assertIn("self.reward_history = deque", region)
+            self.assertIn("maxlen=RUNNING_REWARD_HISTORY_SIZE", region)
         self.assertNotIn("reward_history.pop(0)", update_region)
         self.assertNotIn("len(self.reward_history) > RUNNING_REWARD_HISTORY_SIZE", update_region)
 
