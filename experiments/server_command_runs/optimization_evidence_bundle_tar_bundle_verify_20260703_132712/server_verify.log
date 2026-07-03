@@ -1,0 +1,37 @@
+[server-verify] run_id=optimization_evidence_bundle_tar_bundle_verify_20260703_132712
+[server-verify] base=/hy-tmp/optimization_evidence_bundle_tar_bundle_verify_20260703_132712
+[server-verify] git=git clone /hy-tmp/rfr_evidence_bundle_verify_83f3862.bundle src
+git version 2.34.1
+Python 3.11.12
+Cloning into '/hy-tmp/optimization_evidence_bundle_tar_bundle_verify_20260703_132712/src'...
+Note: switching to '1e1360452b7a3aa1d74d3b5b84cd039a27c61a7c'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+[server-verify] bundle_commit=1e1360452b7a3aa1d74d3b5b84cd039a27c61a7c
+169:    def test_tar_writer_does_not_resolve_each_payload_file(self):
+239:        tar_rel = tar_resolved.relative_to(out_dir)
+241:        tar_rel = None
+252:                if tar_rel is not None and rel_path == tar_rel:
+test_cli_generates_bundle_manifest_and_reports (tests.test_optimization_evidence_bundle.OptimizationEvidenceBundleTest.test_cli_generates_bundle_manifest_and_reports) ... ok
+test_tar_writer_does_not_resolve_each_payload_file (tests.test_optimization_evidence_bundle.OptimizationEvidenceBundleTest.test_tar_writer_does_not_resolve_each_payload_file) ... ok
+test_tar_writer_streams_files_without_sorting_full_tree (tests.test_optimization_evidence_bundle.OptimizationEvidenceBundleTest.test_tar_writer_streams_files_without_sorting_full_tree) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.240s
+
+OK
+[server-verify] test_rc=0
