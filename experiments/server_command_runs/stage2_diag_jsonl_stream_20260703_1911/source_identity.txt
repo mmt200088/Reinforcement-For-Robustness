@@ -1,0 +1,6 @@
+run_dir=/hy-tmp/rfr_stage2_diag_jsonl_7789333_20260703_1911
+date=2026-07-03T19:12:40+08:00
+expected_parent=22edaf90b7774a52af60e62c94d3973ceefcfd3e
+expected_head=7789333aff0b1d1f9de2b9e6169986e60de56a7e
+server=I29629d094400801792
+python=Python 3.11.12

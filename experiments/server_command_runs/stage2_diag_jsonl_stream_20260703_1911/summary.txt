@@ -1,0 +1,6 @@
+red_rc=0
+green_rc=0
+ls_remote_rc=0
+red_log=/hy-tmp/rfr_stage2_diag_jsonl_7789333_20260703_1911/red.log
+green_log=/hy-tmp/rfr_stage2_diag_jsonl_7789333_20260703_1911/green.log
+server_ls_remote_log=/hy-tmp/rfr_stage2_diag_jsonl_7789333_20260703_1911/server_ls_remote.log
