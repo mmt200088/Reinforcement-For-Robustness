@@ -350,6 +350,85 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         self.assertGreater(len(ev.reversible_handler.calls), len(first_install_calls))
         self.assertEqual(ev.model.eval_calls, 3)
 
+    def test_worker_eval_path_reuses_handler_install_without_eval_cache(self):
+        from layer_importance_evaluator import (
+            LayerImportanceEvaluator,
+            STAGE1_ORIGINAL_FUNCTION_DEGREE,
+        )
+
+        class FakeModel:
+            def __init__(self):
+                self.eval_calls = 0
+
+            def eval(self):
+                self.eval_calls += 1
+
+        class FakeHandler:
+            def __init__(self):
+                self.calls = []
+
+            def restore_layer_gelu(self, layers, layer_name):
+                self.calls.append(("restore_gelu", tuple(layers), layer_name))
+
+            def restore_layer_softmax(self, layers, layer_name):
+                self.calls.append(("restore_softmax", tuple(layers), layer_name))
+
+            def replace_layer_gelu(self, layers, layer_name, *, degree):
+                self.calls.append(("replace_gelu", tuple(layers), layer_name, int(degree)))
+
+            def replace_layer_softmax(self, layers, layer_name, *, degree):
+                self.calls.append(("replace_softmax", tuple(layers), layer_name, int(degree)))
+
+        ev = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        ev.layers_attribute = "bert.encoder.layer"
+        ev.dataloaders = {"validation_full": object()}
+        ev._stage1_worker_eval_cache = None
+        eval_calls = []
+        ev._run_evaluation = lambda *_args, **_kwargs: eval_calls.append("forward") or (0.1, 0.2, 0.3, 4.0)
+
+        model = FakeModel()
+        handler = FakeHandler()
+        gelu = [1, 2, STAGE1_ORIGINAL_FUNCTION_DEGREE]
+        softmax = [6, 2, STAGE1_ORIGINAL_FUNCTION_DEGREE]
+
+        LayerImportanceEvaluator._stage1_evaluate_on_model(
+            ev,
+            model=model,
+            handler=handler,
+            device="cpu",
+            gelu_degrees=gelu,
+            softmax_degrees=softmax,
+            split_name="validation_full",
+        )
+        first_install_calls = list(handler.calls)
+        self.assertGreater(len(first_install_calls), 0)
+
+        LayerImportanceEvaluator._stage1_evaluate_on_model(
+            ev,
+            model=model,
+            handler=handler,
+            device="cpu",
+            gelu_degrees=tuple(gelu),
+            softmax_degrees=tuple(softmax),
+            split_name="validation_full",
+        )
+        self.assertEqual(handler.calls, first_install_calls)
+        self.assertEqual(model.eval_calls, 2)
+        self.assertEqual(eval_calls, ["forward", "forward"])
+
+        changed_gelu = [2, 2, STAGE1_ORIGINAL_FUNCTION_DEGREE]
+        LayerImportanceEvaluator._stage1_evaluate_on_model(
+            ev,
+            model=model,
+            handler=handler,
+            device="cpu",
+            gelu_degrees=changed_gelu,
+            softmax_degrees=softmax,
+            split_name="validation_full",
+        )
+        self.assertGreater(len(handler.calls), len(first_install_calls))
+        self.assertEqual(model.eval_calls, 3)
+
 
 class Stage1GpuEvalScriptSourceTest(unittest.TestCase):
     def test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync(self):
