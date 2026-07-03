@@ -1,0 +1,9 @@
+{
+  "phase": "green",
+  "run_id": "stage2_ngpu_log_scan_verify_20260703_153654",
+  "server_confirmed_remote_head": "2914a6fd62b3f733e1e84b2b5b9f7a05becba20c",
+  "source_commit": "2914a6fd62b3f733e1e84b2b5b9f7a05becba20c",
+  "source_transport": "git_bundle_minimal_after_remote_head_confirmed",
+  "test_command": "python3 -m unittest tests.test_stage2_ngpu_ab_compare -v",
+  "test_rc": 0
+}

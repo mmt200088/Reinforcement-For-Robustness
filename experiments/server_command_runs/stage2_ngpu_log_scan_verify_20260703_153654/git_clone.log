@@ -1,0 +1,18 @@
+Cloning into '/hy-tmp/stage2_ngpu_log_scan_verify_20260703_153654/src'...
+Note: switching to '60f32b0905d371ef47295e902f1751a3f45f5060'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
