@@ -1,0 +1,15 @@
+test_full_noise_markdown_table_streams_entries_without_copy (tests.test_blb_final_eval_fusion_fixed_action.FusionCountFixedActionDecodeTest.test_full_noise_markdown_table_streams_entries_without_copy) ... FAIL
+
+======================================================================
+FAIL: test_full_noise_markdown_table_streams_entries_without_copy (tests.test_blb_final_eval_fusion_fixed_action.FusionCountFixedActionDecodeTest.test_full_noise_markdown_table_streams_entries_without_copy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_paean_full_noise_table_red_97150f4_20260704_063919/src/tests/test_blb_final_eval_fusion_fixed_action.py", line 154, in test_full_noise_markdown_table_streams_entries_without_copy
+    self.assertNotIn("entries = list(", source)
+AssertionError: 'entries = list(' unexpectedly found in '    @staticmethod\n    def _full_noise_config_markdown_table(full_config) -> List[str]:\n        entries = list((full_config or {}).get("entries", []) or [])\n        lines = [\n            "| path | type | distribution | N | scaling_factor | truncation_k | value | active |",\n            "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",\n        ]\n        for entry in entries:\n            lines.append(\n                "| "\n                + " | ".join(\n                    BLBActionFinalEvaluationModule._md_cell(value)\n                    for value in (\n                        entry.get("path"),\n                        entry.get("type"),\n                        entry.get("distribution"),\n                        entry.get("N"),\n                        entry.get("scaling_factor"),\n                        entry.get("truncation_k"),\n                        entry.get("value"),\n                        entry.get("active"),\n                    )\n                )\n                + " |"\n            )\n        return lines\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 1.835s
+
+FAILED (failures=1)
+RED_RC=1
