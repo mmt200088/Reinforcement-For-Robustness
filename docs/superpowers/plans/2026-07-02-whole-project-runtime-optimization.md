@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `08560c1`, the conservative
-completion estimate is about 76% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `75cce4c`, the conservative
+completion estimate is about 77% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -97,6 +97,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `a600b79` | `experiments/server_command_runs/paean_parse_action_vec_a600b79_20260704_014720/` | Parse legacy Paean action-vector lists directly with numpy instead of copying them through `list()` first. |
 | Paean final eval | `8101feb` | `experiments/server_command_runs/final_summary_running_8101feb_20260704_042900/` | Summarize final-eval random-result families with running counters and stats instead of repeated materialized lists for `np.mean()` / `np.std()`. |
 | Paean final eval | `08560c1` | `experiments/server_command_runs/final_stat_helpers_08560c1_20260704_044500/` | Stream shared final-eval finite-float mean/std helpers without clean-list materialization or numpy stats calls. |
+| Paean final eval | `75cce4c` | `experiments/server_command_runs/final_variance_plot_mean_75cce4c_20260704_052500/` | Stream final-eval variance-plot group means through the shared finite-float helper instead of materializing per-group `vals` lists and calling `np.mean(vals)`. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
@@ -1459,6 +1460,21 @@ numpy stats on materialized `clean` lists. The green gate passed `py_compile`,
 all `tests.test_final_evaluation_config_cache` tests, and a source guard
 confirming the helpers stream through `_finite_float_stats()`.
 
+Progress 2026-07-04: `_plot_variance_results()` now computes the variance bar
+chart's per-group means with the shared streaming finite-float helper instead
+of building a `vals` list and calling `np.mean(vals)` for every group/metric
+pair. The plotted row order, non-finite filtering, and fallback `0.0` behavior
+for empty groups are preserved.
+
+Server evidence 2026-07-04: source commit `75cce4c` has red/green verification
+under
+`experiments/server_command_runs/final_variance_plot_mean_75cce4c_20260704_052500/`.
+The red test patched `np.mean` and proved the old variance plot aggregation
+still depended on materialized `vals` means. The green gate passed
+`py_compile`, all `tests.test_final_evaluation_config_cache` tests, and a
+source guard confirming `_plot_variance_results()` now uses
+`_mean_float_or_none(item.get(key) for item in items)`.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
@@ -2170,6 +2186,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   run directory.
 - `08560c1` final-eval finite-float helper streaming stats, evidence committed
   in the `final_stat_helpers_08560c1_20260704_044500` run directory.
+- `75cce4c` final-eval variance plot mean streaming, evidence committed in the
+  `final_variance_plot_mean_75cce4c_20260704_052500` run directory.
 - `643ae60` shared JSONL single path resolution, evidence committed in the
   `jsonl_resolve_once_643ae60_20260704_034331` run directory.
 - `2ded3e7` BLB GLUE action-config shared JSON reader, evidence committed in

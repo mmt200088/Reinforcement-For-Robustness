@@ -1,0 +1,14 @@
+test_variance_plot_streams_group_means_without_numpy_mean (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_variance_plot_streams_group_means_without_numpy_mean) ... FAIL
+
+======================================================================
+FAIL: test_variance_plot_streams_group_means_without_numpy_mean (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_variance_plot_streams_group_means_without_numpy_mean)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_variance_plot_mean_red_54839c5_20260704_051500/tests/test_final_evaluation_config_cache.py", line 529, in test_variance_plot_streams_group_means_without_numpy_mean
+    self.assertEqual(
+AssertionError: None != '/tmp/final-eval-test/final_eval_variance_mrpc.png' : [Warning] Failed to plot unified final-eval variance: variance plot should stream group means
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

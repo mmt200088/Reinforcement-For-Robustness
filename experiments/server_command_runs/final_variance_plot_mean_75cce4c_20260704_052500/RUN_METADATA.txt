@@ -1,0 +1,6 @@
+source_commit=75cce4c
+base_commit=54839c5
+branch=jk_standard_rl
+red_dir=/hy-tmp/rfr_variance_plot_mean_red_54839c5_20260704_051500
+green_dir=/hy-tmp/rfr_variance_plot_mean_green_54839c5_20260704_052500
+workflow=local_edit_git_push_server_temp_verify_artifact_return
