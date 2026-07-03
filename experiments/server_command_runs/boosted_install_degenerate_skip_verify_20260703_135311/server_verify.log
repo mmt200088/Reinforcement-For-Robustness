@@ -1,0 +1,42 @@
+[server-verify] run_id=boosted_install_degenerate_skip_verify_20260703_135311
+[server-verify] base=/hy-tmp/boosted_install_degenerate_skip_verify_20260703_135311
+[server-verify] remote_head=c77e7ac834ae330ccf7df7be6558dd90077d3467
+[server-verify] source_commit=c77e7ac
+[server-verify] git=git clone /hy-tmp/rfr_boosted_install_verify_c77e7ac.bundle src
+git version 2.34.1
+Python 3.11.12
+Cloning into '/hy-tmp/boosted_install_degenerate_skip_verify_20260703_135311/src'...
+Note: switching to '8feb1f475ac2e2b545328a8b2c17f8ac50c9518c'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+[server-verify] bundle_commit=8feb1f475ac2e2b545328a8b2c17f8ac50c9518c
+117:    def test_map_loop_skips_known_degenerate_maps_before_json_read(self):
+104:def _is_skipped_map_filename(name: str, profile: str) -> bool:
+test_map_loop_discovers_maps_without_path_glob_or_sidecar_reads (tests.test_blb_verify_boosted_install.BoostedInstallVerifierTest.test_map_loop_discovers_maps_without_path_glob_or_sidecar_reads) ... ok
+test_map_loop_passes_loaded_payload_to_verifier (tests.test_blb_verify_boosted_install.BoostedInstallVerifierTest.test_map_loop_passes_loaded_payload_to_verifier) ... ok
+test_map_loop_skips_known_degenerate_maps_before_json_read (tests.test_blb_verify_boosted_install.BoostedInstallVerifierTest.test_map_loop_skips_known_degenerate_maps_before_json_read) ... ok
+test_module_import_is_dependency_light (tests.test_blb_verify_boosted_install.BoostedInstallVerifierTest.test_module_import_is_dependency_light) ... ok
+test_verify_map_reuses_supplied_payload_without_rereading_file (tests.test_blb_verify_boosted_install.BoostedInstallVerifierTest.test_verify_map_reuses_supplied_payload_without_rereading_file) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.057s
+
+OK
+[skip] block1_mrpc: degenerate/dormant map (no boosted fusion option)
+[skip] block5_n0: degenerate/dormant map (no boosted fusion option)
+[skip] block2_mrpc: no boosted fusion option
+[server-verify] test_rc=0
