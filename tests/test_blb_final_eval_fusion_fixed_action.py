@@ -146,6 +146,13 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         self.assertNotIn('[float(r.get("s", 0.0)) for r in selected_results]', source)
         self.assertNotIn('[float(r.get("s_std", 0.0)) for r in selected_results]', source)
 
+    def test_full_noise_markdown_table_streams_entries_without_copy(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        source = inspect.getsource(BLBActionFinalEvaluationModule._full_noise_config_markdown_table)
+
+        self.assertNotIn("entries = list(", source)
+
 
 if __name__ == "__main__":
     unittest.main()

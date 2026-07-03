@@ -1539,7 +1539,7 @@ class BLBActionFinalEvaluationModule:
 
     @staticmethod
     def _full_noise_config_markdown_table(full_config) -> List[str]:
-        entries = list((full_config or {}).get("entries", []) or [])
+        entries = (full_config or {}).get("entries", ()) or ()
         lines = [
             "| path | type | distribution | N | scaling_factor | truncation_k | value | active |",
             "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
