@@ -1,0 +1,6 @@
+red_rc=0
+green_rc=0
+ls_remote_rc=124
+red_log=/hy-tmp/rfr_rl_data_points_stream_12cf8c4_20260703_1903/red.log
+green_log=/hy-tmp/rfr_rl_data_points_stream_12cf8c4_20260703_1903/green.log
+server_ls_remote_log=/hy-tmp/rfr_rl_data_points_stream_12cf8c4_20260703_1903/server_ls_remote.log
