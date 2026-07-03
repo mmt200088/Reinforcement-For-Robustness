@@ -125,6 +125,8 @@ import torch
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
+from json_utils import read_json_file
+
 try:
     from datasets import load_dataset
     _DATASETS_IMPORT_ERROR = None
@@ -1589,7 +1591,7 @@ def generate_blb_glue_submission(
     log_fn = log_fn or print
     if not os.path.isfile(action_config_path):
         raise FileNotFoundError(f"BLB action config not found: {action_config_path}")
-    payload = json.loads(open(action_config_path, "r", encoding="utf-8-sig").read())
+    payload = read_json_file(action_config_path, encoding="utf-8-sig")
 
     # 加大精度 handoff: a fusion_count_fixed_action_v1 config carries the per-step
     # fusion (option, K) selection. Pass it through so the BLB task replays the

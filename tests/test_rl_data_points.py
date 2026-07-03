@@ -309,12 +309,14 @@ class RLDataPointWriterTest(unittest.TestCase):
             "tools/paper_figures.py": "from json_utils import read_json_file",
             "Paean/action_grid.py": "from json_utils import read_json_file",
             "Paean/blb_action_eval.py": "from json_utils import read_json_file",
+            "generate_glue_submission.py": "from json_utils import read_json_file",
         }
         for rel, needle in checks.items():
             with self.subTest(path=rel):
                 text = (REPO_ROOT / rel).read_text(encoding="utf-8")
                 self.assertIn(needle, text)
                 self.assertNotIn("json.loads(path.read_text", text)
+                self.assertNotIn("json.loads(open(", text)
 
     def test_to_jsonable_does_not_import_torch_for_json_native_scalars(self):
         import builtins
