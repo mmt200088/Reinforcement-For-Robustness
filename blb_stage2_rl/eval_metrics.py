@@ -160,11 +160,28 @@ def probe_batch_sample_count(labels: Any) -> int:
     return int(labels_arr.shape[0])
 
 
-def sample_weighted_mean(values: Sequence[float], counts: Sequence[int]) -> float:
-    weights = np.asarray([max(0, int(c)) for c in counts], dtype=float)
-    if weights.size == 0 or float(weights.sum()) <= 0.0:
+def _probe_count_weights(counts: Sequence[int]) -> np.ndarray:
+    return np.asarray([max(0, int(c)) for c in counts], dtype=float)
+
+
+def _sample_weighted_mean_with_weights(
+        values: Sequence[float],
+        weights: np.ndarray,
+        weight_sum: float,
+        ) -> float:
+    if weights.size == 0 or weight_sum <= 0.0:
         return float(np.mean(values)) if values else float("nan")
-    return float(np.average(np.asarray(values, dtype=float), weights=weights))
+    values_arr = np.asarray(values, dtype=float)
+    return float(np.dot(values_arr, weights) / weight_sum)
+
+
+def sample_weighted_mean(values: Sequence[float], counts: Sequence[int]) -> float:
+    weights = _probe_count_weights(counts)
+    return _sample_weighted_mean_with_weights(
+        values,
+        weights,
+        float(weights.sum()),
+    )
 
 
 def weighted_probe_batch_means(
@@ -173,10 +190,12 @@ def weighted_probe_batch_means(
         m2s: Sequence[float],
         counts: Sequence[int],
         ) -> Tuple[float, float, float]:
+    weights = _probe_count_weights(counts)
+    weight_sum = float(weights.sum())
     return (
-        sample_weighted_mean(losses, counts),
-        sample_weighted_mean(m1s, counts),
-        sample_weighted_mean(m2s, counts),
+        _sample_weighted_mean_with_weights(losses, weights, weight_sum),
+        _sample_weighted_mean_with_weights(m1s, weights, weight_sum),
+        _sample_weighted_mean_with_weights(m2s, weights, weight_sum),
     )
 
 

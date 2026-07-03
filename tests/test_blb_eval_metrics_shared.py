@@ -18,6 +18,29 @@ class SharedEvalMetricsTest(unittest.TestCase):
             2.0,
         )
 
+    def test_weighted_probe_batch_means_reuses_count_weights(self):
+        class SingleUseCounts:
+            def __init__(self, values):
+                self.values = list(values)
+                self.used = False
+
+            def __iter__(self):
+                if self.used:
+                    raise AssertionError("counts should be converted to weights once")
+                self.used = True
+                return iter(self.values)
+
+        loss, metric1, metric2 = eval_metrics.weighted_probe_batch_means(
+            losses=[0.0, 10.0],
+            m1s=[1.0, 0.0],
+            m2s=[0.5, 0.0],
+            counts=SingleUseCounts([4, 1]),
+        )
+
+        self.assertAlmostEqual(loss, 2.0)
+        self.assertAlmostEqual(metric1, 0.8)
+        self.assertAlmostEqual(metric2, 0.4)
+
     def test_mrpc_metric2_is_weighted_f1_from_complete_trial(self):
         labels = np.asarray([0, 1, 1, 1, 1], dtype=int)
         preds = np.asarray([0, 1, 0, 0, 1], dtype=int)
