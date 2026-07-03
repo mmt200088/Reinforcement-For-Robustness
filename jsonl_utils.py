@@ -156,6 +156,25 @@ def read_jsonl_xy(
     return xs, ys
 
 
+def read_jsonl_float_field(
+        path: str | Path,
+        field: str,
+        *,
+        errors: JsonlErrorMode = "skip",
+        missing_ok: bool = True,
+        gzip_fallback: bool = False,
+        default: float = 0.0,
+        ) -> list[float]:
+    jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
+    if missing_ok and not jsonl_path.exists():
+        return []
+    values: list[float] = []
+    fallback = float(default)
+    for row in iter_jsonl(jsonl_path, errors=errors, dict_only=True):
+        values.append(float(row.get(field, fallback) or fallback))
+    return values
+
+
 def missing_required_fields(payload: dict[str, Any], required_fields: tuple[str, ...]) -> tuple[str, ...] | None:
     missing = tuple(field for field in required_fields if field not in payload)
     return missing or None

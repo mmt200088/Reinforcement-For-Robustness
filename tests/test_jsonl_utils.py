@@ -10,6 +10,7 @@ from jsonl_utils import (
     iter_jsonl,
     iter_jsonl_records,
     read_jsonl_fields,
+    read_jsonl_float_field,
     read_jsonl_xy,
     read_jsonl,
     resolve_jsonl_path,
@@ -139,6 +140,25 @@ class JsonlUtilsTest(unittest.TestCase):
         self.assertEqual(xs, [10.0, 12.0])
         self.assertEqual(ys, [1.5, 1.75])
 
+    def test_read_jsonl_float_field_projects_one_numeric_column(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "episodes.jsonl"
+            path.write_text(
+                "\n".join(
+                    [
+                        '{"total_reward": 1.5, "large_debug": "x"}',
+                        "{bad-json",
+                        '{"total_reward": 1.75, "large_debug": "y"}',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            rewards = read_jsonl_float_field(path, "total_reward")
+
+        self.assertEqual(rewards, [1.5, 1.75])
+
     def test_count_jsonl_with_required_fields(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "rows.jsonl"
@@ -218,7 +238,9 @@ class JsonlUtilsStaticGuardTest(unittest.TestCase):
             "scripts/verify_stage2_persistent_outputs.py": (
                 "from jsonl_utils import count_jsonl_with_required_fields"
             ),
-            "tools/paper_figures.py": "from jsonl_utils import read_jsonl_fields, read_jsonl_xy",
+            "tools/paper_figures.py": (
+                "from jsonl_utils import read_jsonl_fields, read_jsonl_float_field, read_jsonl_xy"
+            ),
             "tools/experiments_log.py": "from jsonl_utils import iter_jsonl",
         }
         forbidden = {"_read_jsonl", "_open_jsonl", "_count_jsonl", "_count_jsonl_with_required_fields"}

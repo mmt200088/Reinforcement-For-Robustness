@@ -70,7 +70,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from jsonl_utils import read_jsonl_fields, read_jsonl_xy
+from jsonl_utils import read_jsonl_fields, read_jsonl_float_field, read_jsonl_xy
 from json_utils import read_json_file
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ class RunData:
     run_dir: str
     label: str
     progress_dir: str
-    episodes: List[Dict[str, Any]]
+    episodes: List[float]
     ppo_updates: List[Dict[str, Any]]
     best_action_vec: List[int]
     best_slots: List[Dict[str, Any]]
@@ -167,7 +167,10 @@ def load_run(
             progress_dir = run_dir
 
     diag = os.path.join(progress_dir, "diagnostics")
-    episodes = read_jsonl_fields(os.path.join(diag, "episodes.jsonl"), fields=("total_reward",)) if include_episodes else []
+    episodes = (
+        read_jsonl_float_field(os.path.join(diag, "episodes.jsonl"), "total_reward")
+        if include_episodes else []
+    )
     ppo_updates = read_jsonl_fields(
         os.path.join(diag, "ppo_updates.jsonl"),
         fields=("policy_loss", "value_loss", "entropy", "clip_fraction"),
@@ -229,7 +232,7 @@ def fig_training_curves(
         # mean ± std across runs (truncate to shortest)
         series: List[List[float]] = []
         for r in runs:
-            ep_rewards = [float(ep.get("total_reward", 0.0)) for ep in r.episodes]
+            ep_rewards = [float(value) for value in r.episodes]
             if ep_rewards:
                 series.append(ep_rewards)
         if not series:
@@ -245,7 +248,7 @@ def fig_training_curves(
                              label=f"± std (n={len(series)})")
     else:
         for i, r in enumerate(runs):
-            ep_rewards = [float(ep.get("total_reward", 0.0)) for ep in r.episodes]
+            ep_rewards = [float(value) for value in r.episodes]
             if not ep_rewards:
                 continue
             x = np.arange(1, len(ep_rewards) + 1)
@@ -537,7 +540,7 @@ def write_latex_summary_table(
     for run in runs:
         if not run.episodes:
             continue
-        best_reward = max(float(ep.get("total_reward", 0.0)) for ep in run.episodes)
+        best_reward = max(float(value) for value in run.episodes)
         n_ep = len(run.episodes)
         bits = ""
         avg_k = ""
