@@ -315,6 +315,66 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertEqual(summary["by_family"]["cost_matched"]["dominance_rate"], 0.5)
         self.assertEqual(summary["overall"]["dominance_rate"], 0.5)
 
+    def test_random_summary_uses_running_stats_without_np_materialization(self):
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        selected = {
+            "loss": 0.30,
+            "p": 0.90,
+            "s": 0.85,
+            "stage1_tot_c": 10.0,
+            "stage2_tot_c": 20.0,
+        }
+        random_results = [
+            {
+                "family": "cost_matched",
+                "feasible": True,
+                "loss": 0.40,
+                "p": 0.80,
+                "s": 0.80,
+                "loss_delta_vs_baseline": 0.02,
+                "p_delta_vs_baseline": -0.01,
+                "s_delta_vs_baseline": -0.02,
+                "total_cost": 31.0,
+                "stage1_tot_c": 11.0,
+                "stage2_tot_c": 22.0,
+                "loss_var": 0.04,
+            },
+            {
+                "family": "cost_matched",
+                "feasible": False,
+                "loss": 0.20,
+                "p": 0.95,
+                "s": 0.90,
+                "loss_delta_vs_baseline": -0.01,
+                "p_delta_vs_baseline": 0.02,
+                "s_delta_vs_baseline": 0.03,
+                "total_cost": 28.0,
+                "stage1_tot_c": 9.0,
+                "stage2_tot_c": 19.0,
+                "loss_var": 0.02,
+            },
+        ]
+
+        with mock.patch.object(
+            fem.np,
+            "mean",
+            side_effect=AssertionError("random summary should use running mean stats"),
+        ), mock.patch.object(
+            fem.np,
+            "std",
+            side_effect=AssertionError("random summary should use running std stats"),
+        ):
+            summary = runner._summarize_random_results(selected, random_results, num_metrics=2)
+
+        family = summary["by_family"]["cost_matched"]
+        self.assertEqual(family["count"], 2)
+        self.assertAlmostEqual(family["loss_mean"], 0.30)
+        self.assertAlmostEqual(family["loss_std"], 0.10)
+        self.assertAlmostEqual(family["total_cost_mean"], 29.5)
+        self.assertAlmostEqual(family["total_cost_std"], 1.5)
+        self.assertAlmostEqual(family["loss_eval_variance_mean"], 0.03)
+        self.assertAlmostEqual(summary["overall"]["dominance_rate"], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

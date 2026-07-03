@@ -1369,145 +1369,197 @@ class UnifiedFinalEvaluationModule:
         summary: Dict = {"overall": {}, "by_family": {}}
         if not random_results:
             return summary
-        grouped: Dict[str, list] = {}
-        for res in random_results:
-            grouped.setdefault(res["family"], []).append(res)
 
         selected_loss = selected["loss"]
         selected_p = selected["p"]
         selected_s = selected["s"] if num_metrics > 1 else 0.0
         selected_stage1 = selected["stage1_tot_c"]
         selected_stage2 = selected["stage2_tot_c"]
-        all_feasible, all_loss_win, all_primary_win, all_secondary_win, all_dom = (
-            [], [], [], [], []
-        )
-        for family, items in grouped.items():
-            feasible = [1.0 if it["feasible"] else 0.0 for it in items]
-            loss_win = [1.0 if selected_loss <= it["loss"] else 0.0 for it in items]
-            p_win = [1.0 if selected_p >= it["p"] else 0.0 for it in items]
-            s_win = (
-                [1.0 if selected_s >= it["s"] else 0.0 for it in items]
-                if num_metrics > 1
-                else []
-            )
-            dom = [
-                1.0
-                if (
+
+        class _RunningStats:
+            __slots__ = ("count", "total", "total_sq")
+
+            def __init__(self):
+                self.count = 0
+                self.total = 0.0
+                self.total_sq = 0.0
+
+            def add(self, value):
+                value = float(value)
+                self.count += 1
+                self.total += value
+                self.total_sq += value * value
+
+            def add_optional_finite(self, value):
+                if value is None:
+                    return
+                value = float(value)
+                if np.isfinite(value):
+                    self.add(value)
+
+            def mean(self, default=None):
+                if not self.count:
+                    return default
+                return float(self.total / self.count)
+
+            def std(self, default=None):
+                if not self.count:
+                    return default
+                mean = self.total / self.count
+                variance = self.total_sq / self.count - mean * mean
+                if np.isfinite(variance) and variance < 0.0 and variance > -1e-12:
+                    variance = 0.0
+                return float(variance ** 0.5)
+
+        def new_accumulator():
+            return {
+                "count": 0,
+                "feasible": 0,
+                "loss_win": 0,
+                "primary_win": 0,
+                "secondary_win": 0,
+                "dominance": 0,
+                "loss": _RunningStats(),
+                "p": _RunningStats(),
+                "s": _RunningStats(),
+                "loss_delta_default": _RunningStats(),
+                "p_delta_default": _RunningStats(),
+                "s_delta_default": _RunningStats(),
+                "loss_delta_optional": _RunningStats(),
+                "p_delta_optional": _RunningStats(),
+                "s_delta_optional": _RunningStats(),
+                "total_cost": _RunningStats(),
+                "stage1_cost": _RunningStats(),
+                "stage2_cost": _RunningStats(),
+                "var": {
+                    "loss": _RunningStats(),
+                    "p": _RunningStats(),
+                    "s": _RunningStats(),
+                },
+            }
+
+        grouped: Dict[str, dict] = {}
+        overall = new_accumulator()
+
+        for it in random_results:
+            family_acc = grouped.setdefault(it["family"], new_accumulator())
+            for acc in (family_acc, overall):
+                acc["count"] += 1
+                acc["feasible"] += 1 if it["feasible"] else 0
+                acc["loss_win"] += 1 if selected_loss <= it["loss"] else 0
+                acc["primary_win"] += 1 if selected_p >= it["p"] else 0
+                if num_metrics > 1:
+                    acc["secondary_win"] += 1 if selected_s >= it["s"] else 0
+                dominates = (
                     selected_stage1 <= it["stage1_tot_c"]
                     and selected_stage2 <= it["stage2_tot_c"]
                     and selected_loss <= it["loss"]
                     and selected_p >= it["p"]
-                    and (
-                        num_metrics <= 1
-                        or selected_s >= it["s"]
-                    )
+                    and (num_metrics <= 1 or selected_s >= it["s"])
                     and (
                         selected_stage1 < it["stage1_tot_c"]
                         or selected_stage2 < it["stage2_tot_c"]
                         or selected_loss < it["loss"]
                         or selected_p > it["p"]
-                        or (
-                            num_metrics > 1
-                            and selected_s > it["s"]
-                        )
+                        or (num_metrics > 1 and selected_s > it["s"])
                     )
                 )
-                else 0.0
-                for it in items
-            ]
-            summary["by_family"][family] = {
-                "count": len(items),
-                "feasible_rate": float(np.mean(feasible)),
-                "loss_win_rate": float(np.mean(loss_win)),
-                "primary_win_rate": float(np.mean(p_win)),
-                "secondary_win_rate": float(np.mean(s_win)) if s_win else None,
-                "dominance_rate": float(np.mean(dom)),
-                "loss_mean": float(np.mean([it["loss"] for it in items])),
-                "loss_std": float(np.std([it["loss"] for it in items])),
-                "primary_metric_mean": float(np.mean([it["p"] for it in items])),
-                "primary_metric_std": float(np.std([it["p"] for it in items])),
+                acc["dominance"] += 1 if dominates else 0
+                acc["loss"].add(it["loss"])
+                acc["p"].add(it["p"])
+                if num_metrics > 1:
+                    acc["s"].add(it["s"])
+                acc["stage1_cost"].add(it["stage1_tot_c"])
+                acc["stage2_cost"].add(it["stage2_tot_c"])
+                acc["total_cost"].add_optional_finite(it.get("total_cost"))
+                for metric_key in ("loss", "p", "s"):
+                    if f"{metric_key}_var" in it:
+                        acc["var"][metric_key].add(it[f"{metric_key}_var"])
+
+            family_acc["loss_delta_default"].add(it.get("loss_delta_vs_baseline", 0.0))
+            family_acc["p_delta_default"].add(it.get("p_delta_vs_baseline", 0.0))
+            if num_metrics > 1:
+                family_acc["s_delta_default"].add(it.get("s_delta_vs_baseline", 0.0))
+            overall["loss_delta_optional"].add_optional_finite(
+                it.get("loss_delta_vs_baseline")
+            )
+            overall["p_delta_optional"].add_optional_finite(
+                it.get("p_delta_vs_baseline")
+            )
+            if num_metrics > 1:
+                overall["s_delta_optional"].add_optional_finite(
+                    it.get("s_delta_vs_baseline")
+                )
+
+        for family, acc in grouped.items():
+            count = int(acc["count"])
+            family_summary = {
+                "count": count,
+                "feasible_rate": float(acc["feasible"] / count),
+                "loss_win_rate": float(acc["loss_win"] / count),
+                "primary_win_rate": float(acc["primary_win"] / count),
+                "secondary_win_rate": (
+                    float(acc["secondary_win"] / count) if num_metrics > 1 else None
+                ),
+                "dominance_rate": float(acc["dominance"] / count),
+                "loss_mean": acc["loss"].mean(),
+                "loss_std": acc["loss"].std(),
+                "primary_metric_mean": acc["p"].mean(),
+                "primary_metric_std": acc["p"].std(),
                 "secondary_metric_mean": (
-                    float(np.mean([it["s"] for it in items]))
-                    if num_metrics > 1
-                    else None
+                    acc["s"].mean() if num_metrics > 1 else None
                 ),
                 "secondary_metric_std": (
-                    float(np.std([it["s"] for it in items]))
-                    if num_metrics > 1
-                    else None
+                    acc["s"].std() if num_metrics > 1 else None
                 ),
-                "loss_delta_mean": float(
-                    np.mean([it.get("loss_delta_vs_baseline", 0.0) for it in items])
-                ),
-                "primary_metric_delta_mean": float(
-                    np.mean([it.get("p_delta_vs_baseline", 0.0) for it in items])
-                ),
+                "loss_delta_mean": acc["loss_delta_default"].mean(),
+                "primary_metric_delta_mean": acc["p_delta_default"].mean(),
                 "secondary_metric_delta_mean": (
-                    float(np.mean([it.get("s_delta_vs_baseline", 0.0) for it in items]))
-                    if num_metrics > 1
-                    else None
+                    acc["s_delta_default"].mean() if num_metrics > 1 else None
                 ),
-                "total_cost_mean": self._mean_float_or_none(
-                    [it.get("total_cost") for it in items]
-                ),
-                "total_cost_std": self._std_float_or_none(
-                    [it.get("total_cost") for it in items]
-                ),
-                "stage1_cost_mean": float(np.mean([it["stage1_tot_c"] for it in items])),
-                "stage2_cost_mean": float(np.mean([it["stage2_tot_c"] for it in items])),
+                "total_cost_mean": acc["total_cost"].mean(),
+                "total_cost_std": acc["total_cost"].std(),
+                "stage1_cost_mean": acc["stage1_cost"].mean(),
+                "stage2_cost_mean": acc["stage2_cost"].mean(),
             }
             for metric_key in ("loss", "p", "s"):
-                var_values = [
-                    float(it[f"{metric_key}_var"])
-                    for it in items
-                    if f"{metric_key}_var" in it
-                ]
-                if var_values:
-                    summary["by_family"][family][
-                        f"{metric_key}_eval_variance_mean"
-                    ] = float(np.mean(var_values))
-            all_feasible.extend(feasible)
-            all_loss_win.extend(loss_win)
-            all_primary_win.extend(p_win)
-            all_secondary_win.extend(s_win)
-            all_dom.extend(dom)
+                stat = acc["var"][metric_key]
+                if stat.count:
+                    family_summary[f"{metric_key}_eval_variance_mean"] = stat.mean()
+            summary["by_family"][family] = family_summary
 
         summary["overall"] = {
             "count": len(random_results),
-            "feasible_rate": float(np.mean(all_feasible)) if all_feasible else 0.0,
-            "loss_win_rate": float(np.mean(all_loss_win)) if all_loss_win else 0.0,
-            "primary_win_rate": float(np.mean(all_primary_win)) if all_primary_win else 0.0,
+            "feasible_rate": (
+                float(overall["feasible"] / overall["count"]) if overall["count"] else 0.0
+            ),
+            "loss_win_rate": (
+                float(overall["loss_win"] / overall["count"]) if overall["count"] else 0.0
+            ),
+            "primary_win_rate": (
+                float(overall["primary_win"] / overall["count"]) if overall["count"] else 0.0
+            ),
             "secondary_win_rate": (
-                float(np.mean(all_secondary_win)) if all_secondary_win else None
+                float(overall["secondary_win"] / overall["count"])
+                if num_metrics > 1 and overall["count"]
+                else None
             ),
-            "dominance_rate": float(np.mean(all_dom)) if all_dom else 0.0,
-            "loss_delta_mean": self._mean_float_or_none(
-                [it.get("loss_delta_vs_baseline") for it in random_results]
+            "dominance_rate": (
+                float(overall["dominance"] / overall["count"]) if overall["count"] else 0.0
             ),
-            "primary_metric_delta_mean": self._mean_float_or_none(
-                [it.get("p_delta_vs_baseline") for it in random_results]
-            ),
+            "loss_delta_mean": overall["loss_delta_optional"].mean(),
+            "primary_metric_delta_mean": overall["p_delta_optional"].mean(),
             "secondary_metric_delta_mean": (
-                self._mean_float_or_none(
-                    [it.get("s_delta_vs_baseline") for it in random_results]
-                )
+                overall["s_delta_optional"].mean()
                 if num_metrics > 1
                 else None
             ),
-            "total_cost_mean": self._mean_float_or_none(
-                [it.get("total_cost") for it in random_results]
-            ),
+            "total_cost_mean": overall["total_cost"].mean(),
         }
         for metric_key in ("loss", "p", "s"):
-            var_values = [
-                float(it[f"{metric_key}_var"])
-                for it in random_results
-                if f"{metric_key}_var" in it
-            ]
-            if var_values:
-                summary["overall"][f"{metric_key}_eval_variance_mean"] = float(
-                    np.mean(var_values)
-                )
+            stat = overall["var"][metric_key]
+            if stat.count:
+                summary["overall"][f"{metric_key}_eval_variance_mean"] = stat.mean()
         return summary
 
     def _log_performance_table(
