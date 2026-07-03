@@ -1,0 +1,14 @@
+test_build_report_payload_avoids_repeated_ordered_option_scans (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_build_report_payload_avoids_repeated_ordered_option_scans) ... FAIL
+
+======================================================================
+FAIL: test_build_report_payload_avoids_repeated_ordered_option_scans (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_build_report_payload_avoids_repeated_ordered_option_scans)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_fusion_report_option_scan_red_4018434_20260704_001505/src_py_4018434_red/tests/test_report_fusion_count_map.py", line 96, in test_build_report_payload_avoids_repeated_ordered_option_scans
+    self.assertLessEqual(options.iterations, 2)
+AssertionError: 4 not less than or equal to 2
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

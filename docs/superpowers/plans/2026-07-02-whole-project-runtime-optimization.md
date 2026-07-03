@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `d0f543b`, the conservative
-completion estimate is about 44% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `5760c6d`, the conservative
+completion estimate is about 45% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -104,6 +104,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
 | Rescale/fusion maps | `c48e63d` | `experiments/server_command_runs/feasibility_cutpoint_index_c48e63d_20260703_233525/` | Precompute cut-point node identity indices once during feasibility-DAG construction instead of linearly scanning all cut points for every graph node. |
+| Rescale/fusion maps | `5760c6d` | `experiments/server_command_runs/fusion_report_option_scan_5760c6d_20260704_001718/` | Build fusion-map report graph payloads with one ordered-options summary loop after the order check, instead of separately scanning for base option, available fusion counts, and option summaries. |
 | Rescale bridge | `dab3b8b` | `experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/` | Cache static-skeleton archive parses by path, mtime, and size while returning fresh caller lists. |
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
 
