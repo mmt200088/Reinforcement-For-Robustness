@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `94f1aad`, the conservative
-completion estimate is about 54% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `85c03b9`, the conservative
+completion estimate is about 55% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -93,6 +93,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `e443e4a` | `experiments/server_command_runs/final_eval_stage2_cost_incremental_e443e4a_20260703_235252/` | Maintain current cost incrementally in Stage-2 cost-matched final-eval random search instead of rescanning the full candidate config every mutation. |
 | Paean final eval | `2ca2516` | `experiments/server_command_runs/paean_action_grid_max_sfs_cache_2ca2516_20260704_010810/` | Cache Paean action-grid max-SF tables by profile so batched slot-form action configs and fixed/range candidates avoid repeated `load_max_sfs()` parsing. |
 | Paean final eval | `94f1aad` | `experiments/server_command_runs/paean_cost_match_degree_arrays_94f1aad_20260704_013930/` | Reuse normalized GELU/Softmax degree arrays and target integers across Paean cost-matched random action decode attempts. |
+| Paean final eval | `85c03b9` | `experiments/server_command_runs/paean_base_action_ndarray_85c03b9_20260704_014440/` | Normalize ndarray-backed Paean base action vectors without first copying the full vector through `list()`. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
@@ -1224,6 +1225,19 @@ The red test showed repeated decode attempts received different degree array
 objects. The green gate passed `py_compile`, all six `tests.test_paean_action_grid`
 tests, and a source guard confirming the `np.asarray()` calls moved out of the
 decode loop.
+
+Progress 2026-07-04: `Paean/action_grid.py` now normalizes non-string
+`base_action_vec` inputs with `np.asarray(base_action_vec, dtype=int)` directly
+instead of first materializing `list(base_action_vec)`. This preserves the
+existing validation and copy-on-return behavior while avoiding one full Python
+list copy when final-eval callers already hold an ndarray-backed action vector.
+
+Server evidence 2026-07-04: source commit `85c03b9` has red/green verification
+under
+`experiments/server_command_runs/paean_base_action_ndarray_85c03b9_20260704_014440/`.
+The red test failed on `list(base_action_vec)` for ndarray input. The green gate
+passed `py_compile`, all seven `tests.test_paean_action_grid` tests, and a
+source guard confirming the list-copy path was removed.
 
 - [ ] **Step 3: Verify**
 
