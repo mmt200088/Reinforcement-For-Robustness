@@ -1,0 +1,9 @@
+{
+  "command": "python3 -m unittest tests.test_experiments_log -v",
+  "expected_head": "827341441468a4de6870596ab03a4de80e17cc5e",
+  "git_ls_remote_rc": 0,
+  "remote_head_confirmed": true,
+  "run_id": "experiments_registry_append_verify_20260703_165519",
+  "source_mode": "archive_from_pushed_head",
+  "test_rc": 0
+}
