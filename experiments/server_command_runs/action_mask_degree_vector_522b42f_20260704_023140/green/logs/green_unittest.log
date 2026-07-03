@@ -1,0 +1,8 @@
+test_degree_vector_accepts_ndarray_without_list_materialization (tests.test_sequential_smoke.ForbiddenActionMaskTest.test_degree_vector_accepts_ndarray_without_list_materialization) ... ok
+test_roundtrip_via_minimal_import_shim (tests.test_sequential_smoke.ForbiddenActionMaskTest.test_roundtrip_via_minimal_import_shim)
+Functional smoke: shim a fake parent package so the file's ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.076s
+
+OK

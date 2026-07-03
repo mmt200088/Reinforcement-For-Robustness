@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `c15cb03`, the conservative
-completion estimate is about 61% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `522b42f`, the conservative
+completion estimate is about 62% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -104,6 +104,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
 | Stage-2/Paean action space | `2ee6de2` | `experiments/server_command_runs/action_space_splice_no_tolist_2ee6de2_20260704_013204/` | Splice per-step and fusion-step action vectors by iterating checked numpy arrays directly instead of materializing `arr.tolist()` for every splice. |
+| Stage-2/Paean action space | `522b42f` | `experiments/server_command_runs/action_mask_degree_vector_522b42f_20260704_023140/` | Normalize ndarray-backed action-mask degree vectors without copying through `list(raw)` first. |
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
 | Structured artifacts | `e0376a5` | `experiments/server_command_runs/jsonl_encoder_reuse_e0376a5_20260703_223743/` | Reuse one `JSONEncoder` for finite JSONL row writes instead of calling `json.dump()` for every row. |
 | Structured artifacts | `d0f543b` | `experiments/server_command_runs/stage2_monitor_stream_ppo_d0f543b_20260704_000540/` | Stream Stage-2 monitor PPO updates with a bounded recent window while preserving full-file `n_samples` and non-finite-loss checks. |
@@ -852,6 +853,20 @@ functional splice test for both step and fusion helpers. One broader green
 attempt compiled and passed the functional splice check but could not run a
 fusion-map fixture test because the temp source package intentionally did not
 include canonical fusion-map JSON artifacts.
+
+Progress 2026-07-04: `blb_stage2_rl/action_mask.py` now normalizes
+ndarray-backed GELU/attention degree vectors in `_degree_vector()` through a
+direct numpy reshape/length check instead of first copying them with
+`list(raw)`. Non-ndarray iterables keep the existing list-materialization path,
+so CLI/list compatibility is unchanged.
+
+Server evidence 2026-07-04: source commit `522b42f` has red/green verification
+under
+`experiments/server_command_runs/action_mask_degree_vector_522b42f_20260704_023140/`.
+The valid red test failed on `_degree_vector()` calling `list(raw)` for ndarray
+input. The green gate passed `py_compile`, the ndarray regression test, the
+existing minimal import-shim action-mask roundtrip test, and a source guard
+confirming the ndarray branch does not call `list(raw)`.
 
 Progress 2026-07-02: `scripts/blb_f0_scan_feasible_domain.py` now lazily
 imports its torch/optimizer-heavy execution dependencies and uses
