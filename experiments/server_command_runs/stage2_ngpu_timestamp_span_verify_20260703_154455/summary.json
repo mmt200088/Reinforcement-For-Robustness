@@ -1,0 +1,10 @@
+{
+  "local_confirmed_remote_head": "e6570b61ef482222de08f9ffc2d5830fa4481e18",
+  "phase": "green",
+  "remote_head_check": "ls_remote_timeout_124_before_bundle",
+  "run_id": "stage2_ngpu_timestamp_span_verify_20260703_154455",
+  "source_commit": "e6570b61ef482222de08f9ffc2d5830fa4481e18",
+  "source_transport": "git_bundle_minimal_after_server_ls_remote_timeout",
+  "test_command": "python3 -m unittest tests.test_stage2_ngpu_ab_compare -v",
+  "test_rc": 0
+}
