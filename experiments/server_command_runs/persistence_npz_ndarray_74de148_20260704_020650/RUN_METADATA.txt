@@ -1,0 +1,6 @@
+source_commit=74de148
+base_commit=d5c4044
+red_run=/hy-tmp/rfr_persistence_npz_ndarray_red_d5c4044_20260704_020250
+green_run=/hy-tmp/rfr_persistence_npz_ndarray_green_d5c4044_20260704_020650
+red_command=python -m unittest tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_npz_writer_accepts_ndarray_without_list_materialization -v
+green_commands=python -m py_compile blb_stage2_rl/persistence.py; python -m unittest tests.test_blb_stage2_outputs.UpgradedCurvesTest -v; source guard for _float_array(seq)
