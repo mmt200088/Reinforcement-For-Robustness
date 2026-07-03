@@ -1,0 +1,26 @@
+test_curve_helpers_accept_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_curve_helpers_accept_ndarray_without_list_materialization) ... FAIL
+
+======================================================================
+FAIL: test_curve_helpers_accept_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_curve_helpers_accept_ndarray_without_list_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_persistence_curve_ndarray_red_a680835_20260704_015230/tests/test_blb_stage2_outputs.py", line 176, in test_curve_helpers_accept_ndarray_without_list_materialization
+    smoothed = persistence._ema_smooth(values, 3)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_persistence_curve_ndarray_red_a680835_20260704_015230/blb_stage2_rl/persistence.py", line 795, in _ema_smooth
+    arr = _np.asarray(list(values), dtype=float)
+                      ^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: ndarray curve input should not be copied through list
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)
