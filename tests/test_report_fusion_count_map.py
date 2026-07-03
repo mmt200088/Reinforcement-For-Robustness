@@ -304,6 +304,73 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertEqual(set(paths), {"first", "second"})
         self.assertEqual(calls, 1)
 
+    def test_write_action_configs_uses_prebuilt_option_index(self):
+        fields_by_block = {
+            block_idx: [("output_truncation_k", "K", 0)]
+            for block_idx in (1, 2, 3, 4, 5)
+        }
+        fields_by_block[2] = [
+            ("rescale_sf", "F", 14),
+            ("output_truncation_k", "K", 0),
+        ]
+        graphs = {
+            "block2_mrpc": {
+                "graph_key": "block2_mrpc",
+                "block_idx": 2,
+                "k_slot_index": 1,
+                "options": [
+                    {"option_id": 0, "fusion_count": 0, "action_indices": [0, 0], "slots": {}},
+                    {
+                        "option_id": 1,
+                        "fusion_count": 1,
+                        "action_indices": [3, 5],
+                        "slots": {"rescale_sf": 11},
+                    },
+                ],
+            }
+        }
+        schedule = [
+            {"step_idx": idx, "layer_idx": idx, "block_idx": 2, "graph_key": "block2_mrpc"}
+            for idx in range(2)
+        ]
+        group_specs = [
+            {
+                "name": "first",
+                "option_by_graph": {"block2_mrpc": 1},
+                "fusion_count_by_graph": {"block2_mrpc": 1},
+            },
+            {
+                "name": "second",
+                "option_by_graph": {"block2_mrpc": 0},
+                "fusion_count_by_graph": {"block2_mrpc": 0},
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(
+                report,
+                "_option_by_id",
+                side_effect=AssertionError("action-config writer should reuse a prebuilt option index"),
+            ):
+                paths = report._write_action_configs(
+                    output_dir=Path(td),
+                    fields_by_block=fields_by_block,
+                    graphs=graphs,
+                    num_layers=2,
+                    schedule=schedule,
+                    group_specs=group_specs,
+                    profile="mrpc",
+                    gelu=[1, 1],
+                    softmax=[6, 6],
+                )
+
+            first = json.loads(Path(paths["first"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(set(paths), {"first", "second"})
+        self.assertEqual(first["base"][1:3], [3, report.BASELINE_K_INDEX])
+        self.assertEqual(first["base"][7:9], [3, report.BASELINE_K_INDEX])
+        self.assertEqual(first["slots"][0]["scaling_factor"], 11)
+
 
 if __name__ == "__main__":
     unittest.main()

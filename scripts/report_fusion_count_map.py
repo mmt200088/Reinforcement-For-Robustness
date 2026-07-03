@@ -265,6 +265,30 @@ def _option_by_id(graph: Mapping[str, Any], option_id: int) -> Mapping[str, Any]
     raise KeyError(f"graph {graph.get('graph_key')} has no option {option_id}")
 
 
+def _option_index_by_graph(
+    graphs: Mapping[str, Mapping[str, Any]]
+) -> Dict[str, Dict[int, Mapping[str, Any]]]:
+    out: Dict[str, Dict[int, Mapping[str, Any]]] = {}
+    for graph_key, graph in graphs.items():
+        index: Dict[int, Mapping[str, Any]] = {}
+        for option in graph.get("options", []):
+            index.setdefault(int(option.get("option_id")), option)
+        out[str(graph_key)] = index
+    return out
+
+
+def _option_by_index(
+    graph: Mapping[str, Any],
+    option_id: int,
+    option_index_by_graph: Mapping[str, Mapping[int, Mapping[str, Any]]],
+) -> Mapping[str, Any]:
+    graph_key = str(graph.get("graph_key"))
+    try:
+        return option_index_by_graph[graph_key][int(option_id)]
+    except KeyError as exc:
+        raise KeyError(f"graph {graph.get('graph_key')} has no option {option_id}") from exc
+
+
 def _option_id_for_step(step: Mapping[str, Any], option_by_graph: Mapping[str, int], option_by_step: Mapping[str, int] | None = None) -> int:
     step_key = str(step["step_idx"])
     if option_by_step and step_key in option_by_step:
@@ -283,6 +307,7 @@ def _splice_group_action(
     base_action: Sequence[int] | None = None,
     layer_width: int | None = None,
     block_offsets: Mapping[int, int] | None = None,
+    option_index_by_graph: Mapping[str, Mapping[int, Mapping[str, Any]]] | None = None,
 ) -> List[int]:
     action = list(base_action) if base_action is not None else _make_all_max_action(fields_by_block, num_layers)
     width = int(layer_width) if layer_width is not None else _layer_width(fields_by_block)
@@ -292,7 +317,12 @@ def _splice_group_action(
         graph = graphs[graph_key]
         block_idx = int(step["block_idx"])
         layer_idx = int(step["layer_idx"])
-        option = _option_by_id(graph, _option_id_for_step(step, option_by_graph, option_by_step))
+        option_id = _option_id_for_step(step, option_by_graph, option_by_step)
+        option = (
+            _option_by_index(graph, option_id, option_index_by_graph)
+            if option_index_by_graph is not None
+            else _option_by_id(graph, option_id)
+        )
         block_action = [int(v) for v in option.get("action_indices", [])]
         k_slot_index = int(graph["k_slot_index"])
         if 0 <= k_slot_index < len(block_action):
@@ -368,6 +398,7 @@ def _splice_group_slots(
     schedule: Sequence[Mapping[str, Any]],
     option_by_graph: Mapping[str, int],
     option_by_step: Mapping[str, int] | None = None,
+    option_index_by_graph: Mapping[str, Mapping[int, Mapping[str, Any]]] | None = None,
 ) -> List[dict]:
     entries: List[dict] = []
     for step in schedule:
@@ -375,7 +406,12 @@ def _splice_group_slots(
         graph = graphs[graph_key]
         block_idx = int(step["block_idx"])
         layer_idx = int(step["layer_idx"])
-        option = _option_by_id(graph, _option_id_for_step(step, option_by_graph, option_by_step))
+        option_id = _option_id_for_step(step, option_by_graph, option_by_step)
+        option = (
+            _option_by_index(graph, option_id, option_index_by_graph)
+            if option_index_by_graph is not None
+            else _option_by_id(graph, option_id)
+        )
         slot_values = _bound_slot_values(block_idx, option.get("slots", {}))
         if not slot_values:
             continue
@@ -524,6 +560,7 @@ def _write_action_configs(
     base_action = _make_all_max_action(fields_by_block, num_layers)
     width = _layer_width(fields_by_block)
     offsets = _block_offsets(fields_by_block)
+    option_index_by_graph = _option_index_by_graph(graphs)
     for spec in group_specs:
         name = str(spec["name"])
         action = _splice_group_action(
@@ -536,6 +573,7 @@ def _write_action_configs(
             base_action=base_action,
             layer_width=width,
             block_offsets=offsets,
+            option_index_by_graph=option_index_by_graph,
         )
         slots = _splice_group_slots(
             fields_by_block=fields_by_block,
@@ -543,6 +581,7 @@ def _write_action_configs(
             schedule=schedule,
             option_by_graph=spec["option_by_graph"],
             option_by_step=spec.get("option_by_step"),
+            option_index_by_graph=option_index_by_graph,
         )
         payload = {
             "schema_version": "fusion_count_fixed_action_v1",
