@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tempfile
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -398,6 +398,144 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertIsNone(
             fem.UnifiedFinalEvaluationModule._std_float_or_none([None, float("nan")])
         )
+
+    def test_variance_plot_streams_group_means_without_numpy_mean(self):
+        class FakeAxis:
+            def __init__(self):
+                self.bar_calls = []
+
+            def scatter(self, *_args, **_kwargs):
+                pass
+
+            def axhline(self, *_args, **_kwargs):
+                pass
+
+            def text(self, *_args, **_kwargs):
+                pass
+
+            def set_title(self, *_args, **_kwargs):
+                pass
+
+            def set_ylabel(self, *_args, **_kwargs):
+                pass
+
+            def set_xlabel(self, *_args, **_kwargs):
+                pass
+
+            def grid(self, *_args, **_kwargs):
+                pass
+
+            def margins(self, *_args, **_kwargs):
+                pass
+
+            def ticklabel_format(self, *_args, **_kwargs):
+                pass
+
+            def legend(self, *_args, **_kwargs):
+                pass
+
+            def set_xlim(self, *_args, **_kwargs):
+                pass
+
+            def set_xticks(self, *_args, **_kwargs):
+                pass
+
+            def set_xticklabels(self, *_args, **_kwargs):
+                pass
+
+            def bar(self, x, height, **kwargs):
+                self.bar_calls.append(
+                    {
+                        "x": list(np.asarray(x, dtype=float).reshape(-1)),
+                        "height": list(height),
+                        "label": kwargs.get("label"),
+                    }
+                )
+
+        class FakeFigure:
+            def suptitle(self, *_args, **_kwargs):
+                pass
+
+        axes = np.array(
+            [[FakeAxis(), FakeAxis()], [FakeAxis(), FakeAxis()]],
+            dtype=object,
+        )
+        fake_matplotlib = ModuleType("matplotlib")
+        fake_matplotlib.__path__ = []
+        fake_matplotlib.use = lambda *_args, **_kwargs: None
+        fake_pyplot = ModuleType("matplotlib.pyplot")
+        fake_pyplot.subplots = lambda *_args, **_kwargs: (FakeFigure(), axes)
+        fake_pyplot.savefig = lambda *_args, **_kwargs: None
+        fake_pyplot.close = lambda *_args, **_kwargs: None
+
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        runner.results_dir = "/tmp/final-eval-test"
+        logs = []
+        runner.evaluator = SimpleNamespace(
+            dataset_key="mrpc",
+            log=lambda message, *_args, **_kwargs: logs.append(str(message)),
+        )
+
+        with mock.patch.dict(
+            "sys.modules",
+            {
+                "matplotlib": fake_matplotlib,
+                "matplotlib.pyplot": fake_pyplot,
+            },
+        ), mock.patch.object(
+            fem.np,
+            "mean",
+            side_effect=AssertionError("variance plot should stream group means"),
+        ):
+            plot_path = runner._plot_variance_results(
+                metric_short_names=["Accuracy", "F1"],
+                num_metrics=2,
+                baseline={
+                    "loss_var": 0.1,
+                    "p_var": 0.2,
+                    "s_var": 0.3,
+                    "total_cost": 10.0,
+                },
+                optimized={
+                    "loss_var": 0.4,
+                    "p_var": 0.5,
+                    "s_var": 0.6,
+                    "total_cost": 11.0,
+                },
+                stage1_fixed_max={
+                    "loss_var": 0.7,
+                    "p_var": 0.8,
+                    "s_var": 0.9,
+                    "total_cost": 12.0,
+                },
+                random_results=[
+                    {
+                        "family": "Budget",
+                        "loss_var": 1.0,
+                        "p_var": 2.0,
+                        "s_var": 4.0,
+                        "total_cost": 13.0,
+                    },
+                    {
+                        "family": "Budget",
+                        "loss_var": 3.0,
+                        "p_var": 6.0,
+                        "s_var": 8.0,
+                        "total_cost": 14.0,
+                    },
+                ],
+            )
+
+        self.assertEqual(
+            plot_path,
+            "/tmp/final-eval-test/final_eval_variance_mrpc.png",
+            "\n".join(logs),
+        )
+        bar_axis = axes[1, 1]
+        self.assertEqual([call["label"] for call in bar_axis.bar_calls], ["Loss", "Accuracy", "F1"])
+        self.assertEqual(bar_axis.bar_calls[0]["height"][2], 2.0)
+        self.assertEqual(bar_axis.bar_calls[1]["height"][2], 4.0)
+        self.assertEqual(bar_axis.bar_calls[2]["height"][2], 6.0)
 
 
 if __name__ == "__main__":

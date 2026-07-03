@@ -2032,15 +2032,9 @@ class UnifiedFinalEvaluationModule:
                 row = []
                 has_any = False
                 for _, key in variance_specs:
-                    vals = [
-                        float(item[key])
-                        for item in items
-                        if key in item
-                        and item.get(key) is not None
-                        and np.isfinite(float(item[key]))
-                    ]
-                    if vals:
-                        row.append(float(np.mean(vals)))
+                    mean_value = self._mean_float_or_none(item.get(key) for item in items)
+                    if mean_value is not None:
+                        row.append(mean_value)
                         has_any = True
                     else:
                         row.append(0.0)
