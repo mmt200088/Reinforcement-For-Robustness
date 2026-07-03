@@ -1,0 +1,26 @@
+test_truncation_k_helpers_accumulate_without_gather_list (tests.test_blb_cost_semantics.BLBCostSemanticsTests.test_truncation_k_helpers_accumulate_without_gather_list) ... FAIL
+
+======================================================================
+FAIL: test_truncation_k_helpers_accumulate_without_gather_list (tests.test_blb_cost_semantics.BLBCostSemanticsTests.test_truncation_k_helpers_accumulate_without_gather_list)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_action_k_accum_red_4b07227_20260704_044600/src/tests/test_blb_cost_semantics.py", line 46, in test_truncation_k_helpers_accumulate_without_gather_list
+    self.assertEqual(action_space.sum_truncation_k_in_action(action, num_layers), expected_sum)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_action_k_accum_red_4b07227_20260704_044600/src/blb_stage2_rl/action_space.py", line 1960, in sum_truncation_k_in_action
+    return int(sum(_gather_effective_k_values_in_action(action_vec, num_layers)))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: hot K helpers should not allocate a gathered list
+
+----------------------------------------------------------------------
+Ran 1 test in 1.793s
+
+FAILED (failures=1)
