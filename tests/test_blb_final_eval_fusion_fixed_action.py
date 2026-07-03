@@ -1,7 +1,10 @@
 import importlib.util
+import inspect
 import pathlib
 import sys
 import unittest
+
+import numpy as np
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
 for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
@@ -69,6 +72,54 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
         # locks that the boost is actually replayed, not the pre-boost grid SFs.
         self.assertEqual(cfg.softmax_out_fresh.scaling_factor, 21)
         self.assertEqual(cfg.softmax_out_mask_encode.scaling_factor, 14)
+
+    def test_selected_vs_random_summary_keeps_existing_statistics(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        module = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
+        selected = [{
+            "name": "selected",
+            "loss": 1.1,
+            "loss_std": 0.01,
+            "p": 0.80,
+            "p_std": 0.02,
+            "s": 0.70,
+            "s_std": 0.03,
+            "total_bits_sum": 44,
+            "total_fusion_count": 3,
+            "avg_truncation_k": 12.0,
+        }]
+        random_results = [
+            {"loss": 1.2, "loss_std": 0.04, "p": 0.70, "p_std": 0.05, "s": 0.65, "s_std": 0.06},
+            {"loss": 1.0, "loss_std": 0.02, "p": 0.85, "p_std": 0.01, "s": 0.72, "s_std": 0.04},
+            {"loss": 1.3, "loss_std": 0.03, "p": 0.78, "p_std": 0.03, "s": 0.75, "s_std": 0.02},
+        ]
+
+        summary = module._summarize_selected_vs_random(
+            selected_results=selected,
+            random_results=random_results,
+            num_metrics=2,
+        )
+
+        self.assertEqual(summary["random_count"], 3)
+        self.assertEqual(summary["random_stats"]["loss_mean"]["n"], 3)
+        self.assertAlmostEqual(summary["random_stats"]["loss_mean"]["mean"], np.mean([1.2, 1.0, 1.3]))
+        self.assertAlmostEqual(summary["random_stats"]["loss_mean"]["std"], np.std([1.2, 1.0, 1.3]))
+        self.assertAlmostEqual(summary["random_stats"]["metric1_mean"]["max"], 0.85)
+        ranks = summary["anchor_rank_vs_random"]
+        self.assertEqual(ranks["metric1_higher_better"]["rank_better_than_selected"], 2)
+        self.assertEqual(ranks["loss_lower_better"]["rank_better_than_selected"], 2)
+        self.assertEqual(ranks["metric2_higher_better"]["rank_better_than_selected"], 1)
+
+    def test_selected_vs_random_summary_streams_random_rows_once(self):
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        source = inspect.getsource(BLBActionFinalEvaluationModule._summarize_selected_vs_random)
+
+        self.assertNotIn("np.asarray([float(r.get(key, 0.0)) for r in rows]", source)
+        self.assertNotIn("metric_rows = [", source)
+        self.assertNotIn("loss_rows = [", source)
+        self.assertNotIn("metric2_rows = [", source)
 
 
 if __name__ == "__main__":

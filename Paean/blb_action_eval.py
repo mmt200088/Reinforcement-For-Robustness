@@ -1704,16 +1704,39 @@ class BLBActionFinalEvaluationModule:
         if not selected_results and not random_results:
             return {}
 
-        def _field_stats(rows: List[Dict[str, Any]], key: str) -> Dict[str, float]:
-            vals = np.asarray([float(r.get(key, 0.0)) for r in rows], dtype=float)
-            if vals.size == 0:
-                return {"n": 0}
+        def _new_stats() -> Dict[str, Any]:
             return {
-                "n": int(vals.size),
-                "mean": float(vals.mean()),
-                "std": float(vals.std(ddof=0)),
-                "min": float(vals.min()),
-                "max": float(vals.max()),
+                "n": 0,
+                "sum": 0.0,
+                "sum_sq": 0.0,
+                "min": None,
+                "max": None,
+            }
+
+        def _add_stats(stat: Dict[str, Any], value: float) -> None:
+            value_f = float(value)
+            stat["n"] += 1
+            stat["sum"] += value_f
+            stat["sum_sq"] += value_f * value_f
+            if stat["min"] is None or value_f < stat["min"]:
+                stat["min"] = value_f
+            if stat["max"] is None or value_f > stat["max"]:
+                stat["max"] = value_f
+
+        def _finish_stats(stat: Dict[str, Any]) -> Dict[str, float]:
+            count = int(stat["n"])
+            if count <= 0:
+                return {"n": 0}
+            mean = float(stat["sum"]) / float(count)
+            variance = float(stat["sum_sq"]) / float(count) - mean * mean
+            if np.isfinite(variance) and variance < 0.0:
+                variance = 0.0
+            return {
+                "n": count,
+                "mean": float(mean),
+                "std": float(variance ** 0.5),
+                "min": float(stat["min"]),
+                "max": float(stat["max"]),
             }
 
         anchor = selected_results[0] if selected_results else None
@@ -1736,41 +1759,57 @@ class BLBActionFinalEvaluationModule:
                 "avg_truncation_k": float(anchor.get("avg_truncation_k", 0.0)),
             }
         if random_results:
-            summary["random_stats"] = {
-                "loss_mean": _field_stats(random_results, "loss"),
-                "loss_std": _field_stats(random_results, "loss_std"),
-                "metric1_mean": _field_stats(random_results, "p"),
-                "metric1_std": _field_stats(random_results, "p_std"),
-                "metric2_mean": _field_stats(random_results, "s"),
-                "metric2_std": _field_stats(random_results, "s_std"),
-            }
-        if anchor is not None and random_results:
-            # Rank percentiles: where does the selected anchor sit among randoms?
-            def _percentile_rank(values: List[float], target: float, higher_is_better: bool):
-                arr = np.asarray(values, dtype=float)
-                if arr.size == 0:
-                    return None
-                if higher_is_better:
-                    rank = int((arr < float(target)).sum())  # number worse than target
-                else:
-                    rank = int((arr > float(target)).sum())
-                return {
-                    "rank_better_than_selected": int(rank),
-                    "out_of": int(arr.size),
-                    "percentile": float(rank) / float(arr.size) if arr.size else None,
-                }
+            stat_fields = (
+                ("loss_mean", "loss"),
+                ("loss_std", "loss_std"),
+                ("metric1_mean", "p"),
+                ("metric1_std", "p_std"),
+                ("metric2_mean", "s"),
+                ("metric2_std", "s_std"),
+            )
+            stats_by_name = {name: _new_stats() for name, _field in stat_fields}
+            metric1_rank = 0
+            loss_rank = 0
+            metric2_rank = 0
+            anchor_p = float(anchor.get("p", 0.0)) if anchor is not None else 0.0
+            anchor_loss = float(anchor.get("loss", 0.0)) if anchor is not None else 0.0
+            anchor_s = float(anchor.get("s", 0.0)) if anchor is not None else 0.0
 
-            metric_rows = [float(r.get("p", 0.0)) for r in random_results]
-            loss_rows = [float(r.get("loss", 0.0)) for r in random_results]
-            summary["anchor_rank_vs_random"] = {
-                "metric1_higher_better": _percentile_rank(metric_rows, float(anchor.get("p", 0.0)), True),
-                "loss_lower_better": _percentile_rank(loss_rows, float(anchor.get("loss", 0.0)), False),
+            for row in random_results:
+                for name, field in stat_fields:
+                    _add_stats(stats_by_name[name], float(row.get(field, 0.0)))
+                if anchor is None:
+                    continue
+                if float(row.get("p", 0.0)) < anchor_p:
+                    metric1_rank += 1
+                if float(row.get("loss", 0.0)) > anchor_loss:
+                    loss_rank += 1
+                if num_metrics > 1 and float(row.get("s", 0.0)) < anchor_s:
+                    metric2_rank += 1
+
+            summary["random_stats"] = {
+                name: _finish_stats(stats_by_name[name])
+                for name, _field in stat_fields
             }
-            if num_metrics > 1:
-                metric2_rows = [float(r.get("s", 0.0)) for r in random_results]
-                summary["anchor_rank_vs_random"]["metric2_higher_better"] = _percentile_rank(
-                    metric2_rows, float(anchor.get("s", 0.0)), True
-                )
+
+            if anchor is not None:
+                def _rank_dict(rank: int):
+                    count = int(random_count)
+                    if count <= 0:
+                        return None
+                    rank_i = int(rank)
+                    return {
+                        "rank_better_than_selected": rank_i,
+                        "out_of": count,
+                        "percentile": float(rank_i) / float(count),
+                    }
+
+                summary["anchor_rank_vs_random"] = {
+                    "metric1_higher_better": _rank_dict(metric1_rank),
+                    "loss_lower_better": _rank_dict(loss_rank),
+                }
+                if num_metrics > 1:
+                    summary["anchor_rank_vs_random"]["metric2_higher_better"] = _rank_dict(metric2_rank)
         return summary
 
     def _comparison_summary_markdown(
