@@ -67,13 +67,17 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
                 self.applied.append((tuple(gelu), tuple(softmax)))
 
             def _resolve_eval_split(self, *, use_train, split):
-                self.assertFalse(use_train)
-                self.assertEqual(split, "validation_full")
+                if use_train:
+                    raise AssertionError("clean baseline final-eval must use validation")
+                if split != "validation_full":
+                    raise AssertionError(f"unexpected split: {split}")
                 return "validation_full"
 
             def _run_evaluation(self, _loader, *, use_train, split_name):
-                self.assertFalse(use_train)
-                self.assertEqual(split_name, "validation_full")
+                if use_train:
+                    raise AssertionError("clean baseline final-eval must use validation")
+                if split_name != "validation_full":
+                    raise AssertionError(f"unexpected split: {split_name}")
                 self.calls += 1
                 return (
                     0.30 + (0.01 * self.calls),
@@ -145,13 +149,17 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
                 self.apply_calls.append((tuple(gelu), tuple(softmax)))
 
             def _resolve_eval_split(self, *, use_train, split):
-                self.assertFalse(use_train)
-                self.assertEqual(split, "validation_full")
+                if use_train:
+                    raise AssertionError("BLB action final-eval must use validation")
+                if split != "validation_full":
+                    raise AssertionError(f"unexpected split: {split}")
                 return "validation_full"
 
             def _run_evaluation(self, _loader, *, use_train, split_name):
-                self.assertFalse(use_train)
-                self.assertEqual(split_name, "validation_full")
+                if use_train:
+                    raise AssertionError("BLB action final-eval must use validation")
+                if split_name != "validation_full":
+                    raise AssertionError(f"unexpected split: {split_name}")
                 self.eval_calls += 1
                 return (
                     0.30 + (0.01 * self.eval_calls),
@@ -171,7 +179,9 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
             verify_calls = []
             runner._clear_legacy_noise = lambda: legacy_clear_calls.append("legacy")
             runner._clear_all_noise = lambda: all_clear_calls.append("all")
-            runner._verify_model_installation = lambda _bridge, _decoded: verify_calls.append("verify") or {"ok": True}
+            runner._verify_model_installation = (
+                lambda _bridge, _decoded: verify_calls.append("verify") or {"ok": True}
+            )
 
             single, repeat = runner._run_blb_eval(
                 FakeDecoded(),
