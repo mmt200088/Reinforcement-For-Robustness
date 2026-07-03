@@ -1,11 +1,16 @@
+import json
+import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 try:
+    import rescale_optimizer_bridge as bridge_mod
     from rescale_optimizer_bridge import RescaleOptimizerBridge
 except ModuleNotFoundError as exc:  # local macOS test env may be torch-free
     if exc.name != "torch":
         raise
+    bridge_mod = None
     RescaleOptimizerBridge = None
 
 
@@ -64,6 +69,52 @@ class RescaleOptimizerBridgeCacheTest(unittest.TestCase):
         self.assertFalse(first.raw["_optimizer_cache_hit"])
         self.assertTrue(second.raw["_optimizer_cache_hit"])
         self.assertEqual(second.total_bits, 123)
+
+
+@unittest.skipIf(bridge_mod is None, "torch unavailable")
+class BaselineArchiveCacheTest(unittest.TestCase):
+    def test_load_baseline_archive_reuses_parse_and_returns_fresh_lists(self):
+        payload = {
+            "results": [
+                {
+                    "success": True,
+                    "config_name": "block1_mrpc",
+                    "skeleton": [1, 2, 3],
+                    "cut_point_sf": [
+                        {"i": 1, "sf": 30},
+                        {"i": 2, "sf_post": 31},
+                        {"i": 3, "sf": 32},
+                    ],
+                    "modulus_chain": {"drop_order": [60, 50, 40, 30]},
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as td:
+            path = f"{td}/static_skeletons_mrpc.json"
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+
+            cache = getattr(bridge_mod, "_BASELINE_ARCHIVE_CACHE", None)
+            if cache is not None:
+                cache.clear()
+
+            original_load = bridge_mod.json.load
+            load_calls = []
+
+            def counting_load(handle):
+                load_calls.append(handle.name)
+                return original_load(handle)
+
+            with mock.patch.object(bridge_mod.json, "load", side_effect=counting_load):
+                first = bridge_mod.load_baseline_archive(path)
+                second = bridge_mod.load_baseline_archive(path)
+
+        self.assertEqual(load_calls, [path])
+        self.assertEqual(first, second)
+        self.assertIsNot(first, second)
+        self.assertIsNot(first["block1_mrpc"][0], second["block1_mrpc"][0])
+        first["block1_mrpc"][0].append(999)
+        self.assertEqual(second["block1_mrpc"][0], [1, 2, 3])
 
 
 if __name__ == "__main__":
