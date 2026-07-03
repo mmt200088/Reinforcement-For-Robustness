@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from json_utils import stable_json_hash
+from jsonl_utils import iter_jsonl
 
 FIDELITY_ORDER = {
     "F0": 0,
@@ -349,13 +350,9 @@ class CandidateStore:
         if not self.path.exists():
             return []
         records: List[Dict[str, Any]] = []
-        with self.path.open("r", encoding="utf-8") as f:
-            for line in f:
-                if not line or line.isspace():
-                    continue
-                payload = json.loads(line)
-                payload.setdefault("legacy_record", is_legacy_record(payload))
-                records.append(payload)
+        for payload in iter_jsonl(self.path, errors="raise"):
+            payload.setdefault("legacy_record", is_legacy_record(payload))
+            records.append(payload)
         return records
 
     def append(self, record: Mapping[str, Any]) -> Dict[str, Any]:

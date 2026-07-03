@@ -176,6 +176,7 @@ class JsonlUtilsStaticGuardTest(unittest.TestCase):
             "scripts/gpu_utilization_report.py": "from jsonl_utils import iter_jsonl",
             "scripts/blb_fusion_ab_compare.py": "from jsonl_utils import iter_jsonl",
             "scripts/blb_regen_stage2_outputs.py": "from jsonl_utils import iter_jsonl",
+            "blb_stage2_rl/candidate_store.py": "from jsonl_utils import iter_jsonl",
             "scripts/verify_stage2_persistent_outputs.py": (
                 "from jsonl_utils import count_jsonl_with_required_fields"
             ),
