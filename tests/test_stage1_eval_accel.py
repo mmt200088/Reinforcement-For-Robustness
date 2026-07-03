@@ -309,6 +309,36 @@ class Stage1EvaluateModelCacheSourceTest(unittest.TestCase):
         )
 
 
+class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
+    def test_reward_history_uses_bounded_deque_not_front_pop(self):
+        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        init_region = _source_region(
+            source,
+            "        # ==================== PPO 7.1: 运行时回报归一化状态 ====================",
+            "        # ==================== PDF 6.3: Return Normalization (PopArt风格) ====================",
+        )
+        reset_region = _source_region(
+            source,
+            "    def _reset_runtime_ppo_state(",
+            "    def _get_stage1_resume_checkpoint_path(",
+        )
+        resume_region = _source_region(
+            source,
+            "                _ev_rt = ckpt.get(\"ev_runtime_state\", {})",
+            "                # 恢复 return_normalizer（RunningMeanStd）状态",
+        )
+        update_region = _source_region(
+            source,
+            "    def update_reward_statistics(self, episode_reward):",
+            "    def _detect_layer_attribute(self):",
+        )
+
+        for region in (init_region, reset_region, resume_region):
+            self.assertIn("deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)", region)
+        self.assertNotIn("reward_history.pop(0)", update_region)
+        self.assertNotIn("len(self.reward_history) > RUNNING_REWARD_HISTORY_SIZE", update_region)
+
+
 @unittest.skipUnless(_HAS_TORCH, "layer_importance_evaluator imports torch")
 class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
     def test_repeated_same_config_skips_handler_reinstall_but_keeps_eval_mode(self):
