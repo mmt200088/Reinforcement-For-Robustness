@@ -51,6 +51,7 @@ SHORT_KEY_TO_FULL = {
 
 BREAKDOWN_KEYS = ("x", "wq", "wk", "wv", "wo", "wffn1", "wffn2")
 MAX_CONFIG_SOURCES = {"max", "stage2-max", "stage2_max", "blb-max", "blb_max"}
+_LIST_OR_TUPLE_TYPES = (list, tuple)
 
 
 class UnifiedFinalEvaluationModule:
@@ -2159,8 +2160,16 @@ class UnifiedFinalEvaluationModule:
                 return s
         return full_key
 
+    @staticmethod
+    def _as_int_vector(values):
+        if isinstance(values, np.ndarray):
+            return np.asarray(values, dtype=int).reshape(-1)
+        if isinstance(values, _LIST_OR_TUPLE_TYPES):
+            return np.asarray(values, dtype=int).reshape(-1)
+        return np.fromiter((int(value) for value in values), dtype=int)
+
     def _normalize_config_array(self, values, total_layers, default_degree, allowed, label):
-        arr = np.asarray(list(values), dtype=int).flatten()
+        arr = self._as_int_vector(values)
         if arr.size < total_layers:
             pad = np.full(total_layers - arr.size, default_degree, dtype=int)
             self.evaluator.log(
@@ -2179,7 +2188,7 @@ class UnifiedFinalEvaluationModule:
         return arr
 
     def _normalize_noise_array(self, values, total_layers, label):
-        arr = np.asarray(list(values), dtype=int).flatten()
+        arr = self._as_int_vector(values)
         short = self._full_to_short(label) if label in SHORT_KEY_TO_FULL.values() else label
         allowed = self._stage2_allowed(short if short in BREAKDOWN_KEYS else "wq")
         default_val = max(allowed)
