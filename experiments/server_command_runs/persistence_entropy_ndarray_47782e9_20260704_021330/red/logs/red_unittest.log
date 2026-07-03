@@ -1,0 +1,14 @@
+test_entropy_curve_accepts_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_entropy_curve_accepts_ndarray_without_list_materialization) ... FAIL
+
+======================================================================
+FAIL: test_entropy_curve_accepts_ndarray_without_list_materialization (tests.test_blb_stage2_outputs.UpgradedCurvesTest.test_entropy_curve_accepts_ndarray_without_list_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_persistence_entropy_ndarray_red2_80660e1_20260704_021205/tests/test_blb_stage2_outputs.py", line 311, in test_entropy_curve_accepts_ndarray_without_list_materialization
+    self.assertTrue(_nonempty_file(out["entropy_png"]))
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (failures=1)
