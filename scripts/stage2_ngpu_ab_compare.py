@@ -16,6 +16,8 @@ import os
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from jsonl_utils import iter_jsonl
+
 
 TIMING_OR_DEVICE_KEYS = {
     "timestamp",
@@ -65,16 +67,7 @@ def _find_jsonl(path: str, filename: str) -> str:
 
 def _load_jsonl(path: str, *, filename: str, sort_key: str) -> List[Dict[str, Any]]:
     jsonl_path = _find_jsonl(path, filename)
-    rows: List[Dict[str, Any]] = []
-    with open(jsonl_path, encoding="utf-8") as handle:
-        for line_no, line in enumerate(handle, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{jsonl_path}:{line_no}: invalid JSON") from exc
+    rows = list(iter_jsonl(jsonl_path, errors="raise"))
     rows.sort(key=lambda row: int(row.get(sort_key, 0) or 0))
     return rows
 

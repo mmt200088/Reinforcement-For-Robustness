@@ -536,6 +536,14 @@ one second pass for tail-aware summary statistics. This reduces ordered
 `episodes.jsonl` reads from three passes to two while preserving the legacy
 list-based summary/window output.
 
+Progress 2026-07-03: `scripts/stage2_ngpu_ab_compare.py` now loads
+`episodes.jsonl` and optional `ppo_updates.jsonl` through the shared
+`jsonl_utils.iter_jsonl(errors="raise")` path instead of carrying a local
+`open()` / `strip()` / `json.loads()` loop. The A/B report still sorts by
+episode/update before equality comparison, but long-run evidence parsing now
+shares the same low-copy JSONL implementation as the other Stage-2 GPU
+diagnostic reports.
+
 Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now checks common
 `blb_stage2_best_action_full.json` locations directly before falling back to a
 recursive directory walk. A local synthetic run tree with 402 directories and

@@ -4,6 +4,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -52,6 +53,25 @@ def _ppo_row(update, *, timestamp, elapsed_sec, entropy=0.1):
 
 
 class Stage2NgpuCompareTests(unittest.TestCase):
+    def test_load_jsonl_uses_shared_iter_jsonl(self):
+        calls = []
+
+        def fake_iter_jsonl(path, **kwargs):
+            calls.append((path, kwargs))
+            yield {"episode": 2}
+            yield {"episode": 1}
+
+        with mock.patch.object(ngpu_mod, "_find_jsonl", return_value="/tmp/run/episodes.jsonl"):
+            with mock.patch.object(ngpu_mod, "iter_jsonl", fake_iter_jsonl):
+                rows = ngpu_mod._load_jsonl(
+                    "/tmp/run",
+                    filename="episodes.jsonl",
+                    sort_key="episode",
+                )
+
+        self.assertEqual([row["episode"] for row in rows], [1, 2])
+        self.assertEqual(calls, [("/tmp/run/episodes.jsonl", {"errors": "raise"})])
+
     def test_effect_equality_ignores_timing_device_and_bookkeeping(self):
         one = [_row(0, timestamp=1.0, device="cuda:0", pareto_kind="dominated")]
         many = [_row(0, timestamp=2.0, device="cuda:4", pareto_kind="")]
