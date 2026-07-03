@@ -20,6 +20,7 @@
 除 Baseline 以外所有组别都使用 ``evaluate_model_with_attention_noise`` 进行评估。
 """
 
+import itertools
 import json
 import os
 from typing import Dict, List, Optional, Sequence
@@ -430,9 +431,9 @@ class UnifiedFinalEvaluationModule:
             ev.log("Random comparison groups are disabled for this final-eval run.")
             random_results = []
 
-        all_results = (
-            [baseline_result, optimized_result, stage1_fixed_max_noise_result]
-            + list(random_results)
+        all_results = itertools.chain(
+            (baseline_result, optimized_result, stage1_fixed_max_noise_result),
+            random_results,
         )
         self._attach_relative_metrics(baseline_result, all_results, num_metrics)
 

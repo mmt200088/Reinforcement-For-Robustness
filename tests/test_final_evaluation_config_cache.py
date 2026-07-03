@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 import tempfile
@@ -374,6 +375,11 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertAlmostEqual(family["total_cost_std"], 1.5)
         self.assertAlmostEqual(family["loss_eval_variance_mean"], 0.03)
         self.assertAlmostEqual(summary["overall"]["dominance_rate"], 0.5)
+
+    def test_relative_metric_attach_does_not_copy_random_results(self):
+        source = inspect.getsource(fem.UnifiedFinalEvaluationModule.run)
+
+        self.assertNotIn("+ list(random_results)", source)
 
     def test_float_stat_helpers_stream_values_without_clean_lists(self):
         values = [1.0, None, float("nan"), 3.0, float("inf")]
