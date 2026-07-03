@@ -400,6 +400,12 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
             source,
         )
 
+    def test_ordered_families_reuses_static_preferred_order(self):
+        source = inspect.getsource(fem.UnifiedFinalEvaluationModule._ordered_families)
+
+        self.assertNotIn("self._family_colors().keys()", source)
+        self.assertNotIn("preferred = list(", source)
+
     def test_float_stat_helpers_stream_values_without_clean_lists(self):
         values = [1.0, None, float("nan"), 3.0, float("inf")]
 

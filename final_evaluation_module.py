@@ -53,6 +53,17 @@ SHORT_KEY_TO_FULL = {
 BREAKDOWN_KEYS = ("x", "wq", "wk", "wv", "wo", "wffn1", "wffn2")
 MAX_CONFIG_SOURCES = {"max", "stage2-max", "stage2_max", "blb-max", "blb_max"}
 _LIST_OR_TUPLE_TYPES = (list, tuple)
+_FAMILY_COLOR_MAP = {
+    "Stage1Budget": "#72B7B2",
+    "Stage2Budget": "#EECA3B",
+    "Perm": "#4C78A8",
+    "Equiv": "#F58518",
+    "Budget": "#54A24B",
+    "Optimized": "#E45756",
+    "Random": "#4C78A8",
+    "Stage1FixedMaxSF": "#B279A2",
+}
+_FAMILY_COLOR_ORDER = tuple(_FAMILY_COLOR_MAP)
 
 
 class UnifiedFinalEvaluationModule:
@@ -1851,21 +1862,11 @@ class UnifiedFinalEvaluationModule:
 
     @staticmethod
     def _family_colors():
-        return {
-            "Stage1Budget": "#72B7B2",
-            "Stage2Budget": "#EECA3B",
-            "Perm": "#4C78A8",
-            "Equiv": "#F58518",
-            "Budget": "#54A24B",
-            "Optimized": "#E45756",
-            "Random": "#4C78A8",
-            "Stage1FixedMaxSF": "#B279A2",
-        }
+        return dict(_FAMILY_COLOR_MAP)
 
     def _ordered_families(self, grouped):
-        preferred = list(self._family_colors().keys())
-        ordered = [family for family in preferred if family in grouped]
-        ordered.extend(sorted(family for family in grouped.keys() if family not in preferred))
+        ordered = [family for family in _FAMILY_COLOR_ORDER if family in grouped]
+        ordered.extend(sorted(family for family in grouped.keys() if family not in _FAMILY_COLOR_MAP))
         return ordered
 
     @staticmethod
