@@ -22,8 +22,10 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         from rescale_optimizer import backward_level_dp
 
         source = inspect.getsource(backward_level_dp.build_dp_table)
+        dp_loop = source.split("# Process cut points", 1)[1]
 
-        self.assertNotIn("for (ii, j), edge in graph.stage_edges.items()", source)
+        self.assertIn("stage_successor_edges", source)
+        self.assertNotIn("graph.stage_edges.items()", dp_loop)
 
 
 if __name__ == "__main__":
