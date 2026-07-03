@@ -131,6 +131,22 @@ class RLDataPointWriterTest(unittest.TestCase):
 
             self.assertEqual(read_json_file(path), {"a": 1, "b": [2]})
 
+    def test_read_json_file_uses_streaming_json_loader(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "payload.json"
+            path.write_text('{"a": 1, "b": [2]}', encoding="utf-8")
+            original_read_text = Path.read_text
+
+            def fail_read_text(p, *args, **kwargs):
+                if Path(p) == path:
+                    raise AssertionError("read_json_file should not materialize the whole file")
+                return original_read_text(p, *args, **kwargs)
+
+            with mock.patch.object(Path, "read_text", fail_read_text):
+                payload = read_json_file(path)
+
+        self.assertEqual(payload, {"a": 1, "b": [2]})
+
     def test_read_json_file_default_handles_optional_sidecars(self):
         with tempfile.TemporaryDirectory() as td:
             missing = Path(td) / "missing.json"

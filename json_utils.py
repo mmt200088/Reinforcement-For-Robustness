@@ -182,7 +182,8 @@ def read_json_file(
     it and let the underlying exception surface.
     """
     try:
-        return json.loads(Path(path).read_text(encoding=encoding))
+        with Path(path).open(encoding=encoding) as handle:
+            return json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError):
         if default is not _RAISE:
             return default

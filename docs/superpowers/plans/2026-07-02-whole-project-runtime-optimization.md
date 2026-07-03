@@ -1333,6 +1333,12 @@ then skips an in-bundle tarball by relative path. Large evidence bundles no
 longer call `Path.resolve()` for every payload file while adding reports to the
 tar archive, preserving deterministic archive names and self-skip behavior.
 
+Progress 2026-07-03: shared `json_utils.read_json_file()` now reads artifacts
+through `Path.open()` and `json.load()` instead of `Path.read_text()` plus
+`json.loads()`. Paean action configs, fusion maps, report inputs, manifests,
+and optional sidecars keep the same strict/default error semantics while large
+JSON artifacts avoid one extra full-file text materialization.
+
 - [ ] **Step 3: Verify**
 
 Run:
