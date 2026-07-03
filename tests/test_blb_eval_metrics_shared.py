@@ -70,6 +70,22 @@ class SharedEvalMetricsTest(unittest.TestCase):
         self.assertAlmostEqual(acc, 0.8)
         self.assertAlmostEqual(f1, 0.6333333333333333)
 
+    def test_binary_weighted_f1_skips_union_sort(self):
+        labels = np.asarray([0, 1, 1, 1, 1], dtype=int)
+        preds = np.asarray([0, 1, 0, 0, 1], dtype=int)
+        original_union1d = eval_metrics.np.union1d
+
+        def fail_if_called(_left, _right, *args, **kwargs):
+            raise AssertionError("binary weighted F1 should not sort class union")
+
+        eval_metrics.np.union1d = fail_if_called
+        try:
+            metric = eval_metrics.weighted_f1_from_labels(labels, preds)
+        finally:
+            eval_metrics.np.union1d = original_union1d
+
+        self.assertAlmostEqual(metric, 0.6333333333333333)
+
     def test_finalize_probe_trial_metrics_reuses_single_packed_arrays(self):
         labels = np.asarray([0, 1, 1, 1, 1], dtype=int)
         preds = np.asarray([0, 1, 0, 0, 1], dtype=int)

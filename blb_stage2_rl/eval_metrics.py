@@ -36,11 +36,40 @@ def accuracy_from_labels(labels: Any, preds: Any) -> float:
     return float(np.mean(preds_arr == labels_arr))
 
 
+def _is_zero_one_array(arr: np.ndarray) -> bool:
+    if arr.dtype.kind not in "biu":
+        return False
+    return int(arr.min()) >= 0 and int(arr.max()) <= 1
+
+
+def _f1_from_counts(tp: float, fp: float, fn: float) -> float:
+    denom = (2.0 * tp) + fp + fn
+    return (2.0 * tp / denom) if denom > 0.0 else 0.0
+
+
+def _binary_zero_one_weighted_f1(labels_arr: np.ndarray, preds_arr: np.ndarray) -> float:
+    label_pos = labels_arr == 1
+    pred_pos = preds_arr == 1
+    total = float(labels_arr.size)
+    support_pos = float(np.count_nonzero(label_pos))
+    pred_pos_count = float(np.count_nonzero(pred_pos))
+    tp = float(np.count_nonzero(pred_pos & label_pos))
+    fp = pred_pos_count - tp
+    fn = support_pos - tp
+    tn = total - tp - fp - fn
+    pos_f1 = _f1_from_counts(tp, fp, fn)
+    neg_f1 = _f1_from_counts(tn, fn, fp)
+    return float((((total - support_pos) / total) * neg_f1)
+                 + ((support_pos / total) * pos_f1))
+
+
 def weighted_f1_from_labels(labels: Any, preds: Any) -> float:
     labels_arr = np.asarray(labels).reshape(-1)
     preds_arr = np.asarray(preds).reshape(-1)
     if labels_arr.size == 0:
         return 0.0
+    if _is_zero_one_array(labels_arr) and _is_zero_one_array(preds_arr):
+        return _binary_zero_one_weighted_f1(labels_arr, preds_arr)
     classes = np.union1d(preds_arr, labels_arr)
     total = float(labels_arr.size)
     out = 0.0
@@ -53,8 +82,7 @@ def weighted_f1_from_labels(labels: Any, preds: Any) -> float:
         tp = float(np.sum(pred_pos & label_pos))
         fp = float(np.sum(pred_pos & ~label_pos))
         fn = float(np.sum(~pred_pos & label_pos))
-        denom = (2.0 * tp) + fp + fn
-        f1 = (2.0 * tp / denom) if denom > 0.0 else 0.0
+        f1 = _f1_from_counts(tp, fp, fn)
         out += (support / total) * f1
     return float(out)
 
