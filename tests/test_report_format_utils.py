@@ -55,7 +55,9 @@ class ReportFormatStaticGuardTest(unittest.TestCase):
             "scripts/blb_fusion_ab_compare.py": "from report_format_utils import html_table",
             "scripts/render_fusion_count_slots_eval_report.py": "from report_format_utils import html_table",
             "scripts/blb_verify_noise_install.py": "from report_format_utils import html_table",
-            "scripts/stage2_reward_probe_scaling_report.py": "from report_format_utils import format_float",
+            "scripts/stage2_reward_probe_scaling_report.py": (
+                "from report_format_utils import format_float, html_table"
+            ),
             "genetic_search_module.py": "from report_format_utils import format_elapsed as _fmt_elapsed",
             "general_policy_module.py": "from report_format_utils import progress_bar as _progress_bar",
             "noise_rl_module_v2.py": "from report_format_utils import format_elapsed as _fmt_elapsed",

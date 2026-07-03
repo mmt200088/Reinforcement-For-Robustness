@@ -23,7 +23,7 @@ from csv_field_utils import first_present_by_index, normalized_field_index  # no
 from json_utils import write_json_file  # noqa: E402
 from jsonl_utils import iter_jsonl  # noqa: E402
 from numeric_parse_utils import parse_first_float  # noqa: E402
-from report_format_utils import format_float  # noqa: E402
+from report_format_utils import format_float, html_table  # noqa: E402
 from stats_utils import median_sorted  # noqa: E402
 
 
@@ -146,25 +146,28 @@ def build_summary(root: str | Path) -> dict[str, Any]:
 def render_html(summary: Mapping[str, Any]) -> str:
     rows = summary.get("runs") or ()
     best = summary.get("best")
-    trs: list[str] = []
+    headers = [
+        "run", "batch", "GPUs", "visible devices", "rc", "probe calls",
+        "mean wall s", "median wall s", "mean speedup", "devices seen",
+        "trial splits", "max GPU util %", "max GPU mem MiB",
+    ]
+    table_rows: list[list[Any]] = []
     for row in rows:
-        trs.append(
-            "<tr>"
-            f"<td>{html.escape(str(row.get('label', '')))}</td>"
-            f"<td>{row.get('batch_size', '')}</td>"
-            f"<td>{row.get('gpu_count', '')}</td>"
-            f"<td>{html.escape(str(row.get('device_spec', '')))}</td>"
-            f"<td>{row.get('rc', '')}</td>"
-            f"<td>{row.get('probe_calls', '')}</td>"
-            f"<td>{format_float(row.get('mean_wall'), digits=4)}</td>"
-            f"<td>{format_float(row.get('median_wall'), digits=4)}</td>"
-            f"<td>{format_float(row.get('mean_speedup'), digits=4)}</td>"
-            f"<td>{html.escape(str(row.get('devices_seen', [])))}</td>"
-            f"<td>{html.escape(str(row.get('trial_splits', [])))}</td>"
-            f"<td>{html.escape(str(row.get('max_gpu_util_pct', {})))}</td>"
-            f"<td>{html.escape(str(row.get('max_gpu_mem_mib', {})))}</td>"
-            "</tr>"
-        )
+        table_rows.append([
+            row.get("label", ""),
+            row.get("batch_size", ""),
+            row.get("gpu_count", ""),
+            row.get("device_spec", ""),
+            row.get("rc", ""),
+            row.get("probe_calls", ""),
+            format_float(row.get("mean_wall"), digits=4),
+            format_float(row.get("median_wall"), digits=4),
+            format_float(row.get("mean_speedup"), digits=4),
+            row.get("devices_seen", []),
+            row.get("trial_splits", []),
+            row.get("max_gpu_util_pct", {}),
+            row.get("max_gpu_mem_mib", {}),
+        ])
 
     if isinstance(best, Mapping):
         best_html = (
@@ -186,8 +189,7 @@ code{{background:#f6f8fa;padding:2px 4px;border-radius:4px}}
 trials over the 256-example validation probe subset. For 4 GPUs, the expected
 trial split is one independent trial per GPU.</p>
 {best_html}
-<table><thead><tr><th>run</th><th>batch</th><th>GPUs</th><th>visible devices</th><th>rc</th><th>probe calls</th><th>mean wall s</th><th>median wall s</th><th>mean speedup</th><th>devices seen</th><th>trial splits</th><th>max GPU util %</th><th>max GPU mem MiB</th></tr></thead>
-<tbody>{''.join(trs)}</tbody></table>
+{html_table(headers, table_rows)}
 </body></html>"""
 
 
