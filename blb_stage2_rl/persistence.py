@@ -1019,9 +1019,9 @@ def write_training_curves(
             import matplotlib.pyplot as plt
             import numpy as _np
 
-            ent = _np.asarray(list(entropy_series), dtype=float)
+            ent = _float_array(entropy_series)
             if _has(entropy_episodes) and _seq_len(entropy_episodes) == ent.size:
-                ex = _np.asarray(list(entropy_episodes), dtype=float)
+                ex = _float_array(entropy_episodes)
                 xlabel = "Episode (at PPO update)"
             else:
                 ex = _np.arange(1, ent.size + 1)

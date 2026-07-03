@@ -28,6 +28,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -245,6 +246,71 @@ class UpgradedCurvesTest(unittest.TestCase):
             )
 
         self.assertEqual(axis.plots, 2)
+
+    def test_entropy_curve_accepts_ndarray_without_list_materialization(self):
+        import numpy as np
+
+        class FakeAxis:
+            def __init__(self):
+                self.plots = 0
+
+            def plot(self, *_args, **_kwargs):
+                self.plots += 1
+
+            def set_xlabel(self, *_args, **_kwargs):
+                pass
+
+            def set_ylabel(self, *_args, **_kwargs):
+                pass
+
+            def set_title(self, *_args, **_kwargs):
+                pass
+
+            def grid(self, *_args, **_kwargs):
+                pass
+
+            def legend(self, *_args, **_kwargs):
+                pass
+
+        class FakeFigure:
+            def tight_layout(self):
+                pass
+
+            def savefig(self, path, *_args, **_kwargs):
+                with open(path, "wb") as f:
+                    f.write(b"png")
+
+        fake_axis = FakeAxis()
+        fake_matplotlib = types.ModuleType("matplotlib")
+        fake_matplotlib.use = lambda *_args, **_kwargs: None
+        fake_pyplot = types.ModuleType("matplotlib.pyplot")
+        fake_pyplot.subplots = lambda *_args, **_kwargs: (FakeFigure(), fake_axis)
+        fake_pyplot.close = lambda *_args, **_kwargs: None
+        fake_matplotlib.pyplot = fake_pyplot
+
+        def fake_savez(path, **_series):
+            with open(path, "wb") as f:
+                f.write(b"npz")
+
+        entropy = np.asarray([1.0, 0.9, 0.8, 0.7], dtype=float)
+        entropy_episodes = np.asarray([120, 240, 360, 480], dtype=float)
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch("numpy.savez", side_effect=fake_savez), \
+                 mock.patch.dict(sys.modules, {
+                     "matplotlib": fake_matplotlib,
+                     "matplotlib.pyplot": fake_pyplot,
+                 }):
+                with mock.patch("builtins.list", side_effect=AssertionError("entropy ndarray series should not be copied through list")):
+                    out = persistence.write_training_curves(
+                        d,
+                        episode_returns=None,
+                        entropy_series=entropy,
+                        entropy_episodes=entropy_episodes,
+                    )
+
+            self.assertTrue(_nonempty_file(out["entropy_png"]))
+
+        self.assertEqual(fake_axis.plots, 2)
 
     def test_env_can_disable_stage2_plot_rendering_without_callsite_change(self):
         old_env = os.environ.get("RFR_STAGE2_RENDER_PLOTS")
