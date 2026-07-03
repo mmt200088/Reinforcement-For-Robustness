@@ -1,0 +1,33 @@
+{
+  "artifact_type": "server_verification_evidence",
+  "created_at": "2026-07-04T07:34:47+08:00",
+  "source_commit": "c3db582",
+  "optimization": "index fusion report option action sequences directly instead of copying them",
+  "files_changed": [
+    "scripts/report_fusion_count_map.py",
+    "tests/test_report_fusion_count_map.py"
+  ],
+  "server_runs": {
+    "red": {
+      "run_dir": "/hy-tmp/rfr_fusion_report_action_seq_red_2f059d1_20260704_073416",
+      "command": "python3 -m unittest tests.test_report_fusion_count_map.FusionCountMapReportTest.test_option_slot_summary_indexes_action_sequences_without_list_copy -v",
+      "expected_result": "failure on old full-list action_indices comprehension",
+      "exit_code": 1,
+      "local_log": "red_unittest.log"
+    },
+    "green": {
+      "run_dir": "/hy-tmp/rfr_fusion_report_action_seq_green_20260704_073447",
+      "commands": [
+        "python3 -m py_compile scripts/report_fusion_count_map.py tests/test_report_fusion_count_map.py",
+        "python3 -m unittest tests.test_report_fusion_count_map.FusionCountMapReportTest.test_option_slot_summary_indexes_action_sequences_without_list_copy -v"
+      ],
+      "expected_result": "py_compile and focused unittest pass",
+      "exit_code": 0,
+      "local_log": "green_validation.log"
+    }
+  },
+  "workflow": {
+    "server_code_policy": "server used a temporary source package for execution only",
+    "local_git_policy": "source commit pushed before evidence commit"
+  }
+}
