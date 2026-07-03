@@ -138,6 +138,28 @@ def tensor_scalar_values_to_float_list(values: Sequence[torch.Tensor]) -> List[f
     return [float(x) for x in stacked.detach().cpu().numpy().reshape(-1)]
 
 
+def tensor_scalar_sequences_to_float_lists(
+        *sequences: Sequence[torch.Tensor],
+        ) -> Tuple[List[float], ...]:
+    if not sequences:
+        return tuple()
+    lengths = [len(values) for values in sequences]
+    if sum(lengths) == 0:
+        return tuple([] for _ in sequences)
+    stacked = torch.stack(
+        [v.reshape(()) for values in sequences for v in values],
+        dim=0,
+    )
+    flat = stacked.detach().cpu().numpy().reshape(-1)
+    out: List[List[float]] = []
+    cursor = 0
+    for length in lengths:
+        next_cursor = cursor + length
+        out.append([float(x) for x in flat[cursor:next_cursor]])
+        cursor = next_cursor
+    return tuple(out)
+
+
 def tensor_values_to_numpy_arrays(values: Sequence[Any]) -> List[np.ndarray]:
     return [
         np.asarray(x.detach().cpu().numpy()) if isinstance(x, torch.Tensor) else np.asarray(x)
@@ -311,9 +333,11 @@ def run_installed_probe_trial(
         if restore_training and was_training:
             model.train()
 
-    losses = tensor_scalar_values_to_float_list(loss_tensors)
-    m1s = tensor_scalar_values_to_float_list(m1_tensors)
-    m2s = tensor_scalar_values_to_float_list(m2_tensors)
+    losses, m1s, m2s = tensor_scalar_sequences_to_float_lists(
+        loss_tensors,
+        m1_tensors,
+        m2_tensors,
+    )
     trial_preds = tensor_values_to_numpy_arrays(trial_pred_tensors)
     trial_labels = tensor_values_to_numpy_arrays(trial_label_tensors)
     trial_metrics = finalize_probe_trial_metrics(

@@ -72,6 +72,30 @@ class InstalledInferenceEvalSourceTest(unittest.TestCase):
         self.assertNotIn("compute_probe_batch_metrics(", loop_region)
         self.assertNotIn(".cpu().numpy()", loop_region)
 
+    def test_probe_trial_batches_scalar_metric_cpu_sync_once(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        source = (repo / "blb_stage2_rl" / "inference_eval.py").read_text(
+            encoding="utf-8"
+        )
+        region = _function_region_from_source(source, "run_installed_probe_trial")
+
+        self.assertIn(
+            "losses, m1s, m2s = tensor_scalar_sequences_to_float_lists(",
+            region,
+        )
+        self.assertNotIn(
+            "losses = tensor_scalar_values_to_float_list(loss_tensors)",
+            region,
+        )
+        self.assertNotIn(
+            "m1s = tensor_scalar_values_to_float_list(m1_tensors)",
+            region,
+        )
+        self.assertNotIn(
+            "m2s = tensor_scalar_values_to_float_list(m2_tensors)",
+            region,
+        )
+
 
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
 class SharedInstalledInferenceEvalTest(unittest.TestCase):
