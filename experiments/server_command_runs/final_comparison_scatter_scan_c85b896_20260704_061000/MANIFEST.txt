@@ -1,0 +1,12 @@
+./MANIFEST.txt
+./README.md
+./RUN_METADATA.txt
+./green/green_status.txt
+./green/py_compile.log
+./green/source_guard.log
+./green/unittest.log
+./red/red_status.txt
+./red/red_unittest.log
+./source_snapshot/final_evaluation_module_after.py
+./source_snapshot/final_evaluation_module_before.py
+./source_snapshot/test_final_evaluation_config_cache.py

@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `e4c3d47`, the conservative
-completion estimate is about 78% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `c85b896`, the conservative
+completion estimate is about 79% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -99,6 +99,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `08560c1` | `experiments/server_command_runs/final_stat_helpers_08560c1_20260704_044500/` | Stream shared final-eval finite-float mean/std helpers without clean-list materialization or numpy stats calls. |
 | Paean final eval | `75cce4c` | `experiments/server_command_runs/final_variance_plot_mean_75cce4c_20260704_052500/` | Stream final-eval variance-plot group means through the shared finite-float helper instead of materializing per-group `vals` lists and calling `np.mean(vals)`. |
 | Paean final eval | `e4c3d47` | `experiments/server_command_runs/final_variance_scatter_scan_e4c3d47_20260704_054500/` | Scan variance-plot random scatter points once per family/panel instead of building separate `xs` and `ys` list comprehensions over the same rows. |
+| Paean final eval | `c85b896` | `experiments/server_command_runs/final_comparison_scatter_scan_c85b896_20260704_061000/` | Scan main final-eval comparison random scatter points once per family/panel instead of building separate `xs` and `ys` list comprehensions over the same rows. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
@@ -1490,6 +1491,20 @@ read `total_cost` more than once per panel. The green gate passed `py_compile`,
 all `tests.test_final_evaluation_config_cache` tests, and a source guard
 confirming the old paired list-comprehension scan is gone.
 
+Progress 2026-07-04: `_plot_results()` now builds the main final-eval
+comparison scatter panel `xs` and `ys` in one loop per family/panel. Each
+random-result row reads `total_cost` once for that metric panel instead of
+scanning the same `items` twice through separate `xs` and `ys` comprehensions.
+The plotted comparison points and summary bar chart semantics remain unchanged.
+
+Server evidence 2026-07-04: source commit `c85b896` has red/green verification
+under
+`experiments/server_command_runs/final_comparison_scatter_scan_c85b896_20260704_061000/`.
+The red test used a guarded random-result row to prove the old comparison plot
+path read `total_cost` more than once per panel. The green gate passed
+`py_compile`, all `tests.test_final_evaluation_config_cache` tests, and a
+source guard confirming the old paired list-comprehension scan is gone.
+
 - [ ] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
@@ -2205,6 +2220,9 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   `final_variance_plot_mean_75cce4c_20260704_052500` run directory.
 - `e4c3d47` final-eval variance scatter single-scan path, evidence committed
   in the `final_variance_scatter_scan_e4c3d47_20260704_054500` run directory.
+- `c85b896` final-eval comparison scatter single-scan path, evidence committed
+  in the `final_comparison_scatter_scan_c85b896_20260704_061000` run
+  directory.
 - `643ae60` shared JSONL single path resolution, evidence committed in the
   `jsonl_resolve_once_643ae60_20260704_034331` run directory.
 - `2ded3e7` BLB GLUE action-config shared JSON reader, evidence committed in

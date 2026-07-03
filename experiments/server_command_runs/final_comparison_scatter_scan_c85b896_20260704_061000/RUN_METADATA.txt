@@ -1,0 +1,6 @@
+source_commit=c85b896
+base_commit=1856182
+branch=jk_standard_rl
+red_dir=/hy-tmp/rfr_comparison_scatter_scan_red_1856182_20260704_060000
+green_dir=/hy-tmp/rfr_comparison_scatter_scan_green_1856182_20260704_061000
+workflow=local_edit_git_push_server_temp_verify_artifact_return
