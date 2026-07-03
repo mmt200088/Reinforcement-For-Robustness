@@ -550,6 +550,12 @@ N-GPU marker flags such as worker-local probe noise scopes, worker-local CUDA
 streams, and CPU policy mode. This avoids rereading the same long launch log
 three extra times while preserving the existing report fields.
 
+Progress 2026-07-03: `scripts/stage2_ngpu_ab_compare.py` now computes episode
+timestamp spans with a single min/max pass instead of collecting every
+timestamp into a temporary list before calling `min()` and `max()`. Long
+1GPU-vs-NGPU evidence reports keep the same wall-source fallback while avoiding
+one extra 60k-row float list.
+
 Progress 2026-07-02: `scripts/blb_fusion_ab_compare.py` now checks common
 `blb_stage2_best_action_full.json` locations directly before falling back to a
 recursive directory walk. A local synthetic run tree with 402 directories and

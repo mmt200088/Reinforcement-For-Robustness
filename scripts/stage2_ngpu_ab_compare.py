@@ -88,15 +88,23 @@ def _read_wall_seconds(path: Optional[str]) -> Optional[float]:
     return float(text)
 
 
-def _timestamp_span(rows: Sequence[Mapping[str, Any]]) -> Optional[float]:
-    values = [
-        float(row["timestamp"])
-        for row in rows
-        if row.get("timestamp") is not None
-    ]
-    if len(values) < 2:
+def _timestamp_span(rows: Iterable[Mapping[str, Any]]) -> Optional[float]:
+    count = 0
+    min_ts: Optional[float] = None
+    max_ts: Optional[float] = None
+    for row in rows:
+        raw_value = row.get("timestamp")
+        if raw_value is None:
+            continue
+        value = float(raw_value)
+        count += 1
+        if min_ts is None or value < min_ts:
+            min_ts = value
+        if max_ts is None or value > max_ts:
+            max_ts = value
+    if count < 2 or min_ts is None or max_ts is None:
         return None
-    return float(max(values) - min(values))
+    return float(max_ts - min_ts)
 
 
 def _canonical(

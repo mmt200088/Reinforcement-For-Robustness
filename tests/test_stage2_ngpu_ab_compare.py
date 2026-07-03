@@ -73,6 +73,22 @@ class Stage2NgpuCompareTests(unittest.TestCase):
         self.assertEqual([row["episode"] for row in rows], [1, 2])
         self.assertEqual(calls, [("/tmp/run/episodes.jsonl", {"errors": "raise"})])
 
+    def test_timestamp_span_streams_without_collecting_values(self):
+        import inspect
+
+        rows = [
+            {"timestamp": 10.0},
+            {"timestamp": None},
+            {"timestamp": 16.5},
+            {"timestamp": 12.0},
+        ]
+
+        self.assertEqual(ngpu_mod._timestamp_span(rows), 6.5)
+        self.assertIsNone(ngpu_mod._timestamp_span([{"timestamp": 10.0}]))
+        source = inspect.getsource(ngpu_mod._timestamp_span)
+        self.assertNotIn("values = [", source)
+        self.assertNotIn("max(values)", source)
+
     def test_effect_equality_ignores_timing_device_and_bookkeeping(self):
         one = [_row(0, timestamp=1.0, device="cuda:0", pareto_kind="dominated")]
         many = [_row(0, timestamp=2.0, device="cuda:4", pareto_kind="")]
