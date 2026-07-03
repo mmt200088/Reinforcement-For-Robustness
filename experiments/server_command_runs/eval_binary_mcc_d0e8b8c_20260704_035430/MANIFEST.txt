@@ -1,0 +1,10 @@
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/MANIFEST.txt
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/RUN_METADATA.txt
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/green/green_status.txt
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/green/logs/green_unittest.log
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/green/logs/py_compile.log
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/green/logs/source_guard.log
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/red/logs/red_unittest.log
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/red/red_status.txt
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/source_snapshot/eval_metrics.py
+/hy-tmp/eval_binary_mcc_d0e8b8c_20260704_035430/source_snapshot/test_blb_eval_metrics_shared.py

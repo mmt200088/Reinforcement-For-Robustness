@@ -1,0 +1,6 @@
+source_commit=d0e8b8c
+base_commit=0928a4a
+red_run=/hy-tmp/rfr_binary_mcc_red_0928a4a_20260704_035330
+green_run=/hy-tmp/rfr_binary_mcc_green_0928a4a_20260704_035430
+red_command=python -m unittest tests.test_blb_eval_metrics_shared.SharedEvalMetricsTest.test_binary_matthews_corrcoef_skips_union_sort -v
+green_commands=python -m py_compile blb_stage2_rl/eval_metrics.py; python -m unittest tests.test_blb_eval_metrics_shared -v; source guard for binary MCC fast path before union fallback
