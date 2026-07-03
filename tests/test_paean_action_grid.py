@@ -1,6 +1,8 @@
 import importlib.util
+import json
 from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -159,6 +161,62 @@ class PaeanActionGridTest(unittest.TestCase):
         self.assertEqual(candidates, [])
         self.assertEqual(diagnostics.avg_k_prefilter_skipped, 5)
         self.assertEqual(parse_calls, 1)
+
+    def test_slot_config_loading_reuses_profile_max_sfs(self):
+        action_grid = _load_action_grid_module()
+        load_calls = 0
+
+        def counting_load_max_sfs(profile):
+            nonlocal load_calls
+            load_calls += 1
+            return {"profile": profile}
+
+        action_grid.load_max_sfs = counting_load_max_sfs
+
+        action_space_stub = types.ModuleType("blb_stage2_rl.action_space")
+        action_space_stub.load_max_sfs = counting_load_max_sfs
+        action_io_stub = types.ModuleType("blb_stage2_rl.action_io")
+
+        def slots_payload_to_action_vec(payload, *, max_sfs, num_layers, gelu_degree, attn_degree):
+            self.assertEqual(max_sfs, {"profile": "mrpc"})
+            self.assertEqual(int(num_layers), 1)
+            return [0], []
+
+        action_io_stub.slots_payload_to_action_vec = slots_payload_to_action_vec
+
+        previous_action_space = sys.modules.get("blb_stage2_rl.action_space")
+        previous_action_io = sys.modules.get("blb_stage2_rl.action_io")
+        sys.modules["blb_stage2_rl.action_space"] = action_space_stub
+        sys.modules["blb_stage2_rl.action_io"] = action_io_stub
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                payload = {
+                    "schema_version": "blb_v3_slots_human_v1",
+                    "num_layers": 1,
+                    "profile": "mrpc",
+                    "gelu_degree": [4],
+                    "attn_degree": [6],
+                    "slots": [{"label": "L00.B2.W.wffn1", "scaling_factor": 30}],
+                }
+                first_path = root / "first.json"
+                second_path = root / "second.json"
+                first_path.write_text(json.dumps(payload), encoding="utf-8")
+                second_path.write_text(json.dumps(payload), encoding="utf-8")
+
+                action_grid.load_action_grid_config(str(first_path))
+                action_grid.load_action_grid_config(str(second_path))
+        finally:
+            if previous_action_space is None:
+                sys.modules.pop("blb_stage2_rl.action_space", None)
+            else:
+                sys.modules["blb_stage2_rl.action_space"] = previous_action_space
+            if previous_action_io is None:
+                sys.modules.pop("blb_stage2_rl.action_io", None)
+            else:
+                sys.modules["blb_stage2_rl.action_io"] = previous_action_io
+
+        self.assertEqual(load_calls, 1)
 
 
 if __name__ == "__main__":

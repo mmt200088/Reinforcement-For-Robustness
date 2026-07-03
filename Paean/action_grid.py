@@ -32,6 +32,16 @@ _SF_CHOICE_CACHE: Dict[
     Tuple[int, str, int, int],
     Tuple[Dict[int, int], Tuple[int, ...]],
 ] = {}
+_MAX_SFS_PROFILE_CACHE: Dict[str, Any] = {}
+
+
+def _load_max_sfs_cached(profile: str) -> Any:
+    key = str(profile)
+    cached = _MAX_SFS_PROFILE_CACHE.get(key)
+    if cached is None:
+        cached = load_max_sfs(key)
+        _MAX_SFS_PROFILE_CACHE[key] = cached
+    return cached
 
 
 @dataclass(frozen=True)
@@ -154,7 +164,6 @@ def load_action_grid_config(
         # New schema — convert via blb_stage2_rl.action_io.
         try:
             from blb_stage2_rl.action_io import slots_payload_to_action_vec
-            from blb_stage2_rl.action_space import load_max_sfs as _load_max_sfs
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
                 f"slot-form action-config requires blb_stage2_rl.action_io; import failed: {exc}"
@@ -162,7 +171,7 @@ def load_action_grid_config(
         cfg_profile = str(payload.get("profile") or profile or "default")
         cfg_gelu = payload.get("gelu_degree", gelu_degree)
         cfg_attn = payload.get("attn_degree", attn_degree)
-        max_sfs = _load_max_sfs(cfg_profile)
+        max_sfs = _load_max_sfs_cached(cfg_profile)
         slot_payload = dict(payload)
         if "base" not in slot_payload:
             for base_key in ("base_action_vec", "base_action"):
@@ -281,7 +290,7 @@ def build_action_candidates(
         base_action_vec = config.base_action_vec
     base = _normalize_base_action(base_action_vec, num_layers)
 
-    max_sfs = load_max_sfs(profile)
+    max_sfs = _load_max_sfs_cached(profile)
     for spec in fixed:
         selector, values = parse_action_spec(spec)
         if len(values) != 1:
