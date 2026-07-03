@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `54d7bf9`, the conservative
+not by raw commit count. As of source head `af9884a`, the conservative
 completion estimate is about 96% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
@@ -104,6 +104,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `d76cf29` | `experiments/server_command_runs/final_eval_invalid_values_d76cf29_20260704_054400/` | Scan normalized final-eval config arrays for unsupported values without materializing `arr.tolist()` sets. |
 | Paean final eval | `b9f01de` | `experiments/server_command_runs/final_eval_signature_tuple_b9f01de_20260704_054950/` | Build final-eval cache signature keys as direct integer tuples and reuse `_full_signature()` from `_noise_eval()` instead of materializing arrays through `.tolist()`. |
 | Paean final eval | `54d7bf9` | `experiments/server_command_runs/paean_selected_random_summary_54d7bf9_20260704_062553/` | Stream BLB action selected-vs-random final-eval summary rows once, accumulating field stats and anchor ranks without per-field numpy arrays or separate rank lists. |
+| Paean final eval | `af9884a` | `experiments/server_command_runs/paean_results_plot_scan_af9884a_20260704_063156/` | Scan BLB action final-eval plot candidate rows once before numpy conversion instead of rebuilding each plotted column with a separate `candidate_results` list comprehension. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
@@ -1549,6 +1550,20 @@ verification under
 The RED target test failed on the old `np.asarray([float(...) ...])` and rank
 list patterns. The GREEN gate passed `py_compile` and the two focused
 selected-vs-random summary tests, including statistic/rank semantic parity.
+
+Progress 2026-07-04: `BLBActionFinalEvaluationModule._save_results_plot()`
+now scans BLB action final-eval `candidate_results` once to collect labels,
+loss, metric, cost, and timing columns before converting those columns to numpy
+arrays for matplotlib. This removes six separate candidate-result list
+comprehensions from the plot-generation path while preserving the plotted
+series and output path.
+
+Server evidence 2026-07-04: source commit `af9884a` has focused red/green
+verification under
+`experiments/server_command_runs/paean_results_plot_scan_af9884a_20260704_063156/`.
+The RED source guard failed on the old per-column `np.asarray([... for r in
+candidate_results])` patterns. The GREEN gate passed `py_compile` and
+`test_results_plot_scans_candidate_rows_once`.
 
 - [ ] **Step 3: Verify**
 
