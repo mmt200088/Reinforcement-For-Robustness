@@ -184,6 +184,27 @@ class JsonlUtilsTest(unittest.TestCase):
 
         self.assertEqual(text, '{"a": "x", "b": 2}\n')
 
+    def test_write_jsonl_rows_reuses_encoder_without_json_dump_calls(self):
+        import jsonl_utils
+
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "nested" / "rows.jsonl"
+
+            with mock.patch.object(
+                jsonl_utils.json,
+                "dump",
+                side_effect=AssertionError("write_jsonl_rows should reuse one JSONEncoder"),
+            ):
+                write_jsonl_rows(
+                    path,
+                    [{"b": 2, "a": pathlib.Path("x")}, {"c": 3}],
+                    sort_keys=True,
+                )
+
+            text = path.read_text(encoding="utf-8")
+
+        self.assertEqual(text, '{"a": "x", "b": 2}\n{"c": 3}\n')
+
 
 class JsonlUtilsStaticGuardTest(unittest.TestCase):
     def test_known_report_scripts_use_shared_jsonl_reader(self):
