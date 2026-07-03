@@ -407,13 +407,11 @@ class BLBActionFinalEvaluationModule:
             single["evaluation_protocol"] = "single_validation_full"
             return single
 
-        trials = [
-            self._run_single_clean_baseline_eval(
-                baseline_stage1_gelu=baseline_stage1_gelu,
-                baseline_stage1_softmax=baseline_stage1_softmax,
-            )
-            for _idx in range(repeats)
-        ]
+        trials = self._run_clean_baseline_trials(
+            baseline_stage1_gelu=baseline_stage1_gelu,
+            baseline_stage1_softmax=baseline_stage1_softmax,
+            repeats=repeats,
+        )
         repeat = pack_repeat_evaluation(
             trials,
             evaluation_mode="clean_baseline_repeated_validation_full",
@@ -436,6 +434,19 @@ class BLBActionFinalEvaluationModule:
         return result
 
     def _run_single_clean_baseline_eval(self, *, baseline_stage1_gelu, baseline_stage1_softmax):
+        return self._run_clean_baseline_trials(
+            baseline_stage1_gelu=baseline_stage1_gelu,
+            baseline_stage1_softmax=baseline_stage1_softmax,
+            repeats=1,
+        )[0]
+
+    def _run_clean_baseline_trials(
+        self,
+        *,
+        baseline_stage1_gelu,
+        baseline_stage1_softmax,
+        repeats: int,
+    ):
         ev = self.evaluator
         ev.apply_configuration(
             np.asarray(baseline_stage1_gelu, dtype=int),
@@ -443,19 +454,22 @@ class BLBActionFinalEvaluationModule:
         )
         self._clear_all_noise()
         split_name = ev._resolve_eval_split(use_train=False, split="validation_full")
-        loss, p, s, t = ev._run_evaluation(
-            ev.dataloaders[split_name],
-            use_train=False,
-            split_name=split_name,
-        )
-        return {
-            "name": "Baseline (Stage-1 Exact)",
-            "family": "Baseline",
-            "loss": float(loss),
-            "p": float(p),
-            "s": float(s),
-            "time_ms": float(t),
-        }
+        trials = []
+        for _idx in range(max(1, int(repeats))):
+            loss, p, s, t = ev._run_evaluation(
+                ev.dataloaders[split_name],
+                use_train=False,
+                split_name=split_name,
+            )
+            trials.append({
+                "name": "Baseline (Stage-1 Exact)",
+                "family": "Baseline",
+                "loss": float(loss),
+                "p": float(p),
+                "s": float(s),
+                "time_ms": float(t),
+            })
+        return trials
 
     def _evaluate_action_candidate(
             self,
@@ -1272,13 +1286,15 @@ class BLBActionFinalEvaluationModule:
         }
 
     def _run_blb_eval(self, decoded, *, gelu, softmax):
-        ev = self.evaluator
         repeats = self.repeat_n
         if repeats <= 1:
             return self._run_single_blb_eval(decoded, gelu=gelu, softmax=softmax), None
-        trials = []
-        for _idx in range(repeats):
-            trials.append(self._run_single_blb_eval(decoded, gelu=gelu, softmax=softmax))
+        trials = self._run_blb_eval_trials(
+            decoded,
+            gelu=gelu,
+            softmax=softmax,
+            repeats=repeats,
+        )
         repeat = pack_repeat_evaluation(
             trials,
             evaluation_mode="blb_action_repeated_validation_full",
@@ -1292,6 +1308,14 @@ class BLBActionFinalEvaluationModule:
         }, repeat
 
     def _run_single_blb_eval(self, decoded, *, gelu, softmax):
+        return self._run_blb_eval_trials(
+            decoded,
+            gelu=gelu,
+            softmax=softmax,
+            repeats=1,
+        )[0]
+
+    def _run_blb_eval_trials(self, decoded, *, gelu, softmax, repeats: int):
         ev = self.evaluator
         bridge = BLBNoiseRLBridge(
             ev.reversible_handler,
@@ -1312,18 +1336,21 @@ class BLBActionFinalEvaluationModule:
             )
             install_verification = self._verify_model_installation(bridge, decoded)
             split_name = ev._resolve_eval_split(use_train=False, split="validation_full")
-            loss, p, s, time_ms = ev._run_evaluation(
-                ev.dataloaders[split_name],
-                use_train=False,
-                split_name=split_name,
-            )
-            return {
-                "loss": float(loss),
-                "p": float(p),
-                "s": float(s),
-                "time_ms": float(time_ms),
-                "install_verification": install_verification,
-            }
+            trials = []
+            for _idx in range(max(1, int(repeats))):
+                loss, p, s, time_ms = ev._run_evaluation(
+                    ev.dataloaders[split_name],
+                    use_train=False,
+                    split_name=split_name,
+                )
+                trials.append({
+                    "loss": float(loss),
+                    "p": float(p),
+                    "s": float(s),
+                    "time_ms": float(time_ms),
+                    "install_verification": install_verification,
+                })
+            return trials
         finally:
             bridge.clear()
             self._clear_all_noise()

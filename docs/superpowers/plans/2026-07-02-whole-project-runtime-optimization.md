@@ -865,6 +865,12 @@ prevents Stage-1 and Stage-2 JSON resolution from opening/parsing the same
 config file twice in a single final-eval flow while preserving config-source
 semantics.
 
+Progress 2026-07-03: BLB action final-eval repeat handling now reuses one
+clean-baseline Stage-1 install and one BLB bridge install per candidate when
+`repeat_n > 1`, while still running the validation forward pass once per
+repeat. This removes repeated configuration/noise installation work from
+repeat measurements without adding an evaluation-result cache.
+
 Progress 2026-07-02: `UnifiedFinalEvaluationModule` now caches the Stage-2
 total-cost count-solution maps used by random final-eval groups. Repeated
 Stage2Budget/Budget sampling in one final-eval run reuses the same per-noise
