@@ -336,8 +336,15 @@ def load_profile_configs(rescale_optimizer_root: str, profile: str) -> Dict[str,
     out: Dict[str, Mapping[str, Any]] = {}
     if not os.path.isdir(cfg_dir):
         return out
-    for fn in sorted(os.listdir(cfg_dir)):
-        if not fn.endswith(".json") or fn.startswith("static_skeletons"):
-            continue
-        out[fn[:-5]] = read_json_file(os.path.join(cfg_dir, fn))
+    entries = []
+    with os.scandir(cfg_dir) as it:
+        for entry in it:
+            fn = entry.name
+            if not fn.endswith(".json") or fn.startswith("static_skeletons"):
+                continue
+            if not entry.is_file():
+                continue
+            entries.append((fn, entry.path))
+    for fn, path in sorted(entries):
+        out[fn[:-5]] = read_json_file(path)
     return out
