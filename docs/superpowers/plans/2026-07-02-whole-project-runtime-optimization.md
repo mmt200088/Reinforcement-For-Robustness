@@ -1406,6 +1406,14 @@ buffered file handle. Required `rl_training_data_points/` schemas and flush
 cadence stay unchanged while long RL runs avoid one full JSON string allocation
 per manifest, summary, step, episode, and PPO diagnostic row.
 
+Progress 2026-07-03: `blb_stage2_rl/diagnostics.py` now reuses one
+`JSONEncoder` for primary Stage-2 diagnostic JSONL rows and streams encoder
+chunks directly into the buffered `episodes.jsonl` / `ppo_updates.jsonl`
+handles. Periodic `top_candidates.jsonl` and `pareto_frontier.jsonl` rewrites
+use the same row writer. The append schema, default string fallback, buffering,
+and flush cadence stay unchanged while training diagnostics avoid per-row
+`json.dumps(...)+ "\n"` allocations.
+
 - [ ] **Step 3: Verify**
 
 Run:

@@ -540,7 +540,14 @@ class RLDataPointWriterTest(unittest.TestCase):
                 elapsed_sec=2.0,
             )
 
-            with mock.patch("builtins.open", side_effect=fake_open):
+            with (
+                mock.patch("builtins.open", side_effect=fake_open),
+                mock.patch.object(
+                    module.json,
+                    "dumps",
+                    side_effect=AssertionError("primary diagnostics JSONL should stream rows"),
+                ),
+            ):
                 recorder.record_episode(
                     episode_stats=episode_stats,
                     full_action_vec=None,
@@ -562,8 +569,18 @@ class RLDataPointWriterTest(unittest.TestCase):
             self.assertEqual(len(ppo_handles), 1)
             self.assertEqual(episode_handles[0][2]["buffering"], 1024 * 1024)
             self.assertEqual(ppo_handles[0][2]["buffering"], 1024 * 1024)
-            self.assertEqual(episode_handles[0][0].write.call_count, 2)
-            self.assertEqual(ppo_handles[0][0].write.call_count, 2)
+            self.assertEqual(episode_handles[0][0].writelines.call_count, 2)
+            self.assertEqual(ppo_handles[0][0].writelines.call_count, 2)
+            episode_newlines = [
+                call for call in episode_handles[0][0].write.call_args_list
+                if call.args == ("\n",)
+            ]
+            ppo_newlines = [
+                call for call in ppo_handles[0][0].write.call_args_list
+                if call.args == ("\n",)
+            ]
+            self.assertEqual(len(episode_newlines), 2)
+            self.assertEqual(len(ppo_newlines), 2)
 
 
 if __name__ == "__main__":

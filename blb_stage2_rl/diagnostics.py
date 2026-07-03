@@ -284,6 +284,7 @@ class RLDiagnosticsRecorder:
         self._data_point_writer = data_point_writer
         self._jsonl_buffer_size = 1024 * 1024
         self._jsonl_flush_interval = 64
+        self._jsonl_encoder = json.JSONEncoder(ensure_ascii=False, default=str)
         self._jsonl_files: Dict[str, TextIO] = {}
         self._jsonl_line_counts: Dict[str, int] = {}
 
@@ -471,6 +472,10 @@ class RLDiagnosticsRecorder:
     # Recording APIs
     # ------------------------------------------------------------------
 
+    def _write_jsonl_row(self, fh: TextIO, payload: Mapping[str, Any]) -> None:
+        fh.writelines(self._jsonl_encoder.iterencode(payload))
+        fh.write("\n")
+
     def _write_primary_jsonl(self, path: str, payload: Mapping[str, Any]) -> None:
         fh = self._jsonl_files.get(path)
         if fh is None:
@@ -482,7 +487,7 @@ class RLDiagnosticsRecorder:
             )
             self._jsonl_files[path] = fh
             self._jsonl_line_counts[path] = 0
-        fh.write(json.dumps(dict(payload), ensure_ascii=False, default=str) + "\n")
+        self._write_jsonl_row(fh, dict(payload))
         self._jsonl_line_counts[path] = self._jsonl_line_counts.get(path, 0) + 1
         if self._jsonl_line_counts[path] % self._jsonl_flush_interval == 0:
             fh.flush()
@@ -811,7 +816,7 @@ class RLDiagnosticsRecorder:
                         except Exception:
                             pass
                     out_row["rank"] = int(rank)
-                    f.write(json.dumps(out_row, ensure_ascii=False) + "\n")
+                    self._write_jsonl_row(f, out_row)
             os.replace(tmp, self.top_path)
         except Exception as exc:
             self.log(f"  [diag][warning] top_candidates.jsonl write failed: {exc}")
@@ -942,7 +947,7 @@ class RLDiagnosticsRecorder:
         tmp = self.pareto_jsonl_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             for row in rows:
-                f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+                self._write_jsonl_row(f, row)
         os.replace(tmp, self.pareto_jsonl_path)
         _atomic_json_dump(self.pareto_json_path, {
             "schema_version": "blb_stage2_pareto_frontier_v1",
