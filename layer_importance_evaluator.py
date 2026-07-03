@@ -2669,6 +2669,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         
         # ==================== PPO 7.1: 运行时回报归一化状态 ====================
         self.reward_history = deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)  # 历史回报滑动窗口
+        self.reward_history_sum = 0.0
+        self.reward_history_sumsq = 0.0
         self.reward_mean = 0.0    # 运行时均值
         self.reward_std = 1.0     # 运行时标准差（初始为1避免除零）
         
@@ -3792,6 +3794,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         self._update_curriculum_phase(episode)
         
         return self.current_lr, new_entropy
+
+    def _rebuild_reward_statistics_accumulators(self):
+        self.reward_history_sum = float(sum(float(value) for value in self.reward_history))
+        self.reward_history_sumsq = float(sum(float(value) * float(value) for value in self.reward_history))
     
     def _update_curriculum_phase(self, episode):
         """
@@ -3845,13 +3851,21 @@ class LayerImportanceEvaluator(TrainerCallback):
         PPO 7.1: 更新运行时回报统计量
         维护滑动窗口的均值和标准差，用于回报归一化
         """
-        # 将新回报加入历史
+        episode_reward = float(episode_reward)
+        if len(self.reward_history) == self.reward_history.maxlen:
+            old_reward = float(self.reward_history[0])
+            self.reward_history_sum -= old_reward
+            self.reward_history_sumsq -= old_reward * old_reward
         self.reward_history.append(episode_reward)
+        self.reward_history_sum += episode_reward
+        self.reward_history_sumsq += episode_reward * episode_reward
         
         # 更新均值和标准差（至少需要一定数量的样本）
         if len(self.reward_history) >= RUNNING_REWARD_MIN_SAMPLES:
-            self.reward_mean = np.mean(self.reward_history)
-            self.reward_std = np.std(self.reward_history) + RUNNING_REWARD_EPSILON
+            n = float(len(self.reward_history))
+            self.reward_mean = self.reward_history_sum / n
+            variance = max(self.reward_history_sumsq / n - self.reward_mean * self.reward_mean, 0.0)
+            self.reward_std = math.sqrt(variance) + RUNNING_REWARD_EPSILON
     
     def _detect_layer_attribute(self):
         candidates = ['bert.encoder.layer', 'transformer.h', 'model.layers', 'roberta.encoder.layer']
@@ -4916,6 +4930,8 @@ class LayerImportanceEvaluator(TrainerCallback):
         else:
             self.current_lr = self.stage1_ppo_lr_initial
         self.reward_history = deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)
+        self.reward_history_sum = 0.0
+        self.reward_history_sumsq = 0.0
         self.reward_mean = 0.0
         self.reward_std = 1.0
         self.return_normalizer = RunningMeanStd()
@@ -6459,6 +6475,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 )
                 self.reward_mean = float(_ev_rt.get("reward_mean", 0.0))
                 self.reward_std = float(_ev_rt.get("reward_std", 1.0))
+                self._rebuild_reward_statistics_accumulators()
                 self.current_episode = int(_ev_rt.get("current_episode", stage1_resume_start_episode))
                 # 恢复 return_normalizer（RunningMeanStd）状态，保证 value critic 归一化连续
                 if "return_normalizer_mean" in _ev_rt:

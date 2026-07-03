@@ -363,6 +363,53 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
         self.assertNotIn("reward_history.pop(0)", update_region)
         self.assertNotIn("len(self.reward_history) > RUNNING_REWARD_HISTORY_SIZE", update_region)
 
+    def test_reward_statistics_maintain_running_sums_not_numpy_window_scans(self):
+        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        init_region = _source_region(
+            source,
+            "        # ==================== PPO 7.1: 运行时回报归一化状态 ====================",
+            "        # ==================== PDF 6.3: Return Normalization (PopArt风格) ====================",
+        )
+        reset_region = _source_region(
+            source,
+            "    def _reset_runtime_ppo_state(",
+            "    def _get_stage1_resume_checkpoint_path(",
+        )
+        resume_region = _source_region(
+            source,
+            "                _ev_rt = ckpt.get(\"ev_runtime_state\", {})",
+            "                # 恢复 return_normalizer（RunningMeanStd）状态",
+        )
+        helper_marker = "    def _rebuild_reward_statistics_accumulators(self):"
+        if helper_marker not in source:
+            self.fail("LayerImportanceEvaluator is missing reward statistics accumulator rebuild helper")
+        helper_region = _source_region(
+            source,
+            helper_marker,
+            "    def _update_curriculum_phase(self, episode):",
+        )
+        update_region = _source_region(
+            source,
+            "    def update_reward_statistics(self, episode_reward):",
+            "    def _detect_layer_attribute(self):",
+        )
+
+        for region in (init_region, reset_region):
+            self.assertIn("self.reward_history_sum = 0.0", region)
+            self.assertIn("self.reward_history_sumsq = 0.0", region)
+        self.assertIn("self._rebuild_reward_statistics_accumulators()", resume_region)
+        self.assertIn("self.reward_history_sum = float(sum(", helper_region)
+        self.assertIn("self.reward_history_sumsq = float(sum(", helper_region)
+        self.assertIn("old_reward = float(self.reward_history[0])", update_region)
+        self.assertIn("self.reward_history_sum -= old_reward", update_region)
+        self.assertIn("self.reward_history_sumsq -= old_reward * old_reward", update_region)
+        self.assertIn("self.reward_history_sum += episode_reward", update_region)
+        self.assertIn("self.reward_history_sumsq += episode_reward * episode_reward", update_region)
+        self.assertIn("variance = max(", update_region)
+        self.assertIn("math.sqrt(variance)", update_region)
+        self.assertNotIn("np.mean(self.reward_history)", update_region)
+        self.assertNotIn("np.std(self.reward_history)", update_region)
+
 
 @unittest.skipUnless(_HAS_TORCH, "layer_importance_evaluator imports torch")
 class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
