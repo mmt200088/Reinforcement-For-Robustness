@@ -1812,11 +1812,15 @@ class UnifiedFinalEvaluationModule:
 
             # Summary bar chart
             ax = axes[1, 1]
-            families = list(summary.get("by_family", {}).keys())
+            families = []
+            feasible = []
+            dominance = []
+            for family, family_summary in summary.get("by_family", {}).items():
+                families.append(family)
+                feasible.append(family_summary["feasible_rate"])
+                dominance.append(family_summary["dominance_rate"])
             if families:
                 x = np.arange(len(families))
-                feasible = [summary["by_family"][f]["feasible_rate"] for f in families]
-                dominance = [summary["by_family"][f]["dominance_rate"] for f in families]
                 width = 0.34
                 ax.bar(x - width / 2, feasible, width=width,
                        label="Constraint OK", color="#72B7B2")

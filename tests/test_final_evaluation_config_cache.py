@@ -388,6 +388,18 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertNotIn("list(axes.flat)[:3]", comparison_source)
         self.assertNotIn("list(axes.flat)[:3]", variance_source)
 
+    def test_final_eval_summary_bar_chart_collects_series_once(self):
+        source = inspect.getsource(fem.UnifiedFinalEvaluationModule._plot_results)
+
+        self.assertNotIn(
+            'feasible = [summary["by_family"][f]["feasible_rate"] for f in families]',
+            source,
+        )
+        self.assertNotIn(
+            'dominance = [summary["by_family"][f]["dominance_rate"] for f in families]',
+            source,
+        )
+
     def test_float_stat_helpers_stream_values_without_clean_lists(self):
         values = [1.0, None, float("nan"), 3.0, float("inf")]
 
