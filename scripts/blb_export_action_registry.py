@@ -15,7 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_broadcast_int_vector  # noqa: E402
-from json_utils import stable_json_hash  # noqa: E402
+from json_utils import stable_json_hash, write_json_file  # noqa: E402
 
 
 SEMANTIC_TYPE_BY_KIND = {
@@ -489,21 +489,12 @@ def write_registry_artifacts(payload: Dict[str, Any], output_dir: os.PathLike[st
     effective_path = out / "slot_registry_effective.json"
     slot_check_path = out / "current_code_slot_check.md"
     mapping_path = out / "action_index_mapping.md"
-    full_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_json_file(full_path, payload)
     md_path.write_text(_registry_markdown(payload), encoding="utf-8")
     semantics_path.write_text(_slot_semantics_markdown(payload), encoding="utf-8")
     rotation_path.write_text(_rotation_markdown(), encoding="utf-8")
-    slot_registry_full_path.write_text(
-        json.dumps(payload["slot_registry_full"], ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    effective_path.write_text(
-        json.dumps(payload["slot_registry_effective"], ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_json_file(slot_registry_full_path, payload["slot_registry_full"])
+    write_json_file(effective_path, payload["slot_registry_effective"])
     slot_check_path.write_text(payload["current_code_slot_check_markdown"], encoding="utf-8")
     mapping_path.write_text(payload["action_index_mapping_markdown"], encoding="utf-8")
     return {

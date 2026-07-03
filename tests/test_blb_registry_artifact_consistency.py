@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class BLBRegistryArtifactConsistencyTests(unittest.TestCase):
@@ -33,6 +34,67 @@ class BLBRegistryArtifactConsistencyTests(unittest.TestCase):
 
             effective_ids = {row["slot_id"] for row in effective}
             self.assertFalse(any(row["slot_id"] in effective_ids for row in l0b1 + first_input))
+
+    def test_registry_json_artifacts_stream_without_materializing_strings(self):
+        import scripts.blb_export_action_registry as registry
+
+        payload = {
+            "profile": "mrpc",
+            "num_layers": 1,
+            "gelu_degree": [4],
+            "attn_degree": [6],
+            "expected_slots_per_layer": 1,
+            "registry_hash": "hash",
+            "summary": {
+                "slot_count": 1,
+                "required_slot_count": 1,
+                "ineffective_or_compat_extra_count": 0,
+                "required_count_by_layer": {"0": 1},
+                "block_slot_counts_per_layer": {"block1": 1},
+                "per_layer_slot_count": 1,
+                "first_input_tail_slots": 0,
+                "full_action_length": 1,
+            },
+            "slot_registry_full": [
+                {
+                    "slot_id": "L0.B1.gelu_out_sf",
+                    "layer": 0,
+                    "block": "block1",
+                    "field": "gelu_out_sf",
+                    "kind": "F",
+                    "operation": "fresh",
+                    "is_effective": True,
+                    "value_type": "scaling_factor",
+                    "level_values": [28, 29, 30],
+                }
+            ],
+            "slot_registry_effective": [
+                {
+                    "slot_id": "L0.B1.gelu_out_sf",
+                    "layer": 0,
+                    "block": "block1",
+                    "field": "gelu_out_sf",
+                    "kind": "F",
+                    "operation": "fresh",
+                    "is_effective": True,
+                    "value_type": "scaling_factor",
+                    "level_values": [28, 29, 30],
+                }
+            ],
+            "current_code_slot_check_markdown": "# Slot check\n",
+            "action_index_mapping_markdown": "# Mapping\n",
+        }
+
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(registry.json, "dumps", side_effect=AssertionError("stream JSON artifacts")):
+                paths = registry.write_registry_artifacts(payload, td)
+
+            current = json.loads(Path(paths["current_code_action_registry"]).read_text(encoding="utf-8"))
+            full = json.loads(Path(paths["slot_registry_full"]).read_text(encoding="utf-8"))
+            effective = json.loads(Path(paths["slot_registry_effective"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(current["slot_registry_full"], full)
+        self.assertEqual(current["slot_registry_effective"], effective)
 
 
 if __name__ == "__main__":

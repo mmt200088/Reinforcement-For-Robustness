@@ -1265,6 +1265,13 @@ once and reuses the result for expected slot count, block counts, and summary
 slot count. A synthetic 120k-offset benchmark preserved the registry summary
 and reduced the offset-counting path from `0.447s` to `0.226s` (`1.97x`).
 
+Progress 2026-07-03: `scripts/blb_export_action_registry.py` now writes the
+full registry, full slot registry, and effective slot registry JSON artifacts
+through shared `write_json_file()` streaming instead of materializing each
+large JSON document with `json.dumps()` before `Path.write_text()`. This keeps
+the exported artifact schema unchanged while avoiding three extra full-size
+JSON string copies during registry export.
+
 - [ ] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
