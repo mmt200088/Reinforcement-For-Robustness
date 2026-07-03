@@ -53,6 +53,14 @@ def _source_region(source: str, start_marker: str, end_marker: str) -> str:
     return source[start:end]
 
 
+def _method_region(source: str, method_name: str) -> str:
+    start = source.index(f"    def {method_name}")
+    next_method = source.find("\n    def ", start + 1)
+    if next_method == -1:
+        next_method = len(source)
+    return source[start:next_method]
+
+
 class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
     def test_ones_mask_encode_samples_noise_without_full_shape_ones_prefill(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
@@ -236,6 +244,36 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
 
         self.assertIn("tail_pos = 0", region)
         self.assertNotIn("pop(0)", region)
+
+    def test_reversible_handler_reuses_resolved_layer_sequences(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        handler_region = source.split("class ReversibleLayerHandler:", 1)[1]
+        init_region = _method_region(handler_region, "__init__")
+        if "    def _resolve_layers(self, layer_name):" not in handler_region:
+            self.fail("ReversibleLayerHandler is missing _resolve_layers cache helper")
+        helper_region = _method_region(handler_region, "_resolve_layers")
+
+        self.assertIn("self._resolved_layers_cache = {}", init_region)
+        self.assertIn("def _resolve_layers(self, layer_name):", helper_region)
+        self.assertIn("self._resolved_layers_cache.get(layer_name)", helper_region)
+        self.assertIn("tuple(eval(\"self.\" + layer_name))", helper_region)
+
+        for method_name in (
+            "replace_layer_gelu",
+            "replace_layer_softmax",
+            "replace_layer_input_noise",
+            "replace_layer_softmax_value_noise",
+            "_replace_attention_projection_noise",
+            "_replace_layer_linear_module_noise",
+            "restore_layer_gelu",
+            "restore_layer_softmax",
+            "restore_layer_input_noise",
+            "restore_layer_softmax_value_noise",
+        ):
+            region = _method_region(handler_region, method_name)
+            self.assertIn("self._resolve_layers(layer_name)", region, method_name)
+            self.assertNotIn('eval("self." + layer_name)', region, method_name)
+            self.assertNotIn('list(eval("self." + layer_name))', region, method_name)
 
 
 class Stage1EvalCacheTest(unittest.TestCase):

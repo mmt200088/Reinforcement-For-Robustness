@@ -2646,6 +2646,7 @@ class ReversibleLayerHandler:
         self.model = model
         self._arch = self._detect_arch(model)
         self._paths = self._GPT2_PATHS if self._arch == "gpt2" else self._BERT_PATHS
+        self._resolved_layers_cache = {}
         self.original_gelu = {}
         self.original_attention = {}
         self.original_input_noise = {}
@@ -2727,10 +2728,17 @@ class ReversibleLayerHandler:
                 return False
         return True
 
+    def _resolve_layers(self, layer_name):
+        layers = self._resolved_layers_cache.get(layer_name)
+        if layers is None:
+            layers = tuple(eval("self." + layer_name))
+            self._resolved_layers_cache[layer_name] = layers
+        return layers
+
     def replace_layer_gelu(self, layer_indices=None, layer_name="model.model.layers", degree=1):
         """替换指定层的GELU函数 (BERT: intermediate.intermediate_act_fn; GPT-2: mlp.act)"""
         act_path = self._paths["gelu_act"]
-        for i, layer in enumerate(eval("self." + layer_name)):
+        for i, layer in enumerate(self._resolve_layers(layer_name)):
             if i in layer_indices:
                 if i not in self.original_gelu:
                     self.original_gelu[i] = {
@@ -2768,7 +2776,7 @@ class ReversibleLayerHandler:
             if lb is None:
                 print(f"[ReversibleLayerHandler] 警告: degree={degree} 没有对应的 Exp_bound, 跳过 softmax 近似.")
                 return
-            for i, layer in enumerate(eval("self." + layer_name)):
+            for i, layer in enumerate(self._resolve_layers(layer_name)):
                 if i in layer_indices:
                     if i not in self.original_attention:
                         self.original_attention[i] = {
@@ -2779,7 +2787,7 @@ class ReversibleLayerHandler:
                     )
             print(f"已替换 {len(layer_indices)} 层的Softmax函数（GPT-2 approximate softmax, degree={degree}）")
             return
-        for i, layer in enumerate(eval("self." + layer_name)):
+        for i, layer in enumerate(self._resolve_layers(layer_name)):
             if i in layer_indices:
                 # 保存原始函数引用
                 if i not in self.original_attention:
@@ -2836,7 +2844,7 @@ class ReversibleLayerHandler:
         """Inject x-noise on transformer-layer inputs: x + N(0, sigma^2)."""
         _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
 
-        layers = list(eval("self." + layer_name))
+        layers = self._resolve_layers(layer_name)
         if layer_indices is None:
             selected = set(range(len(layers)))
         else:
@@ -2885,7 +2893,7 @@ class ReversibleLayerHandler:
         _ = get_input_noise_variance(int(softmax_scaling_factor), distribution=distribution)
         _ = get_input_noise_variance(int(value_scaling_factor), distribution=distribution)
 
-        layers = list(eval("self." + layer_name))
+        layers = self._resolve_layers(layer_name)
         if layer_indices is None:
             selected = set(range(len(layers)))
         else:
@@ -2979,7 +2987,7 @@ class ReversibleLayerHandler:
         """Temporarily use (W + We) inside Q/K/V projection without mutating the stored weight."""
         _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
 
-        layers = list(eval("self." + layer_name))
+        layers = self._resolve_layers(layer_name)
         if layer_indices is None:
             selected = set(range(len(layers)))
         else:
@@ -3035,7 +3043,7 @@ class ReversibleLayerHandler:
         """Temporarily use (W + We) inside a layer Linear module without mutating the stored weight."""
         _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
 
-        layers = list(eval("self." + layer_name))
+        layers = self._resolve_layers(layer_name)
         if layer_indices is None:
             selected = set(range(len(layers)))
         else:
@@ -3164,7 +3172,7 @@ class ReversibleLayerHandler:
     def restore_layer_gelu(self, layer_indices=None, layer_name="model.model.layers"):
         """恢复指定层的原始GELU函数"""
         act_path = self._paths["gelu_act"]
-        for i, layer in enumerate(eval("self." + layer_name)):
+        for i, layer in enumerate(self._resolve_layers(layer_name)):
             if i in layer_indices and i in self.original_gelu:
                 _set_attr_path(layer, act_path, self.original_gelu[i]["act_fn"])
 
@@ -3173,14 +3181,14 @@ class ReversibleLayerHandler:
     def restore_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention"):
         """恢复指定层的原始Softmax函数"""
         if self._arch == "gpt2":
-            for i, layer in enumerate(eval("self." + layer_name)):
+            for i, layer in enumerate(self._resolve_layers(layer_name)):
                 if i in layer_indices and i in self.original_attention:
                     original_fwd = self.original_attention[i].get('attention_forward')
                     if original_fwd is not None:
                         layer.attn.forward = original_fwd
                     del self.original_attention[i]
             return
-        for i, layer in enumerate(eval("self." + layer_name)):
+        for i, layer in enumerate(self._resolve_layers(layer_name)):
             if i in layer_indices and i in self.original_attention:
                 current_training = layer.attention.self.training
                 restored_attention = self.original_attention[i]['attention']
@@ -3190,7 +3198,7 @@ class ReversibleLayerHandler:
    
     def restore_layer_input_noise(self, layer_indices=None, layer_name="model.model.layers"):
         """Restore original transformer-layer inputs for selected layers."""
-        layers = list(eval("self." + layer_name))
+        layers = self._resolve_layers(layer_name)
         if layer_indices is None:
             selected = set(range(len(layers)))
         else:
@@ -3206,7 +3214,7 @@ class ReversibleLayerHandler:
                 del self.original_input_noise[i]
 
     def restore_layer_softmax_value_noise(self, layer_indices=None, layer_name="model.model.layers"):
-        layers = list(eval("self." + layer_name))
+        layers = self._resolve_layers(layer_name)
         if layer_indices is None:
             selected = set(range(len(layers)))
         else:
