@@ -127,7 +127,10 @@ class SkeletonStageMapTest(unittest.TestCase):
                 "map — extend _NODE_MAP to keep the automation complete",
             )
 
-    def test_load_profile_configs_skips_json_named_directories(self):
+
+@unittest.skipUnless(_AVAILABLE, _SKIP)
+class LoadProfileConfigsTest(unittest.TestCase):
+    def test_skips_json_named_directories(self):
         with tempfile.TemporaryDirectory() as td:
             cfg_dir = pathlib.Path(td) / "configs" / "toy"
             cfg_dir.mkdir(parents=True)
