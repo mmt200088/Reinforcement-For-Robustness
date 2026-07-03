@@ -1,0 +1,26 @@
+test_registry_hash_streams_parsed_json_without_json_dumps (tests.test_blb_make_run_manifest.BlbMakeRunManifestTest.test_registry_hash_streams_parsed_json_without_json_dumps) ... FAIL
+
+======================================================================
+FAIL: test_registry_hash_streams_parsed_json_without_json_dumps (tests.test_blb_make_run_manifest.BlbMakeRunManifestTest.test_registry_hash_streams_parsed_json_without_json_dumps)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_manifest_registry_hash_red_fc0fcb1_20260704_003201/src_py_fc0fcb1_red/tests/test_blb_make_run_manifest.py", line 309, in test_registry_hash_streams_parsed_json_without_json_dumps
+    digest = manifest._load_registry_hash(str(path))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_manifest_registry_hash_red_fc0fcb1_20260704_003201/src_py_fc0fcb1_red/scripts/blb_make_run_manifest.py", line 193, in _load_registry_hash
+    return _sha256_bytes(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8"))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: registry hash should stream JSON chunks
+
+----------------------------------------------------------------------
+Ran 1 test in 0.057s
+
+FAILED (failures=1)
