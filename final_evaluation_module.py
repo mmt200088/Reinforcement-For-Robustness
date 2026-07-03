@@ -1942,22 +1942,20 @@ class UnifiedFinalEvaluationModule:
                 has_data = False
                 for family in random_families:
                     items = random_grouped[family]
-                    xs = [
-                        float(item.get("total_cost"))
-                        for item in items
-                        if item.get("total_cost") is not None
-                        and key in item
-                        and item.get(key) is not None
-                        and np.isfinite(float(item[key]))
-                    ]
-                    ys = [
-                        float(item[key])
-                        for item in items
-                        if item.get("total_cost") is not None
-                        and key in item
-                        and item.get(key) is not None
-                        and np.isfinite(float(item[key]))
-                    ]
+                    xs = []
+                    ys = []
+                    for item in items:
+                        cost = item.get("total_cost")
+                        if cost is None or key not in item:
+                            continue
+                        value = item.get(key)
+                        if value is None:
+                            continue
+                        value = float(value)
+                        if not np.isfinite(value):
+                            continue
+                        xs.append(float(cost))
+                        ys.append(value)
                     if xs:
                         panel_xs.extend(xs)
                         has_data = True

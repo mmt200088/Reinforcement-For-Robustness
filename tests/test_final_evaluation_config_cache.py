@@ -537,6 +537,93 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertEqual(bar_axis.bar_calls[1]["height"][2], 4.0)
         self.assertEqual(bar_axis.bar_calls[2]["height"][2], 6.0)
 
+    def test_variance_plot_scans_random_points_once_per_panel(self):
+        class FakeAxis:
+            def __getattr__(self, name):
+                if name.startswith("__"):
+                    raise AttributeError(name)
+                return lambda *_args, **_kwargs: None
+
+        class FakeFigure:
+            def suptitle(self, *_args, **_kwargs):
+                pass
+
+        class LimitedGetDict(dict):
+            def __init__(self, *args, max_total_cost_gets, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.max_total_cost_gets = max_total_cost_gets
+                self.total_cost_gets = 0
+
+            def get(self, key, default=None):
+                if key == "total_cost":
+                    self.total_cost_gets += 1
+                    if self.total_cost_gets > self.max_total_cost_gets:
+                        raise AssertionError("variance plot should scan each point once per panel")
+                return super().get(key, default)
+
+        axes = np.array(
+            [[FakeAxis(), FakeAxis()], [FakeAxis(), FakeAxis()]],
+            dtype=object,
+        )
+        fake_matplotlib = ModuleType("matplotlib")
+        fake_matplotlib.__path__ = []
+        fake_matplotlib.use = lambda *_args, **_kwargs: None
+        fake_pyplot = ModuleType("matplotlib.pyplot")
+        fake_pyplot.subplots = lambda *_args, **_kwargs: (FakeFigure(), axes)
+        fake_pyplot.savefig = lambda *_args, **_kwargs: None
+        fake_pyplot.close = lambda *_args, **_kwargs: None
+
+        random_point = LimitedGetDict(
+            {
+                "family": "Budget",
+                "loss_var": 1.0,
+                "p_var": 2.0,
+                "s_var": 3.0,
+                "total_cost": 13.0,
+            },
+            max_total_cost_gets=3,
+        )
+        runner = fem.UnifiedFinalEvaluationModule.__new__(fem.UnifiedFinalEvaluationModule)
+        runner.results_dir = "/tmp/final-eval-test"
+        logs = []
+        runner.evaluator = SimpleNamespace(
+            dataset_key="mrpc",
+            log=lambda message, *_args, **_kwargs: logs.append(str(message)),
+        )
+
+        with mock.patch.dict(
+            "sys.modules",
+            {
+                "matplotlib": fake_matplotlib,
+                "matplotlib.pyplot": fake_pyplot,
+            },
+        ):
+            plot_path = runner._plot_variance_results(
+                metric_short_names=["Accuracy", "F1"],
+                num_metrics=2,
+                baseline={"loss_var": 0.1, "p_var": 0.2, "s_var": 0.3},
+                optimized={
+                    "loss_var": 0.4,
+                    "p_var": 0.5,
+                    "s_var": 0.6,
+                    "total_cost": 11.0,
+                },
+                stage1_fixed_max={
+                    "loss_var": 0.7,
+                    "p_var": 0.8,
+                    "s_var": 0.9,
+                    "total_cost": 12.0,
+                },
+                random_results=[random_point],
+            )
+
+        self.assertEqual(
+            plot_path,
+            "/tmp/final-eval-test/final_eval_variance_mrpc.png",
+            "\n".join(logs),
+        )
+        self.assertEqual(random_point.total_cost_gets, 3)
+
 
 if __name__ == "__main__":
     unittest.main()
