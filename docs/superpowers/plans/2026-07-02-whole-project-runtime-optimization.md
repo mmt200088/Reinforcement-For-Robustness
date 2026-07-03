@@ -386,6 +386,12 @@ while still forcing the model into eval mode on every call. This extends the
 existing `evaluate_model()` local skip to final-eval and noise-eval call sites
 that invoke `apply_configuration()` directly.
 
+Progress 2026-07-03: `_stage1_evaluate_on_model()` now applies the same
+unchanged-configuration install short-circuit to each Stage-1 worker handler.
+The worker still runs a validation forward for uncached evaluations, but a
+worker no longer repeats GELU/Softmax restore/replace calls when its replica is
+already on the requested configuration.
+
 - [ ] **Step 3: Optimize only proven redundant work**
 
 Allowed changes:

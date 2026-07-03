@@ -4002,6 +4002,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             if softmax_map[d]:
                 self.reversible_handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
         self._last_applied_config = cfg_sig
+        try:
+            self.reversible_handler._last_stage1_applied_config = cfg_sig
+        except Exception:
+            pass
 
     def validate_input_noise_scaling_factors(self, scaling_factors):
         arr = np.asarray(scaling_factors, dtype=int)
@@ -4488,34 +4492,40 @@ class LayerImportanceEvaluator(TrainerCallback):
         handler_layer_name = "model." + self.layers_attribute
         # 1) GELU/Softmax install (mirrors apply_configuration body, bound to passed handler).
         model.eval()
-        original_gelu_layers = [
-            idx for idx, deg in enumerate(gelu_degrees)
-            if int(deg) == STAGE1_ORIGINAL_FUNCTION_DEGREE
-        ]
-        if original_gelu_layers:
-            handler.restore_layer_gelu(original_gelu_layers, handler_layer_name)
-        original_softmax_layers = [
-            idx for idx, deg in enumerate(softmax_degrees)
-            if int(deg) == STAGE1_ORIGINAL_FUNCTION_DEGREE
-        ]
-        if original_softmax_layers:
-            handler.restore_layer_softmax(original_softmax_layers, handler_layer_name)
-        gelu_map = {d: [] for d in [0, 1, 2, 4]}
-        for idx, deg in enumerate(gelu_degrees):
-            deg = int(deg)
-            if deg in gelu_map:
-                gelu_map[deg].append(idx)
-        for d in [0, 1, 2, 4]:
-            if gelu_map[d]:
-                handler.replace_layer_gelu(gelu_map[d], handler_layer_name, degree=d)
-        softmax_map = {d: [] for d in range(2, 7)}
-        for idx, deg in enumerate(softmax_degrees):
-            deg = int(deg)
-            if deg in softmax_map:
-                softmax_map[deg].append(idx)
-        for d in range(2, 7):
-            if softmax_map[d]:
-                handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
+        cfg_sig = (
+            tuple(int(d) for d in gelu_degrees),
+            tuple(int(d) for d in softmax_degrees),
+        )
+        if getattr(handler, "_last_stage1_applied_config", None) != cfg_sig:
+            original_gelu_layers = [
+                idx for idx, deg in enumerate(gelu_degrees)
+                if int(deg) == STAGE1_ORIGINAL_FUNCTION_DEGREE
+            ]
+            if original_gelu_layers:
+                handler.restore_layer_gelu(original_gelu_layers, handler_layer_name)
+            original_softmax_layers = [
+                idx for idx, deg in enumerate(softmax_degrees)
+                if int(deg) == STAGE1_ORIGINAL_FUNCTION_DEGREE
+            ]
+            if original_softmax_layers:
+                handler.restore_layer_softmax(original_softmax_layers, handler_layer_name)
+            gelu_map = {d: [] for d in [0, 1, 2, 4]}
+            for idx, deg in enumerate(gelu_degrees):
+                deg = int(deg)
+                if deg in gelu_map:
+                    gelu_map[deg].append(idx)
+            for d in [0, 1, 2, 4]:
+                if gelu_map[d]:
+                    handler.replace_layer_gelu(gelu_map[d], handler_layer_name, degree=d)
+            softmax_map = {d: [] for d in range(2, 7)}
+            for idx, deg in enumerate(softmax_degrees):
+                deg = int(deg)
+                if deg in softmax_map:
+                    softmax_map[deg].append(idx)
+            for d in range(2, 7):
+                if softmax_map[d]:
+                    handler.replace_layer_softmax(softmax_map[d], handler_layer_name, degree=d)
+            handler._last_stage1_applied_config = cfg_sig
 
         # 2) Forward via the explicit-model/device variant of _run_evaluation.
         dataloader = self.dataloaders[split_name]
