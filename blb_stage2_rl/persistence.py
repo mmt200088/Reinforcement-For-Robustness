@@ -854,7 +854,7 @@ def _stage1_style_panel(ax, raw, *, color, ma_color, ma_window, title,
     """
     import numpy as _np
 
-    arr = _np.asarray(list(raw), dtype=float)
+    arr = _float_array(raw)
     if arr.size == 0:
         ax.set_title(title)
         ax.set_ylabel(ylabel)

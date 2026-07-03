@@ -180,6 +180,46 @@ class UpgradedCurvesTest(unittest.TestCase):
         self.assertEqual(ma_x.tolist(), [2, 3, 4])
         self.assertEqual(ma_y.tolist(), [1.5, 3.0, 6.0])
 
+    def test_stage1_style_panel_accepts_ndarray_without_list_materialization(self):
+        import numpy as np
+
+        class FakeAxis:
+            def __init__(self):
+                self.plots = 0
+
+            def plot(self, *_args, **_kwargs):
+                self.plots += 1
+
+            def set_title(self, *_args, **_kwargs):
+                pass
+
+            def set_ylabel(self, *_args, **_kwargs):
+                pass
+
+            def set_xlabel(self, *_args, **_kwargs):
+                pass
+
+            def grid(self, *_args, **_kwargs):
+                pass
+
+            def legend(self, *_args, **_kwargs):
+                pass
+
+        axis = FakeAxis()
+        raw = np.asarray([1.0, 2.0, 4.0, 8.0], dtype=float)
+        with mock.patch("builtins.list", side_effect=AssertionError("panel raw ndarray should not be copied through list")):
+            persistence._stage1_style_panel(
+                axis,
+                raw,
+                color="#000000",
+                ma_color="#ffffff",
+                ma_window=2,
+                title="reward",
+                ylabel="reward",
+            )
+
+        self.assertEqual(axis.plots, 2)
+
     def test_env_can_disable_stage2_plot_rendering_without_callsite_change(self):
         old_env = os.environ.get("RFR_STAGE2_RENDER_PLOTS")
         os.environ["RFR_STAGE2_RENDER_PLOTS"] = "0"
