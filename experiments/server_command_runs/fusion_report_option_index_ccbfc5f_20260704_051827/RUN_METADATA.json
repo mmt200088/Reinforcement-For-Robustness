@@ -1,0 +1,22 @@
+{
+  "source_commit": "ccbfc5f",
+  "base_commit": "b6ff631",
+  "timestamp": "20260704_051827",
+  "flow": "Rescale/fusion maps",
+  "optimization": "Prebuild fusion report option-id indices for action-config splicing.",
+  "server_red_dir": "/hy-tmp/rfr_fusion_option_index_red_b6ff631_20260704_051728",
+  "server_green_dir": "/hy-tmp/rfr_fusion_option_index_green_20260704_051827",
+  "red_expected_failure": "AssertionError: action-config writer should reuse a prebuilt option index",
+  "green_checks": [
+    "python3 -m py_compile scripts/report_fusion_count_map.py tests/test_report_fusion_count_map.py",
+    "python3 -m unittest tests.test_report_fusion_count_map -v",
+    "grep -F -n 'option_index_by_graph = _option_index_by_graph(graphs)' scripts/report_fusion_count_map.py",
+    "grep -F -n 'option_index_by_graph=option_index_by_graph' scripts/report_fusion_count_map.py"
+  ],
+  "green_result": {
+    "py_compile_rc": 0,
+    "unittest": "10 tests OK",
+    "build_index_guard_rc": 0,
+    "pass_index_guard_rc": 0
+  }
+}

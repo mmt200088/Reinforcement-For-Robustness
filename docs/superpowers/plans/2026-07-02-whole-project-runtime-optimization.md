@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `ec0776b`, the conservative
-completion estimate is about 85% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `ccbfc5f`, the conservative
+completion estimate is about 86% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -145,6 +145,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `5760c6d` | `experiments/server_command_runs/fusion_report_option_scan_5760c6d_20260704_001718/` | Build fusion-map report graph payloads with one ordered-options summary loop after the order check, instead of separately scanning for base option, available fusion counts, and option summaries. |
 | Rescale/fusion maps | `1410ba0` | `experiments/server_command_runs/fusion_slots_option_index_1410ba0_20260704_010024/` | Cache fusion-count slots eval report option lookups by options-list identity so repeated selected-option and boost-audit sections avoid rescanning graph options. |
 | Rescale/fusion maps | `c15cb03` | `experiments/server_command_runs/fusion_k_independence_count_c15cb03_20260704_022055/` | Count fusion-map K-independence sample configs during the existing scan instead of materializing `sample_configs` a second time. |
+| Rescale/fusion maps | `ccbfc5f` | `experiments/server_command_runs/fusion_report_option_index_ccbfc5f_20260704_051827/` | Prebuild fusion report option-id indices so action-config generation reuses option lookups across action-vector and slot splicing. |
 | Rescale bridge | `dab3b8b` | `experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/` | Cache static-skeleton archive parses by path, mtime, and size while returning fresh caller lists. |
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
 
@@ -2281,6 +2282,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the
   `candidate_store_ndarray_0aa212a_20260704_024050` run directory.
+- `ccbfc5f` fusion report action-config option-index reuse, evidence committed
+  in the `fusion_report_option_index_ccbfc5f_20260704_051827` run directory.
 - `dab3b8b` static-skeleton archive cache, evidence committed in the
   `baseline_archive_cache_dab3b8b_20260703_212500` run directory.
 - `cb215bd` skeleton profile config discovery, evidence committed in the

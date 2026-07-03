@@ -1,0 +1,22 @@
+py_compile_rc=0
+test_build_report_payload_avoids_repeated_ordered_option_scans (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_build_report_payload_avoids_repeated_ordered_option_scans) ... ok
+test_build_report_payload_reuses_decoded_base_option (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_build_report_payload_reuses_decoded_base_option) ... ok
+test_choose_option_scans_candidates_without_sorting (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_choose_option_scans_candidates_without_sorting) ... ok
+test_group_specs_reuses_graph_target_choices (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_group_specs_reuses_graph_target_choices) ... ok
+test_load_maps_does_not_read_non_map_sidecars (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_load_maps_does_not_read_non_map_sidecars) ... ok
+test_load_maps_scans_directory_without_path_glob (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_load_maps_scans_directory_without_path_glob) ... ok
+test_options_in_id_order_skips_sort_when_already_ordered (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_options_in_id_order_skips_sort_when_already_ordered) ... ok
+test_options_in_id_order_sorts_unordered_options (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_options_in_id_order_sorts_unordered_options) ... ok
+test_write_action_configs_reuses_static_baseline_layout (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_write_action_configs_reuses_static_baseline_layout) ... ok
+test_write_action_configs_uses_prebuilt_option_index (tests.test_report_fusion_count_map.FusionCountMapReportTest.test_write_action_configs_uses_prebuilt_option_index) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.005s
+
+OK
+unittest_rc=0
+563:    option_index_by_graph = _option_index_by_graph(graphs)
+build_index_guard_rc=0
+576:            option_index_by_graph=option_index_by_graph,
+584:            option_index_by_graph=option_index_by_graph,
+pass_index_guard_rc=0
