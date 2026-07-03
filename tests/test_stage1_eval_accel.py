@@ -224,6 +224,19 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
             self.assertNotIn("torch.where(mask_low", region)
             self.assertNotIn("torch.zeros_like(x))", region)
 
+    def test_attention_forward_consumes_positional_tail_without_front_pop(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        region = _source_region(
+            source,
+            "    def forward(\n"
+            "        self,\n"
+            "        hidden_states,",
+            "        if past_key_value is None and past_key_values is not None:",
+        )
+
+        self.assertIn("tail_pos = 0", region)
+        self.assertNotIn("pop(0)", region)
+
 
 class Stage1EvalCacheTest(unittest.TestCase):
     def test_make_key_normalizes_sequences(self):
