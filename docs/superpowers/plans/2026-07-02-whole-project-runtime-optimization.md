@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `2ca2516`, the conservative
-completion estimate is about 50% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `54feaa4`, the conservative
+completion estimate is about 51% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -96,6 +96,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
 | Stage-1 eval | `5901ffb` | `experiments/server_command_runs/stage1_report_regex_dispatch_5901ffb_20260704_002526/` | Dispatch Stage-1 report log lines by marker so `[stage1-rollout-total]` rows skip worker/cache regex parsers. |
+| Stage-1 eval | `54feaa4` | `experiments/server_command_runs/stage1_rollout_pack_batch_54feaa4_20260704_011755/` | Batch recurrent rollout `logprobs` and `values` tensor conversion before PPO updates so each field uses one stacked CPU transfer instead of per-step scalar `.item()` syncs. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
@@ -431,6 +432,22 @@ Progress 2026-07-03: Stage-1 parallel rollout replay now keeps prefetched
 rollouts in a `deque` and consumes them with `popleft()` instead of repeatedly
 calling `list.pop(0)`. This preserves global rollout order while avoiding
 per-episode list shifting in every PPO update window.
+
+Progress 2026-07-04: Stage-1 recurrent rollout packing now batches tensor
+`logprobs` and `values` before PPO updates. When the central rollout buffer
+stores tensor values, `_stage1_scalar_episode_values_to_numpy()` stacks the
+whole rollout field and performs one CPU transfer for that field instead of
+calling `.item()` for every episode step. Plain float and mixed-value fallback
+paths preserve the old scalar conversion semantics.
+
+Server evidence 2026-07-04: source commit `54feaa4` has red/green verification
+under
+`experiments/server_command_runs/stage1_rollout_pack_batch_54feaa4_20260704_011755/`.
+The green gate compiles `layer_importance_evaluator.py`, verifies the new
+source guard, and runs a functional tensor-pack script. Two unrelated numeric
+tests in `tests.test_stage1_eval_accel` still fail on clean `8336eef`; the
+evidence directory includes that baseline reproduction so this change does not
+claim a clean full-module gate.
 
 Progress 2026-07-03: Stage-1 plaintext repeat evaluation and the MRPC
 layer-output noise experiment now use pinned DataLoader memory with
