@@ -1,0 +1,6 @@
+source_commit=e4c3d47
+base_commit=50cabd3
+branch=jk_standard_rl
+red_dir=/hy-tmp/rfr_variance_scatter_scan_red_50cabd3_20260704_053500
+green_dir=/hy-tmp/rfr_variance_scatter_scan_green_50cabd3_20260704_054500
+workflow=local_edit_git_push_server_temp_verify_artifact_return
