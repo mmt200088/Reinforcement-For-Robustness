@@ -665,6 +665,18 @@ def _options_in_id_order(options: Iterable[Mapping[str, Any]]) -> List[Mapping[s
     return out
 
 
+def _base_option_from_ordered_options(
+    graph: Mapping[str, Any],
+    options: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    if options and int(options[0].get("option_id", -1)) == 0:
+        return options[0]
+    for option in options:
+        if int(option.get("option_id", -1)) == 0:
+            return option
+    raise KeyError(f"graph {graph.get('graph_key')} has no option 0")
+
+
 def _build_report_payload(
     *,
     graphs: Mapping[str, Mapping[str, Any]],
@@ -682,20 +694,14 @@ def _build_report_payload(
         block_idx = int(graph["block_idx"])
         fields = fields_by_block[block_idx]
         options = _options_in_id_order(graph.get("options", []))
-        base = _option_by_id(graph, 0)
+        base = _base_option_from_ordered_options(graph, options)
         base_action = [int(v) for v in base.get("action_indices", [])]
         base_slots = {str(k): int(v) for k, v in dict(base.get("slots", {})).items()}
-        graph_payload.append({
-            "graph_key": graph_key,
-            "block_idx": block_idx,
-            "gelu_degree": graph.get("gelu_degree"),
-            "attn_degree": graph.get("attn_degree"),
-            "k_slot_index": int(graph["k_slot_index"]),
-            "block_num_slots": int(graph["block_num_slots"]),
-            "available_fusion_counts": sorted({int(o["fusion_count"]) for o in options}),
-            "current_schedule_layers": occurrences.get(graph_key, []),
-            "current_schedule_occurrences": int(len(occurrences.get(graph_key, []))),
-            "options": [
+        available_fusion_counts = set()
+        option_summaries = []
+        for option in options:
+            available_fusion_counts.add(int(option["fusion_count"]))
+            option_summaries.append(
                 _option_slot_summary(
                     graph,
                     fields,
@@ -704,8 +710,18 @@ def _build_report_payload(
                     base_action=base_action,
                     base_slots=base_slots,
                 )
-                for option in options
-            ],
+            )
+        graph_payload.append({
+            "graph_key": graph_key,
+            "block_idx": block_idx,
+            "gelu_degree": graph.get("gelu_degree"),
+            "attn_degree": graph.get("attn_degree"),
+            "k_slot_index": int(graph["k_slot_index"]),
+            "block_num_slots": int(graph["block_num_slots"]),
+            "available_fusion_counts": sorted(available_fusion_counts),
+            "current_schedule_layers": occurrences.get(graph_key, []),
+            "current_schedule_occurrences": int(len(occurrences.get(graph_key, []))),
+            "options": option_summaries,
         })
     return {
         "schema_version": "fusion_count_map_report_v1",

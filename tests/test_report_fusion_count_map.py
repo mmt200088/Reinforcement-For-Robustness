@@ -48,6 +48,53 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertEqual(len(payload["graphs"][0]["options"]), 3)
         self.assertLessEqual(base_action.iterations, 2)
 
+    def test_build_report_payload_avoids_repeated_ordered_option_scans(self):
+        class CountingOptions(list):
+            def __init__(self, values):
+                super().__init__(values)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                return super().__iter__()
+
+        options = CountingOptions(
+            [
+                {
+                    "option_id": idx,
+                    "fusion_count": idx % 3,
+                    "action_indices": [idx % 2],
+                    "slots": {},
+                }
+                for idx in range(12)
+            ]
+        )
+        graphs = {
+            "block1_mrpc": {
+                "graph_key": "block1_mrpc",
+                "block_idx": 1,
+                "k_slot_index": 0,
+                "block_num_slots": 1,
+                "options": options,
+            }
+        }
+        fields_by_block = {1: [("output_truncation_k", "K", 0)]}
+
+        payload = report._build_report_payload(
+            graphs=graphs,
+            fields_by_block=fields_by_block,
+            schedule=[],
+            group_specs=[],
+            action_config_paths={},
+            profile="mrpc",
+            gelu=[1],
+            softmax=[6],
+        )
+
+        self.assertEqual(payload["graphs"][0]["available_fusion_counts"], [0, 1, 2])
+        self.assertEqual(len(payload["graphs"][0]["options"]), 12)
+        self.assertLessEqual(options.iterations, 2)
+
     def test_options_in_id_order_skips_sort_when_already_ordered(self):
         options = [
             {"option_id": 0, "fusion_count": 0},
