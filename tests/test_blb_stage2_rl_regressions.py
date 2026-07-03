@@ -7,6 +7,7 @@ import shutil
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import torch
@@ -612,6 +613,82 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
         self.assertEqual(payload["last_priority"], 0)
         self.assertTrue(payload["last_invalid"])
         self.assertIsNotNone(payload["updated_at"])
+
+    def test_persistence_report_writers_stream_line_outputs(self):
+        from blb_stage2_rl import persistence
+
+        with _workspace_tempdir() as td:
+            root = Path(td)
+            report_paths = {
+                str(root / "blb_stage2_best_action_full.md"),
+                str(root / persistence.BLB_FINAL_REPORT_MD),
+                str(root / persistence.BLB_ERROR_TXT),
+            }
+            original_open = open
+
+            def fake_open(path, *args, **kwargs):
+                if str(path) not in report_paths:
+                    return original_open(path, *args, **kwargs)
+                handle = mock.MagicMock()
+                handle.__enter__.return_value = handle
+                handle.__exit__.return_value = None
+
+                def reject_full_document_write(text):
+                    if isinstance(text, str) and text.count("\n") > 3:
+                        raise AssertionError("persistence reports should stream lines")
+
+                handle.write.side_effect = reject_full_document_write
+                return handle
+
+            with mock.patch("builtins.open", side_effect=fake_open):
+                action_paths = persistence.write_action_description_files(
+                    td,
+                    {
+                        "profile": "mrpc",
+                        "num_layers": 1,
+                        "action_length": 1,
+                        "summary": {"record_count": 1},
+                        "records": [{
+                            "global_index": 0,
+                            "slot_label": "L00.B1.F.example",
+                            "label": "L00.B1.F.example",
+                            "location": "L00.B1",
+                            "operation": "example",
+                            "kind": "F",
+                            "layer": 0,
+                            "block": 1,
+                            "distribution": "F",
+                            "action_index": 1,
+                            "effective": True,
+                            "effective_value": 12,
+                            "scaling_factor": 12,
+                            "level_values": [8, 12],
+                        }],
+                    },
+                )
+                final_report_path = persistence.write_blb_final_report(
+                    td,
+                    run_basename="unit",
+                    profile="mrpc",
+                    total_episodes=10,
+                    completed_episodes=10,
+                    elapsed_sec=1.0,
+                    best_reward=1.0,
+                    best_breakdown={"terminal_priority": 3},
+                    best_action_vec=[1, 2, 3],
+                    baseline={"loss": 0.3},
+                    reward_weights={"cost": 1.0},
+                    episode_returns=[0.1, 0.2, 0.3],
+                    rescale_invoker_kind="unit",
+                )
+                try:
+                    raise RuntimeError("boom")
+                except RuntimeError as exc:
+                    crash_path = persistence.dump_crash_report(td, exc=exc)
+
+            self.assertEqual(action_paths["md"], str(root / "blb_stage2_best_action_full.md"))
+            self.assertEqual(final_report_path, str(root / persistence.BLB_FINAL_REPORT_MD))
+            self.assertEqual(crash_path, str(root / persistence.BLB_ERROR_TXT))
 
     def test_trace_writer_appends_structured_rollout_rows(self):
         from blb_stage2_rl.persistence import append_blb_episode_trace_row

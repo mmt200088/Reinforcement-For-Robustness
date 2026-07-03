@@ -1428,6 +1428,12 @@ atomic replace. Report contents, file names, and refresh cadence stay unchanged
 while periodic diagnostics flushes avoid a second full Markdown/HTML string
 copy during long Stage-2 runs.
 
+Progress 2026-07-03: `blb_stage2_rl/persistence.py` now streams action
+description Markdown, final Stage-2 report Markdown, and crash-report text line
+writes instead of materializing one full joined string before writing. These
+paths keep the same report sections and output file names while reducing peak
+allocation in Stage-2 persistence/report flushes.
+
 - [ ] **Step 3: Verify**
 
 Run:

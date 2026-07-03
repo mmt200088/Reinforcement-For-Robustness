@@ -35,7 +35,7 @@ import sys
 import tempfile
 import time
 import traceback
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
 
 from json_utils import to_jsonable as _to_jsonable
 from training_curve_plot import save_stage1_style_training_curve
@@ -143,6 +143,16 @@ def _atomic_text_dump(path: str, text: str) -> None:
         except OSError:
             pass
         raise
+
+
+def _write_joined_lines_stream(fh: TextIO, lines: Iterable[str]) -> None:
+    first = True
+    for line in lines:
+        if first:
+            first = False
+        else:
+            fh.write("\n")
+        fh.write(str(line))
 
 
 def _stage2_plot_rendering_enabled(render_plots: Optional[bool]) -> bool:
@@ -569,7 +579,7 @@ def write_action_description_files(
             "可以直接喂给 `Paean/run_final_eval.sh --action-config`。"
         )
         with open(md_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+            _write_joined_lines_stream(f, lines)
     except Exception as exc:
         log(f"  [BLB action][warning] failed to write {md_path}: {exc}")
         out["md"] = ""
@@ -1466,7 +1476,7 @@ def write_blb_final_report(
                  "训练曲线（PNG + NPZ）/ 本报告 都在该目录下。")
 
     with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        _write_joined_lines_stream(f, lines)
     return path
 
 
@@ -1511,7 +1521,7 @@ def dump_crash_report(
     lines.append(f"CWD: {os.getcwd()}")
     try:
         with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+            _write_joined_lines_stream(f, lines)
     except Exception as inner_exc:
         log(f"  [BLB崩溃归档][警告] 写 {path} 失败：{inner_exc}")
         return ""
