@@ -1,0 +1,23 @@
+{
+  "source_commit": "ee8a68e",
+  "base_commit_for_red": "c0f3d78",
+  "evidence_dir": "experiments/server_command_runs/handler_layer_resolve_cache_ee8a68e_20260704_061121",
+  "server_red_dir": "/hy-tmp/rfr_layer_resolve_cache_red_c0f3d78_20260704_",
+  "server_green_dir": "/hy-tmp/rfr_layer_resolve_cache_green_20260704_",
+  "server_canonical_worktree_modified": false,
+  "optimization": "Cache ReversibleLayerHandler layer-name resolution for Stage-1 GELU/Softmax and shared legacy noise install/restore paths.",
+  "red": {
+    "command": "python3 -m unittest tests.test_stage1_eval_accel.FunctionHandlerForwardAllocationSourceTest -v",
+    "expected_rc": 1,
+    "evidence": "red_unittest.log"
+  },
+  "green": {
+    "commands": [
+      "python3 -m py_compile function_handler.py tests/test_stage1_eval_accel.py",
+      "python3 -m unittest tests.test_stage1_eval_accel.FunctionHandlerForwardAllocationSourceTest -v"
+    ],
+    "py_compile_rc": 0,
+    "unittest_rc": 0,
+    "evidence": "green_validation.log"
+  }
+}

@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `e17eee8`, the conservative
-completion estimate is about 94% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `ee8a68e`, the conservative
+completion estimate is about 95% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -115,6 +115,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared inference eval | `b5dfff5` | `experiments/server_command_runs/probe_skip_pred_arrays_b5dfff5_20260704_025610/` | Skip reward-probe prediction/label tensor retention and numpy transfer for accuracy-only metric profiles. |
 | Shared inference eval | `2d98907` | `experiments/server_command_runs/probe_tensor_arrays_2d98907_20260704_030105/` | Concatenate same-device reward-probe prediction/label tensors before one packed CPU/numpy transfer. |
 | Shared inference eval | `7be83af` | `experiments/server_command_runs/inference_mnli_accuracy_helper_7be83af_20260704_042030/` | Reuse the shared direct-count accuracy helper for MNLI full eval instead of carrying a local `np.mean()` implementation. |
+| Shared inference eval | `ee8a68e` | `experiments/server_command_runs/handler_layer_resolve_cache_ee8a68e_20260704_061121/` | Cache `ReversibleLayerHandler` layer-name resolution for Stage-1 GELU/Softmax and shared legacy noise install/restore paths instead of repeatedly evaluating and copying layer sequences. |
 | Shared eval metrics | `da02fca` | `experiments/server_command_runs/eval_metric_weights_da02fca_20260704_030610/` | Reuse one count-weight array and weight sum for reward-probe loss/metric batch means instead of rebuilding weights three times. |
 | Shared eval metrics | `1a6969a` | `experiments/server_command_runs/eval_single_array_1a6969a_20260704_031145/` | Reuse single packed reward-probe prediction/label arrays directly instead of copying them through `np.concatenate()`. |
 | Shared eval metrics | `f9bbb29` | `experiments/server_command_runs/eval_binary_f1_f9bbb29_20260704_034430/` | Compute 0/1 binary weighted F1 with direct count reductions instead of sorting a class union for every MRPC/QQP reward-probe trial. |

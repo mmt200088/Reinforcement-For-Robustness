@@ -1,0 +1,237 @@
+function_handler.py ReversibleLayerHandler layer cache excerpt for commit ee8a68e
+
+Lines 2646-2650: cache initialization
+  2646	        self.model = model
+  2647	        self._arch = self._detect_arch(model)
+  2648	        self._paths = self._GPT2_PATHS if self._arch == "gpt2" else self._BERT_PATHS
+  2649	        self._resolved_layers_cache = {}
+  2650	        self.original_gelu = {}
+
+Lines 2731-2737: _resolve_layers helper
+  2731	    def _resolve_layers(self, layer_name):
+  2732	        layers = self._resolved_layers_cache.get(layer_name)
+  2733	        if layers is None:
+  2734	            layers = tuple(eval("self." + layer_name))
+  2735	            self._resolved_layers_cache[layer_name] = layers
+  2736	        return layers
+  2737
+
+Lines 2739-2790: GELU/Softmax install paths use _resolve_layers
+  2739	        """替换指定层的GELU函数 (BERT: intermediate.intermediate_act_fn; GPT-2: mlp.act)"""
+  2740	        act_path = self._paths["gelu_act"]
+  2741	        for i, layer in enumerate(self._resolve_layers(layer_name)):
+  2742	            if i in layer_indices:
+  2743	                if i not in self.original_gelu:
+  2744	                    self.original_gelu[i] = {
+  2745	                        "act_fn": _get_attr_path(layer, act_path),
+  2746	                    }
+  2747	                orig_act = _get_attr_path(layer, act_path)
+  2748	                orig_training = getattr(orig_act, "training", layer.training)
+  2749	                # Reuse a cached PolynomialGELU for this (layer, degree). The
+  2750	                # module is stateless apart from a lazily-built coeff-tensor
+  2751	                # cache, so reusing it across episodes is bit-identical and skips
+  2752	                # rebuilding the coeff tensor on every forward. Keyed per
+  2753	                # (layer, degree) — not per degree — so modules stay un-shared
+  2754	                # across layers and the BLB block-5 per-instance forward wrap
+  2755	                # cannot leak between layers. Skip the cache if a wrap was
+  2756	                # installed (instance-level ``forward``).
+  2757	                cached = (self._approx_gelu_cache.get((i, degree))
+  2758	                          if self.reuse_approx_modules else None)
+  2759	                if cached is not None and "forward" not in vars(cached):
+  2760	                    new_act = cached
+  2761	                else:
+  2762	                    # degree 0 = ReLU（用 ReLU 替换 GELU）；其余 degree 用多项式 GELU。
+  2763	                    new_act = nn.ReLU() if int(degree) == 0 else PolynomialGELU(degree=degree)
+  2764	                    self._approx_gelu_rebuilds += 1
+  2765	                    if self.reuse_approx_modules:
+  2766	                        self._approx_gelu_cache[(i, degree)] = new_act
+  2767	                new_act.train(bool(orig_training))
+  2768	                _set_attr_path(layer, act_path, new_act)
+  2769
+  2770	        print(f"已替换 {len(layer_indices)} 层的GELU函数（GELU function）")
+  2771
+  2772	    def replace_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention", degree=1):
+  2773	        """替换指定层的Softmax函数 (BERT: 替换 BertSelfAttention; GPT-2: monkey-patch forward)"""
+  2774	        if self._arch == "gpt2":
+  2775	            lb = Exp_bound.get(degree)
+  2776	            if lb is None:
+  2777	                print(f"[ReversibleLayerHandler] 警告: degree={degree} 没有对应的 Exp_bound, 跳过 softmax 近似.")
+  2778	                return
+  2779	            for i, layer in enumerate(self._resolve_layers(layer_name)):
+  2780	                if i in layer_indices:
+  2781	                    if i not in self.original_attention:
+  2782	                        self.original_attention[i] = {
+  2783	                            'attention_forward': layer.attn.forward,
+  2784	                        }
+  2785	                    layer.attn.forward = _make_gpt2_approx_attn_forward(
+  2786	                        layer.attn, degree=degree, lower_bound=lb,
+  2787	                    )
+  2788	            print(f"已替换 {len(layer_indices)} 层的Softmax函数（GPT-2 approximate softmax, degree={degree}）")
+  2789	            return
+  2790	        for i, layer in enumerate(self._resolve_layers(layer_name)):
+
+Lines 2844-2898: input and softmax/value noise install paths use _resolve_layers
+  2844	        """Inject x-noise on transformer-layer inputs: x + N(0, sigma^2)."""
+  2845	        _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
+  2846
+  2847	        layers = self._resolve_layers(layer_name)
+  2848	        if layer_indices is None:
+  2849	            selected = set(range(len(layers)))
+  2850	        else:
+  2851	            selected = set(layer_indices)
+  2852	            if not selected:
+  2853	                return
+  2854
+  2855	        # legacy / BLB 互斥校验
+  2856	        self._check_blb_legacy_conflict(selected, installing="legacy")
+  2857
+  2858	        for i, layer in enumerate(layers):
+  2859	            if i not in selected:
+  2860	                continue
+  2861
+  2862	            stored_forward = self.original_input_noise.get(i, {}).get("forward")
+  2863	            if stored_forward is None or getattr(stored_forward, "__self__", None) is not layer:
+  2864	                self.original_input_noise[i] = {
+  2865	                    "forward": layer.forward,
+  2866	                }
+  2867
+  2868	            original_forward = self.original_input_noise[i]["forward"]
+  2869	            layer.forward = _make_input_noise_forward(
+  2870	                original_forward,
+  2871	                scaling_factor=int(scaling_factor),
+  2872	                distribution=distribution,
+  2873	            )
+  2874	            self.original_input_noise[i]["scaling_factor"] = int(scaling_factor)
+  2875	            self.original_input_noise[i]["distribution"] = str(distribution).lower()
+  2876
+  2877	        print(_format_noise_enable_message("input", len(selected), scaling_factor, distribution))
+  2878
+  2879	    def _get_attention_core_module(self, layer):
+  2880	        if self._arch == "gpt2":
+  2881	            return layer.attn
+  2882	        return layer.attention.self
+  2883
+  2884	    def replace_layer_softmax_value_noise(
+  2885	            self,
+  2886	            layer_indices=None,
+  2887	            layer_name="model.model.layers",
+  2888	            softmax_scaling_factor=SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
+  2889	            value_scaling_factor=SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
+  2890	            distribution="fresh",
+  2891	            ):
+  2892	        """Inject fresh noise as (softmax + e1) @ (V + e2) in attention."""
+  2893	        _ = get_input_noise_variance(int(softmax_scaling_factor), distribution=distribution)
+  2894	        _ = get_input_noise_variance(int(value_scaling_factor), distribution=distribution)
+  2895
+  2896	        layers = self._resolve_layers(layer_name)
+  2897	        if layer_indices is None:
+  2898	            selected = set(range(len(layers)))
+
+Lines 2987-3047: projection and linear noise install paths use _resolve_layers
+  2987	        """Temporarily use (W + We) inside Q/K/V projection without mutating the stored weight."""
+  2988	        _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
+  2989
+  2990	        layers = self._resolve_layers(layer_name)
+  2991	        if layer_indices is None:
+  2992	            selected = set(range(len(layers)))
+  2993	        else:
+  2994	            selected = set(layer_indices)
+  2995	            if not selected:
+  2996	                return
+  2997
+  2998	        # legacy / BLB 互斥校验
+  2999	        self._check_blb_legacy_conflict(selected, installing="legacy")
+  3000
+  3001	        # GPT-2 fused c_attn path: use a per-layer proxy and accumulate state.
+  3002	        if self._arch == "gpt2":
+  3003	            for i, layer in enumerate(layers):
+  3004	                if i not in selected:
+  3005	                    continue
+  3006	                self._ensure_gpt2_qkv_wrapper(i, layer)
+  3007	                state = self._gpt2_qkv_state.setdefault(i, {})
+  3008	                state[projection_name] = (int(scaling_factor), str(distribution).lower())
+  3009	            print(_format_noise_enable_message(projection_name, len(selected), scaling_factor, distribution))
+  3010	            return
+  3011
+  3012	        projection_store = self.original_projection_noise.setdefault(projection_name, {})
+  3013	        for i, layer in enumerate(layers):
+  3014	            if i not in selected:
+  3015	                continue
+  3016
+  3017	            projection_module = getattr(layer.attention.self, projection_name)
+  3018	            stored_forward = projection_store.get(i, {}).get("forward")
+  3019	            if stored_forward is None or getattr(stored_forward, "__self__", None) is not projection_module:
+  3020	                projection_store[i] = {
+  3021	                    "forward": projection_module.forward,
+  3022	                }
+  3023
+  3024	            projection_module.forward = _make_noisy_linear_forward(
+  3025	                projection_module,
+  3026	                scaling_factor=int(scaling_factor),
+  3027	                distribution=distribution,
+  3028	            )
+  3029	            projection_store[i]["scaling_factor"] = int(scaling_factor)
+  3030	            projection_store[i]["distribution"] = str(distribution).lower()
+  3031
+  3032	        print(_format_noise_enable_message(projection_name, len(selected), scaling_factor, distribution))
+  3033
+  3034	    def _replace_layer_linear_module_noise(
+  3035	            self,
+  3036	            store_key,
+  3037	            module_path,
+  3038	            layer_indices=None,
+  3039	            layer_name="model.model.layers",
+  3040	            scaling_factor=WEIGHT_NOISE_DEFAULT_SCALING_FACTOR,
+  3041	            distribution="encoding"
+  3042	            ):
+  3043	        """Temporarily use (W + We) inside a layer Linear module without mutating the stored weight."""
+  3044	        _ = get_input_noise_variance(int(scaling_factor), distribution=distribution)
+  3045
+  3046	        layers = self._resolve_layers(layer_name)
+  3047	        if layer_indices is None:
+
+Lines 3172-3215: GELU/Softmax/input/softmax-value restore paths use _resolve_layers
+  3172	    def restore_layer_gelu(self, layer_indices=None, layer_name="model.model.layers"):
+  3173	        """恢复指定层的原始GELU函数"""
+  3174	        act_path = self._paths["gelu_act"]
+  3175	        for i, layer in enumerate(self._resolve_layers(layer_name)):
+  3176	            if i in layer_indices and i in self.original_gelu:
+  3177	                _set_attr_path(layer, act_path, self.original_gelu[i]["act_fn"])
+  3178
+  3179	        print(f"已恢复 {len(layer_indices)} 层的原始GELU函数（original GELU function）")
+  3180
+  3181	    def restore_layer_softmax(self, layer_indices=None, layer_name="model.model.layers", attention_name = "attention"):
+  3182	        """恢复指定层的原始Softmax函数"""
+  3183	        if self._arch == "gpt2":
+  3184	            for i, layer in enumerate(self._resolve_layers(layer_name)):
+  3185	                if i in layer_indices and i in self.original_attention:
+  3186	                    original_fwd = self.original_attention[i].get('attention_forward')
+  3187	                    if original_fwd is not None:
+  3188	                        layer.attn.forward = original_fwd
+  3189	                    del self.original_attention[i]
+  3190	            return
+  3191	        for i, layer in enumerate(self._resolve_layers(layer_name)):
+  3192	            if i in layer_indices and i in self.original_attention:
+  3193	                current_training = layer.attention.self.training
+  3194	                restored_attention = self.original_attention[i]['attention']
+  3195	                restored_attention.train(bool(current_training))
+  3196	                layer.attention.self = restored_attention
+  3197
+  3198
+  3199	    def restore_layer_input_noise(self, layer_indices=None, layer_name="model.model.layers"):
+  3200	        """Restore original transformer-layer inputs for selected layers."""
+  3201	        layers = self._resolve_layers(layer_name)
+  3202	        if layer_indices is None:
+  3203	            selected = set(range(len(layers)))
+  3204	        else:
+  3205	            selected = set(layer_indices)
+  3206	            if not selected:
+  3207	                return
+  3208
+  3209	        for i, layer in enumerate(layers):
+  3210	            if i in selected and i in self.original_input_noise:
+  3211	                original_forward = self.original_input_noise[i]["forward"]
+  3212	                if getattr(original_forward, "__self__", None) is layer:
+  3213	                    layer.forward = original_forward
+  3214	                del self.original_input_noise[i]
+  3215
