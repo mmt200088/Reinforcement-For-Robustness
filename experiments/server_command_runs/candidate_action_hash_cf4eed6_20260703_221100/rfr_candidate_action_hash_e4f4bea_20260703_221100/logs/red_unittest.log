@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_candidate_action_hash_avoids_json_dumps_for_integer_vectors (tests.test_blb_stage2_rl_regressions.BLBPlaybookArtifactRegressionTests.test_candidate_action_hash_avoids_json_dumps_for_integer_vectors)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_candidate_action_hash_e4f4bea_20260703_221100/src_py_e4f4bea/tests/test_blb_stage2_rl_regressions.py", line 1626, in test_candidate_action_hash_avoids_json_dumps_for_integer_vectors
+    self.assertNotIn("json.dumps", source)
+AssertionError: 'json.dumps' unexpectedly found in '@lru_cache(maxsize=8192)\ndef _action_hash_from_tuple(action_indices: Tuple[int, ...]) -> str:\n    payload = json.dumps(\n        list(action_indices),\n        ensure_ascii=True,\n        separators=(",", ":"),\n    )\n    return hashlib.sha256(payload.encode("utf-8")).hexdigest()\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.007s
+
+FAILED (failures=1)

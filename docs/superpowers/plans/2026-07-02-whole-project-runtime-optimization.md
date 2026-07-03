@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source/evidence head `392b646`, the conservative
+not by raw commit count. As of source/evidence head `cf4eed6`, the conservative
 completion estimate is about 30% of the full goal: the plan/audit layer and
 several low-conflict hot paths have landed, but hardware-default promotion,
 long-run A/B evidence, and remaining flow-wide scheduling work are still open.
@@ -92,6 +92,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
+| Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
 | Rescale bridge | `dab3b8b` | `experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/` | Cache static-skeleton archive parses by path, mtime, and size while returning fresh caller lists. |
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
 
@@ -1565,6 +1566,20 @@ append-only store keeps the same stable sorting, ASCII escaping, action hashes,
 candidate identity fields, and read-back behavior while reducing allocation in
 Stage-2 search candidate persistence.
 
+Progress 2026-07-03: `blb_stage2_rl/candidate_store.py`
+`_action_hash_from_tuple()` now streams the compact integer-array payload
+directly into `hashlib.sha256()` instead of building `list(action_indices)`,
+serializing it through `json.dumps()`, and encoding the resulting string. The
+hash bytes remain compatible with the previous compact JSON form, so candidate
+identity and persisted records stay stable.
+
+Server evidence 2026-07-03: source commit `cf4eed6` has red/green verification
+under
+`experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/`.
+The red run proved the old helper still used `json.dumps`; the green run
+verified `py_compile=0`, hash compatibility for `[4,3,2,-1]`, and the
+no-`json.dumps` source guard.
+
 Progress 2026-07-03: `blb_stage2_rl/diagnostics.py` now streams generated
 `diagnostics_summary.md` and `pareto_frontier.html` lines into their temporary
 files instead of materializing a single `"\n".join(lines)` document before
@@ -1734,6 +1749,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   `stage1_reward_history_deque_392b646_20260703_215700` run directory.
 - `a416d46` shared attention tail cursor parsing, evidence committed in the
   `attention_tail_cursor_a416d46_20260703_214800` run directory.
+- `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
+  `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `dab3b8b` static-skeleton archive cache, evidence committed in the
   `baseline_archive_cache_dab3b8b_20260703_212500` run directory.
 - `cb215bd` skeleton profile config discovery, evidence committed in the
