@@ -121,6 +121,17 @@ class PaeanActionGridTest(unittest.TestCase):
         self.assertEqual(vec[1], 3)
         self.assertEqual(vec[23], 3)
 
+    def test_normalize_base_action_accepts_ndarray_without_list_materialization(self):
+        action_grid = _load_action_grid_module()
+        action_grid.action_dims_for_config = lambda _num_layers: [2, 3, 4]
+        base = action_grid.np.asarray([1, 2, 3], dtype=int)
+
+        with mock.patch("builtins.list", side_effect=AssertionError("ndarray input should stay ndarray-backed")):
+            out = action_grid._normalize_base_action(base, num_layers=1)
+
+        self.assertEqual(out.tolist(), [1, 2, 3])
+        self.assertIsNot(out, base)
+
     def test_cost_matched_sampling_reuses_parsed_fixed_specs(self):
         action_grid = _load_action_grid_module()
         action_grid.action_dims_for_config = lambda _num_layers: [5]

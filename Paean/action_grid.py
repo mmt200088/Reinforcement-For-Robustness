@@ -547,7 +547,7 @@ def _normalize_base_action(base_action_vec: Optional[Sequence[int]], num_layers:
             base_action_vec = json.loads(text)
         else:
             base_action_vec = [int(v.strip()) for v in text.split(",") if v.strip()]
-    arr = np.asarray(list(base_action_vec), dtype=int).reshape(-1)
+    arr = np.asarray(base_action_vec, dtype=int).reshape(-1)
     if arr.size != expected:
         raise ValueError(
             f"action vector length {arr.size} != expected {expected} for {num_layers} layers"
