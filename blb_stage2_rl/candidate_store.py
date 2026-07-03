@@ -22,6 +22,7 @@ FIDELITY_ORDER = {
     "F1": 1,
     "F4": 2,
 }
+_CANDIDATE_JSONL_ENCODER = json.JSONEncoder(ensure_ascii=True, sort_keys=True)
 # Note: F2 / F3 were intermediate tiers in the original spec; deprecated and
 # removed 2026-05-16. The active ladder is F0 (optimizer-only, no model
 # forward) → F1 (small probe + few MC trials during training) → F4 (full
@@ -388,7 +389,8 @@ class CandidateStore:
         payload.setdefault("rank_key", list(candidate_rank_key(payload)))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True, sort_keys=True) + "\n")
+            f.writelines(_CANDIDATE_JSONL_ENCODER.iterencode(payload))
+            f.write("\n")
         return payload
 
     def best_for_action(

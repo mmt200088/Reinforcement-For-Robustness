@@ -1414,6 +1414,13 @@ use the same row writer. The append schema, default string fallback, buffering,
 and flush cadence stay unchanged while training diagnostics avoid per-row
 `json.dumps(...)+ "\n"` allocations.
 
+Progress 2026-07-03: `blb_stage2_rl/candidate_store.py` now appends candidate
+store JSONL records with a reused `JSONEncoder.iterencode()` writer instead of
+building a complete `json.dumps(...)+ "\n"` string for every candidate. The
+append-only store keeps the same stable sorting, ASCII escaping, action hashes,
+candidate identity fields, and read-back behavior while reducing allocation in
+Stage-2 search candidate persistence.
+
 - [ ] **Step 3: Verify**
 
 Run:

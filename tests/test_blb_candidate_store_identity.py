@@ -87,6 +87,37 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
 
         self.assertEqual([record["action_indices"] for record in records], [[1], [2]])
 
+    def test_append_streams_jsonl_rows_without_full_row_write(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            store = CandidateStore(path)
+            fake_handle = mock.MagicMock()
+            fake_handle.__enter__.return_value = fake_handle
+            fake_handle.__exit__.return_value = None
+            original_open = Path.open
+
+            def guarded_open(open_path, *args, **kwargs):
+                if Path(open_path) == path:
+                    return fake_handle
+                return original_open(open_path, *args, **kwargs)
+
+            with mock.patch.object(Path, "open", guarded_open):
+                saved = store.append({
+                    "action_indices": [1, 2, 3],
+                    "fidelity": "F1",
+                    "valid": True,
+                })
+
+        self.assertEqual(saved["action_indices"], [1, 2, 3])
+        fake_handle.writelines.assert_called_once()
+        newline_writes = [
+            call for call in fake_handle.write.call_args_list
+            if call.args == ("\n",)
+        ]
+        self.assertEqual(len(newline_writes), 1)
+
     def test_candidate_key_binds_action_and_context_hashes(self):
         from blb_stage2_rl.candidate_store import (
             build_candidate_identity_context,
