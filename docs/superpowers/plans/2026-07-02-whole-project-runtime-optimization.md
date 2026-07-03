@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `a1de9a3`, the conservative
-completion estimate is about 80% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `43ec3cc`, the conservative
+completion estimate is about 81% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -121,6 +121,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 artifacts | `0aa212a` | `experiments/server_command_runs/candidate_store_ndarray_0aa212a_20260704_024050/` | Normalize ndarray-backed candidate action vectors through a direct reshape iterator instead of copying through `.tolist()`. |
 | Stage-2/Paean action space | `2ee6de2` | `experiments/server_command_runs/action_space_splice_no_tolist_2ee6de2_20260704_013204/` | Splice per-step and fusion-step action vectors by iterating checked numpy arrays directly instead of materializing `arr.tolist()` for every splice. |
 | Stage-2/Paean action space | `522b42f` | `experiments/server_command_runs/action_mask_degree_vector_522b42f_20260704_023140/` | Normalize ndarray-backed action-mask degree vectors without copying through `list(raw)` first. |
+| Stage-2/Paean action space | `43ec3cc` | `experiments/server_command_runs/action_avg_k_direct_43ec3cc_20260704_044200/` | Compute average effective truncation K with direct integer sum/count arithmetic instead of dispatching through `np.mean(ks)`. |
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
 | Structured artifacts | `e0376a5` | `experiments/server_command_runs/jsonl_encoder_reuse_e0376a5_20260703_223743/` | Reuse one `JSONEncoder` for finite JSONL row writes instead of calling `json.dump()` for every row. |
 | Structured artifacts | `643ae60` | `experiments/server_command_runs/jsonl_resolve_once_643ae60_20260704_034331/` | Resolve JSONL paths once in shared readers and open the resolved file directly, avoiding duplicate filesystem checks in report/artifact scans. |
@@ -2258,6 +2259,9 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   in the `eval_accuracy_count_211ca50_20260704_041100` run directory.
 - `a416d46` shared attention tail cursor parsing, evidence committed in the
   `attention_tail_cursor_a416d46_20260703_214800` run directory.
+- `43ec3cc` Stage-2/Paean action-space average K direct arithmetic helper,
+  evidence committed in the `action_avg_k_direct_43ec3cc_20260704_044200`
+  run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the

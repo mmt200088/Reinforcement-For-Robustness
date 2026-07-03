@@ -1,0 +1,12 @@
+source_commit=43ec3cc
+base_commit=ca6f7c6
+flow=Stage-2/Paean action space
+optimization=direct avg truncation K sum/count helper
+red_remote=/hy-tmp/rfr_action_avg_k_red_ca6f7c6_20260704_044100
+green_remote=/hy-tmp/rfr_action_avg_k_green_ca6f7c6_20260704_044200
+red_status=1
+green_py_compile=0
+green_unittest=0
+green_source_guard=0
+local_test_policy=server-only
+canonical_source_workflow=local_edit_git_push_server_run_evidence_pullback
