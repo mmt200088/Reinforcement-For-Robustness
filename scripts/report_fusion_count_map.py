@@ -703,10 +703,10 @@ def _write_action_configs(
 
 
 def _graph_occurrences(schedule: Sequence[Mapping[str, Any]]) -> Dict[str, List[int]]:
-    out: Dict[str, List[int]] = {}
+    out: Dict[str, set[int]] = {}
     for step in schedule:
-        out.setdefault(str(step["graph_key"]), []).append(int(step["layer_idx"]))
-    return {k: sorted(set(v)) for k, v in sorted(out.items())}
+        out.setdefault(str(step["graph_key"]), set()).add(int(step["layer_idx"]))
+    return {k: sorted(v) for k, v in sorted(out.items())}
 
 
 def _int_slot_mapping(slots: Any) -> Dict[str, int]:

@@ -549,6 +549,24 @@ class FusionCountMapReportTest(unittest.TestCase):
 
         self.assertNotIn('dict(base.get("slots"', source)
 
+    def test_graph_occurrences_accumulates_unique_layers_without_list_dedupe(self):
+        source = inspect.getsource(report._graph_occurrences)
+
+        self.assertNotIn('append(int(step["layer_idx"]))', source)
+        self.assertNotIn("sorted(set(v))", source)
+
+        schedule = [
+            {"graph_key": "block2_mrpc", "layer_idx": 2},
+            {"graph_key": "block2_mrpc", "layer_idx": 0},
+            {"graph_key": "block2_mrpc", "layer_idx": 2},
+            {"graph_key": "block4", "layer_idx": 1},
+        ]
+
+        self.assertEqual(
+            report._graph_occurrences(schedule),
+            {"block2_mrpc": [0, 2], "block4": [1]},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
