@@ -51,7 +51,6 @@ REQUIRED_PPO_UPDATE_FIELDS = (
 
 
 _missing_required_fields = missing_required_fields
-_count_jsonl_with_required_fields = count_jsonl_with_required_fields
 
 
 def _resolve_progress_dir(args: argparse.Namespace) -> Path:
@@ -176,7 +175,7 @@ def verify(args: argparse.Namespace) -> int:
     episodes_path = progress / "diagnostics" / "episodes.jsonl"
     if episodes_path.is_file():
         try:
-            n_episode_rows, field_failures = _count_jsonl_with_required_fields(
+            n_episode_rows, field_failures = count_jsonl_with_required_fields(
                 episodes_path,
                 REQUIRED_EPISODE_FIELDS,
                 label="episodes.jsonl",
@@ -193,7 +192,7 @@ def verify(args: argparse.Namespace) -> int:
     ppo_path = progress / "diagnostics" / "ppo_updates.jsonl"
     if ppo_path.is_file():
         try:
-            n_ppo_rows, field_failures = _count_jsonl_with_required_fields(
+            n_ppo_rows, field_failures = count_jsonl_with_required_fields(
                 ppo_path,
                 REQUIRED_PPO_UPDATE_FIELDS,
                 label="ppo_updates.jsonl",

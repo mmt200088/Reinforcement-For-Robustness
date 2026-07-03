@@ -120,10 +120,8 @@ class Stage2PersistentOutputVerifierTest(unittest.TestCase):
         )
 
     def test_required_field_counter_uses_shared_jsonl_helper(self):
-        self.assertIs(
-            verifier._count_jsonl_with_required_fields,
-            verifier.count_jsonl_with_required_fields,
-        )
+        self.assertNotIn("_count_jsonl_with_required_fields", vars(verifier))
+        self.assertIsNotNone(verifier.count_jsonl_with_required_fields)
 
     def test_detail_file_count_does_not_sort_or_materialize_files(self):
         with tempfile.TemporaryDirectory(prefix="stage2_verify_details_") as td:
