@@ -32,6 +32,12 @@ _CANDIDATE_JSONL_ENCODER = json.JSONEncoder(ensure_ascii=True, sort_keys=True)
 
 
 def normalize_action_indices(action_indices: Any) -> List[int]:
+    if (
+            not isinstance(action_indices, (str, bytes))
+            and hasattr(action_indices, "reshape")
+            and hasattr(action_indices, "shape")
+    ):
+        return [int(item) for item in action_indices.reshape(-1)]
     if hasattr(action_indices, "tolist"):
         action_indices = action_indices.tolist()
     if isinstance(action_indices, str):

@@ -33,6 +33,18 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         ):
             self.assertEqual(store_mod.normalize_action_indices(items), [1, 2, 3])
 
+    def test_normalize_action_indices_accepts_ndarray_without_tolist_materialization(self):
+        import numpy as np
+
+        from blb_stage2_rl import candidate_store as store_mod
+
+        class NoToListArray(np.ndarray):
+            def tolist(self):
+                raise AssertionError("candidate action ndarray should not be copied through tolist")
+
+        action = np.asarray([[1, 2], [3, 4]], dtype=int).view(NoToListArray)
+        self.assertEqual(store_mod.normalize_action_indices(action), [1, 2, 3, 4])
+
     def test_action_hash_caches_by_normalized_action_tuple(self):
         from blb_stage2_rl import candidate_store as store_mod
 
@@ -54,7 +66,7 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertNotEqual(first, third)
-        self.assertEqual(dumps_calls, 2)
+        self.assertEqual(dumps_calls, 0)
 
     def test_read_all_skips_blank_lines_without_strip_copy(self):
         from blb_stage2_rl.candidate_store import CandidateStore
