@@ -1,0 +1,67 @@
+layer_importance_evaluator.py focused source excerpt for commit 343a5e3
+
+Lines 4032-4076: helper, input-noise validation, weight-noise validation
+  4032	    @staticmethod
+  4033	    def _unsupported_int_values(values, allowed_values):
+  4034	        allowed_set = {int(value) for value in allowed_values}
+  4035	        invalid = set()
+  4036	        for value in np.asarray(values, dtype=int).reshape(-1):
+  4037	            int_value = int(value)
+  4038	            if int_value not in allowed_set:
+  4039	                invalid.add(int_value)
+  4040	        return sorted(invalid)
+  4041
+  4042	    def validate_input_noise_scaling_factors(self, scaling_factors):
+  4043	        arr = np.asarray(scaling_factors, dtype=int)
+  4044	        if arr.shape != (self.total_layers,):
+  4045	            raise ValueError(
+  4046	                f"input_noise_scaling_factors must have shape ({self.total_layers},), "
+  4047	                f"but got {arr.shape}"
+  4048	            )
+  4049	        invalid = self._unsupported_int_values(arr, INPUT_NOISE_ALLOWED_SCALING_FACTORS)
+  4050	        if invalid:
+  4051	            raise ValueError(
+  4052	                f"Unsupported input-noise scaling factors: {invalid}. "
+  4053	                f"Allowed values: {list(INPUT_NOISE_ALLOWED_SCALING_FACTORS)}"
+  4054	            )
+  4055	        return arr
+  4056
+  4057	    def validate_weight_noise_scaling_factors(
+  4058	            self,
+  4059	            scaling_factors,
+  4060	            noise_name,
+  4061	            allowed_values=None,
+  4062	    ):
+  4063	        arr = np.asarray(scaling_factors, dtype=int)
+  4064	        if arr.shape != (self.total_layers,):
+  4065	            raise ValueError(
+  4066	                f"{noise_name}_noise_scaling_factors must have shape ({self.total_layers},), "
+  4067	                f"but got {arr.shape}"
+  4068	            )
+  4069	        allowed_values = tuple(allowed_values or WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
+  4070	        invalid = self._unsupported_int_values(arr, allowed_values)
+  4071	        if invalid:
+  4072	            raise ValueError(
+  4073	                f"Unsupported {noise_name}-noise scaling factors: {invalid}. "
+  4074	                f"Allowed values: {list(allowed_values)}"
+  4075	            )
+  4076	        return arr
+
+Lines 4284-4300: softmax/value-noise validation
+  4284	    def validate_softmax_value_noise_scaling_factors(self, scaling_factors, noise_name):
+  4285	        arr = np.asarray(scaling_factors, dtype=int)
+  4286	        if arr.shape != (self.total_layers,):
+  4287	            raise ValueError(
+  4288	                f"{noise_name}_scaling_factors must have shape ({self.total_layers},), "
+  4289	                f"but got {arr.shape}"
+  4290	            )
+  4291	        invalid = self._unsupported_int_values(
+  4292	            arr,
+  4293	            SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS,
+  4294	        )
+  4295	        if invalid:
+  4296	            raise ValueError(
+  4297	                f"Unsupported {noise_name} scaling factors: {invalid}. "
+  4298	                f"Allowed values: {list(SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS)}"
+  4299	            )
+  4300	        return arr

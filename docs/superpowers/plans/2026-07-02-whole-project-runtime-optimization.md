@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `b9f01de`, the conservative
-completion estimate is about 92% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `343a5e3`, the conservative
+completion estimate is about 93% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -109,6 +109,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `5901ffb` | `experiments/server_command_runs/stage1_report_regex_dispatch_5901ffb_20260704_002526/` | Dispatch Stage-1 report log lines by marker so `[stage1-rollout-total]` rows skip worker/cache regex parsers. |
 | Stage-1 eval | `54feaa4` | `experiments/server_command_runs/stage1_rollout_pack_batch_54feaa4_20260704_011755/` | Batch recurrent rollout `logprobs` and `values` tensor conversion before PPO updates so each field uses one stacked CPU transfer instead of per-step scalar `.item()` syncs. |
 | Stage-1 eval | `92ad0f0` | `experiments/server_command_runs/stage1_rollout_direct_tensor_92ad0f0_20260704_012541/` | Pack recurrent rollout `logprobs` and `values` directly as target-device tensors before PPO updates, avoiding the CPU numpy round trip introduced by the earlier batch path. |
+| Stage-1 eval | `343a5e3` | `experiments/server_command_runs/stage1_noise_validation_scan_343a5e3_20260704_055529/` | Scan layer-evaluator noise scaling validation arrays directly for unsupported values instead of materializing `arr.tolist()` sets. |
 | Shared inference eval | `497ecda` | `experiments/server_command_runs/probe_scalar_sync_497ecda_20260704_025145/` | Batch reward-probe loss/metric scalar tensors into one packed CPU transfer instead of three per-field scalar sequence transfers. |
 | Shared inference eval | `b5dfff5` | `experiments/server_command_runs/probe_skip_pred_arrays_b5dfff5_20260704_025610/` | Skip reward-probe prediction/label tensor retention and numpy transfer for accuracy-only metric profiles. |
 | Shared inference eval | `2d98907` | `experiments/server_command_runs/probe_tensor_arrays_2d98907_20260704_030105/` | Concatenate same-device reward-probe prediction/label tensors before one packed CPU/numpy transfer. |
