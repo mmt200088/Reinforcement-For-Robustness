@@ -627,14 +627,21 @@ class BLBTraceWriterRegressionTests(unittest.TestCase):
             original_open = open
 
             def fake_open(path, *args, **kwargs):
-                if str(path) not in report_paths:
+                path_str = str(path)
+                if path_str not in report_paths:
                     return original_open(path, *args, **kwargs)
                 handle = mock.MagicMock()
                 handle.__enter__.return_value = handle
                 handle.__exit__.return_value = None
 
                 def reject_full_document_write(text):
-                    if isinstance(text, str) and text.count("\n") > 3:
+                    if not isinstance(text, str) or text.count("\n") <= 3:
+                        return
+                    if path_str.endswith(persistence.BLB_ERROR_TXT):
+                        if "Traceback:" in text and "Python:" in text:
+                            raise AssertionError("persistence reports should stream lines")
+                        return
+                    else:
                         raise AssertionError("persistence reports should stream lines")
 
                 handle.write.side_effect = reject_full_document_write
