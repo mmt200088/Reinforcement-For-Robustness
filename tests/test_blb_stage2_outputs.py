@@ -215,6 +215,14 @@ class UpgradedCurvesTest(unittest.TestCase):
 
         self.assertEqual(arr.tolist(), [1.0, 2.0, 4.0])
 
+    def test_seq_len_counts_iterable_without_list_materialization(self):
+        class IterOnly:
+            def __iter__(self):
+                return iter((1.0, 2.0, 3.0))
+
+        with mock.patch("builtins.list", side_effect=AssertionError("iterable length should not be materialized through list")):
+            self.assertEqual(persistence._seq_len(IterOnly()), 3)
+
     def test_stage1_style_panel_accepts_ndarray_without_list_materialization(self):
         import numpy as np
 

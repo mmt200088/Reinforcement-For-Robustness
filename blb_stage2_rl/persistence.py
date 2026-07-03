@@ -823,7 +823,7 @@ def _seq_len(values) -> int:
     try:
         return len(values)
     except TypeError:
-        return len(list(values))
+        return sum(1 for _ in values)
 
 
 def _moving_average(values, window):
