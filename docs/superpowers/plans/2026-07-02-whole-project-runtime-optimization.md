@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `211ca50`, the conservative
-completion estimate is about 71% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `7be83af`, the conservative
+completion estimate is about 72% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -104,6 +104,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared inference eval | `497ecda` | `experiments/server_command_runs/probe_scalar_sync_497ecda_20260704_025145/` | Batch reward-probe loss/metric scalar tensors into one packed CPU transfer instead of three per-field scalar sequence transfers. |
 | Shared inference eval | `b5dfff5` | `experiments/server_command_runs/probe_skip_pred_arrays_b5dfff5_20260704_025610/` | Skip reward-probe prediction/label tensor retention and numpy transfer for accuracy-only metric profiles. |
 | Shared inference eval | `2d98907` | `experiments/server_command_runs/probe_tensor_arrays_2d98907_20260704_030105/` | Concatenate same-device reward-probe prediction/label tensors before one packed CPU/numpy transfer. |
+| Shared inference eval | `7be83af` | `experiments/server_command_runs/inference_mnli_accuracy_helper_7be83af_20260704_042030/` | Reuse the shared direct-count accuracy helper for MNLI full eval instead of carrying a local `np.mean()` implementation. |
 | Shared eval metrics | `da02fca` | `experiments/server_command_runs/eval_metric_weights_da02fca_20260704_030610/` | Reuse one count-weight array and weight sum for reward-probe loss/metric batch means instead of rebuilding weights three times. |
 | Shared eval metrics | `1a6969a` | `experiments/server_command_runs/eval_single_array_1a6969a_20260704_031145/` | Reuse single packed reward-probe prediction/label arrays directly instead of copying them through `np.concatenate()`. |
 | Shared eval metrics | `f9bbb29` | `experiments/server_command_runs/eval_binary_f1_f9bbb29_20260704_034430/` | Compute 0/1 binary weighted F1 with direct count reductions instead of sorting a class union for every MRPC/QQP reward-probe trial. |
@@ -590,6 +591,20 @@ under
 The red test proved the old accuracy path called `np.mean()`. The green gate
 passed `py_compile`, all ten `tests.test_blb_eval_metrics_shared` tests, and a
 source guard confirming the direct count path without `np.mean()`.
+
+Progress 2026-07-04: `run_installed_model_on_dataloader()` now reuses the
+shared `accuracy_from_labels()` helper for its MNLI full-eval branch. This
+removes the remaining local `np.mean(pred_classes == all_labels)` accuracy
+implementation from the installed inference path, so future accuracy hot-path
+improvements stay centralized.
+
+Server evidence 2026-07-04: source commit `7be83af` has red/green verification
+under
+`experiments/server_command_runs/inference_mnli_accuracy_helper_7be83af_20260704_042030/`.
+The red test proved the old MNLI full-eval branch called the local `np.mean()`
+path. The green gate passed `py_compile`, all nine
+`tests.test_blb_inference_eval_shared` tests, and a source guard confirming the
+MNLI branch uses the shared accuracy helper.
 
 Progress 2026-07-03: Stage-1 plaintext repeat evaluation and the MRPC
 layer-output noise experiment now use pinned DataLoader memory with
@@ -2089,6 +2104,9 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
 - `2d98907` shared reward-probe tensor prediction-array packed transfer,
   evidence committed in the `probe_tensor_arrays_2d98907_20260704_030105` run
   directory.
+- `7be83af` shared installed inference MNLI accuracy helper reuse, evidence
+  committed in the `inference_mnli_accuracy_helper_7be83af_20260704_042030`
+  run directory.
 - `da02fca` shared reward-probe count-weight reuse, evidence committed in the
   `eval_metric_weights_da02fca_20260704_030610` run directory.
 - `1a6969a` shared reward-probe single-array flatten fast path, evidence

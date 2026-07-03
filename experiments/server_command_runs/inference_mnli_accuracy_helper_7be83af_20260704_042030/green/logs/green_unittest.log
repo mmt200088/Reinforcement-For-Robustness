@@ -1,0 +1,14 @@
+test_full_eval_concatenates_tensor_batches_before_cpu_transfer (tests.test_blb_inference_eval_shared.InstalledInferenceEvalSourceTest.test_full_eval_concatenates_tensor_batches_before_cpu_transfer) ... ok
+test_full_eval_defers_per_batch_tensor_cpu_syncs (tests.test_blb_inference_eval_shared.InstalledInferenceEvalSourceTest.test_full_eval_defers_per_batch_tensor_cpu_syncs) ... ok
+test_probe_trial_batches_scalar_metric_cpu_sync_once (tests.test_blb_inference_eval_shared.InstalledInferenceEvalSourceTest.test_probe_trial_batches_scalar_metric_cpu_sync_once) ... ok
+test_probe_trial_defers_per_batch_tensor_cpu_syncs (tests.test_blb_inference_eval_shared.InstalledInferenceEvalSourceTest.test_probe_trial_defers_per_batch_tensor_cpu_syncs) ... ok
+test_full_eval_mnli_accuracy_reuses_shared_helper (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_full_eval_mnli_accuracy_reuses_shared_helper) ... ok
+test_full_eval_preserves_single_logit_binary_threshold_semantics (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_full_eval_preserves_single_logit_binary_threshold_semantics) ... ok
+test_probe_trial_and_full_eval_share_metric_semantics (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_probe_trial_and_full_eval_share_metric_semantics) ... ok
+test_probe_trial_skips_prediction_array_transfer_for_accuracy_profiles (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_probe_trial_skips_prediction_array_transfer_for_accuracy_profiles) ... ok
+test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 1.441s
+
+OK

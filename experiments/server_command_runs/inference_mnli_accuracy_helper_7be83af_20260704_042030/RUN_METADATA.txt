@@ -1,0 +1,6 @@
+source_commit=7be83af
+base_commit=0f6834b
+red_run=/hy-tmp/rfr_mnli_accuracy_helper_red_0f6834b_20260704_041930
+green_run=/hy-tmp/rfr_mnli_accuracy_helper_green_0f6834b_20260704_042030
+red_command=python -m unittest tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_full_eval_mnli_accuracy_reuses_shared_helper -v
+green_commands=python -m py_compile blb_stage2_rl/inference_eval.py; python -m unittest tests.test_blb_inference_eval_shared -v; source guard for MNLI branch using shared accuracy helper
