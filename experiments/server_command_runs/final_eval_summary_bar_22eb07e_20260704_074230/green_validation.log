@@ -1,0 +1,8 @@
+PY_COMPILE_RC=0
+test_final_eval_summary_bar_chart_collects_series_once (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_summary_bar_chart_collects_series_once) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.005s
+
+OK
+TEST_RC=0

@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `7a7e9d4`, the conservative
-completion estimate is about 96% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `22eb07e`, the conservative
+completion estimate is about 96-97% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -110,6 +110,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Unified final eval | `9026d8f` | `experiments/server_command_runs/final_eval_relative_chain_9026d8f_20260704_071220/` | Stream baseline/optimized/max-SF and random-result rows into relative-metric attachment with `itertools.chain()` instead of copying `random_results` through list concatenation. |
 | Paean final eval | `5fe7760` | `experiments/server_command_runs/paean_fusion_decode_copy_5fe7760_20260704_072520/` | Remove short-lived dict/list copy wrappers from fusion fixed-action decode metadata normalization, per-step block slicing, and option-field replay. |
 | Unified final eval reports | `7a7e9d4` | `experiments/server_command_runs/final_eval_axes_islice_7a7e9d4_20260704_073330/` | Iterate final-eval comparison and variance plot axes with `itertools.islice()` instead of materializing `list(axes.flat)[:3]`. |
+| Unified final eval reports | `22eb07e` | `experiments/server_command_runs/final_eval_summary_bar_22eb07e_20260704_074230/` | Collect final-eval summary bar chart family labels, feasibility rates, and dominance rates in one pass instead of separate scans/list comprehensions over `summary["by_family"]`. |
 | Stage-1 eval | `dca7526` | `experiments/server_command_runs/stage1_apply_config_reuse_dca7526_20260703_210000/` | Skip repeated `apply_configuration()` installs for unchanged GELU/Softmax configs. |
 | Stage-1 eval | `5d15e6c` | `experiments/server_command_runs/stage1_worker_apply_config_reuse_5d15e6c_20260703_211000/` | Skip repeated worker-handler installs for unchanged Stage-1 configs. |
 | Stage-1 eval | `61c8c57` | `experiments/server_command_runs/stage1_reward_history_deque_392b646_20260703_215700/` | Maintain Stage-1 reward normalization history with a bounded deque instead of list `pop(0)`. |
@@ -1639,6 +1640,19 @@ verification under
 The RED source guard failed on the old `list(axes.flat)[:3]` pattern. The GREEN
 gate passed `py_compile` and
 `test_final_eval_plots_iterate_axes_without_flat_list_copy`.
+
+Progress 2026-07-04: `UnifiedFinalEvaluationModule._plot_results()` now
+collects the summary bar chart family labels, feasible rates, and dominance
+rates in one pass over `summary["by_family"].items()` instead of taking keys and
+then rescanning the mapping with two list comprehensions. Bar order and plotted
+values are unchanged.
+
+Server evidence 2026-07-04: source commit `22eb07e` has focused red/green
+verification under
+`experiments/server_command_runs/final_eval_summary_bar_22eb07e_20260704_074230/`.
+The RED source guard failed on the old feasible-rate list comprehension. The
+GREEN gate passed `py_compile` and
+`test_final_eval_summary_bar_chart_collects_series_once`.
 
 - [ ] **Step 3: Verify**
 
