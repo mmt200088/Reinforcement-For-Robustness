@@ -116,19 +116,19 @@ def _iter_golden_shard_results(payloads: List[Dict[str, Any]], num_shards: int):
 def _merge_golden_shard_results(shard_results) -> Tuple[List[Any], int]:
     import fusion_enum
 
-    ev_g: List[Any] = []
+    reducer = fusion_enum._MinNoiseReducer()
     nv_g = 0
     for num_valid, shard in shard_results:
         nv_g += int(num_valid)
         for ai, fc, tb, tv, sig in shard:
-            ev_g.append(
+            reducer.add(
                 fusion_enum.EvaluatedConfig(
                     action_indices=tuple(ai), fusion_count=int(fc),
                     total_bits=int(tb), total_variance=float(tv),
                     installed_signature=sig, slots={},
                 )
             )
-    return ev_g, nv_g
+    return reducer.results(), nv_g
 
 
 def _fast_range_payloads(

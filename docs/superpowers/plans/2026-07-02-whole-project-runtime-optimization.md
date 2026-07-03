@@ -770,6 +770,13 @@ directories are ignored before any read attempt. A local 1000-map /
 3000-sidecar benchmark preserved loaded graph count and reduced map loading
 from `0.208784s` / `3.57MB` to `0.068689s` / `2.54MB` (`3.04x`).
 
+Progress 2026-07-03: `scripts/blb_build_fusion_count_map.py` now reduces
+golden shard results with the same `_MinNoiseReducer` used inside shard workers
+while streaming parent-process merge input. The builder still counts every valid
+config, but dominated cross-shard candidates are discarded before the final
+grouping pass, reducing parent memory and follow-up work during golden fallback
+builds.
+
 - [ ] **Step 3: Verify**
 
 Run:

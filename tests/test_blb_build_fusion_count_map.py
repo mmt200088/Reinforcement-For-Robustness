@@ -68,13 +68,33 @@ class FusionCountMapBuilderTests(unittest.TestCase):
                     raise AssertionError("iterator consumed more than once")
                 self.used = True
                 yield (2, [((1, 2), 0, 10, 1.5, "a"), ((2, 3), 1, 9, 2.5, "b")])
-                yield (1, [((3, 4), 0, 8, 3.5, "c")])
+                yield (1, [((3, 4), 2, 8, 3.5, "c")])
 
         evaluated, total = builder._merge_golden_shard_results(SinglePassResults())
 
         self.assertEqual(total, 3)
         self.assertEqual([ec.action_indices for ec in evaluated], [(1, 2), (2, 3), (3, 4)])
-        self.assertEqual([ec.fusion_count for ec in evaluated], [0, 1, 0])
+        self.assertEqual([ec.fusion_count for ec in evaluated], [0, 1, 2])
+
+    def test_merge_golden_shard_results_drops_dominated_rows(self):
+        builder = _load_builder()
+
+        evaluated, total = builder._merge_golden_shard_results(iter([
+            (2, [
+                ((1, 2), 0, 10, 1.0, "best-f0"),
+                ((9, 9), 0, 1, 2.0, "dominated-f0"),
+            ]),
+            (1, [
+                ((3, 4), 1, 8, 0.5, "best-f1"),
+            ]),
+        ]))
+
+        self.assertEqual(total, 3)
+        self.assertEqual(
+            {ec.action_indices for ec in evaluated},
+            {(1, 2), (3, 4)},
+        )
+        self.assertNotIn((9, 9), {ec.action_indices for ec in evaluated})
 
 
 if __name__ == "__main__":
