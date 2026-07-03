@@ -4029,6 +4029,16 @@ class LayerImportanceEvaluator(TrainerCallback):
         except Exception:
             pass
 
+    @staticmethod
+    def _unsupported_int_values(values, allowed_values):
+        allowed_set = {int(value) for value in allowed_values}
+        invalid = set()
+        for value in np.asarray(values, dtype=int).reshape(-1):
+            int_value = int(value)
+            if int_value not in allowed_set:
+                invalid.add(int_value)
+        return sorted(invalid)
+
     def validate_input_noise_scaling_factors(self, scaling_factors):
         arr = np.asarray(scaling_factors, dtype=int)
         if arr.shape != (self.total_layers,):
@@ -4036,7 +4046,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"input_noise_scaling_factors must have shape ({self.total_layers},), "
                 f"but got {arr.shape}"
             )
-        invalid = sorted(set(arr.tolist()) - set(INPUT_NOISE_ALLOWED_SCALING_FACTORS))
+        invalid = self._unsupported_int_values(arr, INPUT_NOISE_ALLOWED_SCALING_FACTORS)
         if invalid:
             raise ValueError(
                 f"Unsupported input-noise scaling factors: {invalid}. "
@@ -4057,7 +4067,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"but got {arr.shape}"
             )
         allowed_values = tuple(allowed_values or WEIGHT_NOISE_ALLOWED_SCALING_FACTORS)
-        invalid = sorted(set(arr.tolist()) - set(allowed_values))
+        invalid = self._unsupported_int_values(arr, allowed_values)
         if invalid:
             raise ValueError(
                 f"Unsupported {noise_name}-noise scaling factors: {invalid}. "
@@ -4278,8 +4288,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"{noise_name}_scaling_factors must have shape ({self.total_layers},), "
                 f"but got {arr.shape}"
             )
-        invalid = sorted(
-            set(arr.tolist()) - set(SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS)
+        invalid = self._unsupported_int_values(
+            arr,
+            SOFTMAX_VALUE_NOISE_ALLOWED_SCALING_FACTORS,
         )
         if invalid:
             raise ValueError(

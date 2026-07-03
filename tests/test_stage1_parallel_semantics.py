@@ -205,6 +205,22 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("rollout = _stage1_parallel_stash.popleft()", parallel_region)
         self.assertNotIn("_stage1_parallel_stash.pop(0)", source)
 
+    def test_noise_scaling_validation_scans_arrays_without_tolist_materialization(self):
+        source = _source(LAYER_EVALUATOR)
+
+        if "def _unsupported_int_values" not in source:
+            self.fail("layer evaluator is missing shared _unsupported_int_values helper")
+        for method_name in (
+            "validate_input_noise_scaling_factors",
+            "validate_weight_noise_scaling_factors",
+            "validate_softmax_value_noise_scaling_factors",
+        ):
+            region = _method_region(source, method_name)
+            if "_unsupported_int_values(" not in region:
+                self.fail(f"{method_name} does not use _unsupported_int_values")
+            if "arr.tolist()" in region:
+                self.fail(f"{method_name} still materializes arr.tolist()")
+
 
 if __name__ == "__main__":
     unittest.main()
