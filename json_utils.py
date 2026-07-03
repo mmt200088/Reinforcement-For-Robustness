@@ -156,16 +156,17 @@ def write_json_file(
     """
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(
-        to_jsonable(payload, preserve_native=True),
-        ensure_ascii=bool(ensure_ascii),
-        indent=indent,
-        sort_keys=bool(sort_keys),
-        default=json_default,
-    )
-    if trailing_newline:
-        text += "\n"
-    out_path.write_text(text, encoding="utf-8")
+    with out_path.open("w", encoding="utf-8") as handle:
+        json.dump(
+            to_jsonable(payload, preserve_native=True),
+            handle,
+            ensure_ascii=bool(ensure_ascii),
+            indent=indent,
+            sort_keys=bool(sort_keys),
+            default=json_default,
+        )
+        if trailing_newline:
+            handle.write("\n")
     return out_path
 
 

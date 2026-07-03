@@ -124,6 +124,25 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertTrue(text.endswith("\n"))
         self.assertEqual(json.loads(text), {"a": "x", "b": 2})
 
+    def test_write_json_file_streams_to_file_handle(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "nested" / "payload.json"
+            original_write_text = Path.write_text
+
+            def fail_write_text(p, *args, **kwargs):
+                if Path(p) == path:
+                    raise AssertionError("write_json_file should not materialize full JSON text")
+                return original_write_text(p, *args, **kwargs)
+
+            with mock.patch.object(Path, "write_text", fail_write_text):
+                written = write_json_file(path, {"a": np.int64(1)})
+
+            text = path.read_text(encoding="utf-8")
+
+        self.assertEqual(written, path)
+        self.assertEqual(json.loads(text), {"a": 1})
+        self.assertTrue(text.endswith("\n"))
+
     def test_read_json_file_reads_artifact_payload(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "payload.json"

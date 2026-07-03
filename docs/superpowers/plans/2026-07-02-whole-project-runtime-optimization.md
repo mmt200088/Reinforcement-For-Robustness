@@ -1339,6 +1339,13 @@ through `Path.open()` and `json.load()` instead of `Path.read_text()` plus
 and optional sidecars keep the same strict/default error semantics while large
 JSON artifacts avoid one extra full-file text materialization.
 
+Progress 2026-07-03: shared `json_utils.write_json_file()` now writes artifacts
+through `Path.open()` and `json.dump()` instead of materializing the whole JSON
+document with `json.dumps()` before `write_text()`. Required structured
+artifacts keep the same normalization, sorting, indentation, and trailing
+newline behavior while large manifests/reports/evidence summaries avoid one
+extra full-document string allocation.
+
 - [ ] **Step 3: Verify**
 
 Run:
