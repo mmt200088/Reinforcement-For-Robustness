@@ -2642,7 +2642,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.current_lr = self.stage1_ppo_lr_initial
         
         # ==================== PPO 7.1: 运行时回报归一化状态 ====================
-        self.reward_history = []  # 历史回报滑动窗口
+        self.reward_history = deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)  # 历史回报滑动窗口
         self.reward_mean = 0.0    # 运行时均值
         self.reward_std = 1.0     # 运行时标准差（初始为1避免除零）
         
@@ -3822,10 +3822,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 将新回报加入历史
         self.reward_history.append(episode_reward)
         
-        # 保持滑动窗口大小
-        if len(self.reward_history) > RUNNING_REWARD_HISTORY_SIZE:
-            self.reward_history.pop(0)
-        
         # 更新均值和标准差（至少需要一定数量的样本）
         if len(self.reward_history) >= RUNNING_REWARD_MIN_SAMPLES:
             self.reward_mean = np.mean(self.reward_history)
@@ -4882,7 +4878,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.current_lr = self.stage2_ppo_lr_initial
         else:
             self.current_lr = self.stage1_ppo_lr_initial
-        self.reward_history = []
+        self.reward_history = deque(maxlen=RUNNING_REWARD_HISTORY_SIZE)
         self.reward_mean = 0.0
         self.reward_std = 1.0
         self.return_normalizer = RunningMeanStd()
@@ -6420,7 +6416,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage1_prev_avg_reward[0] = ckpt.get("stage1_prev_avg_reward")
                 stage1_warnings = list(ckpt.get("stage1_warnings", []))
                 _ev_rt = ckpt.get("ev_runtime_state", {})
-                self.reward_history = list(_ev_rt.get("reward_history", []))
+                self.reward_history = deque(
+                    _ev_rt.get("reward_history", []),
+                    maxlen=RUNNING_REWARD_HISTORY_SIZE,
+                )
                 self.reward_mean = float(_ev_rt.get("reward_mean", 0.0))
                 self.reward_std = float(_ev_rt.get("reward_std", 1.0))
                 self.current_episode = int(_ev_rt.get("current_episode", stage1_resume_start_episode))
