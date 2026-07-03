@@ -1750,6 +1750,7 @@ class UnifiedFinalEvaluationModule:
             grouped: Dict[str, list] = {}
             for r in random_results:
                 grouped.setdefault(r["family"], []).append(r)
+            ordered_families = self._ordered_families(grouped)
 
             metric_panels = [
                 ("Loss", "loss"),
@@ -1762,7 +1763,7 @@ class UnifiedFinalEvaluationModule:
 
             for ax, (label, key) in zip(itertools.islice(axes.flat, 3), metric_panels):
                 panel_xs = []
-                for fam in self._ordered_families(grouped):
+                for fam in ordered_families:
                     items = grouped[fam]
                     xs = []
                     ys = []

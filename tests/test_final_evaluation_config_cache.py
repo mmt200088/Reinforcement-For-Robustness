@@ -413,6 +413,11 @@ class FinalEvaluationConfigCacheTest(unittest.TestCase):
         self.assertNotIn("self._family_colors()", comparison_source)
         self.assertNotIn("self._family_colors()", variance_source)
 
+    def test_final_eval_comparison_plot_reuses_ordered_families(self):
+        source = inspect.getsource(fem.UnifiedFinalEvaluationModule._plot_results)
+
+        self.assertNotIn("for fam in self._ordered_families(grouped):", source)
+
     def test_float_stat_helpers_stream_values_without_clean_lists(self):
         values = [1.0, None, float("nan"), 3.0, float("inf")]
 
