@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `7be83af`, the conservative
-completion estimate is about 72% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `643ae60`, the conservative
+completion estimate is about 73% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -117,6 +117,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2/Paean action space | `522b42f` | `experiments/server_command_runs/action_mask_degree_vector_522b42f_20260704_023140/` | Normalize ndarray-backed action-mask degree vectors without copying through `list(raw)` first. |
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
 | Structured artifacts | `e0376a5` | `experiments/server_command_runs/jsonl_encoder_reuse_e0376a5_20260703_223743/` | Reuse one `JSONEncoder` for finite JSONL row writes instead of calling `json.dump()` for every row. |
+| Structured artifacts | `643ae60` | `experiments/server_command_runs/jsonl_resolve_once_643ae60_20260704_034331/` | Resolve JSONL paths once in shared readers and open the resolved file directly, avoiding duplicate filesystem checks in report/artifact scans. |
 | Structured artifacts | `d0f543b` | `experiments/server_command_runs/stage2_monitor_stream_ppo_d0f543b_20260704_000540/` | Stream Stage-2 monitor PPO updates with a bounded recent window while preserving full-file `n_samples` and non-finite-loss checks. |
 | Structured artifacts | `cdcbeca` | `experiments/server_command_runs/manifest_registry_hash_cdcbeca_20260704_003917/` | Stream Trust-0 manifest registry JSON hashing through `JSONEncoder.iterencode()` instead of materializing one canonical JSON string before sha256. |
 | Reports / paper figures | `5a75eee` | `experiments/server_command_runs/stage2_monitor_html_stream_5a75eee_20260704_005141/` | Stream Stage-2 monitor HTML report rows and nested reward-probe/GPU JSON chunks directly to the file handle instead of materializing full JSON/table strings. |
@@ -1872,6 +1873,19 @@ the newline, instead of building a full per-row JSON string with
 sorting, and line-delimited output while large finite report rows avoid one
 extra full-row string allocation.
 
+Progress 2026-07-04: `jsonl_utils.iter_jsonl_records()` now resolves
+`.jsonl`/`.jsonl.gz` paths once and opens the resolved path through
+`_open_resolved_jsonl()`. `open_jsonl()` keeps the public behavior for callers,
+while shared readers avoid the duplicate `resolve_jsonl_path()` call on every
+file scan.
+
+Server evidence 2026-07-04: source commit `643ae60` has red/green verification
+under
+`experiments/server_command_runs/jsonl_resolve_once_643ae60_20260704_034331/`.
+The red test proved the old iterator resolved the path twice. The green gate
+passed `py_compile`, all `tests.test_jsonl_utils` tests, and a source guard
+confirming `iter_jsonl_records()` opens the already resolved path directly.
+
 Progress 2026-07-03: `scripts/stage2_first10k_monitor.py` now writes live and
 final monitor summary JSON files through shared `write_json_file()` streaming
 and appends `monitor_events.jsonl` rows with `json.dump()` directly into the
@@ -2107,6 +2121,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
 - `7be83af` shared installed inference MNLI accuracy helper reuse, evidence
   committed in the `inference_mnli_accuracy_helper_7be83af_20260704_042030`
   run directory.
+- `643ae60` shared JSONL single path resolution, evidence committed in the
+  `jsonl_resolve_once_643ae60_20260704_034331` run directory.
 - `da02fca` shared reward-probe count-weight reuse, evidence committed in the
   `eval_metric_weights_da02fca_20260704_030610` run directory.
 - `1a6969a` shared reward-probe single-array flatten fast path, evidence

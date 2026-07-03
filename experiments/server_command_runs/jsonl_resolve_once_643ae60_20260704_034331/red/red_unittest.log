@@ -1,0 +1,23 @@
+test_iter_jsonl_records_resolves_path_once (tests.test_jsonl_utils.JsonlUtilsTest.test_iter_jsonl_records_resolves_path_once) ... FAIL
+
+======================================================================
+FAIL: test_iter_jsonl_records_resolves_path_once (tests.test_jsonl_utils.JsonlUtilsTest.test_iter_jsonl_records_resolves_path_once)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_jsonl_resolve_red_3f3db4f_20260704_043430/tests/test_jsonl_utils.py", line 74, in test_iter_jsonl_records_resolves_path_once
+    rows = list(jsonl_utils.iter_jsonl_records(path))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_jsonl_resolve_red_3f3db4f_20260704_043430/jsonl_utils.py", line 43, in iter_jsonl_records
+    with open_jsonl(jsonl_path) as handle:
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_jsonl_resolve_red_3f3db4f_20260704_043430/jsonl_utils.py", line 23, in open_jsonl
+    jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_jsonl_resolve_red_3f3db4f_20260704_043430/tests/test_jsonl_utils.py", line 69, in resolve_once
+    raise AssertionError("iter_jsonl_records should resolve path once")
+AssertionError: iter_jsonl_records should resolve path once
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
