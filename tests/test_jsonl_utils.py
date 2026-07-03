@@ -54,6 +54,29 @@ class JsonlUtilsTest(unittest.TestCase):
 
         self.assertEqual(rows, [(2, {"a": 1}), (3, [1, 2])])
 
+    def test_iter_jsonl_records_resolves_path_once(self):
+        import jsonl_utils
+
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "rows.jsonl"
+            path.write_text('{"a": 1}\n', encoding="utf-8")
+            original_resolve = jsonl_utils.resolve_jsonl_path
+            calls = []
+
+            def resolve_once(path_arg, *, gzip_fallback=False):
+                calls.append(path_arg)
+                if len(calls) > 1:
+                    raise AssertionError("iter_jsonl_records should resolve path once")
+                return original_resolve(path_arg, gzip_fallback=gzip_fallback)
+
+            jsonl_utils.resolve_jsonl_path = resolve_once
+            try:
+                rows = list(jsonl_utils.iter_jsonl_records(path))
+            finally:
+                jsonl_utils.resolve_jsonl_path = original_resolve
+
+        self.assertEqual(rows, [(1, {"a": 1})])
+
     def test_read_jsonl_missing_ok(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "missing.jsonl"

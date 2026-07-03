@@ -21,6 +21,10 @@ def resolve_jsonl_path(path: str | Path, *, gzip_fallback: bool = False) -> Path
 
 def open_jsonl(path: str | Path, *, gzip_fallback: bool = False) -> TextIO:
     jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
+    return _open_resolved_jsonl(jsonl_path)
+
+
+def _open_resolved_jsonl(jsonl_path: Path) -> TextIO:
     if jsonl_path.suffix == ".gz":
         return gzip.open(jsonl_path, "rt", encoding="utf-8", errors="replace")
     return jsonl_path.open(encoding="utf-8", errors="replace")
@@ -40,7 +44,7 @@ def iter_jsonl_records(
     behavior that reports the file and line number on malformed JSON.
     """
     jsonl_path = resolve_jsonl_path(path, gzip_fallback=gzip_fallback)
-    with open_jsonl(jsonl_path) as handle:
+    with _open_resolved_jsonl(jsonl_path) as handle:
         for line_no, line in enumerate(handle, start=1):
             if not line or line.isspace():
                 continue
