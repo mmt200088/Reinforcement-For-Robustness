@@ -12,6 +12,11 @@ import numpy as np
 _TORCH_TENSOR_TYPE: Any = None
 _TORCH_TENSOR_TYPE_RESOLVED = False
 _RAISE = object()
+_STABLE_JSON_ENCODER = json.JSONEncoder(
+    ensure_ascii=True,
+    sort_keys=True,
+    separators=(",", ":"),
+)
 
 
 def _torch_tensor_type() -> Any:
@@ -126,16 +131,14 @@ def json_default(value: Any) -> Any:
 
 
 def stable_json_key(value: Any) -> str:
-    return json.dumps(
-        to_jsonable(value, preserve_native=True),
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    return _STABLE_JSON_ENCODER.encode(to_jsonable(value, preserve_native=True))
 
 
 def stable_json_hash(value: Any) -> str:
-    return hashlib.sha256(stable_json_key(value).encode("utf-8")).hexdigest()
+    h = hashlib.sha256()
+    for chunk in _STABLE_JSON_ENCODER.iterencode(to_jsonable(value, preserve_native=True)):
+        h.update(chunk.encode("utf-8"))
+    return h.hexdigest()
 
 
 def write_json_file(
