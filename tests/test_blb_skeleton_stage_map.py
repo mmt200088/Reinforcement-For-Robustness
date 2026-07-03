@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import pathlib
 import sys
+import tempfile
 import unittest
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -125,6 +126,18 @@ class SkeletonStageMapTest(unittest.TestCase):
                 f"{graph_key}: full-chain nodes {missing} are not in the SSOT node "
                 "map — extend _NODE_MAP to keep the automation complete",
             )
+
+    def test_load_profile_configs_skips_json_named_directories(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg_dir = pathlib.Path(td) / "configs" / "toy"
+            cfg_dir.mkdir(parents=True)
+            (cfg_dir / "block1_toy.json").write_text('{"graph": "block1"}\n', encoding="utf-8")
+            (cfg_dir / "static_skeletons_toy.json").write_text('{"ignored": true}\n', encoding="utf-8")
+            (cfg_dir / "block2_toy.json").mkdir()
+
+            cfgs = ssm.load_profile_configs(td, "toy")
+
+        self.assertEqual(cfgs, {"block1_toy": {"graph": "block1"}})
 
 
 # ---------------------------------------------------------------------------
