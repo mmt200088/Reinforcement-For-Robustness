@@ -50,7 +50,7 @@ class BLBInstallLogRegressionTests(unittest.TestCase):
 
 
 class BLBActionFinalEvalRegressionTests(unittest.TestCase):
-    def test_clean_baseline_uses_repeat_protocol_without_eval_cache(self):
+    def test_clean_baseline_reuses_single_configuration_install_without_eval_cache(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
 
         class FakeEvaluator:
@@ -85,7 +85,8 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
         runner.evaluator = FakeEvaluator()
         runner.repeat_n = 3
-        runner._clear_all_noise = lambda: None
+        clear_calls = []
+        runner._clear_all_noise = lambda: clear_calls.append("clear")
 
         result = runner._evaluate_clean_baseline(
             baseline_stage1_gelu=np.asarray([1], dtype=int),
@@ -93,6 +94,8 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         )
 
         self.assertEqual(runner.evaluator.calls, 3)
+        self.assertEqual(runner.evaluator.applied, [((1,), (6,))])
+        self.assertEqual(clear_calls, ["clear"])
         self.assertEqual(result["evaluation_n"], 3)
         self.assertEqual(result["evaluation_protocol"], "repeated_mean_n=3")
         self.assertAlmostEqual(result["loss"], 0.32)
@@ -100,6 +103,95 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertAlmostEqual(result["s"], 0.74)
         self.assertGreater(result["loss_std"], 0.0)
         self.assertIn("repeat_evaluation", result)
+
+    def test_blb_repeat_reuses_single_bridge_install_without_eval_cache(self):
+        import Paean.blb_action_eval as mod
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        class FakeBridge:
+            instances = []
+
+            def __init__(self, _handler, *, layers_attribute):
+                self.layers_attribute = layers_attribute
+                self.apply_calls = 0
+                self.clear_calls = 0
+                FakeBridge.instances.append(self)
+
+            def apply(self, **_kwargs):
+                self.apply_calls += 1
+
+            def clear(self):
+                self.clear_calls += 1
+
+        class FakeDecoded:
+            block1_cfgs = {}
+            block2_cfgs = {}
+            block3_cfgs = {}
+            block4_cfgs = {}
+            block5_cfgs = {}
+
+        class FakeEvaluator:
+            total_layers = 1
+            dataset_key = "mrpc"
+            layers_attribute = "encoder.layer"
+
+            def __init__(self):
+                self.reversible_handler = object()
+                self.dataloaders = {"validation_full": object()}
+                self.apply_calls = []
+                self.eval_calls = 0
+
+            def apply_configuration(self, gelu, softmax):
+                self.apply_calls.append((tuple(gelu), tuple(softmax)))
+
+            def _resolve_eval_split(self, *, use_train, split):
+                self.assertFalse(use_train)
+                self.assertEqual(split, "validation_full")
+                return "validation_full"
+
+            def _run_evaluation(self, _loader, *, use_train, split_name):
+                self.assertFalse(use_train)
+                self.assertEqual(split_name, "validation_full")
+                self.eval_calls += 1
+                return (
+                    0.30 + (0.01 * self.eval_calls),
+                    0.80 + (0.01 * self.eval_calls),
+                    0.70 + (0.02 * self.eval_calls),
+                    10.0 * self.eval_calls,
+                )
+
+        old_bridge = mod.BLBNoiseRLBridge
+        try:
+            mod.BLBNoiseRLBridge = FakeBridge
+            runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
+            runner.evaluator = FakeEvaluator()
+            runner.repeat_n = 3
+            legacy_clear_calls = []
+            all_clear_calls = []
+            verify_calls = []
+            runner._clear_legacy_noise = lambda: legacy_clear_calls.append("legacy")
+            runner._clear_all_noise = lambda: all_clear_calls.append("all")
+            runner._verify_model_installation = lambda _bridge, _decoded: verify_calls.append("verify") or {"ok": True}
+
+            single, repeat = runner._run_blb_eval(
+                FakeDecoded(),
+                gelu=np.asarray([1], dtype=int),
+                softmax=np.asarray([6], dtype=int),
+            )
+        finally:
+            mod.BLBNoiseRLBridge = old_bridge
+
+        self.assertEqual(runner.evaluator.eval_calls, 3)
+        self.assertEqual(runner.evaluator.apply_calls, [((1,), (6,))])
+        self.assertEqual(len(FakeBridge.instances), 1)
+        self.assertEqual(FakeBridge.instances[0].apply_calls, 1)
+        self.assertEqual(FakeBridge.instances[0].clear_calls, 1)
+        self.assertEqual(legacy_clear_calls, ["legacy"])
+        self.assertEqual(all_clear_calls, ["all"])
+        self.assertEqual(verify_calls, ["verify"])
+        self.assertAlmostEqual(single["loss"], 0.32)
+        self.assertEqual(repeat["stats"]["n"], 3)
+        self.assertEqual(single["install_verification"], {"ok": True})
 
     def test_resolve_base_action_accepts_numpy_arrays_without_truthiness(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
