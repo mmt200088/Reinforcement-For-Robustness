@@ -1,0 +1,32 @@
+test_build_summary_streams_ppo_updates_without_full_read_jsonl (tests.test_stage2_first10k_monitor.Stage2First10kMonitorTest.test_build_summary_streams_ppo_updates_without_full_read_jsonl) ... FAIL
+
+======================================================================
+FAIL: test_build_summary_streams_ppo_updates_without_full_read_jsonl (tests.test_stage2_first10k_monitor.Stage2First10kMonitorTest.test_build_summary_streams_ppo_updates_without_full_read_jsonl)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_stage2_monitor_stream_ppo_red_6dc415d_20260703_000051/src_py_6dc415d_red/tests/test_stage2_first10k_monitor.py", line 387, in test_build_summary_streams_ppo_updates_without_full_read_jsonl
+    summary = monitor.build_summary(args)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_stage2_monitor_stream_ppo_red_6dc415d_20260703_000051/src_py_6dc415d_red/scripts/stage2_first10k_monitor.py", line 173, in build_summary
+    episodes, ppo = _load_monitor_rows(args)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_stage2_monitor_stream_ppo_red_6dc415d_20260703_000051/src_py_6dc415d_red/scripts/stage2_first10k_monitor.py", line 159, in _load_monitor_rows
+    ppo = read_jsonl(artifact / "ppo_updates.jsonl", missing_ok=True)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1189, in _execute_mock_call
+    result = effect(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_stage2_monitor_stream_ppo_red_6dc415d_20260703_000051/src_py_6dc415d_red/tests/test_stage2_first10k_monitor.py", line 368, in guarded_read_jsonl
+    raise AssertionError("PPO updates should be streamed, not fully materialized")
+AssertionError: PPO updates should be streamed, not fully materialized
+
+----------------------------------------------------------------------
+Ran 1 test in 0.065s
+
+FAILED (failures=1)
