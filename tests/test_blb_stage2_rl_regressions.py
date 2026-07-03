@@ -203,6 +203,31 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertEqual(repeat["stats"]["n"], 3)
         self.assertEqual(single["install_verification"], {"ok": True})
 
+    def test_max_sfs_table_is_cached_per_final_eval_module_profile(self):
+        import Paean.blb_action_eval as mod
+        from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+
+        old_load_max_sfs = mod.load_max_sfs
+        calls = []
+        try:
+            def fake_load_max_sfs(profile):
+                calls.append(str(profile))
+                return {"profile": str(profile)}
+
+            mod.load_max_sfs = fake_load_max_sfs
+            runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
+
+            first = runner._load_max_sfs("mrpc")
+            second = runner._load_max_sfs("mrpc")
+            third = runner._load_max_sfs("rte")
+        finally:
+            mod.load_max_sfs = old_load_max_sfs
+
+        self.assertIs(first, second)
+        self.assertEqual(first, {"profile": "mrpc"})
+        self.assertEqual(third, {"profile": "rte"})
+        self.assertEqual(calls, ["mrpc", "rte"])
+
     def test_resolve_base_action_accepts_numpy_arrays_without_truthiness(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
 
