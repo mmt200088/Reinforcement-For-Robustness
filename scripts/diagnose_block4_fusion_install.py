@@ -22,6 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from json_utils import write_json_file
+
 from blb_stage2_rl.action_space import (
     K_LEVELS,
     expand_fusion_step_action,
@@ -213,7 +215,7 @@ def main() -> int:
         "block4_option1_explicit_field_values": boosted_fields,
         "variants": results,
     }
-    output_json.write_text(json.dumps(_jsonable(payload), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_file(output_json, payload)
     print(json.dumps({"output_json": str(output_json)}, ensure_ascii=False, indent=2))
     return 0
 

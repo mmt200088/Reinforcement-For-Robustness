@@ -158,6 +158,7 @@ class RLDataPointWriterTest(unittest.TestCase):
             "scripts/blb_make_run_manifest.py": "from json_utils import read_json_file, write_json_file",
             "scripts/blb_build_fusion_count_map.py": "from json_utils import write_json_file",
             "scripts/blb_orphan_slot_audit.py": "from json_utils import read_json_file, write_json_file",
+            "scripts/diagnose_block4_fusion_install.py": "from json_utils import write_json_file",
             "scripts/stage1_plaintext_repeat_eval.py": "from json_utils import write_json_file",
             "reports/generate_blb_mapping_html_reports.py": "from json_utils import read_json_file, write_json_file",
         }
