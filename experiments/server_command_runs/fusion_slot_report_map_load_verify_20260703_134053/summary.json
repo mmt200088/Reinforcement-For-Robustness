@@ -1,0 +1,12 @@
+{
+  "run_id": "fusion_slot_report_map_load_verify_20260703_134053",
+  "source_commit": "3543d41",
+  "bundle_commit": "4106d6f",
+  "bundle_commit_full": "4106d6f2ba4ae1dc2a66d2d078b1d3414ee4ad0e",
+  "remote_head_check": "ls_remote_timeout_124",
+  "git_clone_rc": 0,
+  "test_command": "python3 -m unittest tests.test_render_fusion_count_slots_eval_report -v",
+  "test_rc": 0,
+  "server_work_dir": "/hy-tmp/fusion_slot_report_map_load_verify_20260703_134053",
+  "source_transport": "git_bundle_minimal_after_github_ls_remote_timeout"
+}
