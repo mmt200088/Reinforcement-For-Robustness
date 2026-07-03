@@ -417,7 +417,7 @@ def _bound_slot_values(block_idx: int, slots: Mapping[str, Any]) -> Dict[str, An
     then overlays these values; bound compat slots must be overlaid too, or the
     decoded cfg can drift from the map option that was actually audited.
     """
-    out = {str(k): v for k, v in dict(slots or {}).items()}
+    out = {str(k): v for k, v in slots.items()} if slots else {}
     if int(block_idx) == 2:
         if "inv_std_fresh_sf" in out:
             out.setdefault("x_centered_fresh_sf", out["inv_std_fresh_sf"])

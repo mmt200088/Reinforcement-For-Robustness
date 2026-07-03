@@ -499,6 +499,24 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertEqual(len(slots), 2)
         self.assertLessEqual(calls, 1)
 
+    def test_bound_slot_values_uses_mapping_items_without_dict_copy(self):
+        slots = {
+            "inv_std_fresh_sf": 11,
+            "wk_sf": 12,
+            "kt_mask1_sf": 13,
+        }
+
+        with mock.patch(
+            "builtins.dict",
+            side_effect=AssertionError("bound slot values should not copy mapping through dict()"),
+        ):
+            out = report._bound_slot_values(2, slots)
+
+        self.assertEqual(out["inv_std_fresh_sf"], 11)
+        self.assertEqual(out["x_centered_fresh_sf"], 11)
+        self.assertEqual(out["wq_sf"], 12)
+        self.assertEqual(out["q_mask1_sf"], 13)
+
 
 if __name__ == "__main__":
     unittest.main()
