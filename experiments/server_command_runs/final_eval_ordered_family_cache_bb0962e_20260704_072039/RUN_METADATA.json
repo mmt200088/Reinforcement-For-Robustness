@@ -1,0 +1,33 @@
+{
+  "artifact_type": "server_verification_evidence",
+  "created_at": "2026-07-04T07:20:39+08:00",
+  "source_commit": "bb0962e",
+  "optimization": "cache final-eval comparison plot ordered families across metric panels",
+  "files_changed": [
+    "final_evaluation_module.py",
+    "tests/test_final_evaluation_config_cache.py"
+  ],
+  "server_runs": {
+    "red": {
+      "run_dir": "/hy-tmp/rfr_final_eval_order_cache_red_743e572_20260704_072006",
+      "command": "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_comparison_plot_reuses_ordered_families -v",
+      "expected_result": "failure on old per-panel _ordered_families call",
+      "exit_code": 1,
+      "local_log": "red_unittest.log"
+    },
+    "green": {
+      "run_dir": "/hy-tmp/rfr_final_eval_order_cache_green_20260704_072039",
+      "commands": [
+        "python3 -m py_compile final_evaluation_module.py tests/test_final_evaluation_config_cache.py",
+        "python3 -m unittest tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_comparison_plot_reuses_ordered_families -v"
+      ],
+      "expected_result": "py_compile and focused unittest pass",
+      "exit_code": 0,
+      "local_log": "green_validation.log"
+    }
+  },
+  "workflow": {
+    "server_code_policy": "server used a temporary source package for execution only",
+    "local_git_policy": "source commit pushed before evidence commit"
+  }
+}

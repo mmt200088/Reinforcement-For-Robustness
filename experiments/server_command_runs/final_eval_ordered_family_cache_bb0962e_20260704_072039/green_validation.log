@@ -1,0 +1,8 @@
+PY_COMPILE_RC=0
+test_final_eval_comparison_plot_reuses_ordered_families (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_final_eval_comparison_plot_reuses_ordered_families) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.005s
+
+OK
+TEST_RC=0
