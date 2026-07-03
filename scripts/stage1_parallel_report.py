@@ -103,8 +103,19 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
     warnings: list[str] = []
 
     for line in lines:
-        if "[stage1-rollout" not in line:
+        if "[stage1-rollout-total]" in line:
+            total_match = TOTAL_RE.search(line)
+            if total_match:
+                total_window_count += 1
+                total_episodes += int(total_match.group("episodes"))
+                total_wall_seconds += float(total_match.group("total"))
+                for key in COMPONENT_KEYS:
+                    component_seconds[key] += float(total_match.group(key))
             continue
+
+        if "[stage1-rollout]" not in line:
+            continue
+
         rollout_match = ROLLOUT_RE.search(line)
         if rollout_match:
             devices = _split_csv(rollout_match.group("devices"))
@@ -129,14 +140,6 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
                 "hit_rate": float(cache_match.group("hit_rate")) / 100.0,
             }
             continue
-
-        total_match = TOTAL_RE.search(line)
-        if total_match:
-            total_window_count += 1
-            total_episodes += int(total_match.group("episodes"))
-            total_wall_seconds += float(total_match.group("total"))
-            for key in COMPONENT_KEYS:
-                component_seconds[key] += float(total_match.group(key))
 
     component_share = {
         key: safe_div_or_none(value, total_wall_seconds)

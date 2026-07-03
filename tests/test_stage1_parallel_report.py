@@ -128,6 +128,28 @@ class Stage1ParallelReportTest(unittest.TestCase):
         self.assertEqual(summary["windows"], 0)
         self.assertIn("No [stage1-rollout] worker timing lines found.", summary["warnings"])
 
+    def test_parse_log_lines_dispatches_total_lines_without_worker_regex(self):
+        report = _load_report_module()
+
+        class BombPattern:
+            def search(self, _line):
+                raise AssertionError("total lines should not hit worker/cache regex")
+
+        total_line = (
+            "  [stage1-rollout-total] window=3 episodes=60 total=120.000s "
+            "collect=100.000s replay=3.000s detail=2.000s "
+            "ppo_update=10.000s other=5.000s throughput=1800.0ep/h\n"
+        )
+        with (
+            mock.patch.object(report, "ROLLOUT_RE", BombPattern()),
+            mock.patch.object(report, "CACHE_RE", BombPattern()),
+        ):
+            summary = report.parse_log_lines([total_line])
+
+        self.assertEqual(summary["windows"], 1)
+        self.assertEqual(summary["total_episodes"], 60)
+        self.assertEqual(summary["total_wall_seconds"], 120.0)
+
     def test_cli_writes_json_and_markdown(self):
         report = _load_report_module()
 
