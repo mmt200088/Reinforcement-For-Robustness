@@ -301,6 +301,38 @@ def _field_kinds_by_block(
     }
 
 
+def _adjusted_block_action(
+    graph: Mapping[str, Any],
+    option: Mapping[str, Any],
+    fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]],
+) -> Tuple[int, ...]:
+    graph_key = str(graph.get("graph_key"))
+    block_idx = int(graph["block_idx"])
+    block_action = [int(v) for v in option.get("action_indices", [])]
+    k_slot_index = int(graph["k_slot_index"])
+    if 0 <= k_slot_index < len(block_action):
+        block_action[k_slot_index] = BASELINE_K_INDEX
+    expected = len(fields_by_block[block_idx])
+    if len(block_action) != expected:
+        raise RuntimeError(
+            f"{graph_key}: action_indices len {len(block_action)} != block{block_idx} field count {expected}"
+        )
+    return tuple(block_action)
+
+
+def _block_actions_by_option(
+    graphs: Mapping[str, Mapping[str, Any]],
+    fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]],
+) -> Dict[str, Dict[int, Tuple[int, ...]]]:
+    out: Dict[str, Dict[int, Tuple[int, ...]]] = {}
+    for graph_key, graph in graphs.items():
+        out[str(graph_key)] = {
+            int(option.get("option_id")): _adjusted_block_action(graph, option, fields_by_block)
+            for option in graph.get("options", [])
+        }
+    return out
+
+
 def _option_id_for_step(step: Mapping[str, Any], option_by_graph: Mapping[str, int], option_by_step: Mapping[str, int] | None = None) -> int:
     step_key = str(step["step_idx"])
     if option_by_step and step_key in option_by_step:
@@ -320,32 +352,33 @@ def _splice_group_action(
     layer_width: int | None = None,
     block_offsets: Mapping[int, int] | None = None,
     option_index_by_graph: Mapping[str, Mapping[int, Mapping[str, Any]]] | None = None,
+    block_actions_by_option: Mapping[str, Mapping[int, Sequence[int]]] | None = None,
 ) -> List[int]:
     action = list(base_action) if base_action is not None else _make_all_max_action(fields_by_block, num_layers)
     width = int(layer_width) if layer_width is not None else _layer_width(fields_by_block)
     offsets = block_offsets if block_offsets is not None else _block_offsets(fields_by_block)
+    block_action_cache: Dict[Tuple[str, int], Sequence[int]] = {}
     for step in schedule:
         graph_key = str(step["graph_key"])
         graph = graphs[graph_key]
         block_idx = int(step["block_idx"])
         layer_idx = int(step["layer_idx"])
         option_id = _option_id_for_step(step, option_by_graph, option_by_step)
-        option = (
-            _option_by_index(graph, option_id, option_index_by_graph)
-            if option_index_by_graph is not None
-            else _option_by_id(graph, option_id)
-        )
-        block_action = [int(v) for v in option.get("action_indices", [])]
-        k_slot_index = int(graph["k_slot_index"])
-        if 0 <= k_slot_index < len(block_action):
-            block_action[k_slot_index] = BASELINE_K_INDEX
-        expected = len(fields_by_block[block_idx])
-        if len(block_action) != expected:
-            raise RuntimeError(
-                f"{graph_key}: action_indices len {len(block_action)} != block{block_idx} field count {expected}"
-            )
+        if block_actions_by_option is not None:
+            block_action = block_actions_by_option[graph_key][option_id]
+        else:
+            cache_key = (graph_key, option_id)
+            block_action = block_action_cache.get(cache_key)
+            if block_action is None:
+                option = (
+                    _option_by_index(graph, option_id, option_index_by_graph)
+                    if option_index_by_graph is not None
+                    else _option_by_id(graph, option_id)
+                )
+                block_action = _adjusted_block_action(graph, option, fields_by_block)
+                block_action_cache[cache_key] = block_action
         start = layer_idx * width + offsets[block_idx]
-        action[start : start + expected] = block_action
+        action[start : start + len(block_action)] = block_action
     return action
 
 
@@ -579,6 +612,7 @@ def _write_action_configs(
     offsets = _block_offsets(fields_by_block)
     option_index_by_graph = _option_index_by_graph(graphs)
     field_kinds_by_block = _field_kinds_by_block(fields_by_block)
+    block_actions_by_option = _block_actions_by_option(graphs, fields_by_block)
     for spec in group_specs:
         name = str(spec["name"])
         action = _splice_group_action(
@@ -592,6 +626,7 @@ def _write_action_configs(
             layer_width=width,
             block_offsets=offsets,
             option_index_by_graph=option_index_by_graph,
+            block_actions_by_option=block_actions_by_option,
         )
         slots = _splice_group_slots(
             fields_by_block=fields_by_block,

@@ -414,6 +414,52 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertEqual(len(slots), 2)
         self.assertLessEqual(block2_fields.iterations, 1)
 
+    def test_splice_group_action_reuses_adjusted_block_actions(self):
+        class CountingAction(list):
+            def __init__(self, values):
+                super().__init__(values)
+                self.iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                return super().__iter__()
+
+        action_indices = CountingAction([3, 5])
+        graphs = {
+            "block2_mrpc": {
+                "graph_key": "block2_mrpc",
+                "block_idx": 2,
+                "k_slot_index": 1,
+                "options": [
+                    {
+                        "option_id": 1,
+                        "fusion_count": 1,
+                        "action_indices": action_indices,
+                        "slots": {},
+                    },
+                ],
+            }
+        }
+        fields_by_block = {2: [("rescale_sf", "F", 14), ("output_truncation_k", "K", 0)]}
+        schedule = [
+            {"step_idx": idx, "layer_idx": idx, "block_idx": 2, "graph_key": "block2_mrpc"}
+            for idx in range(2)
+        ]
+
+        action = report._splice_group_action(
+            fields_by_block=fields_by_block,
+            graphs=graphs,
+            num_layers=2,
+            schedule=schedule,
+            option_by_graph={"block2_mrpc": 1},
+            base_action=[0, 0, 0, 0],
+            layer_width=2,
+            block_offsets={2: 0},
+        )
+
+        self.assertEqual(action, [3, report.BASELINE_K_INDEX, 3, report.BASELINE_K_INDEX])
+        self.assertLessEqual(action_indices.iterations, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
