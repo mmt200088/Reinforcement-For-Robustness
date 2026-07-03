@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `00bc7e8`, the conservative
-completion estimate is about 84% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `ec0776b`, the conservative
+completion estimate is about 85% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -137,6 +137,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Reports / paper figures | `47782e9` | `experiments/server_command_runs/persistence_entropy_ndarray_47782e9_20260704_021330/` | Preserve ndarray fast paths in Stage-2 entropy PNG rendering instead of copying entropy series and update episodes through `list()`. |
 | Reports / paper figures | `e8bb0dc` | `experiments/server_command_runs/persistence_float_array_sequence_e8bb0dc_20260704_045400/` | Send already-materialized list/tuple/range curve inputs directly to `numpy.asarray()` so Stage-2 curve/report generation avoids one extra Python sequence copy. |
 | Reports / paper figures | `00bc7e8` | `experiments/server_command_runs/diagnostic_curve_array_cache_00bc7e8_20260704_050000/` | Reuse `_float_array()` and per-render array caching in Stage-2 diagnostic-curve generation instead of repeatedly materializing series with `list(seq)`. |
+| Reports / paper figures | `ec0776b` | `experiments/server_command_runs/persistence_seq_len_count_ec0776b_20260704_051045/` | Count unsized Stage-2 curve/report iterables directly instead of materializing `list(values)` to compute length. |
 | Stage-2 scheduling gate | `27be72e` | `experiments/server_command_runs/stage2_ab_ordered_jsonl_27be72e_20260703_225809/` | Skip sorting already ordered Stage-2 A/B JSONL logs while preserving sorted fallback for out-of-order artifacts. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
@@ -2273,6 +2274,9 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   directory.
 - `00bc7e8` Stage-2 diagnostic-curve array cache, evidence committed in the
   `diagnostic_curve_array_cache_00bc7e8_20260704_050000` run directory.
+- `ec0776b` Stage-2 persistence iterable-length streaming count, evidence
+  committed in the `persistence_seq_len_count_ec0776b_20260704_051045` run
+  directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the
