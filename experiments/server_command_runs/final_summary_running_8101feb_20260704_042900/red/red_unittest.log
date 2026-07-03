@@ -1,0 +1,26 @@
+test_random_summary_uses_running_stats_without_np_materialization (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_random_summary_uses_running_stats_without_np_materialization) ... FAIL
+
+======================================================================
+FAIL: test_random_summary_uses_running_stats_without_np_materialization (tests.test_final_evaluation_config_cache.FinalEvaluationConfigCacheTest.test_random_summary_uses_running_stats_without_np_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_final_summary_running_red_e73d171_20260704_042000/tests/test_final_evaluation_config_cache.py", line 367, in test_random_summary_uses_running_stats_without_np_materialization
+    summary = runner._summarize_random_results(selected, random_results, num_metrics=2)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_final_summary_running_red_e73d171_20260704_042000/final_evaluation_module.py", line 1420, in _summarize_random_results
+    "feasible_rate": float(np.mean(feasible)),
+                           ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: random summary should use running mean stats
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
