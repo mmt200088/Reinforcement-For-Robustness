@@ -1,0 +1,23 @@
+test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists (tests.test_stage1_eval_accel.Stage1GpuEvalScriptSourceTest.test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists) ... FAIL
+test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync (tests.test_stage1_eval_accel.Stage1GpuEvalScriptSourceTest.test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync) ... FAIL
+
+======================================================================
+FAIL: test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists (tests.test_stage1_eval_accel.Stage1GpuEvalScriptSourceTest.test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/stage1_gpu_eval_scripts_4324577_20260703_200810/old_src/tests/test_stage1_eval_accel.py", line 329, in test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists
+    self.assertIn("pin_memory=torch.cuda.is_available()", dataloader_region)
+AssertionError: 'pin_memory=torch.cuda.is_available()' not found in 'def build_dataloader(\n    tokenizer: Any,\n    dataset: Any,\n    batch_size: int,\n    max_length: int,\n    max_samples: Optional[int],\n) -> Any:\n    from torch.utils.data import DataLoader\n    from transformers import DataCollatorWithPadding\n\n    if max_samples is not None and max_samples > 0:\n        dataset = dataset.select(range(min(max_samples, len(dataset))))\n\n    def tokenize(batch: Mapping[str, Sequence[str]]) -> Mapping[str, Any]:\n        return tokenizer(\n            batch["sentence1"],\n            batch["sentence2"],\n            truncation=True,\n            max_length=max_length,\n        )\n\n    tokenized = dataset.map(tokenize, batched=True)\n    keep_columns = ["input_ids", "attention_mask", "label"]\n    if "token_type_ids" in tokenized.column_names:\n        keep_columns.append("token_type_ids")\n    tokenized = tokenized.remove_columns(\n        [name for name in tokenized.column_names if name not in keep_columns]\n    )\n    collator = DataCollatorWithPadding(tokenizer=tokenizer)\n    return DataLoader(tokenized, batch_size=batch_size, shuffle=False, collate_fn=collator)\n\n\n'
+
+======================================================================
+FAIL: test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync (tests.test_stage1_eval_accel.Stage1GpuEvalScriptSourceTest.test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/stage1_gpu_eval_scripts_4324577_20260703_200810/old_src/tests/test_stage1_eval_accel.py", line 311, in test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync
+    self.assertIn("pin_memory=torch.cuda.is_available()", dataloader_region)
+AssertionError: 'pin_memory=torch.cuda.is_available()' not found in 'def _build_dataloader(tokenizer, task: str, batch_size: int, max_samples: int | None):\n    field_a, field_b = _TASK_FIELDS[task]\n    dataset = _load_glue_validation(task)\n    if max_samples is not None:\n        dataset = dataset.select(range(min(int(max_samples), len(dataset))))\n\n    def _collate(batch):\n        texts_a = [row[field_a] for row in batch]\n        if field_b is None:\n            enc = tokenizer(texts_a, padding=True, truncation=True, max_length=256, return_tensors="pt")\n        else:\n            texts_b = [row[field_b] for row in batch]\n            enc = tokenizer(texts_a, texts_b, padding=True, truncation=True, max_length=256, return_tensors="pt")\n        labels = torch.tensor([int(row["label"]) for row in batch], dtype=torch.long)\n        enc["labels"] = labels\n        return enc\n\n    return DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=_collate), len(dataset)\n\n\n'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (failures=2)
