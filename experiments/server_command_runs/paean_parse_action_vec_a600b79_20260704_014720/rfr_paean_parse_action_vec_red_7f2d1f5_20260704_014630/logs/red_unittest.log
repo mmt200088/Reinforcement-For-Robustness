@@ -1,0 +1,26 @@
+test_parse_base_action_vec_accepts_list_without_extra_list_materialization (tests.test_paean_action_grid.PaeanActionGridTest.test_parse_base_action_vec_accepts_list_without_extra_list_materialization) ... FAIL
+
+======================================================================
+FAIL: test_parse_base_action_vec_accepts_list_without_extra_list_materialization (tests.test_paean_action_grid.PaeanActionGridTest.test_parse_base_action_vec_accepts_list_without_extra_list_materialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_paean_parse_action_vec_red_7f2d1f5_20260704_014630/tests/test_paean_action_grid.py", line 139, in test_parse_base_action_vec_accepts_list_without_extra_list_materialization
+    out = action_grid._parse_base_action_vec([1, 2, 3], num_layers_hint=1)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_paean_parse_action_vec_red_7f2d1f5_20260704_014630/Paean/action_grid.py", line 579, in _parse_base_action_vec
+    return np.asarray(list(base_raw), dtype=int)
+                      ^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: legacy action_vec list should pass directly to numpy
+
+----------------------------------------------------------------------
+Ran 1 test in 0.062s
+
+FAILED (failures=1)

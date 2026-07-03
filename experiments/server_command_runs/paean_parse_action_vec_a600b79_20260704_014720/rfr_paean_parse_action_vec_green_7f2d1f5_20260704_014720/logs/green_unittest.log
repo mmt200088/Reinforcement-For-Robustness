@@ -1,0 +1,13 @@
+test_cost_matched_sampling_reuses_degree_arrays_across_decode_attempts (tests.test_paean_action_grid.PaeanActionGridTest.test_cost_matched_sampling_reuses_degree_arrays_across_decode_attempts) ... ok
+test_cost_matched_sampling_reuses_parsed_fixed_specs (tests.test_paean_action_grid.PaeanActionGridTest.test_cost_matched_sampling_reuses_parsed_fixed_specs) ... ok
+test_k_value_to_action_index_uses_precomputed_lookup (tests.test_paean_action_grid.PaeanActionGridTest.test_k_value_to_action_index_uses_precomputed_lookup) ... ok
+test_normalize_base_action_accepts_ndarray_without_list_materialization (tests.test_paean_action_grid.PaeanActionGridTest.test_normalize_base_action_accepts_ndarray_without_list_materialization) ... ok
+test_parse_base_action_vec_accepts_list_without_extra_list_materialization (tests.test_paean_action_grid.PaeanActionGridTest.test_parse_base_action_vec_accepts_list_without_extra_list_materialization) ... ok
+test_scaling_factor_value_lookup_reuses_choice_table (tests.test_paean_action_grid.PaeanActionGridTest.test_scaling_factor_value_lookup_reuses_choice_table) ... ok
+test_selector_slots_are_cached_across_repeated_sets (tests.test_paean_action_grid.PaeanActionGridTest.test_selector_slots_are_cached_across_repeated_sets) ... ok
+test_slot_config_loading_reuses_profile_max_sfs (tests.test_paean_action_grid.PaeanActionGridTest.test_slot_config_loading_reuses_profile_max_sfs) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.079s
+
+OK
