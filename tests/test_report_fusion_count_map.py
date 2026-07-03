@@ -460,6 +460,45 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertEqual(action, [3, report.BASELINE_K_INDEX, 3, report.BASELINE_K_INDEX])
         self.assertLessEqual(action_indices.iterations, 1)
 
+    def test_splice_group_slots_reuses_bound_slot_entries(self):
+        graphs = {
+            "block2_mrpc": {
+                "graph_key": "block2_mrpc",
+                "block_idx": 2,
+                "options": [
+                    {
+                        "option_id": 1,
+                        "fusion_count": 1,
+                        "action_indices": [3, 5],
+                        "slots": {"rescale_sf": 11},
+                    },
+                ],
+            }
+        }
+        fields_by_block = {2: [("rescale_sf", "F", 14), ("output_truncation_k", "K", 0)]}
+        schedule = [
+            {"step_idx": idx, "layer_idx": idx, "block_idx": 2, "graph_key": "block2_mrpc"}
+            for idx in range(2)
+        ]
+        calls = 0
+        original_bound = report._bound_slot_values
+
+        def counted_bound_slot_values(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return original_bound(*args, **kwargs)
+
+        with mock.patch.object(report, "_bound_slot_values", counted_bound_slot_values):
+            slots = report._splice_group_slots(
+                fields_by_block=fields_by_block,
+                graphs=graphs,
+                schedule=schedule,
+                option_by_graph={"block2_mrpc": 1},
+            )
+
+        self.assertEqual(len(slots), 2)
+        self.assertLessEqual(calls, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

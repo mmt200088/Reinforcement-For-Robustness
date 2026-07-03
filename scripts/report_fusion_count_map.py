@@ -436,6 +436,38 @@ def _bound_slot_values(block_idx: int, slots: Mapping[str, Any]) -> Dict[str, An
     return out
 
 
+def _slot_entries_for_option(
+    block_idx: int,
+    option: Mapping[str, Any],
+    field_kinds: Mapping[str, str],
+) -> Tuple[Tuple[str, str, Any], ...]:
+    slot_values = _bound_slot_values(block_idx, option.get("slots", {}))
+    if not slot_values:
+        return ()
+    entries: List[Tuple[str, str, Any]] = []
+    for field_name, value in sorted(slot_values.items()):
+        kind = field_kinds.get(str(field_name))
+        if kind is None:
+            continue
+        entries.append((str(field_name), kind, value))
+    return tuple(entries)
+
+
+def _slot_entries_by_option(
+    graphs: Mapping[str, Mapping[str, Any]],
+    field_kinds_by_block: Mapping[int, Mapping[str, str]],
+) -> Dict[str, Dict[int, Tuple[Tuple[str, str, Any], ...]]]:
+    out: Dict[str, Dict[int, Tuple[Tuple[str, str, Any], ...]]] = {}
+    for graph_key, graph in graphs.items():
+        block_idx = int(graph["block_idx"])
+        field_kinds = field_kinds_by_block.get(block_idx, {})
+        out[str(graph_key)] = {
+            int(option.get("option_id")): _slot_entries_for_option(block_idx, option, field_kinds)
+            for option in graph.get("options", [])
+        }
+    return out
+
+
 def _splice_group_slots(
     *,
     fields_by_block: Mapping[int, Sequence[Tuple[str, str, int]]],
@@ -445,34 +477,40 @@ def _splice_group_slots(
     option_by_step: Mapping[str, int] | None = None,
     option_index_by_graph: Mapping[str, Mapping[int, Mapping[str, Any]]] | None = None,
     field_kinds_by_block: Mapping[int, Mapping[str, str]] | None = None,
+    slot_entries_by_option: Mapping[str, Mapping[int, Sequence[Tuple[str, str, Any]]]] | None = None,
 ) -> List[dict]:
     entries: List[dict] = []
     field_kind_cache: Dict[int, Mapping[str, str]] = dict(field_kinds_by_block or {})
+    slot_entry_cache: Dict[Tuple[str, int], Sequence[Tuple[str, str, Any]]] = {}
     for step in schedule:
         graph_key = str(step["graph_key"])
         graph = graphs[graph_key]
         block_idx = int(step["block_idx"])
         layer_idx = int(step["layer_idx"])
         option_id = _option_id_for_step(step, option_by_graph, option_by_step)
-        option = (
-            _option_by_index(graph, option_id, option_index_by_graph)
-            if option_index_by_graph is not None
-            else _option_by_id(graph, option_id)
-        )
-        slot_values = _bound_slot_values(block_idx, option.get("slots", {}))
-        if not slot_values:
+        if slot_entries_by_option is not None:
+            slot_entries = slot_entries_by_option[graph_key][option_id]
+        else:
+            cache_key = (graph_key, option_id)
+            slot_entries = slot_entry_cache.get(cache_key)
+            if slot_entries is None:
+                option = (
+                    _option_by_index(graph, option_id, option_index_by_graph)
+                    if option_index_by_graph is not None
+                    else _option_by_id(graph, option_id)
+                )
+                field_kinds = field_kind_cache.get(block_idx)
+                if field_kinds is None:
+                    field_kinds = {
+                        str(field): str(kind)
+                        for field, kind, _max_sf in fields_by_block[block_idx]
+                    }
+                    field_kind_cache[block_idx] = field_kinds
+                slot_entries = _slot_entries_for_option(block_idx, option, field_kinds)
+                slot_entry_cache[cache_key] = slot_entries
+        if not slot_entries:
             continue
-        field_kinds = field_kind_cache.get(block_idx)
-        if field_kinds is None:
-            field_kinds = {
-                str(field): str(kind)
-                for field, kind, _max_sf in fields_by_block[block_idx]
-            }
-            field_kind_cache[block_idx] = field_kinds
-        for field_name, value in sorted(slot_values.items()):
-            kind = field_kinds.get(str(field_name))
-            if kind is None:
-                continue
+        for field_name, kind, value in slot_entries:
             if kind == "K":
                 entries.append({
                     "label": _canonical_slot_label(layer_idx, block_idx, kind, field_name),
@@ -613,6 +651,7 @@ def _write_action_configs(
     option_index_by_graph = _option_index_by_graph(graphs)
     field_kinds_by_block = _field_kinds_by_block(fields_by_block)
     block_actions_by_option = _block_actions_by_option(graphs, fields_by_block)
+    slot_entries_by_option = _slot_entries_by_option(graphs, field_kinds_by_block)
     for spec in group_specs:
         name = str(spec["name"])
         action = _splice_group_action(
@@ -636,6 +675,7 @@ def _write_action_configs(
             option_by_step=spec.get("option_by_step"),
             option_index_by_graph=option_index_by_graph,
             field_kinds_by_block=field_kinds_by_block,
+            slot_entries_by_option=slot_entries_by_option,
         )
         payload = {
             "schema_version": "fusion_count_fixed_action_v1",
