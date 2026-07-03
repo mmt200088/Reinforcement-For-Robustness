@@ -1,0 +1,16 @@
+test_normalize_config_array_avoids_list_materialization_for_ndarray (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_normalize_config_array_avoids_list_materialization_for_ndarray) ... ok
+test_normalize_noise_array_avoids_list_materialization_for_ndarray (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_normalize_noise_array_avoids_list_materialization_for_ndarray) ... ok
+test_stage2_cost_matched_array_tracks_cost_incrementally (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_stage2_cost_matched_array_tracks_cost_incrementally) ... FAIL
+
+======================================================================
+FAIL: test_stage2_cost_matched_array_tracks_cost_incrementally (tests.test_final_eval_normalize_arrays.FinalEvalNormalizeArrayTests.test_stage2_cost_matched_array_tracks_cost_incrementally)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_final_eval_stage2_cost_incremental_red_db96be7_20260703_235029/src_py_db96be7_red/tests/test_final_eval_normalize_arrays.py", line 69, in test_stage2_cost_matched_array_tracks_cost_incrementally
+    self.assertIn("curr_cost", source)
+AssertionError: 'curr_cost' not found in '    @staticmethod\n    def _stage2_cost_matched_array(rng, target_cost, cost_map, allowed, length):\n        values = list(allowed)\n        for _ in range(2000):\n            cfg = np.array(rng.choice(values, size=length), dtype=int)\n            for _ in range(500):\n                curr = sum(cost_map[int(d)] for d in cfg)\n                diff = curr - target_cost\n                if abs(diff) < 1e-6:\n                    return cfg\n                idx = int(rng.integers(0, length))\n                old_v = int(cfg[idx])\n                moves = [\n                    d\n                    for d in values\n                    if abs((curr - cost_map[old_v] + cost_map[int(d)]) - target_cost)\n                    < abs(diff)\n                ]\n                cfg[idx] = int(rng.choice(moves if moves else values))\n        return None\n'
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.004s
+
+FAILED (failures=1)
