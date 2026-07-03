@@ -1,0 +1,7 @@
+run_dir=/hy-tmp/rfr_candidate_store_jsonl_f6a51e8_20260703_1917
+date=2026-07-03T19:20:43+08:00
+expected_red_parent=b26552a8b8f371399706f65d76ae241b67281b0f
+source_commit=f6a51e8e3fec689e2d9d64c56f83bf87a512c6bd
+expected_head=53b3cb8e75fba0e326f0ed371553a5087597e395
+server=I29629d094400801792
+python=Python 3.11.12
