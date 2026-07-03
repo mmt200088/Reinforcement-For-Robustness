@@ -331,10 +331,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     report = build_project_audit(args.root, artifact_roots=args.artifact_root)
     if args.out_json:
-        Path(args.out_json).write_text(
-            json.dumps(report, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        with Path(args.out_json).open("w", encoding="utf-8") as handle:
+            json.dump(report, handle, indent=2, sort_keys=True)
+            handle.write("\n")
     markdown = render_markdown(report)
     if args.out_md:
         Path(args.out_md).write_text(markdown, encoding="utf-8")

@@ -240,6 +240,33 @@ class ProjectOptimizationAuditTest(unittest.TestCase):
             self.assertIn("# Project Optimization Audit", markdown)
             self.assertIn("launcher", markdown)
 
+    def test_cli_streams_json_output_without_json_dumps(self):
+        audit = _load_audit_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _touch(root / "llama_7B_LayerImportance.sh", "#!/usr/bin/env bash\n")
+            out_json = root / "audit.json"
+
+            with mock.patch.object(
+                audit.json,
+                "dumps",
+                side_effect=AssertionError("audit JSON output should stream via json.dump"),
+            ):
+                rc = audit.main([
+                    "--root",
+                    str(root),
+                    "--out-json",
+                    str(out_json),
+                ])
+
+            text = out_json.read_text(encoding="utf-8")
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(text.endswith("\n"))
+        self.assertIn('"flow_stages"', text)
+        self.assertIn("launcher", [stage["id"] for stage in json.loads(text)["flow_stages"]])
+
 
 if __name__ == "__main__":
     unittest.main()

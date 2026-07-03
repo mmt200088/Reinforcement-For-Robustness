@@ -159,6 +159,12 @@ every file through every glob pattern. A local 200k-name parity benchmark kept
 the same counts and reduced classification time from `0.622s` to `0.093s`
 (`6.69x`).
 
+Progress 2026-07-03: `scripts/project_optimization_audit.py` CLI JSON output
+now writes through `json.dump(..., handle)` instead of materializing the whole
+audit report with `json.dumps()` before `Path.write_text()`. The audit tool
+remains stdlib-only and keeps deterministic indentation, sorted keys, and a
+trailing newline while avoiding one extra full-report string allocation.
+
 - [x] **Step 4: Commit**
 
 ```bash
