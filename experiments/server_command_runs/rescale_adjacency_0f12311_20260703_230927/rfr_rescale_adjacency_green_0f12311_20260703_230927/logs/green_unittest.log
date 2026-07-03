@@ -1,0 +1,11 @@
+test_backward_dp_uses_stage_successor_adjacency (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests.test_backward_dp_uses_stage_successor_adjacency) ... ok
+test_reachability_uses_stage_successor_adjacency (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests.test_reachability_uses_stage_successor_adjacency) ... ok
+test_contiguous_ranges_cover_exactly_once (tests.test_blb_fusion_enum_fast.ComboRangeTest.test_contiguous_ranges_cover_exactly_once) ... ok
+test_derived_delta_uses_current_slot_sfs (tests.test_blb_fusion_enum_fast.ComboRangeTest.test_derived_delta_uses_current_slot_sfs) ... ok
+test_iter_combo_range_matches_itertools_product (tests.test_blb_fusion_enum_fast.ComboRangeTest.test_iter_combo_range_matches_itertools_product) ... ok
+test_no_enum_slots_single_empty_combo (tests.test_blb_fusion_enum_fast.ComboRangeTest.test_no_enum_slots_single_empty_combo) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.005s
+
+OK
