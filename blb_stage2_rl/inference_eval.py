@@ -162,8 +162,17 @@ def tensor_scalar_sequences_to_float_lists(
 
 
 def tensor_values_to_numpy_arrays(values: Sequence[Any]) -> List[np.ndarray]:
+    if not values:
+        return []
+    if all(isinstance(x, torch.Tensor) for x in values):
+        tensors = [x.detach().reshape(-1) for x in values]
+        first_device = tensors[0].device
+        if all(t.device == first_device for t in tensors):
+            return [torch.cat(tensors, dim=0).detach().cpu().numpy()]
     return [
-        np.asarray(x.detach().cpu().numpy()) if isinstance(x, torch.Tensor) else np.asarray(x)
+        np.asarray(x.detach().cpu().numpy())
+        if isinstance(x, torch.Tensor)
+        else np.asarray(x)
         for x in values
     ]
 

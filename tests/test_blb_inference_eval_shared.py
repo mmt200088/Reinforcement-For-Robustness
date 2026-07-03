@@ -250,6 +250,21 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         self.assertAlmostEqual(metric1, 1.0)
         self.assertAlmostEqual(metric2, 1.0)
 
+    def test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors(self):
+        import torch
+
+        from blb_stage2_rl.inference_eval import tensor_values_to_numpy_arrays
+
+        arrays = tensor_values_to_numpy_arrays(
+            [
+                torch.tensor([0, 1], dtype=torch.long),
+                torch.tensor([1, 0, 1], dtype=torch.long),
+            ]
+        )
+
+        self.assertEqual(len(arrays), 1)
+        np.testing.assert_array_equal(arrays[0], np.array([0, 1, 1, 0, 1]))
+
 
 if __name__ == "__main__":
     unittest.main()
