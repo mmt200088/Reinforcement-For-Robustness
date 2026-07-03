@@ -1,0 +1,14 @@
+test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors) ... FAIL
+
+======================================================================
+FAIL: test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_probe_tensor_arrays_red_c6e7bf0_20260704_030020/tests/test_blb_inference_eval_shared.py", line 265, in test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors
+    self.assertEqual(len(arrays), 1)
+AssertionError: 2 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 1.326s
+
+FAILED (failures=1)

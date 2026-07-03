@@ -1,0 +1,6 @@
+source_commit=2d98907
+base_commit=c6e7bf0
+red_run=/hy-tmp/rfr_probe_tensor_arrays_red_c6e7bf0_20260704_030020
+green_run=/hy-tmp/rfr_probe_tensor_arrays_green_c6e7bf0_20260704_030105
+red_command=python -m unittest tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors -v
+green_commands=python -m py_compile blb_stage2_rl/inference_eval.py; python -m unittest tests.test_blb_inference_eval_shared -v; source guard for tensor_values_to_numpy_arrays same-device torch.cat fast path
