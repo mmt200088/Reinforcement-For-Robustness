@@ -296,6 +296,61 @@ class Stage1EvaluateModelCacheSourceTest(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(_HAS_TORCH, "layer_importance_evaluator imports torch")
+class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
+    def test_repeated_same_config_skips_handler_reinstall_but_keeps_eval_mode(self):
+        from layer_importance_evaluator import (
+            LayerImportanceEvaluator,
+            STAGE1_ORIGINAL_FUNCTION_DEGREE,
+        )
+
+        class FakeModel:
+            def __init__(self):
+                self.eval_calls = 0
+
+            def eval(self):
+                self.eval_calls += 1
+
+        class FakeHandler:
+            def __init__(self):
+                self.calls = []
+
+            def restore_layer_gelu(self, layers, layer_name):
+                self.calls.append(("restore_gelu", tuple(layers), layer_name))
+
+            def restore_layer_softmax(self, layers, layer_name):
+                self.calls.append(("restore_softmax", tuple(layers), layer_name))
+
+            def replace_layer_gelu(self, layers, layer_name, *, degree):
+                self.calls.append(("replace_gelu", tuple(layers), layer_name, int(degree)))
+
+            def replace_layer_softmax(self, layers, layer_name, *, degree):
+                self.calls.append(("replace_softmax", tuple(layers), layer_name, int(degree)))
+
+        ev = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        ev.model = FakeModel()
+        ev.reversible_handler = FakeHandler()
+        ev.layers_attribute = "bert.encoder.layer"
+        ev._last_applied_config = None
+
+        gelu = [1, 2, STAGE1_ORIGINAL_FUNCTION_DEGREE]
+        softmax = [6, 2, STAGE1_ORIGINAL_FUNCTION_DEGREE]
+
+        LayerImportanceEvaluator.apply_configuration(ev, gelu, softmax)
+        first_install_calls = list(ev.reversible_handler.calls)
+        self.assertGreater(len(first_install_calls), 0)
+        self.assertEqual(ev.model.eval_calls, 1)
+
+        LayerImportanceEvaluator.apply_configuration(ev, tuple(gelu), tuple(softmax))
+        self.assertEqual(ev.reversible_handler.calls, first_install_calls)
+        self.assertEqual(ev.model.eval_calls, 2)
+
+        changed_gelu = [2, 2, STAGE1_ORIGINAL_FUNCTION_DEGREE]
+        LayerImportanceEvaluator.apply_configuration(ev, changed_gelu, softmax)
+        self.assertGreater(len(ev.reversible_handler.calls), len(first_install_calls))
+        self.assertEqual(ev.model.eval_calls, 3)
+
+
 class Stage1GpuEvalScriptSourceTest(unittest.TestCase):
     def test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync(self):
         source = (_REPO_ROOT / "scripts" / "stage1_plaintext_repeat_eval.py").read_text(
