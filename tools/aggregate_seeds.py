@@ -22,7 +22,7 @@ The seed-list file is two columns: ``<seed> <run_tag>`` per line.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 import json
 import math
 import os
@@ -344,6 +344,29 @@ def _write_summary_md(path: str, run_name: str, rows: List[SeedRow]) -> None:
             f.write(line)
 
 
+def _seed_row_json_dict(row: SeedRow) -> Dict[str, Any]:
+    return {name: getattr(row, name) for name in row.__dataclass_fields__}
+
+
+def _write_summary_json(path: str, rows: List[SeedRow]) -> None:
+    encoder = json.JSONEncoder(indent=2, ensure_ascii=False)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("[")
+        first = True
+        for row in rows:
+            if first:
+                first = False
+                f.write("\n")
+            else:
+                f.write(",\n")
+            for chunk in encoder.iterencode(_seed_row_json_dict(row)):
+                f.write(chunk)
+        if first:
+            f.write("]")
+        else:
+            f.write("\n]")
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-name", required=True)
@@ -375,8 +398,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     _write_summary_md(md_path, args.run_name, seed_rows)
 
     json_path = os.path.join(args.output_dir, "seed_summary.json")
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump([asdict(r) for r in seed_rows], f, indent=2, ensure_ascii=False)
+    _write_summary_json(json_path, seed_rows)
 
     print(f"Wrote: {md_path}")
     print(f"Wrote: {json_path}")
