@@ -145,33 +145,43 @@ def _same_cost(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
 def _write_markdown(path: Path, payload: Mapping[str, Any]) -> None:
     cases = {case["label"]: case for case in payload["cases"]}
     invariants = payload["invariants"]
-    lines = [
-        "# Phase-1B Optimizer Mode Consistency",
-        "",
-        f"- profile: `{payload['profile']}`",
-        f"- num_layers: `{payload['num_layers']}`",
-        f"- rescale_optimizer_mode: `{payload['rescale_optimizer_mode']}`",
-        f"- rescale_optimizer_hash: `{payload['rescale_optimizer_canonical_hash']}`",
-        f"- stage1_config_hash: `{payload['stage1_config_content_hash']}`",
-        "",
-        "## Invariants",
-        "",
-        "| invariant | status |",
-        "|---|---|",
-    ]
-    for name, ok in invariants.items():
-        lines.append(f"| `{name}` | {'PASS' if ok else 'FAIL'} |")
-    lines.extend(["", "## Cases", "", "| case | mode | valid | bits | fusion | requests | raw_hash | effective_hash |", "|---|---|---:|---:|---:|---:|---|---|"])
-    for label in payload["case_order"]:
-        case = cases[label]
-        agg = case["aggregate"]
-        lines.append(
-            f"| `{label}` | `{case['optimizer_eval_mode']}` | {str(agg['optimizer_valid']).lower()} | "
-            f"{agg['total_bits_sum']} | {agg['fusion_count']} | {case['request_count']} | "
-            f"`{case['raw_action_hash'][:12]}` | `{case['effective_action_hash'][:12]}` |"
-        )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with path.open("w", encoding="utf-8") as handle:
+        for line in (
+                "# Phase-1B Optimizer Mode Consistency",
+                "",
+                f"- profile: `{payload['profile']}`",
+                f"- num_layers: `{payload['num_layers']}`",
+                f"- rescale_optimizer_mode: `{payload['rescale_optimizer_mode']}`",
+                f"- rescale_optimizer_hash: `{payload['rescale_optimizer_canonical_hash']}`",
+                f"- stage1_config_hash: `{payload['stage1_config_content_hash']}`",
+                "",
+                "## Invariants",
+                "",
+                "| invariant | status |",
+                "|---|---|",
+                ):
+            handle.write(line)
+            handle.write("\n")
+        for name, ok in invariants.items():
+            handle.write(f"| `{name}` | {'PASS' if ok else 'FAIL'} |\n")
+        for line in (
+                "",
+                "## Cases",
+                "",
+                "| case | mode | valid | bits | fusion | requests | raw_hash | effective_hash |",
+                "|---|---|---:|---:|---:|---:|---|---|",
+                ):
+            handle.write(line)
+            handle.write("\n")
+        for label in payload["case_order"]:
+            case = cases[label]
+            agg = case["aggregate"]
+            handle.write(
+                f"| `{label}` | `{case['optimizer_eval_mode']}` | {str(agg['optimizer_valid']).lower()} | "
+                f"{agg['total_bits_sum']} | {agg['fusion_count']} | {case['request_count']} | "
+                f"`{case['raw_action_hash'][:12]}` | `{case['effective_action_hash'][:12]}` |\n"
+            )
 
 
 def run_compare(argv: Sequence[str] | None = None) -> Dict[str, Any]:
