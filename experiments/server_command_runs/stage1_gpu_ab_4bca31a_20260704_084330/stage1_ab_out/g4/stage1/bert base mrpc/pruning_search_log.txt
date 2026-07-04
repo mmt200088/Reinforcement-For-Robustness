@@ -1,0 +1,46 @@
+=== Stage-1 RL 局部最优检测报告 ===
+完成回合数: 170
+判定: [OK] no warning signals
+
+--- 各项判据信号 ---
+  entropy_collapsed: False
+  reward_plateau: False
+  best_stuck: False
+  action_diversity_collapsed: False
+
+--- 数值指标 ---
+  recent_entropy_mean: 1.0985904932022095
+  recent_reward_mean: -0.0686928518983286
+  recent_reward_std: 0.1606376612068429
+  recent_reward_cv: 2.3384913187137344
+  best_stuck_window: 100
+  episodes_since_last_best_improve: 94
+  action_kl_recent_vs_early: None
+
+--- 说明 ---
+判定规则：A.熵塌缩 / B.reward 平台 / C.best 长期不更新 三条中
+≥2 条成立 → likely_local_optimum=True；或 D.动作分布塌缩单独成立。
+  [检测] 局部最优检测报告 → /hy-tmp/rfr_stage1_ab_4bca31a_20260704_084330_min170_wait/out/g4/stage1/bert base mrpc/pruning_search_log.txt
+  [检测] [OK] no warning signals
+
+[Stage-1] 最终配置使用原始 PPO reward-best；GELU/Softmax 为确定性替换，不再按 window 二次评估重排。
+
+--- PPO训练完成（PPO Training Completed） ---
+已找到最优配置（通过RL）（Best Configuration Found by RL）：
+  GELU配置: [2, 1, 1, 1, 1, 1, 1, 4, 2, 4, 1, 1]
+  Softmax配置: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  成本（Cost）: 55.00, 奖励（Reward）: 0.3768
+PPO训练曲线已保存至（PPO training curves saved to）: /hy-tmp/rfr_stage1_ab_4bca31a_20260704_084330_min170_wait/out/g4/stage1/bert base mrpc/ppo_training_curve.png
+PPO熵曲线已保存至（PPO entropy curve saved to）: /hy-tmp/rfr_stage1_ab_4bca31a_20260704_084330_min170_wait/out/g4/stage1/bert base mrpc/ppo_entropy_curve.png
+  [解耦] Stage-1 已归档进 record → /hy-tmp/rfr_stage1_ab_4bca31a_20260704_084330_min170_wait/out/g4/stage1/record/bert base mrpc 1 20260704（COMPLETED 已标记）
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+[信息] 统一最终评估已跳过（--skip-final-eval）。
+
+配置评估完成（Configuration evaluation finished）。
+  [best_policy] 已复制 /hy-tmp/rfr_stage1_ab_4bca31a_20260704_084330_min170_wait/out/g4/stage1/bert base mrpc/stage1_policy.pt → /hy-tmp/rfr_stage1_ab_4bca31a_20260704_084330_min170_wait/out/g4/stage1/bert base mrpc/best_policy/stage1_policy.pt

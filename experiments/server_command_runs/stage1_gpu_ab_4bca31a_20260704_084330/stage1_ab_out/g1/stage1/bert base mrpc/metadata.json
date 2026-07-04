@@ -1,0 +1,30 @@
+{
+  "algorithm": "rl",
+  "model_type": "bert-base",
+  "dataset": "mrpc",
+  "stage1_accuracy_tolerance": 0.0,
+  "stage2_limit_tolerance": 0.05,
+  "stage2_stability_tolerance": 1.2,
+  "stage2_k_trials": 5,
+  "stage2_probe_size": 256,
+  "created_at": "2026-07-04T08:44:53+08:00",
+  "last_updated_at": "2026-07-04T08:46:30.464719",
+  "run_count": 1,
+  "stage_status": {
+    "stage1_search": "completed",
+    "stage1_final_eval": "not_started",
+    "stage2_search": "skipped",
+    "stage2_final_eval": "not_started",
+    "final_eval": "skipped"
+  },
+  "stage_detail": {
+    "stage1_search": {
+      "episodes": 170,
+      "completed_episodes": 170,
+      "target_episodes": 170,
+      "stop_reason": "max_episodes",
+      "best_reward": 0.3768171746185698,
+      "best_cost": 55.0
+    }
+  }
+}

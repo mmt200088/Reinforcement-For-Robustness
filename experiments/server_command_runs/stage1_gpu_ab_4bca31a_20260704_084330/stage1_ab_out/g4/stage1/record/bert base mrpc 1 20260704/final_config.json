@@ -1,0 +1,35 @@
+{
+  "stage": 1,
+  "combo": "bert base mrpc",
+  "gelu_degree_per_layer": [
+    2,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    4,
+    2,
+    4,
+    1,
+    1
+  ],
+  "softmax_degree_per_layer": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "gelu_cost": 19.0,
+  "softmax_cost": 36.0,
+  "total_degree_cost": 55.0
+}

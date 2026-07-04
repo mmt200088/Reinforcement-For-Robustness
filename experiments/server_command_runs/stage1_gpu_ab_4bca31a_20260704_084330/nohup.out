@@ -1,0 +1,4 @@
+=== RUN g1 START 2026-07-04T08:44:53+08:00 devices=0 CUDA_VISIBLE_DEVICES=0
+=== RUN g1 END 2026-07-04T08:46:40+08:00 launcher_rc=0 wait_rc=0 wall=106s completed=true log=/hy-tmp/rfr_stage1_ab_4bca31a_20260704_084330_min170_wait/out/g1/stage1/bert base mrpc/logs/output.log
+=== RUN g4 START 2026-07-04T08:46:40+08:00 devices=0,1,2,3 CUDA_VISIBLE_DEVICES=0,1,2,3
+=== RUN g4 END 2026-07-04T08:49:42+08:00 launcher_rc=0 wait_rc=0 wall=182s completed=true log=/hy-tmp/rfr_stage1_ab_4bca31a_20260704_084330_min170_wait/out/g4/stage1/bert base mrpc/logs/output.log
