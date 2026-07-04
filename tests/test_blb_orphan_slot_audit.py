@@ -151,3 +151,37 @@ DEFAULT_CFG_TO_T_NEW_MAP = {
         self.assertEqual(found[4], ["block4.json"])
         self.assertEqual(found[5], ["block5_n1.json"])
         self.assertEqual(len(calls), 1)
+
+    def test_main_streams_markdown_report_without_path_write_text(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "function_handler.py").write_text("", encoding="utf-8")
+            (root / "rescale_optimizer_bridge.py").write_text(
+                "DEFAULT_CFG_TO_T_NEW_MAP = {}\n",
+                encoding="utf-8",
+            )
+            rescale_root = root / "Rescale_optimizer"
+            configs_dir = rescale_root / "configs" / "mrpc"
+            configs_dir.mkdir(parents=True)
+            out_dir = root / "out"
+            original_write_text = Path.write_text
+
+            def reject_markdown_write_text(path, *args, **kwargs):
+                if path.name == "audit_mrpc.md":
+                    raise AssertionError("markdown report should stream through Path.open")
+                return original_write_text(path, *args, **kwargs)
+
+            with mock.patch.object(audit, "REPO_ROOT", root):
+                with mock.patch.object(Path, "write_text", reject_markdown_write_text):
+                    rc = audit.main([
+                        "--profile",
+                        "mrpc",
+                        "--rescale-optimizer-root",
+                        str(rescale_root),
+                        "--out",
+                        str(out_dir),
+                    ])
+
+            self.assertEqual(rc, 0)
+            self.assertTrue((out_dir / "audit_mrpc.md").exists())
+            self.assertTrue((out_dir / "audit_mrpc.json").exists())

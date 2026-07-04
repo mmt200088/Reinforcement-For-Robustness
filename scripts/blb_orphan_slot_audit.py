@@ -40,6 +40,33 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _AST_CACHE: Dict[Path, ast.AST] = {}
 _GRAPH_CONFIG_NAMES_CACHE: Dict[Path, Tuple[str, ...]] = {}
 
+
+class _MarkdownLinesWriter:
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = path.open("w", encoding="utf-8")
+        self._has_written = False
+
+    def append(self, text: str) -> None:
+        if self._has_written:
+            self._handle.write("\n")
+        self._handle.write(text)
+        self._has_written = True
+
+    def extend(self, lines: Iterable[str]) -> None:
+        for line in lines:
+            self.append(line)
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def __enter__(self) -> "_MarkdownLinesWriter":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.close()
+
+
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -608,7 +635,8 @@ def main(argv: List[str]) -> int:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    lines: List[str] = []
+    md_path = out_dir / f"audit_{args.profile}.md"
+    lines = _MarkdownLinesWriter(md_path)
     lines.append(f"# BLB orphan-slot audit — profile `{args.profile}`\n")
     lines.append(
         "Three-layer trace of every RL action slot through to a Rescale_optimizer graph node. "
@@ -690,8 +718,7 @@ def main(argv: List[str]) -> int:
         "over `cfg.degree`. The audit flags them as `loop` instead of mapping to a single "
         "static cfg field."
     )
-    md_path = out_dir / f"audit_{args.profile}.md"
-    md_path.write_text("\n".join(lines), encoding="utf-8")
+    lines.close()
     json_path = out_dir / f"audit_{args.profile}.json"
     write_json_file(json_path, summary)
 
