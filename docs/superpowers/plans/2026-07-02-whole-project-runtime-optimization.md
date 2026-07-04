@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `4bca31a`, the conservative
+not by raw commit count. As of source head `4834b2f`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -125,7 +125,8 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `dbd1b6f` | `experiments/server_command_runs/stage1_semantics_gate_dbd1b6f_20260704_080342/` | Restore the Stage-1 semantic gate after shared fast-path changes: coefficient-order low-allocation GELU polynomial evaluation, Stage-1 batch-loss averaging, and legacy sklearn metric precision. |
 | Stage-1 rollout | `b62743a` | `experiments/server_command_runs/stage1_timing_fields_b62743a_20260704_082005/` | Add Stage-1 rollout timing diagnostics for model-forward wall seconds, forward calls, and report-write wall seconds while preserving existing worker/cache/total timing log fields. |
 | Launcher gates | `4bca31a` | `experiments/server_command_runs/stage1_gpu_ab_4bca31a_20260704_084330/` | Make `scripts/launcher_gpu_audit.py` runnable as a script from repo root without relying on external `PYTHONPATH`, unblocking clean server launcher gates. |
-| Stage-1 throughput gate | `4bca31a` | `experiments/server_command_runs/stage1_gpu_ab_4bca31a_20260704_084330/` | Ran the formal 170-episode Stage-1 MRPC 1GPU vs 4GPU gate. Both completed and 4GPU used `cuda:0..3`, but 4GPU was slower overall, so Stage-1 defaults must not be promoted to 4GPU until duplicated validation/model-forward cost is reduced. |
+| Stage-1 throughput gate | `4bca31a` | `experiments/server_command_runs/stage1_gpu_ab_4bca31a_20260704_084330/` | Ran the formal 170-episode Stage-1 MRPC 1GPU vs 4GPU gate. Both completed and 4GPU used `cuda:0..3`, but the gate exposed a diagnostic undercount fixed in `4834b2f`; rerun this gate before using the wall-clock ratio for default promotion. |
+| Stage-1 diagnostics | `4834b2f` | `experiments/server_command_runs/stage1_parallel_episode_count_4834b2f_20260704_085732/` | Count Stage-1 parallel rollout total episodes from actual worker counts (`43/43/42/42 => 170`) instead of `num_workers * floor(episodes_per_worker)` (`168`), fixing throughput undercounting for imbalanced windows. |
 | Shared inference eval | `497ecda` | `experiments/server_command_runs/probe_scalar_sync_497ecda_20260704_025145/` | Batch reward-probe loss/metric scalar tensors into one packed CPU transfer instead of three per-field scalar sequence transfers. |
 | Shared inference eval | `b5dfff5` | `experiments/server_command_runs/probe_skip_pred_arrays_b5dfff5_20260704_025610/` | Skip reward-probe prediction/label tensor retention and numpy transfer for accuracy-only metric profiles. |
 | Shared inference eval | `2d98907` | `experiments/server_command_runs/probe_tensor_arrays_2d98907_20260704_030105/` | Concatenate same-device reward-probe prediction/label tensors before one packed CPU/numpy transfer. |
@@ -183,10 +184,10 @@ Remaining main-chain gates before this goal can be complete:
 1. **Evidence loop:** every new source optimization must have a red/green or
    parity evidence directory committed back from the server.
 2. **Stage-1 throughput default promotion:** the 1GPU vs 4GPU evidence has
-   been collected. Do not promote 4GPU defaults yet: the 170-episode gate at
-   `4bca31a` showed 4GPU worker parallelism active but slower end-to-end, so
-   the remaining Stage-1 optimization is reducing duplicated validation /
-   model-forward cost before any default change.
+   been collected once, but it exposed a diagnostics undercount that was fixed
+   in `4834b2f`. Do not promote 4GPU defaults yet; rerun the 170-episode gate
+   after `4834b2f`, then decide whether the remaining Stage-1 optimization is
+   duplicated validation/model-forward work or a different scheduling bottleneck.
 3. **Stage-2 scheduling:** keep core RL files out of scope while the Stage-2
    RL agent is active; after handoff, run 1GPU vs NGPU parity and wall-clock
    gates before promoting GPU defaults.
@@ -760,11 +761,13 @@ as a script from repo root without `PYTHONPATH`; after the import-path fix,
 `tests.test_launcher_gpu_audit` passed all `11` tests plus a direct CLI run.
 The same evidence directory contains the formal 170-episode Stage-1 MRPC
 1GPU vs 4GPU gate. Both runs completed with `launcher_rc=0`, `wait_rc=0`, and
-`COMPLETED`; 4GPU used `cuda:0..3` with worker counts `43/43/42/42`, but it
-was slower end-to-end (`wall_clock_speedup_g4_over_g1=0.582`,
-parser throughput speedup `0.504`). Do not change Stage-1 defaults to 4GPU
-from this evidence; use it to target duplicated validation/model-forward work
-before retrying default promotion.
+`COMPLETED`; 4GPU used `cuda:0..3` with worker counts `43/43/42/42`. This gate
+also exposed that the total timing line counted `168` episodes by multiplying
+`num_workers * floor(episodes_per_worker)` instead of using actual worker
+counts. Source commit `4834b2f`, verified under
+`experiments/server_command_runs/stage1_parallel_episode_count_4834b2f_20260704_085732/`,
+fixes that diagnostics undercount. Do not change Stage-1 defaults to 4GPU
+until the 170-episode A/B gate is rerun on `4834b2f` or newer.
 
 ## Task 4: Stage-2 BLB RL GPU Scheduling and Diagnostics
 

@@ -1,0 +1,15 @@
+test_stage1_parallel_total_uses_actual_worker_episode_counts (tests.test_stage1_parallel_semantics.Stage1ParallelSemanticsTest.test_stage1_parallel_total_uses_actual_worker_episode_counts) ... FAIL
+
+======================================================================
+FAIL: test_stage1_parallel_total_uses_actual_worker_episode_counts (tests.test_stage1_parallel_semantics.Stage1ParallelSemanticsTest.test_stage1_parallel_total_uses_actual_worker_episode_counts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_stage1_total_red_4d4c713_20260704_085649/src/tests/test_stage1_parallel_semantics.py", line 61, in test_stage1_parallel_total_uses_actual_worker_episode_counts
+    self.assertIn("sum(_diag.per_worker_episode_counts)", region)
+AssertionError: 'sum(_diag.per_worker_episode_counts)' not found in '_stage1_parallel_window_episodes = (\n                            len(_stage1_parallel_runner.workers)\n                            * int(_stage1_parallel_runner.last_diagnostics.episodes_per_worker)\n                            if _stage1_parallel_runner.last_diagnostics is not None\n                            else PPO_UPDATE_INTERVAL\n                        )\n                        '
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)
+TEST_RC=1
