@@ -235,6 +235,17 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertIn('sys.stdout.write("\\n")', main_region)
         self.assertNotIn("print(json.dumps(", main_region)
 
+    def test_main_reuses_static_default_degree_json_strings(self):
+        source = Path("scripts/report_fusion_count_map.py").read_text(encoding="utf-8")
+        main_region = source.split("def main(", 1)[1].split('if __name__ == "__main__":', 1)[0]
+
+        self.assertIn("DEFAULT_GELU_JSON = json.dumps(DEFAULT_GELU)", source)
+        self.assertIn("DEFAULT_SOFTMAX_JSON = json.dumps(DEFAULT_SOFTMAX)", source)
+        self.assertIn("default=DEFAULT_GELU_JSON", main_region)
+        self.assertIn("default=DEFAULT_SOFTMAX_JSON", main_region)
+        self.assertNotIn("default=json.dumps(DEFAULT_GELU)", main_region)
+        self.assertNotIn("default=json.dumps(DEFAULT_SOFTMAX)", main_region)
+
     def test_group_specs_reuses_graph_target_choices(self):
         graphs = {
             "block2_mrpc": {

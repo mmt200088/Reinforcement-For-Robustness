@@ -39,6 +39,8 @@ FIRST_INPUT_LEVELS = 5
 
 DEFAULT_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
 DEFAULT_SOFTMAX = [6] * 12
+DEFAULT_GELU_JSON = json.dumps(DEFAULT_GELU)
+DEFAULT_SOFTMAX_JSON = json.dumps(DEFAULT_SOFTMAX)
 
 
 def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
@@ -1032,8 +1034,8 @@ def main() -> int:
     parser.add_argument("--html", default="reports/html_reports/20260610_mrpc_fusion_count_map_slots.html")
     parser.add_argument("--json", default="")
     parser.add_argument("--profile", default="mrpc")
-    parser.add_argument("--gelu", default=json.dumps(DEFAULT_GELU))
-    parser.add_argument("--softmax", default=json.dumps(DEFAULT_SOFTMAX))
+    parser.add_argument("--gelu", default=DEFAULT_GELU_JSON)
+    parser.add_argument("--softmax", default=DEFAULT_SOFTMAX_JSON)
     args = parser.parse_args()
 
     map_dir = Path(args.map_dir)
