@@ -1,0 +1,34 @@
+test_artifact_file_walk_does_not_sort_filenames (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_artifact_file_walk_does_not_sort_filenames) ... ok
+test_artifact_summary_counts_known_runtime_evidence_files (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_artifact_summary_counts_known_runtime_evidence_files) ... ok
+test_artifact_summary_streams_tree_without_path_rglob (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_artifact_summary_streams_tree_without_path_rglob) ... ok
+test_artifact_summary_uses_direct_name_classification (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_artifact_summary_uses_direct_name_classification) ... ok
+test_artifact_summary_walks_each_root_once (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_artifact_summary_walks_each_root_once) ... ok
+test_build_project_audit_reports_flow_stage_file_presence (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_build_project_audit_reports_flow_stage_file_presence) ... ok
+test_cli_streams_json_output_without_json_dumps (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_cli_streams_json_output_without_json_dumps) ... ok
+test_cli_streams_markdown_output_without_full_render_string (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_cli_streams_markdown_output_without_full_render_string) ... FAIL
+test_cli_writes_json_and_markdown (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_cli_writes_json_and_markdown) ... ok
+
+======================================================================
+FAIL: test_cli_streams_markdown_output_without_full_render_string (tests.test_project_optimization_audit.ProjectOptimizationAuditTest.test_cli_streams_markdown_output_without_full_render_string)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/project_audit_md_stream_red_c655efb_20260704_161500/tests/test_project_optimization_audit.py", line 264, in test_cli_streams_markdown_output_without_full_render_string
+    rc = audit.main([
+         ^^^^^^^^^^^^
+  File "/hy-tmp/project_audit_md_stream_red_c655efb_20260704_161500/scripts/project_optimization_audit.py", line 337, in main
+    markdown = render_markdown(report)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: CLI markdown output should not render one full string
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.019s
+
+FAILED (failures=1)

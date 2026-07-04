@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `841d48e`, the conservative
+not by raw commit count. As of source head `bd2912d`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -87,6 +87,7 @@ Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Paean final eval | `567ad75` | `experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/` | Reuse one clean-baseline install and one BLB bridge install across `repeat_n > 1` forwards. |
 | Paean final eval | `b2a7325` | `experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/` | Cache `load_max_sfs(profile)` per final-eval module instance. |
 | Paean final eval | `fa52906` | `experiments/server_command_runs/final_eval_normalize_ndarray_fa52906_20260703_234423/` | Normalize ndarray-backed final-eval config arrays without first materializing Python lists. |
