@@ -1,0 +1,9 @@
+test_grep_entrypoints_streams_files_without_read_text (tests.test_blb_phase0_preflight.Phase0PreflightTest.test_grep_entrypoints_streams_files_without_read_text) ... ok
+test_write_phase0_reports_reuses_single_repo_walk_for_grep (tests.test_blb_phase0_preflight.Phase0PreflightTest.test_write_phase0_reports_reuses_single_repo_walk_for_grep) ... ok
+test_write_phase0_reports_streams_outputs_without_write_text (tests.test_blb_phase0_preflight.Phase0PreflightTest.test_write_phase0_reports_streams_outputs_without_write_text) ... ok
+test_write_phase0_reports_streams_phase0_markdown_without_render_string (tests.test_blb_phase0_preflight.Phase0PreflightTest.test_write_phase0_reports_streams_phase0_markdown_without_render_string) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.009s
+
+OK
