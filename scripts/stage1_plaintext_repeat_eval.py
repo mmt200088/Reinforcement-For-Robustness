@@ -7,6 +7,7 @@ import json
 import math
 import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import torch
@@ -170,7 +171,8 @@ def main() -> int:
 
     out = Path(args.output_json)
     write_json_file(out, summary)
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    json.dump(summary, sys.stdout, indent=2, ensure_ascii=False)
+    sys.stdout.write("\n")
     if not summary["no_stage2_noise_hooks_installed"] or not summary["identical_metrics"]:
         return 1
     return 0

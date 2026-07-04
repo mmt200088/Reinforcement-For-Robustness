@@ -602,6 +602,16 @@ class Stage1GpuEvalScriptSourceTest(unittest.TestCase):
         self.assertIn("correct_t = torch.zeros((), dtype=torch.long, device=device)", eval_region)
         self.assertNotIn(".item()", loop_region)
 
+    def test_stage1_plaintext_repeat_eval_streams_stdout_json_summary(self):
+        source = (_REPO_ROOT / "scripts" / "stage1_plaintext_repeat_eval.py").read_text(
+            encoding="utf-8",
+        )
+        main_region = _source_region(source, "def main() -> int:", 'if __name__ == "__main__":')
+
+        self.assertIn("json.dump(summary, sys.stdout", main_region)
+        self.assertIn('sys.stdout.write("\\n")', main_region)
+        self.assertNotIn("print(json.dumps(summary", main_region)
+
     def test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists(self):
         source = (_REPO_ROOT / "scripts" / "bert_mrpc_layer_noise_experiment.py").read_text(
             encoding="utf-8",
