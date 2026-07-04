@@ -1,0 +1,8 @@
+test_main_writes_json_without_materializing_full_row_list (tests.test_aggregate_seeds.AggregateSeedsFinalEvalTest.test_main_writes_json_without_materializing_full_row_list) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK
+Wrote: /tmp/tmphobn8oq5/out/seed_summary.md
+Wrote: /tmp/tmphobn8oq5/out/seed_summary.json
