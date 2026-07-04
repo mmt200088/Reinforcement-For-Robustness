@@ -1,0 +1,14 @@
+test_main_streams_stdout_json_paths (tests.test_blb_make_run_manifest.BlbMakeRunManifestTest.test_main_streams_stdout_json_paths) ... FAIL
+
+======================================================================
+FAIL: test_main_streams_stdout_json_paths (tests.test_blb_make_run_manifest.BlbMakeRunManifestTest.test_main_streams_stdout_json_paths)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/manifest_stdout_json_red_20260704_105032/src/tests/test_blb_make_run_manifest.py", line 47, in test_main_streams_stdout_json_paths
+    self.assertIn("json.dump(paths, sys.stdout", main_region)
+AssertionError: 'json.dump(paths, sys.stdout' not found in 'argv: Sequence[str] | None = None) -> int:\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument("--output-dir", default="reports/blb_opt/trust0_manifest")\n    parser.add_argument("--profile", default="mrpc")\n    parser.add_argument("--num-layers", type=int, default=12)\n    parser.add_argument("--dataset", default="mrpc")\n    parser.add_argument("--model", default="bert-base")\n    parser.add_argument("--action-space-version", default="current-code-v1")\n    parser.add_argument("--decode-version", default="action_space_v1")\n    parser.add_argument("--registry-path", default="reports/blb_opt/trust0_registry/current_code_action_registry.json")\n    parser.add_argument("--max-sfs-path", default="blb_stage2_rl/max_sfs/mrpc.json")\n    parser.add_argument("--stage1-source", default="")\n    parser.add_argument("--stage1-config-path", default="")\n    parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")\n    parser.add_argument("--rescale-optimizer-mode", default="in_process_real")\n    parser.add_argument("--threshold-source", default="unknown")\n    parser.add_argument("--acc-limit", type=float, default=None)\n    parser.add_argument("--f1-limit", type=float, default=None)\n    parser.add_argument("--acc-std-limit", type=float, default=None)\n    parser.add_argument("--f1-std-limit", type=float, default=None)\n    parser.add_argument("--strict-z", type=float, default=1.0)\n    parser.add_argument("--mpc-truncation-cost-enabled", action="store_true")\n    args = parser.parse_args(argv)\n    paths = write_manifest(build_manifest(args), args.output_dir)\n    print(json.dumps(paths, ensure_ascii=False, indent=2))\n    return 0\n\n\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)

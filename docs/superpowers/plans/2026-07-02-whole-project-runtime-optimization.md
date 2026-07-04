@@ -2584,6 +2584,19 @@ synthetic benchmark preserved the manifest-derived counts, improved best time
 from `0.349566s` to `0.222708s` (`1.57x`), and cut traced peak memory from
 `30.30MB` to `15.18MB` (`2.00x`).
 
+Progress 2026-07-04: `scripts/blb_make_run_manifest.py` now streams the CLI
+stdout JSON path summary with `json.dump(..., sys.stdout)` plus a trailing
+newline instead of materializing it through `json.dumps()` before `print()`.
+The manifest JSON artifact still uses `write_json_file()`, and Trust-0 manifest
+contents are unchanged.
+
+Server evidence 2026-07-04: source commit `362ea22` has focused RED/GREEN
+verification under
+`experiments/server_command_runs/manifest_stdout_json_362ea22_20260704_105117/`.
+The RED test failed on the old `print(json.dumps(paths, ...))` stdout path.
+The GREEN gate passed `py_compile` and the full
+`tests.test_blb_make_run_manifest` suite (`11` tests).
+
 Progress 2026-07-02: `_dir_sha256()` in `scripts/blb_make_run_manifest.py` now
 prunes skip directories such as `.git`, `__pycache__`, `.pytest_cache`, and
 `.mypy_cache` before calling `iterdir()` on them, while preserving the existing
@@ -2722,6 +2735,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   in the `gpu_markdown_device_stream_9412e3b_20260704_104315` run directory.
 - `0980322` fusion-count map report stdout JSON streaming, evidence committed
   in the `fusion_report_stdout_json_0980322_20260704_104732` run directory.
+- `362ea22` BLB Trust-0 manifest stdout JSON streaming, evidence committed in
+  the `manifest_stdout_json_362ea22_20260704_105117` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the
