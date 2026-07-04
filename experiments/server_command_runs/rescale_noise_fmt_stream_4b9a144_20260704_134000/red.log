@@ -1,0 +1,14 @@
+test_fmt_dict_block_streams_items_without_full_list_copy (tests.test_rescale_update_noise_tables.UpdateNoiseTablesDiscoveryTest.test_fmt_dict_block_streams_items_without_full_list_copy) ... FAIL
+
+======================================================================
+FAIL: test_fmt_dict_block_streams_items_without_full_list_copy (tests.test_rescale_update_noise_tables.UpdateNoiseTablesDiscoveryTest.test_fmt_dict_block_streams_items_without_full_list_copy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rescale_noise_fmt_stream_red_8c55616_20260704_134000/tests/test_rescale_update_noise_tables.py", line 71, in test_fmt_dict_block_streams_items_without_full_list_copy
+    self.assertNotIn("items = list(d.items())", fmt_region)
+AssertionError: 'items = list(d.items())' unexpectedly found in 'def fmt_dict_block(d: Dict[int, float], indent: str) -> str:\n    items = list(d.items())\n    lines: List[str] = []\n    for i in range(0, len(items), ITEMS_PER_LINE):\n        chunk = items[i : i + ITEMS_PER_LINE]\n        parts = [f\'"{sf}": {val:.6e}\' for sf, val in chunk]\n        line = indent + ", ".join(parts)\n        if i + ITEMS_PER_LINE < len(items):\n            line += ","\n        lines.append(line)\n    return "\\n".join(lines)\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)

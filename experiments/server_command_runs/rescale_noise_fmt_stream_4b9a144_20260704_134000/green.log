@@ -1,0 +1,8 @@
+test_discovers_configs_without_path_glob (tests.test_rescale_update_noise_tables.UpdateNoiseTablesDiscoveryTest.test_discovers_configs_without_path_glob) ... ok
+test_fmt_dict_block_streams_items_without_full_list_copy (tests.test_rescale_update_noise_tables.UpdateNoiseTablesDiscoveryTest.test_fmt_dict_block_streams_items_without_full_list_copy) ... ok
+test_load_csv_avoids_per_row_dict_reader (tests.test_rescale_update_noise_tables.UpdateNoiseTablesDiscoveryTest.test_load_csv_avoids_per_row_dict_reader) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.003s
+
+OK

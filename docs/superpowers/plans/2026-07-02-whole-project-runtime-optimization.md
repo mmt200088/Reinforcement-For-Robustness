@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `9356c77`, the conservative
+not by raw commit count. As of source head `4b9a144`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -190,6 +190,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
 | Rescale/fusion maps | `c48e63d` | `experiments/server_command_runs/feasibility_cutpoint_index_c48e63d_20260703_233525/` | Precompute cut-point node identity indices once during feasibility-DAG construction instead of linearly scanning all cut points for every graph node. |
+| Rescale/fusion maps | `4b9a144` | `experiments/server_command_runs/rescale_noise_fmt_stream_4b9a144_20260704_134000/` | Format generated rescale noise-table dictionaries by streaming `d.items()` with a bounded per-line buffer instead of copying all items before chunking. |
 | Rescale/fusion maps | `5760c6d` | `experiments/server_command_runs/fusion_report_option_scan_5760c6d_20260704_001718/` | Build fusion-map report graph payloads with one ordered-options summary loop after the order check, instead of separately scanning for base option, available fusion counts, and option summaries. |
 | Rescale/fusion maps | `1410ba0` | `experiments/server_command_runs/fusion_slots_option_index_1410ba0_20260704_010024/` | Cache fusion-count slots eval report option lookups by options-list identity so repeated selected-option and boost-audit sections avoid rescanning graph options. |
 | Rescale/fusion maps | `c15cb03` | `experiments/server_command_runs/fusion_k_independence_count_c15cb03_20260704_022055/` | Count fusion-map K-independence sample configs during the existing scan instead of materializing `sample_configs` a second time. |
