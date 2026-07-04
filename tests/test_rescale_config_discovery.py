@@ -47,6 +47,16 @@ class RescaleConfigDiscoveryTest(unittest.TestCase):
 
         self.assertEqual([p.name for p in configs], ["alpha.json", "zeta.json"])
 
+    def test_batch_archive_writer_streams_output_file(self):
+        source = (REPO_ROOT / "Rescale_optimizer/scripts/batch_run_configs.py").read_text(encoding="utf-8")
+        main_region = source[source.index("def main("):]
+
+        self.assertIn("def _write_doc(", source)
+        self.assertIn("_write_doc(f,", main_region)
+        self.assertIn('out_path.open("w", encoding="utf-8")', main_region)
+        self.assertNotIn("_format_doc(entries", main_region)
+        self.assertNotIn("write_text(out_text", main_region)
+
     def test_headroom_main_scans_directory_without_path_glob(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

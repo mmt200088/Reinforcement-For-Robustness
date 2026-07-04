@@ -355,20 +355,32 @@ def _format_entry(e: Dict[str, Any]) -> str:
 def _format_doc(entries: List[Dict[str, Any]],
                 n_configs: int,
                 n_success: int) -> str:
-    parts: List[str] = []
-    parts.append("{")
-    parts.append('  "schema_version": 2,')
-    parts.append('  "generated_by": "scripts/batch_run_configs.py",')
-    parts.append(f'  "n_configs": {n_configs},')
-    parts.append(f'  "n_success": {n_success},')
-    parts.append('  "results": [')
+    return "\n".join(_iter_doc_lines(entries, n_configs, n_success)) + "\n"
+
+
+def _iter_doc_lines(entries: List[Dict[str, Any]],
+                    n_configs: int,
+                    n_success: int):
+    yield "{"
+    yield '  "schema_version": 2,'
+    yield '  "generated_by": "scripts/batch_run_configs.py",'
+    yield f'  "n_configs": {n_configs},'
+    yield f'  "n_success": {n_success},'
+    yield '  "results": ['
     for k, e in enumerate(entries):
         body = _format_entry(e)
         suffix = "," if k < len(entries) - 1 else ""
-        parts.append(body + suffix)
-    parts.append("  ]")
-    parts.append("}")
-    return "\n".join(parts) + "\n"
+        yield body + suffix
+    yield "  ]"
+    yield "}"
+
+
+def _write_doc(f, entries: List[Dict[str, Any]],
+               n_configs: int,
+               n_success: int) -> None:
+    for line in _iter_doc_lines(entries, n_configs, n_success):
+        f.write(line)
+        f.write("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -458,11 +470,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "message": f"crash: {e}",
             })
 
-    out_text = _format_doc(entries, n_configs=len(configs), n_success=n_ok)
-
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(out_text, encoding="utf-8")
+    with out_path.open("w", encoding="utf-8") as f:
+        _write_doc(f, entries, n_configs=len(configs), n_success=n_ok)
 
     print(f"\n[batch] wrote {out_path}")
     print(f"[batch] success: {n_ok} / {len(configs)}")
