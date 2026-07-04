@@ -50,6 +50,7 @@ _ENV_LEVEL = "BLB_LOG_LEVEL"
 _ENV_FILE = "BLB_LOG_FILE"
 _ENV_JSON = "BLB_LOG_JSON"
 
+_JSON_LOG_ENCODER = json.JSONEncoder(ensure_ascii=False, default=str)
 _INITIALIZED = False
 
 
@@ -88,7 +89,7 @@ class _JSONFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
-        return json.dumps(payload, ensure_ascii=False, default=str)
+        return _JSON_LOG_ENCODER.encode(payload)
 
 
 def _resolve_level() -> int:
