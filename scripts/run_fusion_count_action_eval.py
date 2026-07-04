@@ -376,12 +376,13 @@ def main() -> int:
     output_html.parent.mkdir(parents=True, exist_ok=True)
     write_json_file(output_json, combined)
     output_html.write_text(_render_html(combined), encoding="utf-8")
-    print(json.dumps({
+    json.dump({
         "output_json": str(output_json),
         "output_html": str(output_html),
         "unique_action_runs": combined["evaluation_protocol"]["unique_action_runs"],
         "requested_group_count": combined["evaluation_protocol"]["requested_group_count"],
-    }, ensure_ascii=False, indent=2))
+    }, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0
 
 

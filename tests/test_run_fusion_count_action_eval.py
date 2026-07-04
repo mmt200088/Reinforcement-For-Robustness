@@ -164,6 +164,15 @@ class FusionCountActionEvalTest(unittest.TestCase):
         self.assertIn("from runtime_error_reporter import format_command", source)
         self.assertNotIn('" ".join(cmd)', source)
 
+    def test_main_streams_stdout_json_without_json_dumps_string(self):
+        source = Path(action_eval.__file__).read_text(encoding="utf-8")
+        main_source = source[source.index("def main("):]
+
+        self.assertIn("json.dump(", main_source)
+        self.assertIn("sys.stdout", main_source)
+        self.assertIn('sys.stdout.write("\\n")', main_source)
+        self.assertNotIn("print(json.dumps(", main_source)
+
 
 if __name__ == "__main__":
     unittest.main()
