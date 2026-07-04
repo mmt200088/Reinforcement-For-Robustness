@@ -33,7 +33,9 @@ from blb_stage2_rl.action_space import (
 
 from run_fusion_count_action_eval_rlpath import (
     DEFAULT_STAGE1_GELU,
+    DEFAULT_STAGE1_GELU_JSON,
     DEFAULT_STAGE1_SOFTMAX,
+    DEFAULT_STAGE1_SOFTMAX_JSON,
     _base_model,
     _build_evaluator,
     _build_seq_env,
@@ -130,8 +132,8 @@ def main() -> int:
     parser.add_argument("--output-json", required=True)
     parser.add_argument("--run-output-dir", default="experiments/server_command_runs/block4_fusion_install_diag_tmp")
     parser.add_argument("--stage1-config-json", default="experiments/server_command_runs/mrpc_stage2_fixed_stage1_rlbest_20260627.json")
-    parser.add_argument("--stage1-gelu", default=json.dumps(DEFAULT_STAGE1_GELU))
-    parser.add_argument("--stage1-softmax", default=json.dumps(DEFAULT_STAGE1_SOFTMAX))
+    parser.add_argument("--stage1-gelu", default=DEFAULT_STAGE1_GELU_JSON)
+    parser.add_argument("--stage1-softmax", default=DEFAULT_STAGE1_SOFTMAX_JSON)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--probe-size", type=int, default=408)
     parser.add_argument("--batch-size", type=int, default=64)
