@@ -217,3 +217,16 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertIn("sys.stdout", main_source)
         self.assertIn('sys.stdout.write("\\n")', main_source)
         self.assertNotIn("print(json.dumps(", main_source)
+
+    def test_main_reuses_static_stage1_default_json_strings(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        source = Path(rlpath.__file__).read_text(encoding="utf-8")
+        main_source = source[source.index("def main("):]
+
+        self.assertIn("DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)", source)
+        self.assertIn("DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)", source)
+        self.assertIn("default=DEFAULT_STAGE1_GELU_JSON", main_source)
+        self.assertIn("default=DEFAULT_STAGE1_SOFTMAX_JSON", main_source)
+        self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_GELU)", main_source)
+        self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_SOFTMAX)", main_source)

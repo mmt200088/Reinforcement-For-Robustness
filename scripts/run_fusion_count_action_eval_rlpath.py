@@ -41,6 +41,8 @@ from scripts.fusion_count_action_eval_common import (
 
 DEFAULT_STAGE1_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
 DEFAULT_STAGE1_SOFTMAX = [6] * 12
+DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)
+DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)
 
 _RUNTIME_DEPS: dict[str, object] | None = None
 
@@ -485,8 +487,8 @@ def main() -> int:
     parser.add_argument("--output-html", required=True)
     parser.add_argument("--run-output-dir", default="experiments/server_command_runs/fusion_count_rlpath_tmp")
     parser.add_argument("--stage1-config-json", default="experiments/server_command_runs/mrpc_stage2_fixed_stage1_rlbest_20260627.json")
-    parser.add_argument("--stage1-gelu", default=json.dumps(DEFAULT_STAGE1_GELU))
-    parser.add_argument("--stage1-softmax", default=json.dumps(DEFAULT_STAGE1_SOFTMAX))
+    parser.add_argument("--stage1-gelu", default=DEFAULT_STAGE1_GELU_JSON)
+    parser.add_argument("--stage1-softmax", default=DEFAULT_STAGE1_SOFTMAX_JSON)
     parser.add_argument("--repeat", type=int, default=5)
     parser.add_argument("--probe-size", type=int, default=408)
     parser.add_argument("--batch-size", type=int, default=64)
