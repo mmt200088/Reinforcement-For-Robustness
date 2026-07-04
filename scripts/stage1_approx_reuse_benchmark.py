@@ -53,6 +53,7 @@ _DIMS = {
     "bert-base": dict(hidden_size=768, num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072),
     "bert-large": dict(hidden_size=1024, num_hidden_layers=24, num_attention_heads=16, intermediate_size=4096),
 }
+_MODEL_TYPES = tuple(_DIMS)
 
 
 def _install_stage1_config(handler, gelu_degrees, softmax_degrees):
@@ -161,7 +162,7 @@ def _summarize_timings(
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model-type", choices=list(_DIMS), default="bert-large")
+    ap.add_argument("--model-type", choices=_MODEL_TYPES, default="bert-large")
     ap.add_argument("--num-episodes", type=int, default=40)
     ap.add_argument("--warmup", type=int, default=3)
     ap.add_argument("--batch-size", type=int, default=32)

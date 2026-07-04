@@ -71,6 +71,17 @@ class Stage1ApproxReuseBenchmarkTest(unittest.TestCase):
         self.assertAlmostEqual(summary["episode_speedup"], 2.0)
         self.assertAlmostEqual(summary["install_speedup"], 2.5)
 
+    def test_parser_reuses_static_model_type_choices(self):
+        source = BENCHMARK_PATH.read_text(encoding="utf-8")
+        main_region = source[
+            source.index("def main():"):
+            source.index("\n\nif __name__ == \"__main__\":")
+        ]
+
+        self.assertIn("_MODEL_TYPES = tuple(_DIMS)", source)
+        self.assertIn('choices=_MODEL_TYPES', main_region)
+        self.assertNotIn("choices=list(_DIMS)", main_region)
+
 
 if __name__ == "__main__":
     unittest.main()
