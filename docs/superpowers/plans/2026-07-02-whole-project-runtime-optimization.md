@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `22b2fc8`, the conservative
+not by raw commit count. As of source head `9cabfaa`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -159,6 +159,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `9b78854` | `experiments/server_command_runs/action_registry_klevel_scan_9b78854_20260704_074904/` | Find the all-max truncation-K action index for registry export with one pass over `k_levels` instead of copying the sequence and scanning twice. |
 | Structured artifacts | `b66a8d2` | `experiments/server_command_runs/experiments_log_json_stream_b66a8d2_20260704_102030/` | Stream `tools.experiments_log query --format json` output directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()`. |
 | Structured artifacts | `c5424cd` | `experiments/server_command_runs/experiments_log_register_json_stream_c5424cd_20260704_102430/` | Stream `tools.experiments_log register` JSON output through the shared stdout `json.dump()` helper instead of materializing one full JSON string through `json.dumps()`. |
+| Structured artifacts | `9cabfaa` | `experiments/server_command_runs/experiments_log_rebuild_sort_9cabfaa_20260704_131500/` | Sort latest run records directly from the `_latest_by_run_id(...).values()` view in `tools.experiments_log rebuild`, avoiding a pre-sort list copy before index generation. |
 | Structured artifacts | `afcc72a` | `experiments/server_command_runs/action_registry_stdout_json_afcc72a_20260704_110045/` | Stream BLB action registry CLI path summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Stage-2 artifacts | `cfc368d` | `experiments/server_command_runs/f0_scan_stdout_json_cfc368d_20260704_111713/` | Stream F0 feasible-domain scan CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Stage-2 artifacts | `1b15448` | `experiments/server_command_runs/blb_eval_action_stdout_json_1b15448_20260704_110534/` | Stream BLB F0 eval action CLI candidate record directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
