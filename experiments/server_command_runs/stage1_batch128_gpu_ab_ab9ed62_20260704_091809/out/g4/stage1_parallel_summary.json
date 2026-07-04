@@ -1,0 +1,47 @@
+{
+  "component_seconds": {
+    "collect": 65.744,
+    "detail": 0.326,
+    "other": 0.029,
+    "ppo_update": 3.358,
+    "replay": 0.004
+  },
+  "component_share": {
+    "collect": 0.9464879572709867,
+    "detail": 0.004693281121780568,
+    "other": 0.0004175004678884554,
+    "ppo_update": 0.04834367486791149,
+    "replay": 5.75862714328904e-05
+  },
+  "device_count": 4,
+  "devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2",
+    "cuda:3"
+  ],
+  "eval_cache": {
+    "distinct": 170,
+    "hit_rate": 0.0,
+    "hits": 0,
+    "misses": 170,
+    "window": 0
+  },
+  "max_worker_speedup": 3.96,
+  "mean_worker_speedup": 3.96,
+  "throughput_ep_per_hour": 8810.699529232232,
+  "timing_seconds": {
+    "model_forward": 175.841,
+    "report_write": 0.326
+  },
+  "total_episodes": 170,
+  "total_wall_seconds": 69.461,
+  "warnings": [],
+  "windows": 1,
+  "worker_episode_counts_by_device": {
+    "cuda:0": 43,
+    "cuda:1": 43,
+    "cuda:2": 42,
+    "cuda:3": 42
+  }
+}
