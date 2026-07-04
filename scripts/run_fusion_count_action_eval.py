@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from typing import Dict, List, Mapping, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -51,6 +51,31 @@ DEFAULT_MANUAL_NOISE = {
 DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)
 DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)
 DEFAULT_MANUAL_NOISE_JSON = json.dumps(DEFAULT_MANUAL_NOISE, separators=(",", ":"))
+
+
+class _HtmlPartsWriter:
+    def __init__(self, path: Path):
+        self._handle = path.open("w", encoding="utf-8")
+        self._first = True
+
+    def append(self, value: Any) -> None:
+        if not self._first:
+            self._handle.write("\n")
+        self._handle.write(str(value))
+        self._first = False
+
+    def extend(self, values: Iterable[Any]) -> None:
+        for value in values:
+            self.append(value)
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def __enter__(self) -> "_HtmlPartsWriter":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
 
 
 def _output_dir(output_root: Path, run_name: str) -> Path:
@@ -218,7 +243,7 @@ def _build_combined(
     }
 
 
-def _render_html(combined: Mapping[str, Any]) -> str:
+def _emit_rendered_html(combined: Mapping[str, Any], parts: Any) -> None:
     baseline = combined["baseline"]
     rows = [[
         "baseline_plaintext",
@@ -272,7 +297,7 @@ def _render_html(combined: Mapping[str, Any]) -> str:
         ])
 
     ctx = combined["map_report_context"]
-    parts = [
+    parts.extend([
         "<!doctype html><html><head><meta charset='utf-8'>",
         "<title>MRPC Fusion Count Action Evaluation</title>",
         "<style>",
@@ -318,8 +343,18 @@ def _render_html(combined: Mapping[str, Any]) -> str:
             allow_html_cells=True,
         ),
         "</body></html>",
-    ]
+    ])
+
+
+def _render_html(combined: Mapping[str, Any]) -> str:
+    parts: List[str] = []
+    _emit_rendered_html(combined, parts)
     return "\n".join(parts)
+
+
+def write_rendered_html(output_html: Path, combined: Mapping[str, Any]) -> None:
+    with _HtmlPartsWriter(output_html) as parts:
+        _emit_rendered_html(combined, parts)
 
 
 def main() -> int:
@@ -378,7 +413,7 @@ def main() -> int:
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_html.parent.mkdir(parents=True, exist_ok=True)
     write_json_file(output_json, combined)
-    output_html.write_text(_render_html(combined), encoding="utf-8")
+    write_rendered_html(output_html, combined)
     json.dump({
         "output_json": str(output_json),
         "output_html": str(output_html),

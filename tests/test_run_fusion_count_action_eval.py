@@ -188,6 +188,24 @@ class FusionCountActionEvalTest(unittest.TestCase):
         self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_SOFTMAX)", main_source)
         self.assertNotIn("json.dumps(DEFAULT_MANUAL_NOISE", run_one_source)
 
+    def test_main_streams_html_report_without_full_render_string_write(self):
+        source = Path(action_eval.__file__).read_text(encoding="utf-8")
+        main_source = source[source.index("def main("):]
+
+        self.assertTrue(hasattr(action_eval, "write_rendered_html"))
+        self.assertTrue(hasattr(action_eval, "_HtmlPartsWriter"))
+        self.assertIn("_HtmlPartsWriter(output_html)", source)
+        self.assertNotIn("output_html.write_text(_render_html(combined)", main_source)
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "parts.html"
+            writer = action_eval._HtmlPartsWriter(path)
+            writer.append("alpha")
+            writer.extend(["beta", "gamma"])
+            writer.close()
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "alpha\nbeta\ngamma")
+
 
 if __name__ == "__main__":
     unittest.main()
