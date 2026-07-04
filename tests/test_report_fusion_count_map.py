@@ -278,6 +278,16 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertTrue(calls)
         self.assertLessEqual(max(calls.values()), 1)
 
+    def test_group_specs_reuses_graph_keys_view_without_list_copy(self):
+        source = Path("scripts/report_fusion_count_map.py").read_text(encoding="utf-8")
+        group_region = source[
+            source.index("def _group_specs("):
+            source.index("\n\ndef _write_action_configs(")
+        ]
+
+        self.assertIn("graph_order = graphs.keys()", group_region)
+        self.assertNotIn("graph_order = list(graphs.keys())", group_region)
+
     def test_write_action_configs_reuses_static_baseline_layout(self):
         fields_by_block = {
             block_idx: [("output_truncation_k", "K", 0)]

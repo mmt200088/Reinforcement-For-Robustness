@@ -529,7 +529,7 @@ def _splice_group_slots(
 
 
 def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Mapping[str, Any]]) -> List[dict]:
-    graph_order = list(graphs.keys())
+    graph_order = graphs.keys()
     occurrence_counts = Counter(str(s["graph_key"]) for s in schedule)
     choice_cache: Dict[Tuple[str, str | int], Tuple[int, int, bool]] = {}
 
