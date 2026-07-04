@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import itertools
 import os
 from pathlib import Path
 import sys
@@ -158,6 +159,18 @@ def _reward_series_for_plot(values: Sequence[float]) -> Sequence[float]:
     if isinstance(values, list):
         return values
     return [float(value) for value in values]
+
+
+def _reward_seed_matrix(series: Sequence[Sequence[float]], min_len: int) -> np.ndarray:
+    width = int(min_len)
+    arr = np.empty((len(series), width), dtype=float)
+    for row_idx, values in enumerate(series):
+        arr[row_idx] = np.fromiter(
+            itertools.islice(values, width),
+            dtype=float,
+            count=width,
+        )
+    return arr
 
 
 def load_run(
@@ -261,7 +274,7 @@ def fig_training_curves(
             ax.text(0.5, 0.5, "(no data)", ha="center", va="center", transform=ax.transAxes)
         else:
             min_len = min(len(s) for s in series)
-            arr = np.asarray([s[:min_len] for s in series], dtype=float)
+            arr = _reward_seed_matrix(series, min_len)
             mean = arr.mean(axis=0)
             std = arr.std(axis=0)
             x = np.arange(1, min_len + 1)

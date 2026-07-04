@@ -300,6 +300,76 @@ class PaperFiguresTest(unittest.TestCase):
 
         self.assertIs(captured["y"], rewards)
 
+    def test_group_training_curve_avoids_seed_slice_copies(self):
+        paper = _load_paper_figures_module()
+
+        class NoSliceRewards(list):
+            def __getitem__(self, key):
+                if isinstance(key, slice):
+                    raise AssertionError("seed reward series should not be copied through slicing")
+                return super().__getitem__(key)
+
+        runs = [
+            paper.RunData(
+                run_dir=f"/tmp/run{i}",
+                label=f"r{i}",
+                progress_dir=f"/tmp/run{i}/progress",
+                episodes=rewards,
+                ppo_updates=[],
+                best_action_vec=[],
+                best_slots=[],
+                baseline_slots=[],
+                diff_vs_baseline=[],
+                first_invalid_counts={},
+                action_histogram=None,
+            )
+            for i, rewards in enumerate(
+                [
+                    NoSliceRewards([1.0, 2.0, 3.0, 4.0]),
+                    NoSliceRewards([2.0, 4.0, 6.0]),
+                ]
+            )
+        ]
+        captured = {}
+
+        class FakeAxes:
+            def plot(self, _x, y, **_kwargs):
+                captured["mean_len"] = len(y)
+
+            def fill_between(self, _x, lower, upper, **_kwargs):
+                captured["band_len"] = (len(lower), len(upper))
+
+            def set_xlabel(self, *_args, **_kwargs):
+                pass
+
+            def set_ylabel(self, *_args, **_kwargs):
+                pass
+
+            def set_title(self, *_args, **_kwargs):
+                pass
+
+            def grid(self, *_args, **_kwargs):
+                pass
+
+            def legend(self, *_args, **_kwargs):
+                pass
+
+        class FakePlt:
+            def subplots(self, **_kwargs):
+                return object(), FakeAxes()
+
+        with mock.patch.object(paper, "_setup_matplotlib", return_value=FakePlt()):
+            with mock.patch.object(paper, "_save_fig", return_value=[]):
+                paper.fig_training_curves(
+                    runs,
+                    group_label="seeded",
+                    out_path_no_ext="/tmp/out",
+                    formats=("png",),
+                )
+
+        self.assertEqual(captured["mean_len"], 3)
+        self.assertEqual(captured["band_len"], (3, 3))
+
 
 if __name__ == "__main__":
     unittest.main()
