@@ -318,6 +318,47 @@ class BlbMakeRunManifestTest(unittest.TestCase):
 
         self.assertEqual(digest, expected)
 
+    def test_write_manifest_streams_markdown_without_write_text(self):
+        manifest = _load_manifest_module()
+        payload = {
+            "git": {
+                "head": "abc123",
+                "diff_hash": "diff123",
+                "dirty": False,
+            },
+            "action_space": {
+                "registry_hash": "registry123",
+                "full_action_length": 26,
+            },
+            "max_sfs": {
+                "hash": "maxsfs123",
+            },
+            "rescale_optimizer": {
+                "mode": "in_process_real",
+                "root": "Rescale_optimizer",
+                "hash": "rescale123",
+            },
+            "thresholds": {
+                "strict_z": 1.0,
+            },
+            "missing_or_todo": ["threshold_source"],
+        }
+
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(
+                Path,
+                "write_text",
+                side_effect=AssertionError("manifest markdown should stream file writes"),
+            ):
+                paths = manifest.write_manifest(payload, td)
+
+            markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
+            manifest_json = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+
+        self.assertIn("# BLB Trust-0 Run Manifest", markdown)
+        self.assertIn("- threshold_source", markdown)
+        self.assertEqual(manifest_json["git"]["head"], "abc123")
+
 
 if __name__ == "__main__":
     unittest.main()

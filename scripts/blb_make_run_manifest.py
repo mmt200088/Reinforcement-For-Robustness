@@ -322,33 +322,43 @@ def write_manifest(manifest: Dict[str, Any], output_dir: str | Path) -> Dict[str
     json_path = out / "run_manifest.json"
     md_path = out / "run_manifest.md"
     write_json_file(json_path, manifest)
-    lines = [
-        "# BLB Trust-0 Run Manifest",
-        "",
-        f"- git HEAD: `{manifest['git']['head']}`",
-        f"- diff hash: `{manifest['git']['diff_hash']}`",
-        f"- dirty: `{manifest['git']['dirty']}`",
-        f"- registry hash: `{manifest['action_space']['registry_hash']}`",
-        f"- max_sfs hash: `{manifest['max_sfs']['hash']}`",
-        f"- Rescale_optimizer mode/root/hash: `{manifest['rescale_optimizer']['mode']}` / `{manifest['rescale_optimizer']['root']}` / `{manifest['rescale_optimizer']['hash']}`",
-        f"- full action length: `{manifest['action_space']['full_action_length']}`",
-        f"- strict_z: `{manifest['thresholds']['strict_z']}`",
-        "",
-        "## Cost Policy",
-        "",
-        "- Rescale optimizer final cost terms: `total_bits_sum`, `fusion_count`",
-        "- `invalid_chain` is a validity gate, not numeric cost.",
-        "- `q_bits`, `q_head_bits`, `q_tail_bits` are debug-only.",
-        "",
-        "## Missing / TODO",
-        "",
-    ]
-    if manifest["missing_or_todo"]:
-        lines.extend(f"- {item}" for item in manifest["missing_or_todo"])
-    else:
-        lines.append("- none")
-    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_lines(md_path, iter_manifest_markdown_lines(manifest))
     return {"json": str(json_path), "markdown": str(md_path)}
+
+
+def iter_manifest_markdown_lines(manifest: Dict[str, Any]) -> Iterable[str]:
+    yield "# BLB Trust-0 Run Manifest"
+    yield ""
+    yield f"- git HEAD: `{manifest['git']['head']}`"
+    yield f"- diff hash: `{manifest['git']['diff_hash']}`"
+    yield f"- dirty: `{manifest['git']['dirty']}`"
+    yield f"- registry hash: `{manifest['action_space']['registry_hash']}`"
+    yield f"- max_sfs hash: `{manifest['max_sfs']['hash']}`"
+    yield f"- Rescale_optimizer mode/root/hash: `{manifest['rescale_optimizer']['mode']}` / `{manifest['rescale_optimizer']['root']}` / `{manifest['rescale_optimizer']['hash']}`"
+    yield f"- full action length: `{manifest['action_space']['full_action_length']}`"
+    yield f"- strict_z: `{manifest['thresholds']['strict_z']}`"
+    yield ""
+    yield "## Cost Policy"
+    yield ""
+    yield "- Rescale optimizer final cost terms: `total_bits_sum`, `fusion_count`"
+    yield "- `invalid_chain` is a validity gate, not numeric cost."
+    yield "- `q_bits`, `q_head_bits`, `q_tail_bits` are debug-only."
+    yield ""
+    yield "## Missing / TODO"
+    yield ""
+    if manifest["missing_or_todo"]:
+        for item in manifest["missing_or_todo"]:
+            yield f"- {item}"
+    else:
+        yield "- none"
+
+
+def _write_lines(path: Path, lines: Iterable[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(str(line))
+            handle.write("\n")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
