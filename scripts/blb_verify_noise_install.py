@@ -60,6 +60,18 @@ def _html_escape(s: Any) -> str:
     return html.escape(str(s), quote=True)
 
 
+class _HtmlPartsWriter:
+    def __init__(self, path: Path):
+        self._handle = path.open("w", encoding="utf-8")
+
+    def append(self, text: str) -> None:
+        self._handle.write(str(text))
+        self._handle.write("\n")
+
+    def close(self) -> None:
+        self._handle.close()
+
+
 # ---------------------------------------------------------------------------
 # Noise variance table — extracted via AST from function_handler.py so we
 # don't need torch at script load time.
@@ -210,7 +222,7 @@ def write_smoke_html(
     fusion_total = sum(int(r.get("fusion_count", 0)) for r in results)
     bits_total = sum(int(r.get("total_bits", 0)) for r in results)
 
-    parts: List[str] = []
+    parts = _HtmlPartsWriter(out_path)
     parts.append("<!doctype html><html lang='en'><head><meta charset='utf-8'>")
     parts.append(f"<title>BLB smoke verify — {_html_escape(args.profile)}</title>")
     parts.append(STYLE_BLOCK)
@@ -340,7 +352,7 @@ def write_smoke_html(
     parts.append("</section>")
     parts.append("</main></body></html>")
 
-    out_path.write_text("\n".join(parts), encoding="utf-8")
+    parts.close()
     return out_path
 
 
@@ -529,7 +541,7 @@ def write_full_html(
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    parts: List[str] = []
+    parts = _HtmlPartsWriter(out_path)
     parts.append("<!doctype html><html lang='en'><head><meta charset='utf-8'>")
     parts.append(f"<title>BLB noise-install verify — {_html_escape(args.profile)}</title>")
     parts.append(STYLE_BLOCK)
@@ -622,7 +634,7 @@ def write_full_html(
     parts.append("</section>")
     parts.append("</main></body></html>")
 
-    out_path.write_text("\n".join(parts), encoding="utf-8")
+    parts.close()
     return out_path
 
 

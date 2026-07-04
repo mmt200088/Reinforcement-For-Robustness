@@ -64,7 +64,17 @@ _NOISE_STD_RAW = {
             0.2,
         )
 
+    def test_html_reports_stream_parts_without_full_document_list(self):
+        source = Path(verifier.__file__).read_text(encoding="utf-8")
+        smoke_region = source[source.index("def write_smoke_html("):source.index("\n\n# ---------------------------------------------------------------------------\n# Full mode")]
+        full_region = source[source.index("def write_full_html("):source.index("\n\n# ---------------------------------------------------------------------------\n# Stylesheet")]
+
+        self.assertIn("class _HtmlPartsWriter", source)
+        for region in (smoke_region, full_region):
+            self.assertIn("_HtmlPartsWriter(out_path)", region)
+            self.assertNotIn("parts: List[str] = []", region)
+            self.assertNotIn('write_text("\\n".join(parts)', region)
+
 
 if __name__ == "__main__":
     unittest.main()
-
