@@ -244,14 +244,14 @@ def run_f0_eval(
         action_avg_k=avg_truncation_k_in_action(action, num_layers),
     )
     record_path = CandidateStore(out / "candidates" / "candidate_store.jsonl").append(record)
-    (out / "rank_key.json").write_text(
-        json.dumps({
+    write_json_file(
+        out / "rank_key.json",
+        {
             "action_hash": record_path["action_hash"],
             "candidate_key": record_path.get("candidate_key"),
             "rank_key": record_path["rank_key"],
             "rescale_cost_rank_key": record_path["rescale_cost"]["rank_key"],
-        }, indent=2) + "\n",
-        encoding="utf-8",
+        },
     )
     return record_path
 

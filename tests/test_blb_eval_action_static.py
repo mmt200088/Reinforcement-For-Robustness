@@ -15,6 +15,16 @@ class BLBEvalActionStaticTests(unittest.TestCase):
         self.assertIn('sys.stdout.write("\\n")', main_source)
         self.assertNotIn("print(json.dumps(record", main_source)
 
+    def test_rank_key_artifact_uses_shared_json_writer(self):
+        source_path = Path(__file__).resolve().parents[1] / "scripts" / "blb_eval_action.py"
+        source = source_path.read_text(encoding="utf-8")
+        run_source = source[source.index("def run_f0_eval("):source.index("def main(")]
+
+        self.assertIn("write_json_file(", run_source)
+        self.assertIn('out / "rank_key.json"', run_source)
+        self.assertNotIn('"rank_key.json").write_text(', run_source)
+        self.assertNotIn("json.dumps({", run_source)
+
 
 if __name__ == "__main__":
     unittest.main()
