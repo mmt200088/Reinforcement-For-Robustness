@@ -52,6 +52,19 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("model_forward_seconds", runner_source)
         self.assertIn("model_forward_calls", runner_source)
 
+    def test_stage1_parallel_total_uses_actual_worker_episode_counts(self):
+        source = _source(LAYER_EVALUATOR)
+        marker = "_stage1_parallel_window_episodes = ("
+        start = source.index(marker)
+        region = source[start:source.index("_stage1_parallel_known_seconds", start)]
+
+        self.assertIn("sum(_diag.per_worker_episode_counts)", region)
+        self.assertNotIn(
+            "len(_stage1_parallel_runner.workers)\n"
+            "                            * int(_stage1_parallel_runner.last_diagnostics.episodes_per_worker)",
+            region,
+        )
+
     def test_policy_replica_sync_reuses_one_state_dict_per_window(self):
         region = _method_region(_source(PARALLEL_RUNNER), "_sync_policy_replicas")
 

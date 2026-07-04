@@ -6928,13 +6928,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                             _stage1_parallel_runner is not None
                             and _stage1_parallel_window_t0 is not None
                             and _stage1_parallel_window_idx is not None):
+                        _diag = _stage1_parallel_runner.last_diagnostics
                         _stage1_parallel_total_seconds = (
                             time.time() - _stage1_parallel_window_t0
                         )
                         _stage1_parallel_window_episodes = (
-                            len(_stage1_parallel_runner.workers)
-                            * int(_stage1_parallel_runner.last_diagnostics.episodes_per_worker)
-                            if _stage1_parallel_runner.last_diagnostics is not None
+                            int(sum(_diag.per_worker_episode_counts))
+                            if _diag is not None
                             else PPO_UPDATE_INTERVAL
                         )
                         _stage1_parallel_known_seconds = (
@@ -6966,8 +6966,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                             "other_seconds": float(_stage1_parallel_other_seconds),
                             "throughput_ep_per_hour": float(_stage1_parallel_ep_per_hour),
                         }
-                        if _stage1_parallel_runner.last_diagnostics is not None:
-                            _diag = _stage1_parallel_runner.last_diagnostics
+                        if _diag is not None:
                             _stage1_parallel_update_payload["worker_seconds"] = list(_diag.per_worker_seconds)
                             _stage1_parallel_update_payload["worker_episode_counts"] = list(_diag.per_worker_episode_counts)
                             _stage1_parallel_update_payload["devices"] = list(_diag.devices)
