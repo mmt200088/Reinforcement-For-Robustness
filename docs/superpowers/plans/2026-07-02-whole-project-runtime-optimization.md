@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `bd99c65`, the conservative
+not by raw commit count. As of source head `6875648`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -179,6 +179,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Reports / diagnostics | `8296f0a` | `experiments/server_command_runs/blb_noise_html_stream_8296f0a_20260704_130548/` | Stream BLB noise-install verifier smoke/full HTML report fragments directly to the output file instead of accumulating a full `parts` list and joined HTML string before writing. |
 | Reports / diagnostics | `31a584c` | `experiments/server_command_runs/fusion_slots_html_stream_31a584c_20260704_131220/` | Stream fusion-count slot-eval detailed HTML reports directly through the CLI writer while preserving the existing `render()` string API for compatibility. |
 | Reports / diagnostics | `12e298a` | `experiments/server_command_runs/orphan_slot_md_stream_12e298a_20260704_151500/` | Stream BLB orphan-slot audit Markdown reports through the CLI writer instead of accumulating the full report line list before `Path.write_text()`. |
+| Reports / diagnostics | `6875648` | `experiments/server_command_runs/gpu_util_md_stream_6875648_20260704_154500/` | Stream GPU utilization Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Diagnostics | `032d2c1` | `experiments/server_command_runs/block4_diag_stdout_json_032d2c1_20260704_112821/` | Stream block4 fusion-install diagnosis CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Diagnostics | `0c3c9b2` | `experiments/server_command_runs/diagnose_block4_defaults_0c3c9b2_20260704_125748/` | Reuse fixed RL-path Stage-1 default JSON strings in the block4 fusion-install diagnosis parser instead of dumping the same defaults again. |
 | Diagnostics | `3cafcc3` | `experiments/server_command_runs/invalid_blocks_report_json_3cafcc3_20260704_113312/` | Write invalid-block diagnosis `report.json` through shared `write_json_file()` instead of materializing a full JSON string before `Path.write_text()`. |

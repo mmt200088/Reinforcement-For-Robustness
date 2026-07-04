@@ -1,0 +1,28 @@
+test_cli_streams_markdown_output_without_full_render_string (tests.test_gpu_utilization_report.GpuUtilizationReportTest.test_cli_streams_markdown_output_without_full_render_string) ... FAIL
+test_cli_writes_json_and_markdown_reports (tests.test_gpu_utilization_report.GpuUtilizationReportTest.test_cli_writes_json_and_markdown_reports) ... ok
+test_markdown_device_lists_do_not_materialize_iterables (tests.test_gpu_utilization_report.GpuUtilizationReportTest.test_markdown_device_lists_do_not_materialize_iterables) ... ok
+
+======================================================================
+FAIL: test_cli_streams_markdown_output_without_full_render_string (tests.test_gpu_utilization_report.GpuUtilizationReportTest.test_cli_streams_markdown_output_without_full_render_string)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/gpu_util_md_stream_red_db550c2_20260704_154530/tests/test_gpu_utilization_report.py", line 475, in test_cli_streams_markdown_output_without_full_render_string
+    rc = report.main(
+         ^^^^^^^^^^^^
+  File "/hy-tmp/gpu_util_md_stream_red_db550c2_20260704_154530/scripts/gpu_utilization_report.py", line 474, in main
+    markdown = render_markdown(summary)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: CLI markdown output should not render one full string
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.066s
+
+FAILED (failures=1)
