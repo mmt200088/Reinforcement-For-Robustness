@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `2f74c05`, the conservative
+not by raw commit count. As of source head `d125fd4`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -158,6 +158,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `afcc72a` | `experiments/server_command_runs/action_registry_stdout_json_afcc72a_20260704_110045/` | Stream BLB action registry CLI path summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Stage-2 artifacts | `1b15448` | `experiments/server_command_runs/blb_eval_action_stdout_json_1b15448_20260704_110534/` | Stream BLB F0 eval action CLI candidate record directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Paean final eval | `2f74c05` | `experiments/server_command_runs/fusion_action_eval_stdout_json_2f74c05_20260704_110908/` | Stream fusion-count action eval CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
+| Stage-2 artifacts | `d125fd4` | `experiments/server_command_runs/fusion_rlpath_stdout_json_d125fd4_20260704_111300/` | Stream fusion-count RL-path eval CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Reports / paper figures | `5a75eee` | `experiments/server_command_runs/stage2_monitor_html_stream_5a75eee_20260704_005141/` | Stream Stage-2 monitor HTML report rows and nested reward-probe/GPU JSON chunks directly to the file handle instead of materializing full JSON/table strings. |
 | Reports / paper figures | `dcfea75` | `experiments/server_command_runs/paper_episode_column_dcfea75_20260703_225013/` | Read paper-figure episode rewards as a direct float column instead of building one dict per episode row. |
 | Reports / paper figures | `b6dda66` | `experiments/server_command_runs/paper_figures_payload_reuse_b6dda66_20260704_094735/` | Reuse JSON-native list/dict payloads from paper-figure action and invalid-count sidecars instead of copying them through `list(...)` / `dict(...)` during `load_run()`. |
