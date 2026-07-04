@@ -694,6 +694,19 @@ loops also defer loss/correct or label/pred CPU synchronization until after the
 batch loop, reducing per-batch device synchronization while preserving the same
 metrics and deterministic evaluation protocol.
 
+Progress 2026-07-04: `scripts/stage1_plaintext_repeat_eval.py` now writes its
+stdout JSON summary with `json.dump(..., sys.stdout)` plus a trailing newline
+instead of building a second complete JSON string through `json.dumps()` before
+`print()`. The required `--output-json` artifact still uses `write_json_file()`,
+and the evaluation protocol/metrics are unchanged.
+
+Server evidence 2026-07-04: source commit `5d248a0` has focused RED/GREEN
+verification under
+`experiments/server_command_runs/stage1_stdout_json_stream_5d248a0_20260704_103647/`.
+The RED test failed on the old `print(json.dumps(summary, ...))` stdout path.
+The GREEN gate passed `py_compile` and all three
+`Stage1GpuEvalScriptSourceTest` tests.
+
 Progress 2026-07-03: `LayerImportanceEvaluator.apply_configuration()` now
 short-circuits repeated GELU/Softmax installs for an unchanged configuration
 while still forcing the model into eval mode on every call. This extends the
@@ -2676,6 +2689,9 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   the `experiments_log_json_stream_b66a8d2_20260704_102030` run directory.
 - `c5424cd` experiments-log register JSON stdout streaming, evidence committed
   in the `experiments_log_register_json_stream_c5424cd_20260704_102430` run
+  directory.
+- `5d248a0` Stage-1 plaintext repeat-eval stdout JSON streaming, evidence
+  committed in the `stage1_stdout_json_stream_5d248a0_20260704_103647` run
   directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.

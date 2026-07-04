@@ -1,0 +1,11 @@
+py_compile_rc=0
+test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists (tests.test_stage1_eval_accel.Stage1GpuEvalScriptSourceTest.test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists) ... ok
+test_stage1_plaintext_repeat_eval_streams_stdout_json_summary (tests.test_stage1_eval_accel.Stage1GpuEvalScriptSourceTest.test_stage1_plaintext_repeat_eval_streams_stdout_json_summary) ... ok
+test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync (tests.test_stage1_eval_accel.Stage1GpuEvalScriptSourceTest.test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.000s
+
+OK
+test_rc=0
+final_rc=0
