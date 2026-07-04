@@ -130,6 +130,11 @@ def _append_record(registry_path: str, record: Mapping[str, Any]) -> None:
         f.write("\n")
 
 
+def _print_json(payload: Any) -> None:
+    json.dump(payload, sys.stdout, indent=2, ensure_ascii=False)
+    sys.stdout.write("\n")
+
+
 # ---------------------------------------------------------------------------
 # register: called from sequential_runner.py (or manually).
 # ---------------------------------------------------------------------------
@@ -485,7 +490,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             registry_path=args.registry_path,
         )
         if args.format == "json":
-            print(json.dumps(rows, indent=2, ensure_ascii=False))
+            _print_json(rows)
         elif args.format == "tsv":
             keys = ("run_id", "dataset", "algorithm", "preset", "seed", "status", "best_reward")
             print("\t".join(keys))

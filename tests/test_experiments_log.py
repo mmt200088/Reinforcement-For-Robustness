@@ -1,5 +1,7 @@
 import builtins
 from collections.abc import Mapping
+import contextlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -117,6 +119,44 @@ class ExperimentsLogTest(unittest.TestCase):
                 rows = experiments_log._query(dataset="mrpc", registry_path=str(registry))
 
         self.assertEqual([row["run_id"] for row in rows], ["run-a"])
+
+    def test_query_json_output_streams_without_json_dumps(self):
+        with tempfile.TemporaryDirectory() as td:
+            registry = Path(td) / "registry.jsonl"
+            registry.write_text(
+                json.dumps({
+                    "run_id": "run-json",
+                    "registered_at": "2026-07-02T00:00:00",
+                    "dataset": "mrpc",
+                    "algorithm": "rl",
+                    "status": "complete",
+                    "best_reward": 0.5,
+                }) + "\n",
+                encoding="utf-8",
+            )
+            out = io.StringIO()
+
+            with (
+                mock.patch.object(
+                    experiments_log.json,
+                    "dumps",
+                    side_effect=AssertionError("query JSON output should stream to stdout"),
+                ),
+                contextlib.redirect_stdout(out),
+            ):
+                rc = experiments_log.main([
+                    "query",
+                    "--dataset",
+                    "mrpc",
+                    "--format",
+                    "json",
+                    "--registry-path",
+                    str(registry),
+                ])
+
+        self.assertEqual(rc, 0)
+        payload = json.loads(out.getvalue())
+        self.assertEqual([row["run_id"] for row in payload], ["run-json"])
 
     def test_query_filters_before_materializing_latest_records(self):
         rows = [
