@@ -200,6 +200,54 @@ class PaperFiguresTest(unittest.TestCase):
         self.assertEqual(run.episodes, [2.5])
         self.assertEqual(seen, [("episodes.jsonl", "total_reward", {})])
 
+    def test_load_run_reuses_json_native_action_payloads_without_copy(self):
+        paper = _load_paper_figures_module()
+
+        class NoCopyList(list):
+            def __iter__(self):
+                raise AssertionError("native JSON list payload should be reused, not copied")
+
+        class NoCopyDict(dict):
+            def keys(self):
+                raise AssertionError("native JSON dict payload should be reused, not copied")
+
+        action_vec = NoCopyList([1, 2, 3])
+        best_slots = NoCopyList([{"slot": 1}])
+        baseline_slots = NoCopyList([{"slot": 0}])
+        diff_vs_baseline = NoCopyList([{"delta": -1}])
+        first_invalid = NoCopyDict({"L00-B1": 2})
+
+        def fake_read_json_file(path, **_kwargs):
+            name = Path(path).name
+            if name == "best_action_vec.json":
+                return {
+                    "action_vec": action_vec,
+                    "slots": best_slots,
+                    "diff_vs_baseline": diff_vs_baseline,
+                }
+            if name == "baseline_action_vec.json":
+                return {"slots": baseline_slots}
+            if name == "first_invalid_counts.json":
+                return first_invalid
+            return {}
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "run" / "blb_stage2" / "progress" / "diagnostics").mkdir(parents=True)
+            with mock.patch.object(paper, "read_json_file", fake_read_json_file):
+                run = paper.load_run(
+                    str(root / "run"),
+                    include_episodes=False,
+                    include_ppo_updates=False,
+                    include_action_histogram=False,
+                )
+
+        self.assertIs(run.best_action_vec, action_vec)
+        self.assertIs(run.best_slots, best_slots)
+        self.assertIs(run.baseline_slots, baseline_slots)
+        self.assertIs(run.diff_vs_baseline, diff_vs_baseline)
+        self.assertIs(run.first_invalid_counts, first_invalid)
+
 
 if __name__ == "__main__":
     unittest.main()

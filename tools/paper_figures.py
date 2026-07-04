@@ -138,6 +138,22 @@ class RunData:
     action_histogram: Optional[np.ndarray]   # shape (num_slots, max_levels)
 
 
+def _json_list_or_empty(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if not value:
+        return []
+    return list(value)
+
+
+def _json_dict_or_empty(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    return dict(value)
+
+
 def load_run(
         run_dir: str,
         label: str = "",
@@ -201,11 +217,11 @@ def load_run(
         progress_dir=progress_dir,
         episodes=episodes,
         ppo_updates=ppo_updates,
-        best_action_vec=list(best_blob.get("action_vec") or []),
-        best_slots=list(best_blob.get("slots") or []),
-        baseline_slots=list(baseline_blob.get("slots") or []),
-        diff_vs_baseline=list(best_blob.get("diff_vs_baseline") or []),
-        first_invalid_counts=dict(first_inv or {}),
+        best_action_vec=_json_list_or_empty(best_blob.get("action_vec")),
+        best_slots=_json_list_or_empty(best_blob.get("slots")),
+        baseline_slots=_json_list_or_empty(baseline_blob.get("slots")),
+        diff_vs_baseline=_json_list_or_empty(best_blob.get("diff_vs_baseline")),
+        first_invalid_counts=_json_dict_or_empty(first_inv),
         action_histogram=hist,
     )
 
