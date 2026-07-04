@@ -271,6 +271,44 @@ def _build_mask(
     }
 
 
+def _iter_per_slot_summary_markdown(summary_rows: Iterable[Mapping[str, Any]]) -> Iterable[str]:
+    yield "# Phase-1 F0 单槽位扫描摘要"
+    yield ""
+    yield "| slot | block | field | kind | baseline | candidates | valid | improving | best_delta_bits |"
+    yield "|---:|---|---|---|---:|---:|---:|---:|---:|"
+    for row in summary_rows:
+        yield (
+            f"| {row['slot_global_index']} | `{row['block']}` | `{row['field']}` | `{row['kind']}` | "
+            f"{row['baseline_index']} | {row['candidate_count']} | {row['valid_count']} | "
+            f"{row['improving_valid_count']} | {row['best_delta_total_bits']} |"
+        )
+
+
+def _iter_action_mask_markdown(mask: Mapping[str, Any], mask_hash: str) -> Iterable[str]:
+    yield "# Phase-1 Suggested Action Mask"
+    yield ""
+    yield f"- action_width: `{mask['action_width']}`"
+    yield f"- mask_hash: `{mask_hash}`"
+    yield f"- source: `{mask['source']}`"
+    yield ""
+    yield "| slot | block | field | kind | baseline | allowed | reason |"
+    yield "|---:|---|---|---|---:|---|---|"
+    for slot in mask["slots"]:
+        allowed = ",".join(str(x) for x in slot["allowed_indices"])
+        yield (
+            f"| {slot['global_index']} | `{slot.get('block', '')}` | `{slot.get('field', '')}` | "
+            f"`{slot.get('kind', '')}` | {slot['baseline_index']} | `{allowed}` | `{slot['reason']}` |"
+        )
+
+
+def _write_lines(path: Path, lines: Iterable[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(str(line))
+            handle.write("\n")
+
+
 def _beam_scan(
         *,
         baseline_action: Sequence[int],
@@ -560,19 +598,7 @@ def run_scan_core(
         "best_delta_total_bits", "best_delta_fusion_count",
     ]
     write_csv_rows(out / "per_slot_summary.csv", summary_rows, summary_fields)
-    md_lines = [
-        "# Phase-1 F0 单槽位扫描摘要",
-        "",
-        "| slot | block | field | kind | baseline | candidates | valid | improving | best_delta_bits |",
-        "|---:|---|---|---|---:|---:|---:|---:|---:|",
-    ]
-    for row in summary_rows:
-        md_lines.append(
-            f"| {row['slot_global_index']} | `{row['block']}` | `{row['field']}` | `{row['kind']}` | "
-            f"{row['baseline_index']} | {row['candidate_count']} | {row['valid_count']} | "
-            f"{row['improving_valid_count']} | {row['best_delta_total_bits']} |"
-        )
-    (out / "per_slot_summary.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    _write_lines(out / "per_slot_summary.md", _iter_per_slot_summary_markdown(summary_rows))
 
     invalid_counter = Counter(
         (str(row.get("block", "")), str(row.get("kind", "")))
@@ -619,23 +645,7 @@ def run_scan_core(
     mask_hash = stable_json_hash(mask)
     mask["mask_hash"] = mask_hash
     write_json_file(out / "suggested_action_mask.json", mask)
-    mask_md = [
-        "# Phase-1 Suggested Action Mask",
-        "",
-        f"- action_width: `{mask['action_width']}`",
-        f"- mask_hash: `{mask_hash}`",
-        f"- source: `{mask['source']}`",
-        "",
-        "| slot | block | field | kind | baseline | allowed | reason |",
-        "|---:|---|---|---|---:|---|---|",
-    ]
-    for slot in mask["slots"]:
-        allowed = ",".join(str(x) for x in slot["allowed_indices"])
-        mask_md.append(
-            f"| {slot['global_index']} | `{slot.get('block', '')}` | `{slot.get('field', '')}` | "
-            f"`{slot.get('kind', '')}` | {slot['baseline_index']} | `{allowed}` | `{slot['reason']}` |"
-        )
-    (out / "suggested_action_mask.md").write_text("\n".join(mask_md) + "\n", encoding="utf-8")
+    _write_lines(out / "suggested_action_mask.md", _iter_action_mask_markdown(mask, mask_hash))
 
     random_report = _masked_random_validity(
         mask=mask,

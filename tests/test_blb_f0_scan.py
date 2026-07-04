@@ -278,6 +278,48 @@ class BLBF0ScanTests(unittest.TestCase):
             self.assertIn("best_action_hashes", random_report["by_mutation_count"]["1"])
             self.assertTrue((out / "multi_random_summary.json").exists())
 
+    def test_scan_streams_markdown_outputs_without_write_text(self):
+        from scripts.blb_f0_scan_feasible_domain import run_scan_core
+
+        def evaluate(action, _source):
+            return {
+                "optimizer_valid": True,
+                "total_bits_sum": 100 - (1 if action[0] == 0 else 0),
+                "fusion_count": 0,
+                "avg_k": 13.0,
+                "invalid_chain": None,
+                "q_bits": [60, 50],
+                "candidate_key": f"candidate-{action[0]}-{action[1]}-{action[2]}",
+            }
+
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(
+                Path,
+                "write_text",
+                side_effect=AssertionError("F0 markdown outputs should stream file writes"),
+            ):
+                run_scan_core(
+                    baseline_action=[1, 3, 1],
+                    action_dims=[2, 6, 2],
+                    records=self._records(),
+                    evaluate_action=evaluate,
+                    output_dir=td,
+                    metadata={"profile": "mrpc", "num_layers": 1},
+                    beam_size=2,
+                    beam_depths=[1],
+                    random_samples=2,
+                    random_seed=3,
+                    multi_random_samples=0,
+                    multi_mutation_counts=[],
+                )
+
+            out = Path(td)
+            per_slot_summary = (out / "per_slot_summary.md").read_text(encoding="utf-8")
+            suggested_mask = (out / "suggested_action_mask.md").read_text(encoding="utf-8")
+
+        self.assertIn("# Phase-1 F0", per_slot_summary)
+        self.assertIn("# Phase-1 Suggested Action Mask", suggested_mask)
+
 
 if __name__ == "__main__":
     unittest.main()
