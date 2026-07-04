@@ -40,6 +40,14 @@ def _load_manifest_module():
 
 
 class BlbMakeRunManifestTest(unittest.TestCase):
+    def test_main_streams_stdout_json_paths(self):
+        source = MANIFEST_PATH.read_text(encoding="utf-8")
+        main_region = source.split("def main(", 1)[1].split('if __name__ == "__main__":', 1)[0]
+
+        self.assertIn("json.dump(paths, sys.stdout", main_region)
+        self.assertIn('sys.stdout.write("\\n")', main_region)
+        self.assertNotIn("print(json.dumps(paths", main_region)
+
     def test_run_git_bounds_subprocess_with_timeout(self):
         manifest = _load_manifest_module()
         calls = []

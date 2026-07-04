@@ -375,7 +375,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--mpc-truncation-cost-enabled", action="store_true")
     args = parser.parse_args(argv)
     paths = write_manifest(build_manifest(args), args.output_dir)
-    print(json.dumps(paths, ensure_ascii=False, indent=2))
+    json.dump(paths, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0
 
 
