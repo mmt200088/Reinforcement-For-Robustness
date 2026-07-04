@@ -28729,4 +28729,3 @@
   Softmax配置（softmax_config）: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
   当前学习率（current_lr）: 0.000020
   当前熵系数（current_entropy_coef）: 0.012000
-
