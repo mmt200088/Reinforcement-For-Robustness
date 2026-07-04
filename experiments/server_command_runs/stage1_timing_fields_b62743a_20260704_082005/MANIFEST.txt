@@ -1,0 +1,7 @@
+README.md
+RUN_METADATA.json
+MANIFEST.txt
+initial_red.log
+intermediate_lazy_init_red.log
+precommit_green.log
+green.log

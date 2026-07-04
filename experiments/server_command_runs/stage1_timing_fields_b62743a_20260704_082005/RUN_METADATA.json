@@ -1,0 +1,49 @@
+{
+  "artifact_type": "server_verification_evidence",
+  "created_at": "2026-07-04T08:20:05+08:00",
+  "source_commit": "b62743a",
+  "optimization": "add Stage-1 rollout timing diagnostics for model-forward and report-write wall time",
+  "files_changed": [
+    "layer_importance_evaluator.py",
+    "stage1_rl/parallel_runner.py",
+    "scripts/stage1_parallel_report.py",
+    "tests/test_stage1_parallel_report.py",
+    "tests/test_stage1_parallel_semantics.py"
+  ],
+  "server_runs": {
+    "initial_red": {
+      "run_dir": "/hy-tmp/rfr_stage1_timing_red_1369547_20260704_081516",
+      "command": "python3 -m unittest tests.test_stage1_parallel_report.Stage1ParallelReportTest.test_parse_log_lines_summarizes_forward_and_report_write_timing tests.test_stage1_parallel_semantics.Stage1ParallelSemanticsTest.test_parallel_rollout_logs_forward_and_report_write_timing -v",
+      "exit_code": 1,
+      "local_log": "initial_red.log"
+    },
+    "intermediate_lazy_init_red": {
+      "run_dir": "/hy-tmp/rfr_stage1_timing_green_1369547_20260704_081726",
+      "command": "python3 -m unittest tests.test_stage1_eval_accel tests.test_stage1_parallel_semantics tests.test_stage1_parallel_report -v",
+      "exit_code": 1,
+      "local_log": "intermediate_lazy_init_red.log"
+    },
+    "precommit_green": {
+      "run_dir": "/hy-tmp/rfr_stage1_timing_green2_1369547_20260704_081909",
+      "commands": [
+        "python3 -m py_compile layer_importance_evaluator.py stage1_rl/parallel_runner.py scripts/stage1_parallel_report.py tests/test_stage1_eval_accel.py tests/test_stage1_parallel_semantics.py tests/test_stage1_parallel_report.py",
+        "python3 -m unittest tests.test_stage1_eval_accel tests.test_stage1_parallel_semantics tests.test_stage1_parallel_report -v"
+      ],
+      "exit_code": 0,
+      "local_log": "precommit_green.log"
+    },
+    "green": {
+      "run_dir": "/hy-tmp/rfr_stage1_timing_final_b62743a_20260704_082005",
+      "commands": [
+        "python3 -m py_compile layer_importance_evaluator.py stage1_rl/parallel_runner.py scripts/stage1_parallel_report.py tests/test_stage1_eval_accel.py tests/test_stage1_parallel_semantics.py tests/test_stage1_parallel_report.py",
+        "python3 -m unittest tests.test_stage1_eval_accel tests.test_stage1_parallel_semantics tests.test_stage1_parallel_report -v"
+      ],
+      "exit_code": 0,
+      "local_log": "green.log"
+    }
+  },
+  "workflow": {
+    "server_code_policy": "server used temporary source packages for execution only",
+    "local_git_policy": "source commit was pushed before evidence commit"
+  }
+}

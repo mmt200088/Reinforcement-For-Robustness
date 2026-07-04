@@ -77,8 +77,8 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `dbd1b6f`, the conservative
-completion estimate is about 96-97% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `b62743a`, the conservative
+completion estimate is about 97% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
 scheduling work are still open.
@@ -123,6 +123,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `343a5e3` | `experiments/server_command_runs/stage1_noise_validation_scan_343a5e3_20260704_055529/` | Scan layer-evaluator noise scaling validation arrays directly for unsupported values instead of materializing `arr.tolist()` sets. |
 | Stage-1 eval | `e17eee8` | `experiments/server_command_runs/stage1_reward_stats_window_e17eee8_20260704_060340/` | Maintain Stage-1 reward normalization window sum/sumsq incrementally instead of rescanning the bounded deque with `np.mean()` / `np.std()` every episode. |
 | Stage-1 eval | `dbd1b6f` | `experiments/server_command_runs/stage1_semantics_gate_dbd1b6f_20260704_080342/` | Restore the Stage-1 semantic gate after shared fast-path changes: coefficient-order low-allocation GELU polynomial evaluation, Stage-1 batch-loss averaging, and legacy sklearn metric precision. |
+| Stage-1 rollout | `b62743a` | `experiments/server_command_runs/stage1_timing_fields_b62743a_20260704_082005/` | Add Stage-1 rollout timing diagnostics for model-forward wall seconds, forward calls, and report-write wall seconds while preserving existing worker/cache/total timing log fields. |
 | Shared inference eval | `497ecda` | `experiments/server_command_runs/probe_scalar_sync_497ecda_20260704_025145/` | Batch reward-probe loss/metric scalar tensors into one packed CPU transfer instead of three per-field scalar sequence transfers. |
 | Shared inference eval | `b5dfff5` | `experiments/server_command_runs/probe_skip_pred_arrays_b5dfff5_20260704_025610/` | Skip reward-probe prediction/label tensor retention and numpy transfer for accuracy-only metric profiles. |
 | Shared inference eval | `2d98907` | `experiments/server_command_runs/probe_tensor_arrays_2d98907_20260704_030105/` | Concatenate same-device reward-probe prediction/label tensors before one packed CPU/numpy transfer. |
@@ -179,8 +180,8 @@ Remaining main-chain gates before this goal can be complete:
 
 1. **Evidence loop:** every new source optimization must have a red/green or
    parity evidence directory committed back from the server.
-2. **Stage-1 throughput:** finish timing fields and collect server 1GPU vs
-   4GPU evidence before changing rollout/cache defaults.
+2. **Stage-1 throughput:** collect server 1GPU vs 4GPU evidence before
+   changing rollout/cache defaults.
 3. **Stage-2 scheduling:** keep core RL files out of scope while the Stage-2
    RL agent is active; after handoff, run 1GPU vs NGPU parity and wall-clock
    gates before promoting GPU defaults.
@@ -423,11 +424,23 @@ under
 This validates the Stage-1 focused semantic gate only; it is not 1GPU vs 4GPU
 throughput evidence.
 
-- [ ] **Step 2: Add timing fields**
+- [x] **Step 2: Add timing fields**
 
 Add Stage-1 window diagnostics for cache hit rate, worker wall seconds,
 model-forward wall seconds, and report-write wall seconds. Write them to the
 existing Stage-1 log/status path, not to a new hot-path report.
+
+Server evidence 2026-07-04: source commit `b62743a` adds model-forward wall
+seconds / forward-call counts to Stage-1 worker-window diagnostics, emits
+`report_write` alongside the existing `detail` field in
+`[stage1-rollout-total]`, and teaches `scripts/stage1_parallel_report.py` to
+summarize these fields while staying backward compatible with old logs. The
+final committed-source server gate at
+`experiments/server_command_runs/stage1_timing_fields_b62743a_20260704_082005/`
+passed `py_compile` plus `tests.test_stage1_eval_accel`,
+`tests.test_stage1_parallel_semantics`, and `tests.test_stage1_parallel_report`
+(`50` tests). This completes the timing-field prerequisite only; it is still
+not 1GPU vs 4GPU throughput evidence.
 
 Progress 2026-07-02: added torch-free `scripts/stage1_parallel_report.py` to
 summarize existing Stage-1 rollout/cache/component timing logs into JSON and
