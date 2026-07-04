@@ -157,6 +157,17 @@ class BLBF0ScanTests(unittest.TestCase):
         with mock.patch.dict("os.environ", {"BLB_TRUNCATION_K_LEVELS": "8; 13; 12"}, clear=False):
             self.assertEqual(_safe_allowed_k_indices(), [1, 2])
 
+    def test_main_streams_stdout_json_without_json_dumps_string(self):
+        source = (Path(__file__).resolve().parents[1] / "scripts" / "blb_f0_scan_feasible_domain.py").read_text(
+            encoding="utf-8",
+        )
+        main_source = source[source.index("def main("):]
+
+        self.assertIn("json.dump(", main_source)
+        self.assertIn("sys.stdout", main_source)
+        self.assertIn('sys.stdout.write("\\n")', main_source)
+        self.assertNotIn("print(json.dumps(", main_source)
+
     def test_scan_stops_when_baseline_is_invalid(self):
         from scripts.blb_f0_scan_feasible_domain import run_scan_core
 

@@ -891,12 +891,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_baseline_bits=args.expected_baseline_bits,
         expected_baseline_fusion=args.expected_baseline_fusion,
     )
-    print(json.dumps({
+    json.dump({
         "output_dir": args.output_dir,
         "baseline": result["manifest"]["baseline"],
         "mask_hash": result["manifest"]["mask_hash"],
         "masked_random_validity": result["random_report"],
-    }, ensure_ascii=False, indent=2))
+    }, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0
 
 
