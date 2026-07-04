@@ -45,7 +45,7 @@ from blb_stage2_rl.action_space import (  # noqa: E402
 )
 from blb_stage2_rl.action_io import action_vec_to_slots_list  # noqa: E402
 from blb_stage2_rl.optimizer_cost import evaluate_action_for_cost  # noqa: E402
-from json_utils import read_json_file  # noqa: E402
+from json_utils import read_json_file, write_json_file  # noqa: E402
 from rescale_optimizer_bridge import (  # noqa: E402
     InProcessInvoker,
     RescaleOptimizerBridge,
@@ -336,8 +336,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.output_dir:
         out_dir = Path(args.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "report.json").write_text(
-            json.dumps({
+        write_json_file(
+            out_dir / "report.json",
+            {
                 "action_config": args.action_config,
                 "profile": args.profile,
                 "num_layers": args.num_layers,
@@ -351,8 +352,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 },
                 "rows": rows,
                 "invalid_rows": invalid_rows,
-            }, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+            },
         )
         md = ["# BLB invalid-block diagnosis", ""]
         md.append(f"- action_config: `{args.action_config}`")
