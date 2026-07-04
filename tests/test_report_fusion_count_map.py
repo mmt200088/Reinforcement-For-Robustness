@@ -206,6 +206,26 @@ class FusionCountMapReportTest(unittest.TestCase):
 
         self.assertEqual(list(graphs), ["block1_mrpc"])
 
+    def test_public_iter_fusion_map_paths_filters_sidecars(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "_summary.json").write_text("{}", encoding="utf-8")
+            (root / "map_summary.json").write_text("{}", encoding="utf-8")
+            (root / "block1_mrpc.json").write_text("{}", encoding="utf-8")
+            (root / "block4.json").write_text("{}", encoding="utf-8")
+            (root / "notes.json").write_text("{}", encoding="utf-8")
+
+            paths = list(report.iter_fusion_map_paths(root))
+
+        self.assertEqual([path.name for path in paths], ["block1_mrpc.json", "block4.json"])
+
+    def test_server_command_phase2_uses_shared_map_path_filter(self):
+        text = Path("SERVER_COMMAND.md").read_text(encoding="utf-8")
+
+        self.assertIn("from scripts.report_fusion_count_map import iter_fusion_map_paths", text)
+        self.assertIn('iter_fusion_map_paths(Path("blb_stage2_rl/fusion_maps/mrpc"))', text)
+        self.assertNotIn('glob.glob("blb_stage2_rl/fusion_maps/mrpc/*.json")', text)
+
     def test_group_specs_reuses_graph_target_choices(self):
         graphs = {
             "block2_mrpc": {

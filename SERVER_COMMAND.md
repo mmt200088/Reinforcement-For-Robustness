@@ -872,8 +872,10 @@ fi
 
 echo "==================== [phase2] 图门禁（option0==baseline）+ 新旧对比 ===================="
 OUTDIR="$OUT" python3 - <<'PY' 2>&1 | tee "$OUT/map_gate.txt" || { echo "[FATAL] 图门禁失败"; exit 1; }
-import glob, json, os
+import json, os
+from pathlib import Path
 from blb_stage2_rl.fusion_count_map import FusionCountMap
+from scripts.report_fusion_count_map import iter_fusion_map_paths
 FusionCountMap.load("mrpc")
 print("FusionCountMap.load('mrpc') OK — 所有图 option0==baseline。")
 def summarize(p):
@@ -881,9 +883,8 @@ def summarize(p):
     return len(o), sorted({x["fusion_count"] for x in o}), d.get("build_meta", {}).get("enum_total_combos")
 old = "%s/old_maps" % os.environ.get("OUTDIR", "")
 print("\n图              新(n_opt, fusion, enum_total)          旧(n_opt, fusion, enum_total)")
-for f in sorted(glob.glob("blb_stage2_rl/fusion_maps/mrpc/*.json")):
-    b = os.path.basename(f)
-    if b.startswith("_"): continue
+for f in iter_fusion_map_paths(Path("blb_stage2_rl/fusion_maps/mrpc")):
+    b = f.name
     nn = summarize(f)
     op = os.path.join(old, b)
     oo = summarize(op) if os.path.exists(op) else "—"

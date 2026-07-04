@@ -77,7 +77,7 @@ def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
 
 def _load_maps(map_dir: Path) -> OrderedDict[str, dict]:
     graphs: OrderedDict[str, dict] = OrderedDict()
-    for path in _iter_map_paths(map_dir):
+    for path in iter_fusion_map_paths(map_dir):
         payload = read_json_file(path)
         if not isinstance(payload, Mapping) or "graph_key" not in payload or "options" not in payload:
             continue
@@ -85,6 +85,10 @@ def _load_maps(map_dir: Path) -> OrderedDict[str, dict]:
     if not graphs:
         raise RuntimeError(f"no fusion-count maps found under {map_dir}")
     return graphs
+
+
+def iter_fusion_map_paths(map_dir: Path) -> Iterable[Path]:
+    return _iter_map_paths(map_dir)
 
 
 def _iter_map_paths(map_dir: Path) -> Iterable[Path]:
