@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `2edeb35`, the conservative
+not by raw commit count. As of source head `83a317e`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -172,6 +172,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 artifacts | `1b15448` | `experiments/server_command_runs/blb_eval_action_stdout_json_1b15448_20260704_110534/` | Stream BLB F0 eval action CLI candidate record directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Stage-2 artifacts | `03bddfe` | `experiments/server_command_runs/blb_eval_rank_key_json_03bddfe_20260704_112143/` | Write BLB F0 eval `rank_key.json` through shared `write_json_file()` instead of materializing a full JSON string before `Path.write_text()`. |
 | Rescale/fusion maps | `46df691` | `experiments/server_command_runs/optimizer_modes_stdout_json_46df691_20260704_112453/` | Stream optimizer-mode comparison CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
+| Rescale/fusion maps | `83a317e` | `experiments/server_command_runs/optimizer_modes_md_stream_83a317e_20260704_142248/` | Stream optimizer-mode consistency Markdown reports directly through the file handle instead of joining the full report buffer before `Path.write_text()`. |
 | Paean final eval | `2f74c05` | `experiments/server_command_runs/fusion_action_eval_stdout_json_2f74c05_20260704_110908/` | Stream fusion-count action eval CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Paean final eval | `6d2e0bd` | `experiments/server_command_runs/fusion_action_eval_defaults_6d2e0bd_20260704_124423/` | Reuse fixed fusion-count action eval Stage-1 default JSON strings and manual-noise JSON instead of dumping the same defaults for every parser build or Paean action run. |
 | Paean final eval | `e6a8733` | `experiments/server_command_runs/fusion_action_html_stream_e6a8733_20260704_132000/` | Stream fixed fusion-count action-eval HTML reports directly through the CLI writer while preserving the existing `_render_html()` string helper for compatibility. |
