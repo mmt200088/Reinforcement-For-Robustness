@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `6875648`, the conservative
+not by raw commit count. As of source head `841d48e`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -130,6 +130,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Launcher gates | `bd99c65` | `experiments/server_command_runs/server_snapshot_md_stream_bd99c65_20260704_153000/` | Stream server resource snapshot Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Stage-1 throughput gate | `4bca31a` | `experiments/server_command_runs/stage1_gpu_ab_4bca31a_20260704_084330/` | Ran the formal 170-episode Stage-1 MRPC 1GPU vs 4GPU gate. Both completed and 4GPU used `cuda:0..3`, but the gate exposed a diagnostic undercount fixed in `4834b2f`; rerun this gate before using the wall-clock ratio for default promotion. |
 | Stage-1 diagnostics | `4834b2f` | `experiments/server_command_runs/stage1_parallel_episode_count_4834b2f_20260704_085732/` | Count Stage-1 parallel rollout total episodes from actual worker counts (`43/43/42/42 => 170`) instead of `num_workers * floor(episodes_per_worker)` (`168`), fixing throughput undercounting for imbalanced windows. |
+| Stage-1 diagnostics | `841d48e` | `experiments/server_command_runs/stage1_parallel_md_stream_841d48e_20260704_160500/` | Stream Stage-1 parallel Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Stage-1 throughput gate | `180d319` | `experiments/server_command_runs/stage1_gpu_ab_180d319_20260704_090423/` | Reran the formal 170-episode Stage-1 MRPC 1GPU vs 4GPU gate after the episode-count diagnostics fix. 4GPU correctly reports 170 episodes and uses `cuda:0..3`, but remains slower; keep Stage-1 4GPU default promotion blocked until duplicated validation/model-forward cost is reduced. |
 | Stage-1 launcher default | `9f3864d` | `experiments/server_command_runs/stage1_default_batch_gpu_ab_9f3864d_20260704_092741/` | Default `run rl --mode stage1-only` to batch size 128 when `--batch-size` is omitted, preserving explicit user overrides. The no-batch default runtime gate completed 170-episode MRPC A/B with `g4` at `9007.153` ep/h versus `g1` at `7558.355` ep/h. |
 | Stage-1 eval | `db1ddf3` | `experiments/server_command_runs/stage1_bench_model_types_db1ddf3_20260704_143000/` | Reuse a static Stage-1 benchmark model-type tuple for argparse choices instead of rebuilding `list(_DIMS)` when creating the benchmark parser. |
