@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `a12c433`, the conservative
+not by raw commit count. As of source head `2edeb35`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -168,6 +168,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `9cabfaa` | `experiments/server_command_runs/experiments_log_rebuild_sort_9cabfaa_20260704_131500/` | Sort latest run records directly from the `_latest_by_run_id(...).values()` view in `tools.experiments_log rebuild`, avoiding a pre-sort list copy before index generation. |
 | Structured artifacts | `afcc72a` | `experiments/server_command_runs/action_registry_stdout_json_afcc72a_20260704_110045/` | Stream BLB action registry CLI path summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Stage-2 artifacts | `cfc368d` | `experiments/server_command_runs/f0_scan_stdout_json_cfc368d_20260704_111713/` | Stream F0 feasible-domain scan CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
+| Stage-2 artifacts | `2edeb35` | `experiments/server_command_runs/f0_scan_md_stream_2edeb35_20260704_141650/` | Stream F0 feasible-domain per-slot summary and suggested action-mask Markdown outputs through line writers instead of joining full Markdown buffers before `Path.write_text()`. |
 | Stage-2 artifacts | `1b15448` | `experiments/server_command_runs/blb_eval_action_stdout_json_1b15448_20260704_110534/` | Stream BLB F0 eval action CLI candidate record directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Stage-2 artifacts | `03bddfe` | `experiments/server_command_runs/blb_eval_rank_key_json_03bddfe_20260704_112143/` | Write BLB F0 eval `rank_key.json` through shared `write_json_file()` instead of materializing a full JSON string before `Path.write_text()`. |
 | Rescale/fusion maps | `46df691` | `experiments/server_command_runs/optimizer_modes_stdout_json_46df691_20260704_112453/` | Stream optimizer-mode comparison CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
