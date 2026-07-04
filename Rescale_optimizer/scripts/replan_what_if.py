@@ -451,10 +451,10 @@ def _dumps_compact_json(obj: Any, indent: int = 2, _level: int = 0) -> str:
         if len(obj) <= 6 and all(_is_primitive(v) for v in obj.values()):
             return json.dumps(obj, ensure_ascii=False, separators=(", ", ": "))
 
-        items = list(obj.items())
         lines = ["{"]
-        for i, (k, v) in enumerate(items):
-            suf = "," if i < len(items) - 1 else ""
+        last_idx = len(obj) - 1
+        for i, (k, v) in enumerate(obj.items()):
+            suf = "," if i < last_idx else ""
             vv = _dumps_compact_json(v, indent, _level + 1)
             lines.append(f"{pad_in}{json.dumps(k, ensure_ascii=False)}: {vv}{suf}")
         lines.append(f"{pad}}}")
