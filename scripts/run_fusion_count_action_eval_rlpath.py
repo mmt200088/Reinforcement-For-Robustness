@@ -20,7 +20,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, List, Mapping, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 import numpy as np
 
@@ -45,6 +45,31 @@ DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)
 DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)
 
 _RUNTIME_DEPS: dict[str, object] | None = None
+
+
+class _HtmlPartsWriter:
+    def __init__(self, path: Path):
+        self._handle = path.open("w", encoding="utf-8")
+        self._first = True
+
+    def append(self, value: Any) -> None:
+        if not self._first:
+            self._handle.write("\n")
+        self._handle.write(str(value))
+        self._first = False
+
+    def extend(self, values: Iterable[Any]) -> None:
+        for value in values:
+            self.append(value)
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def __enter__(self) -> "_HtmlPartsWriter":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
 
 
 def _load_runtime_deps() -> dict[str, object]:
@@ -424,7 +449,7 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     }
 
 
-def _render_html(combined: Mapping[str, Any]) -> str:
+def _emit_rendered_html(combined: Mapping[str, Any], parts: Any) -> None:
     rows = []
     for r in combined["group_results"]:
         m = r.get("metrics") or {}
@@ -452,7 +477,7 @@ def _render_html(combined: Mapping[str, Any]) -> str:
             json.dumps(r.get("block5_graph_counts", {}), ensure_ascii=False),
             r.get("terminal_priority", ""),
         ])
-    return "\n".join([
+    parts.extend([
         "<!doctype html><html><head><meta charset='utf-8'>",
         "<title>MRPC Fusion Count RL-Path Eval</title>",
         "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:28px;color:#111827;background:#fbfcfd}"
@@ -474,6 +499,17 @@ def _render_html(combined: Mapping[str, Any]) -> str:
         ], rows),
         "</body></html>",
     ])
+
+
+def _render_html(combined: Mapping[str, Any]) -> str:
+    parts: List[str] = []
+    _emit_rendered_html(combined, parts)
+    return "\n".join(parts)
+
+
+def write_rendered_html(output_html: Path, combined: Mapping[str, Any]) -> None:
+    with _HtmlPartsWriter(output_html) as parts:
+        _emit_rendered_html(combined, parts)
 
 
 def main() -> int:
@@ -568,7 +604,7 @@ def main() -> int:
         "group_results": to_jsonable(group_results, stringify_unknown=True, preserve_native=True),
     }
     write_json_file(output_json, combined)
-    output_html.write_text(_render_html(combined), encoding="utf-8")
+    write_rendered_html(output_html, combined)
     json.dump({"output_json": str(output_json), "output_html": str(output_html)}, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
     return 0
