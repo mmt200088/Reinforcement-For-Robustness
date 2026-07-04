@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `248a0ec`, the conservative
+not by raw commit count. As of source head `b6dda66`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -155,6 +155,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `9b78854` | `experiments/server_command_runs/action_registry_klevel_scan_9b78854_20260704_074904/` | Find the all-max truncation-K action index for registry export with one pass over `k_levels` instead of copying the sequence and scanning twice. |
 | Reports / paper figures | `5a75eee` | `experiments/server_command_runs/stage2_monitor_html_stream_5a75eee_20260704_005141/` | Stream Stage-2 monitor HTML report rows and nested reward-probe/GPU JSON chunks directly to the file handle instead of materializing full JSON/table strings. |
 | Reports / paper figures | `dcfea75` | `experiments/server_command_runs/paper_episode_column_dcfea75_20260703_225013/` | Read paper-figure episode rewards as a direct float column instead of building one dict per episode row. |
+| Reports / paper figures | `b6dda66` | `experiments/server_command_runs/paper_figures_payload_reuse_b6dda66_20260704_094735/` | Reuse JSON-native list/dict payloads from paper-figure action and invalid-count sidecars instead of copying them through `list(...)` / `dict(...)` during `load_run()`. |
 | Reports / paper figures | `bd4ca26` | `experiments/server_command_runs/persistence_curve_ndarray_bd4ca26_20260704_015320/` | Preserve ndarray fast paths in Stage-2 curve smoothing/moving-average helpers instead of copying curve arrays through `list()`. |
 | Reports / paper figures | `7460284` | `experiments/server_command_runs/persistence_panel_ndarray_7460284_20260704_015635/` | Preserve ndarray fast paths in Stage-2 Stage-1-style panel plotting instead of copying panel raw series through `list()`. |
 | Reports / paper figures | `74de148` | `experiments/server_command_runs/persistence_npz_ndarray_74de148_20260704_020650/` | Preserve ndarray fast paths in Stage-2 NPZ training-curve writes instead of copying every array-backed series through `list()`. |
@@ -1944,6 +1945,20 @@ existing low-copy parse path. A local 100k valid-row / 50k blank-row episode
 benchmark preserved projected rows and reduced read time from `0.716423s` to
 `0.468636s` (`1.53x`).
 
+Progress 2026-07-04: `tools/paper_figures.py` now reuses JSON-native
+`list`/`dict` payloads returned by `read_json_file()` for best action vectors,
+best/baseline slot metadata, diff-vs-baseline rows, and first-invalid counts.
+Malformed/non-native truthy containers keep the old compatibility path through
+`list(...)` / `dict(...)`, but normal paper-figure sidecars avoid a second
+full-container copy during `load_run()`.
+
+Server evidence 2026-07-04: source commit `b6dda66` has red/green verification
+under
+`experiments/server_command_runs/paper_figures_payload_reuse_b6dda66_20260704_094735/`.
+The red package failed the new regression test at the old
+`best_action_vec=list(...)` copy. The green package passed that test,
+`py_compile`, and the complete `tests.test_paper_figures` suite (`5` tests).
+
 Progress 2026-07-02: `blb_stage2_rl/candidate_store.py` now skips blank
 candidate JSONL rows with `isspace()` and passes nonblank rows directly to
 `json.loads()` instead of allocating stripped copies while loading append-only
@@ -2561,6 +2576,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
 - `ec0776b` Stage-2 persistence iterable-length streaming count, evidence
   committed in the `persistence_seq_len_count_ec0776b_20260704_051045` run
   directory.
+- `b6dda66` paper-figure JSON-native sidecar payload reuse, evidence committed
+  in the `paper_figures_payload_reuse_b6dda66_20260704_094735` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the
