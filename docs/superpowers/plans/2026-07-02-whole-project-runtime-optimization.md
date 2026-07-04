@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `8fe0b03`, the conservative
+not by raw commit count. As of source head `61185e9`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -200,6 +200,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `71fbfc6` | `experiments/server_command_runs/fusion_report_field_kinds_71fbfc6_20260704_052234/` | Reuse per-block fusion report field-kind lookups during slot-form action-config splicing instead of rebuilding them per schedule step. |
 | Rescale/fusion maps | `82b83ca` | `experiments/server_command_runs/fusion_report_block_actions_82b83ca_20260704_052649/` | Cache adjusted per-graph/per-option block actions during fusion report action-config splicing instead of rebuilding action-index lists per schedule step. |
 | Rescale/fusion maps | `f8d649e` | `experiments/server_command_runs/fusion_report_slot_entries_f8d649e_20260704_053236/` | Cache bound per-graph/per-option slot entries during fusion report slot-form action-config splicing instead of rebinding and resorting slots per schedule step. |
+| Rescale/fusion maps | `61185e9` | `experiments/server_command_runs/fusion_report_graph_keys_61185e9_20260704_142000/` | Reuse the `graphs.keys()` view when building fusion-count report group specs instead of copying graph names through `list(graphs.keys())`. |
 | Rescale/fusion maps | `476a230` | `experiments/server_command_runs/fusion_report_bound_slot_items_476a230_20260704_053630/` | Iterate fusion report slot mappings directly in bound-slot compatibility expansion instead of copying through `dict(slots)`. |
 | Rescale/fusion maps | `269ba69` | `experiments/server_command_runs/fusion_report_slot_mapping_269ba69_20260704_072557/` | Normalize fusion report option/base slot mappings by iterating mapping `.items()` directly instead of copying through `dict(...).items()` for each option summary. |
 | Rescale/fusion maps | `74d5d28` | `experiments/server_command_runs/fusion_report_occurrences_74d5d28_20260704_073030/` | Accumulate fusion report graph occurrence layers as sets during the schedule scan instead of building lists and then deduplicating with `sorted(set(v))`. |
