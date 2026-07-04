@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `bd2912d`, the conservative
+not by raw commit count. As of source head `9b7777a`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -129,6 +129,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 rollout | `b62743a` | `experiments/server_command_runs/stage1_timing_fields_b62743a_20260704_082005/` | Add Stage-1 rollout timing diagnostics for model-forward wall seconds, forward calls, and report-write wall seconds while preserving existing worker/cache/total timing log fields. |
 | Launcher gates | `4bca31a` | `experiments/server_command_runs/stage1_gpu_ab_4bca31a_20260704_084330/` | Make `scripts/launcher_gpu_audit.py` runnable as a script from repo root without relying on external `PYTHONPATH`, unblocking clean server launcher gates. |
 | Launcher gates | `bd99c65` | `experiments/server_command_runs/server_snapshot_md_stream_bd99c65_20260704_153000/` | Stream server resource snapshot Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
+| Launcher gates | `9b7777a` | `experiments/server_command_runs/phase0_preflight_stream_9b7777a_20260704_140740/` | Stream Phase-0 preflight report files and entrypoint Markdown directly through the line writer instead of joining full output lists or rendering one full Markdown string before `Path.write_text()`. |
 | Stage-1 throughput gate | `4bca31a` | `experiments/server_command_runs/stage1_gpu_ab_4bca31a_20260704_084330/` | Ran the formal 170-episode Stage-1 MRPC 1GPU vs 4GPU gate. Both completed and 4GPU used `cuda:0..3`, but the gate exposed a diagnostic undercount fixed in `4834b2f`; rerun this gate before using the wall-clock ratio for default promotion. |
 | Stage-1 diagnostics | `4834b2f` | `experiments/server_command_runs/stage1_parallel_episode_count_4834b2f_20260704_085732/` | Count Stage-1 parallel rollout total episodes from actual worker counts (`43/43/42/42 => 170`) instead of `num_workers * floor(episodes_per_worker)` (`168`), fixing throughput undercounting for imbalanced windows. |
 | Stage-1 diagnostics | `841d48e` | `experiments/server_command_runs/stage1_parallel_md_stream_841d48e_20260704_160500/` | Stream Stage-1 parallel Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
