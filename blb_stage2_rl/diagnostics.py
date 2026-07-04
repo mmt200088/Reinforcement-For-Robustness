@@ -94,6 +94,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO
 
 import numpy as np
 
+from stats_utils import mean_or_default
+
 try:  # Package import path.
     from .candidate_store import action_hash
 except Exception:  # Standalone test/script loading via spec_from_file_location.
@@ -1363,14 +1365,14 @@ class RLDiagnosticsRecorder:
                     f"建议：查 stage1_degree[{layer}] / max_sfs 表对应 block {block} 的项。"
                 )
         if self._ppo_history and len(self._ppo_history) >= 5:
-            recent_ent = float(np.mean([u.entropy for u in self._ppo_history[-3:]]))
+            recent_ent = mean_or_default(u.entropy for u in self._ppo_history[-3:])
             if recent_ent < 0.1:
                 flags.append(
                     f"⚠ **熵过低**：最近 3 次 PPO 更新平均 entropy={recent_ent:.3f} "
                     "(< 0.1)。policy 已经几乎确定性输出，可能过早收敛 — "
                     "增大 ent_coef 或 clip_range。"
                 )
-            recent_clip = float(np.mean([u.clip_fraction for u in self._ppo_history[-3:]]))
+            recent_clip = mean_or_default(u.clip_fraction for u in self._ppo_history[-3:])
             if recent_clip > 0.40:
                 flags.append(
                     f"⚠ **clip_fraction 偏高**：最近 3 次 PPO clip_frac="
