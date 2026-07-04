@@ -1,0 +1,6 @@
+test_report_json_uses_shared_writer_without_json_dumps_string (tests.test_blb_diagnose_invalid_blocks_static.BLBDiagnoseInvalidBlocksStaticTests.test_report_json_uses_shared_writer_without_json_dumps_string) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+OK
