@@ -65,10 +65,10 @@ def _format_actions_file(name: str, t_new: List[int],
                  'Edit t_new / delta_overrides as needed.",')
     lines.append(f'  "t_new": {json.dumps(t_new, separators=(", ", ": "))},')
     lines.append('  "delta_overrides": {')
-    items = list(delta_overrides.items())
-    for k, (name_, val) in enumerate(items):
+    last_idx = len(delta_overrides) - 1
+    for k, (name_, val) in enumerate(delta_overrides.items()):
         v_str = ('"x2"' if val == "x2" else json.dumps(val))
-        suf = "," if k < len(items) - 1 else ""
+        suf = "," if k < last_idx else ""
         lines.append(f'    {json.dumps(name_)}: {v_str}{suf}')
     lines.append("  }")
     lines.append("}")
