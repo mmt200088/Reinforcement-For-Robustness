@@ -362,6 +362,18 @@ class ExperimentsLogTest(unittest.TestCase):
         self.assertIn("run-2", text)
         self.assertGreater(len(captured.parts), 5)
 
+    def test_rebuild_index_sorts_latest_values_without_pre_sort_list_copy(self):
+        source = Path(experiments_log.__file__).read_text(encoding="utf-8")
+        rebuild_region = source[
+            source.index("def _rebuild_index("):
+            source.index("\n\ndef _query(")
+        ]
+
+        self.assertIn("latest = sorted(", rebuild_region)
+        self.assertIn(").values(),", rebuild_region)
+        self.assertNotIn("latest = list(_latest_by_run_id", rebuild_region)
+        self.assertNotIn("latest.sort(", rebuild_region)
+
     def test_rebuild_index_computes_best_during_summary_scan(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
