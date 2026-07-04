@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `0c3c9b2`, the conservative
+not by raw commit count. As of source head `33107ea`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -197,6 +197,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `8fe0b03` | `experiments/server_command_runs/rescale_replan_json_stream_8fe0b03_20260704_140500/` | Render `replan_what_if.py` compact JSON dictionaries by streaming `obj.items()` instead of copying all entries before output. |
 | Rescale/fusion maps | `7a63c1a` | `experiments/server_command_runs/rescale_gen_replan_stream_7a63c1a_20260704_135000/` | Generate replan action templates by streaming `delta_overrides.items()` instead of copying every override before formatting. |
 | Rescale/fusion maps | `4b9a144` | `experiments/server_command_runs/rescale_noise_fmt_stream_4b9a144_20260704_134000/` | Format generated rescale noise-table dictionaries by streaming `d.items()` with a bounded per-line buffer instead of copying all items before chunking. |
+| Rescale/fusion maps | `33107ea` | `experiments/server_command_runs/rescale_batch_writer_33107ea_20260704_130120/` | Stream `batch_run_configs.py` static-skeleton archive output directly to the file handle instead of materializing the full archive string before `Path.write_text()`. |
 | Rescale/fusion maps | `5760c6d` | `experiments/server_command_runs/fusion_report_option_scan_5760c6d_20260704_001718/` | Build fusion-map report graph payloads with one ordered-options summary loop after the order check, instead of separately scanning for base option, available fusion counts, and option summaries. |
 | Rescale/fusion maps | `1410ba0` | `experiments/server_command_runs/fusion_slots_option_index_1410ba0_20260704_010024/` | Cache fusion-count slots eval report option lookups by options-list identity so repeated selected-option and boost-audit sections avoid rescanning graph options. |
 | Rescale/fusion maps | `c15cb03` | `experiments/server_command_runs/fusion_k_independence_count_c15cb03_20260704_022055/` | Count fusion-map K-independence sample configs during the existing scan instead of materializing `sample_configs` a second time. |
