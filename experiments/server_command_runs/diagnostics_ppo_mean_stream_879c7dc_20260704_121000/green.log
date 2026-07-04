@@ -1,0 +1,6 @@
+test_ppo_warning_means_use_shared_streaming_helper (tests.test_blb_diagnostics_static.BLBDiagnosticsStaticTest.test_ppo_warning_means_use_shared_streaming_helper) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
