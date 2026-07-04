@@ -248,6 +248,58 @@ class PaperFiguresTest(unittest.TestCase):
         self.assertIs(run.diff_vs_baseline, diff_vs_baseline)
         self.assertIs(run.first_invalid_counts, first_invalid)
 
+    def test_training_curve_reuses_native_episode_rewards_without_copy(self):
+        paper = _load_paper_figures_module()
+
+        class NoCopyRewards(list):
+            def __iter__(self):
+                raise AssertionError("native episode reward list should be plotted without a copy")
+
+        rewards = NoCopyRewards([1.0, 2.0, 3.0])
+        run = paper.RunData(
+            run_dir="/tmp/run",
+            label="r1",
+            progress_dir="/tmp/run/progress",
+            episodes=rewards,
+            ppo_updates=[],
+            best_action_vec=[],
+            best_slots=[],
+            baseline_slots=[],
+            diff_vs_baseline=[],
+            first_invalid_counts={},
+            action_histogram=None,
+        )
+        captured = {}
+
+        class FakeAxes:
+            def plot(self, _x, y, **_kwargs):
+                captured["y"] = y
+
+            def set_xlabel(self, *_args, **_kwargs):
+                pass
+
+            def set_ylabel(self, *_args, **_kwargs):
+                pass
+
+            def set_title(self, *_args, **_kwargs):
+                pass
+
+            def grid(self, *_args, **_kwargs):
+                pass
+
+            def legend(self, *_args, **_kwargs):
+                pass
+
+        class FakePlt:
+            def subplots(self, **_kwargs):
+                return object(), FakeAxes()
+
+        with mock.patch.object(paper, "_setup_matplotlib", return_value=FakePlt()):
+            with mock.patch.object(paper, "_save_fig", return_value=[]):
+                paper.fig_training_curves([run], out_path_no_ext="/tmp/out", formats=("png",))
+
+        self.assertIs(captured["y"], rewards)
+
 
 if __name__ == "__main__":
     unittest.main()

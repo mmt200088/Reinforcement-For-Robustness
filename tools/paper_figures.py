@@ -154,6 +154,12 @@ def _json_dict_or_empty(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
+def _reward_series_for_plot(values: Sequence[float]) -> Sequence[float]:
+    if isinstance(values, list):
+        return values
+    return [float(value) for value in values]
+
+
 def load_run(
         run_dir: str,
         label: str = "",
@@ -246,9 +252,9 @@ def fig_training_curves(
 
     if group_label:
         # mean ± std across runs (truncate to shortest)
-        series: List[List[float]] = []
+        series: List[Sequence[float]] = []
         for r in runs:
-            ep_rewards = [float(value) for value in r.episodes]
+            ep_rewards = _reward_series_for_plot(r.episodes)
             if ep_rewards:
                 series.append(ep_rewards)
         if not series:
@@ -264,7 +270,7 @@ def fig_training_curves(
                              label=f"± std (n={len(series)})")
     else:
         for i, r in enumerate(runs):
-            ep_rewards = [float(value) for value in r.episodes]
+            ep_rewards = _reward_series_for_plot(r.episodes)
             if not ep_rewards:
                 continue
             x = np.arange(1, len(ep_rewards) + 1)
