@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `1d65c55`, the conservative
+not by raw commit count. As of source head `2367890`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -110,6 +110,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Unified final eval | `9026d8f` | `experiments/server_command_runs/final_eval_relative_chain_9026d8f_20260704_071220/` | Stream baseline/optimized/max-SF and random-result rows into relative-metric attachment with `itertools.chain()` instead of copying `random_results` through list concatenation. |
 | Paean final eval | `5fe7760` | `experiments/server_command_runs/paean_fusion_decode_copy_5fe7760_20260704_072520/` | Remove short-lived dict/list copy wrappers from fusion fixed-action decode metadata normalization, per-step block slicing, and option-field replay. |
 | Paean final eval | `1d65c55` | `experiments/server_command_runs/paean_action_specs_tuple_json_1d65c55_20260704_122000/` | Serialize final-eval action range/fixed tuples directly in the command builder instead of copying them through `list()` before `json.dumps()`. |
+| Paean final eval | `2367890` | `experiments/server_command_runs/paean_protocol_action_specs_2367890_20260704_123000/` | Reuse normalized final-eval action spec tuples in `evaluation_protocol` until the existing `to_jsonable()` conversion, avoiding manual list copies while preserving JSON output. |
 | Unified final eval reports | `7a7e9d4` | `experiments/server_command_runs/final_eval_axes_islice_7a7e9d4_20260704_073330/` | Iterate final-eval comparison and variance plot axes with `itertools.islice()` instead of materializing `list(axes.flat)[:3]`. |
 | Unified final eval reports | `22eb07e` | `experiments/server_command_runs/final_eval_summary_bar_22eb07e_20260704_074230/` | Collect final-eval summary bar chart family labels, feasibility rates, and dominance rates in one pass instead of separate scans/list comprehensions over `summary["by_family"]`. |
 | Unified final eval reports | `aed348f` | `experiments/server_command_runs/final_eval_family_order_aed348f_20260704_071234/` | Reuse a static final-eval family color order tuple in `_ordered_families()` instead of rebuilding the color map and copying keys for every plotted panel. |
