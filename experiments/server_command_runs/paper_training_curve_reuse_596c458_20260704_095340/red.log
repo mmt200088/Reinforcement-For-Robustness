@@ -1,0 +1,19 @@
+test_training_curve_reuses_native_episode_rewards_without_copy (tests.test_paper_figures.PaperFiguresTest.test_training_curve_reuses_native_episode_rewards_without_copy) ... FAIL
+
+======================================================================
+FAIL: test_training_curve_reuses_native_episode_rewards_without_copy (tests.test_paper_figures.PaperFiguresTest.test_training_curve_reuses_native_episode_rewards_without_copy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_paper_training_curve_reuse_20260704_095340/red/src/tests/test_paper_figures.py", line 299, in test_training_curve_reuses_native_episode_rewards_without_copy
+    paper.fig_training_curves([run], out_path_no_ext="/tmp/out", formats=("png",))
+  File "/hy-tmp/rfr_paper_training_curve_reuse_20260704_095340/red/src/tools/paper_figures.py", line 267, in fig_training_curves
+    ep_rewards = [float(value) for value in r.episodes]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_paper_training_curve_reuse_20260704_095340/red/src/tests/test_paper_figures.py", line 256, in __iter__
+    raise AssertionError("native episode reward list should be plotted without a copy")
+AssertionError: native episode reward list should be plotted without a copy
+
+----------------------------------------------------------------------
+Ran 1 test in 0.063s
+
+FAILED (failures=1)
