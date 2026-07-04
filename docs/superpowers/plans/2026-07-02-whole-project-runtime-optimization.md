@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `623cd5d`, the conservative
+not by raw commit count. As of source head `b66a8d2`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -153,6 +153,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `d0f543b` | `experiments/server_command_runs/stage2_monitor_stream_ppo_d0f543b_20260704_000540/` | Stream Stage-2 monitor PPO updates with a bounded recent window while preserving full-file `n_samples` and non-finite-loss checks. |
 | Structured artifacts | `cdcbeca` | `experiments/server_command_runs/manifest_registry_hash_cdcbeca_20260704_003917/` | Stream Trust-0 manifest registry JSON hashing through `JSONEncoder.iterencode()` instead of materializing one canonical JSON string before sha256. |
 | Structured artifacts | `9b78854` | `experiments/server_command_runs/action_registry_klevel_scan_9b78854_20260704_074904/` | Find the all-max truncation-K action index for registry export with one pass over `k_levels` instead of copying the sequence and scanning twice. |
+| Structured artifacts | `b66a8d2` | `experiments/server_command_runs/experiments_log_json_stream_b66a8d2_20260704_102030/` | Stream `tools.experiments_log query --format json` output directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()`. |
 | Reports / paper figures | `5a75eee` | `experiments/server_command_runs/stage2_monitor_html_stream_5a75eee_20260704_005141/` | Stream Stage-2 monitor HTML report rows and nested reward-probe/GPU JSON chunks directly to the file handle instead of materializing full JSON/table strings. |
 | Reports / paper figures | `dcfea75` | `experiments/server_command_runs/paper_episode_column_dcfea75_20260703_225013/` | Read paper-figure episode rewards as a direct float column instead of building one dict per episode row. |
 | Reports / paper figures | `b6dda66` | `experiments/server_command_runs/paper_figures_payload_reuse_b6dda66_20260704_094735/` | Reuse JSON-native list/dict payloads from paper-figure action and invalid-count sidecars instead of copying them through `list(...)` / `dict(...)` during `load_run()`. |
@@ -2123,6 +2124,20 @@ in a list and joining the full document before one final write. A local
 comparable wall time (`0.472218s` to `0.473366s`) while reducing traced peak
 allocation from `166.66MB` to `131.88MB`.
 
+Progress 2026-07-04: `tools/experiments_log.py query --format json` now writes
+the result rows directly to stdout with `json.dump(..., sys.stdout)` and a
+trailing newline instead of materializing one full JSON string through
+`json.dumps()` before `print()`. Query filtering and JSON indentation stay
+unchanged while large registry query output avoids an extra complete string
+copy.
+
+Server evidence 2026-07-04: source commit `b66a8d2` has focused red/green
+verification under
+`experiments/server_command_runs/experiments_log_json_stream_b66a8d2_20260704_102030/`.
+The red package failed the new regression test at the old
+`print(json.dumps(rows, ...))` path. The green package passed that test,
+`py_compile`, and the complete `tests.test_experiments_log` suite (`15` tests).
+
 Progress 2026-07-02: `tools/experiments_log.py rebuild` now computes status
 counts, dataset counts, and best-by-dataset rows in one pass over the sorted
 latest registry records, instead of scanning the same latest list again through
@@ -2644,6 +2659,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   `aggregate_seed_json_stream_9388563_20260704_100730` run directory.
 - `623cd5d` Stage-2 A/B excluded-key set reuse, evidence committed in the
   `stage2_ab_excluded_keys_623cd5d_20260704_101330` run directory.
+- `b66a8d2` experiments-log query JSON stdout streaming, evidence committed in
+  the `experiments_log_json_stream_b66a8d2_20260704_102030` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the
