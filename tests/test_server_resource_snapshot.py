@@ -174,6 +174,48 @@ class ServerResourceSnapshotTest(unittest.TestCase):
             self.assertIn("GPU count: 2", markdown)
             self.assertIn("idle GPUs: 1", markdown)
 
+    def test_cli_streams_markdown_output_without_full_render_string(self):
+        snap = _load_snapshot_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            smi = root / "nvidia_smi.csv"
+            smi.write_text(
+                "0, NVIDIA A100-SXM4-40GB, 40960, 1024, 57\n",
+                encoding="utf-8",
+            )
+            out_json = root / "snapshot.json"
+            out_md = root / "snapshot.md"
+            original_write_text = Path.write_text
+
+            def guarded_write_text(path, *args, **kwargs):
+                if Path(path) == out_md:
+                    raise AssertionError("markdown output should stream through Path.open")
+                return original_write_text(path, *args, **kwargs)
+
+            with mock.patch.object(
+                snap,
+                "render_markdown",
+                side_effect=AssertionError("CLI markdown output should not render one full string"),
+            ):
+                with mock.patch.object(Path, "write_text", guarded_write_text):
+                    rc = snap.main(
+                        [
+                            "--root",
+                            str(root),
+                            "--nvidia-smi-csv",
+                            str(smi),
+                            "--out-json",
+                            str(out_json),
+                            "--out-md",
+                            str(out_md),
+                        ]
+                    )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(out_json.exists())
+            self.assertIn("GPU count: 1", out_md.read_text(encoding="utf-8"))
+
     def test_collect_snapshot_streams_offline_gpu_csv(self):
         snap = _load_snapshot_module()
 

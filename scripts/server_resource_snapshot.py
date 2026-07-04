@@ -269,46 +269,57 @@ def collect_snapshot(root: str | Path, *, nvidia_smi_csv: str | Path | None = No
     }
 
 
-def render_markdown(snapshot: dict[str, Any]) -> str:
+def iter_markdown_lines(snapshot: dict[str, Any]) -> Iterable[str]:
     gpu_summary = snapshot.get("gpu_summary", {})
     git = snapshot.get("git", {})
     system = snapshot.get("system", {})
-    lines = [
-        "# Server Resource Snapshot",
-        "",
-        f"Created at: {snapshot.get('created_at', '')}",
-        f"Root: `{snapshot.get('root', '')}`",
-        "",
-        "## Source",
-        f"- branch: `{git.get('branch', '')}`",
-        f"- commit: `{git.get('commit', '')}`",
-        f"- dirty files: {git.get('dirty_file_count', 0)}",
-        "",
-        "## System",
-        f"- CPU count: {system.get('cpu_count', 0)}",
-        f"- load average: {system.get('load_average', [])}",
-        "",
-        "## GPU Summary",
-        f"- GPU count: {gpu_summary.get('gpu_count', 0)}",
-        f"- active GPUs: {gpu_summary.get('active_gpu_count', 0)}",
-        f"- idle GPUs: {gpu_summary.get('idle_gpu_count', 0)}",
-        f"- memory used MiB: {gpu_summary.get('memory_used_mib', 0)} / {gpu_summary.get('memory_total_mib', 0)}",
-        f"- max GPU utilization pct: {gpu_summary.get('max_utilization_gpu_pct', 0)}",
-        "",
-        "## GPUs",
-    ]
+    yield "# Server Resource Snapshot"
+    yield ""
+    yield f"Created at: {snapshot.get('created_at', '')}"
+    yield f"Root: `{snapshot.get('root', '')}`"
+    yield ""
+    yield "## Source"
+    yield f"- branch: `{git.get('branch', '')}`"
+    yield f"- commit: `{git.get('commit', '')}`"
+    yield f"- dirty files: {git.get('dirty_file_count', 0)}"
+    yield ""
+    yield "## System"
+    yield f"- CPU count: {system.get('cpu_count', 0)}"
+    yield f"- load average: {system.get('load_average', [])}"
+    yield ""
+    yield "## GPU Summary"
+    yield f"- GPU count: {gpu_summary.get('gpu_count', 0)}"
+    yield f"- active GPUs: {gpu_summary.get('active_gpu_count', 0)}"
+    yield f"- idle GPUs: {gpu_summary.get('idle_gpu_count', 0)}"
+    yield f"- memory used MiB: {gpu_summary.get('memory_used_mib', 0)} / {gpu_summary.get('memory_total_mib', 0)}"
+    yield f"- max GPU utilization pct: {gpu_summary.get('max_utilization_gpu_pct', 0)}"
+    yield ""
+    yield "## GPUs"
     gpus = snapshot.get("gpus") or []
     if gpus:
         for row in gpus:
-            lines.append(
+            yield (
                 "- "
                 f"cuda:{row.get('index')}: {row.get('name')} "
                 f"util={row.get('utilization_gpu_pct')}% "
                 f"mem={row.get('memory_used_mib')}/{row.get('memory_total_mib')} MiB"
             )
     else:
-        lines.append("- none detected")
-    return "\n".join(lines) + "\n"
+        yield "- none detected"
+
+
+def render_markdown(snapshot: dict[str, Any]) -> str:
+    return "\n".join(iter_markdown_lines(snapshot)) + "\n"
+
+
+def write_markdown_file(path: str | Path, snapshot: dict[str, Any]) -> Path:
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for line in iter_markdown_lines(snapshot):
+            handle.write(line)
+            handle.write("\n")
+    return out_path
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -326,13 +337,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.root,
         nvidia_smi_csv=args.nvidia_smi_csv or None,
     )
-    markdown = render_markdown(snapshot)
     if args.out_json:
         write_json_file(args.out_json, snapshot, sort_keys=True)
     if args.out_md:
-        Path(args.out_md).write_text(markdown, encoding="utf-8")
+        write_markdown_file(args.out_md, snapshot)
     if not args.out_json and not args.out_md:
-        sys.stdout.write(markdown)
+        sys.stdout.write(render_markdown(snapshot))
     return 0
 
 
