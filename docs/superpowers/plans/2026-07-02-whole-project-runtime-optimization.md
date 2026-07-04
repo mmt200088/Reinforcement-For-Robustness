@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `5f877ca`, the conservative
+not by raw commit count. As of source head `22b2fc8`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -150,6 +150,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2/Paean action space | `43ec3cc` | `experiments/server_command_runs/action_avg_k_direct_43ec3cc_20260704_044200/` | Compute average effective truncation K with direct integer sum/count arithmetic instead of dispatching through `np.mean(ks)`. |
 | Stage-2/Paean action space | `4db8e02` | `experiments/server_command_runs/action_k_accum_direct_4db8e02_20260704_044800/` | Share a direct effective-K sum/count accumulator and cached K-slot positions so avg/sum helpers avoid gathered K list allocation. |
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
+| Structured artifacts | `22b2fc8` | `experiments/server_command_runs/osr_baseline_hash_stream_22b2fc8_20260704_125000/` | Stream OSR baseline action vector JSON-array bytes directly into sha256, preserving fingerprint hashes without list and JSON-string materialization. |
 | Structured artifacts | `e0376a5` | `experiments/server_command_runs/jsonl_encoder_reuse_e0376a5_20260703_223743/` | Reuse one `JSONEncoder` for finite JSONL row writes instead of calling `json.dump()` for every row. |
 | Structured artifacts | `643ae60` | `experiments/server_command_runs/jsonl_resolve_once_643ae60_20260704_034331/` | Resolve JSONL paths once in shared readers and open the resolved file directly, avoiding duplicate filesystem checks in report/artifact scans. |
 | Structured artifacts | `2ded3e7` | `experiments/server_command_runs/glue_json_reader_2ded3e7_20260704_040930/` | Read BLB GLUE action configs through the shared streaming JSON loader instead of `json.loads(open(...).read())`. |

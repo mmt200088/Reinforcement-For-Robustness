@@ -1,0 +1,19 @@
+test_default_block_list_excludes_block_3 (tests.test_blb_osr.BlockExclusionTests.test_default_block_list_excludes_block_3) ... ok
+test_baseline_action_vec_hash_streams_json_array_without_materialization (tests.test_blb_osr.FingerprintTests.test_baseline_action_vec_hash_streams_json_array_without_materialization) ... ok
+test_changes_when_any_field_changes (tests.test_blb_osr.FingerprintTests.test_changes_when_any_field_changes) ... ok
+test_osr_version_included (tests.test_blb_osr.FingerprintTests.test_osr_version_included) ... ok
+test_stable_when_inputs_equal (tests.test_blb_osr.FingerprintTests.test_stable_when_inputs_equal) ... ok
+test_apply_per_slot_disables_recorded_cells (tests.test_blb_osr.PrePruneMaskTests.test_apply_per_slot_disables_recorded_cells) ... ok
+test_apply_per_slot_keeps_at_least_one_level_per_slot (tests.test_blb_osr.PrePruneMaskTests.test_apply_per_slot_keeps_at_least_one_level_per_slot) ... ok
+test_apply_per_slot_respects_protected_actions (tests.test_blb_osr.PrePruneMaskTests.test_apply_per_slot_respects_protected_actions) ... ok
+test_apply_per_slot_unrelated_layer_is_noop (tests.test_blb_osr.PrePruneMaskTests.test_apply_per_slot_unrelated_layer_is_noop) ... ok
+test_is_combo_pruned_matches_only_blacklisted_tuples (tests.test_blb_osr.PrePruneMaskTests.test_is_combo_pruned_matches_only_blacklisted_tuples) ... ok
+test_load_allows_mismatch_with_override (tests.test_blb_osr.ResultsRoundtripTests.test_load_allows_mismatch_with_override) ... ok
+test_load_refuses_fingerprint_mismatch_by_default (tests.test_blb_osr.ResultsRoundtripTests.test_load_refuses_fingerprint_mismatch_by_default) ... ok
+test_load_with_no_expected_fingerprint_skips_check (tests.test_blb_osr.ResultsRoundtripTests.test_load_with_no_expected_fingerprint_skips_check) ... ok
+test_save_load_preserves_all_fields (tests.test_blb_osr.ResultsRoundtripTests.test_save_load_preserves_all_fields) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.061s
+
+OK
