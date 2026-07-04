@@ -567,7 +567,8 @@ def main() -> int:
     }
     write_json_file(output_json, combined)
     output_html.write_text(_render_html(combined), encoding="utf-8")
-    print(json.dumps({"output_json": str(output_json), "output_html": str(output_html)}, ensure_ascii=False, indent=2))
+    json.dump({"output_json": str(output_json), "output_html": str(output_html)}, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0
 
 

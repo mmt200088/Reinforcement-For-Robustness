@@ -206,3 +206,14 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
             self.assertNotIn(token, source)
         self.assertIn("resolve_repo_path", source)
         self.assertIn("unique_rlpath_action_configs", source)
+
+    def test_main_streams_stdout_json_without_json_dumps_string(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        source = Path(rlpath.__file__).read_text(encoding="utf-8")
+        main_source = source[source.index("def main("):]
+
+        self.assertIn("json.dump(", main_source)
+        self.assertIn("sys.stdout", main_source)
+        self.assertIn('sys.stdout.write("\\n")', main_source)
+        self.assertNotIn("print(json.dumps(", main_source)
