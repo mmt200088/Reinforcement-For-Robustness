@@ -216,7 +216,8 @@ def main() -> int:
         "variants": results,
     }
     write_json_file(output_json, payload)
-    print(json.dumps({"output_json": str(output_json)}, ensure_ascii=False, indent=2))
+    json.dump({"output_json": str(output_json)}, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0
 
 
