@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `6137460`, the conservative
+not by raw commit count. As of source head `0c3c9b2`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -174,6 +174,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Reports / diagnostics | `65481ad` | `experiments/server_command_runs/stats_utils_mean_stream_65481ad_20260704_120000/` | Stream shared `mean_or_none()` float conversion and count tracking while preserving `math.fsum()` behavior, avoiding intermediate float-list materialization across report and diagnostic paths. |
 | Reports / diagnostics | `879c7dc` | `experiments/server_command_runs/diagnostics_ppo_mean_stream_879c7dc_20260704_121000/` | Compute Stage-2 diagnostics PPO warning means through the shared streaming helper instead of building short entropy/clip lists for `np.mean()`. |
 | Diagnostics | `032d2c1` | `experiments/server_command_runs/block4_diag_stdout_json_032d2c1_20260704_112821/` | Stream block4 fusion-install diagnosis CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
+| Diagnostics | `0c3c9b2` | `experiments/server_command_runs/diagnose_block4_defaults_0c3c9b2_20260704_125748/` | Reuse fixed RL-path Stage-1 default JSON strings in the block4 fusion-install diagnosis parser instead of dumping the same defaults again. |
 | Diagnostics | `3cafcc3` | `experiments/server_command_runs/invalid_blocks_report_json_3cafcc3_20260704_113312/` | Write invalid-block diagnosis `report.json` through shared `write_json_file()` instead of materializing a full JSON string before `Path.write_text()`. |
 | Reports / paper figures | `dcfea75` | `experiments/server_command_runs/paper_episode_column_dcfea75_20260703_225013/` | Read paper-figure episode rewards as a direct float column instead of building one dict per episode row. |
 | Reports / paper figures | `9356c77` | `experiments/server_command_runs/paper_figures_cli_names_9356c77_20260704_132500/` | Reuse one static `ALL_FIG_NAMES` tuple for `tools.paper_figures` parser defaults and help text instead of rebuilding `list(ALL_FIGS.keys())`. |
