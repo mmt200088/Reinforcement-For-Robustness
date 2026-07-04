@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `6d2e0bd`, the conservative
+not by raw commit count. As of source head `83b350f`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -169,6 +169,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `2f74c05` | `experiments/server_command_runs/fusion_action_eval_stdout_json_2f74c05_20260704_110908/` | Stream fusion-count action eval CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Paean final eval | `6d2e0bd` | `experiments/server_command_runs/fusion_action_eval_defaults_6d2e0bd_20260704_124423/` | Reuse fixed fusion-count action eval Stage-1 default JSON strings and manual-noise JSON instead of dumping the same defaults for every parser build or Paean action run. |
 | Stage-2 artifacts | `d125fd4` | `experiments/server_command_runs/fusion_rlpath_stdout_json_d125fd4_20260704_111300/` | Stream fusion-count RL-path eval CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
+| Stage-2 artifacts | `83b350f` | `experiments/server_command_runs/fusion_rlpath_defaults_83b350f_20260704_124951/` | Reuse fixed fusion-count RL-path Stage-1 default JSON strings instead of dumping the same defaults whenever the comparison parser is built. |
 | Reports / paper figures | `5a75eee` | `experiments/server_command_runs/stage2_monitor_html_stream_5a75eee_20260704_005141/` | Stream Stage-2 monitor HTML report rows and nested reward-probe/GPU JSON chunks directly to the file handle instead of materializing full JSON/table strings. |
 | Reports / diagnostics | `65481ad` | `experiments/server_command_runs/stats_utils_mean_stream_65481ad_20260704_120000/` | Stream shared `mean_or_none()` float conversion and count tracking while preserving `math.fsum()` behavior, avoiding intermediate float-list materialization across report and diagnostic paths. |
 | Reports / diagnostics | `879c7dc` | `experiments/server_command_runs/diagnostics_ppo_mean_stream_879c7dc_20260704_121000/` | Compute Stage-2 diagnostics PPO warning means through the shared streaming helper instead of building short entropy/clip lists for `np.mean()`. |
