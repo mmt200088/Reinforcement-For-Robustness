@@ -1676,8 +1676,8 @@ class BLBActionFinalEvaluationModule:
                 "random_groups": "enabled" if self.random_enabled else "disabled",
                 "cost_match_count": int(self.cost_match_count),
                 "cost_match_max_attempts": int(self.cost_match_max_attempts),
-                "action_ranges": list(self.action_ranges),
-                "action_fixed": list(self.action_fixed),
+                "action_ranges": self.action_ranges,
+                "action_fixed": self.action_fixed,
                 "repeat_n": int(self.repeat_n),
             },
         }
