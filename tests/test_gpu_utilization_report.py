@@ -441,6 +441,36 @@ class GpuUtilizationReportTest(unittest.TestCase):
             self.assertIn("- cuda:0: episodes=1", markdown)
             self.assertIn("Replan/optimizer mean seconds:", markdown)
 
+    def test_markdown_device_lists_do_not_materialize_iterables(self):
+        report = _load_report_module()
+
+        class NoListIterable:
+            def __init__(self, values):
+                self.values = tuple(values)
+
+            def __iter__(self):
+                return iter(self.values)
+
+        original_list = list
+
+        def guarded_list(value=(), *args, **kwargs):
+            if isinstance(value, NoListIterable):
+                raise AssertionError("render_markdown should stream device iterables")
+            return original_list(value, *args, **kwargs)
+
+        summary = {
+            "episodes": 1,
+            "visible_devices": NoListIterable(["cuda:0", "cuda:1"]),
+            "used_probe_devices": NoListIterable(["cuda:0"]),
+            "idle_visible_devices": NoListIterable(["cuda:1"]),
+        }
+        with mock.patch("builtins.list", guarded_list):
+            markdown = report.render_markdown(summary)
+
+        self.assertIn("Visible devices: cuda:0, cuda:1", markdown)
+        self.assertIn("Used probe devices: cuda:0", markdown)
+        self.assertIn("Idle visible devices: cuda:1", markdown)
+
 
 if __name__ == "__main__":
     unittest.main()

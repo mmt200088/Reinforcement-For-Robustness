@@ -11,6 +11,7 @@ import argparse
 import collections
 import csv
 import functools
+import itertools
 import os
 from pathlib import Path
 import re
@@ -359,8 +360,13 @@ def summarize_run(
     )
 
 
-def _join_or_none(values: Sequence[str]) -> str:
-    return ", ".join(values) if values else "none"
+def _join_or_none(values: Iterable[object]) -> str:
+    iterator = iter(values)
+    try:
+        first = next(iterator)
+    except StopIteration:
+        return "none"
+    return ", ".join(str(value) for value in itertools.chain((first,), iterator))
 
 
 def render_markdown(summary: Mapping[str, Any]) -> str:
@@ -368,9 +374,9 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
         "# GPU Utilization Report",
         "",
         f"Episodes: {summary.get('episodes', 0)}",
-        f"Visible devices: {_join_or_none(list(summary.get('visible_devices') or []))}",
-        f"Used probe devices: {_join_or_none(list(summary.get('used_probe_devices') or []))}",
-        f"Idle visible devices: {_join_or_none(list(summary.get('idle_visible_devices') or []))}",
+        f"Visible devices: {_join_or_none(summary.get('visible_devices') or ())}",
+        f"Used probe devices: {_join_or_none(summary.get('used_probe_devices') or ())}",
+        f"Idle visible devices: {_join_or_none(summary.get('idle_visible_devices') or ())}",
         "",
         "## Probe Timing",
     ]
