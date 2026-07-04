@@ -1153,6 +1153,19 @@ The red package failed the two new regression tests against the old source
 glob path). The green package passed those tests, `py_compile`, and the full
 `tests.test_report_fusion_count_map` suite (`21` tests).
 
+Progress 2026-07-04: `scripts/report_fusion_count_map.py` now streams its CLI
+stdout JSON summary with `json.dump(..., sys.stdout)` plus a trailing newline
+instead of materializing the summary through `json.dumps()` before `print()`.
+The report JSON artifact still uses `write_json_file()`, and generated HTML /
+action-config semantics are unchanged.
+
+Server evidence 2026-07-04: source commit `0980322` has focused RED/GREEN
+verification under
+`experiments/server_command_runs/fusion_report_stdout_json_0980322_20260704_104732/`.
+The RED test failed on the old `print(json.dumps(...))` stdout path. The GREEN
+gate passed `py_compile` and the full `tests.test_report_fusion_count_map`
+suite (`22` tests).
+
 Progress 2026-07-02: `scripts/report_fusion_count_map.py` now precomputes the
 static all-max baseline action, layer width, and block offsets once per
 action-config report instead of recomputing them for every generated group. A
@@ -2707,6 +2720,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   directory.
 - `9412e3b` GPU utilization Markdown device-list streaming, evidence committed
   in the `gpu_markdown_device_stream_9412e3b_20260704_104315` run directory.
+- `0980322` fusion-count map report stdout JSON streaming, evidence committed
+  in the `fusion_report_stdout_json_0980322_20260704_104732` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the
