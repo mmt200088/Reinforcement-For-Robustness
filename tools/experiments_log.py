@@ -471,7 +471,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             notes=args.notes,
             registry_path=args.registry_path,
         )
-        print(json.dumps(rec, indent=2, ensure_ascii=False))
+        _print_json(rec)
         return 0
 
     if args.cmd == "rebuild":

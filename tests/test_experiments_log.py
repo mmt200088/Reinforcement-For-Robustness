@@ -68,6 +68,38 @@ class ExperimentsLogTest(unittest.TestCase):
 
         self.assertEqual(rows, [record])
 
+    def test_register_json_output_streams_without_json_dumps(self):
+        with tempfile.TemporaryDirectory() as td:
+            registry = Path(td) / "registry.jsonl"
+            out = io.StringIO()
+
+            with (
+                mock.patch.object(experiments_log, "_git_info", return_value={}),
+                mock.patch.object(experiments_log, "_rebuild_index", return_value="index.md"),
+                mock.patch.object(
+                    experiments_log.json,
+                    "dumps",
+                    side_effect=AssertionError("register JSON output should stream to stdout"),
+                ),
+                contextlib.redirect_stdout(out),
+            ):
+                rc = experiments_log.main([
+                    "register",
+                    "--run-id",
+                    "run-register-json",
+                    "--dataset",
+                    "mrpc",
+                    "--registry-path",
+                    str(registry),
+                ])
+
+            rows = list(experiments_log._iter_records(str(registry)))
+
+        self.assertEqual(rc, 0)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(payload["run_id"], "run-register-json")
+        self.assertEqual([row["run_id"] for row in rows], ["run-register-json"])
+
     def test_latest_per_run_id_does_not_materialize_overwritten_records(self):
         rows = experiments_log._latest_per_run_id([
             LazyMaterializationRecord(
