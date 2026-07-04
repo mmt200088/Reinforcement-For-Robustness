@@ -10,10 +10,18 @@ from typing import Iterable, Sequence
 
 
 def mean_or_none(values: Iterable[float]) -> float | None:
-    vals = [float(value) for value in values]
-    if not vals:
+    count = 0
+
+    def iter_floats():
+        nonlocal count
+        for value in values:
+            count += 1
+            yield float(value)
+
+    total = math.fsum(iter_floats())
+    if not count:
         return None
-    return float(math.fsum(vals)) / float(len(vals))
+    return float(total) / float(count)
 
 
 def mean_or_default(values: Iterable[float], *, default: float = 0.0) -> float:
