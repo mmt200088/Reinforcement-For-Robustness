@@ -41,6 +41,7 @@ from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from transformers.trainer_callback import TrainerCallback
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score
 from blb_stage2_rl.eval_metrics import (
     summarize_eval_trials,
 )
@@ -5366,8 +5367,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 loss_average="batch",
             )
             avg_loss = result.loss
-            metric1 = result.metric1
-            metric2 = result.metric2
+            metric1, metric2 = self._stage1_legacy_metric_pair_from_eval_result(result)
             avg_time = result.time_ms
         except Exception as e:
             print(f"[警告] 为数据集（dataset）'{ds}' 计算指标失败: {e}")
@@ -5432,6 +5432,18 @@ class LayerImportanceEvaluator(TrainerCallback):
     @staticmethod
     def _normalize_logits_for_metrics(logits, expected_batch_size):
         return shared_normalize_logits_for_metrics(logits, expected_batch_size)
+
+    def _stage1_legacy_metric_pair_from_eval_result(self, result):
+        pred_classes = self._logits_to_classes(result.logits)
+        labels = result.labels
+        metric1 = accuracy_score(labels, pred_classes)
+        ds = str(getattr(self, "dataset_key", "") or "").lower()
+        metric2 = (
+            f1_score(labels, pred_classes, average="weighted")
+            if ds in ("mrpc", "qqp")
+            else metric1
+        )
+        return float(metric1), float(metric2)
 
     def _evaluate_accuracy_on_dataloader(self, dataloader):
         """在指定 dataloader 上计算 accuracy（用于 MNLI mismatched）"""
