@@ -347,11 +347,12 @@ def run_compare(argv: Sequence[str] | None = None) -> Dict[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     payload = run_compare(argv)
-    print(json.dumps({
+    json.dump({
         "output_dir": "reports/blb_opt/phase1b_consistency",
         "all_invariants_pass": bool(payload["all_invariants_pass"]),
         "invariants": payload["invariants"],
-    }, ensure_ascii=False, indent=2))
+    }, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0 if payload["all_invariants_pass"] else 2
 
 
