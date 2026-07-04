@@ -39,6 +39,19 @@ class Stage1ParallelSemanticsTest(unittest.TestCase):
         self.assertIn("per_worker_seconds", source)
         self.assertIn("speedup_vs_sequential", source)
 
+    def test_parallel_rollout_logs_forward_and_report_write_timing(self):
+        evaluator_source = _source(LAYER_EVALUATOR)
+        runner_source = _source(PARALLEL_RUNNER)
+
+        self.assertIn("_stage1_parallel_model_forward_seconds", evaluator_source)
+        self.assertIn("_stage1_worker_timing_snapshot", evaluator_source)
+        self.assertIn('"model_forward_seconds"', evaluator_source)
+        self.assertIn('"report_write_seconds"', evaluator_source)
+        self.assertIn("model_forward=", evaluator_source)
+        self.assertIn("report_write=", evaluator_source)
+        self.assertIn("model_forward_seconds", runner_source)
+        self.assertIn("model_forward_calls", runner_source)
+
     def test_policy_replica_sync_reuses_one_state_dict_per_window(self):
         region = _method_region(_source(PARALLEL_RUNNER), "_sync_policy_replicas")
 

@@ -150,6 +150,8 @@ class Stage1ParallelRunnerDiagnostics:
     per_worker_seconds: List[float] = field(default_factory=list)
     per_worker_episode_counts: List[int] = field(default_factory=list)
     devices: List[str] = field(default_factory=list)
+    model_forward_seconds: float = 0.0
+    model_forward_calls: int = 0
 
     @property
     def speedup_vs_sequential(self) -> float:
@@ -215,6 +217,13 @@ class Stage1ParallelRunner:
                 w.gtrxl_replica.load_state_dict(state_dict)
             w.gtrxl_replica.eval()
 
+    def _timing_snapshot(self) -> Dict[str, Any]:
+        evaluator = getattr(self.workers[0], "evaluator", None)
+        snapshot_fn = getattr(evaluator, "_stage1_worker_timing_snapshot", None)
+        if callable(snapshot_fn):
+            return dict(snapshot_fn())
+        return {}
+
     def run_window(
             self,
             *,
@@ -245,6 +254,7 @@ class Stage1ParallelRunner:
         threads: List[threading.Thread] = []
         errors: List[Tuple[int, BaseException]] = []
         errors_lock = threading.Lock()
+        timing_before = self._timing_snapshot()
 
         def worker_thread(w_idx: int) -> None:
             worker = self.workers[w_idx]
@@ -276,6 +286,17 @@ class Stage1ParallelRunner:
         for t in threads:
             t.join()
         wall_seconds = time.time() - wall_t0
+        timing_after = self._timing_snapshot()
+        model_forward_seconds = max(
+            0.0,
+            float(timing_after.get("model_forward_seconds", 0.0))
+            - float(timing_before.get("model_forward_seconds", 0.0)),
+        )
+        model_forward_calls = max(
+            0,
+            int(timing_after.get("model_forward_calls", 0))
+            - int(timing_before.get("model_forward_calls", 0)),
+        )
 
         if errors:
             # Re-raise the first error so the caller sees the same traceback
@@ -299,6 +320,8 @@ class Stage1ParallelRunner:
             per_worker_seconds=list(per_worker_wall),
             per_worker_episode_counts=[len(a) for a in assignments],
             devices=[str(w.device) for w in self.workers],
+            model_forward_seconds=model_forward_seconds,
+            model_forward_calls=model_forward_calls,
         )
 
         # Determinism signature over the window's rollouts in GLOBAL order: a hash
@@ -478,5 +501,7 @@ def format_diagnostics_line(diag: Stage1ParallelRunnerDiagnostics) -> str:
         f"[stage1-rollout] window={diag.window_idx} eps_per_worker={diag.episodes_per_worker}  "
         f"devices=[{devs}] counts=[{counts}]  "
         f"wall={diag.wall_seconds:.3f}s worker_seconds=[{ws}]  "
-        f"speedup={diag.speedup_vs_sequential:.2f}x"
+        f"speedup={diag.speedup_vs_sequential:.2f}x "
+        f"model_forward={diag.model_forward_seconds:.3f}s "
+        f"forward_calls={diag.model_forward_calls}"
     )

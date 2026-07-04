@@ -150,6 +150,22 @@ class Stage1ParallelReportTest(unittest.TestCase):
         self.assertEqual(summary["total_episodes"], 60)
         self.assertEqual(summary["total_wall_seconds"], 120.0)
 
+    def test_parse_log_lines_summarizes_forward_and_report_write_timing(self):
+        report = _load_report_module()
+
+        total_line = (
+            "  [stage1-rollout-total] window=3 episodes=60 total=120.000s "
+            "collect=100.000s model_forward=91.500s replay=3.000s "
+            "detail=2.000s report_write=2.000s ppo_update=10.000s "
+            "other=5.000s throughput=1800.0ep/h\n"
+        )
+
+        summary = report.parse_log_lines([total_line])
+
+        self.assertEqual(summary["windows"], 1)
+        self.assertEqual(summary["timing_seconds"]["model_forward"], 91.5)
+        self.assertEqual(summary["timing_seconds"]["report_write"], 2.0)
+
     def test_cli_writes_json_and_markdown(self):
         report = _load_report_module()
 

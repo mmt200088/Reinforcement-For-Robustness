@@ -32,6 +32,7 @@ import copy
 import itertools
 import math
 import sys
+import threading
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import numpy as np
 import torch
@@ -2406,6 +2407,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 命中返回的是先前算出的同一组浮点数 → 对 rollout_sig / 1==N 完全透明。
         # 仅 Stage-1 明文评估可用；任何带噪声采样的评估路径不得使用。
         self._stage1_worker_eval_cache = Stage1EvalCache()
+        self._stage1_parallel_timing_lock = threading.Lock()
+        self._stage1_parallel_model_forward_seconds = 0.0
+        self._stage1_parallel_model_forward_calls = 0
         # Track one-time device placement; eval mode is re-asserted before each forward.
         self._eval_infra_ready = False
         # 记录上一次已应用的 (gelu_degrees, softmax_degrees); apply_configuration 是幂等的,
@@ -4577,6 +4581,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         # 2) Forward via the explicit-model/device variant of _run_evaluation.
         dataloader = self.dataloaders[split_name]
+        _forward_t0 = time.time()
         result = self._run_evaluation(
             dataloader,
             use_train=(split_name == "train"),
@@ -4584,9 +4589,37 @@ class LayerImportanceEvaluator(TrainerCallback):
             model=model,
             device=device,
         )
+        self._record_stage1_parallel_model_forward(time.time() - _forward_t0)
         if _shared_cache is not None:
             _shared_cache.put(_cache_key, result)
         return result
+
+    def _record_stage1_parallel_model_forward(self, seconds):
+        lock = self._stage1_parallel_timing_state_lock()
+        with lock:
+            self._stage1_parallel_model_forward_seconds += max(0.0, float(seconds))
+            self._stage1_parallel_model_forward_calls += 1
+
+    def _stage1_worker_timing_snapshot(self):
+        lock = self._stage1_parallel_timing_state_lock()
+        with lock:
+            return {
+                "model_forward_seconds": float(self._stage1_parallel_model_forward_seconds),
+                "model_forward_calls": int(self._stage1_parallel_model_forward_calls),
+            }
+
+    def _stage1_parallel_timing_state_lock(self):
+        lock = getattr(self, "_stage1_parallel_timing_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._stage1_parallel_timing_lock = lock
+            self._stage1_parallel_model_forward_seconds = float(
+                getattr(self, "_stage1_parallel_model_forward_seconds", 0.0)
+            )
+            self._stage1_parallel_model_forward_calls = int(
+                getattr(self, "_stage1_parallel_model_forward_calls", 0)
+            )
+        return lock
 
     def stage1_final_evaluate(self, gelu_degrees, softmax_degrees, use_train=False, split=None):
         """Stage-1 final eval is plaintext-only: GELU/Softmax replacement, no BLB noise."""
@@ -6380,6 +6413,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             _stage1_parallel_window_t0 = None
             _stage1_parallel_window_idx = None
             _stage1_parallel_collect_seconds = 0.0
+            _stage1_parallel_model_forward_seconds = 0.0
+            _stage1_parallel_model_forward_calls = 0
             _stage1_parallel_replay_seconds = 0.0
             _stage1_parallel_detail_seconds = 0.0
 
@@ -6573,6 +6608,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                         from stage1_rl.parallel_runner import format_diagnostics_line
 
                         if _stage1_parallel_runner.last_diagnostics is not None:
+                            _stage1_parallel_model_forward_seconds = float(
+                                _stage1_parallel_runner.last_diagnostics.model_forward_seconds
+                            )
+                            _stage1_parallel_model_forward_calls = int(
+                                _stage1_parallel_runner.last_diagnostics.model_forward_calls
+                            )
                             self.log(
                                 "  " + format_diagnostics_line(
                                     _stage1_parallel_runner.last_diagnostics
@@ -6916,8 +6957,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                             "episodes": int(_stage1_parallel_window_episodes),
                             "total_seconds": float(_stage1_parallel_total_seconds),
                             "collect_seconds": float(_stage1_parallel_collect_seconds),
+                            "model_forward_seconds": float(_stage1_parallel_model_forward_seconds),
+                            "model_forward_calls": int(_stage1_parallel_model_forward_calls),
                             "replay_seconds": float(_stage1_parallel_replay_seconds),
                             "detail_seconds": float(_stage1_parallel_detail_seconds),
+                            "report_write_seconds": float(_stage1_parallel_detail_seconds),
                             "ppo_update_seconds": float(_stage1_ppo_update_seconds),
                             "other_seconds": float(_stage1_parallel_other_seconds),
                             "throughput_ep_per_hour": float(_stage1_parallel_ep_per_hour),
@@ -6934,8 +6978,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                             f"episodes={_stage1_parallel_window_episodes} "
                             f"total={_stage1_parallel_total_seconds:.3f}s "
                             f"collect={_stage1_parallel_collect_seconds:.3f}s "
+                            f"model_forward={_stage1_parallel_model_forward_seconds:.3f}s "
                             f"replay={_stage1_parallel_replay_seconds:.3f}s "
                             f"detail={_stage1_parallel_detail_seconds:.3f}s "
+                            f"report_write={_stage1_parallel_detail_seconds:.3f}s "
                             f"ppo_update={_stage1_ppo_update_seconds:.3f}s "
                             f"other={_stage1_parallel_other_seconds:.3f}s "
                             f"throughput={_stage1_parallel_ep_per_hour:.1f}ep/h"
@@ -6943,6 +6989,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                         _stage1_parallel_window_t0 = None
                         _stage1_parallel_window_idx = None
                         _stage1_parallel_collect_seconds = 0.0
+                        _stage1_parallel_model_forward_seconds = 0.0
+                        _stage1_parallel_model_forward_calls = 0
                         _stage1_parallel_replay_seconds = 0.0
                         _stage1_parallel_detail_seconds = 0.0
                     

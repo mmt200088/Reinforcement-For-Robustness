@@ -49,13 +49,16 @@ TOTAL_RE = re.compile(
     r"episodes=(?P<episodes>\d+)\s+"
     r"total=(?P<total>[0-9.]+)s\s+"
     r"collect=(?P<collect>[0-9.]+)s\s+"
+    r"(?:model_forward=(?P<model_forward>[0-9.]+)s\s+)?"
     r"replay=(?P<replay>[0-9.]+)s\s+"
     r"detail=(?P<detail>[0-9.]+)s\s+"
+    r"(?:report_write=(?P<report_write>[0-9.]+)s\s+)?"
     r"ppo_update=(?P<ppo_update>[0-9.]+)s\s+"
     r"other=(?P<other>[0-9.]+)s\s+"
     r"throughput=(?P<throughput>[0-9.]+)ep/h"
 )
 COMPONENT_KEYS = ("collect", "replay", "detail", "ppo_update", "other")
+TIMING_KEYS = ("model_forward", "report_write")
 
 
 def _split_csv(text: str) -> list[str]:
@@ -88,6 +91,7 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
     total_episodes = 0
     total_wall_seconds = 0.0
     component_seconds = {key: 0.0 for key in COMPONENT_KEYS}
+    timing_seconds = {key: 0.0 for key in TIMING_KEYS}
     speedup_sum = 0.0
     speedup_count = 0
     max_speedup: float | None = None
@@ -111,6 +115,15 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
                 total_wall_seconds += float(total_match.group("total"))
                 for key in COMPONENT_KEYS:
                     component_seconds[key] += float(total_match.group(key))
+                model_forward = total_match.group("model_forward")
+                if model_forward is not None:
+                    timing_seconds["model_forward"] += float(model_forward)
+                report_write = total_match.group("report_write")
+                timing_seconds["report_write"] += (
+                    float(report_write)
+                    if report_write is not None
+                    else float(total_match.group("detail"))
+                )
             continue
 
         if "[stage1-rollout]" not in line:
@@ -169,6 +182,7 @@ def parse_log_lines(lines: Iterable[str]) -> dict[str, Any]:
         "worker_episode_counts_by_device": dict(sorted(worker_episode_counts.items())),
         "component_seconds": component_seconds,
         "component_share": component_share,
+        "timing_seconds": timing_seconds,
         "eval_cache": last_cache,
         "warnings": warnings,
     }
@@ -211,6 +225,14 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
             share = shares.get(key)
             share_text = "n/a" if share is None else f"{float(share):.3f}"
             lines.append(f"- {key}: {seconds} ({share_text})")
+    else:
+        lines.append("- none")
+    timing = summary.get("timing_seconds") or {}
+    lines.append("")
+    lines.append("## Nested Timing Seconds")
+    if timing:
+        for key, seconds in timing.items():
+            lines.append(f"- {key}: {seconds}")
     else:
         lines.append("- none")
     cache = summary.get("eval_cache") or {}
