@@ -1,0 +1,20 @@
+test_markdown_device_lists_do_not_materialize_iterables (tests.test_gpu_utilization_report.GpuUtilizationReportTest.test_markdown_device_lists_do_not_materialize_iterables) ... FAIL
+
+======================================================================
+FAIL: test_markdown_device_lists_do_not_materialize_iterables (tests.test_gpu_utilization_report.GpuUtilizationReportTest.test_markdown_device_lists_do_not_materialize_iterables)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/gpu_markdown_device_stream_red_20260704_104046/src/tests/test_gpu_utilization_report.py", line 468, in test_markdown_device_lists_do_not_materialize_iterables
+    markdown = report.render_markdown(summary)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/gpu_markdown_device_stream_red_20260704_104046/src/scripts/gpu_utilization_report.py", line 371, in render_markdown
+    f"Visible devices: {_join_or_none(list(summary.get('visible_devices') or []))}",
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/gpu_markdown_device_stream_red_20260704_104046/src/tests/test_gpu_utilization_report.py", line 458, in guarded_list
+    raise AssertionError("render_markdown should stream device iterables")
+AssertionError: render_markdown should stream device iterables
+
+----------------------------------------------------------------------
+Ran 1 test in 0.060s
+
+FAILED (failures=1)

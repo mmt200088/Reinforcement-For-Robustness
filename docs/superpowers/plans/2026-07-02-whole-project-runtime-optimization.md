@@ -952,6 +952,18 @@ precompiled hot-path float regex for episode timing fields and sampled
 numeric parse. A local 200k-value mixed GPU/timing benchmark preserved parsed
 values and reduced `_float_value()` from `0.103639s` to `0.072524s` (`1.43x`).
 
+Progress 2026-07-04: `scripts/gpu_utilization_report.py` Markdown rendering now
+streams visible/used/idle device iterables through `_join_or_none()` instead of
+wrapping each collection in `list()` before joining. Empty iterables still
+render as `none`, and existing Markdown device order is preserved.
+
+Server evidence 2026-07-04: source commit `9412e3b` has focused RED/GREEN
+verification under
+`experiments/server_command_runs/gpu_markdown_device_stream_9412e3b_20260704_104315/`.
+The RED test failed on the old `list(summary.get(...))` path. The GREEN gate
+passed `py_compile`, the new no-materialization test, representative CLI
+Markdown output, and core probe-device summary output.
+
 Progress 2026-07-02: `scripts/stage2_reward_probe_scaling_report.py` now uses
 the same precompiled float regex for probe wall/speedup values, trial counts,
 and sampled `nvidia-smi` utilization/memory fields. A local 200k-value mixed
@@ -2693,6 +2705,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
 - `5d248a0` Stage-1 plaintext repeat-eval stdout JSON streaming, evidence
   committed in the `stage1_stdout_json_stream_5d248a0_20260704_103647` run
   directory.
+- `9412e3b` GPU utilization Markdown device-list streaming, evidence committed
+  in the `gpu_markdown_device_stream_9412e3b_20260704_104315` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the
