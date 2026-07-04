@@ -535,7 +535,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_slots_per_layer=args.expected_slots_per_layer,
     )
     paths = write_registry_artifacts(payload, args.output_dir)
-    print(json.dumps(paths, ensure_ascii=False, indent=2))
+    json.dump(paths, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0
 
 

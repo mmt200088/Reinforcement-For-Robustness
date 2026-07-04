@@ -104,6 +104,15 @@ class BLBExportActionRegistryLightTests(unittest.TestCase):
         self.assertEqual(registry._all_max_action_index(record, k_levels=k_levels), 1)
         self.assertEqual(k_levels.iterations, 1)
 
+    def test_main_streams_stdout_json_without_json_dumps_string(self):
+        import scripts.blb_export_action_registry as registry
+
+        source = inspect.getsource(registry.main)
+
+        self.assertIn("json.dump(paths, sys.stdout", source)
+        self.assertIn('sys.stdout.write("\\n")', source)
+        self.assertNotIn("print(json.dumps(paths", source)
+
 
 if __name__ == "__main__":
     unittest.main()
