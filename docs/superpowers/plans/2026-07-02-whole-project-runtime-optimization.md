@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `9f3864d`, the conservative
+not by raw commit count. As of source head `248a0ec`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -178,6 +178,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `74d5d28` | `experiments/server_command_runs/fusion_report_occurrences_74d5d28_20260704_073030/` | Accumulate fusion report graph occurrence layers as sets during the schedule scan instead of building lists and then deduplicating with `sorted(set(v))`. |
 | Rescale/fusion maps | `c3db582` | `experiments/server_command_runs/fusion_report_action_sequence_c3db582_20260704_073447/` | Index fusion report option/base action-index sequences directly in `_option_slot_summary()` instead of copying the full sequences through integer list comprehensions. |
 | Rescale/fusion maps | `b0a1928` | `experiments/server_command_runs/fusion_report_base_action_b0a1928_20260704_073904/` | Pass the fusion report base option action-index sequence directly into option summaries instead of copying it through an integer list comprehension once per graph. |
+| Rescale/fusion maps | `248a0ec` | `experiments/server_command_runs/fusion_map_gate_filter_248a0ec_20260704_094103/` | Reuse the fusion-report canonical map-path filter in the active `SERVER_COMMAND.md` phase2 map gate, so sidecars such as `map_summary.json` are skipped before JSON parsing instead of being opened and failing on missing `options`. |
 | Rescale bridge | `dab3b8b` | `experiments/server_command_runs/baseline_archive_cache_dab3b8b_20260703_212500/` | Cache static-skeleton archive parses by path, mtime, and size while returning fresh caller lists. |
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
 
@@ -194,9 +195,10 @@ Remaining main-chain gates before this goal can be complete:
 3. **Stage-2 scheduling:** keep core RL files out of scope while the Stage-2
    RL agent is active; after handoff, run 1GPU vs NGPU parity and wall-clock
    gates before promoting GPU defaults.
-4. **Rescale/fusion maps:** finish profiled session/graph/DAG reuse and verify
-   large-build behavior with server logs when the claim is about build wall
-   time or memory.
+4. **Rescale/fusion maps:** the active `SERVER_COMMAND.md` sidecar parser gap
+   is closed by `248a0ec`. Continue only with profiled session/graph/DAG reuse
+   and large-build server evidence when the claim is about build wall time or
+   memory.
 5. **Paean final eval:** finish model/tokenizer reuse and independent-config
    GPU scheduling only after fixed-action metric parity evidence.
 6. **Artifacts/reports:** keep required JSON/JSONL/NPZ data complete while
@@ -1090,6 +1092,21 @@ before loading fusion maps for detailed slot-eval reports. The report keeps
 deterministic map ordering while skipping post-build sidecars such as
 `map_summary.json` before JSON parsing, and a regression test patches
 `Path.glob()` out of the loader.
+
+Progress 2026-07-04: `scripts/report_fusion_count_map.py` now exposes the
+canonical fusion-map iterator as `iter_fusion_map_paths()`, and the active
+`SERVER_COMMAND.md` phase2 map gate imports that iterator instead of using
+`glob("*.json")` plus ad hoc `_summary.json` filtering. This closes the
+remaining post-build parser/audit gap where sidecars such as `map_summary.json`
+could be opened as maps and fail on missing `options`.
+
+Server evidence 2026-07-04: source commit `248a0ec` has red/green verification
+under
+`experiments/server_command_runs/fusion_map_gate_filter_248a0ec_20260704_094103/`.
+The red package failed the two new regression tests against the old source
+(`iter_fusion_map_paths` missing, and `SERVER_COMMAND.md` still using the old
+glob path). The green package passed those tests, `py_compile`, and the full
+`tests.test_report_fusion_count_map` suite (`21` tests).
 
 Progress 2026-07-02: `scripts/report_fusion_count_map.py` now precomputes the
 static all-max baseline action, layer width, and block offsets once per
@@ -2570,6 +2587,9 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   directory.
 - `b0a1928` fusion report base action direct pass-through, evidence committed
   in the `fusion_report_base_action_b0a1928_20260704_073904` run directory.
+- `248a0ec` active SERVER_COMMAND fusion-map gate sidecar filtering, evidence
+  committed in the `fusion_map_gate_filter_248a0ec_20260704_094103` run
+  directory.
 - `dab3b8b` static-skeleton archive cache, evidence committed in the
   `baseline_archive_cache_dab3b8b_20260703_212500` run directory.
 - `cb215bd` skeleton profile config discovery, evidence committed in the
