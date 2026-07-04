@@ -610,6 +610,7 @@ ALL_FIGS = {
     "ppo_dynamics": fig_ppo_dynamics,
     "cost_vs_accuracy": fig_cost_vs_accuracy,
 }
+ALL_FIG_NAMES = tuple(ALL_FIGS)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -622,8 +623,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="If set, treat all --runs as seeds and plot mean ± std on training_curves")
     ap.add_argument("--out", required=True, help="Output directory")
     ap.add_argument("--formats", nargs="+", default=["png", "pdf"])
-    ap.add_argument("--figs", nargs="+", default=list(ALL_FIGS.keys()),
-                    help=f"Which figures to render; default = all. Options: {list(ALL_FIGS.keys())}")
+    ap.add_argument("--figs", nargs="+", default=ALL_FIG_NAMES,
+                    help=f"Which figures to render; default = all. Options: {ALL_FIG_NAMES}")
     ap.add_argument("--single-column", action="store_true",
                     help="Render at single-column width (3.5\") instead of double (7\")")
     ap.add_argument("--latex-tables", action="store_true",

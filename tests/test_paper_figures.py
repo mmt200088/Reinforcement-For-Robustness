@@ -370,6 +370,17 @@ class PaperFiguresTest(unittest.TestCase):
         self.assertEqual(captured["mean_len"], 3)
         self.assertEqual(captured["band_len"], (3, 3))
 
+    def test_cli_reuses_static_figure_name_tuple_for_parser_defaults(self):
+        source = PAPER_FIGURES_PATH.read_text(encoding="utf-8")
+        cli_region = source[
+            source.index("ALL_FIGS = {"):
+            source.index("\n\nif __name__ == \"__main__\":")
+        ]
+
+        self.assertIn("ALL_FIG_NAMES = tuple(ALL_FIGS)", cli_region)
+        self.assertIn("default=ALL_FIG_NAMES", cli_region)
+        self.assertNotIn("list(ALL_FIGS.keys())", cli_region)
+
 
 if __name__ == "__main__":
     unittest.main()
