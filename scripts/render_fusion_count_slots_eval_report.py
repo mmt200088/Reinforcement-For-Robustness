@@ -42,6 +42,31 @@ def _fmt_num(value: Any, digits: int = 6) -> str:
         return str(value)
 
 
+class _HtmlPartsWriter:
+    def __init__(self, path: Path):
+        self._handle = path.open("w", encoding="utf-8")
+        self._first = True
+
+    def append(self, value: Any) -> None:
+        if not self._first:
+            self._handle.write("\n")
+        self._handle.write(str(value))
+        self._first = False
+
+    def extend(self, values: Iterable[Any]) -> None:
+        for value in values:
+            self.append(value)
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def __enter__(self) -> "_HtmlPartsWriter":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
+
+
 def _scalar_rows(payload: Mapping[str, Any]) -> list[list[Any]]:
     rows: list[list[Any]] = []
     for key in sorted(payload):
@@ -535,16 +560,17 @@ def _boost_summary_rows(
     return rows
 
 
-def render(
+def _emit_rendered_html(
     combined: Mapping[str, Any],
     *,
     artifact_dir: Path,
     run_name: str,
     maps: Mapping[str, Mapping[str, Any]],
-) -> str:
+    parts: Any,
+) -> None:
     ctx = combined.get("map_report_context", {})
     protocol = combined.get("evaluation_protocol", {})
-    parts = [
+    parts.extend([
         "<!doctype html><html><head><meta charset='utf-8'>",
         "<title>Fusion Count Slot Eval Detailed Report</title>",
         "<style>",
@@ -613,7 +639,7 @@ def render(
             ],
             _boost_summary_rows(combined, maps),
         ),
-    ]
+    ])
 
     baseline = combined.get("baseline", {})
     baseline_result = next(
@@ -707,7 +733,42 @@ def render(
         ])
 
     parts.append("</main></body></html>")
+
+
+def render(
+    combined: Mapping[str, Any],
+    *,
+    artifact_dir: Path,
+    run_name: str,
+    maps: Mapping[str, Mapping[str, Any]],
+) -> str:
+    parts: list[str] = []
+    _emit_rendered_html(
+        combined,
+        artifact_dir=artifact_dir,
+        run_name=run_name,
+        maps=maps,
+        parts=parts,
+    )
     return "\n".join(parts)
+
+
+def write_rendered_html(
+    output_html: Path,
+    combined: Mapping[str, Any],
+    *,
+    artifact_dir: Path,
+    run_name: str,
+    maps: Mapping[str, Mapping[str, Any]],
+) -> None:
+    with _HtmlPartsWriter(output_html) as parts:
+        _emit_rendered_html(
+            combined,
+            artifact_dir=artifact_dir,
+            run_name=run_name,
+            maps=maps,
+            parts=parts,
+        )
 
 
 def main() -> int:
@@ -727,9 +788,12 @@ def main() -> int:
     combined = read_json_file(combined_path)
     maps = _load_maps(map_dir)
     output_html.parent.mkdir(parents=True, exist_ok=True)
-    output_html.write_text(
-        render(combined, artifact_dir=artifact_dir, run_name=run_name, maps=maps),
-        encoding="utf-8",
+    write_rendered_html(
+        output_html,
+        combined,
+        artifact_dir=artifact_dir,
+        run_name=run_name,
+        maps=maps,
     )
     print(output_html)
     return 0

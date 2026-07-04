@@ -82,6 +82,25 @@ class FusionCountSlotsEvalReportTest(unittest.TestCase):
         self.assertEqual(second["fusion_count"], 1)
         self.assertEqual(options.iterations, 1)
 
+    def test_main_streams_html_report_without_full_render_string_write(self):
+        report = _load_report_module()
+        source = REPORT_PATH.read_text(encoding="utf-8")
+        main_region = source[source.index("def main() -> int:"):]
+
+        self.assertTrue(hasattr(report, "write_rendered_html"))
+        self.assertTrue(hasattr(report, "_HtmlPartsWriter"))
+        self.assertIn("_HtmlPartsWriter(output_html)", source)
+        self.assertNotIn("output_html.write_text(\n        render(", main_region)
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "parts.html"
+            writer = report._HtmlPartsWriter(path)
+            writer.append("alpha")
+            writer.extend(["beta", "gamma"])
+            writer.close()
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "alpha\nbeta\ngamma")
+
 
 if __name__ == "__main__":
     unittest.main()
