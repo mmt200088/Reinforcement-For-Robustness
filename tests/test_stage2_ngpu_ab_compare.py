@@ -1,5 +1,6 @@
 import argparse
 import builtins
+import io
 import importlib.util
 import inspect
 import pathlib
@@ -422,6 +423,46 @@ class Stage2NgpuCompareTests(unittest.TestCase):
         self.assertIn("PPO update equality: FAIL", report)
         self.assertIn("ppo_update[1].entropy", report)
         self.assertIn("[FATAL] equality requirement failed", report)
+
+    def test_main_streams_output_without_build_report_string(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            one_path = root / "one.jsonl"
+            many_path = root / "many.jsonl"
+            one_path.write_text(
+                ngpu_mod.json.dumps(_row(0, timestamp=1.0, device="cuda:0", pareto_kind="")) + "\n",
+                encoding="utf-8",
+            )
+            many_path.write_text(
+                ngpu_mod.json.dumps(_row(0, timestamp=2.0, device="cuda:1", pareto_kind="")) + "\n",
+                encoding="utf-8",
+            )
+            out_path = root / "report.txt"
+            argv = [
+                "stage2_ngpu_ab_compare.py",
+                "--one", str(one_path),
+                "--many", str(many_path),
+                "--out", str(out_path),
+                "--require-equal",
+            ]
+
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(
+                    ngpu_mod,
+                    "build_report",
+                    side_effect=AssertionError("main should stream report lines"),
+                ),
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            ):
+                rc = ngpu_mod.main()
+
+            out_text = out_path.read_text(encoding="utf-8")
+            stdout_text = stdout.getvalue()
+
+        self.assertEqual(rc, 0)
+        self.assertIn("quality/effect equality: PASS", out_text)
+        self.assertEqual(out_text, stdout_text)
 
 
 if __name__ == "__main__":

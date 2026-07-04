@@ -341,7 +341,7 @@ def _timing_report_lines(label: str, summary: Mapping[str, float]) -> List[str]:
     return lines
 
 
-def build_report(args: argparse.Namespace) -> str:
+def iter_report_lines(args: argparse.Namespace) -> Iterable[str]:
     one = _load_episodes(args.one)
     many = _load_episodes(args.many)
     equality_ok, diffs = compare_rows(
@@ -434,87 +434,111 @@ def build_report(args: argparse.Namespace) -> str:
     scoped_noise_detected = many_markers.get("worker-local probe noise scopes active", False)
     worker_streams_detected = many_markers.get("worker-local CUDA probe streams active", False)
     cpu_policy_detected = many_markers.get("policy_device=cpu", False)
-    lines = [
-        "==== Stage-2 N-GPU A/B Verdict ====",
-        f"1GPU episodes: {len(one)}",
-        f"NGPU episodes: {len(many)}",
-        f"quality/effect equality: {'PASS' if equality_ok else 'FAIL'}",
-        f"strict diagnostic equality: {'PASS' if not diag_diffs else 'DIFF'}",
-        (
-            "PPO update equality: n/a"
-            if ppo_equality_ok is None
-            else f"PPO update equality: {'PASS' if ppo_equality_ok else 'FAIL'}"
-        ),
-        (
-            "PPO update counts: n/a"
-            if ppo_equality_ok is None
-            else f"PPO update counts: 1GPU={one_ppo_count} NGPU={many_ppo_count}"
-        ),
-        f"wall source: {'wall file' if one_wall is not None and many_wall is not None else 'episode timestamps'}",
-        f"1GPU wall_s: {_fmt(one_wall_for_speed)}",
-        f"NGPU wall_s: {_fmt(many_wall_for_speed)}",
-        f"1GPU episodes/hour: {_fmt(one_eph)}",
-        f"NGPU episodes/hour: {_fmt(many_eph)}",
-        f"speedup: {_fmt(speedup, 'x')}",
-        f"NGPU distinct probe devices: {many_device_count}",
-        f"speedup/device_count: {_fmt(speedup_fraction_of_devices)}",
-        (
-            "NGPU device episode balance min/max: n/a"
-            if many_episode_min is None or many_episode_max is None
-            else f"NGPU device episode balance min/max: {many_episode_min:.0f}/{many_episode_max:.0f}"
-        ),
-        f"NGPU probe critical-path lower bound_s: {many_probe_bound:.3f}",
-        f"NGPU probe-bound ceiling episodes/hour: {_fmt(many_probe_bound_eph)}",
-        f"NGPU wall/probe_bound ratio: {_fmt(many_wall_over_probe_bound)}",
-        f"NGPU probe ceiling utilization: {_fmt(many_probe_ceiling_utilization)}",
-        f"NGPU component critical-path lower bound_s: {many_component_bound:.3f}",
-        f"NGPU component-bound ceiling episodes/hour: {_fmt(many_component_bound_eph)}",
-        f"NGPU wall/component_bound ratio: {_fmt(many_wall_over_component_bound)}",
-        f"NGPU component ceiling utilization: {_fmt(many_component_ceiling_utilization)}",
-        f"NGPU policy diagnostic critical-path sum_s: {many_policy_bound:.3f}",
-        f"1GPU terminal probe mean_s/episode: {_fmt(one_probe_mean)}",
-        f"NGPU terminal probe mean_s/episode: {_fmt(many_probe_mean)}",
-        f"NGPU/1GPU terminal probe mean ratio: {_fmt(_safe_div(many_probe_mean, one_probe_mean))}",
-        f"1GPU policy rollout mean_s/episode: {_fmt(one_policy_mean)}",
-        f"NGPU policy rollout mean_s/episode: {_fmt(many_policy_mean)}",
-        f"NGPU/1GPU policy rollout mean ratio: {_fmt(_safe_div(many_policy_mean, one_policy_mean))}",
-        f"NGPU worker-local probe noise scopes detected: {scoped_noise_detected}",
-        f"NGPU worker-local CUDA probe streams detected: {worker_streams_detected}",
-        f"NGPU cpu policy mode detected: {cpu_policy_detected}",
-        "",
-        "1GPU device breakdown:",
-    ]
+    yield "==== Stage-2 N-GPU A/B Verdict ===="
+    yield f"1GPU episodes: {len(one)}"
+    yield f"NGPU episodes: {len(many)}"
+    yield f"quality/effect equality: {'PASS' if equality_ok else 'FAIL'}"
+    yield f"strict diagnostic equality: {'PASS' if not diag_diffs else 'DIFF'}"
+    yield (
+        "PPO update equality: n/a"
+        if ppo_equality_ok is None
+        else f"PPO update equality: {'PASS' if ppo_equality_ok else 'FAIL'}"
+    )
+    yield (
+        "PPO update counts: n/a"
+        if ppo_equality_ok is None
+        else f"PPO update counts: 1GPU={one_ppo_count} NGPU={many_ppo_count}"
+    )
+    yield f"wall source: {'wall file' if one_wall is not None and many_wall is not None else 'episode timestamps'}"
+    yield f"1GPU wall_s: {_fmt(one_wall_for_speed)}"
+    yield f"NGPU wall_s: {_fmt(many_wall_for_speed)}"
+    yield f"1GPU episodes/hour: {_fmt(one_eph)}"
+    yield f"NGPU episodes/hour: {_fmt(many_eph)}"
+    yield f"speedup: {_fmt(speedup, 'x')}"
+    yield f"NGPU distinct probe devices: {many_device_count}"
+    yield f"speedup/device_count: {_fmt(speedup_fraction_of_devices)}"
+    yield (
+        "NGPU device episode balance min/max: n/a"
+        if many_episode_min is None or many_episode_max is None
+        else f"NGPU device episode balance min/max: {many_episode_min:.0f}/{many_episode_max:.0f}"
+    )
+    yield f"NGPU probe critical-path lower bound_s: {many_probe_bound:.3f}"
+    yield f"NGPU probe-bound ceiling episodes/hour: {_fmt(many_probe_bound_eph)}"
+    yield f"NGPU wall/probe_bound ratio: {_fmt(many_wall_over_probe_bound)}"
+    yield f"NGPU probe ceiling utilization: {_fmt(many_probe_ceiling_utilization)}"
+    yield f"NGPU component critical-path lower bound_s: {many_component_bound:.3f}"
+    yield f"NGPU component-bound ceiling episodes/hour: {_fmt(many_component_bound_eph)}"
+    yield f"NGPU wall/component_bound ratio: {_fmt(many_wall_over_component_bound)}"
+    yield f"NGPU component ceiling utilization: {_fmt(many_component_ceiling_utilization)}"
+    yield f"NGPU policy diagnostic critical-path sum_s: {many_policy_bound:.3f}"
+    yield f"1GPU terminal probe mean_s/episode: {_fmt(one_probe_mean)}"
+    yield f"NGPU terminal probe mean_s/episode: {_fmt(many_probe_mean)}"
+    yield f"NGPU/1GPU terminal probe mean ratio: {_fmt(_safe_div(many_probe_mean, one_probe_mean))}"
+    yield f"1GPU policy rollout mean_s/episode: {_fmt(one_policy_mean)}"
+    yield f"NGPU policy rollout mean_s/episode: {_fmt(many_policy_mean)}"
+    yield f"NGPU/1GPU policy rollout mean ratio: {_fmt(_safe_div(many_policy_mean, one_policy_mean))}"
+    yield f"NGPU worker-local probe noise scopes detected: {scoped_noise_detected}"
+    yield f"NGPU worker-local CUDA probe streams detected: {worker_streams_detected}"
+    yield f"NGPU cpu policy mode detected: {cpu_policy_detected}"
+    yield ""
+    yield "1GPU device breakdown:"
     for device, values in sorted(one_dev.items()):
-        lines.append(f"  {device}: {values}")
-    lines.append("NGPU device breakdown:")
+        yield f"  {device}: {values}"
+    yield "NGPU device breakdown:"
     for device, values in sorted(many_dev.items()):
-        lines.append(f"  {device}: {values}")
-    lines.append("")
-    lines.extend(_timing_report_lines("1GPU", one_timing))
-    lines.extend(_timing_report_lines("NGPU", many_timing))
+        yield f"  {device}: {values}"
+    yield ""
+    yield from _timing_report_lines("1GPU", one_timing)
+    yield from _timing_report_lines("NGPU", many_timing)
     if diffs:
-        lines.append("")
-        lines.append(f"first {len(diffs)} equality diffs:")
-        lines.extend(f"  - {diff}" for diff in diffs)
+        yield ""
+        yield f"first {len(diffs)} equality diffs:"
+        for diff in diffs:
+            yield f"  - {diff}"
     if diag_diffs:
-        lines.append("")
-        lines.append(f"first {len(diag_diffs)} diagnostic-only diffs:")
-        lines.extend(f"  - {diff}" for diff in diag_diffs)
+        yield ""
+        yield f"first {len(diag_diffs)} diagnostic-only diffs:"
+        for diff in diag_diffs:
+            yield f"  - {diff}"
     if ppo_diffs:
-        lines.append("")
-        lines.append(f"first {len(ppo_diffs)} PPO update equality diffs:")
-        lines.extend(f"  - {diff}" for diff in ppo_diffs)
+        yield ""
+        yield f"first {len(ppo_diffs)} PPO update equality diffs:"
+        for diff in ppo_diffs:
+            yield f"  - {diff}"
     if args.require_equal and (not equality_ok or ppo_equality_ok is False):
-        lines.append("")
-        lines.append("[FATAL] equality requirement failed")
+        yield ""
+        yield "[FATAL] equality requirement failed"
     if args.min_speedup is not None and speedup is not None:
         if speedup >= float(args.min_speedup):
-            lines.append(f"[OK] speedup >= {float(args.min_speedup):.3f}x")
+            yield f"[OK] speedup >= {float(args.min_speedup):.3f}x"
         else:
-            lines.append(f"[WARN] speedup < {float(args.min_speedup):.3f}x")
+            yield f"[WARN] speedup < {float(args.min_speedup):.3f}x"
             if args.require_speedup:
-                lines.append("[FATAL] speedup requirement failed")
-    return "\n".join(lines) + "\n"
+                yield "[FATAL] speedup requirement failed"
+
+
+def build_report(args: argparse.Namespace) -> str:
+    return "\n".join(iter_report_lines(args)) + "\n"
+
+
+def _write_report(args: argparse.Namespace) -> Tuple[bool, bool]:
+    equality_failed = False
+    speedup_failed = False
+    handle = open(args.out, "w", encoding="utf-8") if args.out else None
+    try:
+        for line in iter_report_lines(args):
+            if line == "[FATAL] equality requirement failed":
+                equality_failed = True
+            elif line == "[FATAL] speedup requirement failed":
+                speedup_failed = True
+            if handle is not None:
+                handle.write(line)
+                handle.write("\n")
+            print(line)
+    finally:
+        if handle is not None:
+            handle.close()
+    return equality_failed, speedup_failed
 
 
 def main() -> int:
@@ -543,14 +567,10 @@ def main() -> int:
         help="include diagnostic frontier bookkeeping fields in equality verdict",
     )
     args = parser.parse_args()
-    report = build_report(args)
-    if args.out:
-        with open(args.out, "w", encoding="utf-8") as handle:
-            handle.write(report)
-    print(report, end="")
-    if args.require_equal and "[FATAL] equality requirement failed" in report:
+    equality_failed, speedup_failed = _write_report(args)
+    if args.require_equal and equality_failed:
         return 2
-    if args.require_speedup and "[FATAL] speedup requirement failed" in report:
+    if args.require_speedup and speedup_failed:
         return 3
     return 0
 
