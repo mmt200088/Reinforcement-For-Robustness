@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `596c458`, the conservative
+not by raw commit count. As of source head `7d66fed`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -157,6 +157,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Reports / paper figures | `dcfea75` | `experiments/server_command_runs/paper_episode_column_dcfea75_20260703_225013/` | Read paper-figure episode rewards as a direct float column instead of building one dict per episode row. |
 | Reports / paper figures | `b6dda66` | `experiments/server_command_runs/paper_figures_payload_reuse_b6dda66_20260704_094735/` | Reuse JSON-native list/dict payloads from paper-figure action and invalid-count sidecars instead of copying them through `list(...)` / `dict(...)` during `load_run()`. |
 | Reports / paper figures | `596c458` | `experiments/server_command_runs/paper_training_curve_reuse_596c458_20260704_095340/` | Reuse list-backed paper-figure episode reward series directly in training-curve rendering instead of copying them through `[float(value) for ...]` before plotting. |
+| Reports / paper figures | `7d66fed` | `experiments/server_command_runs/paper_group_curve_matrix_7d66fed_20260704_095833/` | Build grouped paper-figure training-curve reward matrices with `itertools.islice()` / `np.fromiter()` instead of copying each seed through `s[:min_len]` before numpy conversion. |
 | Reports / paper figures | `bd4ca26` | `experiments/server_command_runs/persistence_curve_ndarray_bd4ca26_20260704_015320/` | Preserve ndarray fast paths in Stage-2 curve smoothing/moving-average helpers instead of copying curve arrays through `list()`. |
 | Reports / paper figures | `7460284` | `experiments/server_command_runs/persistence_panel_ndarray_7460284_20260704_015635/` | Preserve ndarray fast paths in Stage-2 Stage-1-style panel plotting instead of copying panel raw series through `list()`. |
 | Reports / paper figures | `74de148` | `experiments/server_command_runs/persistence_npz_ndarray_74de148_20260704_020650/` | Preserve ndarray fast paths in Stage-2 NPZ training-curve writes instead of copying every array-backed series through `list()`. |
@@ -1973,6 +1974,20 @@ The red package failed the new regression test at the old reward-list copy.
 The green package passed that test, `py_compile`, and the complete
 `tests.test_paper_figures` suite (`6` tests).
 
+Progress 2026-07-04: `tools/paper_figures.py` now builds grouped
+training-curve reward matrices by streaming each seed's first `min_len` rewards
+through `itertools.islice()` and `np.fromiter()` instead of materializing one
+sliced list per seed. The grouped mean/std band keeps the same numpy matrix
+semantics while avoiding the `s[:min_len]` intermediate copies on long
+multi-seed reward curves.
+
+Server evidence 2026-07-04: source commit `7d66fed` has red/green verification
+under
+`experiments/server_command_runs/paper_group_curve_matrix_7d66fed_20260704_095833/`.
+The red package failed the new regression test at the old `s[:min_len]` copy.
+The green package passed that test, `py_compile`, and the complete
+`tests.test_paper_figures` suite (`7` tests).
+
 Progress 2026-07-02: `blb_stage2_rl/candidate_store.py` now skips blank
 candidate JSONL rows with `isspace()` and passes nonblank rows directly to
 `json.loads()` instead of allocating stripped copies while loading append-only
@@ -2594,6 +2609,8 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
   in the `paper_figures_payload_reuse_b6dda66_20260704_094735` run directory.
 - `596c458` paper-figure training reward series reuse, evidence committed in
   the `paper_training_curve_reuse_596c458_20260704_095340` run directory.
+- `7d66fed` paper-figure grouped reward matrix streaming, evidence committed
+  in the `paper_group_curve_matrix_7d66fed_20260704_095833` run directory.
 - `cf4eed6` Stage-2 candidate action hash streaming, evidence committed in the
   `candidate_action_hash_cf4eed6_20260703_221100` run directory.
 - `0aa212a` Stage-2 candidate ndarray normalization, evidence committed in the
