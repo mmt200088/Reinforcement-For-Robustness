@@ -85,6 +85,10 @@ def _iter_episode_rows(path: str | Path) -> Iterable[dict[str, Any]]:
     yield from iter_jsonl(episodes_path, errors="raise")
 
 
+def _iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
+    yield from iter_jsonl(path)
+
+
 def _int_list(value: object) -> list[int]:
     if not isinstance(value, list):
         return []
@@ -369,80 +373,91 @@ def _join_or_none(values: Iterable[object]) -> str:
     return ", ".join(str(value) for value in itertools.chain((first,), iterator))
 
 
-def render_markdown(summary: Mapping[str, Any]) -> str:
-    lines = [
-        "# GPU Utilization Report",
-        "",
-        f"Episodes: {summary.get('episodes', 0)}",
-        f"Visible devices: {_join_or_none(summary.get('visible_devices') or ())}",
-        f"Used probe devices: {_join_or_none(summary.get('used_probe_devices') or ())}",
-        f"Idle visible devices: {_join_or_none(summary.get('idle_visible_devices') or ())}",
-        "",
-        "## Probe Timing",
-    ]
+def iter_markdown_lines(summary: Mapping[str, Any]) -> Iterable[str]:
+    yield "# GPU Utilization Report"
+    yield ""
+    yield f"Episodes: {summary.get('episodes', 0)}"
+    yield f"Visible devices: {_join_or_none(summary.get('visible_devices') or ())}"
+    yield f"Used probe devices: {_join_or_none(summary.get('used_probe_devices') or ())}"
+    yield f"Idle visible devices: {_join_or_none(summary.get('idle_visible_devices') or ())}"
+    yield ""
+    yield "## Probe Timing"
     probe_stats = summary.get("terminal_probe_wall_seconds") or {}
     policy_stats = summary.get("policy_rollout_wall_seconds") or {}
     replan_stats = summary.get("replan_wall_seconds") or {}
-    lines.append(f"Terminal probe mean seconds: {probe_stats.get('mean')}")
-    lines.append(f"Policy rollout mean seconds: {policy_stats.get('mean')}")
-    lines.append(f"Replan/optimizer mean seconds: {replan_stats.get('mean')}")
-    lines.append("")
-    lines.append("## Probe Wall By Device")
+    yield f"Terminal probe mean seconds: {probe_stats.get('mean')}"
+    yield f"Policy rollout mean seconds: {policy_stats.get('mean')}"
+    yield f"Replan/optimizer mean seconds: {replan_stats.get('mean')}"
+    yield ""
+    yield "## Probe Wall By Device"
     wall_by_device = summary.get("probe_wall_seconds_by_device") or {}
     episodes_by_device = summary.get("probe_episode_counts_by_device") or {}
     if wall_by_device:
         for device, stats in wall_by_device.items():
-            lines.append(
+            yield (
                 f"- {device}: episodes={episodes_by_device.get(device, 0)}, "
                 f"mean_s={stats.get('mean')}, min_s={stats.get('min')}, "
                 f"max_s={stats.get('max')}"
             )
     else:
-        lines.append("- none")
-    lines.append("")
+        yield "- none"
+    yield ""
     hot_path = summary.get("hot_path_wall_seconds") or {}
     if hot_path:
-        lines.append("## Hot Path Timing")
+        yield "## Hot Path Timing"
         for field, stats in hot_path.items():
-            lines.append(
+            yield (
                 f"- {field}: count={stats.get('count')}, mean_s={stats.get('mean')}, "
                 f"max_s={stats.get('max')}"
             )
-        lines.append("")
-    lines.append("## Trial Balance")
+        yield ""
+    yield "## Trial Balance"
     counts = summary.get("probe_trial_counts_by_device") or {}
     if counts:
         for device, count in counts.items():
-            lines.append(f"- {device}: {count}")
+            yield f"- {device}: {count}"
     else:
-        lines.append("- none")
+        yield "- none"
     gpu_util = summary.get("gpu_utilization") or {}
     if gpu_util:
-        lines.append("")
-        lines.append("## Nvidia SMI")
+        yield ""
+        yield "## Nvidia SMI"
         for device, info in gpu_util.items():
-            lines.append(
+            yield (
                 "- "
                 f"{device}: max_util_pct={info.get('max_util_pct')}, "
                 f"mean_util_pct={info.get('mean_util_pct')}, "
                 f"active_sample_rate={info.get('active_sample_rate')}, "
                 f"max_memory_mib={info.get('max_memory_mib')}"
             )
-    lines.append("")
-    lines.append("## Warnings")
+    yield ""
+    yield "## Warnings"
     warnings = summary.get("warnings") or []
     if warnings:
         for item in warnings:
-            lines.append(f"- {item}")
+            yield f"- {item}"
     else:
-        lines.append("- none")
+        yield "- none"
     recommendations = summary.get("recommendations") or []
     if recommendations:
-        lines.append("")
-        lines.append("## Recommendations")
+        yield ""
+        yield "## Recommendations"
         for item in recommendations:
-            lines.append(f"- {item}")
-    return "\n".join(lines) + "\n"
+            yield f"- {item}"
+
+
+def render_markdown(summary: Mapping[str, Any]) -> str:
+    return "\n".join(iter_markdown_lines(summary)) + "\n"
+
+
+def write_markdown_file(path: str | Path, summary: Mapping[str, Any]) -> Path:
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for line in iter_markdown_lines(summary):
+            handle.write(line)
+            handle.write("\n")
+    return out_path
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -471,11 +486,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if args.out_json:
         write_json_file(args.out_json, summary, sort_keys=True)
-    markdown = render_markdown(summary)
     if args.out_md:
-        Path(args.out_md).write_text(markdown, encoding="utf-8")
+        write_markdown_file(args.out_md, summary)
     if not args.out_json and not args.out_md:
-        sys.stdout.write(markdown)
+        sys.stdout.write(render_markdown(summary))
     return 0
 
 

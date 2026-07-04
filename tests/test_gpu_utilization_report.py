@@ -441,6 +441,54 @@ class GpuUtilizationReportTest(unittest.TestCase):
             self.assertIn("- cuda:0: episodes=1", markdown)
             self.assertIn("Replan/optimizer mean seconds:", markdown)
 
+    def test_cli_streams_markdown_output_without_full_render_string(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            episodes = root / "episodes.jsonl"
+            _write_jsonl(
+                episodes,
+                [
+                    {
+                        "episode": 0,
+                        "terminal_probe_devices": ["cuda:0"],
+                        "terminal_probe_trial_counts": [1],
+                    }
+                ],
+            )
+            out_json = root / "gpu_report.json"
+            out_md = root / "gpu_report.md"
+            original_write_text = Path.write_text
+
+            def guarded_write_text(path, *args, **kwargs):
+                if Path(path) == out_md:
+                    raise AssertionError("markdown output should stream through Path.open")
+                return original_write_text(path, *args, **kwargs)
+
+            with mock.patch.object(
+                report,
+                "render_markdown",
+                side_effect=AssertionError("CLI markdown output should not render one full string"),
+            ):
+                with mock.patch.object(Path, "write_text", guarded_write_text):
+                    rc = report.main(
+                        [
+                            "--episodes",
+                            str(episodes),
+                            "--visible-devices",
+                            "0",
+                            "--out-json",
+                            str(out_json),
+                            "--out-md",
+                            str(out_md),
+                        ]
+                    )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(out_json.exists())
+            self.assertIn("Used probe devices: cuda:0", out_md.read_text(encoding="utf-8"))
+
     def test_markdown_device_lists_do_not_materialize_iterables(self):
         report = _load_report_module()
 
