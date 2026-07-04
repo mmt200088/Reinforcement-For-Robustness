@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
+import sys
 import unittest
 from unittest import mock
 
@@ -206,6 +208,32 @@ class LauncherGpuAuditTest(unittest.TestCase):
         ])
 
         self.assertEqual(rc, 0)
+
+    def test_script_runs_from_repo_root_without_pythonpath(self):
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(AUDIT_PATH),
+                "--search-algorithm", "rl",
+                "--run-mode", "stage1-only",
+                "--stage2-rl-variant", "blb_v3",
+                "--cuda-visible-devices", "0",
+                "--stage1-rl-devices", "0",
+                "--stage2-rl-devices", "",
+                "--blb-v3-reward-devices", "",
+                "--stage2-k-trials", "4",
+                "--strict",
+            ],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 if __name__ == "__main__":
