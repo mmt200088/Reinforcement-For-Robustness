@@ -1,0 +1,28 @@
+SOURCE_BASE=8faf478
+START=2026-07-04 08:00:34 +0800
+0, NVIDIA GeForce RTX 5090, 0, 2, 32607, P8
+1, NVIDIA GeForce RTX 5090, 0, 2, 32607, P8
+2, NVIDIA GeForce RTX 5090, 0, 2, 32607, P8
+3, NVIDIA GeForce RTX 5090, 0, 2, 32607, P8
+4, NVIDIA GeForce RTX 5090, 0, 2, 32607, P8
+PY_COMPILE_RC=0
+test_forward_matches_reference_piecewise (tests.test_stage1_eval_accel.HornerPolyEquivalenceTest.test_forward_matches_reference_piecewise) ... ok
+test_poly_matches_stacked_reference_all_degrees_and_signs (tests.test_stage1_eval_accel.HornerPolyEquivalenceTest.test_poly_matches_stacked_reference_all_degrees_and_signs) ... ok
+test_bit_identical_to_per_batch_sync_loop (tests.test_stage1_eval_accel.RunEvaluationDeferredSyncTest.test_bit_identical_to_per_batch_sync_loop) ... FAIL
+test_probe_trial_and_full_eval_share_metric_semantics (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_probe_trial_and_full_eval_share_metric_semantics) ... ok
+
+======================================================================
+FAIL: test_bit_identical_to_per_batch_sync_loop (tests.test_stage1_eval_accel.RunEvaluationDeferredSyncTest.test_bit_identical_to_per_batch_sync_loop)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_stage1_gate_green_20260704_080029/tests/test_stage1_eval_accel.py", line 843, in test_bit_identical_to_per_batch_sync_loop
+    self.assertEqual(m2, ref_m2)
+AssertionError: 0.28409090909090906 != 0.2840909090909091
+
+----------------------------------------------------------------------
+Ran 4 tests in 1.680s
+
+FAILED (failures=1)
+FOCUS_RC=1
+FULL_RC=99
+END=2026-07-04 08:00:38 +0800

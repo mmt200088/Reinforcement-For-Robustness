@@ -1,0 +1,16 @@
+test_probe_trial_and_full_eval_share_metric_semantics (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_probe_trial_and_full_eval_share_metric_semantics) ... ERROR
+
+======================================================================
+ERROR: test_probe_trial_and_full_eval_share_metric_semantics (tests.test_blb_inference_eval_shared.SharedInstalledInferenceEvalTest.test_probe_trial_and_full_eval_share_metric_semantics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_stage1_gate_red_8faf478_20260704_075934/tests/test_blb_inference_eval_shared.py", line 162, in test_probe_trial_and_full_eval_share_metric_semantics
+    full_batch_loss = run_installed_model_on_dataloader(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: run_installed_model_on_dataloader() got an unexpected keyword argument 'loss_average'
+
+----------------------------------------------------------------------
+Ran 1 test in 1.329s
+
+FAILED (errors=1)
+RED_RC=1

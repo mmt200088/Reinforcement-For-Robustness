@@ -1,0 +1,15 @@
+README.md
+RUN_METADATA.json
+MANIFEST.txt
+initial_stage1_semantics_red.log
+stage1_failure_probe.log
+loss_average_param_red.log
+intermediate_green_metric_red.log
+precommit_green_validation.log
+green_validation.log
+source_snapshot/function_handler.py
+source_snapshot/inference_eval.py
+source_snapshot/layer_importance_evaluator.py
+source_snapshot/test_blb_inference_eval_shared.py
+source_snapshot/test_stage1_eval_accel.py
+source_snapshot/test_stage1_parallel_semantics.py

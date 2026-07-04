@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `9b78854`, the conservative
+not by raw commit count. As of source head `dbd1b6f`, the conservative
 completion estimate is about 96-97% of the full goal: the plan/audit layer,
 artifact helpers, and several low-conflict hot paths have landed, but
 hardware-default promotion, long-run A/B evidence, and remaining flow-wide
@@ -122,6 +122,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `92ad0f0` | `experiments/server_command_runs/stage1_rollout_direct_tensor_92ad0f0_20260704_012541/` | Pack recurrent rollout `logprobs` and `values` directly as target-device tensors before PPO updates, avoiding the CPU numpy round trip introduced by the earlier batch path. |
 | Stage-1 eval | `343a5e3` | `experiments/server_command_runs/stage1_noise_validation_scan_343a5e3_20260704_055529/` | Scan layer-evaluator noise scaling validation arrays directly for unsupported values instead of materializing `arr.tolist()` sets. |
 | Stage-1 eval | `e17eee8` | `experiments/server_command_runs/stage1_reward_stats_window_e17eee8_20260704_060340/` | Maintain Stage-1 reward normalization window sum/sumsq incrementally instead of rescanning the bounded deque with `np.mean()` / `np.std()` every episode. |
+| Stage-1 eval | `dbd1b6f` | `experiments/server_command_runs/stage1_semantics_gate_dbd1b6f_20260704_080342/` | Restore the Stage-1 semantic gate after shared fast-path changes: coefficient-order low-allocation GELU polynomial evaluation, Stage-1 batch-loss averaging, and legacy sklearn metric precision. |
 | Shared inference eval | `497ecda` | `experiments/server_command_runs/probe_scalar_sync_497ecda_20260704_025145/` | Batch reward-probe loss/metric scalar tensors into one packed CPU transfer instead of three per-field scalar sequence transfers. |
 | Shared inference eval | `b5dfff5` | `experiments/server_command_runs/probe_skip_pred_arrays_b5dfff5_20260704_025610/` | Skip reward-probe prediction/label tensor retention and numpy transfer for accuracy-only metric profiles. |
 | Shared inference eval | `2d98907` | `experiments/server_command_runs/probe_tensor_arrays_2d98907_20260704_030105/` | Concatenate same-device reward-probe prediction/label tensors before one packed CPU/numpy transfer. |
@@ -404,13 +405,23 @@ python3 -m ruff check scripts/launcher_gpu_audit.py tests/test_launcher_gpu_audi
 - Test: `tests/test_stage1_parallel_semantics.py`
 - Test: `tests/test_stage1_parallel_report.py`
 
-- [ ] **Step 1: Baseline current behavior**
+- [x] **Step 1: Baseline current behavior**
 
 Run focused local tests:
 
 ```bash
 python3 -m unittest tests.test_stage1_eval_accel tests.test_stage1_parallel_semantics -v
 ```
+
+Server evidence 2026-07-04: because this workflow forbids local execution, the
+focused Stage-1 gate was run on the server from temporary source packages. The
+initial run at source `8faf478` failed two semantic locks; final source
+`dbd1b6f` passes `tests.test_stage1_eval_accel`,
+`tests.test_stage1_parallel_semantics`, and `tests.test_blb_inference_eval_shared`
+under
+`experiments/server_command_runs/stage1_semantics_gate_dbd1b6f_20260704_080342/`.
+This validates the Stage-1 focused semantic gate only; it is not 1GPU vs 4GPU
+throughput evidence.
 
 - [ ] **Step 2: Add timing fields**
 
