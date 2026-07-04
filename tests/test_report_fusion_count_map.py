@@ -246,6 +246,24 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertNotIn("default=json.dumps(DEFAULT_GELU)", main_region)
         self.assertNotIn("default=json.dumps(DEFAULT_SOFTMAX)", main_region)
 
+    def test_main_streams_html_report_without_full_render_string_write(self):
+        source = Path("scripts/report_fusion_count_map.py").read_text(encoding="utf-8")
+        main_region = source.split("def main(", 1)[1].split('if __name__ == "__main__":', 1)[0]
+
+        self.assertTrue(hasattr(report, "write_rendered_html"))
+        self.assertTrue(hasattr(report, "_HtmlPartsWriter"))
+        self.assertIn("_HtmlPartsWriter(html_path)", source)
+        self.assertNotIn("html_path.write_text(_render_html(payload)", main_region)
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "parts.html"
+            writer = report._HtmlPartsWriter(path)
+            writer.append("alpha")
+            writer.extend(["beta", "gamma"])
+            writer.close()
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "alpha\nbeta\ngamma")
+
     def test_group_specs_reuses_graph_target_choices(self):
         graphs = {
             "block2_mrpc": {

@@ -43,6 +43,31 @@ DEFAULT_GELU_JSON = json.dumps(DEFAULT_GELU)
 DEFAULT_SOFTMAX_JSON = json.dumps(DEFAULT_SOFTMAX)
 
 
+class _HtmlPartsWriter:
+    def __init__(self, path: Path):
+        self._handle = path.open("w", encoding="utf-8")
+        self._first = True
+
+    def append(self, value: Any) -> None:
+        if not self._first:
+            self._handle.write("\n")
+        self._handle.write(str(value))
+        self._first = False
+
+    def extend(self, values: Iterable[Any]) -> None:
+        for value in values:
+            self.append(value)
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def __enter__(self) -> "_HtmlPartsWriter":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
+
+
 def _parse_block_fields() -> Dict[int, List[Tuple[str, str, int]]]:
     tree = ast.parse(ACTION_SPACE_PATH.read_text(encoding="utf-8-sig"))
     out: Dict[int, List[Tuple[str, str, int]]] = {}
@@ -898,7 +923,7 @@ def _fmt_layers(layers: Sequence[int]) -> str:
     return ", ".join(f"L{int(v)}" for v in layers)
 
 
-def _render_html(payload: Mapping[str, Any]) -> str:
+def _emit_rendered_html(payload: Mapping[str, Any], parts: Any) -> None:
     graph_rows = []
     for graph in payload["graphs"]:
         graph_rows.append([
@@ -927,7 +952,7 @@ def _render_html(payload: Mapping[str, Any]) -> str:
             details = (details + "; " if details else "") + step_txt
         group_rows.append([name, group.get("family", ""), no_op, details, counts, opts])
 
-    parts = [
+    parts.extend([
         "<!doctype html>",
         "<html><head><meta charset='utf-8'>",
         "<title>MRPC Fusion Count Map Report</title>",
@@ -970,7 +995,7 @@ def _render_html(payload: Mapping[str, Any]) -> str:
             group_rows,
             allow_html_cells=True,
         ),
-    ]
+    ])
 
     for graph in payload["graphs"]:
         parts.append(f"<div class='section'><h2>{html.escape(graph['graph_key'])}</h2>")
@@ -1024,7 +1049,17 @@ def _render_html(payload: Mapping[str, Any]) -> str:
         parts.append("</div>")
 
     parts.extend(["</body></html>"])
+
+
+def _render_html(payload: Mapping[str, Any]) -> str:
+    parts: List[str] = []
+    _emit_rendered_html(payload, parts)
     return "\n".join(parts)
+
+
+def write_rendered_html(html_path: Path, payload: Mapping[str, Any]) -> None:
+    with _HtmlPartsWriter(html_path) as parts:
+        _emit_rendered_html(payload, parts)
 
 
 def main() -> int:
@@ -1089,7 +1124,7 @@ def main() -> int:
     html_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.parent.mkdir(parents=True, exist_ok=True)
     write_json_file(json_path, payload)
-    html_path.write_text(_render_html(payload), encoding="utf-8")
+    write_rendered_html(html_path, payload)
     json.dump({
         "html": str(html_path),
         "json": str(json_path),
