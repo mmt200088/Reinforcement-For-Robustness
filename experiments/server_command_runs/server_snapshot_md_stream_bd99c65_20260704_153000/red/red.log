@@ -1,0 +1,34 @@
+test_cli_streams_markdown_output_without_full_render_string (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_cli_streams_markdown_output_without_full_render_string) ... FAIL
+test_cli_writes_json_and_markdown_from_offline_gpu_csv (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_cli_writes_json_and_markdown_from_offline_gpu_csv) ... ok
+test_collect_snapshot_streams_offline_gpu_csv (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_collect_snapshot_streams_offline_gpu_csv) ... ok
+test_external_commands_are_bounded (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_external_commands_are_bounded) ... ok
+test_git_summary_counts_dirty_rows_without_splitlines_list (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_git_summary_counts_dirty_rows_without_splitlines_list) ... ok
+test_parse_nvidia_smi_csv_streams_text_lines_without_list (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_parse_nvidia_smi_csv_streams_text_lines_without_list) ... ok
+test_parse_nvidia_smi_lines_skips_blank_rows_without_strip_copy (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_parse_nvidia_smi_lines_skips_blank_rows_without_strip_copy) ... ok
+test_parse_nvidia_smi_rows_normalizes_numeric_fields (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_parse_nvidia_smi_rows_normalizes_numeric_fields) ... ok
+test_parse_nvidia_smi_sample_csv_collapses_rows_by_gpu (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_parse_nvidia_smi_sample_csv_collapses_rows_by_gpu) ... ok
+
+======================================================================
+FAIL: test_cli_streams_markdown_output_without_full_render_string (tests.test_server_resource_snapshot.ServerResourceSnapshotTest.test_cli_streams_markdown_output_without_full_render_string)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/server_snapshot_md_stream_red_0cf4551_20260704_153000/tests/test_server_resource_snapshot.py", line 202, in test_cli_streams_markdown_output_without_full_render_string
+    rc = snap.main(
+         ^^^^^^^^^^
+  File "/hy-tmp/server_snapshot_md_stream_red_0cf4551_20260704_153000/scripts/server_resource_snapshot.py", line 329, in main
+    markdown = render_markdown(snapshot)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: CLI markdown output should not render one full string
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.091s
+
+FAILED (failures=1)
