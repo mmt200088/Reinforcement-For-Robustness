@@ -48,6 +48,9 @@ DEFAULT_MANUAL_NOISE = {
     "wffn1": [22] * 12,
     "wffn2": [22] * 12,
 }
+DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)
+DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)
+DEFAULT_MANUAL_NOISE_JSON = json.dumps(DEFAULT_MANUAL_NOISE, separators=(",", ":"))
 
 
 def _output_dir(output_root: Path, run_name: str) -> Path:
@@ -99,7 +102,7 @@ def _run_one(
         "--manual-stage1-softmax",
         json.dumps([int(v) for v in stage1_softmax]),
         "--manual-stage2-noise",
-        json.dumps(DEFAULT_MANUAL_NOISE, separators=(",", ":")),
+        DEFAULT_MANUAL_NOISE_JSON,
         "--action-config",
         str(cfg["path"]),
         "--output-root",
@@ -328,8 +331,8 @@ def main() -> int:
     parser.add_argument("--output-html", default=str(DEFAULT_HTML))
     parser.add_argument("--repeat", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--stage1-gelu", default=json.dumps(DEFAULT_STAGE1_GELU))
-    parser.add_argument("--stage1-softmax", default=json.dumps(DEFAULT_STAGE1_SOFTMAX))
+    parser.add_argument("--stage1-gelu", default=DEFAULT_STAGE1_GELU_JSON)
+    parser.add_argument("--stage1-softmax", default=DEFAULT_STAGE1_SOFTMAX_JSON)
     parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-run", action="store_true", help="Only collect existing Paean result JSON files.")

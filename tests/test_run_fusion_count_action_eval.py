@@ -173,6 +173,21 @@ class FusionCountActionEvalTest(unittest.TestCase):
         self.assertIn('sys.stdout.write("\\n")', main_source)
         self.assertNotIn("print(json.dumps(", main_source)
 
+    def test_main_reuses_static_stage1_default_json_strings(self):
+        source = Path(action_eval.__file__).read_text(encoding="utf-8")
+        run_one_source = source[source.index("def _run_one("):source.index("def _load_result(")]
+        main_source = source[source.index("def main("):]
+
+        self.assertIn("DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)", source)
+        self.assertIn("DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)", source)
+        self.assertIn('DEFAULT_MANUAL_NOISE_JSON = json.dumps(DEFAULT_MANUAL_NOISE, separators=(",", ":"))', source)
+        self.assertIn("default=DEFAULT_STAGE1_GELU_JSON", main_source)
+        self.assertIn("default=DEFAULT_STAGE1_SOFTMAX_JSON", main_source)
+        self.assertIn("DEFAULT_MANUAL_NOISE_JSON", run_one_source)
+        self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_GELU)", main_source)
+        self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_SOFTMAX)", main_source)
+        self.assertNotIn("json.dumps(DEFAULT_MANUAL_NOISE", run_one_source)
+
 
 if __name__ == "__main__":
     unittest.main()
