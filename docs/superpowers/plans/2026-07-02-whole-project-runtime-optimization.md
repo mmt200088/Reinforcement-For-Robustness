@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `2367890`, the conservative
+not by raw commit count. As of source head `5f877ca`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -142,6 +142,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared eval metrics | `d0e8b8c` | `experiments/server_command_runs/eval_binary_mcc_d0e8b8c_20260704_035430/` | Compute 0/1 binary Matthews correlation with direct count reductions instead of sorting a class union for CoLA-style evals. |
 | Shared eval metrics | `211ca50` | `experiments/server_command_runs/eval_accuracy_count_211ca50_20260704_041100/` | Compute classification accuracy with `np.count_nonzero()` match counts instead of generic `np.mean()` over a boolean mask. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
+| Shared logging | `5f877ca` | `experiments/server_command_runs/logging_json_encoder_5f877ca_20260704_124000/` | Reuse one module-level JSON encoder for BLB structured log records instead of constructing an encoder through `json.dumps()` for every record. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
 | Stage-2 artifacts | `0aa212a` | `experiments/server_command_runs/candidate_store_ndarray_0aa212a_20260704_024050/` | Normalize ndarray-backed candidate action vectors through a direct reshape iterator instead of copying through `.tolist()`. |
 | Stage-2/Paean action space | `2ee6de2` | `experiments/server_command_runs/action_space_splice_no_tolist_2ee6de2_20260704_013204/` | Splice per-step and fusion-step action vectors by iterating checked numpy arrays directly instead of materializing `arr.tolist()` for every splice. |
