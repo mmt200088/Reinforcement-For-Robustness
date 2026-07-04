@@ -1,0 +1,26 @@
+test_register_json_output_streams_without_json_dumps (tests.test_experiments_log.ExperimentsLogTest.test_register_json_output_streams_without_json_dumps) ... FAIL
+
+======================================================================
+FAIL: test_register_json_output_streams_without_json_dumps (tests.test_experiments_log.ExperimentsLogTest.test_register_json_output_streams_without_json_dumps)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_experiments_log_register_json_stream_20260704_102430/red/tests/test_experiments_log.py", line 86, in test_register_json_output_streams_without_json_dumps
+    rc = experiments_log.main([
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_experiments_log_register_json_stream_20260704_102430/red/tools/experiments_log.py", line 474, in main
+    print(json.dumps(rec, indent=2, ensure_ascii=False))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/unittest/mock.py", line 1183, in _execute_mock_call
+    raise effect
+AssertionError: register JSON output should stream to stdout
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (failures=1)
