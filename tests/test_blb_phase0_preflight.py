@@ -42,6 +42,42 @@ class Phase0PreflightTest(unittest.TestCase):
 
         self.assertEqual(matches, ["runner.py:1:class BLBStage2RLRunner:"])
 
+    def test_write_phase0_reports_streams_outputs_without_write_text(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = root / "runner.py"
+            src.write_text("class BLBStage2RLRunner:\n    pass\n", encoding="utf-8")
+
+            with mock.patch.object(
+                Path,
+                "write_text",
+                side_effect=AssertionError("phase0 reports should stream output files"),
+            ):
+                paths = blb_phase0_preflight.write_phase0_reports(root, reports_dir="reports")
+
+            grep_text = Path(paths["blb_entrypoints_grep"]).read_text(encoding="utf-8")
+            phase0_text = Path(paths["phase0_entrypoints"]).read_text(encoding="utf-8")
+
+        self.assertIn("runner.py:1:class BLBStage2RLRunner:", grep_text)
+        self.assertIn("# BLB Phase 0 Entrypoints", phase0_text)
+
+    def test_write_phase0_reports_streams_phase0_markdown_without_render_string(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = root / "runner.py"
+            src.write_text("class BLBStage2RLRunner:\n    pass\n", encoding="utf-8")
+
+            with mock.patch.object(
+                blb_phase0_preflight,
+                "build_phase0_entrypoint_report",
+                side_effect=AssertionError("phase0 report should stream markdown lines"),
+            ):
+                paths = blb_phase0_preflight.write_phase0_reports(root, reports_dir="reports")
+
+            phase0_text = Path(paths["phase0_entrypoints"]).read_text(encoding="utf-8")
+
+        self.assertIn("# BLB Phase 0 Entrypoints", phase0_text)
+
 
 if __name__ == "__main__":
     unittest.main()

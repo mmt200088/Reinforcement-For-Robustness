@@ -63,38 +63,46 @@ def iter_repo_files(repo_root: Path) -> Iterable[Path]:
 
 
 def build_phase0_entrypoint_report(repo_root: Path) -> str:
+    return "\n".join(iter_phase0_entrypoint_report_lines(repo_root)) + "\n"
+
+
+def iter_phase0_entrypoint_report_lines(repo_root: Path) -> Iterable[str]:
     root = Path(repo_root).resolve()
     launcher = root / "llama_7B_LayerImportance.sh"
     runner = root / "blb_stage2_rl" / "runner.py"
     action_space = root / "blb_stage2_rl" / "action_space.py"
     rescale = root / "Rescale_optimizer"
     preset = root / "presets" / "mrpc-blb-stage2-rl.conf"
-    lines = [
-        "# BLB Phase 0 Entrypoints",
-        "",
-        "1. Main training entrypoint: `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh`.",
-        "2. Resume entrypoint: `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl`.",
-        "3. Stage-2 variant switch: `--stage2-rl-variant blb_v3` in `presets/mrpc-blb-stage2-rl.conf`.",
-        "4. Runner implementation: `blb_stage2_rl/runner.py` (`BLBStage2RLRunner`).",
-        "5. Action registry/decode implementation: `blb_stage2_rl/action_space.py`.",
-        "6. Rescale optimizer path: `Rescale_optimizer`; BLB Stage-2 uses the in-process optimizer path.",
-        "",
-        "| artifact | exists |",
-        "|---|---:|",
-        f"| llama_7B_LayerImportance.sh | {str(launcher.exists()).lower()} |",
-        f"| presets/mrpc-blb-stage2-rl.conf | {str(preset.exists()).lower()} |",
-        f"| blb_stage2_rl/runner.py | {str(runner.exists()).lower()} |",
-        f"| blb_stage2_rl/action_space.py | {str(action_space.exists()).lower()} |",
-        f"| Rescale_optimizer | {str(rescale.exists()).lower()} |",
-        "",
-        "Current defaults from the preserved operator surface are resolved by the launcher and preset; this report is an audit artifact, not a replacement command.",
-    ]
-    return "\n".join(lines) + "\n"
+    yield "# BLB Phase 0 Entrypoints"
+    yield ""
+    yield "1. Main training entrypoint: `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh`."
+    yield "2. Resume entrypoint: `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl`."
+    yield "3. Stage-2 variant switch: `--stage2-rl-variant blb_v3` in `presets/mrpc-blb-stage2-rl.conf`."
+    yield "4. Runner implementation: `blb_stage2_rl/runner.py` (`BLBStage2RLRunner`)."
+    yield "5. Action registry/decode implementation: `blb_stage2_rl/action_space.py`."
+    yield "6. Rescale optimizer path: `Rescale_optimizer`; BLB Stage-2 uses the in-process optimizer path."
+    yield ""
+    yield "| artifact | exists |"
+    yield "|---|---:|"
+    yield f"| llama_7B_LayerImportance.sh | {str(launcher.exists()).lower()} |"
+    yield f"| presets/mrpc-blb-stage2-rl.conf | {str(preset.exists()).lower()} |"
+    yield f"| blb_stage2_rl/runner.py | {str(runner.exists()).lower()} |"
+    yield f"| blb_stage2_rl/action_space.py | {str(action_space.exists()).lower()} |"
+    yield f"| Rescale_optimizer | {str(rescale.exists()).lower()} |"
+    yield ""
+    yield "Current defaults from the preserved operator surface are resolved by the launcher and preset; this report is an audit artifact, not a replacement command."
 
 
 def _write_lines(path: Path, lines: Iterable[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    wrote = False
+    with path.open("w", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(str(line))
+            handle.write("\n")
+            wrote = True
+        if not wrote:
+            handle.write("\n")
 
 
 def _grep_entrypoint_file(repo_root: Path, path: Path, pattern: re.Pattern[str]) -> List[str]:
@@ -152,7 +160,7 @@ def write_phase0_reports(
     _write_lines(reports / "repo_code_config_files.txt", code_config)
     _write_lines(reports / "blb_entrypoints_grep.txt", grep_matches)
     phase0_path = reports / "phase0_entrypoints.md"
-    phase0_path.write_text(build_phase0_entrypoint_report(root), encoding="utf-8")
+    _write_lines(phase0_path, iter_phase0_entrypoint_report_lines(root))
     return {
         "repo_file_list": str(reports / "repo_file_list.txt"),
         "repo_code_config_files": str(reports / "repo_code_config_files.txt"),
