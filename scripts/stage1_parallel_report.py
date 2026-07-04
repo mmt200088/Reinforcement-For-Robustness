@@ -198,63 +198,70 @@ def _iter_log_lines(paths: Sequence[str]) -> Iterable[str]:
             yield from handle
 
 
-def render_markdown(summary: Mapping[str, Any]) -> str:
-    lines = [
-        "# Stage-1 Parallel Report",
-        "",
-        f"Windows: {summary.get('windows', 0)}",
-        f"Episodes: {summary.get('total_episodes', 0)}",
-        f"Total wall seconds: {summary.get('total_wall_seconds')}",
-        f"Throughput: {float(summary.get('throughput_ep_per_hour') or 0.0):.3f} ep/h",
-        f"Mean worker speedup: {summary.get('mean_worker_speedup')}",
-        "",
-        "## Worker Balance",
-    ]
+def iter_markdown_lines(summary: Mapping[str, Any]) -> Iterable[str]:
+    yield "# Stage-1 Parallel Report"
+    yield ""
+    yield f"Windows: {summary.get('windows', 0)}"
+    yield f"Episodes: {summary.get('total_episodes', 0)}"
+    yield f"Total wall seconds: {summary.get('total_wall_seconds')}"
+    yield f"Throughput: {float(summary.get('throughput_ep_per_hour') or 0.0):.3f} ep/h"
+    yield f"Mean worker speedup: {summary.get('mean_worker_speedup')}"
+    yield ""
+    yield "## Worker Balance"
     counts = summary.get("worker_episode_counts_by_device") or {}
     if counts:
         for device, count in counts.items():
-            lines.append(f"- {device}: {count}")
+            yield f"- {device}: {count}"
     else:
-        lines.append("- none")
-    lines.append("")
-    lines.append("## Component Wall Seconds")
+        yield "- none"
+    yield ""
+    yield "## Component Wall Seconds"
     components = summary.get("component_seconds") or {}
     shares = summary.get("component_share") or {}
     if components:
         for key, seconds in components.items():
             share = shares.get(key)
             share_text = "n/a" if share is None else f"{float(share):.3f}"
-            lines.append(f"- {key}: {seconds} ({share_text})")
+            yield f"- {key}: {seconds} ({share_text})"
     else:
-        lines.append("- none")
+        yield "- none"
     timing = summary.get("timing_seconds") or {}
-    lines.append("")
-    lines.append("## Nested Timing Seconds")
+    yield ""
+    yield "## Nested Timing Seconds"
     if timing:
         for key, seconds in timing.items():
-            lines.append(f"- {key}: {seconds}")
+            yield f"- {key}: {seconds}"
     else:
-        lines.append("- none")
+        yield "- none"
     cache = summary.get("eval_cache") or {}
-    lines.extend(
-        [
-            "",
-            "## Eval Cache",
-            f"Hits: {cache.get('hits', 0)}",
-            f"Misses: {cache.get('misses', 0)}",
-            f"Distinct: {cache.get('distinct', 0)}",
-            f"Hit rate: {cache.get('hit_rate')}",
-            "",
-            "## Warnings",
-        ]
-    )
+    yield ""
+    yield "## Eval Cache"
+    yield f"Hits: {cache.get('hits', 0)}"
+    yield f"Misses: {cache.get('misses', 0)}"
+    yield f"Distinct: {cache.get('distinct', 0)}"
+    yield f"Hit rate: {cache.get('hit_rate')}"
+    yield ""
+    yield "## Warnings"
     warnings = summary.get("warnings") or []
     if warnings:
         for warning in warnings:
-            lines.append(f"- {warning}")
+            yield f"- {warning}"
     else:
-        lines.append("- none")
-    return "\n".join(lines) + "\n"
+        yield "- none"
+
+
+def render_markdown(summary: Mapping[str, Any]) -> str:
+    return "\n".join(iter_markdown_lines(summary)) + "\n"
+
+
+def write_markdown_file(path: str | Path, summary: Mapping[str, Any]) -> Path:
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for line in iter_markdown_lines(summary):
+            handle.write(line)
+            handle.write("\n")
+    return out_path
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -268,13 +275,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     summary = parse_log_lines(_iter_log_lines(args.log))
-    markdown = render_markdown(summary)
     if args.out_json:
         write_json_file(args.out_json, summary, sort_keys=True)
     if args.out_md:
-        Path(args.out_md).write_text(markdown, encoding="utf-8")
+        write_markdown_file(args.out_md, summary)
     if not args.out_json and not args.out_md:
-        sys.stdout.write(markdown)
+        sys.stdout.write(render_markdown(summary))
     return 0
 
 

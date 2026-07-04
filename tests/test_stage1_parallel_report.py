@@ -193,6 +193,41 @@ class Stage1ParallelReportTest(unittest.TestCase):
             self.assertIn("Throughput: 1963.636", markdown)
             self.assertIn("- cuda:0: 60", markdown)
 
+    def test_cli_streams_markdown_output_without_full_render_string(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            log_path = root / "stage1.log"
+            log_path.write_text(SAMPLE_LOG, encoding="utf-8")
+            out_json = root / "stage1_report.json"
+            out_md = root / "stage1_report.md"
+            original_write_text = Path.write_text
+
+            def guarded_write_text(path, *args, **kwargs):
+                if Path(path) == out_md:
+                    raise AssertionError("markdown output should stream through Path.open")
+                return original_write_text(path, *args, **kwargs)
+
+            with mock.patch.object(
+                report,
+                "render_markdown",
+                side_effect=AssertionError("CLI markdown output should not render one full string"),
+            ):
+                with mock.patch.object(Path, "write_text", guarded_write_text):
+                    rc = report.main([
+                        "--log",
+                        str(log_path),
+                        "--out-json",
+                        str(out_json),
+                        "--out-md",
+                        str(out_md),
+                    ])
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(out_json.exists())
+            self.assertIn("Throughput: 1963.636", out_md.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
