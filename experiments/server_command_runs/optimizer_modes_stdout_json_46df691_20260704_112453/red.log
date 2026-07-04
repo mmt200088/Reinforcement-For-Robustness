@@ -1,0 +1,14 @@
+test_main_streams_stdout_json_without_json_dumps_string (tests.test_blb_compare_optimizer_modes_static.BLBCompareOptimizerModesStaticTests.test_main_streams_stdout_json_without_json_dumps_string) ... FAIL
+
+======================================================================
+FAIL: test_main_streams_stdout_json_without_json_dumps_string (tests.test_blb_compare_optimizer_modes_static.BLBCompareOptimizerModesStaticTests.test_main_streams_stdout_json_without_json_dumps_string)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/optimizer_modes_stdout_red_85e8778_20260704_112416/src/tests/test_blb_compare_optimizer_modes_static.py", line 14, in test_main_streams_stdout_json_without_json_dumps_string
+    self.assertIn("json.dump(", main_source)
+AssertionError: 'json.dump(' not found in 'def main(argv: Sequence[str] | None = None) -> int:\n    payload = run_compare(argv)\n    print(json.dumps({\n        "output_dir": "reports/blb_opt/phase1b_consistency",\n        "all_invariants_pass": bool(payload["all_invariants_pass"]),\n        "invariants": payload["invariants"],\n    }, ensure_ascii=False, indent=2))\n    return 0 if payload["all_invariants_pass"] else 2\n\n\nif __name__ == "__main__":\n    raise SystemExit(main())\n'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (failures=1)
