@@ -1,0 +1,23 @@
+test_bridge_loaders_share_rescale_bridge_ast (tests.test_blb_orphan_slot_audit.OrphanSlotAuditTest.test_bridge_loaders_share_rescale_bridge_ast) ... ok
+test_graphs_for_block_reuses_directory_scan_across_blocks (tests.test_blb_orphan_slot_audit.OrphanSlotAuditTest.test_graphs_for_block_reuses_directory_scan_across_blocks) ... ok
+test_graphs_for_block_scans_directory_without_path_glob (tests.test_blb_orphan_slot_audit.OrphanSlotAuditTest.test_graphs_for_block_scans_directory_without_path_glob) ... ok
+test_main_streams_markdown_report_without_path_write_text (tests.test_blb_orphan_slot_audit.OrphanSlotAuditTest.test_main_streams_markdown_report_without_path_write_text) ... FAIL
+test_slot_loader_reuses_function_handler_ast (tests.test_blb_orphan_slot_audit.OrphanSlotAuditTest.test_slot_loader_reuses_function_handler_ast) ... ok
+
+======================================================================
+FAIL: test_main_streams_markdown_report_without_path_write_text (tests.test_blb_orphan_slot_audit.OrphanSlotAuditTest.test_main_streams_markdown_report_without_path_write_text)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/orphan_slot_md_stream_red_00ab5c7_20260704_151500/tests/test_blb_orphan_slot_audit.py", line 176, in test_main_streams_markdown_report_without_path_write_text
+    rc = audit.main([
+         ^^^^^^^^^^^^
+  File "/hy-tmp/orphan_slot_md_stream_red_00ab5c7_20260704_151500/scripts/blb_orphan_slot_audit.py", line 694, in main
+    md_path.write_text("\n".join(lines), encoding="utf-8")
+  File "/hy-tmp/orphan_slot_md_stream_red_00ab5c7_20260704_151500/tests/test_blb_orphan_slot_audit.py", line 171, in reject_markdown_write_text
+    raise AssertionError("markdown report should stream through Path.open")
+AssertionError: markdown report should stream through Path.open
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.007s
+
+FAILED (failures=1)
