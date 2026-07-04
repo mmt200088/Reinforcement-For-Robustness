@@ -114,6 +114,37 @@ class Stage2NgpuCompareTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any("terminal_metric1_mean" in diff for diff in diffs))
 
+    def test_compare_rows_materializes_excluded_keys_once(self):
+        class SinglePassExcluded:
+            def __init__(self):
+                self.used = False
+
+            def __iter__(self):
+                if self.used:
+                    raise AssertionError("excluded keys should be materialized once per compare")
+                self.used = True
+                return iter(["timestamp"])
+
+        one = [
+            {"episode": 0, "timestamp": 1.0, "total_reward": 12.5},
+            {"episode": 1, "timestamp": 2.0, "total_reward": 13.5},
+        ]
+        many = [
+            {"episode": 0, "timestamp": 100.0, "total_reward": 12.5},
+            {"episode": 1, "timestamp": 200.0, "total_reward": 13.5},
+        ]
+
+        ok, diffs = ngpu_mod.compare_rows(
+            one,
+            many,
+            atol=0.0,
+            limit=10,
+            strict_diagnostics=True,
+            excluded_keys=SinglePassExcluded(),
+        )
+
+        self.assertTrue(ok, diffs)
+
     def test_require_speedup_adds_fatal_marker(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

@@ -125,10 +125,17 @@ def _canonical(
     excluded = set(TIMING_OR_DEVICE_KEYS if excluded_keys is None else excluded_keys)
     if not bool(strict_diagnostics):
         excluded.update(DIAGNOSTIC_BOOKKEEPING_KEYS)
+    return _canonical_with_exclusions(row, excluded)
+
+
+def _canonical_with_exclusions(
+        row: Mapping[str, Any],
+        excluded_keys: Iterable[str],
+        ) -> Dict[str, Any]:
     return {
         str(key): value
         for key, value in row.items()
-        if str(key) not in excluded
+        if str(key) not in excluded_keys
     }
 
 
@@ -191,6 +198,9 @@ def compare_rows(
         ) -> Tuple[bool, List[str]]:
     if len(one) != len(many):
         return False, [f"{row_label} count differs: {len(one)} != {len(many)}"]
+    excluded = set(TIMING_OR_DEVICE_KEYS if excluded_keys is None else excluded_keys)
+    if not bool(strict_diagnostics):
+        excluded.update(DIAGNOSTIC_BOOKKEEPING_KEYS)
     diffs: List[str] = []
     for idx, (a_row, b_row) in enumerate(zip(one, many)):
         a_key = int(a_row.get(key_field, idx) or 0)
@@ -201,16 +211,8 @@ def compare_rows(
                 break
             continue
         _diff_values(
-            _canonical(
-                a_row,
-                strict_diagnostics=bool(strict_diagnostics),
-                excluded_keys=excluded_keys,
-            ),
-            _canonical(
-                b_row,
-                strict_diagnostics=bool(strict_diagnostics),
-                excluded_keys=excluded_keys,
-            ),
+            _canonical_with_exclusions(a_row, excluded),
+            _canonical_with_exclusions(b_row, excluded),
             path=f"{row_label}[{a_key}]",
             atol=float(atol),
             limit=int(limit),
