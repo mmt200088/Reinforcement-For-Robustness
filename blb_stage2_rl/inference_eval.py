@@ -187,6 +187,7 @@ def run_installed_model_on_dataloader(
         use_train: bool = False,
         split_name: Optional[str] = None,
         mnli_metric2_fn: Optional[Callable[[], float]] = None,
+        loss_average: str = "sample",
         ) -> InstalledModelEvalResult:
     """Run a full installed-model eval loop on an existing dataloader.
 
@@ -232,7 +233,12 @@ def run_installed_model_on_dataloader(
             batch_labels.append(labels)
 
     loss_values = tensor_scalar_values_to_float_list(loss_tensors)
-    avg_loss = sample_weighted_mean(loss_values, loss_counts) if loss_values else 0.0
+    if not loss_values:
+        avg_loss = 0.0
+    elif str(loss_average).lower() == "batch":
+        avg_loss = float(sum(loss_values) / len(loss_values))
+    else:
+        avg_loss = sample_weighted_mean(loss_values, loss_counts)
     all_logits = concatenate_logits_for_metrics(batch_logits)
     all_labels = concatenate_labels_for_metrics(batch_labels)
     n_batches = max(1, len(dataloader))

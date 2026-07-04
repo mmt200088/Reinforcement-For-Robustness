@@ -5363,6 +5363,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 use_train=bool(use_train),
                 split_name=split_name,
                 mnli_metric2_fn=mnli_metric2_fn,
+                loss_average="batch",
             )
             avg_loss = result.loss
             metric1 = result.metric1

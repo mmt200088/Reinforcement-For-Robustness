@@ -159,9 +159,23 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
             use_train=False,
             split_name="validation_full",
         )
+        full_batch_loss = run_installed_model_on_dataloader(
+            model,
+            dataloader,
+            device=torch.device("cpu"),
+            metric_profile="mrpc",
+            use_train=False,
+            split_name="validation_full",
+            loss_average="batch",
+        )
 
         self.assertAlmostEqual(probe_loss, expected_loss, places=7)
         self.assertAlmostEqual(full.loss, expected_loss, places=7)
+        self.assertAlmostEqual(
+            full_batch_loss.loss,
+            sum(expected_losses) / len(expected_losses),
+            places=7,
+        )
         self.assertAlmostEqual(probe_m1, expected_m1, places=7)
         self.assertAlmostEqual(full.metric1, expected_m1, places=7)
         self.assertAlmostEqual(probe_m2, expected_m2, places=7)

@@ -2159,22 +2159,18 @@ class PolynomialGELU(nn.Module):
         return t
 
     def _poly(self, x: Tensor, sign: int) -> Tensor:
-        # Horner evaluation of the same polynomial the old stacked-powers code
-        # computed (sum_i coeff[i] * x**i). GELU runs on the widest activation
-        # in the network (the 4096-dim FFN output for bert-large); the previous
-        # ``torch.stack([x.pow(i) ...])`` materialized a (deg+1)-times-larger
-        # intermediate plus one kernel per power. Horner is degree-many addcmul
-        # kernels with no extra materialization. fp rounding differs from the
-        # stacked form at ~1e-7 relative (unit-locked in
-        # tests/test_stage1_eval_accel.py against the stacked reference).
+        # Evaluate in coefficient order to stay close to the old stacked-powers
+        # fp32 rounding while avoiding the (degree+1)-wide powers tensor.
         coeff_tensor = self._coeff_tensor(sign, x.device, x.dtype)
         n = coeff_tensor.shape[0]
         if n == 1:
             return coeff_tensor[0].expand_as(x).clone()
-        # First step folds the two highest coefficients: c[n-2] + c[n-1]*x.
-        out = torch.addcmul(coeff_tensor[n - 2], coeff_tensor[n - 1], x)
-        for i in range(n - 3, -1, -1):
-            out = torch.addcmul(coeff_tensor[i], out, x)
+        out = coeff_tensor[0].expand_as(x).clone()
+        power = x
+        out = torch.addcmul(out, coeff_tensor[1], power)
+        for i in range(2, n):
+            power = power * x
+            out = torch.addcmul(out, coeff_tensor[i], power)
         return out
 
     def forward(self, x: Tensor) -> Tensor:
