@@ -324,7 +324,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         gelu_degree=stage1_gelu_degrees if stage1_gelu_degrees != "unknown" else 4,
         attn_degree=stage1_softmax_degrees if stage1_softmax_degrees != "unknown" else 4,
     )
-    print(json.dumps(record, ensure_ascii=False, indent=2))
+    json.dump(record, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0
 
 
