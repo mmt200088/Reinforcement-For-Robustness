@@ -49,6 +49,7 @@
   },
   "workflow": {
     "server_code_policy": "server used temporary source packages for execution only",
-    "local_git_policy": "source commits were pushed before evidence commit"
+    "local_git_policy": "source commits were pushed before evidence commit",
+    "source_snapshot_policy": "source files are represented by pushed source commits 463ba08 and dbd1b6f; verbatim snapshots are omitted from the evidence tree to avoid carrying unrelated pre-existing whitespace noise into diff checks"
   }
 }

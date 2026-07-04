@@ -77,4 +77,8 @@ full gate passed (`FULL_RC=0`).
 - `precommit_green_validation.log`: successful server validation of the final
   file content before the final source commit was created.
 - `green_validation.log`: final server GREEN gate.
-- `source_snapshot/`: final source/test snapshots from `dbd1b6f`.
+
+Source content is represented by pushed source commits `463ba08` and
+`dbd1b6f`. Verbatim source snapshots are intentionally omitted from this
+evidence tree so diff checks do not inherit unrelated pre-existing whitespace
+from full-file copies.
