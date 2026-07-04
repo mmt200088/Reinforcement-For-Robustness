@@ -267,50 +267,59 @@ def _format_count(value: object) -> str:
     return str(int(value)) if isinstance(value, int) else str(value)
 
 
-def render_markdown(report: Mapping[str, Any]) -> str:
+def iter_markdown_lines(report: Mapping[str, Any]) -> Iterable[str]:
     summary = report.get("summary", {})
-    lines = [
-        "# Project Optimization Audit",
-        "",
-        f"Root: `{report.get('root', '')}`",
-        "",
-        "## Summary",
-        "",
-        f"- Flow stages: {_format_count(summary.get('total_flow_stages', 0))}",
-        f"- Expected files: {_format_count(summary.get('total_expected_files', 0))}",
-        f"- Present files: {_format_count(summary.get('present_files', 0))}",
-        f"- Missing files: {_format_count(summary.get('missing_files', 0))}",
-        "",
-        "## Flow Stages",
-        "",
-    ]
+    yield "# Project Optimization Audit"
+    yield ""
+    yield f"Root: `{report.get('root', '')}`"
+    yield ""
+    yield "## Summary"
+    yield ""
+    yield f"- Flow stages: {_format_count(summary.get('total_flow_stages', 0))}"
+    yield f"- Expected files: {_format_count(summary.get('total_expected_files', 0))}"
+    yield f"- Present files: {_format_count(summary.get('present_files', 0))}"
+    yield f"- Missing files: {_format_count(summary.get('missing_files', 0))}"
+    yield ""
+    yield "## Flow Stages"
+    yield ""
     for stage in report.get("flow_stages", []):
-        lines.append(f"### {stage['id']}: {stage['name']}")
-        lines.append(f"- Present files: {stage['present_files']}")
-        lines.append(f"- Missing files: {stage['missing_files']}")
+        yield f"### {stage['id']}: {stage['name']}"
+        yield f"- Present files: {stage['present_files']}"
+        yield f"- Missing files: {stage['missing_files']}"
         for item in stage.get("files", []):
             mark = "present" if item.get("present") else "missing"
-            lines.append(f"- `{item['path']}`: {mark}")
+            yield f"- `{item['path']}`: {mark}"
         surfaces = ", ".join(stage.get("optimization_surfaces", []))
-        lines.append(f"- Optimization surfaces: {surfaces}")
-        lines.append("")
+        yield f"- Optimization surfaces: {surfaces}"
+        yield ""
     artifacts = report.get("artifact_summary", {})
-    lines.extend([
-        "## Artifact Evidence",
-        "",
-        f"- Roots scanned: {artifacts.get('roots_scanned', 0)}",
-    ])
+    yield "## Artifact Evidence"
+    yield ""
+    yield f"- Roots scanned: {artifacts.get('roots_scanned', 0)}"
     counts = artifacts.get("counts", {})
     for key in sorted(counts):
-        lines.append(f"- {key}: {counts[key]}")
+        yield f"- {key}: {counts[key]}"
     missing = artifacts.get("missing_evidence", [])
-    lines.append(f"- Missing evidence: {', '.join(missing) if missing else 'none'}")
-    lines.append("")
-    lines.append("## Next Steps")
-    lines.append("")
+    yield f"- Missing evidence: {', '.join(missing) if missing else 'none'}"
+    yield ""
+    yield "## Next Steps"
+    yield ""
     for item in report.get("next_steps", []):
-        lines.append(f"- {item}")
-    return "\n".join(lines) + "\n"
+        yield f"- {item}"
+
+
+def render_markdown(report: Mapping[str, Any]) -> str:
+    return "\n".join(iter_markdown_lines(report)) + "\n"
+
+
+def write_markdown_file(path: str | Path, report: Mapping[str, Any]) -> Path:
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for line in iter_markdown_lines(report):
+            handle.write(line)
+            handle.write("\n")
+    return out_path
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -334,11 +343,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         with Path(args.out_json).open("w", encoding="utf-8") as handle:
             json.dump(report, handle, indent=2, sort_keys=True)
             handle.write("\n")
-    markdown = render_markdown(report)
     if args.out_md:
-        Path(args.out_md).write_text(markdown, encoding="utf-8")
+        write_markdown_file(args.out_md, report)
     if not args.out_json and not args.out_md:
-        print(markdown, end="")
+        print(render_markdown(report), end="")
     return 0
 
 
