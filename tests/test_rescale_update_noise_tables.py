@@ -60,6 +60,32 @@ class UpdateNoiseTablesDiscoveryTest(unittest.TestCase):
 
         self.assertEqual([p.name for p in configs], ["alpha.json", "zeta.json"])
 
+    def test_fmt_dict_block_streams_items_without_full_list_copy(self):
+        mod = _load_module()
+        source = SCRIPT_PATH.read_text(encoding="utf-8")
+        fmt_region = source[
+            source.index("def fmt_dict_block("):
+            source.index("\n\ndef replace_block(")
+        ]
+
+        self.assertNotIn("items = list(d.items())", fmt_region)
+        rendered = mod.fmt_dict_block(
+            {
+                12: 1.0,
+                13: 2.0,
+                14: 3.0,
+                15: 4.0,
+                16: 5.0,
+            },
+            "    ",
+        )
+        self.assertEqual(
+            rendered,
+            '    "12": 1.000000e+00, "13": 2.000000e+00, '
+            '"14": 3.000000e+00, "15": 4.000000e+00,\n'
+            '    "16": 5.000000e+00',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

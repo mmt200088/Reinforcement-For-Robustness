@@ -125,15 +125,18 @@ def build_tables(
 
 
 def fmt_dict_block(d: Dict[int, float], indent: str) -> str:
-    items = list(d.items())
     lines: List[str] = []
-    for i in range(0, len(items), ITEMS_PER_LINE):
-        chunk = items[i : i + ITEMS_PER_LINE]
-        parts = [f'"{sf}": {val:.6e}' for sf, val in chunk]
+    parts: List[str] = []
+    last_idx = len(d) - 1
+    for idx, (sf, val) in enumerate(d.items()):
+        parts.append(f'"{sf}": {val:.6e}')
+        if len(parts) < ITEMS_PER_LINE and idx != last_idx:
+            continue
         line = indent + ", ".join(parts)
-        if i + ITEMS_PER_LINE < len(items):
+        if idx != last_idx:
             line += ","
         lines.append(line)
+        parts = []
     return "\n".join(lines)
 
 
