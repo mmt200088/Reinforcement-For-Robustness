@@ -66,6 +66,18 @@ baseline throughout training, so its action space contributes nothing."""
 # ---------------------------------------------------------------------------
 # Fingerprint
 # ---------------------------------------------------------------------------
+def _baseline_action_vec_hash(baseline_action_vec: Sequence[int]) -> str:
+    arr = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1)
+    digest = hashlib.sha256()
+    digest.update(b"[")
+    for idx, value in enumerate(arr):
+        if idx:
+            digest.update(b",")
+        digest.update(str(int(value)).encode("ascii"))
+    digest.update(b"]")
+    return "sha256:" + digest.hexdigest()
+
+
 def compute_fingerprint(
         *,
         profile: str,
@@ -85,9 +97,6 @@ def compute_fingerprint(
     cache file is rejected at load time. ``baseline_action_vec`` is hashed (not
     embedded) to keep the fingerprint compact.
     """
-    bvec = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1).tolist()
-    payload = json.dumps(bvec, separators=(",", ":")).encode("utf-8")
-    bvec_hash = "sha256:" + hashlib.sha256(payload).hexdigest()
     return {
         "profile": str(profile),
         "num_layers": int(num_layers),
@@ -97,7 +106,7 @@ def compute_fingerprint(
         "probe_size": int(probe_size),
         "tol_acc": float(tol_acc),
         "tol_stab": float(tol_stab),
-        "baseline_action_vec_hash": str(bvec_hash),
+        "baseline_action_vec_hash": _baseline_action_vec_hash(baseline_action_vec),
         "osr_version": str(osr_version),
     }
 

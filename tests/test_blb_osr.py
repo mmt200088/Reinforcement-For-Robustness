@@ -15,6 +15,7 @@ workaround test_blb_substage_assembly.py uses).
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -94,6 +95,19 @@ class FingerprintTests(unittest.TestCase):
         osr = _load_osr_module()
         fp = _make_fingerprint(osr)
         self.assertEqual(fp["osr_version"], osr.OSR_VERSION)
+
+    def test_baseline_action_vec_hash_streams_json_array_without_materialization(self):
+        osr = _load_osr_module()
+        fp = _make_fingerprint(osr, baseline_action_vec=[0, 1, 2, 3])
+        expected = "sha256:" + hashlib.sha256(b"[0,1,2,3]").hexdigest()
+        self.assertEqual(fp["baseline_action_vec_hash"], expected)
+
+        with open(_OSR_PATH, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("def _baseline_action_vec_hash(", text)
+        self.assertIn("digest.update(b\"[\")", text)
+        self.assertNotIn("reshape(-1).tolist()", text)
+        self.assertNotIn("json.dumps(bvec", text)
 
 
 class ResultsRoundtripTests(unittest.TestCase):
