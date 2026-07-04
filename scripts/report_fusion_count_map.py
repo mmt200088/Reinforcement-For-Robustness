@@ -1088,12 +1088,13 @@ def main() -> int:
     json_path.parent.mkdir(parents=True, exist_ok=True)
     write_json_file(json_path, payload)
     html_path.write_text(_render_html(payload), encoding="utf-8")
-    print(json.dumps({
+    json.dump({
         "html": str(html_path),
         "json": str(json_path),
         "action_config_dir": str(output_dir / "action_configs"),
         "action_configs": action_paths,
-    }, ensure_ascii=False, indent=2))
+    }, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
     return 0
 
 

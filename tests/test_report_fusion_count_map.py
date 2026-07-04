@@ -226,6 +226,15 @@ class FusionCountMapReportTest(unittest.TestCase):
         self.assertIn('iter_fusion_map_paths(Path("blb_stage2_rl/fusion_maps/mrpc"))', text)
         self.assertNotIn('glob.glob("blb_stage2_rl/fusion_maps/mrpc/*.json")', text)
 
+    def test_main_streams_stdout_json_summary(self):
+        source = Path("scripts/report_fusion_count_map.py").read_text(encoding="utf-8")
+        main_region = source.split("def main(", 1)[1].split('if __name__ == "__main__":', 1)[0]
+
+        self.assertIn("json.dump(", main_region)
+        self.assertIn("sys.stdout", main_region)
+        self.assertIn('sys.stdout.write("\\n")', main_region)
+        self.assertNotIn("print(json.dumps(", main_region)
+
     def test_group_specs_reuses_graph_target_choices(self):
         graphs = {
             "block2_mrpc": {
