@@ -1,0 +1,1 @@
+Interrupted full-repository git archive after it proved unnecessarily broad; retried with temporary reports sparse inclusion.

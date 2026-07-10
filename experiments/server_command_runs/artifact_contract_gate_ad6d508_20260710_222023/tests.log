@@ -1,0 +1,29 @@
+................................
+======================================================================
+ERROR: test_json_artifact_scripts_use_shared_reader (tests.test_rl_data_points.RLDataPointWriterTest) (path='reports/generate_blb_mapping_html_reports.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_rl_data_points.py", line 316, in test_json_artifact_scripts_use_shared_reader
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/pathlib.py", line 1134, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/pathlib.py", line 1119, in open
+    return self._accessor.open(self, mode, buffering, encoding, errors,
+FileNotFoundError: [Errno 2] No such file or directory: '/hy-tmp/rfr_runtime_optimization/reports/generate_blb_mapping_html_reports.py'
+
+======================================================================
+ERROR: test_json_artifact_scripts_use_shared_writer (tests.test_rl_data_points.RLDataPointWriterTest) (path='reports/generate_blb_mapping_html_reports.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_rl_data_points.py", line 283, in test_json_artifact_scripts_use_shared_writer
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/pathlib.py", line 1134, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/pathlib.py", line 1119, in open
+    return self._accessor.open(self, mode, buffering, encoding, errors,
+FileNotFoundError: [Errno 2] No such file or directory: '/hy-tmp/rfr_runtime_optimization/reports/generate_blb_mapping_html_reports.py'
+
+----------------------------------------------------------------------
+Ran 34 tests in 1.841s
+
+FAILED (errors=2)

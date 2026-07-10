@@ -170,6 +170,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `c5424cd` | `experiments/server_command_runs/experiments_log_register_json_stream_c5424cd_20260704_102430/` | Stream `tools.experiments_log register` JSON output through the shared stdout `json.dump()` helper instead of materializing one full JSON string through `json.dumps()`. |
 | Structured artifacts | `9cabfaa` | `experiments/server_command_runs/experiments_log_rebuild_sort_9cabfaa_20260704_131500/` | Sort latest run records directly from the `_latest_by_run_id(...).values()` view in `tools.experiments_log rebuild`, avoiding a pre-sort list copy before index generation. |
 | Structured artifacts | `afcc72a` | `experiments/server_command_runs/action_registry_stdout_json_afcc72a_20260704_110045/` | Stream BLB action registry CLI path summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
+| Structured artifact verification | `ad6d508` | `experiments/server_command_runs/artifact_contract_gate_ad6d508_20260710_222023/` | Verify RL data-point schemas, Stage-2 persistent-output contracts, and evidence bundle behavior together on the replacement server. |
 | Stage-2 artifacts | `cfc368d` | `experiments/server_command_runs/f0_scan_stdout_json_cfc368d_20260704_111713/` | Stream F0 feasible-domain scan CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Stage-2 artifacts | `2edeb35` | `experiments/server_command_runs/f0_scan_md_stream_2edeb35_20260704_141650/` | Stream F0 feasible-domain per-slot summary and suggested action-mask Markdown outputs through line writers instead of joining full Markdown buffers before `Path.write_text()`. |
 | Stage-2 artifacts | `1b15448` | `experiments/server_command_runs/blb_eval_action_stdout_json_1b15448_20260704_110534/` | Stream BLB F0 eval action CLI candidate record directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
@@ -2625,13 +2626,22 @@ writes instead of materializing one full joined string before writing. These
 paths keep the same report sections and output file names while reducing peak
 allocation in Stage-2 persistence/report flushes.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
 ```bash
 python3 -m unittest tests.test_rl_data_points tests.test_stage2_persistent_output_verifier -v
 ```
+
+Server evidence 2026-07-10: source commit `ad6d508` passed Python compilation
+and all 34 tests from `tests.test_rl_data_points`,
+`tests.test_stage2_persistent_output_verifier`, and
+`tests.test_optimization_evidence_bundle`. The first run exposed only a server
+sparse-checkout fixture omission; the accepted retry temporarily added the
+tracked `reports/` path through Git, ran the unchanged test command, and
+restored the original sparse set with a clean main worktree. Evidence is under
+`experiments/server_command_runs/artifact_contract_gate_ad6d508_20260710_222023/`.
 
 ## Task 8: Server Evidence and Promotion Loop
 
