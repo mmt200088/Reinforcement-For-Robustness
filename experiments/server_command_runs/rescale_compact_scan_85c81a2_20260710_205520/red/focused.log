@@ -1,0 +1,22 @@
+test_compact_config_propagates_each_stage_without_nodes_between (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... FAIL
+
+======================================================================
+FAIL: test_compact_config_propagates_each_stage_without_nodes_between (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_rescale_optimizer_hotpaths.py", line 75, in test_compact_config_propagates_each_stage_without_nodes_between
+    compact = build_new_compact_config(graph, "block4", result)
+  File "/hy-tmp/rfr_runtime_optimization/Rescale_optimizer/rescale_optimizer/replan_interface.py", line 312, in build_new_compact_config
+    sf = int(propagate_scale(t_vec[r_prev], graph.nodes_between(skeleton[r_prev], i)))
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/unittest/mock.py", line 1173, in _execute_mock_call
+    raise effect
+AssertionError: replayed cut-point path
+
+----------------------------------------------------------------------
+Ran 1 test in 0.010s
+
+FAILED (failures=1)

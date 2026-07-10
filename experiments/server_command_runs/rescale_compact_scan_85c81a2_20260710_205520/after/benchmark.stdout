@@ -1,0 +1,36 @@
+{
+  "source_commit": "85c81a25bb7feb8cd834998ce3be26ff354b534f",
+  "graph_key": "block4",
+  "graph_node_count": 14,
+  "compact_only": {
+    "n": 100000,
+    "repeats": 3,
+    "seconds": [
+      1.0715171089977957,
+      1.07292627095012,
+      1.0709649570053443
+    ],
+    "median_seconds": 1.0715171089977957,
+    "calls_per_second": 93325.62136458217
+  },
+  "full_replan_with_compact": {
+    "n": 50000,
+    "repeats": 3,
+    "seconds": [
+      1.436879199987743,
+      1.432390601024963,
+      1.4323060769820586
+    ],
+    "median_seconds": 1.432390601024963,
+    "calls_per_second": 34906.679759153645
+  },
+  "compact_speedup_vs_before": 1.3993567357951273,
+  "full_replan_speedup_vs_before": 1.2113472189483234,
+  "compact_saved_seconds_per_100k": 0.4279175749979913,
+  "full_saved_seconds_per_50k": 0.3027317699743435,
+  "compact_sha256": "3e35f13723546fc93979981338da9d9e540c567bacc726f06b74b0ff3d322c33",
+  "compact_sha256_equal": true,
+  "full_semantic_signature_equal": true,
+  "all_graph_outputs_equal": true,
+  "all_graph_count": 12
+}

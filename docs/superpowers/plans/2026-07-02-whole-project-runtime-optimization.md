@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `2907e63`, the conservative
+not by raw commit count. As of source head `85c81a2`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -207,6 +207,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 scheduling gate | `623cd5d` | `experiments/server_command_runs/stage2_ab_excluded_keys_623cd5d_20260704_101330/` | Materialize Stage-2 A/B canonical excluded keys once per comparison and reuse the set across all per-row canonicalization calls. |
 | Stage-2 scheduling gate | `f3103d9` | `experiments/server_command_runs/stage2_ngpu_report_stream_f3103d9_20260710_154047/` | Stream the Stage-2 1GPU-vs-NGPU verdict to stdout and the optional output file without materializing the complete report string in the CLI path. |
 | Rescale/fusion maps | `2907e63` | `experiments/server_command_runs/rescale_scalar_restore_2907e63_20260710_204509/` | Snapshot and restore Rescale graph delta state with direct `int` / `None` assignment instead of per-node `deepcopy()` calls in every repeated replan. |
+| Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
 | Rescale/fusion maps | `c48e63d` | `experiments/server_command_runs/feasibility_cutpoint_index_c48e63d_20260703_233525/` | Precompute cut-point node identity indices once during feasibility-DAG construction instead of linearly scanning all cut points for every graph node. |
@@ -1165,6 +1166,18 @@ only about `0.0029s`, while two graph-state restores per full replan spent
 tests and the baseline comparison for one unrelated stale fusion-map assertion
 are committed under
 `experiments/server_command_runs/rescale_scalar_restore_2907e63_20260710_204509/`.
+
+Progress 2026-07-10: the post-restore cProfile identified compact handoff
+construction as the next Rescale hotspot. Source commit `85c81a2` now carries
+the current scale through each adjacent `stage_node_lists` segment once,
+resetting only at retained rescale cut points, instead of repeatedly building
+`nodes_between()` lists and replaying the path. A three-repeat block4 benchmark
+improved 100,000 compact builds from `1.499435s` to `1.071517s` (`1.399x`)
+and 50,000 full replans from `1.735122s` to `1.432391s` (`1.211x`). The full
+compact outputs for all 12 MRPC graphs are byte-identical before/after. TDD,
+21 directly related GREEN tests, cProfile, and parity artifacts are committed
+under
+`experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/`.
 
 Progress 2026-07-03: `rescale_optimizer_bridge.load_baseline_archive()` now
 caches parsed static-skeleton archives by absolute path, mtime, and size. The
