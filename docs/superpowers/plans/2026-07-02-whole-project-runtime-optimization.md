@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `ffa58a5`, the conservative
+not by raw commit count. As of source head `64727a9`, the conservative
 completion estimate is about 99% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -162,6 +162,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
 | Structured artifacts | `22b2fc8` | `experiments/server_command_runs/osr_baseline_hash_stream_22b2fc8_20260704_125000/` | Stream OSR baseline action vector JSON-array bytes directly into sha256, preserving fingerprint hashes without list and JSON-string materialization. |
 | Structured artifacts | `e0376a5` | `experiments/server_command_runs/jsonl_encoder_reuse_e0376a5_20260703_223743/` | Reuse one `JSONEncoder` for finite JSONL row writes instead of calling `json.dump()` for every row. |
+| Structured artifacts | `64727a9` | `experiments/server_command_runs/rl_jsonl_direct_64727a9_20260710_234402/` | Let the reused RL JSONL encoder normalize only non-native leaves instead of eagerly traversing every payload before encoding. |
 | Structured artifacts | `643ae60` | `experiments/server_command_runs/jsonl_resolve_once_643ae60_20260704_034331/` | Resolve JSONL paths once in shared readers and open the resolved file directly, avoiding duplicate filesystem checks in report/artifact scans. |
 | Structured artifacts | `a12c433` | `experiments/server_command_runs/run_manifest_md_stream_a12c433_20260704_141300/` | Stream BLB Trust-0 run manifest Markdown through the line writer instead of joining the full summary and writing it with `Path.write_text()`. |
 | Structured artifacts | `2ded3e7` | `experiments/server_command_runs/glue_json_reader_2ded3e7_20260704_040930/` | Read BLB GLUE action configs through the shared streaming JSON loader instead of `json.loads(open(...).read())`. |
@@ -2593,6 +2594,19 @@ training JSONL rows with a reused `JSONEncoder.iterencode()` into the existing
 buffered file handle. Required `rl_training_data_points/` schemas and flush
 cadence stay unchanged while long RL runs avoid one full JSON string allocation
 per manifest, summary, step, episode, and PPO diagnostic row.
+
+Progress 2026-07-10: the reused RL JSONL encoder now receives each payload
+directly and invokes `json_default` only for non-native leaves. This removes a
+redundant eager `to_jsonable(..., preserve_native=True)` traversal from every
+Stage-1 step/episode and Stage-2 episode/PPO row without changing buffering,
+flush cadence, schemas, sorting, whitespace, or newlines. Server TDD used RED
+commit `4225543` and GREEN source `64727a9`; all 25
+`tests.test_rl_data_points` tests passed. Seven-sample alternating-order
+benchmarks produced byte-identical rows and reduced representative Stage-1
+step serialization from `1.811772s` to `0.530645s` per 30,000 rows (`3.414x`),
+while a NumPy-heavy Stage-2 row improved from `1.978704s` to `1.799263s`
+(`1.100x`). Evidence is under
+`experiments/server_command_runs/rl_jsonl_direct_64727a9_20260710_234402/`.
 
 Progress 2026-07-03: `blb_stage2_rl/diagnostics.py` now reuses one
 `JSONEncoder` for primary Stage-2 diagnostic JSONL rows and streams encoder
