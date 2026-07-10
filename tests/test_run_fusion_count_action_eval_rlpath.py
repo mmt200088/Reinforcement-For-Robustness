@@ -3,6 +3,9 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+from types import SimpleNamespace
+
+import numpy as np
 
 from json_utils import to_jsonable
 from scripts.fusion_count_action_eval_common import (
@@ -31,6 +34,75 @@ class NoCopyMapping:
 
 
 class FusionCountActionEvalRLPathTest(unittest.TestCase):
+    def test_fixed_map_option_converts_to_policy_local_index(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        class FakeSeqEnv:
+            def __init__(self):
+                self.base = SimpleNamespace(probe_noise_seed=None)
+                self._step_idx = 0
+                self._schedule = [SimpleNamespace(
+                    step_idx=0,
+                    layer_idx=0,
+                    block_idx=2,
+                    graph_key_suffix="block2_mrpc",
+                    map_option_ids=(1,),
+                )]
+                self.evaluated_actions = []
+
+            def reset(self, *, seed):
+                self._step_idx = 0
+
+            def evaluate_step(self, action):
+                self.evaluated_actions.append(list(action))
+                return {
+                    "valid": True,
+                    "fusion_count": 1,
+                    "boosted_field_values": {"output_truncation_k": 13},
+                }
+
+            def commit_step(self, _eval_info, *, defer_terminal_forward):
+                self._step_idx = 1
+                terminal_info = {
+                    "metrics": SimpleNamespace(
+                        loss_mean=0.3,
+                        loss_std=0.01,
+                        metric1_mean=0.88,
+                        metric1_std=0.01,
+                        metric2_mean=0.87,
+                        metric2_std=0.01,
+                    ),
+                    "fusion_action_steps": [{
+                        "block_idx": 2,
+                        "fusion_count": 1,
+                        "k_value": 13,
+                        "graph_key": "block2_mrpc_L0",
+                    }],
+                }
+                return np.zeros(1), 1.0, True, {"terminal_info": terminal_info}
+
+        env = FakeSeqEnv()
+        old_deps = rlpath._RUNTIME_DEPS
+        try:
+            rlpath._RUNTIME_DEPS = {"K_LEVELS": (8, 9, 11, 13, 10, 12)}
+            result = rlpath._run_group(
+                env,
+                {
+                    "name": "fixed_b2",
+                    "path": Path("fixed_b2.json"),
+                    "baseline_k_index": 3,
+                    "group": {"option_by_graph": {"block2_mrpc": 1}},
+                },
+                seed=42,
+            )
+        finally:
+            rlpath._RUNTIME_DEPS = old_deps
+
+        self.assertEqual(env.evaluated_actions, [[0, 3]])
+        self.assertEqual(result["step_records"][0]["policy_option_index"], 0)
+        self.assertEqual(result["step_records"][0]["map_option_id"], 1)
+        self.assertEqual(result["fusion_total"], 1)
+
     def test_module_import_is_dependency_light(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
 
