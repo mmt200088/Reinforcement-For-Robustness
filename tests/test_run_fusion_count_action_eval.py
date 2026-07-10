@@ -29,6 +29,21 @@ class NoCopyMapping:
 
 
 class FusionCountActionEvalTest(unittest.TestCase):
+    def test_fixed_action_command_disables_unused_cost_matched_search(self):
+        command = action_eval._final_eval_command(
+            action_config=Path("candidate.json"),
+            output_root=Path("outputs"),
+            run_name="candidate",
+            repeat=1,
+            batch_size=128,
+            stage1_gelu=[1] * 12,
+            stage1_softmax=[6] * 12,
+            rescale_optimizer_root="Rescale_optimizer",
+        )
+
+        option_index = command.index("--cost-match-count")
+        self.assertEqual(command[option_index + 1], "0")
+
     def test_split_batch_result_preserves_per_config_result_contract(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
