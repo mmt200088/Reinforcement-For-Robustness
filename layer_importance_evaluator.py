@@ -3470,15 +3470,20 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.dataloaders_mm.pop(split_name, None)
             return
 
+        cache_eval_batches = split_name == "validation_full"
         self.dataset_splits[split_name] = dataset
-        self.dataloaders[split_name] = self._make_dataloader(dataset)
+        dataloader = self._make_dataloader(dataset)
+        self.dataloaders[split_name] = tuple(dataloader) if cache_eval_batches else dataloader
 
         if dataset_mm is None:
             self.dataset_splits_mm.pop(split_name, None)
             self.dataloaders_mm.pop(split_name, None)
         else:
             self.dataset_splits_mm[split_name] = dataset_mm
-            self.dataloaders_mm[split_name] = self._make_dataloader(dataset_mm)
+            dataloader_mm = self._make_dataloader(dataset_mm)
+            self.dataloaders_mm[split_name] = (
+                tuple(dataloader_mm) if cache_eval_batches else dataloader_mm
+            )
 
     def has_dataset_split(self, split_name):
         return self.dataloaders.get(split_name) is not None
