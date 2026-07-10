@@ -117,12 +117,16 @@ class UpgradedCurvesTest(unittest.TestCase):
             self.assertFalse(persistence._stage2_plot_rendering_enabled(None))
             self.assertTrue(persistence._stage2_plot_rendering_enabled(True))
             self.assertFalse(persistence._stage2_plot_rendering_enabled(False))
+        with mock.patch.dict(os.environ, {"RFR_STAGE2_RENDER_PLOTS": "1"}, clear=True):
+            self.assertTrue(persistence._stage2_plot_rendering_enabled(None))
 
     def test_full_series_emits_all_pngs(self):
         if not HAVE_MPL:
             self.skipTest("matplotlib not installed")
         with tempfile.TemporaryDirectory() as d:
-            out = persistence.write_training_curves(d, **self._full_kwargs())
+            out = persistence.write_training_curves(
+                d, **self._full_kwargs(), render_plots=True,
+            )
             for key in ("png", "entropy_png", "paper_png"):
                 self.assertTrue(_nonempty_file(out[key]), f"{key} not produced")
             self.assertEqual(os.path.basename(out["png"]),
@@ -328,6 +332,7 @@ class UpgradedCurvesTest(unittest.TestCase):
                         episode_returns=None,
                         entropy_series=entropy,
                         entropy_episodes=entropy_episodes,
+                        render_plots=True,
                     )
 
             self.assertTrue(_nonempty_file(out["entropy_png"]))
@@ -380,7 +385,9 @@ class UpgradedCurvesTest(unittest.TestCase):
         persistence.save_stage1_style_training_curve = fake_renderer
         try:
             with tempfile.TemporaryDirectory() as d:
-                out = persistence.write_training_curves(d, **self._full_kwargs(n=40))
+                out = persistence.write_training_curves(
+                    d, **self._full_kwargs(n=40), render_plots=True,
+                )
                 self.assertTrue(_nonempty_file(out["png"]))
         finally:
             persistence.save_stage1_style_training_curve = old
@@ -409,6 +416,7 @@ class UpgradedCurvesTest(unittest.TestCase):
                 episode_returns=[float(i) for i in range(50)],
                 best_reward_curve=[49.0] * 50,
                 ppo_loss_curve=[0.0] * 10,
+                render_plots=True,
             )
             self.assertTrue(_nonempty_file(out["npz"]))
             self.assertEqual(out["entropy_png"], "",
@@ -422,7 +430,7 @@ class UpgradedCurvesTest(unittest.TestCase):
         kw = self._full_kwargs()
         kw.pop("baselines")
         with tempfile.TemporaryDirectory() as d:
-            out = persistence.write_training_curves(d, **kw)
+            out = persistence.write_training_curves(d, **kw, render_plots=True)
             self.assertTrue(_nonempty_file(out["png"]))
 
 
@@ -907,6 +915,7 @@ class DiagnosticCurvesTest(unittest.TestCase):
                         fusion_count=fusion,
                         rolling_window=2,
                         log_fn=logs.append,
+                        render_plots=True,
                     )
 
             if not _nonempty_file(out["diagnostics_png"]):
@@ -931,6 +940,7 @@ class DiagnosticCurvesTest(unittest.TestCase):
                 cost_score=[min(3.0, 0.1 * f) for f in fz],
                 p3_metric_margin=[0.3] * n, metric1_std=[0.0155] * n,
                 rolling_window=100,
+                render_plots=True,
             )
             self.assertTrue(_nonempty_file(out["diagnostics_png"]))
 

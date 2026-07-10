@@ -161,7 +161,7 @@ def _stage2_plot_rendering_enabled(render_plots: Optional[bool]) -> bool:
         return bool(render_plots)
     raw = os.environ.get("RFR_STAGE2_RENDER_PLOTS")
     if raw is None:
-        return True
+        return False
     return raw.strip().lower() not in _PLOT_RENDER_FALSE_VALUES
 
 
@@ -977,7 +977,7 @@ def write_training_curves(
         log(f"  [BLB曲线][警告] 写 NPZ 失败：{exc}")
 
     if not should_render_plots:
-        log("  [BLB曲线][信息] 跳过 PNG/PDF 渲染（RFR_STAGE2_RENDER_PLOTS=0 或 render_plots=False）。")
+        log("  [BLB曲线][信息] PNG/PDF 渲染已延后；设置 RFR_STAGE2_RENDER_PLOTS=1 或 render_plots=True 可启用。")
         return out
 
     # ---- 主训练曲线（Stage-1 风格：Reward / Loss / metric1 / metric2）----
@@ -1154,7 +1154,7 @@ def write_diagnostic_curves(
     out = {"diagnostics_png": ""}
     os.makedirs(persistence_dir, exist_ok=True)
     if not _stage2_plot_rendering_enabled(render_plots):
-        log("  [诊断曲线][信息] 跳过 PNG 渲染（RFR_STAGE2_RENDER_PLOTS=0 或 render_plots=False）。")
+        log("  [诊断曲线][信息] PNG 渲染已延后；设置 RFR_STAGE2_RENDER_PLOTS=1 或 render_plots=True 可启用。")
         return out
     try:
         import matplotlib
