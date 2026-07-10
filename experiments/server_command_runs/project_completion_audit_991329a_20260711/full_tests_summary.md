@@ -1,0 +1,30 @@
+# Full Test Audit Summary
+
+- Source commit: `991329ac3876b859ca7cf123207031dfb0ac724b`
+- Tests: 1221 in 17.867s
+- Result: `FAILED (failures=18, errors=1, skipped=2)`
+- Full log SHA256: `5e854033bea4010eeba47920fb3e042192e8e016873857dbdef581fa7e5112f4`
+
+## Remaining Failures
+
+- ERROR: `test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests.test_action_candidate_applies_replan_cfg_before_model_forward`
+- FAIL: `test_blb_action_mask.BLBActionMaskTests.test_policy_sample_and_evaluate_share_masked_logprob`
+- FAIL: `test_blb_reward_archive.ParetoCostArchiveTests.test_adaptive_scalar_cost_has_fusion_and_truncation_step_boosts`
+- FAIL: `test_blb_reward_archive.ParetoCostArchiveTests.test_compute_reward_uses_adaptive_scalar_for_p3_cost_while_recording_pareto`
+- FAIL: `test_blb_reward_archive.ParetoCostArchiveTests.test_p3_cost_rank_remains_unbounded_after_ppo_cost_score_clips`
+- FAIL: `test_blb_stage2_eval_single_path_static.Stage2EvalSinglePathStaticTest.test_executable_eval_paths_use_shared_optimizer_writeback_helper`
+- FAIL: `test_blb_stage2_eval_single_path_static.Stage2EvalSinglePathStaticTest.test_installed_model_forward_paths_use_shared_inference_eval`
+- FAIL: `test_blb_stage2_eval_single_path_static.Stage2EvalSinglePathStaticTest.test_probe_runner_diagnostics_payload_uses_shared_helper`
+- FAIL: `test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests.test_action_candidate_still_runs_model_forward_when_optimizer_invalid`
+- FAIL: `test_blb_threshold_semantics.BLBThresholdSemanticsTests.test_baseline_derived_threshold_uses_all_max_blb_metric`
+- FAIL: `test_cli_parse_utils.CliParseUtilsTest.test_existing_script_wrappers_use_shared_helper`
+- FAIL: `test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_legacy_stage2_rollout_defers_logprob_value_sync_until_buffer_pack`
+- FAIL: `test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_probe_runner_aggregates_trial_results_in_preallocated_lists`
+- FAIL: `test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_probe_runner_caches_round_robin_trial_assignments`
+- FAIL: `test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_rollout_policy_uses_causal_prefix_fast_path`
+- FAIL: `test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_sequential_stage2_rollout_defers_logprob_value_sync_until_buffer_pack`
+- FAIL: `test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_stage2_fusion_action_level_masks_are_cached_per_device`
+- FAIL: `test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_stage2_parallel_rollout_batches_worker_scalar_sync_at_episode_end`
+- FAIL: `test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_stage2_step_static_tensors_are_cached_per_schedule_device`
+
+All remaining failures are in Stage-2 contract paths changed by concurrent integration commit `16b68e3`; the optimization audit does not silently classify them as green.

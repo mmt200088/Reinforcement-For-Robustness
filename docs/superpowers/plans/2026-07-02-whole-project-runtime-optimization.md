@@ -77,18 +77,22 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `511b3f2`, the conservative
-completion estimate is about 99% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `991329a`, the conservative
+completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
-All currently single-GPU-verifiable plan phases are green. Hardware-default
-promotion remains evidence-gated rather than automatic, and the multi-GPU
-gate that requires more than the current one-GPU server remains open.
+The latest low-conflict single-GPU gates are green, but the repository-wide
+suite is not: concurrent Stage-2 integration commit `16b68e3` left 19 Stage-2
+contract failures, including eight guards for previously landed runtime work.
+Those failures require a coordinated Stage-2 handoff instead of an overlapping
+algorithm edit. Hardware-default promotion remains evidence-gated, and the
+multi-GPU gate that requires more than the current one-GPU server remains open.
 
 Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Plan and audit | `991329a` | `experiments/server_command_runs/project_completion_audit_991329a_20260711/` | Audit the complete sparse checkout on the replacement server, verify 30/30 whole-flow files and all structured-artifact classes, fix experiments-index and PyTorch test-process pollution, and retain the 19 remaining Stage-2 contract failures as explicit red evidence. |
 | Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Plan and audit | `7030da2` | `experiments/server_command_runs/project_optimization_audit_7030da2_20260710_223053/` | Re-run the six-stage whole-project audit on the replacement server after Paean, Rescale, rendering, and artifact-contract work. |
 | Paean final eval | `567ad75` | `experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/` | Reuse one clean-baseline install and one BLB bridge install across `repeat_n > 1` forwards. |
@@ -247,6 +251,18 @@ Server-verified optimization commits currently in the execution ledger:
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
 
 Remaining main-chain gates before this goal can be complete:
+
+Completion audit 2026-07-11: commit `991329a` passed the six-stage project
+inventory (30/30 expected files), 9 project-audit tests, 35 structured-artifact
+contract tests, and completion-tool compilation on the one-RTX-4090 server.
+The full 1,221-test run completed without test-process contamination but still
+reported 18 failures and one error, all in Stage-2 contract paths changed by
+concurrent integration commit `16b68e3`. Eight failures are runtime-regression
+guards (probe scheduling/preallocation, causal-prefix rollout, cached masks and
+static tensors, and deferred scalar synchronization). Do not mark those paths
+green or edit the Stage-2 algorithm concurrently; reconcile them at handoff.
+Evidence is in
+`experiments/server_command_runs/project_completion_audit_991329a_20260711/`.
 
 1. **Evidence loop:** every new source optimization must have a red/green or
    parity evidence directory committed back from the server.
