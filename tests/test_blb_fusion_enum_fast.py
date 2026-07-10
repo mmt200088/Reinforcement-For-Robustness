@@ -11,6 +11,7 @@ are golden-derived on the server and gated by ``verify_template`` there).
 import itertools
 import pathlib
 import sys
+from types import SimpleNamespace
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -54,13 +55,16 @@ class ComboRangeTest(unittest.TestCase):
                 self.last_deltas = None
 
             def replan(self, graph_key, *, t_new, delta_overrides, return_dict):
+                raise AssertionError("fast enumeration requested full replan output")
+
+            def replan_compact(self, graph_key, *, t_new, delta_overrides):
                 self.last_deltas = dict(delta_overrides)
-                return {
-                    "valid": True,
-                    "fusion_count": 0,
-                    "new_compact_config": {},
-                    "result": {"valid": True, "chain": {"total_bits": 123}},
-                }
+                return SimpleNamespace(
+                    valid=True,
+                    fusion_count=0,
+                    total_bits=123,
+                    compact_config={},
+                )
 
         tpl = fef.FastEnumTemplate(
             graph_key="fake_block4",

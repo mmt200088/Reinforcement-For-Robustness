@@ -13,6 +13,30 @@ if str(RESCALE_ROOT) not in sys.path:
 
 
 class RescaleOptimizerHotPathTests(unittest.TestCase):
+    def test_compact_replan_matches_full_result_without_building_full_output(self):
+        from rescale_optimizer import CompactReplanResult, ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        full = session.replan("block4")
+
+        with mock.patch.object(
+            replan_interface,
+            "build_replan_output_dict",
+            side_effect=AssertionError("built full replan output"),
+        ):
+            compact = session.replan_compact("block4")
+
+        self.assertIsInstance(compact, CompactReplanResult)
+        self.assertEqual(compact.valid, full["valid"])
+        self.assertEqual(compact.fusion_count, full["fusion_count"])
+        self.assertEqual(compact.total_bits, full["result"]["chain"]["total_bits"])
+        self.assertEqual(compact.compact_config, full["new_compact_config"])
+
     def test_compact_config_propagates_each_stage_without_nodes_between(self):
         from rescale_optimizer import ReplanSession
         from rescale_optimizer.graph import propagate_scale
