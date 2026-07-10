@@ -472,6 +472,61 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
 
 @unittest.skipUnless(_HAS_TORCH, "layer_importance_evaluator imports torch")
 class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
+    @staticmethod
+    def _empty_split_registry(evaluator):
+        evaluator.dataset_splits = {}
+        evaluator.dataloaders = {}
+        evaluator.dataset_splits_mm = {}
+        evaluator.dataloaders_mm = {}
+
+    def test_validation_full_batches_are_collated_once_for_repeated_evaluation(self):
+        from layer_importance_evaluator import LayerImportanceEvaluator
+
+        class CountingLoader:
+            def __init__(self, batch):
+                self.batch = batch
+                self.iter_calls = 0
+
+            def __iter__(self):
+                self.iter_calls += 1
+                yield self.batch
+
+        evaluator = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        self._empty_split_registry(evaluator)
+        validation_dataset = object()
+        validation_batch = {"input_ids": object(), "labels": object()}
+        validation_loader = CountingLoader(validation_batch)
+        evaluator._make_dataloader = lambda dataset: validation_loader
+
+        LayerImportanceEvaluator._register_dataset_split(
+            evaluator,
+            "validation_full",
+            validation_dataset,
+        )
+
+        self.assertEqual(evaluator.dataloaders["validation_full"], (validation_batch,))
+        self.assertEqual(validation_loader.iter_calls, 1)
+        list(evaluator.dataloaders["validation_full"])
+        list(evaluator.dataloaders["validation_full"])
+        self.assertEqual(validation_loader.iter_calls, 1)
+
+    def test_training_split_keeps_lazy_dataloader(self):
+        from layer_importance_evaluator import LayerImportanceEvaluator
+
+        evaluator = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        self._empty_split_registry(evaluator)
+        train_dataset = object()
+        train_loader = object()
+        evaluator._make_dataloader = lambda dataset: train_loader
+
+        LayerImportanceEvaluator._register_dataset_split(
+            evaluator,
+            "train",
+            train_dataset,
+        )
+
+        self.assertIs(evaluator.dataloaders["train"], train_loader)
+
     def test_repeated_same_config_skips_handler_reinstall_but_keeps_eval_mode(self):
         from layer_importance_evaluator import (
             LayerImportanceEvaluator,
