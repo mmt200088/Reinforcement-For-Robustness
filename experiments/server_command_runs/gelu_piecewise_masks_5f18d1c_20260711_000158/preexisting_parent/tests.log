@@ -1,0 +1,29 @@
+test_action_candidate_applies_replan_cfg_before_model_forward (tests.test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests) ... /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+ERROR
+test_action_candidate_still_runs_model_forward_when_optimizer_invalid (tests.test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests) ... FAIL
+
+======================================================================
+ERROR: test_action_candidate_applies_replan_cfg_before_model_forward (tests.test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_stage2_rl_regressions.py", line 308, in test_action_candidate_applies_replan_cfg_before_model_forward
+    old_apply_optimizer_output_to_cfg = mod.apply_optimizer_output_to_cfg
+AttributeError: module 'Paean.blb_action_eval' has no attribute 'apply_optimizer_output_to_cfg'
+
+======================================================================
+FAIL: test_action_candidate_still_runs_model_forward_when_optimizer_invalid (tests.test_blb_stage2_rl_regressions.BLBActionFinalEvalRegressionTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_stage2_rl_regressions.py", line 486, in test_action_candidate_still_runs_model_forward_when_optimizer_invalid
+    self.assertFalse(result["skipped_forward"])
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.281s
+
+FAILED (failures=1, errors=1)

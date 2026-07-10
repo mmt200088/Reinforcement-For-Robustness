@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `64727a9`, the conservative
+not by raw commit count. As of source head `5f18d1c`, the conservative
 completion estimate is about 99% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -151,6 +151,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared eval metrics | `f9bbb29` | `experiments/server_command_runs/eval_binary_f1_f9bbb29_20260704_034430/` | Compute 0/1 binary weighted F1 with direct count reductions instead of sorting a class union for every MRPC/QQP reward-probe trial. |
 | Shared eval metrics | `d0e8b8c` | `experiments/server_command_runs/eval_binary_mcc_d0e8b8c_20260704_035430/` | Compute 0/1 binary Matthews correlation with direct count reductions instead of sorting a class union for CoLA-style evals. |
 | Shared eval metrics | `211ca50` | `experiments/server_command_runs/eval_accuracy_count_211ca50_20260704_041100/` | Compute classification accuracy with `np.count_nonzero()` match counts instead of generic `np.mean()` over a boolean mask. |
+| Shared GELU forward | `5f18d1c` | `experiments/server_command_runs/gelu_piecewise_masks_5f18d1c_20260711_000158/` | Select GELU polynomial pieces with three scalar comparisons instead of two compound interval masks, removing four full-shape comparison/boolean operations. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Shared logging | `5f877ca` | `experiments/server_command_runs/logging_json_encoder_5f877ca_20260704_124000/` | Reuse one module-level JSON encoder for BLB structured log records instead of constructing an encoder through `json.dumps()` for every record. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
@@ -564,6 +565,19 @@ now uses scalar `0.0` for the low/NaN branch instead of allocating
 `PolynomialGELU` and Block-5 noisy GELU, so this removes one full-shape zero
 tensor allocation from both installed forward paths while preserving the same
 piecewise boundaries.
+
+Progress 2026-07-11: the shared GELU piece selector now chooses the negative
+or positive polynomial with `x < 0`, preserves the low/NaN zero branch with
+`x >= -2.7`, and keeps the existing `x > 2.7` identity branch. This replaces
+two compound interval masks and removes four full-shape comparison/boolean
+operations per call. Server TDD used RED source `50e2ebd` and GREEN source
+`5f18d1c`; the relevant 71-test gate passed with 4 environment skips. Real
+MRPC validation_full A/B at batch 128 produced bit-identical logits and
+predictions for degree 1, degree 2, degree 4, and mixed configurations while
+improving complete eval wall time by `1.042x` to `1.065x` (about `21ms` per
+408-row eval). GPU sampling averaged `97.03%` utilization and peaked at 100%.
+Evidence is under
+`experiments/server_command_runs/gelu_piecewise_masks_5f18d1c_20260711_000158/`.
 
 Progress 2026-07-03: Block-2 QK-merge, Block-2 BSGS, and Block-4 input /
 softmax-V ones-mask encode hooks in `function_handler.py` now sample the
