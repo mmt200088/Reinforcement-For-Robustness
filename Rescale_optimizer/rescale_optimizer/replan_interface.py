@@ -279,42 +279,42 @@ def build_new_compact_config(
 
     rescale_index_at: Dict[int, int] = {skeleton[r]: r for r in range(1, R + 1)}
     cut_point_sf: List[Dict[str, Any]] = []
+    current_scale = int(t_vec[0])
 
     for i in range(M + 1):
         cp = graph.cut_points[i]
         type_name = cp.node.node_type.name
-
-        if i in rescale_index_at:
-            r = rescale_index_at[i]
-            sf_pre = int(
-                propagate_scale(t_vec[r - 1], graph.nodes_between(skeleton[r - 1], i))
-            )
-            cut_point_sf.append({
-                "i": i,
-                "name": cp.node.name,
-                "type": type_name,
-                "sf_pre": sf_pre,
-                "sf_post": int(t_vec[r]),
-                "drop": int(chain.q_bits[r - 1]),
-            })
-            continue
 
         if i == skeleton[0]:
             cut_point_sf.append({
                 "i": i,
                 "name": cp.node.name,
                 "type": type_name,
-                "sf": int(t_vec[0]),
+                "sf": current_scale,
             })
             continue
 
-        r_prev = max(r for r in range(R + 1) if skeleton[r] <= i)
-        sf = int(propagate_scale(t_vec[r_prev], graph.nodes_between(skeleton[r_prev], i)))
+        current_scale = int(
+            propagate_scale(current_scale, graph.stage_node_lists[i - 1])
+        )
+        if i in rescale_index_at:
+            r = rescale_index_at[i]
+            cut_point_sf.append({
+                "i": i,
+                "name": cp.node.name,
+                "type": type_name,
+                "sf_pre": current_scale,
+                "sf_post": int(t_vec[r]),
+                "drop": int(chain.q_bits[r - 1]),
+            })
+            current_scale = int(t_vec[r])
+            continue
+
         cut_point_sf.append({
             "i": i,
             "name": cp.node.name,
             "type": type_name,
-            "sf": sf,
+            "sf": current_scale,
         })
 
     drop_order = [
