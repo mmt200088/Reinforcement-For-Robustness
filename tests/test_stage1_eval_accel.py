@@ -130,6 +130,23 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
         self.assertNotIn(" & ", helper_region)
         self.assertNotIn("torch.zeros_like", helper_region)
 
+    def test_large_cuda_gelu_pairs_piece_evaluation_behind_size_gate(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        gelu_region = _source_region(
+            source,
+            "class PolynomialGELU",
+            "# change BertsdpaAttention",
+        )
+
+        self.assertIn("_GELU_PAIRED_POLY_MIN_NUMEL = 12_000_000", source)
+        self.assertIn("def _paired_coeff_tensor(", gelu_region)
+        self.assertIn("def _poly_pair(", gelu_region)
+        self.assertIn("x.is_cuda", gelu_region)
+        self.assertIn("x.dtype == torch.float32", gelu_region)
+        self.assertIn("self.degree in (2, 4)", gelu_region)
+        self.assertIn("x.numel() >= _GELU_PAIRED_POLY_MIN_NUMEL", gelu_region)
+        self.assertIn("y1, y2 = self._poly_pair(x)", gelu_region)
+
     def test_softmax_lower_bound_zero_branch_uses_scalar_zero(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
         bert_region = _source_region(
@@ -660,6 +677,21 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
                     got, ref, rtol=1e-5, atol=1e-6,
                     msg=f"degree={degree} sign={sign}",
                 )
+
+    def test_paired_polys_match_independent_piece_evaluation_exactly(self):
+        from function_handler import PolynomialGELU
+
+        x = self._x()
+        for degree in (2, 4):
+            mod = PolynomialGELU(degree=degree)
+            paired_neg, paired_pos = mod._poly_pair(x)
+
+            self.assertTrue(torch.equal(paired_neg, mod._poly(x, 1)))
+            self.assertTrue(torch.equal(paired_pos, mod._poly(x, 0)))
+
+            first = mod._paired_coeff_tensor(x.device, x.dtype)
+            second = mod._paired_coeff_tensor(x.device, x.dtype)
+            self.assertIs(first, second)
 
     def test_forward_matches_reference_piecewise(self):
         from function_handler import GELU_COEEF, PolynomialGELU, polynomial
