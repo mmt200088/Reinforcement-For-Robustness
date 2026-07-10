@@ -26,6 +26,10 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         self.assertIn("np.random.set_state(state[\"numpy\"])", text)
         self.assertIn("torch.random.set_rng_state(state[\"torch_cpu\"])", text)
         self.assertIn("torch.cuda.set_rng_state_all(state[\"torch_cuda\"])", text)
+        self.assertIn("from function_handler import reseed_noise_rng", text)
+        self.assertIn("reseed_noise_rng(self.random_seed)", text)
+        self.assertIn("finally:", loop)
+        self.assertIn("reseed_noise_rng(None)", loop)
 
     def test_evaluation_protocol_reuses_action_spec_tuples_until_json_conversion(self):
         text = source_text("Paean/blb_action_eval.py")
