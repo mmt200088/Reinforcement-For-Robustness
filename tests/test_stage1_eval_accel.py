@@ -693,6 +693,38 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
             second = mod._paired_coeff_tensor(x.device, x.dtype)
             self.assertIs(first, second)
 
+    @unittest.skipUnless(
+        _HAS_TORCH and torch.cuda.is_available(),
+        "paired GELU size gate requires CUDA",
+    )
+    def test_cuda_forward_size_gate_matches_legacy_and_skips_small_tensors(self):
+        from function_handler import (
+            PolynomialGELU,
+            _GELU_PAIRED_POLY_MIN_NUMEL,
+            _select_piecewise_gelu_output,
+        )
+
+        torch.manual_seed(19)
+        small = torch.empty(1024, device="cuda").uniform_(-4.0, 4.0)
+        large = torch.empty(
+            _GELU_PAIRED_POLY_MIN_NUMEL,
+            device="cuda",
+        ).uniform_(-4.0, 4.0)
+        for degree in (2, 4):
+            mod = PolynomialGELU(degree=degree).cuda().eval()
+            mod(small)
+            self.assertEqual(len(mod._paired_coeff_cache), 0)
+
+            legacy = _select_piecewise_gelu_output(
+                large,
+                mod._poly(large, 1),
+                mod._poly(large, 0),
+            )
+            got = mod(large)
+
+            self.assertTrue(torch.equal(got, legacy))
+            self.assertEqual(len(mod._paired_coeff_cache), 1)
+
     def test_forward_matches_reference_piecewise(self):
         from function_handler import GELU_COEEF, PolynomialGELU, polynomial
         x = self._x()
