@@ -4,9 +4,11 @@ import dataclasses
 import json
 import os
 from pathlib import Path
+import random
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+import torch
 
 from blb_rl_bridge import BLBNoiseRLBridge
 from blb_stage2_rl.action_space import (
@@ -106,6 +108,34 @@ class BLBActionFinalEvaluationModule:
         if key not in cache:
             cache[key] = load_max_sfs(key)
         return cache[key]
+
+    @staticmethod
+    def _capture_isolated_candidate_rng_state() -> Dict[str, Any]:
+        return {
+            "python": random.getstate(),
+            "numpy": np.random.get_state(),
+            "torch_cpu": torch.random.get_rng_state(),
+            "torch_cuda": (
+                torch.cuda.get_rng_state_all()
+                if torch.cuda.is_available()
+                else None
+            ),
+        }
+
+    @staticmethod
+    def _restore_isolated_candidate_rng_state(
+        metadata: Mapping[str, Any],
+        state: Optional[Mapping[str, Any]],
+    ) -> None:
+        if not bool((metadata or {}).get("isolate_random_seed", False)):
+            return
+        if state is None:
+            raise RuntimeError("isolated batch candidate RNG state was not captured")
+        random.setstate(state["python"])
+        np.random.set_state(state["numpy"])
+        torch.random.set_rng_state(state["torch_cpu"])
+        if state["torch_cuda"] is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(state["torch_cuda"])
 
     def run(
         self,
@@ -233,12 +263,23 @@ class BLBActionFinalEvaluationModule:
             baseline_result["p"],
             baseline_result["s"],
         )
+        isolated_candidate_rng_state = None
+        if any(
+            bool((candidate.metadata or {}).get("isolate_random_seed", False))
+            for candidate in selected_candidates
+        ):
+            isolated_candidate_rng_state = (
+                self._capture_isolated_candidate_rng_state()
+            )
 
         # ---- Evaluate selected candidates first ----
         selected_results: List[Dict[str, Any]] = []
         for idx, candidate in enumerate(selected_candidates, start=1):
             ev.log(
                 f"\n--- BLB selected candidate {idx}/{len(selected_candidates)}: {candidate.name} ---"
+            )
+            self._restore_isolated_candidate_rng_state(
+                candidate.metadata, isolated_candidate_rng_state,
             )
             result = self._evaluate_action_candidate(
                 name=candidate.name,

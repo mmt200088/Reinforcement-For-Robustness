@@ -51,6 +51,7 @@ DEFAULT_MANUAL_NOISE = {
 DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)
 DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)
 DEFAULT_MANUAL_NOISE_JSON = json.dumps(DEFAULT_MANUAL_NOISE, separators=(",", ":"))
+BATCH_RUN_NAME = "paean_action_batch"
 
 
 class _HtmlPartsWriter:
@@ -86,6 +87,65 @@ def _result_json_path(output_root: Path, run_name: str) -> Path:
     return _output_dir(output_root, run_name) / "final_eval" / "blb_action_final_eval_results_mrpc.json"
 
 
+def _final_eval_command(
+    *,
+    action_config: Path,
+    output_root: Path,
+    run_name: str,
+    repeat: int,
+    batch_size: int,
+    stage1_gelu: Sequence[int],
+    stage1_softmax: Sequence[int],
+    rescale_optimizer_root: str,
+) -> List[str]:
+    return [
+        sys.executable,
+        "-m",
+        "Paean.run_final_eval",
+        "--dataset",
+        "mrpc",
+        "--algorithm",
+        "rl",
+        "--model-type",
+        "bert-base",
+        "--batch-size",
+        str(int(batch_size)),
+        "--source",
+        "manual",
+        "--manual-stage1-gelu",
+        json.dumps([int(v) for v in stage1_gelu]),
+        "--manual-stage1-softmax",
+        json.dumps([int(v) for v in stage1_softmax]),
+        "--manual-stage2-noise",
+        DEFAULT_MANUAL_NOISE_JSON,
+        "--action-config",
+        str(action_config),
+        "--output-root",
+        str(output_root),
+        "--run-name",
+        str(run_name),
+        "--repeat",
+        str(int(repeat)),
+        "--rescale-invoker-kind",
+        "in_process",
+        "--rescale-optimizer-root",
+        str(rescale_optimizer_root),
+        "--require-rescale-optimizer",
+        "--no-glue-submission",
+        "--stage1-accuracy-tolerance",
+        "0.005",
+        "--stage2-limit-tolerance",
+        "0.005",
+        "--stage2-stability-tolerance",
+        "0.005",
+        "--stage2-k-trials",
+        "5",
+        "--stage2-probe-size",
+        "408",
+        "--foreground",
+    ]
+
+
 def _run_one(
     *,
     cfg: Mapping[str, Any],
@@ -108,52 +168,16 @@ def _run_one(
     log_dir = output_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "fusion_count_action_eval.log"
-    cmd = [
-        sys.executable,
-        "-m",
-        "Paean.run_final_eval",
-        "--dataset",
-        "mrpc",
-        "--algorithm",
-        "rl",
-        "--model-type",
-        "bert-base",
-        "--batch-size",
-        str(int(batch_size)),
-        "--source",
-        "manual",
-        "--manual-stage1-gelu",
-        json.dumps([int(v) for v in stage1_gelu]),
-        "--manual-stage1-softmax",
-        json.dumps([int(v) for v in stage1_softmax]),
-        "--manual-stage2-noise",
-        DEFAULT_MANUAL_NOISE_JSON,
-        "--action-config",
-        str(cfg["path"]),
-        "--output-root",
-        str(output_root),
-        "--run-name",
-        run_name,
-        "--repeat",
-        str(int(repeat)),
-        "--rescale-invoker-kind",
-        "in_process",
-        "--rescale-optimizer-root",
-        str(rescale_optimizer_root),
-        "--require-rescale-optimizer",
-        "--no-glue-submission",
-        "--stage1-accuracy-tolerance",
-        "0.005",
-        "--stage2-limit-tolerance",
-        "0.005",
-        "--stage2-stability-tolerance",
-        "0.005",
-        "--stage2-k-trials",
-        "5",
-        "--stage2-probe-size",
-        "408",
-        "--foreground",
-    ]
+    cmd = _final_eval_command(
+        action_config=Path(cfg["path"]),
+        output_root=output_root,
+        run_name=run_name,
+        repeat=repeat,
+        batch_size=batch_size,
+        stage1_gelu=stage1_gelu,
+        stage1_softmax=stage1_softmax,
+        rescale_optimizer_root=rescale_optimizer_root,
+    )
     command_text = format_command(cmd)
     print(f"[run] {run_name}: {command_text}")
     with log_path.open("w", encoding="utf-8") as log:
@@ -173,6 +197,120 @@ def _load_result(path: Path) -> dict:
     if not candidates:
         raise RuntimeError(f"missing candidate_results in {path}")
     return payload
+
+
+def _split_batch_result(
+    *,
+    batch_result_path: Path,
+    configs: Sequence[Mapping[str, Any]],
+    output_root: Path,
+) -> List[Path]:
+    payload = _load_result(batch_result_path)
+    candidate_by_name: Dict[str, Mapping[str, Any]] = {}
+    for candidate in payload["candidate_results"]:
+        name = str(candidate.get("name") or "")
+        if not name or name in candidate_by_name:
+            raise RuntimeError(
+                f"batch result has missing or duplicate candidate name: {name!r}"
+            )
+        candidate_by_name[name] = candidate
+
+    output_paths: List[Path] = []
+    for cfg in configs:
+        name = str(cfg["name"])
+        if name not in candidate_by_name:
+            raise RuntimeError(
+                f"batch result is missing candidate {name!r}; "
+                f"available={sorted(candidate_by_name)}"
+            )
+        split_payload = dict(payload)
+        split_payload["candidate_results"] = [dict(candidate_by_name[name])]
+        protocol = dict(split_payload.get("evaluation_protocol") or {})
+        protocol.update({
+            "candidate_count": 1,
+            "batch_candidate_name": name,
+            "batch_source_result": str(batch_result_path),
+        })
+        split_payload["evaluation_protocol"] = protocol
+        result_path = _result_json_path(output_root, name)
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json_file(result_path, split_payload)
+        output_paths.append(result_path)
+    return output_paths
+
+
+def _run_batch(
+    *,
+    configs: Sequence[Mapping[str, Any]],
+    output_root: Path,
+    repeat: int,
+    batch_size: int,
+    stage1_gelu: Sequence[int],
+    stage1_softmax: Sequence[int],
+    rescale_optimizer_root: str,
+    force: bool,
+    env: Mapping[str, str],
+) -> List[Path]:
+    expected_paths = [
+        _result_json_path(output_root, str(cfg["name"]))
+        for cfg in configs
+    ]
+    if expected_paths and not force and all(path.is_file() for path in expected_paths):
+        print(f"[skip] batch: all {len(expected_paths)} per-config results already exist")
+        return expected_paths
+
+    manifest_path = output_root / "paean_action_batch_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    write_json_file(manifest_path, {
+        "schema_version": "paean_action_batch_v1",
+        "candidates": [
+            {
+                "name": str(cfg["name"]),
+                "action_config": str(Path(cfg["path"]).resolve()),
+            }
+            for cfg in configs
+        ],
+    })
+
+    result_path = _result_json_path(output_root, BATCH_RUN_NAME)
+    if force or not result_path.is_file():
+        output_dir = _output_dir(output_root, BATCH_RUN_NAME)
+        log_dir = output_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "fusion_count_action_eval_batch.log"
+        cmd = _final_eval_command(
+            action_config=manifest_path,
+            output_root=output_root,
+            run_name=BATCH_RUN_NAME,
+            repeat=repeat,
+            batch_size=batch_size,
+            stage1_gelu=stage1_gelu,
+            stage1_softmax=stage1_softmax,
+            rescale_optimizer_root=rescale_optimizer_root,
+        )
+        command_text = format_command(cmd)
+        print(f"[run] batch({len(configs)} configs): {command_text}")
+        with log_path.open("w", encoding="utf-8") as log:
+            log.write("command:\n" + command_text + "\n\n")
+            log.flush()
+            rc = subprocess.run(
+                cmd,
+                cwd=str(REPO_ROOT),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=dict(env),
+            ).returncode
+        if rc != 0:
+            raise RuntimeError(f"batched final eval failed with rc={rc}; see {log_path}")
+    if not result_path.is_file():
+        raise RuntimeError(
+            f"batched final eval finished but result JSON is missing: {result_path}"
+        )
+    return _split_batch_result(
+        batch_result_path=result_path,
+        configs=configs,
+        output_root=output_root,
+    )
 
 
 def _build_combined(
@@ -370,6 +508,11 @@ def main() -> int:
     parser.add_argument("--stage1-softmax", default=DEFAULT_STAGE1_SOFTMAX_JSON)
     parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--legacy-per-config-processes",
+        action="store_true",
+        help="Launch one full Paean process per unique action instead of one batch.",
+    )
     parser.add_argument("--skip-run", action="store_true", help="Only collect existing Paean result JSON files.")
     args = parser.parse_args()
 
@@ -379,7 +522,7 @@ def main() -> int:
     output_json = resolve_repo_path(args.output_json)
     output_html = resolve_repo_path(args.output_html)
     configs = load_paean_action_configs(action_dir)
-    unique = unique_paean_action_configs(configs)
+    unique = tuple(unique_paean_action_configs(configs))
     print(f"[info] requested groups={len(configs)} unique action vectors={len(unique)}")
     stage1_gelu = parse_json_int_list(args.stage1_gelu, default=DEFAULT_STAGE1_GELU, name="--stage1-gelu")
     stage1_softmax = parse_json_int_list(args.stage1_softmax, default=DEFAULT_STAGE1_SOFTMAX, name="--stage1-softmax")
@@ -389,9 +532,22 @@ def main() -> int:
     env = dict(os.environ)
     env.setdefault("TOKENIZERS_PARALLELISM", "false")
     if not args.skip_run:
-        for cfg in unique:
-            _run_one(
-                cfg=cfg,
+        if args.legacy_per_config_processes:
+            for cfg in unique:
+                _run_one(
+                    cfg=cfg,
+                    output_root=output_root,
+                    repeat=int(args.repeat),
+                    batch_size=int(args.batch_size),
+                    stage1_gelu=stage1_gelu,
+                    stage1_softmax=stage1_softmax,
+                    rescale_optimizer_root=str(args.rescale_optimizer_root),
+                    force=bool(args.force),
+                    env=env,
+                )
+        else:
+            _run_batch(
+                configs=unique,
                 output_root=output_root,
                 repeat=int(args.repeat),
                 batch_size=int(args.batch_size),
