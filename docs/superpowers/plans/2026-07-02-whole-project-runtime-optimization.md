@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `7b59a10`, the conservative
+not by raw commit count. As of source head `511b3f2`, the conservative
 completion estimate is about 99% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -218,6 +218,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 scheduling gate | `f3103d9` | `experiments/server_command_runs/stage2_ngpu_report_stream_f3103d9_20260710_154047/` | Stream the Stage-2 1GPU-vs-NGPU verdict to stdout and the optional output file without materializing the complete report string in the CLI path. |
 | Rescale/fusion maps | `2907e63` | `experiments/server_command_runs/rescale_scalar_restore_2907e63_20260710_204509/` | Snapshot and restore Rescale graph delta state with direct `int` / `None` assignment instead of per-node `deepcopy()` calls in every repeated replan. |
 | Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
+| Rescale/fusion maps | `511b3f2` | `experiments/server_command_runs/fusion_compact_replan_511b3f2_20260711/` | Return only validity, fusion count, total bits, and compact config to the fast Cartesian-product enum loop instead of expanding the full compatibility JSON result for every combination. |
 | Rescale/fusion maps | `ffa58a5` | `experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/` | Make fusion schedule/replay verification derive expectations from the canonical map and close the 140-test Task 5 gate without changing runtime semantics. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
@@ -617,6 +618,14 @@ worth per-worker VRAM copies and device-cache complexity. Suppressing roughly
 198,795 GELU/Softmax install-success lines across 50,000 configurations also
 projected only `0.052s` runtime savings on the actual redirected-log path.
 Both measurements are retained with the validation-batch evidence.
+
+Rejected screening 2026-07-11: dynamic Stage-1 padding reduced MRPC
+full-validation wall by `1.60x` to `1.73x`, but changed logits and loss for the
+original plaintext baseline, all-degree1, all-degree4, and mixed
+configurations. Maximum absolute logit drift ranged from `2.6e-6` to
+`1.19e-4`. Current MRPC labels and metrics happened to remain equal, but the
+loss drift can change strict zero-tolerance feasibility and therefore the PPO
+trajectory, so the fixed-padding protocol remains unchanged.
 
 Progress 2026-07-03: Block-2 QK-merge, Block-2 BSGS, and Block-4 input /
 softmax-V ones-mask encode hooks in `function_handler.py` now sample the
@@ -1243,6 +1252,19 @@ compact outputs for all 12 MRPC graphs are byte-identical before/after. TDD,
 21 directly related GREEN tests, cProfile, and parity artifacts are committed
 under
 `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/`.
+
+Progress 2026-07-11: cProfile of the fast fusion Cartesian-product loop showed
+that `build_replan_output_dict()` spent `1.23s` in a profiled 100,000-combo
+run expanding compatibility JSON fields that enumeration never reads. Source
+commit `511b3f2` adds `ReplanSession.replan_compact()` and routes only the fast
+enum loop through its validity/fusion/bits/compact result; full replan/CLI/JSON
+callers are unchanged. Six-repeat production A/B improved the same 100,000
+real `block1_mrpc` combinations from median `2.065481s` to `1.485932s`
+(`1.390x`) with identical valid counts, reduced rows, and result SHA256. A
+20-worker end-to-end block1 build improved from `14.17s` to `12.34s`
+(`1.148x`), and the generated maps were semantically equal after excluding
+wall metadata. Server TDD and 128 related tests are under
+`experiments/server_command_runs/fusion_compact_replan_511b3f2_20260711/`.
 
 Progress 2026-07-03: `rescale_optimizer_bridge.load_baseline_archive()` now
 caches parsed static-skeleton archives by absolute path, mtime, and size. The

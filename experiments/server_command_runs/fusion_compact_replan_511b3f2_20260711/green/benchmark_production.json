@@ -1,0 +1,22 @@
+{
+  "combos_per_sample": 100000,
+  "mean_seconds": 1.4858590943428378,
+  "median_seconds": 1.4859320935211144,
+  "num_valid": 769,
+  "path": "compact_replan_output",
+  "reduced_rows": 1,
+  "result_sha256": "04b1fa904266bcc79ae3874cd29b7b8b6b253f90a59f7b1477edee8f3ab0e45c",
+  "samples": [
+    1.4826004030182958,
+    1.4855300600174814,
+    1.493617443018593,
+    1.4885228319908492,
+    1.4863341270247474,
+    1.4785497009870596
+  ],
+  "source_commit": "511b3f2",
+  "verify": {
+    "checked": 10,
+    "num_random": 8
+  }
+}

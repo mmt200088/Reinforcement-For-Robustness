@@ -1,0 +1,29 @@
+{
+  "builder_block1_20_workers": {
+    "combos": 3913140,
+    "parent_elapsed_seconds": 14.17,
+    "production_elapsed_seconds": 12.34,
+    "saved_seconds": 1.83,
+    "semantic_map_equal_excluding_wall_metadata": true,
+    "speedup": 1.1482982171799028
+  },
+  "microbenchmark": {
+    "combos_per_sample": 100000,
+    "parent_median_seconds": 2.06548133349861,
+    "production_median_seconds": 1.4859320935211144,
+    "projected_block4_20_worker_minutes_saved_ideal": 10.659866501871072,
+    "projected_block4_single_core_hours_saved": 3.5532888339570237,
+    "result_sha256": "04b1fa904266bcc79ae3874cd29b7b8b6b253f90a59f7b1477edee8f3ab0e45c",
+    "result_sha256_equal": true,
+    "rounds_per_source": 6,
+    "saved_seconds_per_100k": 0.5795492399774957,
+    "speedup": 1.3900240411418643
+  },
+  "related_tests": {
+    "passed": 126,
+    "ran": 128,
+    "skipped": 2
+  },
+  "source_parent": "5f260d0",
+  "source_production": "511b3f2"
+}

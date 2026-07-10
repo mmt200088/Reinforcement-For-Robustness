@@ -11,6 +11,31 @@
     "quiet_seconds": 2.6232831189990975,
     "speedup": 1.007989573398586
   },
+  "stage1_dynamic_padding": {
+    "configs": {
+      "degree1": {
+        "max_abs_logit_diff": 0.0000069141387939453125,
+        "speedup": 1.7326849301088505
+      },
+      "degree4": {
+        "max_abs_logit_diff": 0.000053882598876953125,
+        "speedup": 1.6830457263192957
+      },
+      "mixed": {
+        "max_abs_logit_diff": 0.00011944770812988281,
+        "speedup": 1.7075912782104121
+      },
+      "original": {
+        "max_abs_logit_diff": 0.0000026226043701171875,
+        "speedup": 1.5970864182530717
+      }
+    },
+    "decision": "rejected_numerical_drift",
+    "labels_exact": true,
+    "loss_exact": false,
+    "metrics_exact_on_mrpc": true,
+    "reason": "Different logits/loss can change strict zero-tolerance feasibility and the RL trajectory."
+  },
   "validation_batch_residency": {
     "cached_cpu_bytes": 1256640,
     "cpu_cached_median_seconds": 0.68821911100531,
