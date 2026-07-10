@@ -29,6 +29,53 @@ class NoCopyMapping:
 
 
 class FusionCountActionEvalTest(unittest.TestCase):
+    def test_split_batch_result_preserves_per_config_result_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            output_root = root / "outputs"
+            batch_path = root / "batch_result.json"
+            batch_path.write_text(
+                json.dumps({
+                    "baseline": {"loss": 1.0, "p": 0.8, "s": 0.7},
+                    "candidate_results": [
+                        {"name": "first", "loss": 0.9, "p": 0.81, "s": 0.71},
+                        {"name": "second", "loss": 0.8, "p": 0.82, "s": 0.72},
+                    ],
+                    "evaluation_protocol": {"candidate_count": 2},
+                }),
+                encoding="utf-8",
+            )
+            configs = [
+                {"name": "first", "action_hash": "h1"},
+                {"name": "second", "action_hash": "h2"},
+            ]
+
+            paths = action_eval._split_batch_result(
+                batch_result_path=batch_path,
+                configs=configs,
+                output_root=output_root,
+            )
+
+            self.assertEqual(len(paths), 2)
+            for cfg, path in zip(configs, paths):
+                self.assertEqual(path, action_eval._result_json_path(output_root, cfg["name"]))
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(payload["baseline"]["loss"], 1.0)
+                self.assertEqual(
+                    [row["name"] for row in payload["candidate_results"]],
+                    [cfg["name"]],
+                )
+                self.assertEqual(payload["evaluation_protocol"]["candidate_count"], 1)
+
+    def test_main_defaults_to_one_batch_process_with_legacy_opt_in(self):
+        source = Path(action_eval.__file__).read_text(encoding="utf-8")
+        main_source = source[source.index("def main("):]
+
+        self.assertIn("--legacy-per-config-processes", main_source)
+        self.assertIn("if args.legacy_per_config_processes:", main_source)
+        self.assertIn("_run_batch(", main_source)
+        self.assertNotIn("for cfg in unique:\n            _run_one(", main_source)
+
     def test_load_action_configs_does_not_retain_full_payload(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

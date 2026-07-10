@@ -4,6 +4,20 @@ from tests.source_inspection_utils import source_text
 
 
 class PaeanBLBActionEvalStaticTest(unittest.TestCase):
+    def test_batch_candidates_reset_independent_process_seed_before_eval(self):
+        text = source_text("Paean/blb_action_eval.py")
+        loop_start = text.index("for idx, candidate in enumerate(selected_candidates")
+        loop_end = text.index("# ---- Generate cost-matched random candidates", loop_start)
+        loop = text[loop_start:loop_end]
+
+        self.assertIn("self._reset_isolated_candidate_seed(candidate.metadata)", loop)
+        self.assertLess(
+            loop.index("self._reset_isolated_candidate_seed(candidate.metadata)"),
+            loop.index("self._evaluate_action_candidate("),
+        )
+        self.assertIn("def _reset_isolated_candidate_seed(", text)
+        self.assertIn("transformers.set_seed(self.random_seed)", text)
+
     def test_evaluation_protocol_reuses_action_spec_tuples_until_json_conversion(self):
         text = source_text("Paean/blb_action_eval.py")
         self.assertIn('"action_ranges": self.action_ranges,', text)
