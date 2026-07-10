@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `381d4a8`, the conservative
+not by raw commit count. As of source head `f197361`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -92,6 +92,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Paean final eval | `567ad75` | `experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/` | Reuse one clean-baseline install and one BLB bridge install across `repeat_n > 1` forwards. |
 | Paean final eval | `b2a7325` | `experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/` | Cache `load_max_sfs(profile)` per final-eval module instance. |
 | Paean final eval | `381d4a8` | `experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/` | Evaluate fixed fusion-count actions in one model/tokenizer/dataset process, reuse the clean baseline, isolate deterministic BLB-noise streams, and skip unused cost-matched random search. |
+| Paean final eval reports | `f197361` | `experiments/server_command_runs/paean_plot_defer_f197361_20260710_220535/` | Defer redundant Paean PNG/scatter rendering in the fixed-action driver while retaining JSON, Markdown, combined HTML, and explicit render opt-in. |
 | Paean final eval | `fa52906` | `experiments/server_command_runs/final_eval_normalize_ndarray_fa52906_20260703_234423/` | Normalize ndarray-backed final-eval config arrays without first materializing Python lists. |
 | Paean final eval | `e443e4a` | `experiments/server_command_runs/final_eval_stage2_cost_incremental_e443e4a_20260703_235252/` | Maintain current cost incrementally in Stage-2 cost-matched final-eval random search instead of rescanning the full candidate config every mutation. |
 | Paean final eval | `2ca2516` | `experiments/server_command_runs/paean_action_grid_max_sfs_cache_2ca2516_20260704_010810/` | Cache Paean action-grid max-SF tables by profile so batched slot-form action configs and fixed/range candidates avoid repeated `load_max_sfs()` parsing. |
@@ -2342,7 +2343,7 @@ action index with one pass over `k_levels` instead of `max(k_levels)` followed
 by `list(k_levels).index(...)`. Server RED/GREEN evidence is committed under
 `experiments/server_command_runs/action_registry_klevel_scan_9b78854_20260704_074904/`.
 
-- [ ] **Step 2: Move expensive rendering out of hot paths**
+- [x] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
 commands unless the user explicitly requests live rendering.
@@ -2367,6 +2368,17 @@ the NPZ arrays equal; explicit rendering remained available at a `1.072553s`
 median. Focused RED/GREEN evidence, the full 39-test related gate, and the
 benchmark are committed under
 `experiments/server_command_runs/stage2_plot_default_78cfec9_20260710_203325/`.
+
+Progress 2026-07-10: source commit `f197361` keeps Paean BLB action plots
+enabled by default, but the fixed fusion-count action driver now defaults
+`RFR_PAEAN_RENDER_PLOTS=0`. JSON, Markdown, and the driver's combined HTML stay
+enabled, and callers can explicitly set the variable to `1` to restore both
+internal PNGs. A two-candidate server benchmark measured the removed serial
+plot/scatter section at `0.921s` cold and `0.728s` warm median. The end-to-end
+gate wrote zero internal PNGs, retained combined HTML, and matched the accepted
+deterministic baseline/candidate semantic fields; compilation and all 60
+related tests passed. Evidence is committed under
+`experiments/server_command_runs/paean_plot_defer_f197361_20260710_220535/`.
 
 Progress 2026-07-02: the Stage-2 curve persistence path now checks sequence
 length with `len()` where available and converts each NPZ series with one

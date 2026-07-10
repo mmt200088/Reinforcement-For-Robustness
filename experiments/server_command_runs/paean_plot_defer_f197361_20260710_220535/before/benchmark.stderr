@@ -1,0 +1,13 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+Traceback (most recent call last):
+  File "<stdin>", line 10, in <module>
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/pathlib.py", line 1134, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/pathlib.py", line 1119, in open
+    return self._accessor.open(self, mode, buffering, encoding, errors,
+FileNotFoundError: [Errno 2] No such file or directory: '/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/final_batch/combined.json'
