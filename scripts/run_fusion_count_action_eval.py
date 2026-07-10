@@ -533,6 +533,7 @@ def main() -> int:
 
     env = dict(os.environ)
     env.setdefault("TOKENIZERS_PARALLELISM", "false")
+    env.setdefault("RFR_PAEAN_RENDER_PLOTS", "0")
     if not args.skip_run:
         if args.legacy_per_config_processes:
             for cfg in unique:

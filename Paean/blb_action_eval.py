@@ -47,6 +47,8 @@ from .action_grid import (
     coerce_spec_list,
 )
 
+_PLOT_RENDER_FALSE_VALUES = {"0", "false", "no", "off", "skip", "none"}
+
 
 class BLBActionFinalEvaluationModule:
     """Focused final-eval for BLB action vectors.
@@ -109,6 +111,11 @@ class BLBActionFinalEvaluationModule:
         if key not in cache:
             cache[key] = load_max_sfs(key)
         return cache[key]
+
+    @staticmethod
+    def _render_plots_enabled() -> bool:
+        raw = os.environ.get("RFR_PAEAN_RENDER_PLOTS", "1")
+        return raw.strip().lower() not in _PLOT_RENDER_FALSE_VALUES
 
     @staticmethod
     def _capture_isolated_candidate_rng_state() -> Dict[str, Any]:
@@ -400,11 +407,19 @@ class BLBActionFinalEvaluationModule:
             comparison_summary=comparison_summary,
             cost_match_diagnostics=cost_match_payload,
         )
-        plot_path = self._save_results_plot(candidate_results=results)
-        scatter_path = self._save_scatter_plot(
-            selected_results=selected_results,
-            random_results=random_results,
-        )
+        plot_path = None
+        scatter_path = None
+        if self._render_plots_enabled():
+            plot_path = self._save_results_plot(candidate_results=results)
+            scatter_path = self._save_scatter_plot(
+                selected_results=selected_results,
+                random_results=random_results,
+            )
+        else:
+            ev.log(
+                "BLB action final-eval plots deferred; set "
+                "RFR_PAEAN_RENDER_PLOTS=1 to enable."
+            )
         ev.log(f"BLB action final-eval summary saved to: {summary_path}")
         ev.log(f"BLB action final-eval text report saved to: {text_path}")
         if plot_path:
