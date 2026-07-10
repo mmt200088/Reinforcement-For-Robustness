@@ -1749,6 +1749,15 @@ the batched baseline and candidate semantic fields exactly; only expected
 artifact paths and measured `time_ms` differ. Python compilation and all 58
 related tests passed.
 
+Rejected candidate 2026-07-10: real BERT-base MRPC test-set profiling found
+that combining `torch.inference_mode()`, a pinned DataLoader, and removal of a
+warmup synchronization improved the established GLUE submission loop by only
+`1.005x`, despite bit-identical logits. Batch-size 32 reached `1.072x`, but
+changed logits by about `1e-5`; batch sizes 128/256 were slower. No source
+change was accepted because the role requires efficiency gains without
+silently changing result values. Evidence is under
+`experiments/server_command_runs/glue_inference_profile_c448ee2_20260710_232539/`.
+
 Progress 2026-07-04: `UnifiedFinalEvaluationModule._summarize_random_results()`
 now streams final-eval random-result summaries through per-family and overall
 running counters/stats. It no longer builds separate `feasible`, win-rate,
