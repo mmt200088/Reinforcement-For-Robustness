@@ -26,9 +26,12 @@ assume that `option_id == fusion_count`.
 
 ## Canonical Resolution Path
 
-`FusionStepSpec` carries the policy-local-to-map option mapping. A single helper
-resolves a policy-local fusion choice to the real map option ID. The resolved
-option is then used consistently for:
+`FusionStepSpec` carries the policy-local-to-map option mapping. Training
+resolves a policy-local fusion choice to the real map option ID. Fixed-action
+evaluation may supply an explicit real map option override so the fusion-zero
+control remains evaluable even though it is intentionally outside the new
+Block2/5 policy domain. Both routes enter the same resolved-option body, which
+is then used consistently for:
 
 1. map expansion into the full block action vector;
 2. precision-boost explicit field values;

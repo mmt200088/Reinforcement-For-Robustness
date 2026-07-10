@@ -34,7 +34,7 @@ class NoCopyMapping:
 
 
 class FusionCountActionEvalRLPathTest(unittest.TestCase):
-    def test_fixed_map_option_converts_to_policy_local_index(self):
+    def test_fixed_map_option_uses_explicit_override_on_canonical_env_path(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
 
         class FakeSeqEnv:
@@ -49,16 +49,18 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                     map_option_ids=(1,),
                 )]
                 self.evaluated_actions = []
+                self.map_option_overrides = []
 
             def reset(self, *, seed):
                 self._step_idx = 0
 
-            def evaluate_step(self, action):
+            def evaluate_step(self, action, *, map_option_id_override=None):
                 self.evaluated_actions.append(list(action))
+                self.map_option_overrides.append(map_option_id_override)
                 return {
                     "valid": True,
-                    "fusion_count": 1,
-                    "boosted_field_values": {"output_truncation_k": 13},
+                    "fusion_count": int(map_option_id_override or 0),
+                    "boosted_field_values": None,
                 }
 
             def commit_step(self, _eval_info, *, defer_terminal_forward):
@@ -74,7 +76,7 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                     ),
                     "fusion_action_steps": [{
                         "block_idx": 2,
-                        "fusion_count": 1,
+                        "fusion_count": 0,
                         "k_value": 13,
                         "graph_key": "block2_mrpc_L0",
                     }],
@@ -91,7 +93,7 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                     "name": "fixed_b2",
                     "path": Path("fixed_b2.json"),
                     "baseline_k_index": 3,
-                    "group": {"option_by_graph": {"block2_mrpc": 1}},
+                    "group": {"option_by_graph": {"block2_mrpc": 0}},
                 },
                 seed=42,
             )
@@ -99,9 +101,10 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
             rlpath._RUNTIME_DEPS = old_deps
 
         self.assertEqual(env.evaluated_actions, [[0, 3]])
+        self.assertEqual(env.map_option_overrides, [0])
         self.assertEqual(result["step_records"][0]["policy_option_index"], 0)
-        self.assertEqual(result["step_records"][0]["map_option_id"], 1)
-        self.assertEqual(result["fusion_total"], 1)
+        self.assertEqual(result["step_records"][0]["map_option_id"], 0)
+        self.assertEqual(result["fusion_total"], 0)
 
     def test_module_import_is_dependency_light(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath

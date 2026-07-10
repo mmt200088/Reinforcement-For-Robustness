@@ -4,7 +4,7 @@
 
 **Goal:** Make Block4 the only policy-selectable fusion count while fixing every Block2/Block5 occurrence at `fusion_count=1`, then evaluate two MRPC BERT-base GELU ladders and complete/audit five remaining profile maps.
 
-**Architecture:** Keep the existing two-slot `(fusion, K)` policy and sequential horizon. Add a policy-local fusion domain to `FusionStepSpec`, resolve it once to the real map option, and use that resolved option throughout expansion, precision boost, replan, install, reward, and logging. Fixed-action JSON continues to store real map option IDs and converts them through the same schedule mapping before entering the sequential environment.
+**Architecture:** Keep the existing two-slot `(fusion, K)` policy and sequential horizon. Add a policy-local fusion domain to `FusionStepSpec`, resolve it once to the real map option, and use that resolved option throughout expansion, precision boost, replan, install, reward, and logging. Fixed-action JSON continues to store real map option IDs and passes an explicit map-option override into the same sequential-environment body, allowing the fusion-zero control without reopening that action to RL.
 
 **Tech Stack:** Python, NumPy, PyTorch server tests, Rescale Optimizer, existing Stage-2 RL-path evaluator, shell orchestration on the five-GPU server.
 
@@ -115,8 +115,8 @@ git commit -m "Fix Block2 and Block5 fusion at one"
 Tests must assert that a Block2 policy action `[0, k]` expands and logs the real
 map option `1`, carries the boosted explicit field values, records
 `fusion_count=1`, and leaves the selected K unchanged. Add a fixed-action test
-showing that JSON `option_id=1` converts to policy-local index `0` before
-`evaluate_step`.
+showing that JSON `option_id=0` reaches the same `evaluate_step` body through an
+explicit map-option override for the control group.
 
 - [ ] **Step 2: Run focused tests on the server and verify RED**
 
@@ -136,9 +136,9 @@ In `BLBStage2SequentialEnv.evaluate_step`, resolve `action[0]` to
 fusion-count bookkeeping, precision boost, and persisted `option_id`; retain
 the policy-local index separately as `policy_option_index` for PPO diagnostics.
 
-In `_run_group`, resolve a fixed config's real map option ID back to the
-policy-local index before calling `seq_env.evaluate_step`. Persist both IDs in
-the step records.
+In `_run_group`, pass the fixed config's real map option ID as
+`map_option_id_override` while supplying a harmless local placeholder action.
+Persist both IDs in the step records.
 
 - [ ] **Step 4: Run focused tests and the existing fusion contract suite**
 
