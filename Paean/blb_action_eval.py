@@ -11,6 +11,7 @@ import numpy as np
 import torch
 
 from blb_rl_bridge import BLBNoiseRLBridge
+from function_handler import reseed_noise_rng
 from blb_stage2_rl.action_space import (
     ActionDecodeResult,
     _block_default_N,
@@ -122,8 +123,8 @@ class BLBActionFinalEvaluationModule:
             ),
         }
 
-    @staticmethod
     def _restore_isolated_candidate_rng_state(
+        self,
         metadata: Mapping[str, Any],
         state: Optional[Mapping[str, Any]],
     ) -> None:
@@ -136,6 +137,7 @@ class BLBActionFinalEvaluationModule:
         torch.random.set_rng_state(state["torch_cpu"])
         if state["torch_cuda"] is not None and torch.cuda.is_available():
             torch.cuda.set_rng_state_all(state["torch_cuda"])
+        reseed_noise_rng(self.random_seed)
 
     def run(
         self,
@@ -281,15 +283,22 @@ class BLBActionFinalEvaluationModule:
             self._restore_isolated_candidate_rng_state(
                 candidate.metadata, isolated_candidate_rng_state,
             )
-            result = self._evaluate_action_candidate(
-                name=candidate.name,
-                action_vec=candidate.action_vec,
-                overrides=candidate.overrides,
-                metadata=candidate.metadata,
-                gelu=opt_gelu,
-                softmax=opt_softmax,
-                report_constraints=report_constraints,
+            isolate_noise_rng = bool(
+                (candidate.metadata or {}).get("isolate_random_seed", False)
             )
+            try:
+                result = self._evaluate_action_candidate(
+                    name=candidate.name,
+                    action_vec=candidate.action_vec,
+                    overrides=candidate.overrides,
+                    metadata=candidate.metadata,
+                    gelu=opt_gelu,
+                    softmax=opt_softmax,
+                    report_constraints=report_constraints,
+                )
+            finally:
+                if isolate_noise_rng:
+                    reseed_noise_rng(None)
             selected_results.append(result)
             ev.log(
                 f"  {candidate.name}: Loss={result['loss']:.4f}, "
