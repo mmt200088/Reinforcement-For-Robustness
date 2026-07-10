@@ -9,7 +9,6 @@ call replan with ``t_new`` and ``delta_overrides`` variables in a tight loop.
 
 from __future__ import annotations
 
-import copy
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -217,20 +216,25 @@ def load_static_skeleton_baselines(path: Union[str, Path]) -> Dict[str, Baseline
     return out
 
 
-def _snapshot_graph_delta_state(graph: RescaleGraph) -> List[Tuple[int, Any]]:
+def _snapshot_graph_delta_state(
+    graph: RescaleGraph,
+) -> List[Tuple[int, Optional[int]]]:
     return [
         (
             int(getattr(node, "scale_delta_bits", 0)),
-            copy.deepcopy(getattr(node, "other_ct_scale_bits", None)),
+            getattr(node, "other_ct_scale_bits", None),
         )
         for node in graph.nodes
     ]
 
 
-def _restore_graph_delta_state(graph: RescaleGraph, state: Sequence[Tuple[int, Any]]) -> None:
+def _restore_graph_delta_state(
+    graph: RescaleGraph,
+    state: Sequence[Tuple[int, Optional[int]]],
+) -> None:
     for node, (scale_delta_bits, other_ct_scale_bits) in zip(graph.nodes, state):
         node.scale_delta_bits = int(scale_delta_bits)
-        node.other_ct_scale_bits = copy.deepcopy(other_ct_scale_bits)
+        node.other_ct_scale_bits = other_ct_scale_bits
 
 
 def _extract_current_propagation_deltas(graph: RescaleGraph) -> List[Dict[str, Any]]:
@@ -552,7 +556,7 @@ class ReplanSession:
         )
 
         self._graphs: Dict[str, RescaleGraph] = {}
-        self._delta_baselines: Dict[str, List[Tuple[int, Any]]] = {}
+        self._delta_baselines: Dict[str, List[Tuple[int, Optional[int]]]] = {}
         for graph_key, path in self.configs.items():
             graph, _opt_cfg, _amp = load_graph_from_json(path)
             build_feasibility_dag(graph)
