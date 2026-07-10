@@ -1,0 +1,105 @@
+=== INSTALL mrpc layers=12 ===
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+[skip] block1_mrpc: degenerate/dormant map (no boosted fusion option)
+[OK] block2_mrpc opt1: Q1 boosted-install sum 270->279 (+9); Q2 no fused rescale installs noise (nulled overrides=1: gamma_result_rescale)
+[OK] block4 opt1: Q1 boosted-install sum 173->205 (+32); Q2 no fused rescale installs noise (nulled overrides=1: softmax_v_matmul_rescale)
+[skip] block5_n0: degenerate/dormant map (no boosted fusion option)
+[OK] block5_n1 opt1: Q1 boosted-install sum 122->156 (+34); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n2 opt1: Q1 boosted-install sum 173->206 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n4 opt1: Q1 boosted-install sum 204->237 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+
+checked 5 boosted option(s); 0 problem(s)
+VERIFY_OK
+=== INSTALL rte layers=12 ===
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+[OK] block2_rte opt1: Q1 boosted-install sum 186->191 (+5); Q2 no fused rescale installs noise (nulled overrides=0: n/a)
+[OK] block4 opt1: Q1 boosted-install sum 173->205 (+32); Q2 no fused rescale installs noise (nulled overrides=1: softmax_v_matmul_rescale)
+[OK] block5_n1 opt1: Q1 boosted-install sum 122->156 (+34); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n2 opt1: Q1 boosted-install sum 173->206 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n4 opt1: Q1 boosted-install sum 204->237 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+
+checked 5 boosted option(s); 0 problem(s)
+VERIFY_OK
+=== INSTALL sst2 layers=12 ===
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+[OK] block2_sst2 opt1: Q1 boosted-install sum 186->191 (+5); Q2 no fused rescale installs noise (nulled overrides=0: n/a)
+[OK] block4 opt1: Q1 boosted-install sum 173->205 (+32); Q2 no fused rescale installs noise (nulled overrides=1: softmax_v_matmul_rescale)
+[OK] block5_n1 opt1: Q1 boosted-install sum 122->156 (+34); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n2 opt1: Q1 boosted-install sum 173->206 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n4 opt1: Q1 boosted-install sum 204->237 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+
+checked 5 boosted option(s); 0 problem(s)
+VERIFY_OK
+=== INSTALL mrpc_large layers=24 ===
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+[OK] block2_mrpc_large opt1: Q1 boosted-install sum 186->191 (+5); Q2 no fused rescale installs noise (nulled overrides=0: n/a)
+[OK] block4 opt1: Q1 boosted-install sum 173->205 (+32); Q2 no fused rescale installs noise (nulled overrides=1: softmax_v_matmul_rescale)
+[OK] block5_n1 opt1: Q1 boosted-install sum 122->156 (+34); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n2 opt1: Q1 boosted-install sum 173->206 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n4 opt1: Q1 boosted-install sum 204->237 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+
+checked 5 boosted option(s); 0 problem(s)
+VERIFY_OK
+=== INSTALL rte_large layers=24 ===
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+[OK] block2_rte_large opt1: Q1 boosted-install sum 186->191 (+5); Q2 no fused rescale installs noise (nulled overrides=0: n/a)
+[OK] block4 opt1: Q1 boosted-install sum 173->205 (+32); Q2 no fused rescale installs noise (nulled overrides=1: softmax_v_matmul_rescale)
+[OK] block5_n1 opt1: Q1 boosted-install sum 122->156 (+34); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n2 opt1: Q1 boosted-install sum 173->206 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n4 opt1: Q1 boosted-install sum 204->237 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+
+checked 5 boosted option(s); 0 problem(s)
+VERIFY_OK
+=== INSTALL sst2_large layers=24 ===
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+[OK] block2_sst2_large opt1: Q1 boosted-install sum 186->191 (+5); Q2 no fused rescale installs noise (nulled overrides=0: n/a)
+[OK] block4 opt1: Q1 boosted-install sum 173->205 (+32); Q2 no fused rescale installs noise (nulled overrides=1: softmax_v_matmul_rescale)
+[OK] block5_n1 opt1: Q1 boosted-install sum 122->156 (+34); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n2 opt1: Q1 boosted-install sum 173->206 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+[OK] block5_n4 opt1: Q1 boosted-install sum 204->237 (+33); Q2 no fused rescale installs noise (nulled overrides=1: normalize_result_rescale)
+
+checked 5 boosted option(s); 0 problem(s)
+VERIFY_OK
+canonical_install_all_rc=0
