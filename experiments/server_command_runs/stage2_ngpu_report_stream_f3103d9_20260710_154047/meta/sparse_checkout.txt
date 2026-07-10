@@ -1,0 +1,3 @@
+docs/superpowers/plans
+scripts
+tests
