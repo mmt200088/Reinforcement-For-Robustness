@@ -1,0 +1,68 @@
+{
+  "source_commit": "2907e63388c5d58b0e4e6f1e80b37f50aaa2d83c",
+  "graph_key": "block4",
+  "graph_node_count": 14,
+  "session_load_seconds": 0.002828009019140154,
+  "restore_only": {
+    "n": 200000,
+    "repeats": 3,
+    "seconds": [
+      0.17012924497248605,
+      0.1691974709974602,
+      0.16961117298342288
+    ],
+    "median_seconds": 0.16961117298342288,
+    "calls_per_second": 1179167.6012968037
+  },
+  "full_replan_with_compact": {
+    "n": 50000,
+    "repeats": 3,
+    "seconds": [
+      1.7536860059481114,
+      1.755403243994806,
+      1.7520142759894952
+    ],
+    "median_seconds": 1.7536860059481114,
+    "calls_per_second": 28511.375371880236
+  },
+  "restore_speedup_vs_before": 3.632847365745808,
+  "full_replan_speedup_vs_before": 1.169128353644051,
+  "restore_saved_seconds_per_200k": 0.44656032999046147,
+  "full_saved_seconds_per_50k": 0.2965980269946158,
+  "semantic_signature": {
+    "valid": true,
+    "fusion_count": 0,
+    "total_bits": 264,
+    "q_initial": [
+      57,
+      56,
+      31
+    ],
+    "q_final": [
+      57,
+      56,
+      31
+    ],
+    "t_final": [
+      35,
+      31,
+      31,
+      31
+    ],
+    "compact_skeleton": [
+      0,
+      2,
+      5,
+      6,
+      8
+    ],
+    "compact_drop_order": [
+      60,
+      57,
+      56,
+      31,
+      60
+    ]
+  },
+  "semantic_signature_equal": true
+}

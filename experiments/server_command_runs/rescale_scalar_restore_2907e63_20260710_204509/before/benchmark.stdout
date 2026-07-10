@@ -1,0 +1,63 @@
+{
+  "source_commit": "0fc84b66cd737e4395ce9201a3e2442b6d3ecc03",
+  "graph_key": "block4",
+  "graph_node_count": 14,
+  "session_load_seconds": 0.0029328670352697372,
+  "restore_only": {
+    "n": 200000,
+    "repeats": 3,
+    "seconds": [
+      0.6172941050026566,
+      0.615393775049597,
+      0.6161715029738843
+    ],
+    "median_seconds": 0.6161715029738843,
+    "calls_per_second": 324584.9557058739
+  },
+  "full_replan_with_compact": {
+    "n": 50000,
+    "repeats": 3,
+    "seconds": [
+      2.057579316024203,
+      2.050284032942727,
+      2.049707912025042
+    ],
+    "median_seconds": 2.050284032942727,
+    "calls_per_second": 24386.865037541218
+  },
+  "semantic_signature": {
+    "valid": true,
+    "fusion_count": 0,
+    "total_bits": 264,
+    "q_initial": [
+      57,
+      56,
+      31
+    ],
+    "q_final": [
+      57,
+      56,
+      31
+    ],
+    "t_final": [
+      35,
+      31,
+      31,
+      31
+    ],
+    "compact_skeleton": [
+      0,
+      2,
+      5,
+      6,
+      8
+    ],
+    "compact_drop_order": [
+      60,
+      57,
+      56,
+      31,
+      60
+    ]
+  }
+}

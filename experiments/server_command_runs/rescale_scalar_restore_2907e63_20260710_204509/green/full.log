@@ -1,0 +1,51 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+test_backward_dp_uses_stage_successor_adjacency (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
+test_delta_state_restore_does_not_deepcopy_scalar_fields (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
+test_feasibility_dag_precomputes_cut_point_indices (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
+test_feasibility_dag_uses_incremental_stage_accumulation (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
+test_reachability_uses_stage_successor_adjacency (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
+test_load_baseline_archive_reuses_parse_and_returns_fresh_lists (tests.test_rescale_optimizer_bridge_cache.BaselineArchiveCacheTest) ... ok
+test_identical_optimizer_request_is_cached_across_layer_suffixes (tests.test_rescale_optimizer_bridge_cache.RescaleOptimizerBridgeCacheTest) ... ok
+test_compact_json_streams_dict_items_without_full_list_copy (tests.test_rescale_replan_what_if.ReplanWhatIfJsonTest) ... ok
+test_splice_helpers_iterate_numpy_arrays_without_tolist_materialization (tests.test_blb_fusion_count_map.ActionSpaceSpliceSourceTest) ... ok
+test_seven_block_types_have_active_rescales (tests.test_blb_fusion_count_map.ActiveRescalePremiseTest) ... ok
+test_counts_streamed_sample_configs_without_list_materialization (tests.test_blb_fusion_count_map.CheckKIndependenceTest) ... ok
+test_baseline_option_is_zero (tests.test_blb_fusion_count_map.FusionMapLoaderTest) ... ok
+test_expand_overwrites_k_slot (tests.test_blb_fusion_count_map.FusionMapLoaderTest) ... ok
+test_from_payload_rejects_nonzero_baseline (tests.test_blb_fusion_count_map.FusionMapLoaderTest) ... ok
+test_load_discovers_maps_without_path_glob_or_sidecar_reads (tests.test_blb_fusion_count_map.FusionMapLoaderTest) ... ok
+test_load_skips_macos_appledouble_sidecar (tests.test_blb_fusion_count_map.FusionMapLoaderTest) ... ok
+test_load_skips_summary_sidecar (tests.test_blb_fusion_count_map.FusionMapLoaderTest) ... ok
+test_num_and_max_options (tests.test_blb_fusion_count_map.FusionMapLoaderTest) ... ok
+test_block_offsets_contiguous_and_sized (tests.test_blb_fusion_count_map.FusionScheduleTest) ... ok
+test_degenerate_blocks_single_option (tests.test_blb_fusion_count_map.FusionScheduleTest) ... FAIL
+test_dims_are_two_slots (tests.test_blb_fusion_count_map.FusionScheduleTest) ... ok
+test_expand_matches_map (tests.test_blb_fusion_count_map.FusionScheduleTest) ... ok
+test_horizon_matches_step_schedule (tests.test_blb_fusion_count_map.FusionScheduleTest) ... ok
+test_splice_writes_block_slots (tests.test_blb_fusion_count_map.FusionScheduleTest) ... ok
+test_baseline_is_option0 (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest) ... ok
+test_baseline_not_min_noise_raises (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest) ... ok
+test_cheaper_tie_member_ranks_first (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest) ... ok
+test_fusion_tie_pairs (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest) ... ok
+test_higher_variance_dropped_and_dups_removed (tests.test_blb_fusion_count_map.GroupMinNoiseOptionsTest) ... ok
+test_empty_plan_is_zero (tests.test_blb_fusion_count_map.NoiseOrderTest) ... ok
+test_name_is_stable (tests.test_blb_fusion_count_map.NoiseOrderTest) ... ok
+test_summed_installed_variance_sums_table_values (tests.test_blb_fusion_count_map.NoiseOrderTest) ... ok
+
+======================================================================
+FAIL: test_degenerate_blocks_single_option (tests.test_blb_fusion_count_map.FusionScheduleTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_fusion_count_map.py", line 335, in test_degenerate_blocks_single_option
+    self.assertEqual(s.fusion_num_options, 1, f"block{s.block_idx} should be degenerate")
+AssertionError: 2 != 1 : block4 should be degenerate
+
+----------------------------------------------------------------------
+Ran 32 tests in 0.017s
+
+FAILED (failures=1)
