@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `faa1679`, the conservative
+not by raw commit count. As of source head `7b59a10`, the conservative
 completion estimate is about 99% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -131,6 +131,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `343a5e3` | `experiments/server_command_runs/stage1_noise_validation_scan_343a5e3_20260704_055529/` | Scan layer-evaluator noise scaling validation arrays directly for unsupported values instead of materializing `arr.tolist()` sets. |
 | Stage-1 eval | `e17eee8` | `experiments/server_command_runs/stage1_reward_stats_window_e17eee8_20260704_060340/` | Maintain Stage-1 reward normalization window sum/sumsq incrementally instead of rescanning the bounded deque with `np.mean()` / `np.std()` every episode. |
 | Stage-1 eval | `dbd1b6f` | `experiments/server_command_runs/stage1_semantics_gate_dbd1b6f_20260704_080342/` | Restore the Stage-1 semantic gate after shared fast-path changes: coefficient-order low-allocation GELU polynomial evaluation, Stage-1 batch-loss averaging, and legacy sklearn metric precision. |
+| Stage-1 eval | `7b59a10` | `experiments/server_command_runs/stage1_validation_batches_7b59a10_20260711/` | Collate `validation_full` into reusable pinned CPU batch tuples once while leaving training loaders lazy, avoiding repeated dataset indexing and padding on every cache-miss evaluation. |
 | Stage-1 rollout | `b62743a` | `experiments/server_command_runs/stage1_timing_fields_b62743a_20260704_082005/` | Add Stage-1 rollout timing diagnostics for model-forward wall seconds, forward calls, and report-write wall seconds while preserving existing worker/cache/total timing log fields. |
 | Launcher gates | `4bca31a` | `experiments/server_command_runs/stage1_gpu_ab_4bca31a_20260704_084330/` | Make `scripts/launcher_gpu_audit.py` runnable as a script from repo root without relying on external `PYTHONPATH`, unblocking clean server launcher gates. |
 | Launcher gates | `bd99c65` | `experiments/server_command_runs/server_snapshot_md_stream_bd99c65_20260704_153000/` | Stream server resource snapshot Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
@@ -593,11 +594,29 @@ and mixed `[4,2,1] x 4` by `1.043x`; the final 24-row batch correctly fell
 back below the gate. Evidence is under
 `experiments/server_command_runs/gelu_paired_eval_faa1679_20260711_002242/`.
 
+Progress 2026-07-11: Stage-1 now collates each `validation_full` dataloader
+once and retains its pinned CPU batches as an immutable tuple; training
+dataloaders stay lazy. This removes repeated Hugging Face dataset indexing and
+`DataCollatorWithPadding` work from every exact-config cache miss without
+reserving validation copies on each GPU. Server TDD used RED `c84973f` and
+GREEN `7b59a10`; 90 related tests passed. A production-path real MRPC A/B kept
+loss, metrics, labels, and logits bit-identical, used 1,256,640 bytes for four
+pinned batches, and improved median full-validation wall from `0.698002s` to
+`0.690052s` (`1.0115x`, `7.951ms` per eval). Evidence is under
+`experiments/server_command_runs/stage1_validation_batches_7b59a10_20260711/`.
+
 Rejected screening 2026-07-11: lowering Stage-1 detail flush cadence,
 in-place GELU accumulation, in-place approximate-Softmax temporaries, removing
 BLB LayerNorm expanded-input materialization, and reusing sampled-noise buffers
 all failed the full-path/common-batch gain threshold. The measured decisions
 are recorded in the paired-GELU evidence directory; none changed source.
+
+Rejected screening 2026-07-11: keeping validation batches resident on each GPU
+saved only another `57.9us` per eval beyond the pinned CPU tuple, so it was not
+worth per-worker VRAM copies and device-cache complexity. Suppressing roughly
+198,795 GELU/Softmax install-success lines across 50,000 configurations also
+projected only `0.052s` runtime savings on the actual redirected-log path.
+Both measurements are retained with the validation-batch evidence.
 
 Progress 2026-07-03: Block-2 QK-merge, Block-2 BSGS, and Block-4 input /
 softmax-V ones-mask encode hooks in `function_handler.py` now sample the
