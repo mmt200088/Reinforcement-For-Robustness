@@ -112,6 +112,12 @@ class UpgradedCurvesTest(unittest.TestCase):
             self.assertTrue(_nonempty_file(out["npz"]),
                             "NPZ must always be written (matplotlib-independent)")
 
+    def test_plot_rendering_defaults_to_offline_but_explicit_true_wins(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(persistence._stage2_plot_rendering_enabled(None))
+            self.assertTrue(persistence._stage2_plot_rendering_enabled(True))
+            self.assertFalse(persistence._stage2_plot_rendering_enabled(False))
+
     def test_full_series_emits_all_pngs(self):
         if not HAVE_MPL:
             self.skipTest("matplotlib not installed")
