@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `5f18d1c`, the conservative
+not by raw commit count. As of source head `faa1679`, the conservative
 completion estimate is about 99% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -152,6 +152,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared eval metrics | `d0e8b8c` | `experiments/server_command_runs/eval_binary_mcc_d0e8b8c_20260704_035430/` | Compute 0/1 binary Matthews correlation with direct count reductions instead of sorting a class union for CoLA-style evals. |
 | Shared eval metrics | `211ca50` | `experiments/server_command_runs/eval_accuracy_count_211ca50_20260704_041100/` | Compute classification accuracy with `np.count_nonzero()` match counts instead of generic `np.mean()` over a boolean mask. |
 | Shared GELU forward | `5f18d1c` | `experiments/server_command_runs/gelu_piecewise_masks_5f18d1c_20260711_000158/` | Select GELU polynomial pieces with three scalar comparisons instead of two compound interval masks, removing four full-shape comparison/boolean operations. |
+| Shared GELU forward | `faa1679` | `experiments/server_command_runs/gelu_paired_eval_faa1679_20260711_002242/` | Pair negative/positive degree-2/4 polynomial evaluation for large CUDA float32 tensors while retaining the faster legacy path below the measured size crossover. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Shared logging | `5f877ca` | `experiments/server_command_runs/logging_json_encoder_5f877ca_20260704_124000/` | Reuse one module-level JSON encoder for BLB structured log records instead of constructing an encoder through `json.dumps()` for every record. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
@@ -578,6 +579,25 @@ improving complete eval wall time by `1.042x` to `1.065x` (about `21ms` per
 408-row eval). GPU sampling averaged `97.03%` utilization and peaked at 100%.
 Evidence is under
 `experiments/server_command_runs/gelu_piecewise_masks_5f18d1c_20260711_000158/`.
+
+Progress 2026-07-11: large CUDA float32 degree-2/4 GELU activations now evaluate
+the negative and positive polynomial pieces in one leading dimension, reusing
+the same powers and a cached coefficient pair. The path is gated at 12 million
+elements because server crossover scans proved the paired kernel is slower for
+small batches; degree 0/1, CPU, non-float32, and below-threshold tensors retain
+the old path. Server TDD used RED source `408da9e`, production source
+`faa1679`, and final CUDA gate commit `0fcca30`; 74 related tests passed with 4
+environment skips. Real MRPC validation_full kept logits and predictions
+bit-identical while improving all-degree2 by `1.027x`, all-degree4 by `1.086x`,
+and mixed `[4,2,1] x 4` by `1.043x`; the final 24-row batch correctly fell
+back below the gate. Evidence is under
+`experiments/server_command_runs/gelu_paired_eval_faa1679_20260711_002242/`.
+
+Rejected screening 2026-07-11: lowering Stage-1 detail flush cadence,
+in-place GELU accumulation, in-place approximate-Softmax temporaries, removing
+BLB LayerNorm expanded-input materialization, and reusing sampled-noise buffers
+all failed the full-path/common-batch gain threshold. The measured decisions
+are recorded in the paired-GELU evidence directory; none changed source.
 
 Progress 2026-07-03: Block-2 QK-merge, Block-2 BSGS, and Block-4 input /
 softmax-V ones-mask encode hooks in `function_handler.py` now sample the
