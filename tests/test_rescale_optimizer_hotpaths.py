@@ -1,7 +1,9 @@
 import inspect
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +13,24 @@ if str(RESCALE_ROOT) not in sys.path:
 
 
 class RescaleOptimizerHotPathTests(unittest.TestCase):
+    def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
+        from rescale_optimizer import replan_interface
+
+        graph = SimpleNamespace(nodes=[
+            SimpleNamespace(scale_delta_bits=7, other_ct_scale_bits=31),
+            SimpleNamespace(scale_delta_bits=0, other_ct_scale_bits=None),
+        ])
+
+        with mock.patch("copy.deepcopy", side_effect=AssertionError("scalar deepcopy")):
+            state = replan_interface._snapshot_graph_delta_state(graph)
+            graph.nodes[0].scale_delta_bits = 99
+            graph.nodes[0].other_ct_scale_bits = 42
+            replan_interface._restore_graph_delta_state(graph, state)
+
+        self.assertEqual(state, [(7, 31), (0, None)])
+        self.assertEqual(graph.nodes[0].scale_delta_bits, 7)
+        self.assertEqual(graph.nodes[0].other_ct_scale_bits, 31)
+
     def test_reachability_uses_stage_successor_adjacency(self):
         from rescale_optimizer import reachability
 
