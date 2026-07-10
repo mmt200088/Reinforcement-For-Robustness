@@ -329,12 +329,38 @@ class FusionScheduleTest(unittest.TestCase):
         self.assertEqual(md, 2)
         self.assertEqual(mnl, max(self.m.max_num_options(), _aspace.LEVELS_K))
 
-    def test_degenerate_blocks_single_option(self):
+    def test_block2_and_block5_are_fixed_to_fusion_one(self):
         for s in self.sched:
-            if s.block_idx in (1, 4):
-                self.assertEqual(s.fusion_num_options, 1, f"block{s.block_idx} should be degenerate")
-            else:  # block 2 / block5_n4 each have 2 options
-                self.assertEqual(s.fusion_num_options, 2)
+            if s.block_idx not in (2, 5):
+                continue
+            self.assertEqual(s.fusion_num_options, 1)
+            map_option_id = _aspace.resolve_fusion_map_option_id(s, 0)
+            option = next(
+                option
+                for option in self.m.options(s.graph_key_suffix)
+                if int(option.option_id) == int(map_option_id)
+            )
+            self.assertEqual(option.fusion_count, 1)
+            self.assertEqual(s.k_num_levels, _aspace.LEVELS_K)
+
+    def test_block4_keeps_full_fusion_domain(self):
+        s = next(s for s in self.sched if s.block_idx == 4)
+        expected = tuple(
+            int(option.option_id) for option in self.m.options(s.graph_key_suffix)
+        )
+        self.assertEqual(s.fusion_num_options, len(expected))
+        self.assertEqual(s.map_option_ids, expected)
+
+    def test_block1_keeps_existing_domain(self):
+        s = next(s for s in self.sched if s.block_idx == 1)
+        expected = tuple(
+            int(option.option_id) for option in self.m.options(s.graph_key_suffix)
+        )
+        self.assertEqual(s.fusion_num_options, len(expected))
+        self.assertEqual(s.map_option_ids, expected)
+
+    def test_k_domain_is_unchanged_for_every_step(self):
+        for s in self.sched:
             self.assertEqual(s.k_num_levels, _aspace.LEVELS_K)
 
     def test_block_offsets_contiguous_and_sized(self):
@@ -345,9 +371,45 @@ class FusionScheduleTest(unittest.TestCase):
 
     def test_expand_matches_map(self):
         s = next(s for s in self.sched if s.block_idx == 2)
-        got = _aspace.expand_fusion_step_action(s, self.m, 1, 3)
+        got = _aspace.expand_fusion_step_action(s, self.m, 0, 3)
         exp = self.m.expand(s.graph_key_suffix, 1, 3)
         self.assertEqual(list(got), list(exp))
+
+    def test_real_map_option_converts_back_to_policy_local_index(self):
+        s = next(s for s in self.sched if s.block_idx == 2)
+        self.assertEqual(_aspace.resolve_fusion_policy_option_index(s, 1), 0)
+
+    def test_unselectable_real_map_option_is_rejected(self):
+        s = next(s for s in self.sched if s.block_idx == 2)
+        with self.assertRaisesRegex(ValueError, "not selectable"):
+            _aspace.resolve_fusion_policy_option_index(s, 0)
+
+    def test_missing_fusion_one_option_is_rejected(self):
+        m = fcm.FusionCountMap.load("mrpc")
+        graph = m.graphs["block2_mrpc"]
+        graph.options = [option for option in graph.options if option.fusion_count != 1]
+        with self.assertRaisesRegex(ValueError, "exactly one fusion_count=1"):
+            _aspace.fusion_step_schedule(
+                12,
+                m,
+                profile="mrpc",
+                gelu_degree_per_layer=[4] * 12,
+                attn_degree_per_layer=[2] * 12,
+            )
+
+    def test_duplicate_fusion_one_option_is_rejected(self):
+        m = fcm.FusionCountMap.load("mrpc")
+        graph = m.graphs["block2_mrpc"]
+        fusion_one = next(option for option in graph.options if option.fusion_count == 1)
+        graph.options = list(graph.options) + [fusion_one]
+        with self.assertRaisesRegex(ValueError, "exactly one fusion_count=1"):
+            _aspace.fusion_step_schedule(
+                12,
+                m,
+                profile="mrpc",
+                gelu_degree_per_layer=[4] * 12,
+                attn_degree_per_layer=[2] * 12,
+            )
 
     def test_splice_writes_block_slots(self):
         s = next(s for s in self.sched if s.block_idx == 2)
