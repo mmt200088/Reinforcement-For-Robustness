@@ -4,6 +4,17 @@ from tests.source_inspection_utils import source_text
 
 
 class PaeanBLBActionEvalStaticTest(unittest.TestCase):
+    def test_plot_rendering_is_opt_out_and_defaults_enabled(self):
+        text = source_text("Paean/blb_action_eval.py")
+        run_start = text.index("def run(")
+        run_end = text.index("def _resolve_base_action", run_start)
+        run_source = text[run_start:run_end]
+
+        self.assertIn('"RFR_PAEAN_RENDER_PLOTS", "1"', text)
+        self.assertIn("if self._render_plots_enabled():", run_source)
+        self.assertIn("plot_path = None", run_source)
+        self.assertIn("scatter_path = None", run_source)
+
     def test_batch_candidates_reset_independent_process_seed_before_eval(self):
         text = source_text("Paean/blb_action_eval.py")
         loop_start = text.index("for idx, candidate in enumerate(selected_candidates")

@@ -91,6 +91,15 @@ class FusionCountActionEvalTest(unittest.TestCase):
         self.assertIn("_run_batch(", main_source)
         self.assertNotIn("for cfg in unique:\n            _run_one(", main_source)
 
+    def test_main_defers_redundant_paean_plots_by_default(self):
+        source = Path(action_eval.__file__).read_text(encoding="utf-8")
+        main_source = source[source.index("def main("):]
+
+        self.assertIn(
+            'env.setdefault("RFR_PAEAN_RENDER_PLOTS", "0")',
+            main_source,
+        )
+
     def test_load_action_configs_does_not_retain_full_payload(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
