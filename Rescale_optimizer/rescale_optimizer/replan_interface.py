@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .config_loader import load_graph_from_json
 from .feasibility import build_feasibility_dag
-from .graph import NodeType, RescaleGraph, propagate_scale
+from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
 from .replan import ReplanInputs, ReplanResult, replan_with_user_actions
 
 DeltaValue = Union[int, str]
@@ -567,11 +567,21 @@ class ReplanSession:
 
         self._graphs: Dict[str, RescaleGraph] = {}
         self._delta_baselines: Dict[str, List[Tuple[int, Optional[int]]]] = {}
+        self._stage_paths: Dict[str, Tuple[Tuple[ComputeNode, ...], ...]] = {}
         for graph_key, path in self.configs.items():
             graph, _opt_cfg, _amp = load_graph_from_json(path)
             build_feasibility_dag(graph)
             self._graphs[graph_key] = graph
             self._delta_baselines[graph_key] = _snapshot_graph_delta_state(graph)
+            baseline = self.baselines.get(graph_key)
+            if baseline is not None:
+                skeleton = list(baseline.skeleton)
+                if skeleton and skeleton[-1] != graph.dummy_sink_index:
+                    skeleton.append(graph.dummy_sink_index)
+                self._stage_paths[graph_key] = tuple(
+                    tuple(graph.nodes_between(skeleton[r - 1], skeleton[r]))
+                    for r in range(1, len(skeleton) - 1)
+                )
 
     @classmethod
     def from_profile(
@@ -653,6 +663,7 @@ class ReplanSession:
                 allowed_fusion_pairs=fusion_pairs,
             ),
             baseline_q_bits=list(baseline.q_bits_baseline),
+            stage_paths=self._stage_paths.get(key),
         )
 
         if _compact_result:
