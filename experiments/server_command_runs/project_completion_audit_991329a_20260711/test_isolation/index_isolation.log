@@ -1,0 +1,9 @@
+test_experiments_log_roundtrip (tests.test_sequential_smoke.SequentialArtifactContractsTest) ... /hy-tmp/rfr_runtime_optimization/tests/test_sequential_smoke.py:413: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/blb_smoke_o23eldhr/index.md' mode='r' encoding='utf-8'>
+  text = open(idx_path, encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.307s
+
+OK
