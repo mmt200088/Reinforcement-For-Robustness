@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_batch_manifest_counts_candidates_in_one_launcher_process (tests.test_paean_final_eval_workload.FinalEvalWorkloadEstimateTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_paean_final_eval_workload.py", line 35, in test_batch_manifest_counts_candidates_in_one_launcher_process
+    self.assertEqual(workload["selected_config_count"], 2)
+AssertionError: 1 != 2
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

@@ -33,6 +33,7 @@ _SF_CHOICE_CACHE: Dict[
     Tuple[Dict[int, int], Tuple[int, ...]],
 ] = {}
 _MAX_SFS_PROFILE_CACHE: Dict[str, Any] = {}
+_ACTION_BATCH_SCHEMA = "paean_action_batch_v1"
 
 
 def _load_max_sfs_cached(profile: str) -> Any:
@@ -97,6 +98,7 @@ def load_action_grid_config(
         profile: str = "default",
         gelu_degree: object = 4,
         attn_degree: object = 4,
+        _payload: Optional[Mapping[str, Any]] = None,
         ) -> ActionGridConfig:
     """Load an action-config JSON file. Accepts four schemas:
 
@@ -135,7 +137,11 @@ def load_action_grid_config(
     path = Path(str(path_value or "").strip())
     if not path.is_file():
         raise FileNotFoundError(f"final_eval action config does not exist: {path}")
-    payload = read_json_file(path, encoding="utf-8-sig")
+    payload = (
+        _payload
+        if _payload is not None
+        else read_json_file(path, encoding="utf-8-sig")
+    )
     if not isinstance(payload, Mapping):
         raise ValueError("--action-config JSON must be an object")
 
@@ -228,6 +234,63 @@ def load_action_grid_config(
     )
 
 
+def _build_batch_action_candidates(
+        *,
+        manifest_path: Path,
+        payload: Mapping[str, Any],
+        num_layers: int,
+        profile: str,
+        ) -> List[ActionCandidate]:
+    entries = payload.get("candidates")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError(
+            f"{_ACTION_BATCH_SCHEMA} requires a non-empty candidates list"
+        )
+
+    candidates: List[ActionCandidate] = []
+    seen_names = set()
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"batch candidate {index} must be an object")
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            raise ValueError(f"batch candidate {index} is missing name")
+        if name in seen_names:
+            raise ValueError(f"duplicate batch candidate name: {name!r}")
+        seen_names.add(name)
+
+        raw_path = str(entry.get("action_config") or "").strip()
+        if not raw_path:
+            raise ValueError(f"batch candidate {name!r} is missing action_config")
+        action_path = Path(raw_path)
+        if not action_path.is_absolute():
+            action_path = manifest_path.parent / action_path
+        nested = build_action_candidates(
+            num_layers=num_layers,
+            profile=profile,
+            action_config_path=str(action_path),
+        )
+        if len(nested) != 1:
+            raise ValueError(
+                f"batch candidate {name!r} must resolve to one fixed action; "
+                f"got {len(nested)}"
+            )
+        selected = nested[0]
+        metadata = dict(selected.metadata)
+        metadata.update({
+            "batch_manifest_path": str(manifest_path),
+            "batch_candidate_name": name,
+            "isolate_random_seed": True,
+        })
+        candidates.append(ActionCandidate(
+            name=name,
+            action_vec=selected.action_vec,
+            overrides=selected.overrides,
+            metadata=metadata,
+        ))
+    return candidates
+
+
 def _extract_action_config_metadata(
         payload: Mapping[str, object],
         *,
@@ -275,10 +338,31 @@ def build_action_candidates(
 
     config = None
     if action_config_path:
+        config_path = Path(str(action_config_path).strip())
+        if not config_path.is_file():
+            raise FileNotFoundError(
+                f"final_eval action config does not exist: {config_path}"
+            )
+        payload = read_json_file(config_path, encoding="utf-8-sig")
+        if not isinstance(payload, Mapping):
+            raise ValueError("--action-config JSON must be an object")
+        if payload.get("schema_version") == _ACTION_BATCH_SCHEMA:
+            if base_action_vec is not None or fixed_specs or range_specs:
+                raise ValueError(
+                    "batch action manifests cannot be combined with an outer "
+                    "base action, fixed specs, or range specs"
+                )
+            return _build_batch_action_candidates(
+                manifest_path=config_path,
+                payload=payload,
+                num_layers=num_layers,
+                profile=profile,
+            )
         config = load_action_grid_config(
             action_config_path,
             num_layers_hint=num_layers,
             profile=profile,
+            _payload=payload,
         )
 
     cfg_fixed = config.fixed_specs if config is not None else ()

@@ -45,6 +45,53 @@ def _load_action_grid_module():
 
 
 class PaeanActionGridTest(unittest.TestCase):
+    def test_batch_manifest_expands_named_isolated_candidates(self):
+        action_grid = _load_action_grid_module()
+        action_grid.action_dims_for_config = lambda _num_layers: [4, 4, 4]
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            first = root / "first.json"
+            second = root / "second.json"
+            first.write_text(
+                json.dumps({"num_layers": 1, "action_vec": [1, 2, 3]}),
+                encoding="utf-8",
+            )
+            second.write_text(
+                json.dumps({"num_layers": 1, "action_vec": [3, 2, 1]}),
+                encoding="utf-8",
+            )
+            manifest = root / "batch.json"
+            manifest.write_text(
+                json.dumps({
+                    "schema_version": "paean_action_batch_v1",
+                    "candidates": [
+                        {"name": "first_action", "action_config": first.name},
+                        {"name": "second_action", "action_config": second.name},
+                    ],
+                }),
+                encoding="utf-8",
+            )
+
+            candidates = action_grid.build_action_candidates(
+                num_layers=1,
+                profile="mrpc",
+                action_config_path=str(manifest),
+            )
+
+        self.assertEqual(
+            [candidate.name for candidate in candidates],
+            ["first_action", "second_action"],
+        )
+        self.assertEqual(
+            [candidate.action_vec.tolist() for candidate in candidates],
+            [[1, 2, 3], [3, 2, 1]],
+        )
+        self.assertTrue(all(
+            candidate.metadata["isolate_random_seed"]
+            for candidate in candidates
+        ))
+
     def test_k_value_to_action_index_uses_precomputed_lookup(self):
         action_grid = _load_action_grid_module()
         expected_idx = action_grid.K_LEVELS.index(11)

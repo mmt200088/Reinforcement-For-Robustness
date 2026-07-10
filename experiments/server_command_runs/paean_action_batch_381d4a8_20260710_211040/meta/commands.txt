@@ -1,0 +1,9 @@
+RED focused: python -m unittest four Paean batch contract tests -v
+BASELINE: scripts/run_fusion_count_action_eval.py, two Git-sourced MRPC configs, legacy per-config subprocess path, repeat=1, batch_size=128
+REFINED RED focused at 6ce18c4bb3122a8de496a13ae4cd99405d895ced: four Paean batch contract tests with full RNG-state parity
+WORKLOAD RED at 2312cec: batch manifest must count two candidates in one launcher process
+NOISE RNG RED at 3fe6004: batch isolation must reseed the independent BLB noise generator
+FIXED WORKLOAD RED at 34cfb4c: fixed-action command must pass --cost-match-count 0
+FINAL GREEN at 381d4a8: py_compile plus seven related unittest modules, 58 tests total
+FINAL BATCH: two MRPC configs, one Paean process, repeat=1, batch_size=128, /usr/bin/time -v and nvidia-smi -l 1
+FINAL REFERENCES: one independently launched one-candidate batch per MRPC config, repeat=1, batch_size=128

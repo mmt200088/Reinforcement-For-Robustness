@@ -77,19 +77,24 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `85c81a2`, the conservative
-completion estimate is about 98% of the full goal: the plan/audit layer,
-artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
-gate have landed. Hardware-default promotion remains evidence-gated rather
-than automatic, and remaining flow-wide scheduling work is still open.
+not by raw commit count. As of source head `ffa58a5`, the conservative
+completion estimate is about 99% of the full goal: the plan/audit layer,
+artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
+gate, and single-process Paean fixed-action batching have landed.
+All currently single-GPU-verifiable plan phases are green. Hardware-default
+promotion remains evidence-gated rather than automatic, and the multi-GPU
+gate that requires more than the current one-GPU server remains open.
 
 Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
 | Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
+| Plan and audit | `7030da2` | `experiments/server_command_runs/project_optimization_audit_7030da2_20260710_223053/` | Re-run the six-stage whole-project audit on the replacement server after Paean, Rescale, rendering, and artifact-contract work. |
 | Paean final eval | `567ad75` | `experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/` | Reuse one clean-baseline install and one BLB bridge install across `repeat_n > 1` forwards. |
 | Paean final eval | `b2a7325` | `experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/` | Cache `load_max_sfs(profile)` per final-eval module instance. |
+| Paean final eval | `381d4a8` | `experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/` | Evaluate fixed fusion-count actions in one model/tokenizer/dataset process, reuse the clean baseline, isolate deterministic BLB-noise streams, and skip unused cost-matched random search. |
+| Paean final eval reports | `f197361` | `experiments/server_command_runs/paean_plot_defer_f197361_20260710_220535/` | Defer redundant Paean PNG/scatter rendering in the fixed-action driver while retaining JSON, Markdown, combined HTML, and explicit render opt-in. |
 | Paean final eval | `fa52906` | `experiments/server_command_runs/final_eval_normalize_ndarray_fa52906_20260703_234423/` | Normalize ndarray-backed final-eval config arrays without first materializing Python lists. |
 | Paean final eval | `e443e4a` | `experiments/server_command_runs/final_eval_stage2_cost_incremental_e443e4a_20260703_235252/` | Maintain current cost incrementally in Stage-2 cost-matched final-eval random search instead of rescanning the full candidate config every mutation. |
 | Paean final eval | `2ca2516` | `experiments/server_command_runs/paean_action_grid_max_sfs_cache_2ca2516_20260704_010810/` | Cache Paean action-grid max-SF tables by profile so batched slot-form action configs and fixed/range candidates avoid repeated `load_max_sfs()` parsing. |
@@ -167,6 +172,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `c5424cd` | `experiments/server_command_runs/experiments_log_register_json_stream_c5424cd_20260704_102430/` | Stream `tools.experiments_log register` JSON output through the shared stdout `json.dump()` helper instead of materializing one full JSON string through `json.dumps()`. |
 | Structured artifacts | `9cabfaa` | `experiments/server_command_runs/experiments_log_rebuild_sort_9cabfaa_20260704_131500/` | Sort latest run records directly from the `_latest_by_run_id(...).values()` view in `tools.experiments_log rebuild`, avoiding a pre-sort list copy before index generation. |
 | Structured artifacts | `afcc72a` | `experiments/server_command_runs/action_registry_stdout_json_afcc72a_20260704_110045/` | Stream BLB action registry CLI path summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
+| Structured artifact verification | `ad6d508` | `experiments/server_command_runs/artifact_contract_gate_ad6d508_20260710_222023/` | Verify RL data-point schemas, Stage-2 persistent-output contracts, and evidence bundle behavior together on the replacement server. |
 | Stage-2 artifacts | `cfc368d` | `experiments/server_command_runs/f0_scan_stdout_json_cfc368d_20260704_111713/` | Stream F0 feasible-domain scan CLI summary directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
 | Stage-2 artifacts | `2edeb35` | `experiments/server_command_runs/f0_scan_md_stream_2edeb35_20260704_141650/` | Stream F0 feasible-domain per-slot summary and suggested action-mask Markdown outputs through line writers instead of joining full Markdown buffers before `Path.write_text()`. |
 | Stage-2 artifacts | `1b15448` | `experiments/server_command_runs/blb_eval_action_stdout_json_1b15448_20260704_110534/` | Stream BLB F0 eval action CLI candidate record directly to stdout with `json.dump()` instead of materializing one full JSON string through `json.dumps()` before printing. |
@@ -208,6 +214,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 scheduling gate | `f3103d9` | `experiments/server_command_runs/stage2_ngpu_report_stream_f3103d9_20260710_154047/` | Stream the Stage-2 1GPU-vs-NGPU verdict to stdout and the optional output file without materializing the complete report string in the CLI path. |
 | Rescale/fusion maps | `2907e63` | `experiments/server_command_runs/rescale_scalar_restore_2907e63_20260710_204509/` | Snapshot and restore Rescale graph delta state with direct `int` / `None` assignment instead of per-node `deepcopy()` calls in every repeated replan. |
 | Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
+| Rescale/fusion maps | `ffa58a5` | `experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/` | Make fusion schedule/replay verification derive expectations from the canonical map and close the 140-test Task 5 gate without changing runtime semantics. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
 | Rescale/fusion maps | `c48e63d` | `experiments/server_command_runs/feasibility_cutpoint_index_c48e63d_20260703_233525/` | Precompute cut-point node identity indices once during feasibility-DAG construction instead of linearly scanning all cut points for every graph node. |
@@ -1123,6 +1130,10 @@ Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.
 Use `SERVER_COMMAND.md` to run 1GPU vs NGPU parity and speed checks. Promote a
 new default only when effect equality passes and wall-clock evidence improves.
 
+Replacement-server blocker 2026-07-10: the host exposes one RTX 4090, so it
+cannot produce the required 1GPU-vs-NGPU parity/speed evidence. Keep this step
+open until a server with at least two visible GPUs is available.
+
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 
 **Files:**
@@ -1135,13 +1146,13 @@ new default only when effect equality passes and wall-clock evidence improves.
 - Test: `tests/test_rescale_optimizer_bridge_cache.py`
 - Test: `tests/test_blb_fusion_count_map.py`
 
-- [ ] **Step 1: Profile before editing**
+- [x] **Step 1: Profile before editing**
 
 Use existing fusion-map build logs and local unit tests to identify whether
 time is in graph loading, feasibility DAG build, replan calls, or summary
 parsing.
 
-- [ ] **Step 2: Apply safe reuse**
+- [x] **Step 2: Apply safe reuse**
 
 Allowed changes:
 
@@ -1459,7 +1470,7 @@ config, but dominated cross-shard candidates are discarded before the final
 grouping pass, reducing parent memory and follow-up work during golden fallback
 builds.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
@@ -1468,6 +1479,14 @@ python3 -m unittest tests.test_rescale_optimizer_bridge_cache tests.test_blb_fus
 ```
 
 Use server only for large fusion-map wall-clock evidence.
+
+Verification completion 2026-07-10: the original gate exposed a stale
+hard-coded block4 degeneracy expectation, and the expanded gate exposed a
+second stale hard-coded boosted SF. Both tests now derive expectations from the
+loaded canonical map while preserving the independent K-override assertion.
+The final server gate passed Python compilation and all 140 Rescale/fusion-map,
+fixed-action replay, reward, report, and driver tests. Evidence is under
+`experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/`.
 
 ## Task 6: Paean Final Evaluation Throughput
 
@@ -1485,7 +1504,7 @@ Use server only for large fusion-map wall-clock evidence.
 Expose how many configs, repeats, random controls, and expected model loads a
 Paean run will perform before launch.
 
-- [ ] **Step 2: Optimize shared work**
+- [x] **Step 2: Optimize shared work**
 
 Allowed changes:
 
@@ -1707,6 +1726,28 @@ under
 The red test failed on the legacy list-copy path. The green gate passed
 `py_compile`, all eight `tests.test_paean_action_grid` tests, and a source
 guard confirming the direct `np.asarray()` parse path.
+
+Progress 2026-07-10: fixed fusion-count action evaluation now writes a
+`paean_action_batch_v1` manifest and evaluates all unique actions in one Paean
+process. Model, tokenizer, dataset, and clean-baseline work are therefore paid
+once per action group rather than once per action. The legacy per-config
+process path remains available through `--legacy-per-config-processes`.
+Batch candidates restore Python, NumPy, Torch CPU/CUDA, and the independent
+BLB-noise RNG before each evaluation; the latter uses the configured final-eval
+seed and returns to OS-entropy mode after the candidate. The fixed-action
+driver also passes `--cost-match-count 0`, removing random-search work whose
+results were never consumed by this report.
+
+Server evidence 2026-07-10: source commit `381d4a8` has RED/GREEN tests and
+real RTX 4090 timing under
+`experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/`.
+Two MRPC fixed actions fell from two Paean processes and `44.96s` to one
+process and `20.99s` (`2.142x`, `53.31%` wall-time reduction). Average sampled
+GPU utilization rose from `9.87%` to `14.29%`, with the same `4071 MiB` peak.
+Both independently launched deterministic single-candidate references match
+the batched baseline and candidate semantic fields exactly; only expected
+artifact paths and measured `time_ms` differ. Python compilation and all 58
+related tests passed.
 
 Progress 2026-07-04: `UnifiedFinalEvaluationModule._summarize_random_results()`
 now streams final-eval random-result summaries through per-family and overall
@@ -1947,7 +1988,7 @@ The RED source guard failed on the old per-panel
 `py_compile` and
 `test_final_eval_comparison_plot_reuses_ordered_families`.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
 the same fixed action before/after.
@@ -2318,7 +2359,7 @@ action index with one pass over `k_levels` instead of `max(k_levels)` followed
 by `list(k_levels).index(...)`. Server RED/GREEN evidence is committed under
 `experiments/server_command_runs/action_registry_klevel_scan_9b78854_20260704_074904/`.
 
-- [ ] **Step 2: Move expensive rendering out of hot paths**
+- [x] **Step 2: Move expensive rendering out of hot paths**
 
 Keep JSON/JSONL writes in training; move PNG/HTML/NPZ rendering to post-run
 commands unless the user explicitly requests live rendering.
@@ -2343,6 +2384,17 @@ the NPZ arrays equal; explicit rendering remained available at a `1.072553s`
 median. Focused RED/GREEN evidence, the full 39-test related gate, and the
 benchmark are committed under
 `experiments/server_command_runs/stage2_plot_default_78cfec9_20260710_203325/`.
+
+Progress 2026-07-10: source commit `f197361` keeps Paean BLB action plots
+enabled by default, but the fixed fusion-count action driver now defaults
+`RFR_PAEAN_RENDER_PLOTS=0`. JSON, Markdown, and the driver's combined HTML stay
+enabled, and callers can explicitly set the variable to `1` to restore both
+internal PNGs. A two-candidate server benchmark measured the removed serial
+plot/scatter section at `0.921s` cold and `0.728s` warm median. The end-to-end
+gate wrote zero internal PNGs, retained combined HTML, and matched the accepted
+deterministic baseline/candidate semantic fields; compilation and all 60
+related tests passed. Evidence is committed under
+`experiments/server_command_runs/paean_plot_defer_f197361_20260710_220535/`.
 
 Progress 2026-07-02: the Stage-2 curve persistence path now checks sequence
 length with `len()` where available and converts each NPZ series with one
@@ -2589,13 +2641,22 @@ writes instead of materializing one full joined string before writing. These
 paths keep the same report sections and output file names while reducing peak
 allocation in Stage-2 persistence/report flushes.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
 ```bash
 python3 -m unittest tests.test_rl_data_points tests.test_stage2_persistent_output_verifier -v
 ```
+
+Server evidence 2026-07-10: source commit `ad6d508` passed Python compilation
+and all 34 tests from `tests.test_rl_data_points`,
+`tests.test_stage2_persistent_output_verifier`, and
+`tests.test_optimization_evidence_bundle`. The first run exposed only a server
+sparse-checkout fixture omission; the accepted retry temporarily added the
+tracked `reports/` path through Git, ran the unchanged test command, and
+restored the original sparse set with a clean main worktree. Evidence is under
+`experiments/server_command_runs/artifact_contract_gate_ad6d508_20260710_222023/`.
 
 ## Task 8: Server Evidence and Promotion Loop
 
@@ -2609,7 +2670,7 @@ python3 -m unittest tests.test_rl_data_points tests.test_stage2_persistent_outpu
 - Use: `scripts/optimization_evidence_bundle.py`
 - Use: `scripts/stage2_ngpu_ab_compare.py`
 
-- [ ] **Step 1: Write one server command per promoted optimization**
+- [x] **Step 1: Write one server command per promoted optimization**
 
 Each command must record:
 
@@ -2620,7 +2681,7 @@ Each command must record:
 - timing summary.
 - semantic parity/eval evidence.
 
-- [ ] **Step 2: Pull artifacts back locally**
+- [x] **Step 2: Pull artifacts back locally**
 
 Import compact summaries into `experiments/server_command_runs/` or
 `reports/html_reports/` as appropriate.
@@ -2868,9 +2929,16 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
 - `cb215bd` skeleton profile config discovery, evidence committed in the
   `skeleton_profile_config_discovery_cb215bd_20260703_213500` run directory.
 
-- [ ] **Step 3: Commit/push source and evidence**
+- [x] **Step 3: Commit/push source and evidence**
 
 Never leave canonical source changes only on the server.
+
+Progress 2026-07-10: the replacement-server loops for Stage-2 plot deferral,
+two Rescale hot paths, Paean fixed-action batching, Paean plot deferral, and
+the structured-artifact contract gate all followed local edit -> Git push ->
+server Git checkout/run -> local artifact pullback -> evidence commit/push ->
+server pull. Local optimization worktree, `origin/jk_standard_rl`, and the
+server main worktree were checked at the same clean HEAD after each promotion.
 
 ## Completion Audit
 

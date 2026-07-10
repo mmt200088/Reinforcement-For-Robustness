@@ -1,0 +1,8 @@
+[info] requested groups=2 unique action vectors=2
+[run] batch(2 configs): /var/tmp/root-home/miniconda3/envs/llm_ist/bin/python -m Paean.run_final_eval --dataset mrpc --algorithm rl --model-type bert-base --batch-size 128 --source manual --manual-stage1-gelu '[1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]' --manual-stage1-softmax '[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]' --manual-stage2-noise '{"x":[30,30,30,30,30,30,30,30,30,30,30,30],"wq":[22,22,22,22,22,22,22,22,22,22,22,22],"wk":[22,22,22,22,22,22,22,22,22,22,22,22],"wv":[22,22,22,22,22,22,22,22,22,22,22,22],"wo":[22,22,22,22,22,22,22,22,22,22,22,22],"wffn1":[22,22,22,22,22,22,22,22,22,22,22,22],"wffn2":[22,22,22,22,22,22,22,22,22,22,22,22]}' --action-config /hy-tmp/paean_action_batch_897b273_20260710_211040/after/outputs/paean_action_batch_manifest.json --output-root /hy-tmp/paean_action_batch_897b273_20260710_211040/after/outputs --run-name paean_action_batch --repeat 1 --rescale-invoker-kind in_process --rescale-optimizer-root Rescale_optimizer --require-rescale-optimizer --no-glue-submission --stage1-accuracy-tolerance 0.005 --stage2-limit-tolerance 0.005 --stage2-stability-tolerance 0.005 --stage2-k-trials 5 --stage2-probe-size 408 --foreground
+{
+  "output_json": "/hy-tmp/paean_action_batch_897b273_20260710_211040/after/combined.json",
+  "output_html": "/hy-tmp/paean_action_batch_897b273_20260710_211040/after/combined.html",
+  "unique_action_runs": 2,
+  "requested_group_count": 2
+}

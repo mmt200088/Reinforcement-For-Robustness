@@ -66,12 +66,20 @@ class FusionCountFixedActionDecodeTest(unittest.TestCase):
 
         cfg = decoded.block4_cfgs[0]
         self.assertEqual(cfg.output_truncation_k, int(K_LEVELS[k_index]))
-        # block4 option 1 is a BOOSTED option (2026-06-25 precision-boost rebuild):
-        # the decode must use explicit_field_values, so these are the boosted SFs
-        # (softmax_out_mask 13→14 after the boost). Asserting the boosted values
-        # locks that the boost is actually replayed, not the pre-boost grid SFs.
-        self.assertEqual(cfg.softmax_out_fresh.scaling_factor, 21)
-        self.assertEqual(cfg.softmax_out_mask_encode.scaling_factor, 14)
+        # A boosted option must replay its map-owned explicit values instead of
+        # the pre-boost action-index grid. Keep this assertion map-version aware:
+        # precision-boost rebuilds may legitimately change the explicit SFs.
+        option = fusion_map.options(step.graph_key_suffix)[option_id]
+        self.assertTrue(option.boosted)
+        self.assertIsNotNone(option.explicit_field_values)
+        self.assertEqual(
+            cfg.softmax_out_fresh.scaling_factor,
+            option.explicit_field_values["softmax_out_fresh_sf"],
+        )
+        self.assertEqual(
+            cfg.softmax_out_mask_encode.scaling_factor,
+            option.explicit_field_values["softmax_out_mask_sf"],
+        )
 
     def test_selected_vs_random_summary_keeps_existing_statistics(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule

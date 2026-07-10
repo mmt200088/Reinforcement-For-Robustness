@@ -1,0 +1,22 @@
+{
+  "baseline_equal": true,
+  "candidates": {
+    "all_fusion0": {
+      "semantic_equal": true,
+      "semantic_differences": [],
+      "all_difference_paths": [
+        "action_metadata.batch_manifest_path",
+        "time_ms"
+      ]
+    },
+    "one_hot_block2_mrpc": {
+      "semantic_equal": true,
+      "semantic_differences": [],
+      "all_difference_paths": [
+        "action_metadata.batch_manifest_path",
+        "time_ms"
+      ]
+    }
+  },
+  "all_semantic_equal": true
+}

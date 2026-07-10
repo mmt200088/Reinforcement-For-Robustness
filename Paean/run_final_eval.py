@@ -17,6 +17,8 @@ from .config import (
     parse_final_eval_settings,
 )
 
+_ACTION_BATCH_SCHEMA = "paean_action_batch_v1"
+
 
 def _base_model(model_type: str, dataset: str) -> str:
     if model_type == "bert-base":
@@ -196,8 +198,32 @@ def _action_range_value_count(range_spec: str) -> int:
     return max(1, len(values))
 
 
+def _action_config_candidate_count(action_config: str) -> int:
+    if not action_config:
+        return 1
+
+    path = Path(action_config).expanduser()
+    if not path.is_file():
+        return 1
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 1
+
+    if not isinstance(payload, dict):
+        return 1
+    if payload.get("schema_version") != _ACTION_BATCH_SCHEMA:
+        return 1
+
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return 1
+    return max(1, len(candidates))
+
+
 def estimate_workload(settings: FinalEvalSettings) -> Dict[str, object]:
-    selected_config_count = 1
+    selected_config_count = _action_config_candidate_count(settings.action_config)
     for range_spec in settings.action_ranges:
         selected_config_count *= _action_range_value_count(str(range_spec))
 

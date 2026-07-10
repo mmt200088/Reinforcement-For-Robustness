@@ -1,0 +1,23 @@
+	Command being timed: "/var/tmp/root-home/miniconda3/envs/llm_ist/bin/python scripts/project_optimization_audit.py --root /hy-tmp/rfr_runtime_optimization --artifact-root /hy-tmp/stage2_plot_default_78cfec9_20260710_203325 --artifact-root /hy-tmp/rescale_scalar_restore_0fc84b6_20260710_204509 --artifact-root /hy-tmp/rescale_compact_scan_57f67d9_20260710_205520 --artifact-root /hy-tmp/paean_action_batch_897b273_20260710_211040 --artifact-root /hy-tmp/paean_plot_defer_e86ec83_20260710_220535 --artifact-root /hy-tmp/artifact_contract_gate_ad6d508_20260710_222023 --out-json /hy-tmp/project_optimization_audit_7030da2_20260710_223053/audit.json --out-md /hy-tmp/project_optimization_audit_7030da2_20260710_223053/audit.md"
+	User time (seconds): 0.03
+	System time (seconds): 0.00
+	Percent of CPU this job got: 51%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.08
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 11840
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 1754
+	Voluntary context switches: 1
+	Involuntary context switches: 14
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 32
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

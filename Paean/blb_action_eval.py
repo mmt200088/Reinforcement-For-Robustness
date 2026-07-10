@@ -4,11 +4,14 @@ import dataclasses
 import json
 import os
 from pathlib import Path
+import random
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+import torch
 
 from blb_rl_bridge import BLBNoiseRLBridge
+from function_handler import reseed_noise_rng
 from blb_stage2_rl.action_space import (
     ActionDecodeResult,
     _block_default_N,
@@ -43,6 +46,8 @@ from .action_grid import (
     build_random_action_candidates,
     coerce_spec_list,
 )
+
+_PLOT_RENDER_FALSE_VALUES = {"0", "false", "no", "off", "skip", "none"}
 
 
 class BLBActionFinalEvaluationModule:
@@ -106,6 +111,40 @@ class BLBActionFinalEvaluationModule:
         if key not in cache:
             cache[key] = load_max_sfs(key)
         return cache[key]
+
+    @staticmethod
+    def _render_plots_enabled() -> bool:
+        raw = os.environ.get("RFR_PAEAN_RENDER_PLOTS", "1")
+        return raw.strip().lower() not in _PLOT_RENDER_FALSE_VALUES
+
+    @staticmethod
+    def _capture_isolated_candidate_rng_state() -> Dict[str, Any]:
+        return {
+            "python": random.getstate(),
+            "numpy": np.random.get_state(),
+            "torch_cpu": torch.random.get_rng_state(),
+            "torch_cuda": (
+                torch.cuda.get_rng_state_all()
+                if torch.cuda.is_available()
+                else None
+            ),
+        }
+
+    def _restore_isolated_candidate_rng_state(
+        self,
+        metadata: Mapping[str, Any],
+        state: Optional[Mapping[str, Any]],
+    ) -> None:
+        if not bool((metadata or {}).get("isolate_random_seed", False)):
+            return
+        if state is None:
+            raise RuntimeError("isolated batch candidate RNG state was not captured")
+        random.setstate(state["python"])
+        np.random.set_state(state["numpy"])
+        torch.random.set_rng_state(state["torch_cpu"])
+        if state["torch_cuda"] is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(state["torch_cuda"])
+        reseed_noise_rng(self.random_seed)
 
     def run(
         self,
@@ -233,6 +272,14 @@ class BLBActionFinalEvaluationModule:
             baseline_result["p"],
             baseline_result["s"],
         )
+        isolated_candidate_rng_state = None
+        if any(
+            bool((candidate.metadata or {}).get("isolate_random_seed", False))
+            for candidate in selected_candidates
+        ):
+            isolated_candidate_rng_state = (
+                self._capture_isolated_candidate_rng_state()
+            )
 
         # ---- Evaluate selected candidates first ----
         selected_results: List[Dict[str, Any]] = []
@@ -240,15 +287,25 @@ class BLBActionFinalEvaluationModule:
             ev.log(
                 f"\n--- BLB selected candidate {idx}/{len(selected_candidates)}: {candidate.name} ---"
             )
-            result = self._evaluate_action_candidate(
-                name=candidate.name,
-                action_vec=candidate.action_vec,
-                overrides=candidate.overrides,
-                metadata=candidate.metadata,
-                gelu=opt_gelu,
-                softmax=opt_softmax,
-                report_constraints=report_constraints,
+            self._restore_isolated_candidate_rng_state(
+                candidate.metadata, isolated_candidate_rng_state,
             )
+            isolate_noise_rng = bool(
+                (candidate.metadata or {}).get("isolate_random_seed", False)
+            )
+            try:
+                result = self._evaluate_action_candidate(
+                    name=candidate.name,
+                    action_vec=candidate.action_vec,
+                    overrides=candidate.overrides,
+                    metadata=candidate.metadata,
+                    gelu=opt_gelu,
+                    softmax=opt_softmax,
+                    report_constraints=report_constraints,
+                )
+            finally:
+                if isolate_noise_rng:
+                    reseed_noise_rng(None)
             selected_results.append(result)
             ev.log(
                 f"  {candidate.name}: Loss={result['loss']:.4f}, "
@@ -350,11 +407,19 @@ class BLBActionFinalEvaluationModule:
             comparison_summary=comparison_summary,
             cost_match_diagnostics=cost_match_payload,
         )
-        plot_path = self._save_results_plot(candidate_results=results)
-        scatter_path = self._save_scatter_plot(
-            selected_results=selected_results,
-            random_results=random_results,
-        )
+        plot_path = None
+        scatter_path = None
+        if self._render_plots_enabled():
+            plot_path = self._save_results_plot(candidate_results=results)
+            scatter_path = self._save_scatter_plot(
+                selected_results=selected_results,
+                random_results=random_results,
+            )
+        else:
+            ev.log(
+                "BLB action final-eval plots deferred; set "
+                "RFR_PAEAN_RENDER_PLOTS=1 to enable."
+            )
         ev.log(f"BLB action final-eval summary saved to: {summary_path}")
         ev.log(f"BLB action final-eval text report saved to: {text_path}")
         if plot_path:

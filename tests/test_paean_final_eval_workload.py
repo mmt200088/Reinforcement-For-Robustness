@@ -1,5 +1,7 @@
 from pathlib import Path
 import io
+import json
+import tempfile
 from contextlib import redirect_stdout
 import unittest
 from unittest import mock
@@ -10,6 +12,30 @@ from Paean.run_final_eval import configuration_lines, estimate_workload
 
 
 class FinalEvalWorkloadEstimateTest(unittest.TestCase):
+    def test_batch_manifest_counts_candidates_in_one_launcher_process(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = Path(td) / "batch.json"
+            manifest.write_text(
+                json.dumps({
+                    "schema_version": "paean_action_batch_v1",
+                    "candidates": [
+                        {"name": "first", "action_config": "first.json"},
+                        {"name": "second", "action_config": "second.json"},
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            settings = FinalEvalSettings(
+                action_config=str(manifest),
+                cost_match_count=0,
+            )
+
+            workload = estimate_workload(settings)
+
+        self.assertEqual(workload["selected_config_count"], 2)
+        self.assertEqual(workload["total_config_count"], 2)
+        self.assertEqual(workload["launcher_processes"], 1)
+
     def test_counts_action_range_product_and_random_controls(self):
         settings = FinalEvalSettings(
             repeat=3,

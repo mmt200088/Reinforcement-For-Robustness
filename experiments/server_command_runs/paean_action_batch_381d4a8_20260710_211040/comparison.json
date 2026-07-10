@@ -1,0 +1,215 @@
+{
+  "schema_version": "paean_action_batch_benchmark_v1",
+  "source_commit": "381d4a81b9802289fb306e29d64720b5a1813390",
+  "all_commands_exit_zero": true,
+  "tests": {
+    "test_count": 58,
+    "py_compile_rc": 0,
+    "unittest_rc": 0
+  },
+  "workload": {
+    "candidate_count": 2,
+    "legacy_launcher_processes": 2,
+    "batched_launcher_processes": 1,
+    "legacy_clean_baseline_evaluations": 2,
+    "batched_clean_baseline_evaluations": 1,
+    "legacy_unused_cost_match_prefilter_attempts": 10000,
+    "batched_unused_cost_match_prefilter_attempts": 0
+  },
+  "timing": {
+    "legacy_two_process": {
+      "elapsed_raw": "0:44.96",
+      "elapsed_seconds": 44.96,
+      "user_seconds": 14.59,
+      "system_seconds": 10.86,
+      "max_rss_kb": 1619472,
+      "exit_status": 0
+    },
+    "batched_two_candidate": {
+      "elapsed_raw": "0:20.99",
+      "elapsed_seconds": 20.99,
+      "user_seconds": 8.01,
+      "system_seconds": 6.64,
+      "max_rss_kb": 1598996,
+      "exit_status": 0
+    },
+    "independent_deterministic_references": {
+      "all_fusion0": {
+        "elapsed_raw": "0:23.76",
+        "elapsed_seconds": 23.76,
+        "user_seconds": 7.26,
+        "system_seconds": 5.84,
+        "max_rss_kb": 1598172,
+        "exit_status": 0
+      },
+      "one_hot_block2_mrpc": {
+        "elapsed_raw": "0:19.79",
+        "elapsed_seconds": 19.79,
+        "user_seconds": 7.25,
+        "system_seconds": 6.0,
+        "max_rss_kb": 1622492,
+        "exit_status": 0
+      }
+    },
+    "independent_reference_total_seconds": 43.55,
+    "speedup_vs_legacy": 2.141972367794188,
+    "wall_reduction_percent_vs_legacy": 53.31405693950179,
+    "speedup_vs_current_independent_references": 2.0747975226298236
+  },
+  "gpu_sampling": {
+    "legacy_two_process": {
+      "samples": 45,
+      "sample_interval_seconds": 1,
+      "average_utilization_percent": 9.866666666666667,
+      "max_utilization_percent": 100.0,
+      "active_samples": 5,
+      "max_memory_used_mib": 4071.0
+    },
+    "batched_two_candidate": {
+      "samples": 21,
+      "sample_interval_seconds": 1,
+      "average_utilization_percent": 14.285714285714286,
+      "max_utilization_percent": 100.0,
+      "active_samples": 3,
+      "max_memory_used_mib": 4071.0
+    }
+  },
+  "parity": {
+    "baseline_fields": [
+      "loss",
+      "p",
+      "s",
+      "loss_std",
+      "p_std",
+      "s_std",
+      "evaluation_n",
+      "evaluation_protocol"
+    ],
+    "baseline_equal_for_each_independent_reference": {
+      "all_fusion0": true,
+      "one_hot_block2_mrpc": true
+    },
+    "candidate_ignored_paths": [
+      "action_config_path",
+      "action_metadata.batch_manifest_path",
+      "action_metadata.source_path",
+      "time_ms"
+    ],
+    "candidates": {
+      "all_fusion0": {
+        "semantic_equal": true,
+        "semantic_difference_count": 0,
+        "ignored_runtime_or_path_differences": [
+          {
+            "path": "action_config_path",
+            "batch": "/hy-tmp/paean_action_batch_897b273_20260710_211040/before/inputs/all_fusion0.json",
+            "single_process": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_single_refs/all_fusion0/inputs/all_fusion0.json"
+          },
+          {
+            "path": "action_metadata.batch_manifest_path",
+            "batch": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_batch/outputs/paean_action_batch_manifest.json",
+            "single_process": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_single_refs/all_fusion0/outputs/paean_action_batch_manifest.json"
+          },
+          {
+            "path": "action_metadata.source_path",
+            "batch": "/hy-tmp/paean_action_batch_897b273_20260710_211040/before/inputs/all_fusion0.json",
+            "single_process": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_single_refs/all_fusion0/inputs/all_fusion0.json"
+          },
+          {
+            "path": "time_ms",
+            "batch": 321.9411373138428,
+            "single_process": 321.70140743255615
+          }
+        ],
+        "batch_metrics": {
+          "loss": 0.4338113032281399,
+          "p": 0.875,
+          "s": 0.8734248592957315,
+          "loss_std": 0.0,
+          "p_std": 0.0,
+          "s_std": 0.0,
+          "evaluation_n": 1,
+          "total_bits_sum": 11285,
+          "total_fusion_count": 0,
+          "invalid_block_count": 0,
+          "valid_block_count": 47,
+          "any_invalid": false
+        }
+      },
+      "one_hot_block2_mrpc": {
+        "semantic_equal": true,
+        "semantic_difference_count": 0,
+        "ignored_runtime_or_path_differences": [
+          {
+            "path": "action_config_path",
+            "batch": "/hy-tmp/paean_action_batch_897b273_20260710_211040/before/inputs/one_hot_block2_mrpc.json",
+            "single_process": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_single_refs/one_hot_block2_mrpc/inputs/one_hot_block2_mrpc.json"
+          },
+          {
+            "path": "action_metadata.batch_manifest_path",
+            "batch": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_batch/outputs/paean_action_batch_manifest.json",
+            "single_process": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_single_refs/one_hot_block2_mrpc/outputs/paean_action_batch_manifest.json"
+          },
+          {
+            "path": "action_metadata.source_path",
+            "batch": "/hy-tmp/paean_action_batch_897b273_20260710_211040/before/inputs/one_hot_block2_mrpc.json",
+            "single_process": "/hy-tmp/paean_action_batch_897b273_20260710_211040/final_single_refs/one_hot_block2_mrpc/inputs/one_hot_block2_mrpc.json"
+          },
+          {
+            "path": "time_ms",
+            "batch": 320.44607400894165,
+            "single_process": 319.8125958442688
+          }
+        ],
+        "batch_metrics": {
+          "loss": 0.4334430731832981,
+          "p": 0.8774509803921569,
+          "s": 0.8760590106101505,
+          "loss_std": 0.0,
+          "p_std": 0.0,
+          "s_std": 0.0,
+          "evaluation_n": 1,
+          "total_bits_sum": 11009,
+          "total_fusion_count": 12,
+          "invalid_block_count": 0,
+          "valid_block_count": 47,
+          "any_invalid": false
+        }
+      }
+    },
+    "all_semantic_fields_equal": true,
+    "legacy_metric_note": "The pre-change BLB noise generator used OS entropy, so old and new single-run metric samples are not expected to be bit-identical. Parity is measured against independently launched deterministic single-candidate batch manifests at the same source commit."
+  },
+  "legacy_metrics": {
+    "all_fusion0": {
+      "loss": 0.4360087811946869,
+      "p": 0.8725490196078431,
+      "s": 0.8711013710345565,
+      "total_bits_sum": 11285,
+      "total_fusion_count": 0
+    },
+    "one_hot_block2_mrpc": {
+      "loss": 0.43476875126361847,
+      "p": 0.8823529411764706,
+      "s": 0.8807218908102393,
+      "total_bits_sum": 11009,
+      "total_fusion_count": 12
+    }
+  },
+  "final_metrics": {
+    "all_fusion0": {
+      "loss": 0.4338113032281399,
+      "p": 0.875,
+      "s": 0.8734248592957315,
+      "total_bits_sum": 11285,
+      "total_fusion_count": 0
+    },
+    "one_hot_block2_mrpc": {
+      "loss": 0.4334430731832981,
+      "p": 0.8774509803921569,
+      "s": 0.8760590106101505,
+      "total_bits_sum": 11009,
+      "total_fusion_count": 12
+    }
+  }
+}
