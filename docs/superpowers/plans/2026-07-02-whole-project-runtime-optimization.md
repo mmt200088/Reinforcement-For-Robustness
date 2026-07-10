@@ -89,6 +89,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
 | Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
+| Plan and audit | `7030da2` | `experiments/server_command_runs/project_optimization_audit_7030da2_20260710_223053/` | Re-run the six-stage whole-project audit on the replacement server after Paean, Rescale, rendering, and artifact-contract work. |
 | Paean final eval | `567ad75` | `experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/` | Reuse one clean-baseline install and one BLB bridge install across `repeat_n > 1` forwards. |
 | Paean final eval | `b2a7325` | `experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/` | Cache `load_max_sfs(profile)` per final-eval module instance. |
 | Paean final eval | `381d4a8` | `experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/` | Evaluate fixed fusion-count actions in one model/tokenizer/dataset process, reuse the clean baseline, isolate deterministic BLB-noise streams, and skip unused cost-matched random search. |
@@ -1127,6 +1128,10 @@ Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.
 Use `SERVER_COMMAND.md` to run 1GPU vs NGPU parity and speed checks. Promote a
 new default only when effect equality passes and wall-clock evidence improves.
 
+Replacement-server blocker 2026-07-10: the host exposes one RTX 4090, so it
+cannot produce the required 1GPU-vs-NGPU parity/speed evidence. Keep this step
+open until a server with at least two visible GPUs is available.
+
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 
 **Files:**
@@ -1139,13 +1144,13 @@ new default only when effect equality passes and wall-clock evidence improves.
 - Test: `tests/test_rescale_optimizer_bridge_cache.py`
 - Test: `tests/test_blb_fusion_count_map.py`
 
-- [ ] **Step 1: Profile before editing**
+- [x] **Step 1: Profile before editing**
 
 Use existing fusion-map build logs and local unit tests to identify whether
 time is in graph loading, feasibility DAG build, replan calls, or summary
 parsing.
 
-- [ ] **Step 2: Apply safe reuse**
+- [x] **Step 2: Apply safe reuse**
 
 Allowed changes:
 
@@ -1472,6 +1477,12 @@ python3 -m unittest tests.test_rescale_optimizer_bridge_cache tests.test_blb_fus
 ```
 
 Use server only for large fusion-map wall-clock evidence.
+
+Remaining verification note 2026-07-10: scalar-state restore and compact
+scale propagation have focused parity/timing evidence, but the broader
+fusion-map suite still contains the known stale assertion that `block4` must
+be degenerate. Keep this step open until the Stage-2/fusion-map owner updates
+or confirms that map contract; do not weaken current map semantics here.
 
 ## Task 6: Paean Final Evaluation Throughput
 
@@ -2655,7 +2666,7 @@ restored the original sparse set with a clean main worktree. Evidence is under
 - Use: `scripts/optimization_evidence_bundle.py`
 - Use: `scripts/stage2_ngpu_ab_compare.py`
 
-- [ ] **Step 1: Write one server command per promoted optimization**
+- [x] **Step 1: Write one server command per promoted optimization**
 
 Each command must record:
 
@@ -2666,7 +2677,7 @@ Each command must record:
 - timing summary.
 - semantic parity/eval evidence.
 
-- [ ] **Step 2: Pull artifacts back locally**
+- [x] **Step 2: Pull artifacts back locally**
 
 Import compact summaries into `experiments/server_command_runs/` or
 `reports/html_reports/` as appropriate.
@@ -2914,9 +2925,16 @@ server-temp-run, artifact-pullback, evidence-commit workflow:
 - `cb215bd` skeleton profile config discovery, evidence committed in the
   `skeleton_profile_config_discovery_cb215bd_20260703_213500` run directory.
 
-- [ ] **Step 3: Commit/push source and evidence**
+- [x] **Step 3: Commit/push source and evidence**
 
 Never leave canonical source changes only on the server.
+
+Progress 2026-07-10: the replacement-server loops for Stage-2 plot deferral,
+two Rescale hot paths, Paean fixed-action batching, Paean plot deferral, and
+the structured-artifact contract gate all followed local edit -> Git push ->
+server Git checkout/run -> local artifact pullback -> evidence commit/push ->
+server pull. Local optimization worktree, `origin/jk_standard_rl`, and the
+server main worktree were checked at the same clean HEAD after each promotion.
 
 ## Completion Audit
 
