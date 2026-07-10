@@ -100,6 +100,25 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
 
         self.assertEqual(compact["cut_point_sf"], expected)
 
+    def test_replan_session_reuses_precomputed_baseline_stage_paths(self):
+        from rescale_optimizer import ReplanSession
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        graph = session._graphs["block4"]
+
+        with mock.patch.object(
+            graph,
+            "nodes_between",
+            side_effect=AssertionError("rebuilt baseline stage path"),
+        ):
+            compact = session.replan_compact("block4")
+
+        self.assertTrue(compact.valid)
+
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
         from rescale_optimizer import replan_interface
 
