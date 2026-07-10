@@ -1,0 +1,51 @@
+{
+  "before_default_median_seconds": 1.0683508989750408,
+  "before_source_commit": "f8fc0484b58182fddd5f44a81e7c574a0f032779",
+  "default_median_seconds": 0.0019046380184590816,
+  "default_output_sizes": {
+    "entropy_png": 0,
+    "npz": 2890656,
+    "paper_pdf": 0,
+    "paper_png": 0,
+    "png": 0
+  },
+  "default_outputs_present": {
+    "entropy_png": false,
+    "npz": true,
+    "paper_pdf": false,
+    "paper_png": false,
+    "png": false
+  },
+  "default_seconds": [
+    0.0019374230178073049,
+    0.0019046380184590816,
+    0.0018238659831695259
+  ],
+  "default_speedup_vs_before": 560.9207044178262,
+  "episodes": 60000,
+  "explicit_true_median_seconds": 1.0725533899967559,
+  "explicit_true_output_sizes": {
+    "entropy_png": 73657,
+    "npz": 2890656,
+    "paper_pdf": 0,
+    "paper_png": 0,
+    "png": 625821
+  },
+  "explicit_true_outputs_present": {
+    "entropy_png": true,
+    "npz": true,
+    "paper_pdf": false,
+    "paper_png": false,
+    "png": true
+  },
+  "explicit_true_seconds": [
+    1.0716841500252485,
+    1.0725533899967559,
+    1.0792596170213073
+  ],
+  "npz_arrays_equal": true,
+  "projected_saved_seconds_for_100_refreshes": 106.64462609565817,
+  "repeats": 3,
+  "saved_seconds_per_default_refresh": 1.0664462609565817,
+  "source_commit": "78cfec9672db58935f1e2e1c7b7cae5ed0c88be5"
+}

@@ -1,0 +1,37 @@
+{
+  "created_at": "2026-07-10T12:33:37.935312+00:00",
+  "git": {
+    "branch": "HEAD",
+    "commit": "78cfec9672db58935f1e2e1c7b7cae5ed0c88be5",
+    "dirty_examples": [],
+    "dirty_file_count": 0
+  },
+  "gpu_summary": {
+    "active_gpu_count": 1,
+    "gpu_count": 1,
+    "idle_gpu_count": 0,
+    "max_utilization_gpu_pct": 0,
+    "memory_total_mib": 24564,
+    "memory_used_mib": 183
+  },
+  "gpus": [
+    {
+      "index": 0,
+      "memory_total_mib": 24564,
+      "memory_used_mib": 183,
+      "name": "NVIDIA GeForce RTX 4090",
+      "utilization_gpu_pct": 0
+    }
+  ],
+  "root": "/hy-tmp/rfr_runtime_optimization",
+  "schema": "server_resource_snapshot_v1",
+  "system": {
+    "cpu_count": 20,
+    "load_average": [
+      0.0556640625,
+      0.03564453125,
+      0.0419921875
+    ],
+    "python": "3.10.19"
+  }
+}

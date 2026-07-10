@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `f3103d9`, the conservative
+not by raw commit count. As of source head `78cfec9`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
 gate have landed. Hardware-default promotion remains evidence-gated rather
@@ -202,6 +202,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Reports / paper figures | `e8bb0dc` | `experiments/server_command_runs/persistence_float_array_sequence_e8bb0dc_20260704_045400/` | Send already-materialized list/tuple/range curve inputs directly to `numpy.asarray()` so Stage-2 curve/report generation avoids one extra Python sequence copy. |
 | Reports / paper figures | `00bc7e8` | `experiments/server_command_runs/diagnostic_curve_array_cache_00bc7e8_20260704_050000/` | Reuse `_float_array()` and per-render array caching in Stage-2 diagnostic-curve generation instead of repeatedly materializing series with `list(seq)`. |
 | Reports / paper figures | `ec0776b` | `experiments/server_command_runs/persistence_seq_len_count_ec0776b_20260704_051045/` | Count unsized Stage-2 curve/report iterables directly instead of materializing `list(values)` to compute length. |
+| Reports / paper figures | `78cfec9` | `experiments/server_command_runs/stage2_plot_default_78cfec9_20260710_203325/` | Defer synchronous Stage-2 PNG/PDF rendering by default while preserving required NPZ writes and explicit live/offline rendering. |
 | Stage-2 scheduling gate | `27be72e` | `experiments/server_command_runs/stage2_ab_ordered_jsonl_27be72e_20260703_225809/` | Skip sorting already ordered Stage-2 A/B JSONL logs while preserving sorted fallback for out-of-order artifacts. |
 | Stage-2 scheduling gate | `623cd5d` | `experiments/server_command_runs/stage2_ab_excluded_keys_623cd5d_20260704_101330/` | Materialize Stage-2 A/B canonical excluded keys once per comparison and reuse the set across all per-row canonicalization calls. |
 | Stage-2 scheduling gate | `f3103d9` | `experiments/server_command_runs/stage2_ngpu_report_stream_f3103d9_20260710_154047/` | Stream the Stage-2 1GPU-vs-NGPU verdict to stdout and the optional output file without materializing the complete report string in the CLI path. |
@@ -2305,6 +2306,17 @@ post-run reports can regenerate the inspection artifacts later. A local
 5000-episode benchmark reduced `write_training_curves()` from `1.999s` /
 `44.88MB` with PNG/PDF rendering to `0.002s` / `0.30MB` when plot rendering is
 disabled.
+
+Progress 2026-07-10: source commit `78cfec9` makes deferred rendering the
+Stage-2 default while preserving NPZ writes and explicit
+`render_plots=True` / `RFR_STAGE2_RENDER_PLOTS=1` opt-in rendering. The
+offline regeneration command continues to request rendering explicitly. On
+the replacement server, a 60,000-point, three-repeat benchmark reduced the
+default refresh median from `1.068351s` to `0.001905s` (`560.92x`) and kept
+the NPZ arrays equal; explicit rendering remained available at a `1.072553s`
+median. Focused RED/GREEN evidence, the full 39-test related gate, and the
+benchmark are committed under
+`experiments/server_command_runs/stage2_plot_default_78cfec9_20260710_203325/`.
 
 Progress 2026-07-02: the Stage-2 curve persistence path now checks sequence
 length with `len()` where available and converts each NPZ series with one

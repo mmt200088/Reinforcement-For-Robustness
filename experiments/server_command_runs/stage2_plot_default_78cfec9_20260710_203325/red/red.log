@@ -1,0 +1,14 @@
+test_plot_rendering_defaults_to_offline_but_explicit_true_wins (tests.test_blb_stage2_outputs.UpgradedCurvesTest) ... FAIL
+
+======================================================================
+FAIL: test_plot_rendering_defaults_to_offline_but_explicit_true_wins (tests.test_blb_stage2_outputs.UpgradedCurvesTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_stage2_outputs.py", line 117, in test_plot_rendering_defaults_to_offline_but_explicit_true_wins
+    self.assertFalse(persistence._stage2_plot_rendering_enabled(None))
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)

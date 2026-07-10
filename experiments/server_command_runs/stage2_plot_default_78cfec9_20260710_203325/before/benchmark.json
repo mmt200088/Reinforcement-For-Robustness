@@ -1,0 +1,50 @@
+{
+  "default_median_seconds": 1.0683508989750408,
+  "default_output_sizes": {
+    "entropy_png": 73657,
+    "npz": 2890656,
+    "paper_pdf": 0,
+    "paper_png": 0,
+    "png": 625821
+  },
+  "default_outputs_present": {
+    "entropy_png": true,
+    "npz": true,
+    "paper_pdf": false,
+    "paper_png": false,
+    "png": true
+  },
+  "default_seconds": [
+    1.0713808059808798,
+    1.0683508989750408,
+    1.0583362290053628
+  ],
+  "disabled_median_seconds": 0.001770114991813898,
+  "disabled_output_sizes": {
+    "entropy_png": 0,
+    "npz": 2890656,
+    "paper_pdf": 0,
+    "paper_png": 0,
+    "png": 0
+  },
+  "disabled_outputs_present": {
+    "entropy_png": false,
+    "npz": true,
+    "paper_pdf": false,
+    "paper_png": false,
+    "png": false
+  },
+  "disabled_seconds": [
+    0.0019356890115886927,
+    0.001770114991813898,
+    0.001677446998655796
+  ],
+  "environment_render_var_present": false,
+  "episodes": 60000,
+  "npz_arrays_equal": true,
+  "projected_saved_seconds_for_100_refreshes": 106.65807839832269,
+  "repeats": 3,
+  "saved_seconds_per_refresh": 1.0665807839832269,
+  "source_commit": "f8fc0484b58182fddd5f44a81e7c574a0f032779",
+  "speedup_default_over_disabled": 603.548867681339
+}
