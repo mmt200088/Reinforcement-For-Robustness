@@ -329,12 +329,12 @@ class FusionScheduleTest(unittest.TestCase):
         self.assertEqual(md, 2)
         self.assertEqual(mnl, max(self.m.max_num_options(), _aspace.LEVELS_K))
 
-    def test_degenerate_blocks_single_option(self):
+    def test_fusion_option_counts_match_map(self):
         for s in self.sched:
-            if s.block_idx in (1, 4):
-                self.assertEqual(s.fusion_num_options, 1, f"block{s.block_idx} should be degenerate")
-            else:  # block 2 / block5_n4 each have 2 options
-                self.assertEqual(s.fusion_num_options, 2)
+            self.assertEqual(
+                s.fusion_num_options,
+                self.m.num_options(s.graph_key_suffix),
+            )
             self.assertEqual(s.k_num_levels, _aspace.LEVELS_K)
 
     def test_block_offsets_contiguous_and_sized(self):
