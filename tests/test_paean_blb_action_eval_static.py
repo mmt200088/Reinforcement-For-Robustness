@@ -10,13 +10,22 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         loop_end = text.index("# ---- Generate cost-matched random candidates", loop_start)
         loop = text[loop_start:loop_end]
 
-        self.assertIn("self._reset_isolated_candidate_seed(candidate.metadata)", loop)
+        self.assertIn(
+            "self._restore_isolated_candidate_rng_state(\n"
+            "                candidate.metadata, isolated_candidate_rng_state,\n"
+            "            )",
+            loop,
+        )
         self.assertLess(
-            loop.index("self._reset_isolated_candidate_seed(candidate.metadata)"),
+            loop.index("self._restore_isolated_candidate_rng_state("),
             loop.index("self._evaluate_action_candidate("),
         )
-        self.assertIn("def _reset_isolated_candidate_seed(", text)
-        self.assertIn("transformers.set_seed(self.random_seed)", text)
+        self.assertIn("def _capture_isolated_candidate_rng_state(", text)
+        self.assertIn("def _restore_isolated_candidate_rng_state(", text)
+        self.assertIn("random.setstate(state[\"python\"])", text)
+        self.assertIn("np.random.set_state(state[\"numpy\"])", text)
+        self.assertIn("torch.random.set_rng_state(state[\"torch_cpu\"])", text)
+        self.assertIn("torch.cuda.set_rng_state_all(state[\"torch_cuda\"])", text)
 
     def test_evaluation_protocol_reuses_action_spec_tuples_until_json_conversion(self):
         text = source_text("Paean/blb_action_eval.py")
