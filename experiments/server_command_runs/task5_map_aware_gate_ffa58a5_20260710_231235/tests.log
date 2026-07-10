@@ -1,0 +1,19 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+.............F............
+======================================================================
+FAIL: test_degenerate_blocks_single_option (tests.test_blb_fusion_count_map.FusionScheduleTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_fusion_count_map.py", line 335, in test_degenerate_blocks_single_option
+    self.assertEqual(s.fusion_num_options, 1, f"block{s.block_idx} should be degenerate")
+AssertionError: 2 != 1 : block4 should be degenerate
+
+----------------------------------------------------------------------
+Ran 26 tests in 0.005s
+
+FAILED (failures=1)

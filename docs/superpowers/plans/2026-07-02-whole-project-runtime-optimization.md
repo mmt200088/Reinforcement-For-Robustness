@@ -77,12 +77,13 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `f197361`, the conservative
-completion estimate is about 98% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `ffa58a5`, the conservative
+completion estimate is about 99% of the full goal: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
-Hardware-default promotion remains evidence-gated rather than automatic, and
-multi-GPU gates that require more than the current one-GPU server remain open.
+All currently single-GPU-verifiable plan phases are green. Hardware-default
+promotion remains evidence-gated rather than automatic, and the multi-GPU
+gate that requires more than the current one-GPU server remains open.
 
 Server-verified optimization commits currently in the execution ledger:
 
@@ -213,6 +214,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 scheduling gate | `f3103d9` | `experiments/server_command_runs/stage2_ngpu_report_stream_f3103d9_20260710_154047/` | Stream the Stage-2 1GPU-vs-NGPU verdict to stdout and the optional output file without materializing the complete report string in the CLI path. |
 | Rescale/fusion maps | `2907e63` | `experiments/server_command_runs/rescale_scalar_restore_2907e63_20260710_204509/` | Snapshot and restore Rescale graph delta state with direct `int` / `None` assignment instead of per-node `deepcopy()` calls in every repeated replan. |
 | Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
+| Rescale/fusion maps | `ffa58a5` | `experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/` | Make fusion schedule/replay verification derive expectations from the canonical map and close the 140-test Task 5 gate without changing runtime semantics. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
 | Rescale/fusion maps | `c48e63d` | `experiments/server_command_runs/feasibility_cutpoint_index_c48e63d_20260703_233525/` | Precompute cut-point node identity indices once during feasibility-DAG construction instead of linearly scanning all cut points for every graph node. |
@@ -1468,7 +1470,7 @@ config, but dominated cross-shard candidates are discarded before the final
 grouping pass, reducing parent memory and follow-up work during golden fallback
 builds.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
@@ -1478,11 +1480,13 @@ python3 -m unittest tests.test_rescale_optimizer_bridge_cache tests.test_blb_fus
 
 Use server only for large fusion-map wall-clock evidence.
 
-Remaining verification note 2026-07-10: scalar-state restore and compact
-scale propagation have focused parity/timing evidence, but the broader
-fusion-map suite still contains the known stale assertion that `block4` must
-be degenerate. Keep this step open until the Stage-2/fusion-map owner updates
-or confirms that map contract; do not weaken current map semantics here.
+Verification completion 2026-07-10: the original gate exposed a stale
+hard-coded block4 degeneracy expectation, and the expanded gate exposed a
+second stale hard-coded boosted SF. Both tests now derive expectations from the
+loaded canonical map while preserving the independent K-override assertion.
+The final server gate passed Python compilation and all 140 Rescale/fusion-map,
+fixed-action replay, reward, report, and driver tests. Evidence is under
+`experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/`.
 
 ## Task 6: Paean Final Evaluation Throughput
 
