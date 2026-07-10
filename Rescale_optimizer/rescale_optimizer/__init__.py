@@ -71,6 +71,7 @@ from .replan import (
 )
 from .replan_interface import (
     BaselineRecord,
+    CompactReplanResult,
     DEFAULT_FUSION_POLICY,
     FusionPair,
     ReplanSession,
@@ -112,7 +113,8 @@ __all__ = [
     # replan (what-if + fusion-tolerant feasibility)
     "FusionEvent", "ReplanInputs", "ReplanResult", "replan_with_user_actions",
     # high-level variable/return-value replan interface
-    "BaselineRecord", "DEFAULT_FUSION_POLICY", "FusionPair", "ReplanSession",
+    "BaselineRecord", "CompactReplanResult", "DEFAULT_FUSION_POLICY",
+    "FusionPair", "ReplanSession",
     "SUPPORTED_GELU_GRAPH_DEGREES", "build_new_compact_config",
     "build_replan_output_dict", "default_allowed_fusion_pairs_for_graph",
     "graph_key_for_stage1",

@@ -47,6 +47,16 @@ class BaselineRecord:
     archive_entry: Dict[str, Any]
 
 
+@dataclass(frozen=True)
+class CompactReplanResult:
+    """Minimal repeated-replan result consumed by fusion enumeration."""
+
+    valid: bool
+    fusion_count: int
+    total_bits: int
+    compact_config: Optional[Dict[str, Any]]
+
+
 def _parse_delta_value(value: Any) -> DeltaValue:
     if value == "x2":
         return "x2"
@@ -608,7 +618,8 @@ class ReplanSession:
         include_compact: bool = True,
         output_config_name: Optional[str] = None,
         metadata: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Dict[str, Any], ReplanResult]:
+        _compact_result: bool = False,
+    ) -> Union[Dict[str, Any], ReplanResult, CompactReplanResult]:
         """Run one replan call from variable inputs.
 
         If ``t_new`` is omitted, the baseline ``t_baseline`` is reused. This is
@@ -644,6 +655,21 @@ class ReplanSession:
             baseline_q_bits=list(baseline.q_bits_baseline),
         )
 
+        if _compact_result:
+            compact = build_new_compact_config(graph, key, result)
+            if compact is not None:
+                compact["fusion_count"] = int(result.fusion_count)
+            output = CompactReplanResult(
+                valid=bool(result.valid and result.invalid_chain is None),
+                fusion_count=int(result.fusion_count),
+                total_bits=(
+                    int(result.chain.total_bits) if result.chain is not None else 0
+                ),
+                compact_config=compact,
+            )
+            _restore_graph_delta_state(graph, self._delta_baselines[key])
+            return output
+
         if not return_dict:
             _restore_graph_delta_state(graph, self._delta_baselines[key])
             return result
@@ -665,6 +691,24 @@ class ReplanSession:
         )
         _restore_graph_delta_state(graph, self._delta_baselines[key])
         return doc
+
+    def replan_compact(
+        self,
+        graph_key: str,
+        *,
+        t_new: Optional[Sequence[int]] = None,
+        delta_overrides: Optional[Mapping[str, Any]] = None,
+        allowed_fusion_pairs: Any = DEFAULT_FUSION_POLICY,
+    ) -> CompactReplanResult:
+        """Run replan without expanding the compatibility JSON document."""
+
+        return self.replan(  # type: ignore[return-value]
+            graph_key,
+            t_new=t_new,
+            delta_overrides=delta_overrides,
+            allowed_fusion_pairs=allowed_fusion_pairs,
+            _compact_result=True,
+        )
 
     def __call__(self, graph_key: str, payload: Any) -> Dict[str, Any]:
         """Compatibility invoker: ``session(graph_key, payload) -> dict``."""
