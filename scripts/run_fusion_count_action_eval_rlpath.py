@@ -374,15 +374,21 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     while not done:
         spec = seq_env._schedule[seq_env._step_idx]
         graph_key = str(spec.graph_key_suffix)
-        option_id = int(option_by_step.get(str(spec.step_idx), option_by_graph.get(graph_key, 0)))
-        eval_info = seq_env.evaluate_step([option_id, k_index])
+        map_option_id = int(option_by_step.get(str(spec.step_idx), option_by_graph.get(graph_key, 0)))
+        policy_option_index = 0
+        eval_info = seq_env.evaluate_step(
+            [policy_option_index, k_index],
+            map_option_id_override=map_option_id,
+        )
         _obs, reward, done, info = seq_env.commit_step(eval_info, defer_terminal_forward=False)
         step_records.append({
             "step_idx": int(spec.step_idx),
             "layer_idx": int(spec.layer_idx),
             "block_idx": int(spec.block_idx),
             "graph_key": graph_key,
-            "option_id": int(option_id),
+            "option_id": int(map_option_id),
+            "map_option_id": int(map_option_id),
+            "policy_option_index": int(policy_option_index),
             "k_index": int(k_index),
             "k_value": int(K_LEVELS[k_index]),
             "valid": bool(eval_info.get("valid", False)),

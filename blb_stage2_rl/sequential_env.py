@@ -38,10 +38,10 @@ from .action_space import (
     BlockStepSpec,
     action_vector_to_cfgs,
     build_block_cfg_from_field_values,
-    expand_fusion_step_action,
     fusion_step_schedule,
     horizon_for_num_layers,
     make_all_max_action_vector,
+    resolve_fusion_map_option_id,
     splice_fusion_step_into_full_vec,
     splice_step_action_into_full_vec,
     step_schedule,
@@ -209,6 +209,8 @@ class BLBStage2SequentialEnv:
     def evaluate_step(
             self,
             per_step_action: Sequence[int],
+            *,
+            map_option_id_override: Optional[int] = None,
             ) -> Dict[str, Any]:
         """Run the optimizer for the candidate action WITHOUT mutating env state.
 
@@ -227,6 +229,8 @@ class BLBStage2SequentialEnv:
         spec = self.current_spec()
         action = np.asarray(per_step_action, dtype=int).reshape(-1)
         fusion_choice: Optional[BlockChoice] = None
+        policy_option_index: Optional[int] = None
+        map_option_id: Optional[int] = None
         # 加大精度: explicit boosted SFs (with the decided K) for this block, if
         # the chosen fusion option is a boosted one. Captured here so commit_step
         # can carry it to the TERMINAL model-forward install (the index-only
@@ -247,14 +251,32 @@ class BLBStage2SequentialEnv:
                 raise ValueError(
                     f"fusion step {spec.step_idx} expects 2 slots (option, K), got {action.size}"
                 )
-            block_vec = expand_fusion_step_action(spec, self._fusion_map, int(action[0]), int(action[1]))
+            policy_option_index = int(action[0])
+            map_option_id = (
+                int(map_option_id_override)
+                if map_option_id_override is not None
+                else resolve_fusion_map_option_id(spec, policy_option_index)
+            )
+            _opts = self._fusion_map.options(spec.graph_key_suffix)
+            _opt_obj = next(
+                (option for option in _opts if int(option.option_id) == map_option_id),
+                None,
+            )
+            if _opt_obj is None:
+                raise ValueError(
+                    f"step {spec.step_idx} map fusion option {map_option_id} does not exist "
+                    f"for {spec.graph_key_suffix}"
+                )
+            block_vec = self._fusion_map.expand(
+                spec.graph_key_suffix,
+                map_option_id,
+                int(action[1]),
+            )
             splice_fusion_step_into_full_vec(temp_vec, spec, block_vec)
             # Record the per-block (fusion_count, max_fusion, K) for the terminal
             # weighted-cost reward. Use the MAP's declared option fusion_count
             # (what the policy chose), not the optimizer's re-derived value.
-            _opts = self._fusion_map.options(spec.graph_key_suffix)
-            _oid = int(action[0])
-            _chosen_fusion = int(_opts[_oid].fusion_count) if 0 <= _oid < len(_opts) else 0
+            _chosen_fusion = int(_opt_obj.fusion_count)
             _max_fusion = max((int(o.fusion_count) for o in _opts), default=0)
             _kidx = int(action[1])
             _kval = int(K_LEVELS[_kidx]) if 0 <= _kidx < len(K_LEVELS) else int(K_LEVELS[-1])
@@ -293,7 +315,6 @@ class BLBStage2SequentialEnv:
         # decided K spliced in. Everything downstream (replan/override/install) is
         # unchanged. Non-boosted options never enter this branch.
         if self._fusion_map is not None:
-            _opt_obj = _opts[_oid] if 0 <= _oid < len(_opts) else None
             if _opt_obj is not None and getattr(_opt_obj, "boosted", False) and _opt_obj.explicit_field_values:
                 fv = dict(_opt_obj.explicit_field_values)
                 k_field = _BLOCK_SPECS[int(spec.block_idx)].fields[
@@ -339,6 +360,9 @@ class BLBStage2SequentialEnv:
                 "config_name": config_name,
                 "optimizer_wall_seconds": optimizer_wall,
                 "fusion_choice": fusion_choice,
+                "policy_option_index": policy_option_index,
+                "map_option_id": map_option_id,
+                "boosted_field_values": boosted_field_values,
             }
         optimizer_wall = float(time.perf_counter() - optimizer_t0)
 
@@ -355,6 +379,8 @@ class BLBStage2SequentialEnv:
             "config_name": config_name,
             "optimizer_wall_seconds": optimizer_wall,
             "fusion_choice": fusion_choice,
+            "policy_option_index": policy_option_index,
+            "map_option_id": map_option_id,
             "boosted_field_values": boosted_field_values,
         }
 
@@ -418,7 +444,13 @@ class BLBStage2SequentialEnv:
                 "layer_idx": int(spec.layer_idx),
                 "block_idx": int(spec.block_idx),
                 "graph_key": str(config_name),
-                "option_id": int(_action[0]) if _action.size > 0 else 0,
+                # ``option_id`` remains the real map ID for backward-compatible
+                # reports. Keep the policy-local index separately for PPO debug.
+                "option_id": int(eval_info.get("map_option_id", _action[0] if _action.size > 0 else 0)),
+                "map_option_id": int(eval_info.get("map_option_id", _action[0] if _action.size > 0 else 0)),
+                "policy_option_index": int(eval_info.get(
+                    "policy_option_index", _action[0] if _action.size > 0 else 0,
+                )),
                 "fusion_count": int(getattr(_fc, "fusion_count", 0)),
                 "max_fusion": int(getattr(_fc, "max_fusion", 0)),
                 "k_index": int(_action[1]) if _action.size > 1 else 0,
@@ -455,6 +487,8 @@ class BLBStage2SequentialEnv:
             "valid": valid,
             "total_bits": total_bits,
             "fusion_count": fusion_count,
+            "policy_option_index": eval_info.get("policy_option_index"),
+            "map_option_id": eval_info.get("map_option_id"),
             "invalid_chain": eval_info.get("invalid_chain"),
             "optimizer_wall_seconds": float(eval_info.get("optimizer_wall_seconds", 0.0) or 0.0),
         }
