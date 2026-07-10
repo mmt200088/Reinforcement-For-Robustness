@@ -77,11 +77,12 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `85c81a2`, the conservative
+not by raw commit count. As of source head `381d4a8`, the conservative
 completion estimate is about 98% of the full goal: the plan/audit layer,
-artifact helpers, several low-conflict hot paths, and the Stage-1 1GPU vs 4GPU
-gate have landed. Hardware-default promotion remains evidence-gated rather
-than automatic, and remaining flow-wide scheduling work is still open.
+artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
+gate, and single-process Paean fixed-action batching have landed.
+Hardware-default promotion remains evidence-gated rather than automatic, and
+multi-GPU gates that require more than the current one-GPU server remain open.
 
 Server-verified optimization commits currently in the execution ledger:
 
@@ -90,6 +91,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Paean final eval | `567ad75` | `experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/` | Reuse one clean-baseline install and one BLB bridge install across `repeat_n > 1` forwards. |
 | Paean final eval | `b2a7325` | `experiments/server_command_runs/final_eval_max_sfs_cache_b2a7325_20260703_205000/` | Cache `load_max_sfs(profile)` per final-eval module instance. |
+| Paean final eval | `381d4a8` | `experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/` | Evaluate fixed fusion-count actions in one model/tokenizer/dataset process, reuse the clean baseline, isolate deterministic BLB-noise streams, and skip unused cost-matched random search. |
 | Paean final eval | `fa52906` | `experiments/server_command_runs/final_eval_normalize_ndarray_fa52906_20260703_234423/` | Normalize ndarray-backed final-eval config arrays without first materializing Python lists. |
 | Paean final eval | `e443e4a` | `experiments/server_command_runs/final_eval_stage2_cost_incremental_e443e4a_20260703_235252/` | Maintain current cost incrementally in Stage-2 cost-matched final-eval random search instead of rescanning the full candidate config every mutation. |
 | Paean final eval | `2ca2516` | `experiments/server_command_runs/paean_action_grid_max_sfs_cache_2ca2516_20260704_010810/` | Cache Paean action-grid max-SF tables by profile so batched slot-form action configs and fixed/range candidates avoid repeated `load_max_sfs()` parsing. |
@@ -1485,7 +1487,7 @@ Use server only for large fusion-map wall-clock evidence.
 Expose how many configs, repeats, random controls, and expected model loads a
 Paean run will perform before launch.
 
-- [ ] **Step 2: Optimize shared work**
+- [x] **Step 2: Optimize shared work**
 
 Allowed changes:
 
@@ -1707,6 +1709,28 @@ under
 The red test failed on the legacy list-copy path. The green gate passed
 `py_compile`, all eight `tests.test_paean_action_grid` tests, and a source
 guard confirming the direct `np.asarray()` parse path.
+
+Progress 2026-07-10: fixed fusion-count action evaluation now writes a
+`paean_action_batch_v1` manifest and evaluates all unique actions in one Paean
+process. Model, tokenizer, dataset, and clean-baseline work are therefore paid
+once per action group rather than once per action. The legacy per-config
+process path remains available through `--legacy-per-config-processes`.
+Batch candidates restore Python, NumPy, Torch CPU/CUDA, and the independent
+BLB-noise RNG before each evaluation; the latter uses the configured final-eval
+seed and returns to OS-entropy mode after the candidate. The fixed-action
+driver also passes `--cost-match-count 0`, removing random-search work whose
+results were never consumed by this report.
+
+Server evidence 2026-07-10: source commit `381d4a8` has RED/GREEN tests and
+real RTX 4090 timing under
+`experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/`.
+Two MRPC fixed actions fell from two Paean processes and `44.96s` to one
+process and `20.99s` (`2.142x`, `53.31%` wall-time reduction). Average sampled
+GPU utilization rose from `9.87%` to `14.29%`, with the same `4071 MiB` peak.
+Both independently launched deterministic single-candidate references match
+the batched baseline and candidate semantic fields exactly; only expected
+artifact paths and measured `time_ms` differ. Python compilation and all 58
+related tests passed.
 
 Progress 2026-07-04: `UnifiedFinalEvaluationModule._summarize_random_results()`
 now streams final-eval random-result summaries through per-family and overall
@@ -1947,7 +1971,7 @@ The RED source guard failed on the old per-panel
 `py_compile` and
 `test_final_eval_comparison_plot_reuses_ordered_families`.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run final-eval unit tests locally and a server repeated final-eval smoke for
 the same fixed action before/after.
