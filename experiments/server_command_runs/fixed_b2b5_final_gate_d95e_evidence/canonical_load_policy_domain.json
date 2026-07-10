@@ -1,0 +1,199 @@
+{
+  "mrpc_policy_domain": {
+    "block2_block5_resolve_to_fusion_one": true,
+    "fusion_num_options_by_block": {
+      "1": [
+        1
+      ],
+      "2": [
+        1
+      ],
+      "4": [
+        2
+      ],
+      "5": [
+        1
+      ]
+    },
+    "horizon": 47,
+    "selectable_fusion_blocks": [
+      4
+    ]
+  },
+  "profiles": {
+    "mrpc": {
+      "full_schedule_ready": true,
+      "missing_full_schedule_graphs": [],
+      "num_layers": 12,
+      "required_b2_b4_b5_graphs": {
+        "block2_mrpc": [
+          0,
+          1
+        ],
+        "block4": [
+          0,
+          1
+        ],
+        "block5_n1": [
+          0,
+          1
+        ],
+        "block5_n2": [
+          0,
+          1
+        ],
+        "block5_n4": [
+          0,
+          1
+        ]
+      }
+    },
+    "mrpc_large": {
+      "full_schedule_ready": false,
+      "missing_full_schedule_graphs": [
+        "block1_mrpc_large"
+      ],
+      "num_layers": 24,
+      "required_b2_b4_b5_graphs": {
+        "block2_mrpc_large": [
+          0,
+          1
+        ],
+        "block4": [
+          0,
+          1
+        ],
+        "block5_n1": [
+          0,
+          1
+        ],
+        "block5_n2": [
+          0,
+          1
+        ],
+        "block5_n4": [
+          0,
+          1
+        ]
+      }
+    },
+    "rte": {
+      "full_schedule_ready": false,
+      "missing_full_schedule_graphs": [
+        "block1_rte"
+      ],
+      "num_layers": 12,
+      "required_b2_b4_b5_graphs": {
+        "block2_rte": [
+          0,
+          1
+        ],
+        "block4": [
+          0,
+          1
+        ],
+        "block5_n1": [
+          0,
+          1
+        ],
+        "block5_n2": [
+          0,
+          1
+        ],
+        "block5_n4": [
+          0,
+          1
+        ]
+      }
+    },
+    "rte_large": {
+      "full_schedule_ready": false,
+      "missing_full_schedule_graphs": [
+        "block1_rte_large"
+      ],
+      "num_layers": 24,
+      "required_b2_b4_b5_graphs": {
+        "block2_rte_large": [
+          0,
+          1
+        ],
+        "block4": [
+          0,
+          1
+        ],
+        "block5_n1": [
+          0,
+          1
+        ],
+        "block5_n2": [
+          0,
+          1
+        ],
+        "block5_n4": [
+          0,
+          1
+        ]
+      }
+    },
+    "sst2": {
+      "full_schedule_ready": false,
+      "missing_full_schedule_graphs": [
+        "block1_sst2"
+      ],
+      "num_layers": 12,
+      "required_b2_b4_b5_graphs": {
+        "block2_sst2": [
+          0,
+          1
+        ],
+        "block4": [
+          0,
+          1
+        ],
+        "block5_n1": [
+          0,
+          1
+        ],
+        "block5_n2": [
+          0,
+          1
+        ],
+        "block5_n4": [
+          0,
+          1
+        ]
+      }
+    },
+    "sst2_large": {
+      "full_schedule_ready": false,
+      "missing_full_schedule_graphs": [
+        "block1_sst2_large"
+      ],
+      "num_layers": 24,
+      "required_b2_b4_b5_graphs": {
+        "block2_sst2_large": [
+          0,
+          1
+        ],
+        "block4": [
+          0,
+          1
+        ],
+        "block5_n1": [
+          0,
+          1
+        ],
+        "block5_n2": [
+          0,
+          1
+        ],
+        "block5_n4": [
+          0,
+          1
+        ]
+      }
+    }
+  },
+  "scope_note": "Other five profiles were requested for Block2/4/5 map completion only; block1_<profile> remains outside this task.",
+  "status": "pass"
+}
