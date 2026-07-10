@@ -36,6 +36,20 @@
     "metrics_exact_on_mrpc": true,
     "reason": "Different logits/loss can change strict zero-tolerance feasibility and the RL trajectory."
   },
+  "stage1_softmax_amax": {
+    "batch128_attention_shape": [
+      128,
+      12,
+      128,
+      128
+    ],
+    "decision": "rejected_low_end_to_end_impact",
+    "max_values_median_ms": 0.11599999666213989,
+    "amax_median_ms": 0.11435200273990631,
+    "projected_saved_ms_per_12_layer_eval": 0.01977592706680298,
+    "reduction_values_exact": true,
+    "special_nan_inf_behavior_equal": true
+  },
   "validation_batch_residency": {
     "cached_cpu_bytes": 1256640,
     "cpu_cached_median_seconds": 0.68821911100531,

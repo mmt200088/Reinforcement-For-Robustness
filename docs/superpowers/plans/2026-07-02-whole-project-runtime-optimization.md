@@ -627,6 +627,12 @@ configurations. Maximum absolute logit drift ranged from `2.6e-6` to
 loss drift can change strict zero-tolerance feasibility and therefore the PPO
 trajectory, so the fixed-padding protocol remains unchanged.
 
+Rejected screening 2026-07-11: replacing approximate-Softmax
+`x.max(dim)[0]` with `torch.amax()` preserved reduction values and NaN/Inf
+behavior, but at the promoted batch-128 shape saved only `0.00165ms` per
+attention layer, about `0.020ms` across a 12-layer eval. This is below the
+end-to-end gain threshold, so source remains unchanged.
+
 Progress 2026-07-03: Block-2 QK-merge, Block-2 BSGS, and Block-4 input /
 softmax-V ones-mask encode hooks in `function_handler.py` now sample the
 same-shape encode noise against the current tensor and `add_(1.0)` instead of
