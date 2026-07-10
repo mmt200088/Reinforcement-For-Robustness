@@ -123,7 +123,11 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
             "def _make_block5_gelu_forward",
         )
 
-        self.assertIn("torch.where((x >= -2.7) & (x < 0), y_neg, 0.0)", helper_region)
+        self.assertIn("out = torch.where(x < 0, y_neg, y_pos)", helper_region)
+        self.assertIn("out = torch.where(x >= -2.7, out, 0.0)", helper_region)
+        self.assertIn("return torch.where(x > 2.7, x, out)", helper_region)
+        self.assertEqual(helper_region.count("torch.where("), 3)
+        self.assertNotIn(" & ", helper_region)
         self.assertNotIn("torch.zeros_like", helper_region)
 
     def test_softmax_lower_bound_zero_branch_uses_scalar_zero(self):
@@ -676,6 +680,32 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
             torch.testing.assert_close(
                 got, ref, rtol=1e-5, atol=1e-6, msg=f"degree={degree}",
             )
+
+    def test_piecewise_selector_matches_legacy_boundaries_and_special_values(self):
+        from function_handler import _select_piecewise_gelu_output
+
+        x = torch.tensor([
+            float("-inf"),
+            -3.0,
+            -2.7,
+            -1.0,
+            -0.0,
+            0.0,
+            1.0,
+            2.7,
+            3.0,
+            float("inf"),
+            float("nan"),
+        ])
+        y_neg = torch.arange(x.numel(), dtype=x.dtype) + 10.0
+        y_pos = torch.arange(x.numel(), dtype=x.dtype) + 20.0
+
+        legacy = torch.where((x >= -2.7) & (x < 0), y_neg, 0.0)
+        legacy = torch.where((x >= 0) & (x <= 2.7), y_pos, legacy)
+        legacy = torch.where(x > 2.7, x, legacy)
+        got = _select_piecewise_gelu_output(x, y_neg, y_pos)
+
+        self.assertTrue(torch.equal(got, legacy))
 
 
 @unittest.skipUnless(_HAS_TORCH, "torch unavailable")
