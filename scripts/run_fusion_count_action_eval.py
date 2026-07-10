@@ -126,6 +126,8 @@ def _final_eval_command(
         str(run_name),
         "--repeat",
         str(int(repeat)),
+        "--cost-match-count",
+        "0",
         "--rescale-invoker-kind",
         "in_process",
         "--rescale-optimizer-root",
