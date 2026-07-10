@@ -13,6 +13,69 @@ if str(RESCALE_ROOT) not in sys.path:
 
 
 class RescaleOptimizerHotPathTests(unittest.TestCase):
+    def test_compact_config_propagates_each_stage_without_nodes_between(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer.graph import propagate_scale
+        from rescale_optimizer.replan_interface import build_new_compact_config
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        result = session.replan("block4", return_dict=False)
+        self.assertTrue(result.valid)
+        graph = session._graphs["block4"]
+
+        skeleton = [int(value) for value in result.skeleton]
+        t_vec = [int(value) for value in result.t_final]
+        rescale_index_at = {
+            skeleton[index]: index
+            for index in range(1, result.chain.R + 1)
+        }
+        expected = []
+        for cut_point_index in range(graph.M + 1):
+            cut_point = graph.cut_points[cut_point_index]
+            row = {
+                "i": cut_point_index,
+                "name": cut_point.node.name,
+                "type": cut_point.node.node_type.name,
+            }
+            if cut_point_index in rescale_index_at:
+                stage_index = rescale_index_at[cut_point_index]
+                row.update({
+                    "sf_pre": int(propagate_scale(
+                        t_vec[stage_index - 1],
+                        graph.nodes_between(
+                            skeleton[stage_index - 1], cut_point_index,
+                        ),
+                    )),
+                    "sf_post": int(t_vec[stage_index]),
+                    "drop": int(result.chain.q_bits[stage_index - 1]),
+                })
+            elif cut_point_index == skeleton[0]:
+                row["sf"] = int(t_vec[0])
+            else:
+                stage_index = max(
+                    index
+                    for index in range(result.chain.R + 1)
+                    if skeleton[index] <= cut_point_index
+                )
+                row["sf"] = int(propagate_scale(
+                    t_vec[stage_index],
+                    graph.nodes_between(skeleton[stage_index], cut_point_index),
+                ))
+            expected.append(row)
+
+        with mock.patch.object(
+            graph,
+            "nodes_between",
+            side_effect=AssertionError("replayed cut-point path"),
+        ):
+            compact = build_new_compact_config(graph, "block4", result)
+
+        self.assertEqual(compact["cut_point_sf"], expected)
+
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
         from rescale_optimizer import replan_interface
 
