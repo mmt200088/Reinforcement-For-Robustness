@@ -1,0 +1,3670 @@
+{
+  "golden_replan_status": "pass",
+  "install_verification": "all five profiles VERIFY_OK; 5 boosted options/profile; 0 problems",
+  "max_allowed": 1,
+  "profiles": [
+    {
+      "maps": [
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gamma_rescale_sf",
+              "kt_mask1_rescale_sf",
+              "q_mask1_rescale_sf",
+              "qkt_matmul_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              2,
+              3,
+              5,
+              6,
+              8,
+              18,
+              21
+            ],
+            "enum_total_combos": 211891680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "603c2cb75df21570d0dc14d65d5be4d143bad7b63a1e6b9d4b189df6977f05e5",
+              "source_graph_key": "block2_rte",
+              "source_profile": "rte",
+              "source_sha256": "23914f51885ed17766ac2336ef496366f8afbcaeb3504f83707870fdcdae1c30",
+              "target_profile": "rte"
+            },
+            "fast_fallback_reason": "",
+            "fast_shards": 640,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 1287.16,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 732,
+            "num_options": 2,
+            "pinned_positions": [
+              7
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 169990800,
+            "wall_seconds": 1287.31,
+            "workers": 20
+          },
+          "graph_key": "block2_rte",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                14,
+                14,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 20,
+                "inv_std_fresh_sf": 28,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 15,
+                "wk_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 263,
+              "total_variance": 6.359819424660257e-06
+            },
+            {
+              "action_indices": [
+                7,
+                14,
+                9,
+                8,
+                14,
+                14,
+                14,
+                14,
+                1,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                1,
+                14,
+                0,
+                1,
+                3
+              ],
+              "boost_description": "p1:kt_mask2_sf:1; p2:final_encode=18,sf_post=28",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "output_truncation_k": 13,
+                "q_mask1_rescale_sf": 28,
+                "q_mask1_sf": 15,
+                "q_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16,
+                "wq_sf": 22,
+                "wv_sf": 22,
+                "x_centered_fresh_sf": 28
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 46,
+              "output_sf_config_ceiling": 46,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 8.519901418801038e-06
+            }
+          ],
+          "profile": "rte"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "ln_mean_rescale_sf",
+              "ln_square_rescale_sf",
+              "softmax_v_matmul_rescale_sf"
+            ],
+            "block4_config_and_skeleton_identical_across_profiles": [
+              "mrpc",
+              "rte",
+              "sst2",
+              "mrpc_large",
+              "rte_large",
+              "sst2_large"
+            ],
+            "copied_from_identical_block4_profile": "mrpc",
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              1,
+              2,
+              4,
+              5,
+              7,
+              8,
+              9,
+              15
+            ],
+            "enum_total_combos": 2207205000,
+            "fast_fallback_reason": "",
+            "fast_shards": 1280,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 2240.66,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1415,
+            "num_options": 2,
+            "pinned_positions": [
+              6
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "profile": "rte",
+            "source_profile_built_from": "mrpc",
+            "valid_configs": 618776097,
+            "wall_seconds": 2240.96,
+            "workers": 160
+          },
+          "graph_key": "block4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "ln_mean_inv_d_sf": 20,
+                "ln_mean_rescale_sf": 31,
+                "ln_square_rescale_sf": 31,
+                "ln_var_inv_d_sf": 20,
+                "softmax_out_fresh_sf": 35,
+                "softmax_out_mask_sf": 14,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 31,
+                "v_fresh_sf": 25,
+                "wo_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 264,
+              "total_variance": 1.526802187966286e-05
+            },
+            {
+              "action_indices": [
+                0,
+                6,
+                0,
+                14,
+                11,
+                5,
+                14,
+                3,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "boost_description": "p1:ln_mean_inv_d_sf:3+softmax_out_mask_sf:3+softmax_v_mask_sf:2+wo_sf:3; p2:final_encode=21,sf_post=32,softmax_v_mask_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "output_truncation_k": 13,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "v_mask_sf": 14,
+                "wo_sf": 14
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 53,
+              "output_sf_config_ceiling": 53,
+              "slots": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "wo_sf": 14
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 0.0004945825725177234
+            }
+          ],
+          "profile": "rte"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf"
+            ],
+            "both_paths_identical": true,
+            "enum_path": "both",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              11
+            ],
+            "enum_total_combos": 4624620,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "a8b03b71ece05bd152d101e64047d7c7ed7b118a1e8cce1173a66ca1b326dde0",
+              "source_graph_key": "block5_n1",
+              "source_profile": "mrpc",
+              "source_sha256": "512f1044b2e0fcf86be6089bda1685c23d02a107d2a2ef77b856585eaf25c372",
+              "target_profile": "rte"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 5.1,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1250,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 2756449,
+            "wall_seconds": 38.96,
+            "workers": 128
+          },
+          "graph_key": "block5_n1",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 213,
+              "total_variance": 2.669498642156283e-09
+            },
+            {
+              "action_indices": [
+                14,
+                5,
+                9,
+                8,
+                10,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p2:final_encode=0,sf_post=48,gamma_sf:6+gelu_coeff_sf:6+wffn1_sf:5",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 28,
+                "output_truncation_k": 13,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 48,
+              "output_sf_config_ceiling": 48,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 180,
+              "total_variance": 8.540708482520093e-07
+            }
+          ],
+          "profile": "rte"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              11
+            ],
+            "enum_total_combos": 64744680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "60171ac469a49784d39c75565d130cf1a1f7ced83285b1b878c9675354a8f508",
+              "source_graph_key": "block5_n2",
+              "source_profile": "mrpc",
+              "source_sha256": "e2b07f0cdf682a725e346441b03dcdbf258c1c9c209a93040a00f3ac35e493c7",
+              "target_profile": "rte"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 62.6,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1459,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 45243207,
+            "wall_seconds": 62.66,
+            "workers": 128
+          },
+          "graph_key": "block5_n2",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 244,
+              "total_variance": 2.5708599994083115e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:2+gelu_coeff_sf:3+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:2+gelu_coeff_sf:2+wffn1_sf:3",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 3.3589512576535526e-09
+            }
+          ],
+          "profile": "rte"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "gelu_power_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              8,
+              11
+            ],
+            "enum_total_combos": 906425520,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "768e934c1730eecdac222a1c1ae97b0784e83c9f07300b1f7556703cc3893e60",
+              "source_graph_key": "block5_n4",
+              "source_profile": "mrpc",
+              "source_sha256": "55eaa27543c68e7214cb44ab7b8b749c9a7dbb46ce3479754e562029794e4f6c",
+              "target_profile": "rte"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 610.02,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1340,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 191327542,
+            "wall_seconds": 610.07,
+            "workers": 128
+          },
+          "graph_key": "block5_n4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "gelu_power_rescale_sf_0": 31,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 275,
+              "total_variance": 2.5724770270056877e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:1+gelu_coeff_sf:4+wffn1_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 271,
+              "total_variance": 3.722761680693287e-09
+            }
+          ],
+          "profile": "rte"
+        }
+      ],
+      "profile": "rte",
+      "status": "pass",
+      "violations": []
+    },
+    {
+      "maps": [
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gamma_rescale_sf",
+              "kt_mask1_rescale_sf",
+              "q_mask1_rescale_sf",
+              "qkt_matmul_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              2,
+              3,
+              5,
+              6,
+              8,
+              18,
+              21
+            ],
+            "enum_total_combos": 211891680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "603c2cb75df21570d0dc14d65d5be4d143bad7b63a1e6b9d4b189df6977f05e5",
+              "source_graph_key": "block2_rte",
+              "source_profile": "rte",
+              "source_sha256": "23914f51885ed17766ac2336ef496366f8afbcaeb3504f83707870fdcdae1c30",
+              "target_profile": "sst2"
+            },
+            "fast_fallback_reason": "",
+            "fast_shards": 640,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 1287.16,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 732,
+            "num_options": 2,
+            "pinned_positions": [
+              7
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 169990800,
+            "wall_seconds": 1287.31,
+            "workers": 20
+          },
+          "graph_key": "block2_sst2",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                14,
+                14,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 20,
+                "inv_std_fresh_sf": 28,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 15,
+                "wk_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 263,
+              "total_variance": 6.359819424660257e-06
+            },
+            {
+              "action_indices": [
+                7,
+                14,
+                9,
+                8,
+                14,
+                14,
+                14,
+                14,
+                1,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                1,
+                14,
+                0,
+                1,
+                3
+              ],
+              "boost_description": "p1:kt_mask2_sf:1; p2:final_encode=18,sf_post=28",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "output_truncation_k": 13,
+                "q_mask1_rescale_sf": 28,
+                "q_mask1_sf": 15,
+                "q_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16,
+                "wq_sf": 22,
+                "wv_sf": 22,
+                "x_centered_fresh_sf": 28
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 46,
+              "output_sf_config_ceiling": 46,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 8.519901418801038e-06
+            }
+          ],
+          "profile": "sst2"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "ln_mean_rescale_sf",
+              "ln_square_rescale_sf",
+              "softmax_v_matmul_rescale_sf"
+            ],
+            "block4_config_and_skeleton_identical_across_profiles": [
+              "mrpc",
+              "rte",
+              "sst2",
+              "mrpc_large",
+              "rte_large",
+              "sst2_large"
+            ],
+            "copied_from_identical_block4_profile": "mrpc",
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              1,
+              2,
+              4,
+              5,
+              7,
+              8,
+              9,
+              15
+            ],
+            "enum_total_combos": 2207205000,
+            "fast_fallback_reason": "",
+            "fast_shards": 1280,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 2240.66,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1415,
+            "num_options": 2,
+            "pinned_positions": [
+              6
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "profile": "sst2",
+            "source_profile_built_from": "mrpc",
+            "valid_configs": 618776097,
+            "wall_seconds": 2240.96,
+            "workers": 160
+          },
+          "graph_key": "block4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "ln_mean_inv_d_sf": 20,
+                "ln_mean_rescale_sf": 31,
+                "ln_square_rescale_sf": 31,
+                "ln_var_inv_d_sf": 20,
+                "softmax_out_fresh_sf": 35,
+                "softmax_out_mask_sf": 14,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 31,
+                "v_fresh_sf": 25,
+                "wo_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 264,
+              "total_variance": 1.526802187966286e-05
+            },
+            {
+              "action_indices": [
+                0,
+                6,
+                0,
+                14,
+                11,
+                5,
+                14,
+                3,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "boost_description": "p1:ln_mean_inv_d_sf:3+softmax_out_mask_sf:3+softmax_v_mask_sf:2+wo_sf:3; p2:final_encode=21,sf_post=32,softmax_v_mask_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "output_truncation_k": 13,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "v_mask_sf": 14,
+                "wo_sf": 14
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 53,
+              "output_sf_config_ceiling": 53,
+              "slots": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "wo_sf": 14
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 0.0004945825725177234
+            }
+          ],
+          "profile": "sst2"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf"
+            ],
+            "both_paths_identical": true,
+            "enum_path": "both",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              11
+            ],
+            "enum_total_combos": 4624620,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "a8b03b71ece05bd152d101e64047d7c7ed7b118a1e8cce1173a66ca1b326dde0",
+              "source_graph_key": "block5_n1",
+              "source_profile": "mrpc",
+              "source_sha256": "512f1044b2e0fcf86be6089bda1685c23d02a107d2a2ef77b856585eaf25c372",
+              "target_profile": "sst2"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 5.1,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1250,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 2756449,
+            "wall_seconds": 38.96,
+            "workers": 128
+          },
+          "graph_key": "block5_n1",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 213,
+              "total_variance": 2.669498642156283e-09
+            },
+            {
+              "action_indices": [
+                14,
+                5,
+                9,
+                8,
+                10,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p2:final_encode=0,sf_post=48,gamma_sf:6+gelu_coeff_sf:6+wffn1_sf:5",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 28,
+                "output_truncation_k": 13,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 48,
+              "output_sf_config_ceiling": 48,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 180,
+              "total_variance": 8.540708482520093e-07
+            }
+          ],
+          "profile": "sst2"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              11
+            ],
+            "enum_total_combos": 64744680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "60171ac469a49784d39c75565d130cf1a1f7ced83285b1b878c9675354a8f508",
+              "source_graph_key": "block5_n2",
+              "source_profile": "mrpc",
+              "source_sha256": "e2b07f0cdf682a725e346441b03dcdbf258c1c9c209a93040a00f3ac35e493c7",
+              "target_profile": "sst2"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 62.6,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1459,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 45243207,
+            "wall_seconds": 62.66,
+            "workers": 128
+          },
+          "graph_key": "block5_n2",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 244,
+              "total_variance": 2.5708599994083115e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:2+gelu_coeff_sf:3+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:2+gelu_coeff_sf:2+wffn1_sf:3",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 3.3589512576535526e-09
+            }
+          ],
+          "profile": "sst2"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "gelu_power_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              8,
+              11
+            ],
+            "enum_total_combos": 906425520,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "768e934c1730eecdac222a1c1ae97b0784e83c9f07300b1f7556703cc3893e60",
+              "source_graph_key": "block5_n4",
+              "source_profile": "mrpc",
+              "source_sha256": "55eaa27543c68e7214cb44ab7b8b749c9a7dbb46ce3479754e562029794e4f6c",
+              "target_profile": "sst2"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 610.02,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1340,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 191327542,
+            "wall_seconds": 610.07,
+            "workers": 128
+          },
+          "graph_key": "block5_n4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "gelu_power_rescale_sf_0": 31,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 275,
+              "total_variance": 2.5724770270056877e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:1+gelu_coeff_sf:4+wffn1_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 271,
+              "total_variance": 3.722761680693287e-09
+            }
+          ],
+          "profile": "sst2"
+        }
+      ],
+      "profile": "sst2",
+      "status": "pass",
+      "violations": []
+    },
+    {
+      "maps": [
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gamma_rescale_sf",
+              "kt_mask1_rescale_sf",
+              "q_mask1_rescale_sf",
+              "qkt_matmul_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              2,
+              3,
+              5,
+              6,
+              8,
+              18,
+              21
+            ],
+            "enum_total_combos": 211891680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "603c2cb75df21570d0dc14d65d5be4d143bad7b63a1e6b9d4b189df6977f05e5",
+              "source_graph_key": "block2_rte",
+              "source_profile": "rte",
+              "source_sha256": "23914f51885ed17766ac2336ef496366f8afbcaeb3504f83707870fdcdae1c30",
+              "target_profile": "mrpc_large"
+            },
+            "fast_fallback_reason": "",
+            "fast_shards": 640,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 1287.16,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 732,
+            "num_options": 2,
+            "pinned_positions": [
+              7
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 169990800,
+            "wall_seconds": 1287.31,
+            "workers": 20
+          },
+          "graph_key": "block2_mrpc_large",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                14,
+                14,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 20,
+                "inv_std_fresh_sf": 28,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 15,
+                "wk_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 263,
+              "total_variance": 6.359819424660257e-06
+            },
+            {
+              "action_indices": [
+                7,
+                14,
+                9,
+                8,
+                14,
+                14,
+                14,
+                14,
+                1,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                1,
+                14,
+                0,
+                1,
+                3
+              ],
+              "boost_description": "p1:kt_mask2_sf:1; p2:final_encode=18,sf_post=28",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "output_truncation_k": 13,
+                "q_mask1_rescale_sf": 28,
+                "q_mask1_sf": 15,
+                "q_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16,
+                "wq_sf": 22,
+                "wv_sf": 22,
+                "x_centered_fresh_sf": 28
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 46,
+              "output_sf_config_ceiling": 46,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 8.519901418801038e-06
+            }
+          ],
+          "profile": "mrpc_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "ln_mean_rescale_sf",
+              "ln_square_rescale_sf",
+              "softmax_v_matmul_rescale_sf"
+            ],
+            "block4_config_and_skeleton_identical_across_profiles": [
+              "mrpc",
+              "rte",
+              "sst2",
+              "mrpc_large",
+              "rte_large",
+              "sst2_large"
+            ],
+            "copied_from_identical_block4_profile": "mrpc",
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              1,
+              2,
+              4,
+              5,
+              7,
+              8,
+              9,
+              15
+            ],
+            "enum_total_combos": 2207205000,
+            "fast_fallback_reason": "",
+            "fast_shards": 1280,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 2240.66,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1415,
+            "num_options": 2,
+            "pinned_positions": [
+              6
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "profile": "mrpc_large",
+            "source_profile_built_from": "mrpc",
+            "valid_configs": 618776097,
+            "wall_seconds": 2240.96,
+            "workers": 160
+          },
+          "graph_key": "block4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "ln_mean_inv_d_sf": 20,
+                "ln_mean_rescale_sf": 31,
+                "ln_square_rescale_sf": 31,
+                "ln_var_inv_d_sf": 20,
+                "softmax_out_fresh_sf": 35,
+                "softmax_out_mask_sf": 14,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 31,
+                "v_fresh_sf": 25,
+                "wo_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 264,
+              "total_variance": 1.526802187966286e-05
+            },
+            {
+              "action_indices": [
+                0,
+                6,
+                0,
+                14,
+                11,
+                5,
+                14,
+                3,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "boost_description": "p1:ln_mean_inv_d_sf:3+softmax_out_mask_sf:3+softmax_v_mask_sf:2+wo_sf:3; p2:final_encode=21,sf_post=32,softmax_v_mask_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "output_truncation_k": 13,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "v_mask_sf": 14,
+                "wo_sf": 14
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 53,
+              "output_sf_config_ceiling": 53,
+              "slots": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "wo_sf": 14
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 0.0004945825725177234
+            }
+          ],
+          "profile": "mrpc_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf"
+            ],
+            "both_paths_identical": true,
+            "enum_path": "both",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              11
+            ],
+            "enum_total_combos": 4624620,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "a8b03b71ece05bd152d101e64047d7c7ed7b118a1e8cce1173a66ca1b326dde0",
+              "source_graph_key": "block5_n1",
+              "source_profile": "mrpc",
+              "source_sha256": "512f1044b2e0fcf86be6089bda1685c23d02a107d2a2ef77b856585eaf25c372",
+              "target_profile": "mrpc_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 5.1,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1250,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 2756449,
+            "wall_seconds": 38.96,
+            "workers": 128
+          },
+          "graph_key": "block5_n1",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 213,
+              "total_variance": 2.669498642156283e-09
+            },
+            {
+              "action_indices": [
+                14,
+                5,
+                9,
+                8,
+                10,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p2:final_encode=0,sf_post=48,gamma_sf:6+gelu_coeff_sf:6+wffn1_sf:5",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 28,
+                "output_truncation_k": 13,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 48,
+              "output_sf_config_ceiling": 48,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 180,
+              "total_variance": 8.540708482520093e-07
+            }
+          ],
+          "profile": "mrpc_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              11
+            ],
+            "enum_total_combos": 64744680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "60171ac469a49784d39c75565d130cf1a1f7ced83285b1b878c9675354a8f508",
+              "source_graph_key": "block5_n2",
+              "source_profile": "mrpc",
+              "source_sha256": "e2b07f0cdf682a725e346441b03dcdbf258c1c9c209a93040a00f3ac35e493c7",
+              "target_profile": "mrpc_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 62.6,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1459,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 45243207,
+            "wall_seconds": 62.66,
+            "workers": 128
+          },
+          "graph_key": "block5_n2",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 244,
+              "total_variance": 2.5708599994083115e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:2+gelu_coeff_sf:3+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:2+gelu_coeff_sf:2+wffn1_sf:3",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 3.3589512576535526e-09
+            }
+          ],
+          "profile": "mrpc_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "gelu_power_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              8,
+              11
+            ],
+            "enum_total_combos": 906425520,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "768e934c1730eecdac222a1c1ae97b0784e83c9f07300b1f7556703cc3893e60",
+              "source_graph_key": "block5_n4",
+              "source_profile": "mrpc",
+              "source_sha256": "55eaa27543c68e7214cb44ab7b8b749c9a7dbb46ce3479754e562029794e4f6c",
+              "target_profile": "mrpc_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 610.02,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1340,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 191327542,
+            "wall_seconds": 610.07,
+            "workers": 128
+          },
+          "graph_key": "block5_n4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "gelu_power_rescale_sf_0": 31,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 275,
+              "total_variance": 2.5724770270056877e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:1+gelu_coeff_sf:4+wffn1_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 271,
+              "total_variance": 3.722761680693287e-09
+            }
+          ],
+          "profile": "mrpc_large"
+        }
+      ],
+      "profile": "mrpc_large",
+      "status": "pass",
+      "violations": []
+    },
+    {
+      "maps": [
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gamma_rescale_sf",
+              "kt_mask1_rescale_sf",
+              "q_mask1_rescale_sf",
+              "qkt_matmul_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              2,
+              3,
+              5,
+              6,
+              8,
+              18,
+              21
+            ],
+            "enum_total_combos": 211891680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "603c2cb75df21570d0dc14d65d5be4d143bad7b63a1e6b9d4b189df6977f05e5",
+              "source_graph_key": "block2_rte",
+              "source_profile": "rte",
+              "source_sha256": "23914f51885ed17766ac2336ef496366f8afbcaeb3504f83707870fdcdae1c30",
+              "target_profile": "rte_large"
+            },
+            "fast_fallback_reason": "",
+            "fast_shards": 640,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 1287.16,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 732,
+            "num_options": 2,
+            "pinned_positions": [
+              7
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 169990800,
+            "wall_seconds": 1287.31,
+            "workers": 20
+          },
+          "graph_key": "block2_rte_large",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                14,
+                14,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 20,
+                "inv_std_fresh_sf": 28,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 15,
+                "wk_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 263,
+              "total_variance": 6.359819424660257e-06
+            },
+            {
+              "action_indices": [
+                7,
+                14,
+                9,
+                8,
+                14,
+                14,
+                14,
+                14,
+                1,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                1,
+                14,
+                0,
+                1,
+                3
+              ],
+              "boost_description": "p1:kt_mask2_sf:1; p2:final_encode=18,sf_post=28",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "output_truncation_k": 13,
+                "q_mask1_rescale_sf": 28,
+                "q_mask1_sf": 15,
+                "q_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16,
+                "wq_sf": 22,
+                "wv_sf": 22,
+                "x_centered_fresh_sf": 28
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 46,
+              "output_sf_config_ceiling": 46,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 8.519901418801038e-06
+            }
+          ],
+          "profile": "rte_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "ln_mean_rescale_sf",
+              "ln_square_rescale_sf",
+              "softmax_v_matmul_rescale_sf"
+            ],
+            "block4_config_and_skeleton_identical_across_profiles": [
+              "mrpc",
+              "rte",
+              "sst2",
+              "mrpc_large",
+              "rte_large",
+              "sst2_large"
+            ],
+            "copied_from_identical_block4_profile": "mrpc",
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              1,
+              2,
+              4,
+              5,
+              7,
+              8,
+              9,
+              15
+            ],
+            "enum_total_combos": 2207205000,
+            "fast_fallback_reason": "",
+            "fast_shards": 1280,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 2240.66,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1415,
+            "num_options": 2,
+            "pinned_positions": [
+              6
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "profile": "rte_large",
+            "source_profile_built_from": "mrpc",
+            "valid_configs": 618776097,
+            "wall_seconds": 2240.96,
+            "workers": 160
+          },
+          "graph_key": "block4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "ln_mean_inv_d_sf": 20,
+                "ln_mean_rescale_sf": 31,
+                "ln_square_rescale_sf": 31,
+                "ln_var_inv_d_sf": 20,
+                "softmax_out_fresh_sf": 35,
+                "softmax_out_mask_sf": 14,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 31,
+                "v_fresh_sf": 25,
+                "wo_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 264,
+              "total_variance": 1.526802187966286e-05
+            },
+            {
+              "action_indices": [
+                0,
+                6,
+                0,
+                14,
+                11,
+                5,
+                14,
+                3,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "boost_description": "p1:ln_mean_inv_d_sf:3+softmax_out_mask_sf:3+softmax_v_mask_sf:2+wo_sf:3; p2:final_encode=21,sf_post=32,softmax_v_mask_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "output_truncation_k": 13,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "v_mask_sf": 14,
+                "wo_sf": 14
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 53,
+              "output_sf_config_ceiling": 53,
+              "slots": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "wo_sf": 14
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 0.0004945825725177234
+            }
+          ],
+          "profile": "rte_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf"
+            ],
+            "both_paths_identical": true,
+            "enum_path": "both",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              11
+            ],
+            "enum_total_combos": 4624620,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "a8b03b71ece05bd152d101e64047d7c7ed7b118a1e8cce1173a66ca1b326dde0",
+              "source_graph_key": "block5_n1",
+              "source_profile": "mrpc",
+              "source_sha256": "512f1044b2e0fcf86be6089bda1685c23d02a107d2a2ef77b856585eaf25c372",
+              "target_profile": "rte_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 5.1,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1250,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 2756449,
+            "wall_seconds": 38.96,
+            "workers": 128
+          },
+          "graph_key": "block5_n1",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 213,
+              "total_variance": 2.669498642156283e-09
+            },
+            {
+              "action_indices": [
+                14,
+                5,
+                9,
+                8,
+                10,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p2:final_encode=0,sf_post=48,gamma_sf:6+gelu_coeff_sf:6+wffn1_sf:5",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 28,
+                "output_truncation_k": 13,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 48,
+              "output_sf_config_ceiling": 48,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 180,
+              "total_variance": 8.540708482520093e-07
+            }
+          ],
+          "profile": "rte_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              11
+            ],
+            "enum_total_combos": 64744680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "60171ac469a49784d39c75565d130cf1a1f7ced83285b1b878c9675354a8f508",
+              "source_graph_key": "block5_n2",
+              "source_profile": "mrpc",
+              "source_sha256": "e2b07f0cdf682a725e346441b03dcdbf258c1c9c209a93040a00f3ac35e493c7",
+              "target_profile": "rte_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 62.6,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1459,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 45243207,
+            "wall_seconds": 62.66,
+            "workers": 128
+          },
+          "graph_key": "block5_n2",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 244,
+              "total_variance": 2.5708599994083115e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:2+gelu_coeff_sf:3+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:2+gelu_coeff_sf:2+wffn1_sf:3",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 3.3589512576535526e-09
+            }
+          ],
+          "profile": "rte_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "gelu_power_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              8,
+              11
+            ],
+            "enum_total_combos": 906425520,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "768e934c1730eecdac222a1c1ae97b0784e83c9f07300b1f7556703cc3893e60",
+              "source_graph_key": "block5_n4",
+              "source_profile": "mrpc",
+              "source_sha256": "55eaa27543c68e7214cb44ab7b8b749c9a7dbb46ce3479754e562029794e4f6c",
+              "target_profile": "rte_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 610.02,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1340,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 191327542,
+            "wall_seconds": 610.07,
+            "workers": 128
+          },
+          "graph_key": "block5_n4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "gelu_power_rescale_sf_0": 31,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 275,
+              "total_variance": 2.5724770270056877e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:1+gelu_coeff_sf:4+wffn1_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 271,
+              "total_variance": 3.722761680693287e-09
+            }
+          ],
+          "profile": "rte_large"
+        }
+      ],
+      "profile": "rte_large",
+      "status": "pass",
+      "violations": []
+    },
+    {
+      "maps": [
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gamma_rescale_sf",
+              "kt_mask1_rescale_sf",
+              "q_mask1_rescale_sf",
+              "qkt_matmul_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              2,
+              3,
+              5,
+              6,
+              8,
+              18,
+              21
+            ],
+            "enum_total_combos": 211891680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "603c2cb75df21570d0dc14d65d5be4d143bad7b63a1e6b9d4b189df6977f05e5",
+              "source_graph_key": "block2_rte",
+              "source_profile": "rte",
+              "source_sha256": "23914f51885ed17766ac2336ef496366f8afbcaeb3504f83707870fdcdae1c30",
+              "target_profile": "sst2_large"
+            },
+            "fast_fallback_reason": "",
+            "fast_shards": 640,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 1287.16,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 732,
+            "num_options": 2,
+            "pinned_positions": [
+              7
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 169990800,
+            "wall_seconds": 1287.31,
+            "workers": 20
+          },
+          "graph_key": "block2_sst2_large",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                14,
+                14,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 20,
+                "inv_std_fresh_sf": 28,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 15,
+                "wk_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 263,
+              "total_variance": 6.359819424660257e-06
+            },
+            {
+              "action_indices": [
+                7,
+                14,
+                9,
+                8,
+                14,
+                14,
+                14,
+                14,
+                1,
+                0,
+                0,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                1,
+                14,
+                0,
+                1,
+                3
+              ],
+              "boost_description": "p1:kt_mask2_sf:1; p2:final_encode=18,sf_post=28",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "output_truncation_k": 13,
+                "q_mask1_rescale_sf": 28,
+                "q_mask1_sf": 15,
+                "q_mask2_sf": 15,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16,
+                "wq_sf": 22,
+                "wv_sf": 22,
+                "x_centered_fresh_sf": 28
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 46,
+              "output_sf_config_ceiling": 46,
+              "slots": {
+                "gamma_rescale_sf": 28,
+                "gamma_sf": 15,
+                "inv_std_fresh_sf": 21,
+                "kt_mask1_rescale_sf": 28,
+                "kt_mask1_sf": 15,
+                "kt_mask2_sf": 16,
+                "qkt_matmul_rescale_sf": 28,
+                "qkt_merge_mask_sf": 18,
+                "wk_sf": 16
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 8.519901418801038e-06
+            }
+          ],
+          "profile": "sst2_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "ln_mean_rescale_sf",
+              "ln_square_rescale_sf",
+              "softmax_v_matmul_rescale_sf"
+            ],
+            "block4_config_and_skeleton_identical_across_profiles": [
+              "mrpc",
+              "rte",
+              "sst2",
+              "mrpc_large",
+              "rte_large",
+              "sst2_large"
+            ],
+            "copied_from_identical_block4_profile": "mrpc",
+            "enum_path": "fast",
+            "enum_path_effective": "fast",
+            "enum_path_requested": "fast",
+            "enum_positions": [
+              0,
+              1,
+              2,
+              4,
+              5,
+              7,
+              8,
+              9,
+              15
+            ],
+            "enum_total_combos": 2207205000,
+            "fast_fallback_reason": "",
+            "fast_shards": 1280,
+            "fast_verified_probes": 514,
+            "fast_wall_seconds": 2240.66,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1415,
+            "num_options": 2,
+            "pinned_positions": [
+              6
+            ],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "profile": "sst2_large",
+            "source_profile_built_from": "mrpc",
+            "valid_configs": 618776097,
+            "wall_seconds": 2240.96,
+            "workers": 160
+          },
+          "graph_key": "block4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "ln_mean_inv_d_sf": 20,
+                "ln_mean_rescale_sf": 31,
+                "ln_square_rescale_sf": 31,
+                "ln_var_inv_d_sf": 20,
+                "softmax_out_fresh_sf": 35,
+                "softmax_out_mask_sf": 14,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 31,
+                "v_fresh_sf": 25,
+                "wo_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 264,
+              "total_variance": 1.526802187966286e-05
+            },
+            {
+              "action_indices": [
+                0,
+                6,
+                0,
+                14,
+                11,
+                5,
+                14,
+                3,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                3
+              ],
+              "boost_description": "p1:ln_mean_inv_d_sf:3+softmax_out_mask_sf:3+softmax_v_mask_sf:2+wo_sf:3; p2:final_encode=21,sf_post=32,softmax_v_mask_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "output_truncation_k": 13,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "v_mask_sf": 14,
+                "wo_sf": 14
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 53,
+              "output_sf_config_ceiling": 53,
+              "slots": {
+                "ln_mean_inv_d_sf": 14,
+                "ln_mean_rescale_sf": 46,
+                "ln_square_rescale_sf": 32,
+                "ln_var_inv_d_sf": 21,
+                "softmax_out_fresh_sf": 21,
+                "softmax_out_mask_sf": 13,
+                "softmax_v_mask_sf": 14,
+                "softmax_v_matmul_rescale_sf": 37,
+                "v_fresh_sf": 17,
+                "wo_sf": 14
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 0.0004945825725177234
+            }
+          ],
+          "profile": "sst2_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf"
+            ],
+            "both_paths_identical": true,
+            "enum_path": "both",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              11
+            ],
+            "enum_total_combos": 4624620,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "a8b03b71ece05bd152d101e64047d7c7ed7b118a1e8cce1173a66ca1b326dde0",
+              "source_graph_key": "block5_n1",
+              "source_profile": "mrpc",
+              "source_sha256": "512f1044b2e0fcf86be6089bda1685c23d02a107d2a2ef77b856585eaf25c372",
+              "target_profile": "sst2_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 5.1,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1250,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 2756449,
+            "wall_seconds": 38.96,
+            "workers": 128
+          },
+          "graph_key": "block5_n1",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 213,
+              "total_variance": 2.669498642156283e-09
+            },
+            {
+              "action_indices": [
+                14,
+                5,
+                9,
+                8,
+                10,
+                14,
+                0,
+                0,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p2:final_encode=0,sf_post=48,gamma_sf:6+gelu_coeff_sf:6+wffn1_sf:5",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 28,
+                "output_truncation_k": 13,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 48,
+              "output_sf_config_ceiling": 48,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 48,
+                "gelu_coeff_sf": 22,
+                "normalize_rescale_sf": 28,
+                "wffn1_sf": 21,
+                "x_centered_fresh_sf": 22
+              },
+              "tie_index": 0,
+              "total_bits": 180,
+              "total_variance": 8.540708482520093e-07
+            }
+          ],
+          "profile": "sst2_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              11
+            ],
+            "enum_total_combos": 64744680,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "60171ac469a49784d39c75565d130cf1a1f7ced83285b1b878c9675354a8f508",
+              "source_graph_key": "block5_n2",
+              "source_profile": "mrpc",
+              "source_sha256": "e2b07f0cdf682a725e346441b03dcdbf258c1c9c209a93040a00f3ac35e493c7",
+              "target_profile": "sst2_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 62.6,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1459,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 45243207,
+            "wall_seconds": 62.66,
+            "workers": 128
+          },
+          "graph_key": "block5_n2",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 244,
+              "total_variance": 2.5708599994083115e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                0,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:2+gelu_coeff_sf:3+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:2+gelu_coeff_sf:2+wffn1_sf:3",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 23,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 39,
+                "wffn1_sf": 24,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 240,
+              "total_variance": 3.3589512576535526e-09
+            }
+          ],
+          "profile": "sst2_large"
+        },
+        {
+          "build_meta": {
+            "active_rescale_fields": [
+              "gelu_coeff_mul_rescale_sf_0",
+              "gelu_power_rescale_sf_0",
+              "normalize_rescale_sf",
+              "wffn1_rescale_sf"
+            ],
+            "enum_path": "fast",
+            "enum_positions": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              7,
+              8,
+              11
+            ],
+            "enum_total_combos": 906425520,
+            "equivalent_context_reuse": {
+              "normalized_context_sha256": "768e934c1730eecdac222a1c1ae97b0784e83c9f07300b1f7556703cc3893e60",
+              "source_graph_key": "block5_n4",
+              "source_profile": "mrpc",
+              "source_sha256": "55eaa27543c68e7214cb44ab7b8b749c9a7dbb46ce3479754e562029794e4f6c",
+              "target_profile": "sst2_large"
+            },
+            "fast_shards": 1024,
+            "fast_verified_probes": 130,
+            "fast_wall_seconds": 610.02,
+            "fusion_counts": [
+              0,
+              1
+            ],
+            "k_independence": {
+              "k_independent": true,
+              "samples_checked": 2,
+              "violations": []
+            },
+            "kept_configs": 1340,
+            "num_options": 2,
+            "pinned_positions": [],
+            "precision_boost_applied": true,
+            "precision_boost_phase2_applied": true,
+            "valid_configs": 191327542,
+            "wall_seconds": 610.07,
+            "workers": 128
+          },
+          "graph_key": "block5_n4",
+          "options": [
+            {
+              "action_indices": [
+                14,
+                14,
+                14,
+                14,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "fusion_count": 0,
+              "option_id": 0,
+              "slots": {
+                "gamma_sf": 20,
+                "gelu_coeff_mul_rescale_sf_0": 31,
+                "gelu_coeff_sf": 20,
+                "gelu_power_rescale_sf_0": 31,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 31,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 31
+              },
+              "tie_index": 0,
+              "total_bits": 275,
+              "total_variance": 2.5724770270056877e-09
+            },
+            {
+              "action_indices": [
+                14,
+                9,
+                13,
+                12,
+                14,
+                14,
+                0,
+                14,
+                14,
+                0,
+                0,
+                14,
+                0,
+                0,
+                0,
+                3
+              ],
+              "boost_description": "p1:gamma_sf:1+gelu_coeff_sf:1+wffn1_sf:1; p2:final_encode=0,sf_post=43,gamma_sf:1+gelu_coeff_sf:4+wffn1_sf:1",
+              "boosted": true,
+              "explicit_field_values": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "inv_std_fresh_sf": 31,
+                "normalize_rescale_sf": 31,
+                "output_truncation_k": 13,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "fusion_count": 1,
+              "option_id": 1,
+              "output_sf": 43,
+              "output_sf_config_ceiling": 43,
+              "slots": {
+                "gamma_sf": 21,
+                "gelu_coeff_mul_rescale_sf_0": 43,
+                "gelu_coeff_sf": 25,
+                "gelu_power_rescale_sf_0": 39,
+                "normalize_rescale_sf": 31,
+                "wffn1_rescale_sf": 35,
+                "wffn1_sf": 22,
+                "x_centered_fresh_sf": 26
+              },
+              "tie_index": 0,
+              "total_bits": 271,
+              "total_variance": 3.722761680693287e-09
+            }
+          ],
+          "profile": "sst2_large"
+        }
+      ],
+      "profile": "sst2_large",
+      "status": "pass",
+      "violations": []
+    }
+  ],
+  "schema_version": "other5_fusion_map_audit_v1",
+  "source_commit": "ee5d5be4f92f8615c65b3c8fba031e93178ed4d7",
+  "status": "pass"
+}

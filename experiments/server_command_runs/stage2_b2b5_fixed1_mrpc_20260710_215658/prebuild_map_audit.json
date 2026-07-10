@@ -1,0 +1,270 @@
+{
+  "max_allowed": 1,
+  "profiles": [
+    {
+      "errors": [],
+      "graphs": [
+        {
+          "fusion_counts": [
+            0
+          ],
+          "graph_key": "block1_mrpc",
+          "num_options": 1,
+          "path": "blb_stage2_rl/fusion_maps/mrpc/block1_mrpc.json"
+        },
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block2_mrpc",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/mrpc/block2_mrpc.json"
+        },
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block4",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/mrpc/block4.json"
+        },
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block5_n0",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/mrpc/block5_n0.json"
+        },
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block5_n1",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/mrpc/block5_n1.json"
+        },
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block5_n2",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/mrpc/block5_n2.json"
+        },
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block5_n4",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/mrpc/block5_n4.json"
+        }
+      ],
+      "max_allowed": 1,
+      "missing_graph_keys": [],
+      "present_graph_keys": [
+        "block1_mrpc",
+        "block2_mrpc",
+        "block4",
+        "block5_n0",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "profile": "mrpc",
+      "profile_dir": "blb_stage2_rl/fusion_maps/mrpc",
+      "required_graph_keys": [
+        "block2_mrpc",
+        "block4",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "status": "pass",
+      "violations": []
+    },
+    {
+      "errors": [],
+      "graphs": [
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block4",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/rte/block4.json"
+        }
+      ],
+      "max_allowed": 1,
+      "missing_graph_keys": [
+        "block2_rte",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "present_graph_keys": [
+        "block4"
+      ],
+      "profile": "rte",
+      "profile_dir": "blb_stage2_rl/fusion_maps/rte",
+      "required_graph_keys": [
+        "block2_rte",
+        "block4",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "status": "fail",
+      "violations": []
+    },
+    {
+      "errors": [],
+      "graphs": [
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block4",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/sst2/block4.json"
+        }
+      ],
+      "max_allowed": 1,
+      "missing_graph_keys": [
+        "block2_sst2",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "present_graph_keys": [
+        "block4"
+      ],
+      "profile": "sst2",
+      "profile_dir": "blb_stage2_rl/fusion_maps/sst2",
+      "required_graph_keys": [
+        "block2_sst2",
+        "block4",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "status": "fail",
+      "violations": []
+    },
+    {
+      "errors": [],
+      "graphs": [
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block4",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/mrpc_large/block4.json"
+        }
+      ],
+      "max_allowed": 1,
+      "missing_graph_keys": [
+        "block2_mrpc_large",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "present_graph_keys": [
+        "block4"
+      ],
+      "profile": "mrpc_large",
+      "profile_dir": "blb_stage2_rl/fusion_maps/mrpc_large",
+      "required_graph_keys": [
+        "block2_mrpc_large",
+        "block4",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "status": "fail",
+      "violations": []
+    },
+    {
+      "errors": [],
+      "graphs": [
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block4",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/rte_large/block4.json"
+        }
+      ],
+      "max_allowed": 1,
+      "missing_graph_keys": [
+        "block2_rte_large",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "present_graph_keys": [
+        "block4"
+      ],
+      "profile": "rte_large",
+      "profile_dir": "blb_stage2_rl/fusion_maps/rte_large",
+      "required_graph_keys": [
+        "block2_rte_large",
+        "block4",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "status": "fail",
+      "violations": []
+    },
+    {
+      "errors": [],
+      "graphs": [
+        {
+          "fusion_counts": [
+            0,
+            1
+          ],
+          "graph_key": "block4",
+          "num_options": 2,
+          "path": "blb_stage2_rl/fusion_maps/sst2_large/block4.json"
+        }
+      ],
+      "max_allowed": 1,
+      "missing_graph_keys": [
+        "block2_sst2_large",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "present_graph_keys": [
+        "block4"
+      ],
+      "profile": "sst2_large",
+      "profile_dir": "blb_stage2_rl/fusion_maps/sst2_large",
+      "required_graph_keys": [
+        "block2_sst2_large",
+        "block4",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "status": "fail",
+      "violations": []
+    }
+  ],
+  "status": "fail"
+}

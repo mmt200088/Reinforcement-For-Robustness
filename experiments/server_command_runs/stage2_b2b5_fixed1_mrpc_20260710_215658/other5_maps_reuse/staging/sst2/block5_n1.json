@@ -1,0 +1,135 @@
+{
+  "graph_key": "block5_n1",
+  "profile": "sst2",
+  "block_idx": 5,
+  "gelu_degree": 1,
+  "attn_degree": 2,
+  "k_slot_index": 15,
+  "block_num_slots": 16,
+  "options": [
+    {
+      "option_id": 0,
+      "fusion_count": 0,
+      "tie_index": 0,
+      "total_variance": 2.669498642156283e-09,
+      "total_bits": 213,
+      "slots": {
+        "x_centered_fresh_sf": 31,
+        "gamma_sf": 20,
+        "wffn1_sf": 22,
+        "gelu_coeff_sf": 20,
+        "normalize_rescale_sf": 28,
+        "gelu_coeff_mul_rescale_sf_0": 31
+      },
+      "action_indices": [
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        0,
+        0,
+        0,
+        0,
+        0,
+        14,
+        0,
+        0,
+        0,
+        3
+      ]
+    },
+    {
+      "option_id": 1,
+      "fusion_count": 1,
+      "tie_index": 0,
+      "total_variance": 8.540708482520093e-07,
+      "total_bits": 180,
+      "slots": {
+        "x_centered_fresh_sf": 22,
+        "gamma_sf": 21,
+        "wffn1_sf": 21,
+        "gelu_coeff_sf": 22,
+        "normalize_rescale_sf": 28,
+        "gelu_coeff_mul_rescale_sf_0": 48
+      },
+      "action_indices": [
+        14,
+        5,
+        9,
+        8,
+        10,
+        14,
+        0,
+        0,
+        0,
+        0,
+        0,
+        14,
+        0,
+        0,
+        0,
+        3
+      ],
+      "boosted": true,
+      "explicit_field_values": {
+        "inv_std_fresh_sf": 31,
+        "x_centered_fresh_sf": 22,
+        "gamma_sf": 21,
+        "wffn1_sf": 21,
+        "gelu_coeff_sf": 22,
+        "normalize_rescale_sf": 28,
+        "gelu_coeff_mul_rescale_sf_0": 48,
+        "output_truncation_k": 13
+      },
+      "boost_description": "p2:final_encode=0,sf_post=48,gamma_sf:6+gelu_coeff_sf:6+wffn1_sf:5",
+      "output_sf": 48,
+      "output_sf_config_ceiling": 48
+    }
+  ],
+  "build_meta": {
+    "active_rescale_fields": [
+      "gelu_coeff_mul_rescale_sf_0",
+      "normalize_rescale_sf"
+    ],
+    "enum_positions": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      11
+    ],
+    "pinned_positions": [],
+    "enum_total_combos": 4624620,
+    "valid_configs": 2756449,
+    "kept_configs": 1250,
+    "num_options": 2,
+    "fusion_counts": [
+      0,
+      1
+    ],
+    "wall_seconds": 38.96,
+    "workers": 128,
+    "k_independence": {
+      "k_independent": true,
+      "violations": [],
+      "samples_checked": 2
+    },
+    "enum_path": "both",
+    "fast_verified_probes": 130,
+    "fast_shards": 1024,
+    "fast_wall_seconds": 5.1,
+    "both_paths_identical": true,
+    "precision_boost_applied": true,
+    "precision_boost_phase2_applied": true,
+    "equivalent_context_reuse": {
+      "source_profile": "mrpc",
+      "source_graph_key": "block5_n1",
+      "source_sha256": "512f1044b2e0fcf86be6089bda1685c23d02a107d2a2ef77b856585eaf25c372",
+      "normalized_context_sha256": "a8b03b71ece05bd152d101e64047d7c7ed7b118a1e8cce1173a66ca1b326dde0",
+      "target_profile": "sst2"
+    }
+  }
+}
