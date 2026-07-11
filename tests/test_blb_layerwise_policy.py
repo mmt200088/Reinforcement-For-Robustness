@@ -224,6 +224,79 @@ class LayerwisePolicyTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     policy.set_initial_slot_probabilities(probabilities, action_values)
 
+    def test_initial_probabilities_disable_existing_epsilon_exploration(self):
+        policy = self._policy()
+        fusion_probs = {0: 0.60, 1: 0.40}
+        k_probs = {13: 0.50, 12: 0.20, 11: 0.12, 10: 0.08, 9: 0.06, 8: 0.04}
+        k_values = (13, 8, 12, 9, 11, 10)
+        action_values = [(0, 1)] + [k_values] * 5
+
+        policy.set_slot_exploration_epsilon([0.20] * 6)
+        self.assertTrue(policy._slot_exploration_enabled)
+        self.assertTrue(torch.all(policy._slot_exploration_epsilon > 0.0))
+
+        policy.set_initial_slot_probabilities(
+            [fusion_probs] + [k_probs] * 5,
+            action_values,
+        )
+        policy.eval()
+
+        self.assertFalse(policy._slot_exploration_enabled)
+        self.assertTrue(torch.all(policy._slot_exploration_epsilon == 0.0))
+
+        state = torch.zeros(1, policy.cfg.state_dim)
+        state[0, 4] = 1.0
+        logits, _ = policy(state)
+        levels = torch.tensor([[2, 6, 6, 6, 6, 6]])
+        full_mask = torch.ones((1, 6), dtype=torch.bool)
+        logit_mask = policy._build_logit_mask(full_mask, levels, 6)
+        masked_logits = logits + logit_mask
+        dist = policy._action_dist(masked_logits, masked_logits)
+        expected = torch.stack((
+            torch.tensor([0.60, 0.40, 0.0, 0.0, 0.0, 0.0]),
+            *(
+                torch.tensor([k_probs[value] for value in k_values])
+                for _ in range(5)
+            ),
+        )).unsqueeze(0)
+        torch.testing.assert_close(dist.probs, expected, rtol=1e-6, atol=1e-7)
+
+        sampled_actions, sampled_log_prob, _ = policy.sample_action(
+            state,
+            full_mask,
+            levels,
+            deterministic=True,
+        )
+        replay_log_prob, _, _ = policy.evaluate_action(
+            state,
+            sampled_actions,
+            full_mask,
+            levels,
+        )
+        self.assertEqual(sampled_actions.tolist(), [[0, 0, 0, 0, 0, 0]])
+        expected_selected_log_prob = np.log(0.60) + 5.0 * np.log(0.50)
+        self.assertAlmostEqual(float(sampled_log_prob), expected_selected_log_prob, places=6)
+        torch.testing.assert_close(sampled_log_prob, replay_log_prob)
+
+        for slot_idx, support in enumerate(action_values):
+            isolated_mask = torch.zeros((1, 6), dtype=torch.bool)
+            isolated_mask[0, slot_idx] = True
+            for action_idx, decoded_value in enumerate(support):
+                actions = torch.zeros((1, 6), dtype=torch.long)
+                actions[0, slot_idx] = action_idx
+                log_prob, _, _ = policy.evaluate_action(
+                    state,
+                    actions,
+                    isolated_mask,
+                    levels,
+                )
+                desired = fusion_probs if slot_idx == 0 else k_probs
+                self.assertAlmostEqual(
+                    float(torch.exp(log_prob)),
+                    desired[decoded_value],
+                    places=6,
+                )
+
     def test_masked_block1_slot_contributes_no_log_probability_or_entropy(self):
         policy = self._policy()
         fusion_probs = {0: 0.6, 1: 0.4}

@@ -927,6 +927,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             self._preferred_per_slot_idx.fill_(-1)
             self._refresh_preferred_prior_template()
             self.default_prior_scale = 0.0
+            self._slot_exploration_epsilon.zero_()
+            self._slot_exploration_enabled = False
 
     def ppo_aux_state_dict(self) -> Dict[str, Any]:
         """State not owned by ``nn.Module.state_dict`` but needed for resume."""
