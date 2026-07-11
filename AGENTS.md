@@ -1543,6 +1543,10 @@ Key wires:
   and may be reused without a copy. Do not broaden that fast path to bools,
   numpy scalars, subclasses, or custom mappings; those must keep the generic
   coercion and validation behavior.
+- A `ReplanSession` tracks whether each graph's delta state is clean. Normal
+  calls restore once before returning and let the next call skip a redundant
+  entry restore; abnormal dirty state must still trigger entry recovery. Keep
+  that recovery invariant when changing session return or exception paths.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.
