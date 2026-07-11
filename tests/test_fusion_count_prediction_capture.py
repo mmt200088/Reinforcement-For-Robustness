@@ -29,6 +29,17 @@ class TensorLike:
         return self.values
 
 
+class CloseFailureHandle:
+    def __init__(self, wrapped):
+        self.wrapped = wrapped
+        self.close_calls = 0
+
+    def close(self):
+        self.close_calls += 1
+        self.wrapped.close()
+        raise OSError("injected close failure")
+
+
 def _single_example_catalog():
     from scripts.fusion_count_prediction_capture import ExampleIdentityCatalog
 
@@ -761,6 +772,63 @@ class PredictionJsonlWriterTest(unittest.TestCase):
             self.assertEqual(set(path.parent.iterdir()), {path})
             with self.assertRaisesRegex(ValueError, "closed"):
                 writer.write_rows([{"dataset_idx": 8}])
+
+    def test_commit_close_failure_cleans_temp_and_preserves_existing_file(self):
+        from scripts.fusion_count_prediction_capture import PredictionJsonlWriter
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "predictions.jsonl"
+            path.write_text("previous artifact\n", encoding="utf-8")
+            writer = PredictionJsonlWriter(path)
+            writer.write_rows([{"dataset_idx": 7}])
+            failing_handle = CloseFailureHandle(writer._handle)
+            writer._handle = failing_handle
+
+            with self.assertRaisesRegex(OSError, "injected close failure"):
+                writer.commit()
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "previous artifact\n")
+            self.assertEqual(set(path.parent.iterdir()), {path})
+            self.assertEqual(failing_handle.close_calls, 1)
+            writer.abort()
+
+    def test_abort_close_failure_unlinks_temp_before_reporting_error(self):
+        from scripts.fusion_count_prediction_capture import PredictionJsonlWriter
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "predictions.jsonl"
+            path.write_text("previous artifact\n", encoding="utf-8")
+            writer = PredictionJsonlWriter(path)
+            writer.write_rows([{"dataset_idx": 7}])
+            failing_handle = CloseFailureHandle(writer._handle)
+            writer._handle = failing_handle
+
+            with self.assertRaisesRegex(OSError, "injected close failure"):
+                writer.abort()
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "previous artifact\n")
+            self.assertEqual(set(path.parent.iterdir()), {path})
+            self.assertEqual(failing_handle.close_calls, 1)
+            writer.abort()
+
+    def test_context_body_error_is_not_masked_by_abort_close_failure(self):
+        from scripts.fusion_count_prediction_capture import PredictionJsonlWriter
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "predictions.jsonl"
+            path.write_text("previous artifact\n", encoding="utf-8")
+            writer = PredictionJsonlWriter(path)
+
+            with self.assertRaisesRegex(RuntimeError, "body failure"):
+                with writer:
+                    writer.write_rows([{"dataset_idx": 7}])
+                    failing_handle = CloseFailureHandle(writer._handle)
+                    writer._handle = failing_handle
+                    raise RuntimeError("body failure")
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "previous artifact\n")
+            self.assertEqual(set(path.parent.iterdir()), {path})
+            self.assertEqual(failing_handle.close_calls, 1)
 
 
 if __name__ == "__main__":

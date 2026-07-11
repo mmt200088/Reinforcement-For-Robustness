@@ -766,6 +766,94 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertEqual(writers[0].abort_count, 1)
         self.assertGreaterEqual(writers[0].close_count, 1)
 
+    def test_main_group_error_is_not_masked_by_writer_close_failure(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        writers = []
+
+        class CloseFailureHandle:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+                self.close_calls = 0
+
+            def close(self):
+                self.close_calls += 1
+                self.wrapped.close()
+                raise OSError("injected close failure")
+
+        class CloseFailingWriter(rlpath.PredictionJsonlWriter):
+            def write_rows(self, rows):
+                super().write_rows(rows)
+                if not isinstance(self._handle, CloseFailureHandle):
+                    self.failing_handle = CloseFailureHandle(self._handle)
+                    self._handle = self.failing_handle
+
+            def __init__(self, path):
+                super().__init__(path)
+                self.failing_handle = None
+                writers.append(self)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            prediction_path = root / "predictions.jsonl"
+            prediction_path.write_text("previous artifact\n", encoding="utf-8")
+            model = FakeHookModel()
+            evaluator = SimpleNamespace(
+                model=model,
+                fixed_eval_identity_catalog=SimpleNamespace(dataset_indices=(17,)),
+            )
+            seq_env = SimpleNamespace(
+                base=SimpleNamespace(
+                    env_cfg=SimpleNamespace(probe_batch_count=1),
+                ),
+            )
+            config = {
+                "name": "fixed_b2",
+                "path": Path("fixed_b2.json"),
+                "baseline_k_index": 3,
+                "group": {},
+                "group_key": "fixed",
+            }
+
+            def run_group(_env, _cfg, **kwargs):
+                kwargs["prediction_writer"].write_rows([
+                    {"group": "fixed_b2", "dataset_idx": 17},
+                ])
+                raise RuntimeError("group failure")
+
+            argv = [
+                "run_fusion_count_action_eval_rlpath.py",
+                "--action-dir", str(root),
+                "--original-json", str(root / "original.json"),
+                "--output-json", str(root / "result.json"),
+                "--output-html", str(root / "result.html"),
+                "--prediction-jsonl", str(prediction_path),
+            ]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                rlpath, "load_rlpath_action_configs", return_value=[config]
+            ), mock.patch.object(
+                rlpath, "unique_rlpath_action_configs", return_value=[config]
+            ), mock.patch.object(
+                rlpath, "_build_evaluator", return_value=evaluator
+            ), mock.patch.object(
+                rlpath, "_build_seq_env", return_value=(seq_env, {})
+            ), mock.patch.object(
+                rlpath, "read_json_file", return_value={"group_results": []}
+            ), mock.patch.object(
+                rlpath, "_run_group", side_effect=run_group
+            ), mock.patch.object(
+                rlpath, "PredictionJsonlWriter", CloseFailingWriter
+            ):
+                with self.assertRaisesRegex(RuntimeError, "group failure"):
+                    rlpath.main()
+
+            remaining = set(root.iterdir())
+            final_contents = prediction_path.read_text(encoding="utf-8")
+
+        self.assertEqual(final_contents, "previous artifact\n")
+        self.assertEqual(remaining, {prediction_path})
+        self.assertEqual(writers[0].failing_handle.close_calls, 1)
+
     def test_run_group_clears_stale_trials_and_requires_committed_replan_evidence(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
 
