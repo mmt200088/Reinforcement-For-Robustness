@@ -578,11 +578,13 @@ class ReplanSession:
         self._delta_baselines: Dict[str, List[Tuple[int, Optional[int]]]] = {}
         self._stage_paths: Dict[str, Tuple[Tuple[ComputeNode, ...], ...]] = {}
         self._delta_nodes: Dict[str, Dict[str, ComputeNode]] = {}
+        self._delta_state_clean: Dict[str, bool] = {}
         for graph_key, path in self.configs.items():
             graph, _opt_cfg, _amp = load_graph_from_json(path)
             build_feasibility_dag(graph)
             self._graphs[graph_key] = graph
             self._delta_baselines[graph_key] = _snapshot_graph_delta_state(graph)
+            self._delta_state_clean[graph_key] = True
             self._delta_nodes[graph_key] = {
                 node.name: node
                 for node in graph.nodes
@@ -659,7 +661,9 @@ class ReplanSession:
 
         graph = self._graphs[key]
         baseline = self.baselines[key]
-        _restore_graph_delta_state(graph, self._delta_baselines[key])
+        if not self._delta_state_clean[key]:
+            _restore_graph_delta_state(graph, self._delta_baselines[key])
+        self._delta_state_clean[key] = False
 
         skeleton = list(baseline.skeleton)
         if skeleton[-1] != graph.dummy_sink_index:
@@ -695,10 +699,12 @@ class ReplanSession:
                 compact_config=compact,
             )
             _restore_graph_delta_state(graph, self._delta_baselines[key])
+            self._delta_state_clean[key] = True
             return output
 
         if not return_dict:
             _restore_graph_delta_state(graph, self._delta_baselines[key])
+            self._delta_state_clean[key] = True
             return result
 
         doc = build_replan_output_dict(
@@ -717,6 +723,7 @@ class ReplanSession:
             include_compact=include_compact,
         )
         _restore_graph_delta_state(graph, self._delta_baselines[key])
+        self._delta_state_clean[key] = True
         return doc
 
     def replan_compact(
