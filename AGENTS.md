@@ -1539,6 +1539,10 @@ Key wires:
   reference mapping per graph. Reuse it for repeated delta application; retain
   the generic on-demand lookup for standalone replan callers and keep all
   per-action CTPT/CTCT type validation intact.
+- Exact built-in `dict[str, int | "x2"]` delta overrides are already normalized
+  and may be reused without a copy. Do not broaden that fast path to bools,
+  numpy scalars, subclasses, or custom mappings; those must keep the generic
+  coercion and validation behavior.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.
