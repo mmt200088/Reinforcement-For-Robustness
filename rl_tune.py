@@ -511,7 +511,7 @@ def train(
         manual_stage1_gelu: str = "",
         manual_stage1_softmax: str = "",
         manual_stage2_noise: str = "",
-        stage2_fixed_config_source: str = "",
+        stage2_fixed_config_source: str = "all4",
         stage2_fixed_config_path: str = "",
         stage2_manual_gelu: str = "",
         stage2_manual_softmax: str = "",
@@ -1171,6 +1171,8 @@ def train(
     parsed_manual_stage1_gelu = parse_degree_config(manual_stage1_gelu)
     parsed_manual_stage1_softmax = parse_degree_config(manual_stage1_softmax)
     parsed_manual_stage2_noise = parse_noise_config(manual_stage2_noise)
+    parsed_stage2_manual_gelu = parse_degree_config(stage2_manual_gelu)
+    parsed_stage2_manual_softmax = parse_degree_config(stage2_manual_softmax)
     trainer_callbacks = []
 
     if use_ist:
@@ -1199,6 +1201,10 @@ def train(
             manual_stage1_gelu=parsed_manual_stage1_gelu,
             manual_stage1_softmax=parsed_manual_stage1_softmax,
             manual_stage2_noise=parsed_manual_stage2_noise,
+            stage2_fixed_config_source=stage2_fixed_config_source,
+            stage2_fixed_config_path=stage2_fixed_config_path,
+            stage2_manual_gelu=parsed_stage2_manual_gelu,
+            stage2_manual_softmax=parsed_stage2_manual_softmax,
             final_eval_random_seed=final_eval_random_seed,
             final_eval_permutation_trials=final_eval_permutation_trials,
             final_eval_cost_equivalent_trials=final_eval_cost_equivalent_trials,

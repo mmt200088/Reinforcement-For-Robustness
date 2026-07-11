@@ -40,7 +40,7 @@ cat <<'EOF'
   --mode stage1-only         【run rl 必选其一】只运行 Stage-1 搜索，写 Parting Chapter/stage1/{combo}/
   --mode stage2-only         【run rl 必选其一】只运行 Stage-2 搜索，正式结果写
                              Parting Chapter/persistent/rl/{model}/{dataset}/{constraint_slug}/stage2_noise/progress/；
-                             前置 Stage-1 请用 --stage2-fixed-config-source json/manual 显式指定
+                             前置配置当前默认 all4；可用 stage1_result/json/manual 显式切换
   --mode train / eval / search-only
                              链式模式已移除（2026-06-01 解耦）。run rl 必须显式 stage1-only / stage2-only。
                              最终评估请用独立工具：'eval' 子命令转交 Paean，或后续独立 final-eval。
@@ -104,7 +104,7 @@ GA / Greedy：
   --manual-stage1-softmax JSON_ARRAY      manual 模式：Stage-1 Softmax 多项式次数
   --manual-stage2-noise JSON_OBJECT       manual 模式：Stage-2 噪声系数（x/wq/wk/wv/wo/wffn1/wffn2）
   --final-eval-repeat N                   最终评估的重复次数（默认 50；用于在每个配置上重复加噪评估并统计均值/方差）
-  --stage2-fixed-config-source stage1_result|json|manual
+  --stage2-fixed-config-source all4|stage1_result|json|manual
   --stage2-fixed-config PATH
   --stage2-manual-gelu JSON_ARRAY
   --stage2-manual-softmax JSON_ARRAY
@@ -900,7 +900,7 @@ case "$RUN_MODE" in
 esac
 
 case "$FINAL_EVAL_SOURCE" in search|json|manual|max|stage2-max|stage2_max|blb-max|blb_max) ;; *) err "不支持的最终评估来源：$FINAL_EVAL_SOURCE" ;; esac
-case "$STAGE2_FIXED_CONFIG_SOURCE" in ""|stage1_result|search|json|manual) ;; *) err "不支持的 Stage-2 固定 GELU/Softmax 来源：$STAGE2_FIXED_CONFIG_SOURCE" ;; esac
+case "$STAGE2_FIXED_CONFIG_SOURCE" in ""|all4|stage1_result|search|json|manual) ;; *) err "不支持的 Stage-2 固定 GELU/Softmax 来源：$STAGE2_FIXED_CONFIG_SOURCE" ;; esac
 [ "$STAGE2_FIXED_CONFIG_SOURCE" = "search" ] && STAGE2_FIXED_CONFIG_SOURCE="stage1_result"
 # search 是 infer 的别名
 case "$GENERAL_MODE" in train|infer|search) ;; *) err "general-rl 模式必须是 train、search 或 infer，当前为：$GENERAL_MODE" ;; esac
@@ -1023,24 +1023,15 @@ if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$SEARCH_ALGORITHM" != "rl-and-g
   [ "$S_FINAL_EVAL_CONFIG" = "true" ] || FINAL_EVAL_CONFIG="$(default_final_eval_json_for_family "$SEARCH_ALGORITHM")"
   if [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ -n "$STAGE2_MANUAL_GELU" -o -n "$STAGE2_MANUAL_SOFTMAX" ]; then
     STAGE2_FIXED_CONFIG_SOURCE="manual"
-    [ "$S_STAGE2_FIXED_CONFIG" = "true" ] || STAGE2_FIXED_CONFIG="$FINAL_EVAL_CONFIG"
   elif [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "true" ]; then
     STAGE2_FIXED_CONFIG_SOURCE="json"
-  elif [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; then
-    if [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$SKIP_NOISE_SEARCH" = "false" ] && [ -n "$FINAL_EVAL_CONFIG" ]; then
-      STAGE2_FIXED_CONFIG_SOURCE="json"
-    else
-      case "$FINAL_EVAL_SOURCE" in
-        search) STAGE2_FIXED_CONFIG_SOURCE="stage1_result" ;;
-        *) STAGE2_FIXED_CONFIG_SOURCE="$FINAL_EVAL_SOURCE" ;;
-      esac
-    fi
-    STAGE2_FIXED_CONFIG="$FINAL_EVAL_CONFIG"
-    STAGE2_MANUAL_GELU="$MANUAL_STAGE1_GELU"
-    STAGE2_MANUAL_SOFTMAX="$MANUAL_STAGE1_SOFTMAX"
-  else
-    [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "true" ] || STAGE2_FIXED_CONFIG_SOURCE="stage1_result"
+  elif [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ]; then
+    STAGE2_FIXED_CONFIG_SOURCE="all4"
+  fi
+  if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "json" ]; then
     [ "$S_STAGE2_FIXED_CONFIG" = "true" ] || STAGE2_FIXED_CONFIG="$FINAL_EVAL_CONFIG"
+  elif [ "$S_STAGE2_FIXED_CONFIG" = "false" ]; then
+    STAGE2_FIXED_CONFIG=""
   fi
 fi
 
@@ -1249,11 +1240,19 @@ else
     _NEEDS_STAGE2_FIXED_CONFIG="true"
   fi
   if [ "$_NEEDS_STAGE2_FIXED_CONFIG" = "true" ]; then
-    if [ "$STAGE2_FIXED_CONFIG_SOURCE" = "manual" ]; then
-      [ -n "$STAGE2_MANUAL_GELU" ] && [ -n "$STAGE2_MANUAL_SOFTMAX" ] || err "stage2-fixed-config-source=manual 时必须同时提供 --stage2-manual-gelu 和 --stage2-manual-softmax。"
-    else
-      [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ] || err "只有 --stage2-fixed-config-source=manual 时才能提供 --stage2-manual-gelu / --stage2-manual-softmax。"
-    fi
+    case "$STAGE2_FIXED_CONFIG_SOURCE" in
+      all4|stage1_result)
+        [ "$S_STAGE2_FIXED_CONFIG" = "false" ] || err "stage2-fixed-config-source=$STAGE2_FIXED_CONFIG_SOURCE 时不能提供 --stage2-fixed-config。"
+        [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ] || err "stage2-fixed-config-source=$STAGE2_FIXED_CONFIG_SOURCE 时不能提供 manual GELU/Softmax。"
+        ;;
+      json)
+        [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ] || err "stage2-fixed-config-source=json 时不能提供 manual GELU/Softmax。"
+        ;;
+      manual)
+        [ "$S_STAGE2_FIXED_CONFIG" = "false" ] || err "stage2-fixed-config-source=manual 时不能提供 --stage2-fixed-config。"
+        [ -n "$STAGE2_MANUAL_GELU" ] && [ -n "$STAGE2_MANUAL_SOFTMAX" ] || err "stage2-fixed-config-source=manual 时必须同时提供 --stage2-manual-gelu 和 --stage2-manual-softmax。"
+        ;;
+    esac
     if [ "$DECOUPLED_LAYOUT" != "true" ] && [ "$SKIP_STAGE1_SEARCH" = "true" ] && [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ]; then
       # 解耦 RL 的 stage2-only 从 stage1/record/ 读前置 Stage-1（见 Python 端），不走这条同目录 stage1_result 检查。
       _HAS_S1_CKPT="false"

@@ -2287,6 +2287,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                  manual_stage1_gelu=None,
                  manual_stage1_softmax=None,
                  manual_stage2_noise=None,
+                 stage2_fixed_config_source='all4',
+                 stage2_fixed_config_path='',
+                 stage2_manual_gelu=None,
+                 stage2_manual_softmax=None,
                  final_eval_random_seed=42,
                  final_eval_permutation_trials=10,
                  final_eval_cost_equivalent_trials=10,
@@ -2698,6 +2702,46 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.manual_stage1_gelu = manual_stage1_gelu
         self.manual_stage1_softmax = manual_stage1_softmax
         self.manual_stage2_noise = manual_stage2_noise
+        self.stage2_fixed_config_source = str(
+            stage2_fixed_config_source or 'all4'
+        ).strip().lower()
+        self.stage2_fixed_config_path = str(stage2_fixed_config_path or '').strip()
+        self.stage2_manual_gelu = stage2_manual_gelu
+        self.stage2_manual_softmax = stage2_manual_softmax
+        if self.stage2_fixed_config_source not in (
+                'all4', 'stage1_result', 'json', 'manual'):
+            raise ValueError(
+                f"Unsupported stage2_fixed_config_source "
+                f"'{self.stage2_fixed_config_source}'. Use one of: "
+                "all4, stage1_result, json, manual."
+            )
+        if self.stage2_fixed_config_source in ('all4', 'stage1_result'):
+            if self.stage2_fixed_config_path:
+                raise ValueError(
+                    f"stage2_fixed_config_source='{self.stage2_fixed_config_source}' "
+                    "does not accept stage2_fixed_config_path."
+                )
+            if self.stage2_manual_gelu is not None or self.stage2_manual_softmax is not None:
+                raise ValueError(
+                    f"stage2_fixed_config_source='{self.stage2_fixed_config_source}' "
+                    "does not accept stage2_manual_gelu/stage2_manual_softmax."
+                )
+        elif self.stage2_fixed_config_source == 'json':
+            if not self.stage2_fixed_config_path:
+                raise ValueError(
+                    "stage2_fixed_config_source='json' requires "
+                    "stage2_fixed_config_path."
+                )
+            if self.stage2_manual_gelu is not None or self.stage2_manual_softmax is not None:
+                raise ValueError(
+                    "stage2_fixed_config_source='json' does not accept "
+                    "stage2_manual_gelu/stage2_manual_softmax."
+                )
+        elif self.stage2_manual_gelu is None or self.stage2_manual_softmax is None:
+            raise ValueError(
+                "stage2_fixed_config_source='manual' requires both "
+                "stage2_manual_gelu and stage2_manual_softmax."
+            )
         self.final_eval_random_seed = int(final_eval_random_seed)
         self.final_eval_permutation_trials = max(0, int(final_eval_permutation_trials))
         self.final_eval_cost_equivalent_trials = max(0, int(final_eval_cost_equivalent_trials))
@@ -2765,6 +2809,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.needs_stage2_fixed_config
             and self.skip_stage1_rl
             and self.final_eval_config_source == 'search'
+            and self.stage2_fixed_config_source == 'stage1_result'
             and (not _can_fallback_stage1)
             and (not self.final_eval_only)
         ):
@@ -3201,6 +3246,25 @@ class LayerImportanceEvaluator(TrainerCallback):
             results_dir=self.final_eval_dir,
         )
 
+    def _build_stage2_fixed_config_resolver(self):
+        source = self.stage2_fixed_config_source
+        resolver_source = 'search' if source == 'stage1_result' else source
+        return UnifiedFinalEvaluationModule(
+            evaluator=self,
+            config_source=resolver_source,
+            config_path=self.stage2_fixed_config_path,
+            manual_stage1_gelu=self.stage2_manual_gelu,
+            manual_stage1_softmax=self.stage2_manual_softmax,
+            random_seed=self.final_eval_random_seed,
+            permutation_trials=0,
+            cost_equivalent_trials=0,
+            budget_equivalent_trials=0,
+            stage1_budget_trials=0,
+            stage2_budget_trials=0,
+            repeat_n=1,
+            results_dir=getattr(self, 'final_eval_dir', None),
+        )
+
     def _maybe_snapshot_decoupled_stage1_record(
         self, *, best_config, base_gelu, base_softmax,
         episode_metric1s, episode_metric2s, episode_losses,
@@ -3361,14 +3425,25 @@ class LayerImportanceEvaluator(TrainerCallback):
         return gelu, softmax, f"stage1_record:{os.path.basename(rec_dir)}"
 
     def _resolve_stage2_fixed_stage1_config(self, search_best_config=None):
-        resolver = self._build_final_eval_runner()
+        if self.stage2_fixed_config_source == 'all4':
+            gelu = np.full(self.total_layers, 4, dtype=int)
+            softmax = np.full(
+                self.total_layers, FIXED_SOFTMAX_DEGREE, dtype=int
+            )
+            return (
+                gelu,
+                softmax,
+                f"Stage-2 all4 (softmax fixed deg{FIXED_SOFTMAX_DEGREE})",
+                'stage2_all4',
+            )
+
+        resolver = self._build_stage2_fixed_config_resolver()
         # 解耦 stage2-only：无 Stage-1 搜索结果、且未显式给 JSON/manual 覆盖时，从
         # stage1/record/ 读前置 Stage-1（grilled 决定：JSON 仅作为显式 --stage2-fixed-config 覆盖）。
-        _src = str(getattr(resolver, "config_source", "search") or "search")
         _use_record = (
-            getattr(self, "decoupled_layout", False)
+            self.stage2_fixed_config_source == 'stage1_result'
+            and getattr(self, "decoupled_layout", False)
             and search_best_config is None
-            and _src not in ("json", "manual")
         )
         if _use_record:
             gelu, softmax, source = self._resolve_stage1_degrees_from_record()
@@ -3376,6 +3451,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             gelu, softmax, source = resolver.resolve_stage1_only(
                 search_best_stage1=search_best_config,
                 total_layers=self.total_layers,
+            )
+        gelu = np.asarray(gelu, dtype=int).reshape(-1)
+        if gelu.size != int(self.total_layers):
+            raise ValueError(
+                f"Stage-2 GELU vector length {gelu.size} does not match "
+                f"num_layers={self.total_layers}."
             )
         # A (2026-05-30): softmax is no longer a Stage-1 decision — every layer is
         # fixed to FIXED_SOFTMAX_DEGREE. Override whatever the resolver produced so
