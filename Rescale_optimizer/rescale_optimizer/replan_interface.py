@@ -17,7 +17,13 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from .config_loader import load_graph_from_json
 from .feasibility import build_feasibility_dag
 from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
-from .replan import ReplanInputs, ReplanResult, replan_with_user_actions
+from .replan import (
+    ReplanInputs,
+    ReplanResult,
+    _PreparedFusionPairs,
+    _prepare_allowed_fusion_pairs,
+    replan_with_user_actions,
+)
 
 DeltaValue = Union[int, str]
 FusionPair = Tuple[int, int]
@@ -579,6 +585,10 @@ class ReplanSession:
         self._stage_paths: Dict[str, Tuple[Tuple[ComputeNode, ...], ...]] = {}
         self._delta_nodes: Dict[str, Dict[str, ComputeNode]] = {}
         self._delta_state_clean: Dict[str, bool] = {}
+        self._default_fusion_policies: Dict[
+            str,
+            Tuple[Optional[List[FusionPair]], _PreparedFusionPairs],
+        ] = {}
         for graph_key, path in self.configs.items():
             graph, _opt_cfg, _amp = load_graph_from_json(path)
             build_feasibility_dag(graph)
@@ -590,6 +600,11 @@ class ReplanSession:
                 for node in graph.nodes
                 if node.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
             }
+            default_fusion_pairs = resolve_allowed_fusion_pairs(graph_key)
+            self._default_fusion_policies[graph_key] = (
+                default_fusion_pairs,
+                _prepare_allowed_fusion_pairs(default_fusion_pairs),
+            )
             baseline = self.baselines.get(graph_key)
             if baseline is not None:
                 skeleton = list(baseline.skeleton)
@@ -670,7 +685,11 @@ class ReplanSession:
             skeleton.append(graph.dummy_sink_index)
         t_eff = [int(x) for x in (t_new if t_new is not None else baseline.t_baseline)]
         deltas = _normalize_delta_overrides(delta_overrides)
-        fusion_pairs = resolve_allowed_fusion_pairs(key, allowed_fusion_pairs)
+        if allowed_fusion_pairs == DEFAULT_FUSION_POLICY:
+            fusion_pairs, replan_fusion_pairs = self._default_fusion_policies[key]
+        else:
+            fusion_pairs = resolve_allowed_fusion_pairs(key, allowed_fusion_pairs)
+            replan_fusion_pairs = fusion_pairs
 
         result = replan_with_user_actions(
             graph,
@@ -679,7 +698,7 @@ class ReplanSession:
                 t_baseline=list(baseline.t_baseline),
                 t_new=t_eff,
                 delta_overrides=(deltas or None),
-                allowed_fusion_pairs=fusion_pairs,
+                allowed_fusion_pairs=replan_fusion_pairs,
             ),
             baseline_q_bits=(
                 None if _compact_result else list(baseline.q_bits_baseline)

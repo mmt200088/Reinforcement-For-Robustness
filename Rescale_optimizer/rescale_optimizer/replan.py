@@ -76,7 +76,7 @@ mutation happens on local copies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import AbstractSet, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
 from .modulus_chain import ModulusChain
@@ -85,6 +85,13 @@ from .modulus_chain import ModulusChain
 # ---------------------------------------------------------------------------
 # Inputs / outputs
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _PreparedFusionPairs:
+    """Validated immutable fusion policy reused by a preloaded session."""
+
+    pairs: Optional[frozenset[Tuple[int, int]]]
 
 
 @dataclass
@@ -126,7 +133,9 @@ class ReplanInputs:
     #: For example, [(1, 2)] means only the first and second rescale
     #: stages may be fused. None keeps the legacy behaviour where any
     #: adjacent pair is considered; [] disables fusion entirely.
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]] = None
+    allowed_fusion_pairs: Optional[
+        Union[Sequence[Tuple[int, int]], _PreparedFusionPairs]
+    ] = None
 
 
 @dataclass
@@ -335,8 +344,12 @@ def _apply_delta_overrides(
 
 
 def _normalize_allowed_fusion_pairs(
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]],
-) -> Optional[set[Tuple[int, int]]]:
+    allowed_fusion_pairs: Optional[
+        Union[Sequence[Tuple[int, int]], _PreparedFusionPairs]
+    ],
+) -> Optional[AbstractSet[Tuple[int, int]]]:
+    if isinstance(allowed_fusion_pairs, _PreparedFusionPairs):
+        return allowed_fusion_pairs.pairs
     if allowed_fusion_pairs is None:
         return None
 
@@ -353,8 +366,17 @@ def _normalize_allowed_fusion_pairs(
     return out
 
 
+def _prepare_allowed_fusion_pairs(
+    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]],
+) -> _PreparedFusionPairs:
+    normalized = _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
+    return _PreparedFusionPairs(
+        None if normalized is None else frozenset(normalized)
+    )
+
+
 def _is_fusion_boundary_allowed(
-    allowed_pairs: Optional[set[Tuple[int, int]]],
+    allowed_pairs: Optional[AbstractSet[Tuple[int, int]]],
     left_group: Sequence[int],
     right_group: Sequence[int],
 ) -> bool:
@@ -374,7 +396,9 @@ def _fuse_chain(
     t_vec: Sequence[int],
     q_min: int,
     q_max: int,
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]] = None,
+    allowed_fusion_pairs: Optional[
+        Union[Sequence[Tuple[int, int]], _PreparedFusionPairs]
+    ] = None,
 ) -> Tuple[bool, List[int], List[int], List[int], List[FusionEvent], Optional[ModulusChain]]:
     """
     Apply rescale-fusion until no q < q_min remains, OR until fusion is
@@ -423,7 +447,11 @@ def _fuse_chain(
     q = list(q_bits)
     t = list(t_vec)
     events: List[FusionEvent] = []
-    allowed_pairs = _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
+    allowed_pairs = (
+        allowed_fusion_pairs.pairs
+        if isinstance(allowed_fusion_pairs, _PreparedFusionPairs)
+        else _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
+    )
     # Each q slot tracks the original stage ids it has absorbed.  This keeps
     # legal-fusion decisions tied to the baseline graph, not to shifted indices
     # after an earlier fusion.
