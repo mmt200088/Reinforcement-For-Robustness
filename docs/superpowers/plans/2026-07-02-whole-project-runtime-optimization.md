@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `9ab82f0`, the conservative
+not by raw commit count. As of source head `13a9854`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -231,6 +231,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `805e0ed` | `experiments/server_command_runs/replan_skip_applied_805e0ed_20260711/` | Skip materializing the unused applied-delta echo dictionary only for compact fusion-map replans while preserving full replan diagnostics and all validation/mutation work. |
 | Rescale/fusion maps | `f4bec49` | `experiments/server_command_runs/replan_skip_baseline_diag_f4bec49_20260711/` | Skip the unused baseline drop-delta diagnostic only for compact fusion-map replans while preserving it for full replan, CLI, and diagnostic callers. |
 | Rescale/fusion maps | `3e99adc` | `experiments/server_command_runs/replan_single_pass_bounds_3e99adc_20260711/` | Validate non-positive and over-limit initial drops in one pass while preserving non-positive error precedence and the complete over-limit stage list. |
+| Rescale/fusion maps | `13a9854` | `experiments/server_command_runs/replan_default_fusion_policy_13a9854_20260711/` | Resolve and validate each session graph's default fusion policy once, reusing an immutable normalized set for math while retaining ordered diagnostics and per-call validation for custom policies. |
 | Rescale/fusion maps | `ffa58a5` | `experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/` | Make fusion schedule/replay verification derive expectations from the canonical map and close the 140-test Task 5 gate without changing runtime semantics. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
@@ -1392,6 +1393,18 @@ improved median wall from `10.84s` to `10.63s` (`1.0198x`), reduced median
 user CPU by `2.95s`, and produced semantically equal maps. The 136-test gate,
 explicit abnormal-bound parity, cProfile, and evidence are under
 `experiments/server_command_runs/replan_single_pass_bounds_3e99adc_20260711/`.
+
+Progress 2026-07-11: repeated session replans still rebuilt the graph-default
+fusion-policy list and normalized set for every combination. Source commit
+`13a9854` prepares both once per graph: ordered pairs remain available to full
+JSON/diagnostics, while an internal immutable set feeds the replan hot path;
+custom policies retain per-call parsing and validation. Eleven-repeat hot-loop
+A/B improved 100,000 combinations from median `1.043888s` to `1.015084s`
+(`1.0284x`) with identical result SHA256. The short three-repeat 20-worker
+builder gate was wall-neutral (`10.55s` versus `10.56s`) while median user CPU
+fell by `0.99s`; all maps were semantically equal. The 138-test related gate,
+1,230-test full-suite comparison, profile, and evidence are under
+`experiments/server_command_runs/replan_default_fusion_policy_13a9854_20260711/`.
 
 Progress 2026-07-03: `rescale_optimizer_bridge.load_baseline_archive()` now
 caches parsed static-skeleton archives by absolute path, mtime, and size. The

@@ -1,0 +1,21 @@
+test_replan_session_reuses_prepared_default_fusion_policy (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... FAIL
+
+======================================================================
+FAIL: test_replan_session_reuses_prepared_default_fusion_policy (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_rescale_optimizer_hotpaths.py", line 207, in test_replan_session_reuses_prepared_default_fusion_policy
+    self.assertEqual(
+AssertionError: Tuples differ: (2, 2) != (0, 0)
+
+First differing element 0:
+2
+0
+
+- (2, 2)
++ (0, 0)
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+FAILED (failures=1)

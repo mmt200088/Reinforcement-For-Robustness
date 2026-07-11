@@ -1559,6 +1559,10 @@ Key wires:
   precedence and return immediately; otherwise every 1-indexed stage above
   `q_max` must remain in the diagnostic. Do not restore separate `any(...)`
   and over-limit list-comprehension scans in the combination hot path.
+- `ReplanSession` prepares each graph's default fusion policy once as both an
+  ordered diagnostic list and an internal immutable normalized set. Reuse the
+  prepared set for default-policy math, preserve ordered JSON output, and keep
+  explicit custom policies on the normal parser/validator path.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.
