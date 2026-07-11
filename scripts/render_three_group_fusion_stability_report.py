@@ -151,6 +151,23 @@ def _metric_array(group: Any, metric: str) -> list[float]:
     return [float(value) for value in values]
 
 
+def _raw_metric_summary(group: Any) -> dict[str, float] | None:
+    arrays = {metric: _metric_array(group, metric) for metric in METRICS}
+    if any(len(values) != 5 for values in arrays.values()):
+        return None
+    return {
+        "loss_mean": statistics.fmean(arrays["loss"]),
+        "loss_std": statistics.pstdev(arrays["loss"]),
+        "loss_max": max(arrays["loss"]),
+        "metric1_mean": statistics.fmean(arrays["metric1"]),
+        "metric1_std": statistics.pstdev(arrays["metric1"]),
+        "metric1_min": min(arrays["metric1"]),
+        "metric2_mean": statistics.fmean(arrays["metric2"]),
+        "metric2_std": statistics.pstdev(arrays["metric2"]),
+        "metric2_min": min(arrays["metric2"]),
+    }
+
+
 def _finite_or_none(value: Any) -> int | float | None:
     return value if _is_finite_number(value) else None
 
@@ -303,6 +320,44 @@ def _completeness_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
                             )
                         )
     return _gate("completeness", failures)
+
+
+def _metric_consistency_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    for run_index, run in enumerate(run_payloads):
+        seed = _run_seed(run)
+        for group_name in GROUP_SPECS:
+            group = _group_map(run).get(group_name)
+            if group is None:
+                continue
+            expected = _raw_metric_summary(group)
+            if expected is None:
+                continue
+            reported = group.get("metrics")
+            for field, expected_value in expected.items():
+                actual_value = (
+                    reported.get(field) if isinstance(reported, Mapping) else None
+                )
+                matches = _is_finite_number(actual_value) and math.isclose(
+                    actual_value,
+                    expected_value,
+                    rel_tol=0.0,
+                    abs_tol=1e-12,
+                )
+                if not matches:
+                    failures.append(
+                        _failure(
+                            "metric_mismatch",
+                            run_index=run_index,
+                            seed=seed,
+                            group=group_name,
+                            detail=(
+                                f"{field} mismatch: expected {expected_value!r}, "
+                                f"found {actual_value!r}"
+                            ),
+                        )
+                    )
+    return _gate("metric_consistency", failures)
 
 
 def _trial_metadata_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
@@ -538,6 +593,34 @@ def _fusion_pattern_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
             records = group.get("step_records")
             if not isinstance(records, list):
                 continue
+            if len(records) == len(EXPECTED_SCHEDULE):
+                for record_index, (expected_layer, expected_block) in enumerate(
+                    EXPECTED_SCHEDULE
+                ):
+                    record = records[record_index]
+                    if not isinstance(record, Mapping):
+                        continue
+                    actual_order = (
+                        record.get("step_idx"),
+                        record.get("layer_idx"),
+                        record.get("block_idx"),
+                    )
+                    expected_order = (record_index, expected_layer, expected_block)
+                    if actual_order != expected_order:
+                        failures.append(
+                            _failure(
+                                "step_order",
+                                run_index=run_index,
+                                seed=seed,
+                                group=group_name,
+                                layer=record.get("layer_idx"),
+                                block=record.get("block_idx"),
+                                detail=(
+                                    f"list index {record_index}: expected step_idx/layer/block "
+                                    f"{expected_order!r}, found {actual_order!r}"
+                                ),
+                            )
+                        )
             positions: dict[tuple[Any, Any], list[Mapping[str, Any]]] = {}
             for record in records:
                 if isinstance(record, Mapping):
@@ -588,11 +671,17 @@ def _fusion_pattern_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
 
 
 def _per_run_summary(
-    run_payloads: Sequence[Any], group_name: str
+    run_payloads: Sequence[Any],
+    group_name: str,
+    aggregate_run_indexes: set[int],
+    failures_by_run: Mapping[int, list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
     per_runs: list[dict[str, Any]] = []
     for run_index, run in enumerate(run_payloads):
         group = _group_map(run).get(group_name)
+        included = run_index in aggregate_run_indexes
+        run_status = "INCLUDED" if included else "EXCLUDED"
+        exclusion_reasons = [] if included else failures_by_run.get(run_index, [])
         if group is None:
             per_runs.append(
                 {
@@ -602,14 +691,15 @@ def _per_run_summary(
                     "metrics": {},
                     "trial_seeds": [],
                     "evidence": {},
+                    "status": run_status,
+                    "exclusion_reasons": exclusion_reasons,
                 }
             )
             continue
-        metrics = group.get("metrics")
-        safe_metrics = {
-            field: _finite_or_none(metrics.get(field))
-            for field in METRIC_FIELDS
-        } if isinstance(metrics, Mapping) else {}
+        raw_metrics = _raw_metric_summary(group)
+        safe_metrics = raw_metrics if raw_metrics is not None else {
+            field: None for field in METRIC_FIELDS
+        }
         probe = group.get("terminal_probe")
         trial_seeds = (
             probe.get("per_worker_trial_seeds", [])
@@ -623,6 +713,8 @@ def _per_run_summary(
                 "missing": False,
                 "metrics": safe_metrics,
                 "trial_seeds": trial_seeds,
+                "status": run_status,
+                "exclusion_reasons": exclusion_reasons,
                 "evidence": {
                     "fusion_total": group.get("fusion_total"),
                     "fusion_by_block": group.get("fusion_by_block"),
@@ -641,6 +733,7 @@ def _group_summary(
     run_payloads: Sequence[Any],
     group_name: str,
     aggregate_run_indexes: set[int],
+    failures_by_run: Mapping[int, list[dict[str, Any]]],
 ) -> dict[str, Any]:
     spec = GROUP_SPECS[group_name]
     pooled_metrics: dict[str, Any] = {}
@@ -658,9 +751,9 @@ def _group_summary(
             if run_index not in aggregate_run_indexes:
                 continue
             group = _group_map(run).get(group_name)
-            metrics = group.get("metrics") if isinstance(group, Mapping) else None
+            raw_values = _metric_array(group, metric)
             run_means.append(
-                metrics.get(f"{metric}_mean") if isinstance(metrics, Mapping) else None
+                statistics.fmean(raw_values) if len(raw_values) == 5 else None
             )
         run_mean_std[metric] = _stats(run_means, expected_count=5)
     return {
@@ -678,7 +771,12 @@ def _group_summary(
             "4": spec["pattern"][4] * 12,
             "5": spec["pattern"][5] * 12,
         },
-        "per_runs": _per_run_summary(run_payloads, group_name),
+        "per_runs": _per_run_summary(
+            run_payloads,
+            group_name,
+            aggregate_run_indexes,
+            failures_by_run,
+        ),
         "pooled_metrics": pooled_metrics,
         "run_mean_std": run_mean_std,
     }
@@ -740,11 +838,32 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _observed_evaluations(run_payloads: Sequence[Any]) -> int:
+    observed = 0
+    for run in run_payloads:
+        groups = _group_map(run)
+        for group_name in GROUP_SPECS:
+            group = groups.get(group_name)
+            trial_metrics = (
+                group.get("trial_metrics") if isinstance(group, Mapping) else None
+            )
+            arrays = [
+                trial_metrics.get(metric)
+                if isinstance(trial_metrics, Mapping)
+                else None
+                for metric in METRICS
+            ]
+            if all(isinstance(values, list) for values in arrays):
+                observed += min(len(values) for values in arrays)
+    return observed
+
+
 def build_summary(*, run_payloads: Sequence[Any], source_commit: str) -> dict[str, Any]:
     """Validate evaluator payloads and aggregate paired stability statistics."""
     payloads = list(run_payloads) if isinstance(run_payloads, Sequence) else []
     gates = [
         _completeness_gate(payloads),
+        _metric_consistency_gate(payloads),
         _trial_metadata_gate(payloads),
         _steps_install_gate(payloads),
         _fusion_pattern_gate(payloads),
@@ -757,8 +876,34 @@ def build_summary(*, run_payloads: Sequence[Any], source_commit: str) -> dict[st
         and not isinstance(failure.get("run_index"), bool)
     }
     aggregate_run_indexes = set(range(len(payloads))) - invalid_run_indexes
+    failures_by_run: dict[int, list[dict[str, Any]]] = {
+        run_index: [] for run_index in invalid_run_indexes
+    }
+    for gate in gates:
+        for failure in gate["failures"]:
+            run_index = failure.get("run_index")
+            if (
+                isinstance(run_index, int)
+                and not isinstance(run_index, bool)
+                and run_index in failures_by_run
+            ):
+                failures_by_run[run_index].append(
+                    {
+                        "gate": gate["name"],
+                        "code": failure.get("code"),
+                        "detail": failure.get("detail"),
+                        "group": failure.get("group"),
+                        "layer": failure.get("layer"),
+                        "block": failure.get("block"),
+                    }
+                )
     groups = {
-        group_name: _group_summary(payloads, group_name, aggregate_run_indexes)
+        group_name: _group_summary(
+            payloads,
+            group_name,
+            aggregate_run_indexes,
+            failures_by_run,
+        )
         for group_name in GROUP_SPECS
     }
     comparisons = {
@@ -770,6 +915,14 @@ def build_summary(*, run_payloads: Sequence[Any], source_commit: str) -> dict[st
         )
         for comparison_name, (treatment, reference) in COMPARISON_SPECS.items()
     }
+    expected_evaluations = 75
+    observed_evaluations = _observed_evaluations(payloads)
+    included_evaluations = len(aggregate_run_indexes) * 15
+    observed_seeds = [_run_seed(run) for run in payloads]
+    included_seeds = [
+        _run_seed(payloads[run_index])
+        for run_index in sorted(aggregate_run_indexes)
+    ]
     summary = {
         "source_commit": source_commit,
         "schema_version": SCHEMA_VERSION,
@@ -787,8 +940,14 @@ def build_summary(*, run_payloads: Sequence[Any], source_commit: str) -> dict[st
             "step_count": 47,
             "trials_per_run": 5,
         },
-        "seeds": list(EXPECTED_SEEDS),
-        "total_evaluations": 75,
+        "expected_seeds": list(EXPECTED_SEEDS),
+        "observed_seeds": observed_seeds,
+        "included_seeds": included_seeds,
+        "seeds": observed_seeds,
+        "expected_evaluations": expected_evaluations,
+        "observed_evaluations": observed_evaluations,
+        "included_evaluations": included_evaluations,
+        "total_evaluations": included_evaluations,
         "groups": groups,
         "comparisons": comparisons,
         "gates": gates,
@@ -831,7 +990,21 @@ def render_html(summary: Mapping[str, Any]) -> str:
 
     protocol_rows = [
         ("Source commit", summary.get("source_commit", "")),
-        ("Seeds", ", ".join(str(seed) for seed in summary.get("seeds", []))),
+        (
+            "Expected seeds",
+            ", ".join(str(seed) for seed in summary.get("expected_seeds", [])),
+        ),
+        (
+            "Observed seeds",
+            ", ".join(str(seed) for seed in summary.get("observed_seeds", [])),
+        ),
+        (
+            "Included seeds",
+            ", ".join(str(seed) for seed in summary.get("included_seeds", [])),
+        ),
+        ("Expected evaluations", summary.get("expected_evaluations", 0)),
+        ("Observed evaluations", summary.get("observed_evaluations", 0)),
+        ("Included evaluations", summary.get("included_evaluations", 0)),
         ("Total evaluations", summary.get("total_evaluations", 0)),
         ("Probe size", protocol.get("probe_size", "n/a")),
         ("Repeat", protocol.get("repeat", "n/a")),
@@ -866,9 +1039,18 @@ def render_html(summary: Mapping[str, Any]) -> str:
         per_run_rows = []
         for run in group.get("per_runs", []):
             metrics = run.get("metrics", {})
+            reasons = run.get("exclusion_reasons", [])
+            reason_text = "none" if not reasons else "; ".join(
+                f"{reason.get('gate', 'unknown')}/{reason.get('code', 'unknown')}: "
+                f"{reason.get('detail', '')}"
+                for reason in reasons
+                if isinstance(reason, Mapping)
+            )
             per_run_rows.append(
                 (
                     run.get("seed", "n/a"),
+                    run.get("status", "EXCLUDED"),
+                    reason_text,
                     _number(metrics.get("loss_mean")),
                     _number(metrics.get("loss_std")),
                     _number(metrics.get("loss_max")),
@@ -890,6 +1072,8 @@ def render_html(summary: Mapping[str, Any]) -> str:
             + _table(
                 (
                     "Seed",
+                    "Status",
+                    "Exclusion reasons",
                     "Loss mean",
                     "Loss std",
                     "Loss max",
