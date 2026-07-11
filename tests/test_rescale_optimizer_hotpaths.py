@@ -239,6 +239,33 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
             replan_call.call_args.kwargs["record_applied_delta_overrides"]
         )
 
+    def test_only_full_replan_requests_baseline_delta_diagnostics(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        with mock.patch.object(
+            replan_interface,
+            "replan_with_user_actions",
+            wraps=replan_interface.replan_with_user_actions,
+        ) as replan_call:
+            compact = session.replan_compact("block4")
+            full = session.replan("block4", return_dict=False)
+
+        self.assertTrue(compact.valid)
+        self.assertTrue(full.valid)
+        self.assertIsNone(
+            replan_call.call_args_list[0].kwargs["baseline_q_bits"]
+        )
+        self.assertEqual(
+            replan_call.call_args_list[1].kwargs["baseline_q_bits"],
+            session.baselines["block4"].q_bits_baseline,
+        )
+
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
         from rescale_optimizer import replan_interface
 
