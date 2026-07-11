@@ -703,47 +703,73 @@ def main() -> int:
     prediction_recorder = None
     prediction_writer = None
     prediction_hook = None
+    primary_error = None
+    primary_traceback = None
     try:
-        try:
-            if prediction_jsonl is not None:
-                prediction_recorder = ForwardPredictionRecorder(
-                    catalog=ev.fixed_eval_identity_catalog,
-                    probe_batch_count=int(seq_env.base.env_cfg.probe_batch_count),
-                )
-                prediction_writer = PredictionJsonlWriter(prediction_jsonl)
-                prediction_hook = ev.model.register_forward_hook(
-                    prediction_recorder.hook,
-                    with_kwargs=True,
-                )
+        if prediction_jsonl is not None:
+            prediction_recorder = ForwardPredictionRecorder(
+                catalog=ev.fixed_eval_identity_catalog,
+                probe_batch_count=int(seq_env.base.env_cfg.probe_batch_count),
+            )
+            prediction_writer = PredictionJsonlWriter(prediction_jsonl)
+            prediction_hook = ev.model.register_forward_hook(
+                prediction_recorder.hook,
+                with_kwargs=True,
+            )
 
-            for idx, cfg in enumerate(unique):
-                print(f"[run] {cfg['name']}", flush=True)
-                group_seed = _group_seed(
-                    args.seed,
-                    idx,
-                    shared=bool(args.shared_group_seed),
-                )
-                result_by_key[rlpath_config_group_key(cfg)] = _run_group(
-                    seq_env,
-                    cfg,
-                    seed=group_seed,
-                    prediction_recorder=prediction_recorder,
-                    prediction_writer=prediction_writer,
-                )
-        finally:
+        for idx, cfg in enumerate(unique):
+            print(f"[run] {cfg['name']}", flush=True)
+            group_seed = _group_seed(
+                args.seed,
+                idx,
+                shared=bool(args.shared_group_seed),
+            )
+            result_by_key[rlpath_config_group_key(cfg)] = _run_group(
+                seq_env,
+                cfg,
+                seed=group_seed,
+                prediction_recorder=prediction_recorder,
+                prediction_writer=prediction_writer,
+            )
+    except BaseException as exc:
+        primary_error = exc
+        primary_traceback = exc.__traceback__
+
+    cleanup_error = None
+    cleanup_traceback = None
+    try:
+        if prediction_hook is not None:
+            prediction_hook.remove()
+    except BaseException as exc:
+        cleanup_error = exc
+        cleanup_traceback = exc.__traceback__
+    try:
+        if prediction_writer is not None:
+            prediction_writer.close()
+    except BaseException as exc:
+        if cleanup_error is None:
+            cleanup_error = exc
+            cleanup_traceback = exc.__traceback__
+
+    if primary_error is not None or cleanup_error is not None:
+        if prediction_writer is not None:
             try:
-                if prediction_hook is not None:
-                    prediction_hook.remove()
-            finally:
-                if prediction_writer is not None:
-                    prediction_writer.close()
+                prediction_writer.abort()
+            except BaseException:
+                pass
+        if primary_error is not None:
+            raise primary_error.with_traceback(primary_traceback)
+        raise cleanup_error.with_traceback(cleanup_traceback)
 
-        if prediction_writer is not None:
+    if prediction_writer is not None:
+        try:
             prediction_writer.commit()
-    except BaseException:
-        if prediction_writer is not None:
-            prediction_writer.abort()
-        raise
+        except BaseException:
+            try:
+                prediction_writer.abort()
+            except BaseException:
+                pass
+            raise
 
     group_results = []
     for cfg in configs:

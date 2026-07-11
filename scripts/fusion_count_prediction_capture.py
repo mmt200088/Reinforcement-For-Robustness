@@ -437,28 +437,49 @@ class PredictionJsonlWriter:
             self._row_count += 1
 
     def close(self) -> None:
-        if self._handle is not None:
-            self._handle.close()
-            self._handle = None
+        handle = self._handle
+        self._handle = None
+        if handle is not None:
+            handle.close()
 
     def commit(self) -> None:
         if self._temp_path is None:
             return
-        self.close()
         temp_path = self._temp_path
         try:
+            self.close()
             os.replace(temp_path, self._output_path)
         except BaseException:
-            temp_path.unlink(missing_ok=True)
             self._temp_path = None
+            try:
+                temp_path.unlink(missing_ok=True)
+            except BaseException:
+                pass
             raise
         self._temp_path = None
 
     def abort(self) -> None:
-        self.close()
-        if self._temp_path is not None:
-            self._temp_path.unlink(missing_ok=True)
-            self._temp_path = None
+        close_error = None
+        close_traceback = None
+        try:
+            self.close()
+        except BaseException as exc:
+            close_error = exc
+            close_traceback = exc.__traceback__
+
+        temp_path = self._temp_path
+        self._temp_path = None
+        unlink_error = None
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except BaseException as exc:
+                unlink_error = exc
+
+        if close_error is not None:
+            raise close_error.with_traceback(close_traceback)
+        if unlink_error is not None:
+            raise unlink_error
 
     def __enter__(self) -> "PredictionJsonlWriter":
         return self
@@ -467,4 +488,7 @@ class PredictionJsonlWriter:
         if exc_type is None:
             self.commit()
         else:
-            self.abort()
+            try:
+                self.abort()
+            except BaseException:
+                pass
