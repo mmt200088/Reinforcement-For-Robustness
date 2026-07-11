@@ -483,7 +483,7 @@ def _identity_gate(
     failures: list[dict[str, Any]] = []
     canonical: dict[Any, dict[str, Any]] = {}
     expected_ids: Optional[set[Any]] = None
-    expected_position_map: Optional[dict[int, int]] = None
+    expected_position_maps: dict[int, dict[int, int]] = {}
     identity_eligible = set(eligible_row_indexes)
     identity_invalid_trials = set(invalid_trials)
     for seed in EXPECTED_SEEDS:
@@ -591,8 +591,8 @@ def _identity_gate(
                     trial_invalid = True
                 if (
                     not trial_invalid
-                    and expected_position_map is not None
-                    and position_map != expected_position_map
+                    and seed in expected_position_maps
+                    and position_map != expected_position_maps[seed]
                 ):
                     failures.append(
                         _failure(
@@ -625,8 +625,7 @@ def _identity_gate(
                     continue
                 if expected_ids is None:
                     expected_ids = seen
-                if expected_position_map is None:
-                    expected_position_map = position_map
+                expected_position_maps.setdefault(seed, position_map)
                 canonical.update(local_identities)
     return (
         _gate("input_identity", failures),
