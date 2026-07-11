@@ -119,6 +119,46 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
 
         self.assertTrue(compact.valid)
 
+    def test_replan_session_reuses_precomputed_delta_node_lookup(self):
+        from rescale_optimizer import NodeType, ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        graph = session._graphs["block4"]
+        node = next(
+            item
+            for item in graph.nodes
+            if item.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
+        )
+        delta = (
+            int(node.scale_delta_bits)
+            if node.node_type == NodeType.CTPT_MUL
+            else (
+                "x2"
+                if node.other_ct_scale_bits is None
+                else int(node.other_ct_scale_bits)
+            )
+        )
+
+        with mock.patch.object(
+            replan_interface,
+            "replan_with_user_actions",
+            wraps=replan_interface.replan_with_user_actions,
+        ) as replan_call:
+            session.replan_compact(
+                "block4",
+                delta_overrides={node.name: delta},
+            )
+
+        self.assertIs(
+            replan_call.call_args.kwargs["delta_nodes"],
+            session._delta_nodes["block4"],
+        )
+
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
         from rescale_optimizer import replan_interface
 
