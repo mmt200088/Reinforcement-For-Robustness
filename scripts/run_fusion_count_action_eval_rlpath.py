@@ -81,6 +81,30 @@ def _trial_metric_payload(
     }
 
 
+def _recording_blb_stage2_env_class(base_env_class):
+    class RecordingBLBStage2Env(base_env_class):
+        def _aggregate_probe_trials(
+                self,
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+                trial_seeds=None,
+                ):
+            self.fixed_eval_trial_metrics = _trial_metric_payload(
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+            )
+            return super()._aggregate_probe_trials(
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+                trial_seeds=trial_seeds,
+            )
+
+    return RecordingBLBStage2Env
+
+
 class _HtmlPartsWriter:
     def __init__(self, path: Path):
         self._handle = path.open("w", encoding="utf-8")
@@ -303,23 +327,7 @@ def _build_seq_env(args, ev, *, stage1_gelu: Sequence[int], stage1_softmax: Sequ
     BLBStage2SequentialEnv = deps["BLBStage2SequentialEnv"]
     SequentialEnvConfig = deps["SequentialEnvConfig"]
 
-    class RecordingBLBStage2Env(BLBStage2Env):
-        def _aggregate_probe_trials(
-                self,
-                per_trial_loss,
-                per_trial_metric1,
-                per_trial_metric2,
-                ):
-            self.fixed_eval_trial_metrics = _trial_metric_payload(
-                per_trial_loss,
-                per_trial_metric1,
-                per_trial_metric2,
-            )
-            return super()._aggregate_probe_trials(
-                per_trial_loss,
-                per_trial_metric1,
-                per_trial_metric2,
-            )
+    RecordingBLBStage2Env = _recording_blb_stage2_env_class(BLBStage2Env)
 
     runner = BLBStage2RLRunner(ev)
     train_cfg = BLBStage2TrainConfig(
