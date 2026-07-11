@@ -859,14 +859,14 @@ assert callable(rlpath.load_rlpath_action_configs)
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
 
         source = Path(rlpath.__file__).read_text(encoding="utf-8")
-        main_source = source[source.index("def main("):]
+        parser_source = source[source.index("def _parser("):source.index("def main(")]
 
         self.assertIn("DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)", source)
         self.assertIn("DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)", source)
-        self.assertIn("default=DEFAULT_STAGE1_GELU_JSON", main_source)
-        self.assertIn("default=DEFAULT_STAGE1_SOFTMAX_JSON", main_source)
-        self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_GELU)", main_source)
-        self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_SOFTMAX)", main_source)
+        self.assertIn("default=DEFAULT_STAGE1_GELU_JSON", parser_source)
+        self.assertIn("default=DEFAULT_STAGE1_SOFTMAX_JSON", parser_source)
+        self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_GELU)", parser_source)
+        self.assertNotIn("default=json.dumps(DEFAULT_STAGE1_SOFTMAX)", parser_source)
 
     def test_main_streams_html_report_without_full_render_string_write(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath

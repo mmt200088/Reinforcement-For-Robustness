@@ -38,6 +38,12 @@ from scripts.fusion_count_action_eval_common import (
     rlpath_config_group_key,
     unique_rlpath_action_configs,
 )
+from scripts.fusion_count_prediction_capture import (
+    PREDICTION_ROW_SCHEMA,
+    ExampleIdentityCatalog,
+    ForwardPredictionRecorder,
+    PredictionJsonlWriter,
+)
 
 
 DEFAULT_STAGE1_GELU = [4] * 12
@@ -158,7 +164,14 @@ def _base_model(model_type: str, dataset: str) -> str:
     return "textattack/bert-base-uncased-MRPC"
 
 
-def _tokenize_glue(data, *, task: str, tokenizer, seed: int):
+def _tokenize_glue(
+        data,
+        *,
+        task: str,
+        tokenizer,
+        seed: int,
+        include_identity_catalog: bool = False,
+        ):
     def tokenize_fn(examples):
         if task == "mrpc":
             return tokenizer(
@@ -175,9 +188,14 @@ def _tokenize_glue(data, *, task: str, tokenizer, seed: int):
     val_data = data["validation"].shuffle(seed=int(seed)).map(tokenize_fn)
     train_data = train_data.rename_column("label", "labels")
     val_data = val_data.rename_column("label", "labels")
+    identity_catalog = None
+    if include_identity_catalog:
+        identity_catalog = ExampleIdentityCatalog.from_tokenized_rows(val_data)
     cols = ["input_ids", "attention_mask", "token_type_ids", "labels"]
     train_data.set_format(type="torch", columns=cols)
     val_data.set_format(type="torch", columns=cols)
+    if include_identity_catalog:
+        return train_data, val_data, identity_catalog
     return train_data, val_data
 
 
@@ -213,7 +231,18 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
         args.dataset,
         route_log_dir=str(resolve_repo_path(args.output_json).parent / "logs"),
     )
-    train_data, val_data = _tokenize_glue(data, task=args.dataset, tokenizer=tokenizer, seed=int(args.seed))
+    tokenized = _tokenize_glue(
+        data,
+        task=args.dataset,
+        tokenizer=tokenizer,
+        seed=int(args.seed),
+        include_identity_catalog=bool(args.prediction_jsonl),
+    )
+    if args.prediction_jsonl:
+        train_data, val_data, identity_catalog = tokenized
+    else:
+        train_data, val_data = tokenized
+        identity_catalog = None
     collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
         padding="max_length",
@@ -253,6 +282,8 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
         blb_v3_fusion_exploration_epsilon=0.0,
         rl_algo="ppo",
     )
+    if identity_catalog is not None:
+        ev.fixed_eval_identity_catalog = identity_catalog
     return ev
 
 
@@ -402,7 +433,7 @@ def _metric_dict(metrics: Any) -> Dict[str, float]:
     return out
 
 
-def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
+def _run_group_canonical(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     K_LEVELS = _load_runtime_deps()["K_LEVELS"]
     group = cfg.get("group") or {}
     option_by_graph = {str(k): int(v) for k, v in dict(group.get("option_by_graph") or {}).items()}
@@ -516,6 +547,35 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     }
 
 
+def _run_group(
+        seq_env,
+        cfg: Mapping[str, Any],
+        *,
+        seed: int,
+        prediction_recorder=None,
+        prediction_writer=None,
+        ) -> dict:
+    if prediction_recorder is None:
+        return _run_group_canonical(seq_env, cfg, seed=seed)
+    if prediction_writer is None:
+        raise ValueError("prediction_writer is required with prediction_recorder")
+
+    prediction_recorder.begin_group(run_seed=seed, group=str(cfg["name"]))
+    try:
+        result = _run_group_canonical(seq_env, cfg, seed=seed)
+        terminal_probe = result["terminal_probe"]
+        trial_seeds = terminal_probe["per_worker_trial_seeds"][0]
+        prediction_rows = prediction_recorder.finish_group(
+            trial_seeds=trial_seeds,
+        )
+        prediction_writer.write_rows(prediction_rows)
+        result["prediction_capture"] = {"row_count": len(prediction_rows)}
+        return result
+    except Exception:
+        prediction_recorder.abort_group()
+        raise
+
+
 def _emit_rendered_html(combined: Mapping[str, Any], parts: Any) -> None:
     rows = []
     for r in combined["group_results"]:
@@ -579,7 +639,7 @@ def write_rendered_html(output_html: Path, combined: Mapping[str, Any]) -> None:
         _emit_rendered_html(combined, parts)
 
 
-def main() -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="mrpc")
     parser.add_argument("--model-type", default="bert-base")
@@ -600,13 +660,27 @@ def main() -> int:
     parser.add_argument("--stage2-limit-tolerance", type=float, default=0.001)
     parser.add_argument("--stage2-stability-tolerance", type=float, default=3.5)
     parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--prediction-jsonl",
+        default="",
+        help="optional per-example prediction JSONL captured from terminal probe forwards",
+    )
+    return parser
+
+
+def main() -> int:
+    args = _parser().parse_args()
 
     args.base_model = args.base_model or _base_model(args.model_type, args.dataset)
     action_dir = resolve_repo_path(args.action_dir)
     original_json = resolve_repo_path(args.original_json)
     output_json = resolve_repo_path(args.output_json)
     output_html = resolve_repo_path(args.output_html)
+    prediction_jsonl = (
+        resolve_repo_path(args.prediction_jsonl)
+        if args.prediction_jsonl
+        else None
+    )
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_html.parent.mkdir(parents=True, exist_ok=True)
 
@@ -626,14 +700,40 @@ def main() -> int:
     }
 
     result_by_key: Dict[str, dict] = {}
-    for idx, cfg in enumerate(unique):
-        print(f"[run] {cfg['name']}", flush=True)
-        group_seed = _group_seed(
-            args.seed,
-            idx,
-            shared=bool(args.shared_group_seed),
-        )
-        result_by_key[rlpath_config_group_key(cfg)] = _run_group(seq_env, cfg, seed=group_seed)
+    prediction_recorder = None
+    prediction_writer = None
+    prediction_hook = None
+    try:
+        if prediction_jsonl is not None:
+            prediction_recorder = ForwardPredictionRecorder(
+                catalog=ev.fixed_eval_identity_catalog,
+                probe_batch_count=int(seq_env.base.env_cfg.probe_batch_count),
+            )
+            prediction_writer = PredictionJsonlWriter(prediction_jsonl)
+            prediction_hook = ev.model.register_forward_hook(
+                prediction_recorder.hook,
+                with_kwargs=True,
+            )
+
+        for idx, cfg in enumerate(unique):
+            print(f"[run] {cfg['name']}", flush=True)
+            group_seed = _group_seed(
+                args.seed,
+                idx,
+                shared=bool(args.shared_group_seed),
+            )
+            result_by_key[rlpath_config_group_key(cfg)] = _run_group(
+                seq_env,
+                cfg,
+                seed=group_seed,
+                prediction_recorder=prediction_recorder,
+                prediction_writer=prediction_writer,
+            )
+    finally:
+        if prediction_hook is not None:
+            prediction_hook.remove()
+        if prediction_writer is not None:
+            prediction_writer.close()
 
     group_results = []
     for cfg in configs:
@@ -678,6 +778,13 @@ def main() -> int:
         "baseline": to_jsonable(baseline, stringify_unknown=True, preserve_native=True),
         "group_results": to_jsonable(group_results, stringify_unknown=True, preserve_native=True),
     }
+    if prediction_jsonl is not None:
+        combined["prediction_artifact"] = {
+            "schema_version": PREDICTION_ROW_SCHEMA,
+            "path": str(prediction_jsonl),
+            "row_count": int(prediction_writer.row_count),
+            "dataset_indices": list(ev.fixed_eval_identity_catalog.dataset_indices),
+        }
     write_json_file(output_json, combined)
     write_rendered_html(output_html, combined)
     json.dump({"output_json": str(output_json), "output_html": str(output_html)}, sys.stdout, ensure_ascii=False, indent=2)
