@@ -6,15 +6,17 @@ from collections.abc import Iterable, Mapping, Sequence
 import json
 from numbers import Integral, Real
 import operator
+import os
 from pathlib import Path
-from typing import Any
+import tempfile
+from typing import Any, Optional, Union
 
 import numpy as np
 
 
 PREDICTION_ROW_SCHEMA = "fusion-count-per-example-v1"
 
-_IdentityKey = tuple[tuple[int, ...], tuple[int, ...] | None, int]
+_IdentityKey = tuple[tuple[int, ...], Optional[tuple[int, ...]], int]
 _INT64_MIN = int(np.iinfo(np.int64).min)
 _INT64_MAX = int(np.iinfo(np.int64).max)
 
@@ -99,7 +101,7 @@ def _integer_scalar(value: Any, *, name: str) -> int:
 def _identity_key(
     input_ids: Any,
     attention_mask: Any,
-    token_type_ids: Any | None,
+    token_type_ids: Optional[Any],
     label: Any,
 ) -> _IdentityKey:
     ids = _integer_vector(input_ids, name="input_ids")
@@ -107,7 +109,7 @@ def _identity_key(
     if ids.shape != mask.shape:
         raise ValueError("attention_mask shape must match input_ids")
 
-    token_types: np.ndarray | None = None
+    token_types: Optional[np.ndarray] = None
     if token_type_ids is not None:
         token_types = _integer_vector(token_type_ids, name="token_type_ids")
         if token_types.shape != ids.shape:
@@ -205,7 +207,7 @@ class TrialIdentityResolver:
         self,
         input_ids: Any,
         attention_mask: Any,
-        token_type_ids: Any | None,
+        token_type_ids: Optional[Any],
         label: Any,
     ) -> int:
         key = _identity_key(input_ids, attention_mask, token_type_ids, label)
@@ -257,8 +259,8 @@ class ForwardPredictionRecorder:
         self._catalog = catalog
         self._probe_batch_count = int(batch_count)
         self._active = False
-        self._run_seed: int | None = None
-        self._group: str | None = None
+        self._run_seed: Optional[int] = None
+        self._group: Optional[str] = None
         self._captured_batches: list[dict[str, Any]] = []
 
     def begin_group(self, *, run_seed: int, group: str) -> None:
@@ -405,12 +407,20 @@ class ForwardPredictionRecorder:
 
 
 class PredictionJsonlWriter:
-    """Stream strict JSON objects to one JSONL file."""
+    """Stream strict JSON objects to a transactional sibling temp file."""
 
-    def __init__(self, path: str | Path) -> None:
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle = output_path.open("w", encoding="utf-8")
+    def __init__(self, path: Union[str, Path]) -> None:
+        self._output_path = Path(path)
+        self._output_path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(self._output_path.parent),
+            prefix=f".{self._output_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        )
+        self._temp_path: Optional[Path] = Path(self._handle.name)
         self._row_count = 0
 
     @property
@@ -431,8 +441,30 @@ class PredictionJsonlWriter:
             self._handle.close()
             self._handle = None
 
+    def commit(self) -> None:
+        if self._temp_path is None:
+            return
+        self.close()
+        temp_path = self._temp_path
+        try:
+            os.replace(temp_path, self._output_path)
+        except BaseException:
+            temp_path.unlink(missing_ok=True)
+            self._temp_path = None
+            raise
+        self._temp_path = None
+
+    def abort(self) -> None:
+        self.close()
+        if self._temp_path is not None:
+            self._temp_path.unlink(missing_ok=True)
+            self._temp_path = None
+
     def __enter__(self) -> "PredictionJsonlWriter":
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
-        self.close()
+        if exc_type is None:
+            self.commit()
+        else:
+            self.abort()
