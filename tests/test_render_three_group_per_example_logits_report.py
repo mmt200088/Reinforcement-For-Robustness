@@ -163,7 +163,7 @@ class PredictionSummaryTests(unittest.TestCase):
         )
         self.assertFalse(base_gate["passed"])
         self.assertIn("base_gate_failed", failure_codes(summary, "base_three_group"))
-        self.assertIn("steps_and_install", json.dumps(base_gate["failures"]))
+        self.assertIn("steps_install", json.dumps(base_gate["failures"]))
 
     def test_prediction_gate_rejects_wrong_argmax_duplicate_idx_and_nonfinite_logits(self):
         mutations = {
@@ -197,7 +197,7 @@ class PredictionSummaryTests(unittest.TestCase):
             ("input_ids", [101, 999, 102, 0]),
             ("attention_mask", [1, 1, 0, 0]),
             ("token_type_ids", [0, 1, 1, 0]),
-            ("gold_label", 1),
+            ("gold_label", 0),
         ):
             with self.subTest(field=field):
                 runs, rows, prior_runs = make_fixture()

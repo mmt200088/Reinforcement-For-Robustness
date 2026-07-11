@@ -105,7 +105,7 @@ def _json_safe(value: Any) -> Any:
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
-    if value is None or isinstance(value, (str, int, bool)):
+    if value is None or isinstance(value, (str, int, float, bool)):
         return value
     return repr(value)
 
