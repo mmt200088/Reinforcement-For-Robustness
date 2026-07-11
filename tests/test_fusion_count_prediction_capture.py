@@ -1,10 +1,13 @@
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -62,6 +65,68 @@ class ExampleIdentityCatalogTest(unittest.TestCase):
         from scripts.fusion_count_prediction_capture import PREDICTION_ROW_SCHEMA
 
         self.assertEqual(PREDICTION_ROW_SCHEMA, "fusion-count-per-example-v1")
+
+    def test_capture_module_has_no_pep604_union_syntax(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "fusion_count_prediction_capture.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn(" | ", source)
+
+    def test_capture_module_imports_under_python39_without_heavy_dependencies(self):
+        candidates = [
+            os.environ.get("PYTHON39"),
+            shutil.which("python3.9"),
+            "/usr/bin/python3",
+        ]
+        interpreter = None
+        for candidate in candidates:
+            if not candidate or not Path(candidate).is_file():
+                continue
+            version = subprocess.run(
+                [candidate, "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if version.returncode == 0 and version.stdout.strip() == "3.9":
+                interpreter = candidate
+                break
+        if interpreter is None:
+            self.skipTest("Python 3.9 interpreter is not available")
+
+        code = """
+import builtins
+import sys
+
+real_import = builtins.__import__
+blocked = ("torch", "transformers", "blb_stage2_rl")
+
+def guarded_import(name, *args, **kwargs):
+    if name.startswith(blocked):
+        raise AssertionError(f"heavy dependency imported: {name}")
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = guarded_import
+import scripts.fusion_count_prediction_capture as capture
+assert capture.PREDICTION_ROW_SCHEMA == "fusion-count-per-example-v1"
+assert not any(name.startswith(blocked) for name in sys.modules)
+"""
+        completed = subprocess.run(
+            [interpreter, "-c", code],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_duplicate_token_rows_resolve_in_dataset_order_once_per_trial(self):
         from scripts.fusion_count_prediction_capture import ExampleIdentityCatalog
@@ -639,6 +704,63 @@ class PredictionJsonlWriterTest(unittest.TestCase):
 
         self.assertEqual(len(lines), 1)
         self.assertNotIn("NaN", lines[0])
+
+    def test_commit_atomically_promotes_unique_sibling_temp_file(self):
+        from scripts.fusion_count_prediction_capture import PredictionJsonlWriter
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "predictions.jsonl"
+            path.write_text("previous artifact\n", encoding="utf-8")
+            writer = PredictionJsonlWriter(path)
+            writer.write_rows([{"dataset_idx": 7, "logits": [0.1, 0.2]}])
+
+            siblings_before_commit = set(path.parent.iterdir()) - {path}
+            self.assertEqual(path.read_text(encoding="utf-8"), "previous artifact\n")
+            self.assertEqual(len(siblings_before_commit), 1)
+            self.assertEqual(next(iter(siblings_before_commit)).parent, path.parent)
+
+            writer.commit()
+
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["dataset_idx"], 7)
+            self.assertEqual(writer.row_count, 1)
+            self.assertEqual(set(path.parent.iterdir()), {path})
+            with self.assertRaisesRegex(ValueError, "closed"):
+                writer.write_rows([{"dataset_idx": 8}])
+
+    def test_abort_closes_and_removes_temp_without_replacing_existing_file(self):
+        from scripts.fusion_count_prediction_capture import PredictionJsonlWriter
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "predictions.jsonl"
+            path.write_text("previous artifact\n", encoding="utf-8")
+            writer = PredictionJsonlWriter(path)
+            writer.write_rows([{"dataset_idx": 7, "logits": [0.1, 0.2]}])
+
+            writer.abort()
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "previous artifact\n")
+            self.assertEqual(set(path.parent.iterdir()), {path})
+            with self.assertRaisesRegex(ValueError, "closed"):
+                writer.write_rows([{"dataset_idx": 8}])
+
+    def test_failed_atomic_replace_removes_temp_and_preserves_existing_file(self):
+        from scripts.fusion_count_prediction_capture import PredictionJsonlWriter
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "predictions.jsonl"
+            path.write_text("previous artifact\n", encoding="utf-8")
+            writer = PredictionJsonlWriter(path)
+            writer.write_rows([{"dataset_idx": 7, "logits": [0.1, 0.2]}])
+
+            with mock.patch("os.replace", side_effect=OSError("disk failure")):
+                with self.assertRaisesRegex(OSError, "disk failure"):
+                    writer.commit()
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "previous artifact\n")
+            self.assertEqual(set(path.parent.iterdir()), {path})
+            with self.assertRaisesRegex(ValueError, "closed"):
+                writer.write_rows([{"dataset_idx": 8}])
 
 
 if __name__ == "__main__":
