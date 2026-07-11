@@ -137,6 +137,7 @@ def make_run_payload(run_index):
         for group_index, name in enumerate(GROUP_PATTERNS)
     ]
     return {
+        "schema_version": "fusion_count_action_eval_rlpath_compare_v1",
         "seed": SEEDS[run_index],
         "shared_group_seed": True,
         "repeat": 5,
@@ -215,6 +216,49 @@ class BuildSummaryTests(unittest.TestCase):
         self.assertEqual(actual_delta["count"], 25)
         self.assertAlmostEqual(actual_delta["mean"], statistics.fmean(paired))
         self.assertAlmostEqual(actual_delta["std"], statistics.pstdev(paired))
+
+    def test_missing_or_wrong_evaluator_schema_version_fails_completeness_gate(self):
+        report = _load_report_module()
+        mutations = {
+            "missing": lambda payload: payload.pop("schema_version"),
+            "wrong": lambda payload: payload.update(
+                {"schema_version": "fusion_count_action_eval_rlpath_compare_v0"}
+            ),
+        }
+
+        for case, mutate in mutations.items():
+            with self.subTest(case=case):
+                payloads = make_run_payloads()
+                mutate(payloads[2])
+                summary = report.build_summary(
+                    run_payloads=payloads,
+                    source_commit="abc123",
+                )
+                self.assertFalse(summary["all_gates_pass"])
+                completeness = _gate(summary, "completeness")
+                self.assertFalse(completeness["passed"])
+                self.assertIn(
+                    "schema_version",
+                    json.dumps(completeness["failures"]).lower(),
+                )
+
+    def test_non_deterministic_trial_seed_list_fails_trial_metadata_gate(self):
+        report = _load_report_module()
+        payloads = make_run_payloads()
+        probe = _group(
+            payloads[1], "block2_block5_all_layers_fusionmax"
+        )["terminal_probe"]
+        probe["per_worker_trial_seeds"] = [[101, 102, 103, 104, 105]]
+
+        summary = report.build_summary(
+            run_payloads=payloads,
+            source_commit="abc123",
+        )
+
+        self.assertFalse(summary["all_gates_pass"])
+        metadata_gate = _gate(summary, "trial_metadata")
+        self.assertFalse(metadata_gate["passed"])
+        self.assertIn("deterministic", json.dumps(metadata_gate["failures"]).lower())
 
     def test_wrong_block4_replan_is_a_structured_pattern_gate_failure(self):
         report = _load_report_module()
@@ -315,6 +359,10 @@ class CliTests(unittest.TestCase):
                 "b2b4b5_minus_control",
                 "b2b4b5_minus_b2b5",
                 ", ".join(str(seed) for seed in SEEDS),
+                "Stage-1 GELU",
+                "[4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]",
+                "Stage-1 Softmax",
+                "[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]",
             ):
                 self.assertIn(visible_text, html)
 
@@ -342,6 +390,36 @@ class CliTests(unittest.TestCase):
             self.assertFalse(summary["all_gates_pass"])
             self.assertFalse(_gate(summary, "completeness")["passed"])
             self.assertIn("completeness", output_html.read_text(encoding="utf-8").lower())
+
+    def test_non_finite_payload_still_writes_strict_diagnostic_artifacts(self):
+        report = _load_report_module()
+        payloads = make_run_payloads()
+        payloads[0]["seed"] = float("nan")
+        malformed_group = _group(payloads[0], "all_fusion0")
+        malformed_group["fusion_by_block"]["2"] = float("inf")
+        malformed_group["metrics"]["loss_mean"] = float("-inf")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            run_paths = self._write_payloads(directory, payloads)
+            output_json = directory / "non_finite_diagnostic.json"
+            output_html = directory / "non_finite_diagnostic.html"
+
+            rc = report.main(self._argv(run_paths, output_json, output_html))
+
+            self.assertEqual(rc, 1)
+            self.assertTrue(output_json.is_file())
+            self.assertTrue(output_html.is_file())
+            summary = json.loads(
+                output_json.read_text(encoding="utf-8"),
+                parse_constant=lambda value: self.fail(
+                    f"non-standard JSON constant emitted: {value}"
+                ),
+            )
+            self.assertFalse(summary["all_gates_pass"])
+            html = output_html.read_text(encoding="utf-8").lower()
+            self.assertIn("fail", html)
+            self.assertIn("completeness", html)
 
 
 if __name__ == "__main__":
