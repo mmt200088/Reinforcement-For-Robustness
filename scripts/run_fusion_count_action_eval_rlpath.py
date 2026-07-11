@@ -416,7 +416,7 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
             map_option_id_override=map_option_id,
         )
         _obs, reward, done, info = seq_env.commit_step(eval_info, defer_terminal_forward=False)
-        replan_application = eval_info.get("replan_application") or {}
+        replan_application = info.get("replan_application") or {}
         step_records.append({
             "step_idx": int(spec.step_idx),
             "layer_idx": int(spec.layer_idx),
