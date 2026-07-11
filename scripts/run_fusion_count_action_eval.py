@@ -37,7 +37,7 @@ DEFAULT_MAP_REPORT = DEFAULT_RUN_DIR / "fusion_count_map_report.json"
 DEFAULT_OUTPUT_ROOT = DEFAULT_RUN_DIR / "paean_outputs"
 DEFAULT_HTML = REPO_ROOT / "reports" / "html_reports" / "20260610_mrpc_fusion_count_action_eval.html"
 
-DEFAULT_STAGE1_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
+DEFAULT_STAGE1_GELU = [4] * 12
 DEFAULT_STAGE1_SOFTMAX = [6] * 12
 DEFAULT_MANUAL_NOISE = {
     "x": [30] * 12,

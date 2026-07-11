@@ -307,7 +307,7 @@ BLB action selector 支持三种粒度：
 2. 首次运行保护：`run rl`、`run ga`、`run greedy`、`general train` 的新参数组合必须显式传 `--fresh` 或 `--fresh-start`。
 3. 续训安全：训练流程按持久化目录自动续训；`--resume-from` 只建议在 `eval` / `--mode eval` 下使用。
 4. 跳阶段一致性：跳过某阶段时，不要再显式设置该阶段预算参数。
-5. Stage-2 固定配置约束：`stage2-only --config` 会自动推断为 JSON 来源；手动使用 `stage1_result/json/manual` 时仍必须与前置条件匹配。
+5. Stage-2 固定配置约束：当前默认来源为 `all4`；显式配置文件会推断为 JSON 来源，也可用 `stage1_result/json/manual` 切换，且必须与各自前置条件匹配。
 6. 对比模式隔离：`compare` 不与普通 RL/GA/Greedy 搜索参数混用。
 7. 对比输入完整性：默认 `persistent` 必须存在目标目录与 `metadata.json`；高级 `direct` 必须提供 4 个 JSON。
 8. 评估来源一致性：`--final-eval-source` 必须与 `--final-eval-config` / `manual-*` 配套使用。

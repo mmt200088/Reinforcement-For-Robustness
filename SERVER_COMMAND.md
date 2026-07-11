@@ -475,7 +475,7 @@ run_ab () {   # $1 = tag (off/on), $2 = kv flag (0/1)
 	    --stage2-search-episodes "$EPISODES_AB" \
 	    --stage2-k-trials "$KTRIALS" --stage2-probe-size 256 --batch-size 512 \
 	    --stage2-rl-devices "$DEVS" \
-	    --stage2-fixed-config-source json --stage2-fixed-config glue_final_configs_best_ppo.json \
+	    --stage2-fixed-config-source all4 \
 	    --stage2-stability-tolerance 3.0 --stage2-limit-tolerance 0.001 \
 	    --stage2-workers-per-device 1 \
 	    --blb-v3-kv-cache-rollout "$kv" \
@@ -910,8 +910,7 @@ run_gate () {   # tag, visible devs, --stage2-rl-devices 值, workers-per-device
 	    --stage2-probe-size 256 \
 	    --batch-size 512 \
 	    --stage2-rl-devices "$devspec" \
-	    --stage2-fixed-config-source json \
-	    --stage2-fixed-config glue_final_configs_best_ppo.json \
+	    --stage2-fixed-config-source all4 \
 	    --stage2-stability-tolerance 3.0 \
 	    --stage2-limit-tolerance 0.001 \
 	    --fresh 2>&1 | tee "$GOUT/${tag}_launch.log"
@@ -1004,8 +1003,7 @@ CUDA_VISIBLE_DEVICES=$DEVS bash llama_7B_LayerImportance.sh run rl \
 	  --stage2-probe-size 256 \
 	  --batch-size 512 \
 	  --stage2-rl-devices "$DEVS" \
-	  --stage2-fixed-config-source json \
-	  --stage2-fixed-config glue_final_configs_best_ppo.json \
+	  --stage2-fixed-config-source all4 \
 	  --stage2-stability-tolerance 3.0 \
 	  --stage2-limit-tolerance 0.001 \
 	  --stage2-workers-per-device 1 \

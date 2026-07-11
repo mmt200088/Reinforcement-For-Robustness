@@ -39,7 +39,7 @@ from scripts.fusion_count_action_eval_common import (
 )
 
 
-DEFAULT_STAGE1_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
+DEFAULT_STAGE1_GELU = [4] * 12
 DEFAULT_STAGE1_SOFTMAX = [6] * 12
 DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)
 DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)

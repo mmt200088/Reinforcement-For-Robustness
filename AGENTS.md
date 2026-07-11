@@ -35,6 +35,15 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   well utilized. Do not change research semantics, reward/evaluation validity,
   or reported scientific conclusions merely to make runs faster; preserve
   outputs unless the user explicitly asks for a behavior change.
+- Stage-2 prerequisite GELU source, updated 2026-07-11: Stage-2 currently
+  defaults to `--stage2-fixed-config-source all4`, resolving GELU to degree 4
+  and Softmax to degree 6 in every layer. This is a reversible experiment
+  setting, not a permanent restriction: pass `stage1_result`, `json`, or
+  `manual` explicitly to use another prerequisite configuration. The resolved
+  pair is the single source for Stage-2 training, action mapping, model
+  inference, and saved/final evaluation. Under `all4`, every layer's Block 5
+  graph must resolve to `block5_n4`; keep `block5_n1/n2` maps for switch-back
+  and historical reproduction.
 - GPU utilization clarification, added 2026-07-02: when a task is semantically
   suitable for GPU or multi-GPU execution, prefer moving it off CPU and onto
   the server GPUs instead of leaving expensive hardware idle. Treat this as one
@@ -1614,13 +1623,15 @@ The live artifacts to return to the user are under
 `blb_stage2_training_curve.png`, diagnostics JSONL, details batches,
 checkpoint files, and reports. `LATEST_PID` and
 `LATEST_RUN_DIR` are written one level above the slug:
-`Parting Chapter/persistent/rl/bert-base/mrpc/`. Stage-2 runs should pass the
-fixed Stage-1 config explicitly (`--stage2-fixed-config-source json/manual`);
-do not rely on a same-directory Stage-1 checkpoint in this formal path.
-Short diagnostic RL runs (A/B, 1-GPU-vs-N-GPU gates, probe sweeps) must still
-use this persistent group, but with `--run-tag` so they create sibling slugs
-such as `s1t0.001_s2t0.001_s2st3.0__gate_gN_<timestamp>` and cannot overwrite
-the formal 60k canonical slug.
+`Parting Chapter/persistent/rl/bert-base/mrpc/`.
+The formal Stage-2 path currently defaults to
+`--stage2-fixed-config-source all4`; use `stage1_result`, `json`, or `manual`
+explicitly to switch away from it. Do not rely on a same-directory Stage-1
+checkpoint unless `stage1_result` was selected. Short diagnostic RL runs (A/B,
+1-GPU-vs-N-GPU gates, probe sweeps) must still use this persistent group, but
+with `--run-tag` so they create sibling slugs such as
+`s1t0.001_s2t0.001_s2st3.0__gate_gN_<timestamp>` and cannot overwrite the
+formal 60k canonical slug.
 The `mrpc-blb-stage2-rl` preset defaults to this current formal constraint
 slug (`stage1_accuracy_tolerance=0.001`, `stage2_limit_tolerance=0.001`,
 `stage2_stability_tolerance=3.0`); command-line overrides remain allowed but
