@@ -1,0 +1,14 @@
+test_artifact_file_walk_does_not_sort_filenames (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+test_artifact_summary_counts_known_runtime_evidence_files (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+test_artifact_summary_streams_tree_without_path_rglob (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+test_artifact_summary_uses_direct_name_classification (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+test_artifact_summary_walks_each_root_once (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+test_build_project_audit_reports_flow_stage_file_presence (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+test_cli_streams_json_output_without_json_dumps (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+test_cli_streams_markdown_output_without_full_render_string (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+test_cli_writes_json_and_markdown (tests.test_project_optimization_audit.ProjectOptimizationAuditTest) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.007s
+
+OK

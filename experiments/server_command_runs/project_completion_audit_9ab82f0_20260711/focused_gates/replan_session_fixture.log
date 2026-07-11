@@ -1,0 +1,6 @@
+test_from_profile_reuses_loaded_baselines_for_session_construction (tests.test_replan_session_construction.ReplanSessionConstructionTest) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK

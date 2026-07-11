@@ -58,16 +58,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   optimizations by end-to-end wall-clock impact and hardware utilization rather
   than by isolated local speedups.
 - Runtime-optimization completion audit, updated 2026-07-11: source commit
-  `991329a` was verified on replacement server `100.64.229.185:8722` (one RTX
+  `9ab82f0` was verified on replacement server `100.64.229.185:8722` (one RTX
   4090, 20 logical CPUs). The six-stage audit found all 30 expected flow files
   and every required artifact-evidence class; focused project-audit and
-  structured-artifact gates passed 9/9 and 35/35. The full 1,221-test process
+  structured-artifact gates passed 9/9 and 35/35. The full 1,229-test process
   still has 19 Stage-2 contract failures after concurrent integration commit
-  `16b68e3`, including eight guards for cached masks/static tensors, deferred
-  scalar synchronization, causal-prefix rollout, and probe scheduling. Do not
-  report the whole suite green or reapply those Stage-2 core optimizations
-  until the concurrent agent hands off. Evidence is under
-  `experiments/server_command_runs/project_completion_audit_991329a_20260711/`.
+  `16b68e3`; the failure set is exactly equal to the earlier `991329a` audit,
+  with zero added or removed cases. Do not report the whole suite green or
+  reapply those Stage-2 core optimizations until the concurrent agent hands
+  off. Evidence is under
+  `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/`.
 - Replacement-server hardware limit, updated 2026-07-11: the current server
   exposes only one GPU. It can close single-GPU correctness/parity gates but
   cannot close the required Stage-2 1GPU-versus-NGPU promotion gate. Keep GPU

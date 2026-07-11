@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `991329a`, the conservative
+not by raw commit count. As of source head `9ab82f0`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -92,6 +92,7 @@ Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Plan and audit | `9ab82f0` | `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/` | Refresh the complete six-stage audit after the Rescale optimization series, verify 30/30 flow files and all artifact classes, align the session-construction test fixture with the current baseline contract, and prove the remaining 19-item Stage-2 failure set is exactly unchanged. |
 | Plan and audit | `991329a` | `experiments/server_command_runs/project_completion_audit_991329a_20260711/` | Audit the complete sparse checkout on the replacement server, verify 30/30 whole-flow files and all structured-artifact classes, fix experiments-index and PyTorch test-process pollution, and retain the 19 remaining Stage-2 contract failures as explicit red evidence. |
 | Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Plan and audit | `7030da2` | `experiments/server_command_runs/project_optimization_audit_7030da2_20260710_223053/` | Re-run the six-stage whole-project audit on the replacement server after Paean, Rescale, rendering, and artifact-contract work. |
@@ -270,6 +271,17 @@ static tensors, and deferred scalar synchronization). Do not mark those paths
 green or edit the Stage-2 algorithm concurrently; reconcile them at handoff.
 Evidence is in
 `experiments/server_command_runs/project_completion_audit_991329a_20260711/`.
+
+Completion audit refresh 2026-07-11: final source commit `9ab82f0` again found
+all 30 expected flow files and every artifact class, passed 9 project-audit
+tests, 35 structured-artifact tests, completion-tool compilation, and the
+current Replan session-construction fixture. The full suite now contains 1,229
+tests after the added Rescale guards and reports 18 failures plus one error.
+Its 19-item failure set is exactly equal to the earlier `991329a` Stage-2 set,
+with no added or removed failures. The first refresh at `9c2a3a4` exposed one
+outdated non-Stage-2 fake baseline without the now-required `skeleton`; commit
+`9ab82f0` corrected only that fixture before the final rerun. Evidence is in
+`experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/`.
 
 1. **Evidence loop:** every new source optimization must have a red/green or
    parity evidence directory committed back from the server.
