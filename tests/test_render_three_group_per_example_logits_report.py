@@ -32,6 +32,31 @@ def _cross_entropy(logits, label):
     return peak + math.log(sum(math.exp(value - peak) for value in logits)) - logits[label]
 
 
+def _weighted_f1(gold, predicted):
+    weighted = 0.0
+    for label in (0, 1):
+        support = sum(value == label for value in gold)
+        if not support:
+            continue
+        true_positive = sum(
+            actual == label and guess == label
+            for actual, guess in zip(gold, predicted)
+        )
+        false_positive = sum(
+            actual != label and guess == label
+            for actual, guess in zip(gold, predicted)
+        )
+        false_negative = sum(
+            actual == label and guess != label
+            for actual, guess in zip(gold, predicted)
+        )
+        denominator = 2 * true_positive + false_positive + false_negative
+        weighted += support * (
+            0.0 if denominator == 0 else 2 * true_positive / denominator
+        )
+    return weighted / len(gold)
+
+
 def _set_raw_metrics(run_payloads, *, loss, accuracy, weighted_f1):
     for run in run_payloads:
         for group in run["group_results"]:
@@ -52,6 +77,51 @@ def _set_raw_metrics(run_payloads, *, loss, accuracy, weighted_f1):
                 "metric2_std": 0.0,
                 "metric2_min": weighted_f1,
             }
+
+
+def _synchronize_metrics(run_payloads, rows):
+    for run in run_payloads:
+        for group_name in GROUPS:
+            group = _group(run, group_name)
+            values = {"loss": [], "metric1": [], "metric2": []}
+            for trial_index in range(5):
+                trial_rows = [
+                    row
+                    for row in rows
+                    if row["run_seed"] == run["seed"]
+                    and row["group"] == group_name
+                    and row["trial_index"] == trial_index
+                ]
+                gold = [row["gold_label"] for row in trial_rows]
+                predicted = [row["predicted_label"] for row in trial_rows]
+                values["loss"].append(
+                    statistics.fmean(
+                        _cross_entropy(row["logits"], row["gold_label"])
+                        for row in trial_rows
+                    )
+                )
+                values["metric1"].append(
+                    sum(a == b for a, b in zip(gold, predicted)) / len(gold)
+                )
+                values["metric2"].append(_weighted_f1(gold, predicted))
+            group["trial_metrics"] = values
+            group["metrics"] = {
+                "loss_mean": statistics.fmean(values["loss"]),
+                "loss_std": statistics.pstdev(values["loss"]),
+                "loss_max": max(values["loss"]),
+                "metric1_mean": statistics.fmean(values["metric1"]),
+                "metric1_std": statistics.pstdev(values["metric1"]),
+                "metric1_min": min(values["metric1"]),
+                "metric2_mean": statistics.fmean(values["metric2"]),
+                "metric2_std": statistics.pstdev(values["metric2"]),
+                "metric2_min": min(values["metric2"]),
+            }
+
+
+def _make_incorrect(row):
+    row["logits"] = [-2.0, 3.0] if row["gold_label"] == 0 else [3.0, -2.0]
+    row["predicted_label"] = 1 - row["gold_label"]
+    row["correct"] = False
 
 
 def make_fixture(expected_examples=2):
@@ -270,6 +340,109 @@ class PredictionSummaryTests(unittest.TestCase):
         self.assertIn("prediction_file_count", failure_codes(wrong_files))
         self.assertIn("trial_row_count", failure_codes(missing_trial))
 
+    def test_malformed_json_types_produce_structured_failures_without_type_error(self):
+        mutations = {
+            "current_run_seed_type": lambda runs, rows, priors: runs[0].update(
+                {"seed": []}
+            ),
+            "prior_run_seed_type": lambda runs, rows, priors: priors[0].update(
+                {"seed": {"bad": "seed"}}
+            ),
+            "row_run_seed_type": lambda runs, rows, priors: rows[0].update(
+                {"run_seed": []}
+            ),
+            "row_group_type": lambda runs, rows, priors: rows[0].update(
+                {"group": {"bad": "group"}}
+            ),
+        }
+
+        for expected_code, mutate in mutations.items():
+            with self.subTest(expected_code=expected_code):
+                runs, rows, prior_runs = make_fixture()
+                mutate(runs, rows, prior_runs)
+                summary = self._summary(runs, rows, prior_runs)
+                self.assertFalse(summary["all_gates_pass"])
+                self.assertIn(expected_code, failure_codes(summary))
+                json.dumps(summary, allow_nan=False)
+
+    def test_bool_and_nonmapping_run_seeds_fail_structurally(self):
+        runs, rows, prior_runs = make_fixture()
+        runs[0]["seed"] = True
+        prior_runs[1] = ["not", "a", "mapping"]
+
+        summary = self._summary(runs, rows, prior_runs)
+
+        self.assertFalse(summary["all_gates_pass"])
+        self.assertIn("current_run_seed_type", failure_codes(summary))
+        self.assertIn("prior_run_mapping", failure_codes(summary))
+
+    def test_changed_examples_detects_equal_rates_with_different_aligned_patterns(self):
+        runs, rows, _ = make_fixture()
+        seed = runs[0]["seed"]
+        for group_name, trial_index in zip(GROUPS, (0, 1, 2)):
+            row = next(
+                row
+                for row in rows
+                if row["run_seed"] == seed
+                and row["group"] == group_name
+                and row["trial_index"] == trial_index
+                and row["dataset_idx"] == 10
+            )
+            _make_incorrect(row)
+        _synchronize_metrics(runs, rows)
+        prior_runs = copy.deepcopy(runs)
+
+        summary = self._summary(runs, rows, prior_runs)
+
+        self.assertTrue(summary["all_gates_pass"])
+        changed = next(
+            item
+            for item in summary["changed_examples"]["examples"]
+            if item["dataset_idx"] == 10
+        )
+        self.assertTrue(changed["reasons"]["cross_group_pattern_difference"])
+        self.assertTrue(changed["reasons"]["within_group_noise_variation"])
+        self.assertEqual(set(changed["group_rates"].values()), {24 / 25})
+        self.assertEqual(
+            {len(pattern) for pattern in changed["group_patterns"].values()},
+            {25},
+        )
+        self.assertNotEqual(
+            changed["group_patterns"][GROUPS[0]],
+            changed["group_patterns"][GROUPS[1]],
+        )
+
+    def test_changed_examples_detects_same_pattern_with_noise_variation(self):
+        runs, rows, _ = make_fixture()
+        seed = runs[0]["seed"]
+        for group_name in GROUPS:
+            row = next(
+                row
+                for row in rows
+                if row["run_seed"] == seed
+                and row["group"] == group_name
+                and row["trial_index"] == 0
+                and row["dataset_idx"] == 10
+            )
+            _make_incorrect(row)
+        _synchronize_metrics(runs, rows)
+        prior_runs = copy.deepcopy(runs)
+
+        summary = self._summary(runs, rows, prior_runs)
+
+        self.assertTrue(summary["all_gates_pass"])
+        changed = next(
+            item
+            for item in summary["changed_examples"]["examples"]
+            if item["dataset_idx"] == 10
+        )
+        self.assertFalse(changed["reasons"]["cross_group_pattern_difference"])
+        self.assertTrue(changed["reasons"]["within_group_noise_variation"])
+        self.assertEqual(
+            len({tuple(pattern) for pattern in changed["group_patterns"].values()}),
+            1,
+        )
+
     def test_cross_entropy_is_numerically_stable_for_extreme_logits(self):
         self.assertEqual(self.report.stable_cross_entropy([1000.0, -1000.0], 0), 0.0)
         self.assertAlmostEqual(
@@ -339,6 +512,17 @@ class HtmlReportTests(unittest.TestCase):
         self.assertNotIn("predictionRows.map", html_text)
 
 
+class PythonCompatibilityTests(unittest.TestCase):
+    def test_renderer_has_no_pep604_union_syntax(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "render_three_group_per_example_logits_report.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn(" | ", source)
+
+
 class ProductionShapeAndCliTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -401,6 +585,68 @@ class ProductionShapeAndCliTests(unittest.TestCase):
             summary = json.loads(summary_text)
             self.assertFalse(summary["all_gates_pass"])
             self.assertIn("prediction_argmax", failure_codes(summary))
+            self.assertNotIn("NaN", summary_text)
+            self.assertNotIn("Infinity", summary_text)
+            self.assertIn('id="prediction-data"', output_html.read_text(encoding="utf-8"))
+
+    def test_cli_malformed_json_types_write_strict_diagnostics_and_return_nonzero(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            args = []
+            rows_by_seed = {
+                seed: [row for row in self.rows if row["run_seed"] == seed]
+                for seed in (run["seed"] for run in self.runs)
+            }
+            for index, (original_run, original_prior) in enumerate(
+                zip(self.runs, self.prior_runs)
+            ):
+                run = copy.deepcopy(original_run)
+                prior = copy.deepcopy(original_prior)
+                selected_rows = copy.deepcopy(rows_by_seed[original_run["seed"]])
+                if index == 0:
+                    run["seed"] = []
+                    selected_rows[0]["run_seed"] = []
+                    selected_rows[1]["group"] = {"bad": "group"}
+                if index == 1:
+                    prior["seed"] = {"bad": "seed"}
+                run_path = root / f"run-{index}.json"
+                prior_path = root / f"prior-{index}.json"
+                prediction_path = root / f"prediction-{index}.jsonl"
+                run_path.write_text(json.dumps(run), encoding="utf-8")
+                prior_path.write_text(json.dumps(prior), encoding="utf-8")
+                prediction_path.write_text(
+                    "".join(json.dumps(row) + "\n" for row in selected_rows),
+                    encoding="utf-8",
+                )
+                args.extend(["--run-json", str(run_path)])
+                args.extend(["--prediction-jsonl", str(prediction_path)])
+                args.extend(["--prior-run-json", str(prior_path)])
+            output_json = root / "summary.json"
+            output_html = root / "report.html"
+            args.extend(
+                [
+                    "--source-commit",
+                    "malformed-json",
+                    "--output-json",
+                    str(output_json),
+                    "--output-html",
+                    str(output_html),
+                ]
+            )
+
+            return_code = self.report.main(args)
+
+            self.assertEqual(return_code, 1)
+            summary_text = output_json.read_text(encoding="utf-8")
+            summary = json.loads(summary_text)
+            self.assertTrue(
+                {
+                    "current_run_seed_type",
+                    "prior_run_seed_type",
+                    "row_run_seed_type",
+                    "row_group_type",
+                }.issubset(failure_codes(summary))
+            )
             self.assertNotIn("NaN", summary_text)
             self.assertNotIn("Infinity", summary_text)
             self.assertIn('id="prediction-data"', output_html.read_text(encoding="utf-8"))
