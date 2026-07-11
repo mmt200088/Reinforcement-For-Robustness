@@ -3178,6 +3178,40 @@ def _resolve_robust_baseline_config(train_cfg: Any, evaluator: Any) -> Tuple[flo
     return precision_tolerance, stability_multiplier, bootstrap_samples
 
 
+def _run_legacy_preflight_if_needed(
+        *,
+        robust_mode: bool,
+        run_legacy_preflight: Callable[[], None],
+        ) -> None:
+    """Run the legacy one-shot preflight only outside robust mode."""
+    if not robust_mode:
+        run_legacy_preflight()
+
+
+def _install_robust_baseline_reference(
+        base_env: Any,
+        baseline: Any,
+        weights: Any,
+        reference: "BaselineReference",
+        ) -> None:
+    """Install pooled robust constraints into the reward and environment state."""
+    baseline.loss_mean = float(reference.loss_mean)
+    baseline.metric1_mean = float(reference.metric1_mean)
+    baseline.metric2_mean = float(reference.metric2_mean)
+    baseline.loss_std = float(reference.loss_std)
+    baseline.metric1_std = float(reference.metric1_std)
+    baseline.metric2_std = float(reference.metric2_std)
+    weights.baseline_metric1 = float(reference.metric1_mean)
+    weights.baseline_metric2 = float(reference.metric2_mean)
+    weights.stab_tolerance = float(reference.stability_multiplier)
+    weights.stab_floor = 0.0
+    base_env.statistical_reference = reference
+    base_env.loss_threshold = float(reference.loss_limit)
+    base_env.acc_threshold = float(reference.metric1_limit)
+    base_env.acc_threshold_m2 = float(reference.metric2_limit)
+    base_env.stab_threshold = float(reference.loss_std_limit)
+
+
 def _collect_robust_baseline_reference(
         *,
         base_env: Any,
@@ -3585,7 +3619,14 @@ def run_sequential_via_runner(
     # (reserved pseudo-episode -1) so the calibrated acc/stab thresholds are
     # identical for any GPU count and across reruns. Legacy mode (flag unset)
     # keeps the true-random preflight bit-for-bit.
-    if not robust_mode:
+    def run_legacy_preflight() -> None:
+        nonlocal noisy_baseline_metric1
+        nonlocal noisy_baseline_metric2
+        nonlocal noisy_baseline_loss_std
+        nonlocal noisy_baseline_metric1_std
+        nonlocal noisy_baseline_metric2_std
+        nonlocal noisy_baseline_loss_mean
+        nonlocal preflight_ok
         if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
             from .seed_utils import PREFLIGHT_EPISODE, derive_probe_seed
             base_env.probe_noise_seed = derive_probe_seed(
@@ -3619,6 +3660,11 @@ def run_sequential_via_runner(
                 preflight_ok = True
         except Exception as exc:
             log(f"  [baseline-preflight][warning] noisy probe failed: {exc}")
+
+    _run_legacy_preflight_if_needed(
+        robust_mode=robust_mode,
+        run_legacy_preflight=run_legacy_preflight,
+    )
 
     # Resolve gates from the noisy preflight + the user's tolerances.
     # tolerances come from rl_tune.py CLI (stage2_limit_tolerance,
@@ -3748,23 +3794,16 @@ def run_sequential_via_runner(
             stability_multiplier=stability_multiplier,
             bootstrap_samples=bootstrap_samples,
         )
-        base_env.statistical_reference = robust_reference
+        _install_robust_baseline_reference(
+            base_env, baseline, weights, robust_reference,
+        )
+        stab_floor = float(weights.stab_floor)
         noisy_baseline_loss_mean = float(robust_reference.loss_mean)
         noisy_baseline_metric1 = float(robust_reference.metric1_mean)
         noisy_baseline_metric2 = float(robust_reference.metric2_mean)
         noisy_baseline_loss_std = float(robust_reference.loss_std)
         noisy_baseline_metric1_std = float(robust_reference.metric1_std)
         noisy_baseline_metric2_std = float(robust_reference.metric2_std)
-        baseline.loss_mean = noisy_baseline_loss_mean
-        baseline.metric1_mean = noisy_baseline_metric1
-        baseline.metric2_mean = noisy_baseline_metric2
-        baseline.loss_std = noisy_baseline_loss_std
-        baseline.metric1_std = noisy_baseline_metric1_std
-        baseline.metric2_std = noisy_baseline_metric2_std
-        base_env.loss_threshold = float(robust_reference.loss_limit)
-        base_env.acc_threshold = float(robust_reference.metric1_limit)
-        base_env.acc_threshold_m2 = float(robust_reference.metric2_limit)
-        base_env.stab_threshold = float(robust_reference.loss_std_limit)
         allowed_acc_drop = float(robust_reference.precision_tolerance)
         stability_tol = float(robust_reference.stability_multiplier)
         stab_threshold_loss = float(robust_reference.loss_std_limit)
@@ -3787,6 +3826,7 @@ def run_sequential_via_runner(
             "loss_std_threshold": float(robust_reference.loss_std_limit),
             "limit_tolerance": float(robust_reference.precision_tolerance),
             "stability_tolerance": float(robust_reference.stability_multiplier),
+            "stability_floor": float(weights.stab_floor),
         })
 
     log(

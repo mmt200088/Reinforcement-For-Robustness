@@ -1,5 +1,4 @@
 import json
-import inspect
 from types import SimpleNamespace
 
 import numpy as np
@@ -112,6 +111,25 @@ def test_non_degeneracy_errors_propagate_without_retrying():
     with pytest.raises(RuntimeError, match="bridge broken"):
         _collect(env)
 
+    assert env.env_cfg.num_trials_per_step == 2
+    assert env.probe_noise_seed == 777
+    assert env.clear_calls == 2
+
+
+def test_reset_failure_restores_env_state_and_clears_final_install():
+    env = FakeBaseEnv(_metrics)
+
+    def explode(*, seed):
+        raise RuntimeError("reset broken")
+
+    env.reset = explode
+    with pytest.raises(RuntimeError, match="reset broken"):
+        _collect(env)
+
+    assert env.env_cfg.num_trials_per_step == 2
+    assert env.probe_noise_seed == 777
+    assert env.clear_calls == 2
+
 
 def test_summary_includes_raw_groups_and_direct_two_x_std_limits():
     env = FakeBaseEnv(_metrics)
@@ -158,21 +176,30 @@ def test_baseline_group_probe_seed_rejects_invalid_integer_inputs(base_seed, gro
         derive_baseline_group_probe_seed(base_seed, group_idx)
 
 
-def test_robust_mode_guards_legacy_preflight_and_uses_public_bootstrap_config_name():
-    import blb_stage2_rl.sequential_runner as runner_mod
+def test_baseline_preflight_dispatch_skips_legacy_callback_for_robust_mode():
+    from blb_stage2_rl.sequential_runner import _run_legacy_preflight_if_needed
 
-    source = inspect.getsource(runner_mod.run_sequential_via_runner)
-    legacy_preflight = source.index("base_env.step(baseline_action_vec)")
-    assert "if not robust_mode:" in source[:legacy_preflight]
-    resolver_source = inspect.getsource(runner_mod._resolve_robust_baseline_config)
-    assert "constraint_bootstrap_samples" in resolver_source
-    assert "stage2_bootstrap_samples" not in resolver_source
+    calls = []
+    _run_legacy_preflight_if_needed(
+        robust_mode=True,
+        run_legacy_preflight=lambda: calls.append("legacy"),
+    )
+    assert calls == []
+
+    _run_legacy_preflight_if_needed(
+        robust_mode=False,
+        run_legacy_preflight=lambda: calls.append("legacy"),
+    )
+    assert calls == ["legacy"]
 
 
 def test_robust_baseline_config_reads_public_bootstrap_samples_name():
     from blb_stage2_rl.sequential_runner import _resolve_robust_baseline_config
 
-    evaluator = SimpleNamespace(stage2_limit_tolerance=0.001)
+    evaluator = SimpleNamespace(
+        stage2_limit_tolerance=0.001,
+        stage2_stability_tolerance=9.0,
+    )
     configured = SimpleNamespace(
         stage2_stability_multiplier=2.0,
         constraint_bootstrap_samples=123,
@@ -181,3 +208,45 @@ def test_robust_baseline_config_reads_public_bootstrap_samples_name():
 
     assert _resolve_robust_baseline_config(configured, evaluator) == (0.001, 2.0, 123)
     assert _resolve_robust_baseline_config(defaulted, evaluator) == (0.001, 2.0, 4096)
+
+
+def test_install_robust_reference_replaces_legacy_stability_and_margin_state():
+    from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
+    from blb_stage2_rl.sequential_runner import _install_robust_baseline_reference
+
+    reference, summary = _collect(FakeBaseEnv(_metrics))
+    baseline = BaselineCostStats(
+        loss_std=9.0,
+        metric1_std=8.0,
+        metric2_std=7.0,
+        metric1_mean=0.1,
+        metric2_mean=0.2,
+    )
+    weights = RewardWeights(
+        baseline_metric1=0.1,
+        baseline_metric2=0.2,
+        stab_tolerance=9.0,
+        stab_floor=0.01,
+    )
+    base_env = SimpleNamespace(
+        loss_threshold=None,
+        acc_threshold=None,
+        acc_threshold_m2=None,
+        stab_threshold=None,
+    )
+
+    _install_robust_baseline_reference(base_env, baseline, weights, reference)
+
+    pooled = summary["pooled"]
+    assert weights.baseline_metric1 == pooled["metric1_mean"]
+    assert weights.baseline_metric2 == pooled["metric2_mean"]
+    assert weights.stab_tolerance == reference.stability_multiplier == 2.0
+    assert weights.stab_floor == 0.0
+    assert baseline.loss_std * weights.stab_tolerance == reference.loss_std_limit
+    assert baseline.metric1_std * weights.stab_tolerance == reference.metric1_std_limit
+    assert baseline.metric2_std * weights.stab_tolerance == reference.metric2_std_limit
+    assert base_env.stab_threshold == reference.loss_std_limit
+    assert base_env.acc_threshold == reference.metric1_limit
+    assert base_env.acc_threshold_m2 == reference.metric2_limit
+    assert base_env.loss_threshold == reference.loss_limit
+    assert base_env.statistical_reference is reference
