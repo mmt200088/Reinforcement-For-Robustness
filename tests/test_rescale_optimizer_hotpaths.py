@@ -266,6 +266,17 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
             session.baselines["block4"].q_bits_baseline,
         )
 
+    def test_replan_validates_drop_bounds_in_one_scan(self):
+        from rescale_optimizer import replan
+
+        source = inspect.getsource(replan.replan_with_user_actions)
+
+        self.assertNotIn("any(d <= 0 for d in q_initial)", source)
+        self.assertNotIn(
+            "[r for r, q in enumerate(q_initial, start=1) if q > q_max]",
+            source,
+        )
+
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
         from rescale_optimizer import replan_interface
 
