@@ -1531,6 +1531,10 @@ Key wires:
 
 - `InProcessInvoker.from_profile(...)` builds a `ReplanSession` over local graph
   configs and static baselines.
+- Repeated `ReplanSession` calls reuse precomputed node-reference paths for the
+  fixed baseline skeleton. Do not replace those references with copied node
+  values: per-action propagation-delta mutations must remain visible during
+  `propagate_scale()` while topology traversal stays cached.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.

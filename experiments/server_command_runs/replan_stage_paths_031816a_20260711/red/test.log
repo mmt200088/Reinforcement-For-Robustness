@@ -1,0 +1,28 @@
+test_replan_session_reuses_precomputed_baseline_stage_paths (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... FAIL
+
+======================================================================
+FAIL: test_replan_session_reuses_precomputed_baseline_stage_paths (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_rescale_optimizer_hotpaths.py", line 118, in test_replan_session_reuses_precomputed_baseline_stage_paths
+    compact = session.replan_compact("block4")
+  File "/hy-tmp/rfr_runtime_optimization/Rescale_optimizer/rescale_optimizer/replan_interface.py", line 705, in replan_compact
+    return self.replan(  # type: ignore[return-value]
+  File "/hy-tmp/rfr_runtime_optimization/Rescale_optimizer/rescale_optimizer/replan_interface.py", line 646, in replan
+    result = replan_with_user_actions(
+  File "/hy-tmp/rfr_runtime_optimization/Rescale_optimizer/rescale_optimizer/replan.py", line 550, in replan_with_user_actions
+    q_initial = _recompute_drops(graph, skeleton, inputs.t_new)
+  File "/hy-tmp/rfr_runtime_optimization/Rescale_optimizer/rescale_optimizer/replan.py", line 260, in _recompute_drops
+    path = graph.nodes_between(s_prev, s_curr)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/unittest/mock.py", line 1114, in __call__
+    return self._mock_call(*args, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/unittest/mock.py", line 1118, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/unittest/mock.py", line 1173, in _execute_mock_call
+    raise effect
+AssertionError: rebuilt baseline stage path
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+FAILED (failures=1)

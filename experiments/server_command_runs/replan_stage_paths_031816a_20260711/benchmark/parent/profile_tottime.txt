@@ -1,0 +1,85 @@
+         16452159 function calls (16304631 primitive calls) in 6.073 seconds
+
+   Ordered by: internal time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   200000    0.735    0.000    3.416    0.000 replan.py:497(replan_with_user_actions)
+   200000    0.664    0.000    5.400    0.000 replan_interface.py:610(replan)
+   200000    0.444    0.000    6.100    0.000 fusion_enum_fast.py:195(eval_combo_fast)
+   200000    0.401    0.000    0.758    0.000 replan.py:267(_apply_delta_overrides)
+   400000    0.399    0.000    0.399    0.000 replan_interface.py:241(_restore_graph_delta_state)
+   200000    0.397    0.000    1.087    0.000 replan.py:226(_recompute_drops)
+   196865    0.322    0.000    0.467    0.000 replan.py:351(_fuse_chain)
+   200000    0.274    0.000    0.274    0.000 replan.py:280(<dictcomp>)
+   432784    0.257    0.000    0.257    0.000 graph.py:423(propagate_scale)
+   400000    0.255    0.000    0.371    0.000 graph.py:555(nodes_between)
+        1    0.141    0.141    6.358    6.358 fusion_enum_fast.py:304(enumerate_range_fast)
+   200000    0.139    0.000    0.216    0.000 replan_interface.py:74(<dictcomp>)
+  1016392    0.131    0.000    0.169    0.000 graph.py:508(M)
+  3236646    0.119    0.000    0.119    0.000 {built-in method builtins.len}
+   200000    0.116    0.000    5.516    0.000 replan_interface.py:695(replan_compact)
+   200000    0.098    0.000    0.166    0.000 replan_interface.py:274(build_new_compact_config)
+   200000    0.082    0.000    0.312    0.000 replan_interface.py:69(_normalize_delta_overrides)
+   800000    0.078    0.000    0.078    0.000 replan_interface.py:60(_parse_delta_value)
+  1245880    0.071    0.000    0.071    0.000 {method 'get' of 'dict' objects}
+   200001    0.069    0.000    0.069    0.000 fusion_enum_fast.py:80(iter_combo_range)
+   200000    0.060    0.000    0.113    0.000 {built-in method builtins.any}
+   200000    0.058    0.000    0.058    0.000 replan.py:560(<listcomp>)
+   800001    0.054    0.000    0.054    0.000 {method 'extend' of 'list' objects}
+   600000    0.052    0.000    0.052    0.000 replan.py:563(<genexpr>)
+   205061    0.050    0.000    0.071    0.000 modulus_chain.py:79(total_bits)
+845882/698354    0.048    0.000    0.112    0.000 {built-in method builtins.isinstance}
+   200000    0.046    0.000    0.046    0.000 replan_interface.py:642(<listcomp>)
+   208196    0.041    0.000    0.078    0.000 graph.py:513(dummy_sink_index)
+   200000    0.040    0.000    0.040    0.000 replan_interface.py:103(default_allowed_fusion_pairs_for_graph)
+   200000    0.039    0.000    0.079    0.000 replan_interface.py:110(resolve_allowed_fusion_pairs)
+   196865    0.037    0.000    0.037    0.000 replan.py:317(_normalize_allowed_fusion_pairs)
+   522940    0.034    0.000    0.034    0.000 {method 'append' of 'list' objects}
+   200000    0.033    0.000    0.033    0.000 replan.py:589(<listcomp>)
+   196865    0.033    0.000    0.033    0.000 replan.py:410(<listcomp>)
+   208196    0.030    0.000    0.037    0.000 replan.py:189(fusion_count)
+   400000    0.026    0.000    0.026    0.000 {method 'items' of 'dict' objects}
+    73764    0.023    0.000    0.055    0.000 typing.py:1154(__subclasscheck__)
+   188669    0.022    0.000    0.022    0.000 replan.py:336(_is_fusion_boundary_allowed)
+   205061    0.021    0.000    0.021    0.000 {built-in method builtins.sum}
+     8196    0.020    0.000    0.021    0.000 replan_interface.py:250(_extract_current_propagation_deltas)
+    49176    0.016    0.000    0.022    0.000 fusion_enum_fast.py:184(_var_of)
+    73764    0.016    0.000    0.071    0.000 typing.py:993(__instancecheck__)
+    73764    0.010    0.000    0.026    0.000 {built-in method builtins.issubclass}
+    73764    0.009    0.000    0.016    0.000 abc.py:121(__subclasscheck__)
+    40980    0.008    0.000    0.011    0.000 types.py:176(__get__)
+    57372    0.008    0.000    0.008    0.000 fusion_enum.py:396(<genexpr>)
+    73764    0.007    0.000    0.007    0.000 {built-in method _abc._abc_subclasscheck}
+    81960    0.006    0.000    0.006    0.000 fusion_enum_fast.py:329(<genexpr>)
+     8196    0.006    0.000    0.014    0.000 {built-in method builtins.sorted}
+     8196    0.005    0.000    0.005    0.000 <string>:2(__init__)
+     8196    0.005    0.000    0.006    0.000 fusion_enum.py:231(add)
+     8196    0.003    0.000    0.017    0.000 fusion_enum.py:395(_installed_signature)
+    40980    0.003    0.000    0.003    0.000 enum.py:796(name)
+     8196    0.002    0.000    0.002    0.000 replan_interface.py:285(<listcomp>)
+     8196    0.002    0.000    0.002    0.000 replan_interface.py:290(<dictcomp>)
+     8196    0.002    0.000    0.002    0.000 replan_interface.py:366(<listcomp>)
+     8196    0.002    0.000    0.002    0.000 replan_interface.py:344(<dictcomp>)
+     8196    0.001    0.000    0.001    0.000 replan_interface.py:286(<listcomp>)
+     8196    0.001    0.000    0.001    0.000 replan_interface.py:332(<listcomp>)
+     8196    0.001    0.000    0.001    0.000 replan_interface.py:337(<listcomp>)
+     8196    0.001    0.000    0.001    0.000 modulus_chain.py:75(R)
+        1    0.000    0.000    0.000    0.000 encoder.py:204(iterencode)
+        1    0.000    0.000    6.358    6.358 <stdin>:28(run)
+        1    0.000    0.000    0.000    0.000 {built-in method _hashlib.openssl_sha256}
+        1    0.000    0.000    0.000    0.000 encoder.py:182(encode)
+        1    0.000    0.000    0.000    0.000 __init__.py:183(dumps)
+        1    0.000    0.000    0.000    0.000 fusion_enum.py:248(results)
+        1    0.000    0.000    0.000    0.000 fusion_enum_fast.py:319(<listcomp>)
+        1    0.000    0.000    0.000    0.000 fusion_enum_fast.py:68(unrank_combo)
+        1    0.000    0.000    0.000    0.000 {method 'hexdigest' of '_hashlib.HASH' objects}
+        1    0.000    0.000    0.000    0.000 encoder.py:104(__init__)
+        1    0.000    0.000    0.000    0.000 <stdin>:30(<listcomp>)
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+        1    0.000    0.000    0.000    0.000 fusion_enum_fast.py:86(<listcomp>)
+        1    0.000    0.000    0.000    0.000 fusion_enum.py:225(__init__)
+        1    0.000    0.000    0.000    0.000 {method 'encode' of 'str' objects}
+        2    0.000    0.000    0.000    0.000 {method 'values' of 'dict' objects}
+        1    0.000    0.000    0.000    0.000 {method 'join' of 'str' objects}
+
+
