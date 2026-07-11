@@ -47,6 +47,22 @@ DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)
 _RUNTIME_DEPS: dict[str, object] | None = None
 
 
+def _group_seed(base_seed: int, group_index: int, *, shared: bool) -> int:
+    return int(base_seed) if shared else int(base_seed) + int(group_index)
+
+
+def _trial_metric_payload(
+        losses: Sequence[float],
+        metric1s: Sequence[float],
+        metric2s: Sequence[float],
+        ) -> dict:
+    return {
+        "loss": [float(value) for value in losses],
+        "metric1": [float(value) for value in metric1s],
+        "metric2": [float(value) for value in metric2s],
+    }
+
+
 class _HtmlPartsWriter:
     def __init__(self, path: Path):
         self._handle = path.open("w", encoding="utf-8")
@@ -244,6 +260,24 @@ def _build_seq_env(args, ev, *, stage1_gelu: Sequence[int], stage1_softmax: Sequ
     BLBStage2SequentialEnv = deps["BLBStage2SequentialEnv"]
     SequentialEnvConfig = deps["SequentialEnvConfig"]
 
+    class RecordingBLBStage2Env(BLBStage2Env):
+        def _aggregate_probe_trials(
+                self,
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+                ):
+            self.fixed_eval_trial_metrics = _trial_metric_payload(
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+            )
+            return super()._aggregate_probe_trials(
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+            )
+
     runner = BLBStage2RLRunner(ev)
     train_cfg = BLBStage2TrainConfig(
         total_episodes=1,
@@ -280,7 +314,7 @@ def _build_seq_env(args, ev, *, stage1_gelu: Sequence[int], stage1_softmax: Sequ
         ss_baseline,
         snap_sf_to_noise_table=False,
     )
-    base_env = BLBStage2Env(
+    base_env = RecordingBLBStage2Env(
         handler=ev.reversible_handler,
         model=ev.model,
         probe_batches=probe_batches,
@@ -365,6 +399,7 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     if k_index < 0 or k_index >= len(K_LEVELS):
         raise ValueError(f"invalid baseline_k_index={k_index} for {cfg['name']}")
 
+    seq_env.base.fixed_eval_trial_metrics = {}
     seq_env.reset(seed=int(seed))
     seq_env.base.probe_noise_seed = int(seed)
     done = False
@@ -381,6 +416,7 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
             map_option_id_override=map_option_id,
         )
         _obs, reward, done, info = seq_env.commit_step(eval_info, defer_terminal_forward=False)
+        replan_application = eval_info.get("replan_application") or {}
         step_records.append({
             "step_idx": int(spec.step_idx),
             "layer_idx": int(spec.layer_idx),
@@ -394,6 +430,14 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
             "valid": bool(eval_info.get("valid", False)),
             "fusion_count_replan": int(eval_info.get("fusion_count", 0) or 0),
             "boosted": bool(eval_info.get("boosted_field_values")),
+            "replan_application": to_jsonable(
+                replan_application,
+                stringify_unknown=True,
+                preserve_native=True,
+            ),
+            "model_uses_replan_config": bool(
+                replan_application.get("model_uses_replan_config", False)
+            ),
         })
         if done:
             break
@@ -432,6 +476,11 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
         "reward": float(reward),
         "terminal_priority": terminal_info.get("terminal_priority"),
         "metrics": metrics,
+        "trial_metrics": to_jsonable(
+            seq_env.base.fixed_eval_trial_metrics,
+            stringify_unknown=True,
+            preserve_native=True,
+        ),
         "fusion_total": int(fusion_total),
         "fusion_by_block": fusion_by_block,
         "k_distribution": k_dist,
@@ -535,6 +584,7 @@ def main() -> int:
     parser.add_argument("--probe-size", type=int, default=408)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--shared-group-seed", action="store_true")
     parser.add_argument("--stage2-limit-tolerance", type=float, default=0.001)
     parser.add_argument("--stage2-stability-tolerance", type=float, default=3.5)
     parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
@@ -566,7 +616,12 @@ def main() -> int:
     result_by_key: Dict[str, dict] = {}
     for idx, cfg in enumerate(unique):
         print(f"[run] {cfg['name']}", flush=True)
-        result_by_key[rlpath_config_group_key(cfg)] = _run_group(seq_env, cfg, seed=int(args.seed) + idx)
+        group_seed = _group_seed(
+            args.seed,
+            idx,
+            shared=bool(args.shared_group_seed),
+        )
+        result_by_key[rlpath_config_group_key(cfg)] = _run_group(seq_env, cfg, seed=group_seed)
 
     group_results = []
     for cfg in configs:
@@ -602,6 +657,8 @@ def main() -> int:
         "install_path": "BLBStage2SequentialEnv.evaluate_step -> commit_step -> BLBStage2Env.step(boosted_overrides)",
         "original_path": str(original_json),
         "action_dir": str(action_dir),
+        "seed": int(args.seed),
+        "shared_group_seed": bool(args.shared_group_seed),
         "stage1_gelu": [int(v) for v in stage1_gelu],
         "stage1_softmax": [int(v) for v in stage1_softmax],
         "repeat": int(args.repeat),
