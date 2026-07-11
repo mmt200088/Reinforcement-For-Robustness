@@ -279,6 +279,7 @@ def _apply_delta_overrides(
     delta_overrides: Optional[Dict[str, Union[int, str]]],
     *,
     delta_nodes: Optional[Mapping[str, ComputeNode]] = None,
+    collect_applied: bool = True,
 ) -> Dict[str, Union[int, str]]:
     """
     Apply user-provided propagation delta overrides in-place on ``graph``.
@@ -294,7 +295,7 @@ def _apply_delta_overrides(
         for n in graph.nodes
         if n.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
     }
-    applied: Dict[str, Union[int, str]] = {}
+    applied: Optional[Dict[str, Union[int, str]]] = {} if collect_applied else None
 
     for name, raw in delta_overrides.items():
         node = by_name.get(name)
@@ -307,22 +308,25 @@ def _apply_delta_overrides(
                     f"delta_overrides[{name}] for CTPT_MUL must be int, got {raw!r}"
                 )
             node.scale_delta_bits = int(raw)
-            applied[name] = int(raw)
+            if applied is not None:
+                applied[name] = int(raw)
             continue
 
         # CTCT_MUL
         if raw == "x2":
             node.other_ct_scale_bits = None
-            applied[name] = "x2"
+            if applied is not None:
+                applied[name] = "x2"
         elif isinstance(raw, int):
             node.other_ct_scale_bits = int(raw)
-            applied[name] = int(raw)
+            if applied is not None:
+                applied[name] = int(raw)
         else:
             raise ValueError(
                 f"delta_overrides[{name}] for CTCT_MUL must be int or 'x2', got {raw!r}"
             )
 
-    return applied
+    return applied if applied is not None else {}
 
 
 # ---------------------------------------------------------------------------
@@ -517,6 +521,7 @@ def replan_with_user_actions(
     *,
     stage_paths: Optional[Sequence[Sequence[ComputeNode]]] = None,
     delta_nodes: Optional[Mapping[str, ComputeNode]] = None,
+    record_applied_delta_overrides: bool = True,
 ) -> ReplanResult:
     """
     Re-run scale propagation under user-supplied ``t_new``, then run
@@ -565,6 +570,7 @@ def replan_with_user_actions(
             graph,
             inputs.delta_overrides,
             delta_nodes=delta_nodes,
+            collect_applied=record_applied_delta_overrides,
         )
     except ValueError as e:
         return ReplanResult(message=f"delta override failed: {e}")
