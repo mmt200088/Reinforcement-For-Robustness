@@ -322,6 +322,7 @@ class FusionCountMapReportTest(unittest.TestCase):
             "block1_mrpc": graph("block1_mrpc", 1),
             "block2_mrpc": graph("block2_mrpc", 2),
             "block4": graph("block4", 4),
+            "block5_n2": graph("block5_n2", 5),
             "block5_n4": graph("block5_n4", 5),
         }
         schedule = [
@@ -347,6 +348,7 @@ class FusionCountMapReportTest(unittest.TestCase):
                 "block1_mrpc": 0,
                 "block2_mrpc": 1,
                 "block4": 1,
+                "block5_n2": 1,
                 "block5_n4": 1,
             },
         )
@@ -377,6 +379,35 @@ class FusionCountMapReportTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(ValueError, r"block4.*fusion count 1"):
+            report._group_specs(graphs, schedule)
+
+    def test_group_specs_rejects_missing_required_fusion_zero_for_non_target(self):
+        def graph(graph_key, block_idx, fusion_counts):
+            return {
+                "graph_key": graph_key,
+                "block_idx": block_idx,
+                "options": [
+                    {"option_id": option_id, "fusion_count": fusion_count}
+                    for option_id, fusion_count in enumerate(fusion_counts)
+                ],
+            }
+
+        graphs = {
+            "block1_mrpc": graph("block1_mrpc", 1, [1]),
+            "block2_mrpc": graph("block2_mrpc", 2, [0, 1]),
+            "block4": graph("block4", 4, [0, 1]),
+        }
+        schedule = [
+            {
+                "step_idx": step_idx,
+                "layer_idx": step_idx,
+                "block_idx": graph_data["block_idx"],
+                "graph_key": graph_key,
+            }
+            for step_idx, (graph_key, graph_data) in enumerate(graphs.items())
+        ]
+
+        with self.assertRaisesRegex(ValueError, r"block1_mrpc.*fusion count 0"):
             report._group_specs(graphs, schedule)
 
     def test_group_specs_reuses_graph_keys_view_without_list_copy(self):
