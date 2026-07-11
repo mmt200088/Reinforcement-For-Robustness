@@ -1535,6 +1535,10 @@ Key wires:
   fixed baseline skeleton. Do not replace those references with copied node
   values: per-action propagation-delta mutations must remain visible during
   `propagate_scale()` while topology traversal stays cached.
+- `ReplanSession` also owns a cached multiplication-node `name -> node`
+  reference mapping per graph. Reuse it for repeated delta application; retain
+  the generic on-demand lookup for standalone replan callers and keep all
+  per-action CTPT/CTCT type validation intact.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.

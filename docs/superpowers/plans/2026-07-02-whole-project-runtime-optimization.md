@@ -224,6 +224,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
 | Rescale/fusion maps | `511b3f2` | `experiments/server_command_runs/fusion_compact_replan_511b3f2_20260711/` | Return only validity, fusion count, total bits, and compact config to the fast Cartesian-product enum loop instead of expanding the full compatibility JSON result for every combination. |
 | Rescale/fusion maps | `031816a` | `experiments/server_command_runs/replan_stage_paths_031816a_20260711/` | Precompute baseline-skeleton stage node paths once per `ReplanSession`, eliminating repeated `nodes_between()` traversal and list allocation in every fusion-map combination. |
+| Rescale/fusion maps | `8d0e1b3` | `experiments/server_command_runs/replan_delta_nodes_8d0e1b3_20260711/` | Cache each preloaded graph's multiplication-node name lookup once per `ReplanSession` instead of rebuilding it for every propagation-delta update. |
 | Rescale/fusion maps | `ffa58a5` | `experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/` | Make fusion schedule/replay verification derive expectations from the canonical map and close the 140-test Task 5 gate without changing runtime semantics. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
@@ -1301,6 +1302,18 @@ real `block1_mrpc` hot-loop A/B improved 100,000 combinations from median
 maps after excluding wall metadata. The 129-test related gate and raw evidence
 are under
 `experiments/server_command_runs/replan_stage_paths_031816a_20260711/`.
+
+Progress 2026-07-11: the next production cProfile showed
+`_apply_delta_overrides()` rebuilding the same multiplication-node name index
+for every combination. Source commit `8d0e1b3` caches reference mappings per
+preloaded graph while preserving per-action type validation and writes.
+Eleven-repeat real hot-loop A/B improved 100,000 combinations from median
+`1.422549s` to `1.301853s` (`1.0927x`) with identical result SHA256. Three
+20-worker full block1 builds improved median wall from `12.10s` to `11.54s`
+(`1.0485x`), reduced median user CPU by `12.48s`, and produced semantically
+equal maps after excluding wall metadata. The 130-test related gate and raw
+evidence are under
+`experiments/server_command_runs/replan_delta_nodes_8d0e1b3_20260711/`.
 
 Progress 2026-07-03: `rescale_optimizer_bridge.load_baseline_archive()` now
 caches parsed static-skeleton archives by absolute path, mtime, and size. The
