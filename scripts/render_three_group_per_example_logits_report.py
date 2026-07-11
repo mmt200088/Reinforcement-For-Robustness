@@ -7,7 +7,9 @@ import argparse
 import html
 import json
 import math
+import os
 import statistics
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
@@ -24,6 +26,21 @@ SCHEMA_VERSION = "three-group-per-example-logits-v1"
 PREDICTION_ROW_SCHEMA = "fusion-count-per-example-v1"
 TRIAL_COUNT = 5
 PRODUCTION_EXAMPLES = 408
+REQUIRED_ROW_FIELDS = (
+    "schema_version",
+    "run_seed",
+    "group",
+    "trial_index",
+    "trial_seed",
+    "probe_position",
+    "dataset_idx",
+    "input_ids",
+    "attention_mask",
+    "gold_label",
+    "predicted_label",
+    "correct",
+    "logits",
+)
 
 
 def _finite_number(value: Any) -> bool:
@@ -132,6 +149,24 @@ def _row_context(row: Mapping[str, Any], row_index: int) -> dict[str, Any]:
     }
 
 
+def _trial_key(row: Mapping[str, Any]) -> Optional[tuple[int, str, int]]:
+    seed = row.get("run_seed")
+    group = row.get("group")
+    trial_index = row.get("trial_index")
+    if (
+        isinstance(seed, int)
+        and not isinstance(seed, bool)
+        and seed in EXPECTED_SEEDS
+        and isinstance(group, str)
+        and group in GROUP_SPECS
+        and isinstance(trial_index, int)
+        and not isinstance(trial_index, bool)
+        and 0 <= trial_index < TRIAL_COUNT
+    ):
+        return seed, group, trial_index
+    return None
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         if math.isnan(value):
@@ -208,9 +243,11 @@ def _index_rows(
 ) -> tuple[
     dict[tuple[Any, str, int], list[tuple[int, Mapping[str, Any]]]],
     list[dict[str, Any]],
+    set[int],
 ]:
     buckets: dict[tuple[Any, str, int], list[tuple[int, Mapping[str, Any]]]] = {}
     failures: list[dict[str, Any]] = []
+    invalid_row_indexes: set[int] = set()
     expected_seed_set = set(EXPECTED_SEEDS)
     expected_groups = set(GROUP_SPECS)
     for row_index, row in enumerate(prediction_rows):
@@ -218,8 +255,16 @@ def _index_rows(
             failures.append(
                 _failure("row_mapping", row_index=row_index, detail=type(row).__name__)
             )
+            invalid_row_indexes.add(row_index)
             continue
         context = _row_context(row, row_index)
+        missing_fields = [field for field in REQUIRED_ROW_FIELDS if field not in row]
+        for field in missing_fields:
+            failures.append(
+                _failure("missing_required_field", **context, field=field)
+            )
+        if missing_fields:
+            invalid_row_indexes.add(row_index)
         if row.get("schema_version") != PREDICTION_ROW_SCHEMA:
             failures.append(
                 _failure(
@@ -228,6 +273,7 @@ def _index_rows(
                     detail=f"expected {PREDICTION_ROW_SCHEMA!r}",
                 )
             )
+            invalid_row_indexes.add(row_index)
         seed = row.get("run_seed")
         group = row.get("group")
         trial_index = row.get("trial_index")
@@ -240,14 +286,19 @@ def _index_rows(
         valid_group_type = isinstance(group, str)
         if not valid_seed_type:
             failures.append(_failure("row_run_seed_type", **context))
+            invalid_row_indexes.add(row_index)
         elif seed not in expected_seed_set:
             failures.append(_failure("unexpected_run_seed", **context))
+            invalid_row_indexes.add(row_index)
         if not valid_group_type:
             failures.append(_failure("row_group_type", **context))
+            invalid_row_indexes.add(row_index)
         elif group not in expected_groups:
             failures.append(_failure("unexpected_group", **context))
+            invalid_row_indexes.add(row_index)
         if not valid_trial_index:
             failures.append(_failure("unexpected_trial_index", **context))
+            invalid_row_indexes.add(row_index)
         if (
             valid_seed_type
             and seed in expected_seed_set
@@ -256,19 +307,27 @@ def _index_rows(
             and valid_trial_index
         ):
             buckets.setdefault((seed, group, trial_index), []).append((row_index, row))
-    return buckets, failures
+    return buckets, failures, invalid_row_indexes
 
 
 def _prediction_completeness_gate(
     prediction_rows: Sequence[Any],
     buckets: Mapping[tuple[Any, str, int], Sequence[Any]],
     index_failures: Sequence[dict[str, Any]],
+    invalid_row_indexes: set[int],
     *,
     expected_examples: int,
     prediction_file_count: int,
     runs_by_seed: Mapping[Any, Mapping[str, Any]],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], set[int], set[tuple[int, str, int]]]:
     failures = list(index_failures)
+    eligible_row_indexes = {
+        row_index
+        for trial_rows in buckets.values()
+        for row_index, _ in trial_rows
+        if row_index not in invalid_row_indexes
+    }
+    invalid_trials: set[tuple[int, str, int]] = set()
     expected_rows = 5 * len(GROUP_SPECS) * TRIAL_COUNT * expected_examples
     if prediction_file_count != 5:
         failures.append(
@@ -290,7 +349,11 @@ def _prediction_completeness_gate(
         for group_name in GROUP_SPECS:
             seeds = _trial_seeds(groups.get(group_name))
             for trial_index in range(TRIAL_COUNT):
-                trial_rows = buckets.get((seed, group_name, trial_index), [])
+                key = (seed, group_name, trial_index)
+                trial_rows = buckets.get(key, [])
+                trial_invalid = any(
+                    row_index in invalid_row_indexes for row_index, _ in trial_rows
+                )
                 if len(trial_rows) != expected_examples:
                     failures.append(
                         _failure(
@@ -301,9 +364,21 @@ def _prediction_completeness_gate(
                             detail=f"expected {expected_examples}, found {len(trial_rows)}",
                         )
                     )
+                    trial_invalid = True
                 expected_seed = seeds[trial_index] if len(seeds) == TRIAL_COUNT else None
+                seen_positions: set[int] = set()
                 for row_index, row in trial_rows:
-                    if row.get("trial_seed") != expected_seed:
+                    trial_seed = row.get("trial_seed")
+                    if not isinstance(trial_seed, int) or isinstance(trial_seed, bool):
+                        failures.append(
+                            _failure(
+                                "trial_seed_type",
+                                **_row_context(row, row_index),
+                                detail=type(trial_seed).__name__,
+                            )
+                        )
+                        trial_invalid = True
+                    elif trial_seed != expected_seed:
                         failures.append(
                             _failure(
                                 "trial_seed_mismatch",
@@ -311,25 +386,121 @@ def _prediction_completeness_gate(
                                 detail=f"expected {expected_seed!r}, found {row.get('trial_seed')!r}",
                             )
                         )
-    return _gate("prediction_completeness", failures)
+                        trial_invalid = True
+                    probe_position = row.get("probe_position")
+                    if not isinstance(probe_position, int) or isinstance(
+                        probe_position, bool
+                    ):
+                        failures.append(
+                            _failure(
+                                "probe_position_type",
+                                **_row_context(row, row_index),
+                                detail=type(probe_position).__name__,
+                            )
+                        )
+                        trial_invalid = True
+                    elif probe_position in seen_positions:
+                        failures.append(
+                            _failure(
+                                "duplicate_probe_position",
+                                **_row_context(row, row_index),
+                            )
+                        )
+                        trial_invalid = True
+                    else:
+                        seen_positions.add(probe_position)
+                expected_positions = set(range(expected_examples))
+                if seen_positions != expected_positions:
+                    failures.append(
+                        _failure(
+                            "probe_position_set",
+                            seed=seed,
+                            group=group_name,
+                            trial_index=trial_index,
+                            detail=(
+                                f"expected {sorted(expected_positions)}, "
+                                f"found {sorted(seen_positions)}"
+                            ),
+                        )
+                    )
+                    trial_invalid = True
+                if trial_invalid:
+                    invalid_trials.add(key)
+                    eligible_row_indexes.difference_update(
+                        row_index for row_index, _ in trial_rows
+                    )
+    return (
+        _gate("prediction_completeness", failures),
+        eligible_row_indexes,
+        invalid_trials,
+    )
+
+
+def _tensor_failures(
+    field: str,
+    value: Any,
+    context: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return [_failure("input_tensor_type", **context, field=field)]
+    if not value:
+        return [_failure("input_tensor_empty", **context, field=field)]
+    failures = []
+    for element_index, element in enumerate(value):
+        if isinstance(element, bool):
+            code = "input_tensor_bool"
+        elif isinstance(element, (list, tuple, Mapping)):
+            code = "input_tensor_nested"
+        elif not isinstance(element, int):
+            code = "input_tensor_element"
+        else:
+            continue
+        failures.append(
+            _failure(
+                code,
+                **context,
+                field=field,
+                element_index=element_index,
+            )
+        )
+    return failures
 
 
 def _identity_gate(
     buckets: Mapping[
         tuple[Any, str, int], Sequence[tuple[int, Mapping[str, Any]]]
     ],
+    eligible_row_indexes: set[int],
+    invalid_trials: set[tuple[int, str, int]],
     *,
     expected_examples: int,
-) -> tuple[dict[str, Any], dict[Any, dict[str, Any]]]:
+) -> tuple[
+    dict[str, Any],
+    dict[Any, dict[str, Any]],
+    set[int],
+    set[tuple[int, str, int]],
+]:
     failures: list[dict[str, Any]] = []
     canonical: dict[Any, dict[str, Any]] = {}
     expected_ids: Optional[set[Any]] = None
+    expected_position_map: Optional[dict[int, int]] = None
+    identity_eligible = set(eligible_row_indexes)
+    identity_invalid_trials = set(invalid_trials)
     for seed in EXPECTED_SEEDS:
         for group_name in GROUP_SPECS:
             for trial_index in range(TRIAL_COUNT):
-                trial_rows = buckets.get((seed, group_name, trial_index), [])
+                key = (seed, group_name, trial_index)
+                trial_rows = buckets.get(key, [])
+                if key in identity_invalid_trials:
+                    continue
                 seen: set[Any] = set()
+                local_identities: dict[int, dict[str, Any]] = {}
+                position_map: dict[int, int] = {}
+                trial_invalid = False
                 for row_index, row in trial_rows:
+                    if row_index not in identity_eligible:
+                        trial_invalid = True
+                        continue
                     context = _row_context(row, row_index)
                     dataset_idx = row.get("dataset_idx")
                     if (
@@ -337,9 +508,11 @@ def _identity_gate(
                         or isinstance(dataset_idx, bool)
                     ):
                         failures.append(_failure("dataset_idx_type", **context))
+                        trial_invalid = True
                         continue
                     if dataset_idx in seen:
                         failures.append(_failure("duplicate_dataset_idx", **context))
+                        trial_invalid = True
                     seen.add(dataset_idx)
                     identity = {
                         "input_ids": row.get("input_ids"),
@@ -347,36 +520,54 @@ def _identity_gate(
                         "token_type_ids": row.get("token_type_ids"),
                         "gold_label": row.get("gold_label"),
                     }
-                    tensors_valid = all(
-                        isinstance(identity[field], list)
-                        for field in ("input_ids", "attention_mask")
-                    ) and (
-                        identity["token_type_ids"] is None
-                        or isinstance(identity["token_type_ids"], list)
+                    row_failures = []
+                    for field in ("input_ids", "attention_mask"):
+                        row_failures.extend(
+                            _tensor_failures(field, identity[field], context)
+                        )
+                    if identity["token_type_ids"] is not None:
+                        row_failures.extend(
+                            _tensor_failures(
+                                "token_type_ids",
+                                identity["token_type_ids"],
+                                context,
+                            )
+                        )
+                    tensor_lengths = [
+                        len(identity[field])
+                        for field in ("input_ids", "attention_mask", "token_type_ids")
+                        if isinstance(identity[field], list)
+                    ]
+                    expected_tensor_count = (
+                        2 if identity["token_type_ids"] is None else 3
                     )
-                    if not tensors_valid:
-                        failures.append(_failure("input_tensor_type", **context))
+                    if (
+                        len(tensor_lengths) == expected_tensor_count
+                        and len(set(tensor_lengths)) != 1
+                    ):
+                        row_failures.append(
+                            _failure("input_length_mismatch", **context)
+                        )
+                    attention_mask = identity["attention_mask"]
+                    if isinstance(attention_mask, list) and any(
+                        not isinstance(value, bool) and value not in (0, 1)
+                        or isinstance(value, bool)
+                        for value in attention_mask
+                    ):
+                        row_failures.append(
+                            _failure("attention_mask_value", **context)
+                        )
                     if identity["gold_label"] not in (0, 1) or isinstance(
                         identity["gold_label"], bool
                     ):
-                        failures.append(_failure("gold_label", **context))
-                    previous = canonical.setdefault(dataset_idx, identity)
-                    if previous != identity:
-                        failures.append(_failure("unstable_input_identity", **context))
-                if len(seen) == expected_examples:
-                    if expected_ids is None:
-                        expected_ids = seen
-                    elif seen != expected_ids:
-                        failures.append(
-                            _failure(
-                                "dataset_idx_set",
-                                seed=seed,
-                                group=group_name,
-                                trial_index=trial_index,
-                                detail="dataset IDs differ from the first complete trial",
-                            )
-                        )
-                elif seen:
+                        row_failures.append(_failure("gold_label", **context))
+                    if row_failures:
+                        failures.extend(row_failures)
+                        trial_invalid = True
+                        continue
+                    local_identities[dataset_idx] = identity
+                    position_map[row["probe_position"]] = dataset_idx
+                if len(seen) != expected_examples:
                     failures.append(
                         _failure(
                             "dataset_idx_count",
@@ -386,24 +577,88 @@ def _identity_gate(
                             detail=f"expected {expected_examples} unique IDs, found {len(seen)}",
                         )
                     )
-    return _gate("input_identity", failures), canonical
+                    trial_invalid = True
+                if not trial_invalid and expected_ids is not None and seen != expected_ids:
+                    failures.append(
+                        _failure(
+                            "dataset_idx_set",
+                            seed=seed,
+                            group=group_name,
+                            trial_index=trial_index,
+                            detail="dataset IDs differ from the first complete trial",
+                        )
+                    )
+                    trial_invalid = True
+                if (
+                    not trial_invalid
+                    and expected_position_map is not None
+                    and position_map != expected_position_map
+                ):
+                    failures.append(
+                        _failure(
+                            "unstable_position_mapping",
+                            seed=seed,
+                            group=group_name,
+                            trial_index=trial_index,
+                        )
+                    )
+                    trial_invalid = True
+                if not trial_invalid:
+                    for dataset_idx, identity in local_identities.items():
+                        previous = canonical.get(dataset_idx)
+                        if previous is not None and previous != identity:
+                            failures.append(
+                                _failure(
+                                    "unstable_input_identity",
+                                    seed=seed,
+                                    group=group_name,
+                                    trial_index=trial_index,
+                                    dataset_idx=dataset_idx,
+                                )
+                            )
+                            trial_invalid = True
+                if trial_invalid:
+                    identity_invalid_trials.add(key)
+                    identity_eligible.difference_update(
+                        row_index for row_index, _ in trial_rows
+                    )
+                    continue
+                if expected_ids is None:
+                    expected_ids = seen
+                if expected_position_map is None:
+                    expected_position_map = position_map
+                canonical.update(local_identities)
+    return (
+        _gate("input_identity", failures),
+        canonical,
+        identity_eligible,
+        identity_invalid_trials,
+    )
 
 
 def _logits_gate(
     prediction_rows: Sequence[Any],
-) -> tuple[dict[str, Any], set[int]]:
+    eligible_row_indexes: set[int],
+    invalid_trials: set[tuple[int, str, int]],
+) -> tuple[dict[str, Any], set[int], set[tuple[int, str, int]]]:
     failures: list[dict[str, Any]] = []
     valid_row_indexes: set[int] = set()
+    logits_invalid_trials = set(invalid_trials)
     for row_index, row in enumerate(prediction_rows):
-        if not isinstance(row, Mapping):
+        if row_index not in eligible_row_indexes or not isinstance(row, Mapping):
             continue
         context = _row_context(row, row_index)
+        key = _trial_key(row)
         logits = row.get("logits")
         if not isinstance(logits, list) or len(logits) != 2:
             failures.append(_failure("logit_count", **context))
+            if key is not None:
+                logits_invalid_trials.add(key)
             continue
         if not all(_finite_number(value) for value in logits):
             failures.append(_failure("non_finite_logits", **context))
+            if key is not None:
+                logits_invalid_trials.add(key)
             continue
         predicted = row.get("predicted_label")
         expected_prediction = 0 if logits[0] >= logits[1] else 1
@@ -415,6 +670,8 @@ def _logits_gate(
                     detail=f"expected {expected_prediction}, found {predicted!r}",
                 )
             )
+            if key is not None:
+                logits_invalid_trials.add(key)
             continue
         gold = row.get("gold_label")
         correct = row.get("correct")
@@ -427,12 +684,23 @@ def _logits_gate(
                     detail=f"expected {expected_correct}, found {correct!r}",
                 )
             )
+            if key is not None:
+                logits_invalid_trials.add(key)
             continue
         if gold not in (0, 1) or isinstance(gold, bool):
             failures.append(_failure("gold_label", **context))
+            if key is not None:
+                logits_invalid_trials.add(key)
             continue
         valid_row_indexes.add(row_index)
-    return _gate("logits_prediction", failures), valid_row_indexes
+    for row_index, row in enumerate(prediction_rows):
+        if (
+            row_index in valid_row_indexes
+            and isinstance(row, Mapping)
+            and _trial_key(row) in logits_invalid_trials
+        ):
+            valid_row_indexes.remove(row_index)
+    return _gate("logits_prediction", failures), valid_row_indexes, logits_invalid_trials
 
 
 def _trial_result(
@@ -545,7 +813,56 @@ def _prior_equivalence_gate(
     failures = list(input_failures)
     for seed in EXPECTED_SEEDS:
         current_groups = _group_map(current_by_seed.get(seed))
-        prior_groups = _group_map(prior_by_seed.get(seed))
+        prior_run = prior_by_seed.get(seed)
+        raw_groups = (
+            prior_run.get("group_results")
+            if isinstance(prior_run, Mapping)
+            else None
+        )
+        prior_groups: dict[str, Mapping[str, Any]] = {}
+        prior_groups_valid = True
+        if not isinstance(raw_groups, list):
+            failures.append(
+                _failure("prior_group_results_type", seed=seed)
+            )
+            prior_groups_valid = False
+        else:
+            names = [
+                group.get("name")
+                for group in raw_groups
+                if isinstance(group, Mapping) and isinstance(group.get("name"), str)
+            ]
+            name_set = set(names)
+            expected_names = set(GROUP_SPECS)
+            if len(names) != len(set(names)):
+                failures.append(_failure("prior_duplicate_groups", seed=seed))
+                prior_groups_valid = False
+            if expected_names - name_set or len(raw_groups) != len(expected_names):
+                failures.append(
+                    _failure(
+                        "prior_required_groups",
+                        seed=seed,
+                        detail=f"found {names!r}",
+                    )
+                )
+                prior_groups_valid = False
+            unexpected = name_set - expected_names
+            if unexpected:
+                failures.append(
+                    _failure(
+                        "prior_unexpected_groups",
+                        seed=seed,
+                        detail=f"found {sorted(unexpected)!r}",
+                    )
+                )
+                prior_groups_valid = False
+            if len(names) != len(raw_groups):
+                failures.append(_failure("prior_group_mapping", seed=seed))
+                prior_groups_valid = False
+            if prior_groups_valid:
+                prior_groups = {group["name"]: group for group in raw_groups}
+        if not prior_groups_valid:
+            continue
         for group_name in GROUP_SPECS:
             for metric in METRICS:
                 current = _metric_values(current_groups.get(group_name), metric)
@@ -725,19 +1042,36 @@ def build_prediction_summary(
                 detail=f"expected 5, found {len(priors)}",
             )
         )
-    buckets, index_failures = _index_rows(rows)
-    completeness_gate = _prediction_completeness_gate(
+    buckets, index_failures, invalid_row_indexes = _index_rows(rows)
+    (
+        completeness_gate,
+        completeness_eligible,
+        completeness_invalid_trials,
+    ) = _prediction_completeness_gate(
         rows,
         buckets,
         index_failures,
+        invalid_row_indexes,
         expected_examples=expected_examples,
         prediction_file_count=prediction_file_count,
         runs_by_seed=runs_by_seed,
     )
-    identity_gate, canonical = _identity_gate(
-        buckets, expected_examples=expected_examples
+    (
+        identity_gate,
+        canonical,
+        identity_eligible,
+        identity_invalid_trials,
+    ) = _identity_gate(
+        buckets,
+        completeness_eligible,
+        completeness_invalid_trials,
+        expected_examples=expected_examples,
     )
-    logits_gate, valid_row_indexes = _logits_gate(rows)
+    logits_gate, valid_row_indexes, _ = _logits_gate(
+        rows,
+        identity_eligible,
+        identity_invalid_trials,
+    )
     trial_results: list[dict[str, Any]] = []
     recomputed_failures: list[dict[str, Any]] = []
     for seed in EXPECTED_SEEDS:
@@ -1084,8 +1418,87 @@ def _load_jsonl(paths: Sequence[str]) -> list[Any]:
     return rows
 
 
+def _write_temp_file(destination: Path, text: str) -> Path:
+    descriptor, path_text = tempfile.mkstemp(
+        prefix=f".{destination.name}.tmp-",
+        dir=str(destination.parent),
+    )
+    path = Path(path_text)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        path.unlink(missing_ok=True)
+        raise
+    return path
+
+
+def _reserve_backup_path(destination: Path) -> Path:
+    descriptor, path_text = tempfile.mkstemp(
+        prefix=f".{destination.name}.backup-",
+        dir=str(destination.parent),
+    )
+    os.close(descriptor)
+    path = Path(path_text)
+    path.unlink()
+    return path
+
+
+def _write_outputs_transactionally(
+    output_json: Path,
+    output_html: Path,
+    json_text: str,
+    html_text: str,
+) -> None:
+    output_json = Path(output_json)
+    output_html = Path(output_html)
+    if output_json.resolve() == output_html.resolve():
+        raise ValueError("output JSON and HTML paths must resolve to distinct files")
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_html.parent.mkdir(parents=True, exist_ok=True)
+
+    temp_paths: list[Path] = []
+    backups: dict[Path, Path] = {}
+    promoted: set[Path] = set()
+    destinations = (output_json, output_html)
+    try:
+        temp_paths.append(_write_temp_file(output_json, json_text))
+        temp_paths.append(_write_temp_file(output_html, html_text))
+        for destination in destinations:
+            if destination.exists():
+                backup = _reserve_backup_path(destination)
+                os.replace(destination, backup)
+                backups[destination] = backup
+        for temp_path, destination in zip(temp_paths, destinations):
+            os.replace(temp_path, destination)
+            promoted.add(destination)
+    except BaseException:
+        for destination in reversed(destinations):
+            if destination in promoted:
+                destination.unlink(missing_ok=True)
+            backup = backups.get(destination)
+            if backup is not None and backup.exists():
+                os.replace(backup, destination)
+        raise
+    finally:
+        for temp_path in temp_paths:
+            temp_path.unlink(missing_ok=True)
+        for backup in backups.values():
+            backup.unlink(missing_ok=True)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
+    output_json = Path(args.output_json)
+    output_html = Path(args.output_html)
+    if output_json.resolve() == output_html.resolve():
+        raise ValueError("output JSON and HTML paths must resolve to distinct files")
     run_payloads = [_load_json(path) for path in args.run_json]
     prior_payloads = [_load_json(path) for path in args.prior_run_json]
     prediction_rows = _load_jsonl(args.prediction_jsonl)
@@ -1096,15 +1509,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         source_commit=args.source_commit,
         prediction_file_count=len(args.prediction_jsonl),
     )
-    output_json = Path(args.output_json)
-    output_html = Path(args.output_html)
-    output_json.parent.mkdir(parents=True, exist_ok=True)
-    output_html.parent.mkdir(parents=True, exist_ok=True)
-    with output_json.open("w", encoding="utf-8") as handle:
-        json.dump(summary, handle, allow_nan=False, indent=2, sort_keys=True)
-        handle.write("\n")
-    with output_html.open("w", encoding="utf-8") as handle:
-        handle.write(render_html(summary, prediction_rows))
+    json_text = json.dumps(
+        summary,
+        allow_nan=False,
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+    html_text = render_html(summary, prediction_rows)
+    _write_outputs_transactionally(
+        output_json,
+        output_html,
+        json_text,
+        html_text,
+    )
     return 0 if summary["all_gates_pass"] else 1
 
 
