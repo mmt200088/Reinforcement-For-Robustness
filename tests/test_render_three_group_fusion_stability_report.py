@@ -260,6 +260,26 @@ class BuildSummaryTests(unittest.TestCase):
         self.assertFalse(metadata_gate["passed"])
         self.assertIn("deterministic", json.dumps(metadata_gate["failures"]).lower())
 
+    def test_reported_metrics_must_match_raw_trial_statistics(self):
+        report = _load_report_module()
+        payloads = make_run_payloads()
+        group = _group(
+            payloads[3], "block2_block4_block5_all_layers_fusion1"
+        )
+        group["metrics"]["loss_mean"] += 0.1
+
+        summary = report.build_summary(
+            run_payloads=payloads,
+            source_commit="abc123",
+        )
+
+        self.assertFalse(summary["all_gates_pass"])
+        consistency_gate = _gate(summary, "metric_consistency")
+        self.assertFalse(consistency_gate["passed"])
+        failures = json.dumps(consistency_gate["failures"]).lower()
+        self.assertIn("loss_mean", failures)
+        self.assertIn("mismatch", failures)
+
     def test_wrong_block4_replan_is_a_structured_pattern_gate_failure(self):
         report = _load_report_module()
         payloads = make_run_payloads()
@@ -281,6 +301,34 @@ class BuildSummaryTests(unittest.TestCase):
         self.assertFalse(pattern_gate["passed"])
         self.assertTrue(pattern_gate["failures"])
         self.assertIn("block4", json.dumps(pattern_gate["failures"]).lower())
+
+    def test_step_records_must_follow_exact_schedule_order_and_index(self):
+        report = _load_report_module()
+
+        def swap_first_two(payloads):
+            records = _group(payloads[0], "all_fusion0")["step_records"]
+            records[0], records[1] = records[1], records[0]
+
+        def duplicate_step_index(payloads):
+            records = _group(payloads[0], "all_fusion0")["step_records"]
+            records[1]["step_idx"] = records[0]["step_idx"]
+
+        for case, mutate in {
+            "record order": swap_first_two,
+            "step index": duplicate_step_index,
+        }.items():
+            with self.subTest(case=case):
+                payloads = make_run_payloads()
+                mutate(payloads)
+                summary = report.build_summary(
+                    run_payloads=payloads,
+                    source_commit="abc123",
+                )
+                self.assertFalse(summary["all_gates_pass"])
+                pattern_gate = _gate(summary, "fusion_pattern")
+                self.assertFalse(pattern_gate["passed"])
+                failures = json.dumps(pattern_gate["failures"]).lower()
+                self.assertRegex(failures, r"order|index|step_idx")
 
     def test_missing_required_group_or_trial_fails_completeness_gate(self):
         report = _load_report_module()
@@ -347,6 +395,9 @@ class CliTests(unittest.TestCase):
             )
             self.assertTrue(summary["all_gates_pass"])
             self.assertEqual(summary["total_evaluations"], 75)
+            self.assertEqual(summary["expected_evaluations"], 75)
+            self.assertEqual(summary["observed_evaluations"], 75)
+            self.assertEqual(summary["included_evaluations"], 75)
             html = output_html.read_text(encoding="utf-8")
             for visible_text in (
                 "B2=1",
@@ -363,6 +414,7 @@ class CliTests(unittest.TestCase):
                 "[4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]",
                 "Stage-1 Softmax",
                 "[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]",
+                "INCLUDED",
             ):
                 self.assertIn(visible_text, html)
 
@@ -389,7 +441,25 @@ class CliTests(unittest.TestCase):
             summary = json.loads(output_json.read_text(encoding="utf-8"))
             self.assertFalse(summary["all_gates_pass"])
             self.assertFalse(_gate(summary, "completeness")["passed"])
-            self.assertIn("completeness", output_html.read_text(encoding="utf-8").lower())
+            self.assertEqual(summary["expected_evaluations"], 75)
+            self.assertEqual(summary["observed_evaluations"], 70)
+            self.assertEqual(summary["included_evaluations"], 60)
+            self.assertEqual(summary["total_evaluations"], 60)
+            self.assertEqual(summary["expected_seeds"], SEEDS)
+            self.assertEqual(summary["observed_seeds"], SEEDS)
+            self.assertEqual(
+                summary["included_seeds"],
+                [seed for seed in SEEDS if seed != SEEDS[1]],
+            )
+            html = output_html.read_text(encoding="utf-8")
+            self.assertIn("completeness", html.lower())
+            for visible_text in (
+                "Expected evaluations",
+                "Observed evaluations",
+                "Included evaluations",
+                "EXCLUDED",
+            ):
+                self.assertIn(visible_text, html)
 
     def test_non_finite_payload_still_writes_strict_diagnostic_artifacts(self):
         report = _load_report_module()
