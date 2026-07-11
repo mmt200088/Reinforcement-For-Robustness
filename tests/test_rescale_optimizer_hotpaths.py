@@ -13,6 +13,22 @@ if str(RESCALE_ROOT) not in sys.path:
 
 
 class RescaleOptimizerHotPathTests(unittest.TestCase):
+    def test_normalized_delta_override_dict_is_reused_without_reparsing(self):
+        from rescale_optimizer import replan_interface
+
+        overrides = {
+            "ctpt_weight": 17,
+            "ctct_square": "x2",
+        }
+        with mock.patch.object(
+            replan_interface,
+            "_parse_delta_value",
+            side_effect=AssertionError("reparsed normalized delta"),
+        ):
+            normalized = replan_interface._normalize_delta_overrides(overrides)
+
+        self.assertIs(normalized, overrides)
+
     def test_compact_replan_matches_full_result_without_building_full_output(self):
         from rescale_optimizer import CompactReplanResult, ReplanSession
         from rescale_optimizer import replan_interface
