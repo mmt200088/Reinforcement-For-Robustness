@@ -280,6 +280,41 @@ class BuildSummaryTests(unittest.TestCase):
         self.assertIn("loss_mean", failures)
         self.assertIn("mismatch", failures)
 
+    def test_metric_consistency_matches_evaluator_loss_clipping_only(self):
+        report = _load_report_module()
+        payloads = make_run_payloads()
+        run_index = 2
+        group_name = "block2_block5_all_layers_fusionmax"
+        group = _group(payloads[run_index], group_name)
+        group["trial_metrics"]["loss"][0] = 150.0
+        raw_losses = group["trial_metrics"]["loss"]
+        clipped_losses = [min(max(value, 0.0), 100.0) for value in raw_losses]
+        group["metrics"].update(
+            {
+                "loss_mean": statistics.fmean(clipped_losses),
+                "loss_std": statistics.pstdev(clipped_losses),
+                "loss_max": max(clipped_losses),
+            }
+        )
+
+        summary = report.build_summary(
+            run_payloads=payloads,
+            source_commit="abc123",
+        )
+
+        self.assertTrue(_gate(summary, "metric_consistency")["passed"])
+        self.assertTrue(summary["all_gates_pass"])
+        per_run = summary["groups"][group_name]["per_runs"][run_index]
+        self.assertAlmostEqual(
+            per_run["metrics"]["loss_mean"],
+            statistics.fmean(raw_losses),
+        )
+        pooled_losses = _pooled_values(payloads, group_name, "loss")
+        pooled = summary["groups"][group_name]["pooled_metrics"]["loss"]
+        self.assertIn(150.0, pooled["values"])
+        self.assertAlmostEqual(pooled["mean"], statistics.fmean(pooled_losses))
+        self.assertAlmostEqual(pooled["std"], statistics.pstdev(pooled_losses))
+
     def test_wrong_block4_replan_is_a_structured_pattern_gate_failure(self):
         report = _load_report_module()
         payloads = make_run_payloads()
