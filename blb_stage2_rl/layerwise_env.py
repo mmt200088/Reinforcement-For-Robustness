@@ -223,15 +223,30 @@ class BLBStage2LayerwiseEnv:
             return self._build_obs(), 0.0, False, info
 
         variable_cost = compute_variable_cost(self._decoded_actions)
+        # Robust layerwise reward contract consumed by Task 6:
+        # P3 = 1 + C + 0.0005 * barriers, with C in [0, 1].  Keep this raw
+        # normalized C; do not multiply it by the legacy p3_cost_budget.
+        external_cost_score = float(variable_cost.normalized)
+        external_cost_rank = float(variable_cost.normalized)
+        if not 0.0 <= external_cost_score <= 1.0:
+            raise RuntimeError(
+                f"layerwise normalized variable cost outside [0, 1]: {external_cost_score}"
+            )
         terminal_state, terminal_reward, _terminal_done, terminal_info = self.base.step(
             self._pending_full_vec.copy(),
-            external_cost_score=float(variable_cost.normalized),
-            external_cost_rank=float(variable_cost.normalized),
+            external_cost_score=external_cost_score,
+            external_cost_rank=external_cost_rank,
             boosted_overrides=(copy.deepcopy(self._boosted_overrides) or None),
         )
         del terminal_state
         self._done = True
-        info.update(self._terminal_handoff(variable_cost, terminal_reward, terminal_info))
+        info.update(self._terminal_handoff(
+            variable_cost,
+            terminal_reward,
+            terminal_info,
+            external_cost_score=external_cost_score,
+            external_cost_rank=external_cost_rank,
+        ))
         return self._build_obs(), float(terminal_reward), True, info
 
     def _rebuild_schedule(self) -> None:
@@ -308,6 +323,9 @@ class BLBStage2LayerwiseEnv:
             variable_cost: Any,
             terminal_reward: float,
             terminal_info: Any,
+            *,
+            external_cost_score: float,
+            external_cost_rank: float,
             ) -> Dict[str, Any]:
         decoded_actions = [
             {
@@ -327,9 +345,24 @@ class BLBStage2LayerwiseEnv:
             for layer_idx, action in enumerate(self._decoded_actions)
             for block_idx, k_value in action.k_by_block.items()
         ]
+        boosted_override_rows = [
+            {
+                "block_idx": int(block_idx),
+                "layer_idx": int(layer_idx),
+                "field_values": {
+                    str(name): int(value) for name, value in field_values.items()
+                },
+            }
+            for (block_idx, layer_idx), field_values in sorted(
+                self._boosted_overrides.items(),
+                key=lambda item: (int(item[0][1]), int(item[0][0])),
+            )
+        ]
         return {
             "terminal_info": copy.deepcopy(terminal_info),
             "terminal_reward": float(terminal_reward),
+            "external_cost_score": float(external_cost_score),
+            "external_cost_rank": float(external_cost_rank),
             "variable_cost": {
                 "fusion_saving": float(variable_cost.fusion_saving),
                 "truncation_saving": float(variable_cost.truncation_saving),
@@ -343,6 +376,8 @@ class BLBStage2LayerwiseEnv:
             ],
             "k_choices": k_choices,
             "fusion_option_ids": [dict(row) for row in self._fusion_option_ids],
-            "boosted_overrides": copy.deepcopy(self._boosted_overrides),
-            "pending_full_vector": self._pending_full_vec.copy(),
+            # Stable report order: layer first, then block. Tuple keys remain
+            # internal-only for the base.step boosted_overrides contract.
+            "boosted_overrides": boosted_override_rows,
+            "pending_full_vector": [int(value) for value in self._pending_full_vec],
         }

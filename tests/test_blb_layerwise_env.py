@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import importlib.machinery
 import importlib.util
+import json
 import pathlib
 import sys
 import types
@@ -15,6 +16,8 @@ import numpy as np
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 BLB_DIR = REPO_ROOT / "blb_stage2_rl"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 class LayerwiseEnvironmentTest(unittest.TestCase):
@@ -188,7 +191,22 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         terminal_vector, kwargs = self.base.step_calls[0]
         self.assertEqual(kwargs["external_cost_score"], info["variable_cost"]["normalized"])
         self.assertEqual(kwargs["external_cost_rank"], info["variable_cost"]["normalized"])
-        self.assertEqual(kwargs["boosted_overrides"], info["boosted_overrides"])
+        self.assertEqual(info["external_cost_score"], info["variable_cost"]["normalized"])
+        self.assertEqual(info["external_cost_rank"], info["variable_cost"]["normalized"])
+        self.assertGreaterEqual(info["external_cost_score"], 0.0)
+        self.assertLessEqual(info["external_cost_score"], 1.0)
+        expected_boosted_rows = [
+            {
+                "block_idx": int(block_idx),
+                "layer_idx": int(layer_idx),
+                "field_values": dict(field_values),
+            }
+            for (block_idx, layer_idx), field_values in sorted(
+                kwargs["boosted_overrides"].items(),
+                key=lambda item: (int(item[0][1]), int(item[0][0])),
+            )
+        ]
+        self.assertEqual(info["boosted_overrides"], expected_boosted_rows)
         self.assertEqual(info["terminal_info"], {"priority": 3})
         self.assertEqual(info["terminal_reward"], 7.25)
         self.assertEqual(info["policy_actions"], actions)
@@ -198,6 +216,9 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(len(info["k_choices"]), 59)
         self.assertEqual(len(info["fusion_option_ids"]), 12)
         self.assertTrue(info["boosted_overrides"])
+        self.assertIsInstance(info["pending_full_vector"], list)
+        self.assertEqual(info["pending_full_vector"], terminal_vector.tolist())
+        json.dumps(info)
 
         # Block3 keeps baseline SF indices but carries the policy's K index.
         self.assertTrue(np.all(terminal_vector[32:39] == 14))
@@ -240,6 +261,45 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(self.env.action_history[0][0], 1)
         with self.assertRaisesRegex(RuntimeError, "terminated"):
             self.env.step([0] * 6)
+
+    def test_reset_after_terminal_starts_a_fresh_episode(self):
+        self.env.reset(seed=1)
+        for _ in range(12):
+            _obs, _reward, done, _info = self.env.step([0] * 6)
+        self.assertTrue(done)
+
+        obs = self.env.reset(seed=2)
+
+        self.assertEqual(self.base.reset_seeds, [1, 2])
+        self.assertEqual(obs.shape, (self.env.state_dim,))
+        self.assertEqual(self.env.current_spec().layer_idx, 0)
+        self.assertEqual(self.env.action_history, [])
+        self.assertEqual(self.env.layer_summaries, [])
+        _obs, reward, done, info = self.env.step([0] * 6)
+        self.assertEqual((reward, done), (0.0, False))
+        self.assertEqual(info["layer_idx"], 0)
+
+    def test_nonuniform_degrees_select_block3_and_block5_graphs_per_layer(self):
+        self.base.gelu_degree = [4, 2] + [1] * 10
+        self.base.attn_degree = [6, 4] + [2] * 10
+        self.env.reset()
+
+        self.env.step([0] * 6)
+        layer0_graphs = {
+            int(call["block_idx"]): str(call["graph_key"])
+            for call in self.runtime_calls
+        }
+        self.runtime_calls.clear()
+        self.env.step([0] * 6)
+        layer1_graphs = {
+            int(call["block_idx"]): str(call["graph_key"])
+            for call in self.runtime_calls
+        }
+
+        self.assertEqual(layer0_graphs[3], "block3_exp_n6")
+        self.assertEqual(layer0_graphs[5], "block5_n4")
+        self.assertEqual(layer1_graphs[3], "block3_exp_n4")
+        self.assertEqual(layer1_graphs[5], "block5_n2")
 
 
 class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
