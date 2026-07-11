@@ -71,6 +71,15 @@ def _normalize_delta_overrides(
 ) -> Dict[str, DeltaValue]:
     if not delta_overrides:
         return {}
+    if type(delta_overrides) is dict:
+        for key, value in delta_overrides.items():
+            if type(key) is not str or not (
+                type(value) is int
+                or (type(value) is str and value == "x2")
+            ):
+                break
+        else:
+            return delta_overrides
     return {str(k): _parse_delta_value(v) for k, v in delta_overrides.items()}
 
 
