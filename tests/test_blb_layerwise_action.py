@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import replace
 import pathlib
 import sys
 import unittest
@@ -47,6 +47,49 @@ def _option(graph, fusion_count: int):
     matches = [option for option in graph.options if option.fusion_count == fusion_count]
     assert len(matches) == 1
     return matches[0]
+
+
+def _non_contiguous_fusion_map() -> fcm.FusionCountMap:
+    def option(option_id: int, fusion_count: int, slots: int, marker: int, *, boosted: bool = False):
+        payload = {
+            "option_id": option_id,
+            "fusion_count": fusion_count,
+            "tie_index": 0,
+            "total_variance": 1.0,
+            "total_bits": 100,
+            "slots": {},
+            "action_indices": [marker] * slots,
+        }
+        if boosted:
+            payload["boosted"] = True
+            payload["explicit_field_values"] = {"field": marker, "output_truncation_k": 13}
+        return payload
+
+    def graph(graph_key: str, slots: int, options: list[dict]):
+        return {
+            "graph_key": graph_key,
+            "k_slot_index": slots - 1,
+            "block_num_slots": slots,
+            "options": options,
+        }
+
+    return fcm.FusionCountMap.from_payload({
+        "profile": "mrpc",
+        "graphs": {
+            "block1_mrpc": graph("block1_mrpc", 9, [
+                option(0, 2, 9, 14), option(10, 0, 9, 12),
+            ]),
+            "block2_mrpc": graph("block2_mrpc", 23, [
+                option(0, 0, 23, 14), option(88, 1, 23, 9, boosted=True),
+            ]),
+            "block4": graph("block4", 17, [
+                option(0, 2, 17, 14), option(10, 0, 17, 12), option(88, 1, 17, 8, boosted=True),
+            ]),
+            "block5_n4": graph("block5_n4", 16, [
+                option(0, 0, 16, 14), option(88, 1, 16, 7, boosted=True),
+            ]),
+        },
+    })
 
 
 class LayerwiseScheduleTest(unittest.TestCase):
@@ -132,43 +175,16 @@ class LayerwiseApplicationTest(unittest.TestCase):
                     )
 
     def test_resolves_actual_non_contiguous_option_ids(self):
-        @dataclass
-        class Option:
-            option_id: int
-            fusion_count: int
-            action_indices: list[int]
-            boosted: bool = False
-            explicit_field_values: dict[str, int] | None = None
-
-        @dataclass
-        class Graph:
-            graph_key: str
-            k_slot_index: int
-            block_num_slots: int
-            options: list[Option]
-
-        class Map:
-            def __init__(self):
-                self.graphs = {}
-                for key, size in (("block1_mrpc", 9), ("block2_mrpc", 23), ("block4", 17), ("block5_n4", 16)):
-                    options = [Option(41, 0, [14] * size), Option(88, 1, [13] * size)]
-                    if key == "block1_mrpc":
-                        options = [Option(41, 0, [14] * size)]
-                    self.graphs[key] = Graph(key, size - 1, size, options)
-
-            def options(self, graph_key):
-                return self.graphs[graph_key].options
-
-            def expand(self, graph_key, option_id, k_index):
-                option = next(option for option in self.options(graph_key) if option.option_id == option_id)
-                result = np.asarray(option.action_indices, dtype=int).copy()
-                result[self.graphs[graph_key].k_slot_index] = k_index
-                return result
-
-        fake = Map()
-        spec = layerwise.layerwise_schedule(12, fake)[1]
-        result = layerwise.apply_layer_action(_legacy_all_max(), [1, 0, 0, 0, 0, 0], spec, fake)
-        self.assertEqual(result.fusion_option_ids, {1: 41, 2: 88, 4: 88, 5: 88})
+        fusion_map = _non_contiguous_fusion_map()
+        with self.assertRaises(IndexError):
+            fusion_map.expand("block2_mrpc", 88, 0)
+        spec = layerwise.layerwise_schedule(12, fusion_map)[1]
+        result = layerwise.apply_layer_action(_legacy_all_max(), [1, 0, 0, 0, 0, 0], spec, fusion_map)
+        self.assertEqual(result.fusion_option_ids, {1: 10, 2: 88, 4: 88, 5: 88})
+        layer_base = _LAYER_WIDTH
+        self.assertEqual(int(result.full_vector[layer_base + _BLOCK_OFFSETS[2]]), 9)
+        self.assertEqual(int(result.full_vector[layer_base + _BLOCK_OFFSETS[4]]), 8)
+        self.assertEqual(result.boosted_field_values_by_block[2]["output_truncation_k"], 8)
 
 
 class VariableCostTest(unittest.TestCase):
@@ -231,9 +247,61 @@ class LayerwiseValidationTest(unittest.TestCase):
     def test_duplicate_fixed_fusion_options_fail_loudly(self):
         duplicate = fcm.FusionCountMap.load("mrpc")
         graph = duplicate.graphs["block2_mrpc"]
-        graph.options = graph.options + [next(option for option in graph.options if option.fusion_count == 1)]
+        graph.options = graph.options + [replace(
+            next(option for option in graph.options if option.fusion_count == 1),
+            option_id=99,
+        )]
         with self.assertRaisesRegex(ValueError, "exactly one"):
             layerwise.layerwise_schedule(12, duplicate)
+
+    def test_map_structure_validation_fails_loudly(self):
+        cases = []
+
+        missing_graph = _non_contiguous_fusion_map()
+        del missing_graph.graphs["block4"]
+        cases.append(("missing graph", missing_graph, KeyError, "block4"))
+
+        for graph_key, fusion_count in (
+            ("block1_mrpc", 0),
+            ("block2_mrpc", 1),
+            ("block4", 0),
+            ("block4", 1),
+            ("block5_n4", 1),
+        ):
+            missing_required = _non_contiguous_fusion_map()
+            missing_required.graphs[graph_key].options = [
+                option for option in missing_required.graphs[graph_key].options
+                if option.fusion_count != fusion_count
+            ]
+            cases.append((
+                f"missing {graph_key} fusion count {fusion_count}",
+                missing_required,
+                ValueError,
+                f"fusion_count={fusion_count}",
+            ))
+
+        duplicate_count = _non_contiguous_fusion_map()
+        duplicate_count.graphs["block4"].options.append(replace(
+            duplicate_count.graphs["block4"].options[-1],
+            option_id=99,
+        ))
+        cases.append(("duplicate required count", duplicate_count, ValueError, "fusion_count=1"))
+
+        duplicate_id = _non_contiguous_fusion_map()
+        duplicate_id.graphs["block2_mrpc"].options.append(duplicate_id.graphs["block2_mrpc"].options[-1])
+        cases.append(("duplicate option id", duplicate_id, ValueError, "duplicate option_id"))
+
+        malformed_vector = _non_contiguous_fusion_map()
+        malformed_vector.graphs["block1_mrpc"].options[0].action_indices.pop()
+        cases.append(("malformed action vector", malformed_vector, ValueError, "action_indices"))
+
+        invalid_k_slot = _non_contiguous_fusion_map()
+        invalid_k_slot.graphs["block2_mrpc"].k_slot_index = 23
+        cases.append(("out of range K slot", invalid_k_slot, ValueError, "K slot"))
+
+        for name, fusion_map, error_type, message in cases:
+            with self.subTest(name=name), self.assertRaisesRegex(error_type, message):
+                layerwise.layerwise_schedule(12, fusion_map)
 
 
 if __name__ == "__main__":

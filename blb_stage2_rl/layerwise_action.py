@@ -106,6 +106,28 @@ def _unique_option_for_fusion_count(fusion_map: Any, graph_key: str, fusion_coun
     return matches[0]
 
 
+def _validate_graph_options(graph_key: str, graph: Any, expected_slots: int) -> None:
+    k_slot_index = int(graph.k_slot_index)
+    if not 0 <= k_slot_index < expected_slots:
+        raise ValueError(
+            f"{graph_key}: K slot {k_slot_index} outside [0, {expected_slots})"
+        )
+    if k_slot_index != expected_slots - 1:
+        raise ValueError(
+            f"{graph_key}: K slot {k_slot_index} is not legacy slot {expected_slots - 1}"
+        )
+    option_ids = [int(option.option_id) for option in graph.options]
+    if len(set(option_ids)) != len(option_ids):
+        raise ValueError(f"{graph_key}: duplicate option_id values {option_ids}")
+    for option in graph.options:
+        vector = np.asarray(option.action_indices, dtype=int).reshape(-1)
+        if vector.size != expected_slots:
+            raise ValueError(
+                f"{graph_key} option {option.option_id}: action_indices has {vector.size} slots, "
+                f"expected {expected_slots}"
+            )
+
+
 def _validate_graphs(spec: LayerwiseStepSpec, fusion_map: Any) -> None:
     for block_idx, graph_key in spec.graph_keys_by_block:
         if graph_key not in fusion_map.graphs:
@@ -116,10 +138,7 @@ def _validate_graphs(spec: LayerwiseStepSpec, fusion_map: Any) -> None:
             raise ValueError(
                 f"{graph_key}: map has {graph.block_num_slots} slots, expected {expected_slots}"
             )
-        if int(graph.k_slot_index) != expected_slots - 1:
-            raise ValueError(
-                f"{graph_key}: K slot {graph.k_slot_index} is not legacy slot {expected_slots - 1}"
-            )
+        _validate_graph_options(graph_key, graph, expected_slots)
         required_count = 0 if block_idx == 1 else 1 if block_idx in (2, 5) else None
         if required_count is not None:
             _unique_option_for_fusion_count(fusion_map, graph_key, required_count)
@@ -176,19 +195,28 @@ def _validate_layer_action(layer_action: Sequence[int], step_spec: LayerwiseStep
 
 def _splice_mapped_block(
         full_vector: np.ndarray,
-        fusion_map: Any,
+        graph: Any,
         graph_key: str,
         option: Any,
         k_index: int,
         layer_idx: int,
         block_idx: int,
         ) -> None:
-    expanded = np.asarray(fusion_map.expand(graph_key, int(option.option_id), int(k_index)), dtype=int).reshape(-1)
+    # FusionCountMap.expand currently indexes graph.options by option_id.  Keep
+    # this codec correct for valid non-contiguous IDs by expanding the resolved
+    # option object instead of treating its reporting ID as a list index.
+    expanded = np.asarray(option.action_indices, dtype=int).reshape(-1).copy()
     offsets = _block_offsets(layer_idx, block_idx)
     if expanded.size != len(offsets):
         raise ValueError(
             f"{graph_key} option {option.option_id} expanded to {expanded.size} slots, expected {len(offsets)}"
         )
+    k_slot_index = int(graph.k_slot_index)
+    if not 0 <= k_slot_index < expanded.size:
+        raise ValueError(
+            f"{graph_key}: K slot {k_slot_index} outside expanded option width {expanded.size}"
+        )
+    expanded[k_slot_index] = int(k_index)
     full_vector[list(offsets)] = expanded
 
 
@@ -223,7 +251,8 @@ def apply_layer_action(
         graph_key = graph_keys[block_idx]
         option = _unique_option_for_fusion_count(fusion_map, graph_key, fusion_count)
         _splice_mapped_block(
-            result, fusion_map, graph_key, option, k_indices[block_idx], step_spec.layer_idx, block_idx,
+            result, fusion_map.graphs[graph_key], graph_key, option,
+            k_indices[block_idx], step_spec.layer_idx, block_idx,
         )
         fusion_option_ids[block_idx] = int(option.option_id)
         if bool(getattr(option, "boosted", False)) and getattr(option, "explicit_field_values", None):
