@@ -26,6 +26,7 @@ from reward import (
     robust_constrained_reward,
 )
 from statistical_constraints import ConstraintAssessment
+import layerwise_action
 
 
 def _assessment(**overrides):
@@ -64,6 +65,26 @@ def test_boundary_signal_matches_clipped_log_ratio():
     assert np.isclose(boundary_signal(1.0), np.log((1.0 + 1e-8) / (0.5 + 1e-8)))
 
 
+def test_pure_helper_returns_formula_tuple_and_boundary_components():
+    assessment = _assessment(
+        loss_precision_probability=0.8,
+        metric1_stability_probability=0.7,
+    )
+    precision_signal = boundary_signal(0.8)
+    stability_signal = boundary_signal(0.7)
+
+    result = robust_constrained_reward(
+        assessment, invalid=False, variable_cost=0.4,
+    )
+
+    assert result == (
+        1.0 + 0.4 + 0.0005 * (precision_signal + stability_signal),
+        3,
+        precision_signal,
+        stability_signal,
+    )
+
+
 def test_strict_tier_ordering_holds_over_probability_and_cost_boundaries():
     probabilities = np.linspace(0.0, 1.0, 101)
     costs = np.linspace(0.0, 1.0, 101)
@@ -72,7 +93,7 @@ def test_strict_tier_ordering_holds_over_probability_and_cost_boundaries():
             _assessment(loss_precision_probability=float(p)),
             invalid=False,
             variable_cost=float(cost),
-        ).reward
+        )[0]
         for p in probabilities if p < 0.5
         for cost in costs
     ]
@@ -81,7 +102,7 @@ def test_strict_tier_ordering_holds_over_probability_and_cost_boundaries():
             _assessment(loss_stability_probability=float(p)),
             invalid=False,
             variable_cost=float(cost),
-        ).reward
+        )[0]
         for p in probabilities if p < 0.5
         for cost in costs
     ]
@@ -93,7 +114,7 @@ def test_strict_tier_ordering_holds_over_probability_and_cost_boundaries():
             ),
             invalid=False,
             variable_cost=float(cost),
-        ).reward
+        )[0]
         for p in probabilities if p >= 0.5
         for s in probabilities if s >= 0.5
         for cost in costs
@@ -109,7 +130,7 @@ def test_cost_never_affects_failed_constraint_tiers():
         _assessment(metric1_stability_probability=0.25),
     ):
         rewards = {
-            robust_constrained_reward(assessment, invalid=False, variable_cost=cost).reward
+            robust_constrained_reward(assessment, invalid=False, variable_cost=cost)[0]
             for cost in np.linspace(0.0, 1.0, 21)
         }
         assert len(rewards) == 1
@@ -121,12 +142,13 @@ def test_each_precision_channel_independently_yields_p1():
         "metric1_precision_probability",
         "metric2_precision_probability",
     ):
-        result = robust_constrained_reward(
+        reward, priority, precision_signal, stability_signal = robust_constrained_reward(
             _assessment(**{field: 0.49}), invalid=False, variable_cost=1.0,
         )
-        assert result.priority == 1
-        assert result.metric_ok is False
-        assert result.cost_score == 0.0
+        assert priority == 1
+        assert reward == -3.0 + 0.5 * precision_signal
+        assert precision_signal == boundary_signal(0.49)
+        assert stability_signal == boundary_signal(0.9)
 
 
 def test_each_stability_channel_independently_yields_p2_after_precision_passes():
@@ -135,13 +157,13 @@ def test_each_stability_channel_independently_yields_p2_after_precision_passes()
         "metric1_stability_probability",
         "metric2_stability_probability",
     ):
-        result = robust_constrained_reward(
+        reward, priority, precision_signal, stability_signal = robust_constrained_reward(
             _assessment(**{field: 0.49}), invalid=False, variable_cost=1.0,
         )
-        assert result.priority == 2
-        assert result.metric_ok is True
-        assert result.stab_ok is False
-        assert result.cost_score == 0.0
+        assert priority == 2
+        assert reward == -1.5 + 0.5 * stability_signal
+        assert precision_signal == boundary_signal(0.9)
+        assert stability_signal == boundary_signal(0.49)
 
 
 def test_invalid_is_exactly_minus_five_and_preserves_probability_diagnostics():
@@ -151,24 +173,33 @@ def test_invalid_is_exactly_minus_five_and_preserves_probability_diagnostics():
     )
     result = robust_constrained_reward(assessment, invalid=True, variable_cost=1.0)
 
-    assert result.reward == -5.0
-    assert result.priority == 1
-    assert result.invalid is True
-    assert result.loss_precision_probability == 0.2
-    assert result.metric2_stability_probability == 0.3
-    assert result.variable_cost == 1.0
+    assert result == (-5.0, 1, boundary_signal(0.2), boundary_signal(0.3))
+
+
+def test_invalid_without_assessment_has_floor_signals():
+    assert robust_constrained_reward(None, invalid=True, variable_cost=0.0) == (
+        -5.0, 1, -1.0, -1.0,
+    )
 
 
 def test_variable_cost_is_clipped_before_entering_p3():
     for raw, accepted in ((-10.0, 0.0), (2.0, 1.0)):
-        result = robust_constrained_reward(_assessment(), invalid=False, variable_cost=raw)
-        assert result.variable_cost == accepted
-        assert result.cost_score == accepted
-        assert 1.0 <= result.reward <= 2.001
+        reward, priority, _precision_signal, _stability_signal = robust_constrained_reward(
+            _assessment(), invalid=False, variable_cost=raw,
+        )
+        assert priority == 3
+        assert 1.0 + accepted <= reward <= 1.001 + accepted
 
 
-def test_robust_breakdown_exposes_policy_and_all_six_probability_fields():
-    result = robust_constrained_reward(_assessment(), invalid=False, variable_cost=0.4)
+def test_robust_breakdown_exposes_probability_q_signal_and_cost_fields():
+    result = compute_reward(
+        EpisodeMetrics(), SimpleNamespace(any_invalid=False),
+        action_avg_k=13.0,
+        baseline=BaselineCostStats(),
+        weights=RewardWeights(reward_design="robust_constrained"),
+        external_cost_score=0.4,
+        constraint_assessment=_assessment(),
+    )
     assert isinstance(result, RewardBreakdown)
     assert result.constraint_policy == "bootstrap_5x5_v1"
     assert result.loss_precision_probability == 0.9
@@ -177,6 +208,12 @@ def test_robust_breakdown_exposes_policy_and_all_six_probability_fields():
     assert result.loss_stability_probability == 0.9
     assert result.metric1_stability_probability == 0.9
     assert result.metric2_stability_probability == 0.9
+    assert result.q_precision == 0.9
+    assert result.q_stability == 0.9
+    assert result.precision_signal == boundary_signal(0.9)
+    assert result.stability_signal == boundary_signal(0.9)
+    assert result.variable_cost == 0.4
+    assert result.cost_score == 0.4
 
 
 def test_compute_reward_dispatches_only_when_robust_design_is_selected():
@@ -194,11 +231,46 @@ def test_compute_reward_dispatches_only_when_robust_design_is_selected():
     assert result.constraint_policy == "bootstrap_5x5_v1"
 
 
+def test_valid_robust_compute_reward_requires_explicit_normalized_cost():
+    for cost in (None, -0.01, 1.01):
+        try:
+            compute_reward(
+                EpisodeMetrics(), SimpleNamespace(any_invalid=False),
+                action_avg_k=13.0,
+                baseline=BaselineCostStats(),
+                weights=RewardWeights(reward_design="robust_constrained"),
+                external_cost_score=cost,
+                constraint_assessment=_assessment(),
+            )
+        except ValueError as exc:
+            assert "external_cost_score" in str(exc)
+        else:
+            raise AssertionError(f"robust cost {cost!r} did not fail")
+
+
+def test_invalid_robust_compute_reward_needs_neither_assessment_nor_cost():
+    result = compute_reward(
+        EpisodeMetrics(), SimpleNamespace(any_invalid=True),
+        action_avg_k=13.0,
+        baseline=BaselineCostStats(),
+        weights=RewardWeights(reward_design="robust_constrained"),
+    )
+    assert result.reward == -5.0
+    assert result.q_precision == 0.0
+    assert result.q_stability == 0.0
+    assert result.precision_signal == -1.0
+    assert result.stability_signal == -1.0
+
+
 def test_legacy_breakdown_defaults_remain_compatible():
     result = RewardBreakdown(reward=0.0, priority=3, invalid=False)
     assert result.constraint_policy == ""
     assert result.variable_cost == 0.0
     assert result.loss_precision_probability == 0.0
+    assert result.q_precision == 0.0
+    assert result.q_stability == 0.0
+    assert result.precision_signal == 0.0
+    assert result.stability_signal == 0.0
 
 
 def _method_calls(method_name):
@@ -368,15 +440,36 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
     env_module, reward_module, statistical_constraints = _runtime_modules()
 
     signals = SimpleNamespace(any_invalid=False, total_bits_sum=100.0, total_fusion_count=0.0)
-    prepared = {
-        "action_vec": np.asarray([3, 1, 4], dtype=int),
-        "action_hash": "1234567890abcdef" * 4,
-        "opt_signals": signals,
-        "any_invalid": False,
-        "external_cost_score": 0.75,
-        "external_cost_rank": 0.75,
-        "info": {},
-    }
+    decoded_actions = []
+    for layer_idx in range(12):
+        k_by_block = {2: 13, 3: 13, 4: 13, 5: 13}
+        if layer_idx:
+            k_by_block[1] = 13
+        decoded_actions.append(layerwise_action.LayerwiseDecodedAction(1, k_by_block))
+    variable_cost = layerwise_action.compute_variable_cost(decoded_actions).normalized
+    assert variable_cost == 0.5
+
+    env = _runtime_env(env_module, reward_module, statistical_constraints)
+    env.total_action_dim = 3
+    env.env_cfg = SimpleNamespace(profile="mrpc")
+    env.max_sfs = object()
+    env.rescale_bridge = SimpleNamespace(invoker=SimpleNamespace(baselines={}))
+    env.gelu_degree = 4
+    env.attn_degree = 6
+    env.sync_degree_vectors_from_model = lambda: {}
+    decoded = SimpleNamespace(
+        block1_cfgs=[], block2_cfgs=[], block3_cfgs=[], block4_cfgs=[], block5_cfgs=[],
+    )
+    cost_eval = SimpleNamespace(
+        decoded=decoded, cfgs_dict={}, outputs={}, signals=signals, optimizer_eval_mode="fake",
+    )
+    with mock.patch.object(env_module, "make_all_max_action_vector", return_value=np.asarray([9, 9, 9])), \
+            mock.patch.object(env_module, "evaluate_action_for_cost", return_value=cost_eval):
+        prepared = env.prepare_action_for_terminal_probe(
+            np.asarray([3, 1, 4]),
+            external_cost_score=variable_cost,
+            external_cost_rank=variable_cost,
+        )
     metrics = _runtime_metrics(reward_module)
     assessments = []
     for _ in range(2):
@@ -386,12 +479,35 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
                 prepared, metrics,
             )
         assert done is True
-        assert terminal_reward > 1.75
-        assert info["reward_breakdown"].variable_cost == 0.75
+        assert terminal_reward > 1.5
+        assert info["reward_breakdown"].variable_cost == variable_cost
         assert info["statistical_trials"]["seeds"] == [100, 101, 102, 103, 104]
         json.dumps(info["statistical_assessment"])
         assessments.append(info["statistical_assessment"])
     assert assessments[0] == assessments[1]
+
+
+def test_valid_robust_prepared_terminal_rejects_missing_or_out_of_range_cost():
+    env_module, reward_module, statistical_constraints = _runtime_modules()
+    env = _runtime_env(env_module, reward_module, statistical_constraints)
+    signals = SimpleNamespace(any_invalid=False, total_bits_sum=100.0, total_fusion_count=0.0)
+    base = {
+        "action_vec": np.asarray([3, 1, 4], dtype=int),
+        "action_hash": "1234567890abcdef" * 4,
+        "opt_signals": signals,
+        "any_invalid": False,
+        "info": {},
+    }
+    for cost in (None, -0.01, 1.01):
+        prepared = dict(base)
+        if cost is not None:
+            prepared["external_cost_score"] = cost
+        try:
+            env._finish_prepared_terminal_probe(prepared, _runtime_metrics(reward_module))
+        except ValueError as exc:
+            assert "external_cost_score" in str(exc)
+        else:
+            raise AssertionError(f"prepared robust cost {cost!r} did not fail")
 
 
 def test_normal_terminal_runtime_assesses_trials_and_threads_external_cost():

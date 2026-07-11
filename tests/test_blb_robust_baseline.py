@@ -250,3 +250,89 @@ def test_install_robust_reference_replaces_legacy_stability_and_margin_state():
     assert base_env.acc_threshold_m2 == reference.metric2_limit
     assert base_env.loss_threshold == reference.loss_limit
     assert base_env.statistical_reference is reference
+
+
+def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate(monkeypatch):
+    from blb_stage2_rl import env as env_module
+    from blb_stage2_rl.action_space import make_all_max_action_vector
+    from blb_stage2_rl.env import BLBStage2Env
+    from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
+    from blb_stage2_rl.sequential_runner import _collect_robust_baseline_reference
+
+    env = BLBStage2Env.__new__(BLBStage2Env)
+    env.baseline = BaselineCostStats(total_bits_sum=100.0, avg_k=13.0)
+    env.reward_weights = RewardWeights(reward_design="robust_constrained")
+    env.statistical_reference = None
+    env.acc_threshold = 0.0
+    env.acc_threshold_m2 = 0.0
+    env.stab_threshold = 1.0
+    env.loss_threshold = None
+    env.pareto_cost_archive = None
+    env.num_layers = 1
+    env.total_action_dim = len(make_all_max_action_vector(1))
+    env.env_cfg = SimpleNamespace(
+        profile="mrpc", num_trials_per_step=2, persistent_probe_install=False,
+    )
+    env.probe_noise_seed = 777
+    env.max_sfs = object()
+    env.rescale_bridge = SimpleNamespace(invoker=SimpleNamespace(baselines={}))
+    env.gelu_degree = 4
+    env.attn_degree = 6
+    env.sync_degree_vectors_from_model = lambda: {}
+    env.probe_runner = None
+    env.bridge = SimpleNamespace(apply=lambda **_kwargs: None)
+    env.clear_installed_blb = lambda: None
+    env.reset = lambda *, seed: np.asarray([0.0], dtype=np.float32)
+    env._installed_action_hash = None
+    env._last_probe_diagnostics = {}
+    env._step_idx = 0
+    env._last_invalid_rate = 0.0
+    env._last_total_bits_norm = 0.0
+    env._last_fusion_count = 0.0
+    env._build_state = lambda: np.asarray([0.0], dtype=np.float32)
+    group_index = {"value": 0}
+
+    def evaluate_probe(_trial_count):
+        metrics = _metrics(group_index["value"])
+        group_index["value"] += 1
+        return metrics
+
+    env._eval_on_probe = evaluate_probe
+    env._maybe_borderline_retest = lambda metrics, _info: metrics
+    decoded = SimpleNamespace(
+        block1_cfgs=[], block2_cfgs=[], block3_cfgs=[], block4_cfgs=[], block5_cfgs=[],
+    )
+    signals = SimpleNamespace(
+        any_invalid=False,
+        total_bits_sum=100.0,
+        total_fusion_count=0.0,
+        valid_block_count=1,
+        total_block_count=1,
+    )
+    cost_eval = SimpleNamespace(
+        decoded=decoded, cfgs_dict={}, outputs={}, signals=signals, optimizer_eval_mode="fake",
+    )
+    monkeypatch.setattr(env_module, "evaluate_action_for_cost", lambda *_args, **_kwargs: cost_eval)
+
+    reference, _summary = _collect_robust_baseline_reference(
+        base_env=env,
+        baseline_action_vec=make_all_max_action_vector(1),
+        base_seed=42,
+        precision_tolerance=0.001,
+        stability_multiplier=2.0,
+        bootstrap_samples=64,
+    )
+
+    assert reference.trial_count == 25
+    assert env.reward_weights.reward_design == "robust_constrained"
+    assert env.statistical_reference is None
+    with pytest.raises(RuntimeError, match="statistical_reference"):
+        env._compute_terminal_reward(
+            _metrics(6), signals,
+            action_vec=make_all_max_action_vector(1),
+            action_vec_hash="candidate",
+            any_invalid=False,
+            external_cost_score=0.5,
+            external_cost_rank=0.5,
+            info={},
+        )

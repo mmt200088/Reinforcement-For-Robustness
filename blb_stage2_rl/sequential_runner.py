@@ -3231,11 +3231,22 @@ def _collect_robust_baseline_reference(
 
     original_trials = getattr(base_env.env_cfg, "num_trials_per_step", 1)
     original_probe_seed = getattr(base_env, "probe_noise_seed", None)
+    reward_weights = getattr(base_env, "reward_weights", None)
+    original_reward_design = (
+        getattr(reward_weights, "reward_design", None)
+        if reward_weights is not None else None
+    )
+    had_statistical_reference = hasattr(base_env, "statistical_reference")
+    original_statistical_reference = getattr(base_env, "statistical_reference", None)
     action = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1).copy()
     groups: List[Any] = []
     raw_groups: List[Dict[str, Any]] = []
 
     try:
+        if reward_weights is not None and original_reward_design == "robust_constrained":
+            reward_weights.reward_design = "stage1_aligned"
+        if had_statistical_reference:
+            base_env.statistical_reference = None
         base_env.env_cfg.num_trials_per_step = 5
         for group_idx in range(10):
             group_probe_seed = derive_baseline_group_probe_seed(base_seed, group_idx)
@@ -3334,6 +3345,10 @@ def _collect_robust_baseline_reference(
         finally:
             base_env.env_cfg.num_trials_per_step = original_trials
             base_env.probe_noise_seed = original_probe_seed
+            if reward_weights is not None and original_reward_design is not None:
+                reward_weights.reward_design = original_reward_design
+            if had_statistical_reference:
+                base_env.statistical_reference = original_statistical_reference
 
     raise AssertionError("robust baseline collection exhausted without a result")
 

@@ -548,6 +548,10 @@ class RewardBreakdown:
     loss_stability_probability: float = 0.0
     metric1_stability_probability: float = 0.0
     metric2_stability_probability: float = 0.0
+    q_precision: float = 0.0
+    q_stability: float = 0.0
+    precision_signal: float = 0.0
+    stability_signal: float = 0.0
     variable_cost: float = 0.0
     constraint_policy: str = ""
 
@@ -571,8 +575,8 @@ def robust_constrained_reward(
         invalid: bool,
         variable_cost: float,
         eps: float = 1.0e-8,
-        ) -> RewardBreakdown:
-    """Compute the bootstrap-constrained Stage-2 terminal reward."""
+        ) -> Tuple[float, int, float, float]:
+    """Return robust reward, priority, and both boundary signals."""
     cost = float(variable_cost)
     if not math.isfinite(cost):
         raise ValueError("variable_cost must be finite")
@@ -598,38 +602,26 @@ def robust_constrained_reward(
 
     q_precision = min(probabilities[field_name] for field_name in probability_fields[:3])
     q_stability = min(probabilities[field_name] for field_name in probability_fields[3:])
-    metric_ok = bool(q_precision >= 0.5) and not bool(invalid)
-    stab_ok = bool(q_stability >= 0.5) and metric_ok
+    precision_signal = boundary_signal(q_precision, eps)
+    stability_signal = boundary_signal(q_stability, eps)
 
     if invalid:
         reward = -5.0
         priority = 1
-        effective_cost = 0.0
-    elif not metric_ok:
-        reward = -3.0 + 0.5 * boundary_signal(q_precision, eps)
+    elif q_precision < 0.5:
+        reward = -3.0 + 0.5 * precision_signal
         priority = 1
-        effective_cost = 0.0
-    elif not stab_ok:
-        reward = -1.5 + 0.5 * boundary_signal(q_stability, eps)
+    elif q_stability < 0.5:
+        reward = -1.5 + 0.5 * stability_signal
         priority = 2
-        effective_cost = 0.0
     else:
-        reward = 1.0 + cost + 0.0005 * (
-            boundary_signal(q_precision, eps) + boundary_signal(q_stability, eps)
-        )
+        reward = 1.0 + cost + 0.0005 * (precision_signal + stability_signal)
         priority = 3
-        effective_cost = cost
-
-    return RewardBreakdown(
-        reward=float(reward),
-        priority=int(priority),
-        invalid=bool(invalid),
-        metric_ok=bool(metric_ok),
-        stab_ok=bool(stab_ok),
-        cost_score=float(effective_cost),
-        variable_cost=float(cost),
-        constraint_policy="bootstrap_5x5_v1",
-        **probabilities,
+    return (
+        float(reward),
+        int(priority),
+        float(precision_signal),
+        float(stability_signal),
     )
 
 
@@ -1222,10 +1214,62 @@ def compute_reward(
     )
 
     if str(getattr(weights, "reward_design", "tiered")) == "robust_constrained":
-        return robust_constrained_reward(
+        if invalid:
+            variable_cost = 0.0 if external_cost_score is None else float(np.clip(
+                _safe_float(external_cost_score, 0.0), 0.0, 1.0,
+            ))
+        else:
+            if external_cost_score is None:
+                raise ValueError(
+                    "robust_constrained valid candidate requires external_cost_score"
+                )
+            variable_cost = float(external_cost_score)
+            if not math.isfinite(variable_cost) or not 0.0 <= variable_cost <= 1.0:
+                raise ValueError(
+                    "robust_constrained external_cost_score must be in [0, 1]"
+                )
+        reward, priority, precision_signal, stability_signal = robust_constrained_reward(
             constraint_assessment,
             invalid=invalid,
-            variable_cost=(0.0 if external_cost_score is None else external_cost_score),
+            variable_cost=variable_cost,
+        )
+        probability_fields = (
+            "loss_precision_probability",
+            "metric1_precision_probability",
+            "metric2_precision_probability",
+            "loss_stability_probability",
+            "metric1_stability_probability",
+            "metric2_stability_probability",
+        )
+        probabilities = (
+            {field_name: 0.0 for field_name in probability_fields}
+            if constraint_assessment is None
+            else {
+                field_name: float(np.clip(
+                    float(getattr(constraint_assessment, field_name)), 0.0, 1.0,
+                ))
+                for field_name in probability_fields
+            }
+        )
+        q_precision = min(probabilities[field_name] for field_name in probability_fields[:3])
+        q_stability = min(probabilities[field_name] for field_name in probability_fields[3:])
+        metric_ok = bool(priority >= 2) and not invalid
+        stab_ok = bool(priority == 3) and metric_ok
+        return RewardBreakdown(
+            reward=float(reward),
+            priority=int(priority),
+            invalid=invalid,
+            metric_ok=metric_ok,
+            stab_ok=stab_ok,
+            loss_ok=bool(probabilities["loss_precision_probability"] >= 0.5) and not invalid,
+            cost_score=float(variable_cost) if stab_ok else 0.0,
+            variable_cost=float(variable_cost),
+            constraint_policy="bootstrap_5x5_v1",
+            q_precision=float(q_precision),
+            q_stability=float(q_stability),
+            precision_signal=float(precision_signal),
+            stability_signal=float(stability_signal),
+            **probabilities,
         )
 
     m1 = _safe_float(metrics.metric1_mean, 0.0)
