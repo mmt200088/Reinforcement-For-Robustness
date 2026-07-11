@@ -227,6 +227,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `8d0e1b3` | `experiments/server_command_runs/replan_delta_nodes_8d0e1b3_20260711/` | Cache each preloaded graph's multiplication-node name lookup once per `ReplanSession` instead of rebuilding it for every propagation-delta update. |
 | Rescale/fusion maps | `8f5792a` | `experiments/server_command_runs/replan_normalized_deltas_8f5792a_20260711/` | Reuse exact already-normalized `str -> int/'x2'` delta dictionaries without reparsing values or allocating a replacement dictionary. |
 | Rescale/fusion maps | `f5d45c5` | `experiments/server_command_runs/replan_clean_state_f5d45c5_20260711/` | Track clean graph-delta state per session so successful repeated replans perform one exit restore instead of redundant entry-plus-exit restores, while dirty recovery remains intact. |
+| Rescale/fusion maps | `805e0ed` | `experiments/server_command_runs/replan_skip_applied_805e0ed_20260711/` | Skip materializing the unused applied-delta echo dictionary only for compact fusion-map replans while preserving full replan diagnostics and all validation/mutation work. |
 | Rescale/fusion maps | `ffa58a5` | `experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/` | Make fusion schedule/replay verification derive expectations from the canonical map and close the 140-test Task 5 gate without changing runtime semantics. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
@@ -1340,6 +1341,19 @@ Eleven-repeat hot-loop A/B improved 100,000 combinations from median
 equal maps. The 132-test related gate and explicit dirty-recovery parity are
 under
 `experiments/server_command_runs/replan_clean_state_f5d45c5_20260711/`.
+
+Progress 2026-07-11: the compact fusion-map caller never consumes the
+`applied_delta_overrides` echo dictionary, although the generic replan core
+still allocated and filled it for every combination. Source commit `805e0ed`
+lets only `ReplanSession.replan_compact()` skip that record; lookup, mutation,
+and validation remain unchanged, and full replan diagnostics retain the
+original default. Eleven-repeat hot-loop A/B improved 100,000 combinations
+from median `1.197590s` to `1.179304s` (`1.0155x`) with identical result
+SHA256. The short three-repeat 20-worker block1 builder gate was wall-neutral
+(`11.05s` versus `11.09s`) while median user CPU fell by `0.46s`; all maps
+were semantically equal after excluding wall metadata. The 134-test related
+gate and raw evidence are under
+`experiments/server_command_runs/replan_skip_applied_805e0ed_20260711/`.
 
 Progress 2026-07-03: `rescale_optimizer_bridge.load_baseline_archive()` now
 caches parsed static-skeleton archives by absolute path, mtime, and size. The

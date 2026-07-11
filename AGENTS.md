@@ -1547,6 +1547,10 @@ Key wires:
   calls restore once before returning and let the next call skip a redundant
   entry restore; abnormal dirty state must still trigger entry recovery. Keep
   that recovery invariant when changing session return or exception paths.
+- Compact session replans skip materializing the unused
+  `applied_delta_overrides` echo dictionary. Full replan, CLI, and diagnostic
+  callers retain it by default; do not remove their record or bypass delta
+  lookup, mutation, and validation when maintaining this fast path.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.
