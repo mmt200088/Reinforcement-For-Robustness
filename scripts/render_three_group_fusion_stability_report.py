@@ -14,6 +14,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 
 EXPECTED_SEEDS = [20260721, 20261721, 20262721, 20263721, 20264721]
+EVALUATOR_SCHEMA_VERSION = "fusion_count_action_eval_rlpath_compare_v1"
 CANONICAL_INSTALL_PATH = (
     "BLBStage2SequentialEnv.evaluate_step -> commit_step -> "
     "BLBStage2Env.step(boosted_overrides)"
@@ -180,11 +181,27 @@ def _completeness_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
                 detail=f"expected {EXPECTED_SEEDS}, found {actual_seeds}",
             )
         )
+        for run_index, actual_seed in enumerate(actual_seeds):
+            expected_seed = (
+                EXPECTED_SEEDS[run_index]
+                if run_index < len(EXPECTED_SEEDS)
+                else None
+            )
+            if actual_seed != expected_seed:
+                failures.append(
+                    _failure(
+                        "seed_value",
+                        run_index=run_index,
+                        seed=actual_seed,
+                        detail=f"expected {expected_seed!r}, found {actual_seed!r}",
+                    )
+                )
     if len(actual_seeds) != len(set(map(str, actual_seeds))):
         failures.append(_failure("duplicate_seeds", detail=str(actual_seeds)))
 
     expected_names = set(GROUP_SPECS)
     expected_top_level = {
+        "schema_version": EVALUATOR_SCHEMA_VERSION,
         "repeat": 5,
         "probe_size": 408,
         "stage1_gelu": [4] * 12,
@@ -293,6 +310,16 @@ def _trial_metadata_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
     expected_indices = [list(range(5))]
     for run_index, run in enumerate(run_payloads):
         seed = _run_seed(run)
+        expected_trial_seeds = (
+            [
+                [
+                    int((seed ^ (trial * 2654435761)) & 0x7FFFFFFFFFFFFFFF)
+                    for trial in range(5)
+                ]
+            ]
+            if isinstance(seed, int) and not isinstance(seed, bool)
+            else None
+        )
         group_seeds: list[Any] = []
         for group_name in GROUP_SPECS:
             group = _group_map(run).get(group_name)
@@ -327,6 +354,29 @@ def _trial_metadata_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
                         )
                     )
             trial_seeds = probe.get("per_worker_trial_seeds")
+            if expected_trial_seeds is None:
+                failures.append(
+                    _failure(
+                        "deterministic_trial_seeds",
+                        run_index=run_index,
+                        seed=seed,
+                        group=group_name,
+                        detail="deterministic trial seeds require an integer run seed",
+                    )
+                )
+            elif trial_seeds != expected_trial_seeds:
+                failures.append(
+                    _failure(
+                        "deterministic_trial_seeds",
+                        run_index=run_index,
+                        seed=seed,
+                        group=group_name,
+                        detail=(
+                            "deterministic trial seeds: expected "
+                            f"{expected_trial_seeds!r}, found {trial_seeds!r}"
+                        ),
+                    )
+                )
             if (
                 not isinstance(trial_seeds, list)
                 or len(trial_seeds) != 1
@@ -587,19 +637,26 @@ def _per_run_summary(
     return per_runs
 
 
-def _group_summary(run_payloads: Sequence[Any], group_name: str) -> dict[str, Any]:
+def _group_summary(
+    run_payloads: Sequence[Any],
+    group_name: str,
+    aggregate_run_indexes: set[int],
+) -> dict[str, Any]:
     spec = GROUP_SPECS[group_name]
     pooled_metrics: dict[str, Any] = {}
     run_mean_std: dict[str, Any] = {}
     for metric in METRICS:
         pooled = [
             value
-            for run in run_payloads
+            for run_index, run in enumerate(run_payloads)
+            if run_index in aggregate_run_indexes
             for value in _metric_array(_group_map(run).get(group_name), metric)
         ]
         pooled_metrics[metric] = _stats(pooled, expected_count=25)
         run_means: list[Any] = []
-        for run in run_payloads:
+        for run_index, run in enumerate(run_payloads):
+            if run_index not in aggregate_run_indexes:
+                continue
             group = _group_map(run).get(group_name)
             metrics = group.get("metrics") if isinstance(group, Mapping) else None
             run_means.append(
@@ -628,7 +685,10 @@ def _group_summary(run_payloads: Sequence[Any], group_name: str) -> dict[str, An
 
 
 def _comparison_summary(
-    run_payloads: Sequence[Any], treatment_name: str, reference_name: str
+    run_payloads: Sequence[Any],
+    treatment_name: str,
+    reference_name: str,
+    aggregate_run_indexes: set[int],
 ) -> dict[str, Any]:
     paired_deltas: dict[str, Any] = {}
     run_mean_deltas: dict[str, Any] = {}
@@ -636,7 +696,9 @@ def _comparison_summary(
     for metric in METRICS:
         raw_deltas: list[float] = []
         mean_deltas: list[float] = []
-        for run in run_payloads:
+        for run_index, run in enumerate(run_payloads):
+            if run_index not in aggregate_run_indexes:
+                continue
             groups = _group_map(run)
             treatment = _metric_array(groups.get(treatment_name), metric)
             reference = _metric_array(groups.get(reference_name), metric)
@@ -662,6 +724,22 @@ def _comparison_summary(
     }
 
 
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        if math.isnan(value):
+            label = "nan"
+        elif value > 0:
+            label = "positive_infinity"
+        else:
+            label = "negative_infinity"
+        return {"non_finite": label}
+    if isinstance(value, Mapping):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def build_summary(*, run_payloads: Sequence[Any], source_commit: str) -> dict[str, Any]:
     """Validate evaluator payloads and aggregate paired stability statistics."""
     payloads = list(run_payloads) if isinstance(run_payloads, Sequence) else []
@@ -671,15 +749,28 @@ def build_summary(*, run_payloads: Sequence[Any], source_commit: str) -> dict[st
         _steps_install_gate(payloads),
         _fusion_pattern_gate(payloads),
     ]
+    invalid_run_indexes = {
+        failure["run_index"]
+        for gate in gates
+        for failure in gate["failures"]
+        if isinstance(failure.get("run_index"), int)
+        and not isinstance(failure.get("run_index"), bool)
+    }
+    aggregate_run_indexes = set(range(len(payloads))) - invalid_run_indexes
     groups = {
-        group_name: _group_summary(payloads, group_name)
+        group_name: _group_summary(payloads, group_name, aggregate_run_indexes)
         for group_name in GROUP_SPECS
     }
     comparisons = {
-        comparison_name: _comparison_summary(payloads, treatment, reference)
+        comparison_name: _comparison_summary(
+            payloads,
+            treatment,
+            reference,
+            aggregate_run_indexes,
+        )
         for comparison_name, (treatment, reference) in COMPARISON_SPECS.items()
     }
-    return {
+    summary = {
         "source_commit": source_commit,
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -703,6 +794,7 @@ def build_summary(*, run_payloads: Sequence[Any], source_commit: str) -> dict[st
         "gates": gates,
         "all_gates_pass": all(gate["passed"] for gate in gates),
     }
+    return _json_safe(summary)
 
 
 def _h(value: Any) -> str:
@@ -731,6 +823,7 @@ def _table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
 def render_html(summary: Mapping[str, Any]) -> str:
     """Render a self-contained diagnostic HTML report."""
     protocol = summary.get("protocol", {})
+    model = summary.get("model", {})
     groups = summary.get("groups", {})
     comparisons = summary.get("comparisons", {})
     gates = summary.get("gates", [])
@@ -742,6 +835,8 @@ def render_html(summary: Mapping[str, Any]) -> str:
         ("Total evaluations", summary.get("total_evaluations", 0)),
         ("Probe size", protocol.get("probe_size", "n/a")),
         ("Repeat", protocol.get("repeat", "n/a")),
+        ("Stage-1 GELU", model.get("stage1_gelu", [])),
+        ("Stage-1 Softmax", model.get("stage1_softmax", [])),
         ("K", f"K={protocol.get('K', 'n/a')}"),
         ("Install path", protocol.get("install_path", "")),
         ("Control", "Noisy Stage-2 fusion-zero control (not a plaintext baseline)"),
