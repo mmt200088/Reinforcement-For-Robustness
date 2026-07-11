@@ -1,4 +1,5 @@
 import json
+import inspect
 from types import SimpleNamespace
 
 import numpy as np
@@ -138,3 +139,45 @@ def test_baseline_group_probe_seed_is_reproducible_and_unique_for_first_ten_grou
 
     assert seeds == [derive_baseline_group_probe_seed(314, group_idx) for group_idx in range(10)]
     assert len(set(seeds)) == 10
+
+
+@pytest.mark.parametrize("base_seed,group_idx", [
+    (True, 0),
+    (np.bool_(False), 0),
+    (1.5, 0),
+    ("1", 0),
+    (-1, 0),
+    (1, True),
+    (1, np.bool_(False)),
+    (1, 1.5),
+    (1, "1"),
+    (1, -1),
+])
+def test_baseline_group_probe_seed_rejects_invalid_integer_inputs(base_seed, group_idx):
+    with pytest.raises((TypeError, ValueError)):
+        derive_baseline_group_probe_seed(base_seed, group_idx)
+
+
+def test_robust_mode_guards_legacy_preflight_and_uses_public_bootstrap_config_name():
+    import blb_stage2_rl.sequential_runner as runner_mod
+
+    source = inspect.getsource(runner_mod.run_sequential_via_runner)
+    legacy_preflight = source.index("base_env.step(baseline_action_vec)")
+    assert "if not robust_mode:" in source[:legacy_preflight]
+    resolver_source = inspect.getsource(runner_mod._resolve_robust_baseline_config)
+    assert "constraint_bootstrap_samples" in resolver_source
+    assert "stage2_bootstrap_samples" not in resolver_source
+
+
+def test_robust_baseline_config_reads_public_bootstrap_samples_name():
+    from blb_stage2_rl.sequential_runner import _resolve_robust_baseline_config
+
+    evaluator = SimpleNamespace(stage2_limit_tolerance=0.001)
+    configured = SimpleNamespace(
+        stage2_stability_multiplier=2.0,
+        constraint_bootstrap_samples=123,
+    )
+    defaulted = SimpleNamespace(stage2_stability_multiplier=2.0)
+
+    assert _resolve_robust_baseline_config(configured, evaluator) == (0.001, 2.0, 123)
+    assert _resolve_robust_baseline_config(defaulted, evaluator) == (0.001, 2.0, 4096)

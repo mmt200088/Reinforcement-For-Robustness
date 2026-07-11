@@ -579,11 +579,59 @@ class BLBStage2Env:
         return self._build_state()
 
     @staticmethod
+    def _normalize_trial_seeds(
+            trial_seeds: Optional[Sequence[int]],
+            trial_count: int,
+            ) -> Tuple[int, ...]:
+        if trial_seeds is None:
+            return ()
+        try:
+            raw_trial_seeds = tuple(trial_seeds)
+        except TypeError as exc:
+            raise ValueError("trial_seeds must be an integer sequence") from exc
+        if any(isinstance(seed, (bool, np.bool_)) for seed in raw_trial_seeds):
+            raise ValueError("trial_seeds must be an integer sequence")
+        try:
+            normalized = tuple(operator.index(seed) for seed in raw_trial_seeds)
+        except TypeError as exc:
+            raise ValueError("trial_seeds must be an integer sequence") from exc
+        if len(normalized) != int(trial_count):
+            raise ValueError("trial_seeds length must match the number of probe trials")
+        return normalized
+
+    @classmethod
+    def _trial_seeds_from_probe_diagnostics(
+            cls,
+            diagnostics: Any,
+            trial_count: int,
+            ) -> Tuple[int, ...]:
+        seeds_by_trial: List[Optional[int]] = [None] * int(trial_count)
+        for indices, seeds in zip(
+                diagnostics.per_worker_trial_indices,
+                diagnostics.per_worker_trial_seeds,
+        ):
+            if len(indices) != len(seeds):
+                raise ValueError("probe diagnostics trial indices and seeds must align")
+            for trial_idx, seed in zip(indices, seeds):
+                index = operator.index(trial_idx)
+                if not 0 <= index < int(trial_count) or seeds_by_trial[index] is not None:
+                    raise ValueError("probe diagnostics trial indices must be unique and in range")
+                seeds_by_trial[index] = seed
+        if any(seed is None for seed in seeds_by_trial):
+            raise ValueError("probe diagnostics must provide every trial seed")
+        return cls._normalize_trial_seeds(seeds_by_trial, trial_count)
+
+    @staticmethod
     def _metrics_from_trial_results(
             results: Sequence[Tuple[float, float, float]],
+            *,
+            trial_seeds: Optional[Sequence[int]] = None,
             ) -> EpisodeMetrics:
+        normalized_trial_seeds = BLBStage2Env._normalize_trial_seeds(
+            trial_seeds, len(results),
+        ) if trial_seeds is not None else ()
         if not results:
-            return EpisodeMetrics()
+            return EpisodeMetrics(trial_seeds=normalized_trial_seeds)
         loss_arr = np.array([float(x[0]) for x in results], dtype=float)
         m1_arr = np.array([float(x[1]) for x in results], dtype=float)
         m2_arr = np.array([float(x[2]) for x in results], dtype=float)
@@ -594,14 +642,18 @@ class BLBStage2Env:
         m2_arr = np.nan_to_num(m2_arr, nan=0.0, posinf=1.0, neginf=0.0)
         return EpisodeMetrics(
             loss_mean=float(loss_arr.mean()),
-            loss_std=float(loss_arr.std(ddof=0)) if loss_arr.size > 1 else 0.0,
+            loss_std=float(loss_arr.std(ddof=1)) if loss_arr.size > 1 else 0.0,
             metric1_mean=float(m1_arr.mean()),
             metric2_mean=float(m2_arr.mean()),
-            metric1_std=float(m1_arr.std(ddof=0)) if m1_arr.size > 1 else 0.0,
-            metric2_std=float(m2_arr.std(ddof=0)) if m2_arr.size > 1 else 0.0,
+            metric1_std=float(m1_arr.std(ddof=1)) if m1_arr.size > 1 else 0.0,
+            metric2_std=float(m2_arr.std(ddof=1)) if m2_arr.size > 1 else 0.0,
             loss_max=float(loss_arr.max()),
             metric1_min=float(m1_arr.min()),
             metric2_min=float(m2_arr.min()),
+            loss_trials=tuple(float(value) for value in loss_arr.tolist()),
+            metric1_trials=tuple(float(value) for value in m1_arr.tolist()),
+            metric2_trials=tuple(float(value) for value in m2_arr.tolist()),
+            trial_seeds=normalized_trial_seeds,
         )
 
     def _placeholder_metrics_for_invalid(self) -> EpisodeMetrics:
@@ -837,7 +889,11 @@ class BLBStage2Env:
                 )
                 diag_obj = self.probe_runner.last_diagnostics
                 diag = {}
+                local_trial_seeds: Optional[Tuple[int, ...]] = None
                 if diag_obj is not None:
+                    local_trial_seeds = self._trial_seeds_from_probe_diagnostics(
+                        diag_obj, len(forward_indices),
+                    )
                     diag = {
                         "k": int(diag_obj.k),
                         "wall_seconds": float(diag_obj.wall_seconds),
@@ -866,7 +922,13 @@ class BLBStage2Env:
                 })
                 for local_idx, result in enumerate(trial_results):
                     item_idx = forward_indices[local_idx]
-                    metrics = self._metrics_from_trial_results([result])
+                    metrics = self._metrics_from_trial_results(
+                        [result],
+                        trial_seeds=(
+                            [local_trial_seeds[local_idx]]
+                            if local_trial_seeds is not None else None
+                        ),
+                    )
                     out[item_idx] = self._finish_prepared_terminal_probe(
                         prepared_items[item_idx], metrics,
                         probe_diagnostics=diag,
@@ -1458,15 +1520,9 @@ class BLBStage2Env:
                         "speedup_vs_sequential": float(diag.speedup_vs_sequential),
                         "line": format_diagnostics_line(diag),
                     }
-                    if self.probe_noise_seed is not None:
-                        seed_by_trial = {}
-                        for indices, seeds in zip(
-                                diag.per_worker_trial_indices,
-                                diag.per_worker_trial_seeds,
-                        ):
-                            seed_by_trial.update(zip(indices, seeds))
-                        if len(seed_by_trial) == k:
-                            trial_seeds = [int(seed_by_trial[idx]) for idx in range(k)]
+                    trial_seeds = list(
+                        self._trial_seeds_from_probe_diagnostics(diag, k)
+                    )
                 for (loss, m1, m2) in results:
                     if loss is None or (isinstance(loss, float) and not math.isfinite(loss)):
                         # NaN/inf from a probe trial is kept and handled below
@@ -1704,30 +1760,14 @@ class BLBStage2Env:
             per_trial_metric2: List[float],
             trial_seeds: Optional[Sequence[int]] = None,
             ) -> EpisodeMetrics:
-        if not per_trial_loss:
-            return EpisodeMetrics()
-
         trial_count = len(per_trial_loss)
         if len(per_trial_metric1) != trial_count or len(per_trial_metric2) != trial_count:
             raise ValueError("probe trial channels must have equal lengths")
-        normalized_trial_seeds: Tuple[int, ...] = ()
-        if trial_seeds is not None:
-            try:
-                raw_trial_seeds = tuple(trial_seeds)
-            except TypeError as exc:
-                raise ValueError("trial_seeds must be an integer sequence") from exc
-            if any(isinstance(seed, (bool, np.bool_)) for seed in raw_trial_seeds):
-                raise ValueError("trial_seeds must be an integer sequence")
-            try:
-                normalized_trial_seeds = tuple(
-                    operator.index(seed) for seed in raw_trial_seeds
-                )
-            except TypeError as exc:
-                raise ValueError("trial_seeds must be an integer sequence") from exc
-            if normalized_trial_seeds and len(normalized_trial_seeds) != trial_count:
-                raise ValueError(
-                    "trial_seeds length must match the number of probe trials"
-                )
+        normalized_trial_seeds = BLBStage2Env._normalize_trial_seeds(
+            trial_seeds, trial_count,
+        )
+        if not per_trial_loss:
+            return EpisodeMetrics(trial_seeds=normalized_trial_seeds)
 
         loss_arr = np.array(per_trial_loss, dtype=float)
         m1_arr = np.array(per_trial_metric1, dtype=float)

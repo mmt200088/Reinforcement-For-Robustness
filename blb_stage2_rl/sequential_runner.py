@@ -3159,6 +3159,25 @@ def _register_run_in_experiments_log(
         log(f"  [experiments][warning] register failed: {exc}")
 
 
+def _resolve_robust_baseline_config(train_cfg: Any, evaluator: Any) -> Tuple[float, float, int]:
+    """Read robust constraint calibration inputs without legacy tolerance math."""
+    raw_precision_tolerance = getattr(evaluator, "stage2_limit_tolerance", None)
+    precision_tolerance = (
+        0.001 if raw_precision_tolerance is None else float(raw_precision_tolerance)
+    )
+    raw_stability_multiplier = getattr(
+        train_cfg,
+        "stage2_stability_multiplier",
+        getattr(evaluator, "stage2_stability_multiplier", None),
+    )
+    stability_multiplier = (
+        2.0 if raw_stability_multiplier is None else float(raw_stability_multiplier)
+    )
+    raw_bootstrap_samples = getattr(train_cfg, "constraint_bootstrap_samples", None)
+    bootstrap_samples = 4096 if raw_bootstrap_samples is None else int(raw_bootstrap_samples)
+    return precision_tolerance, stability_multiplier, bootstrap_samples
+
+
 def _collect_robust_baseline_reference(
         *,
         base_env: Any,
@@ -3343,6 +3362,10 @@ def run_sequential_via_runner(
     from .action_io import action_vec_to_slots_list
 
     ev = runner.evaluator
+    robust_mode = (
+        str(getattr(train_cfg, "reward_design", "")).strip().lower()
+        == "robust_constrained"
+    )
     bullet = "*"
     log = runner._make_log_safe(ev.log)
 
@@ -3562,39 +3585,40 @@ def run_sequential_via_runner(
     # (reserved pseudo-episode -1) so the calibrated acc/stab thresholds are
     # identical for any GPU count and across reruns. Legacy mode (flag unset)
     # keeps the true-random preflight bit-for-bit.
-    if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
-        from .seed_utils import PREFLIGHT_EPISODE, derive_probe_seed
-        base_env.probe_noise_seed = derive_probe_seed(
-            int(getattr(train_cfg, "seed", 42) or 42), PREFLIGHT_EPISODE,
-        )
-        log(
-            f"  {bullet} [stage2-parallel] deterministic preflight probe seed = "
-            f"{base_env.probe_noise_seed}"
-        )
-    try:
-        base_env.reset(seed=int(train_cfg.seed))
-        _, _preflight_reward, _, preflight_info = base_env.step(baseline_action_vec)
-        noisy_metrics = preflight_info.get("metrics")
-        if noisy_metrics is not None:
-            noisy_baseline_metric1 = float(getattr(noisy_metrics, "metric1_mean", baseline_clean_metric1))
-            noisy_baseline_metric2 = float(getattr(noisy_metrics, "metric2_mean", baseline_clean_metric2))
-            raw_std = float(getattr(noisy_metrics, "loss_std", 0.0))
-            noisy_baseline_loss_std = raw_std if np.isfinite(raw_std) else 0.0
-            raw_m1_std = float(getattr(noisy_metrics, "metric1_std", 0.0))
-            noisy_baseline_metric1_std = raw_m1_std if np.isfinite(raw_m1_std) else 0.0
-            raw_m2_std = float(getattr(noisy_metrics, "metric2_std", 0.0))
-            noisy_baseline_metric2_std = raw_m2_std if np.isfinite(raw_m2_std) else 0.0
-            raw_mean = float(getattr(noisy_metrics, "loss_mean", baseline.loss_mean))
-            noisy_baseline_loss_mean = raw_mean if np.isfinite(raw_mean) else float(baseline.loss_mean)
-            # Overwrite baseline std fields with the noisy preflight values —
-            # these feed v3 combined_stab_excess thresholds. Keep means tied to
-            # the clean reference so rank/report code has a stable frame.
-            baseline.loss_std = noisy_baseline_loss_std
-            baseline.metric1_std = noisy_baseline_metric1_std
-            baseline.metric2_std = noisy_baseline_metric2_std
-            preflight_ok = True
-    except Exception as exc:
-        log(f"  [baseline-preflight][warning] noisy probe failed: {exc}")
+    if not robust_mode:
+        if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
+            from .seed_utils import PREFLIGHT_EPISODE, derive_probe_seed
+            base_env.probe_noise_seed = derive_probe_seed(
+                int(getattr(train_cfg, "seed", 42) or 42), PREFLIGHT_EPISODE,
+            )
+            log(
+                f"  {bullet} [stage2-parallel] deterministic preflight probe seed = "
+                f"{base_env.probe_noise_seed}"
+            )
+        try:
+            base_env.reset(seed=int(train_cfg.seed))
+            _, _preflight_reward, _, preflight_info = base_env.step(baseline_action_vec)
+            noisy_metrics = preflight_info.get("metrics")
+            if noisy_metrics is not None:
+                noisy_baseline_metric1 = float(getattr(noisy_metrics, "metric1_mean", baseline_clean_metric1))
+                noisy_baseline_metric2 = float(getattr(noisy_metrics, "metric2_mean", baseline_clean_metric2))
+                raw_std = float(getattr(noisy_metrics, "loss_std", 0.0))
+                noisy_baseline_loss_std = raw_std if np.isfinite(raw_std) else 0.0
+                raw_m1_std = float(getattr(noisy_metrics, "metric1_std", 0.0))
+                noisy_baseline_metric1_std = raw_m1_std if np.isfinite(raw_m1_std) else 0.0
+                raw_m2_std = float(getattr(noisy_metrics, "metric2_std", 0.0))
+                noisy_baseline_metric2_std = raw_m2_std if np.isfinite(raw_m2_std) else 0.0
+                raw_mean = float(getattr(noisy_metrics, "loss_mean", baseline.loss_mean))
+                noisy_baseline_loss_mean = raw_mean if np.isfinite(raw_mean) else float(baseline.loss_mean)
+                # Overwrite baseline std fields with the noisy preflight values —
+                # these feed v3 combined_stab_excess thresholds. Keep means tied to
+                # the clean reference so rank/report code has a stable frame.
+                baseline.loss_std = noisy_baseline_loss_std
+                baseline.metric1_std = noisy_baseline_metric1_std
+                baseline.metric2_std = noisy_baseline_metric2_std
+                preflight_ok = True
+        except Exception as exc:
+            log(f"  [baseline-preflight][warning] noisy probe failed: {exc}")
 
     # Resolve gates from the noisy preflight + the user's tolerances.
     # tolerances come from rl_tune.py CLI (stage2_limit_tolerance,
@@ -3712,21 +3736,10 @@ def run_sequential_via_runner(
     }
 
     robust_reference = None
-    if str(getattr(train_cfg, "reward_design", "")).strip().lower() == "robust_constrained":
-        raw_precision_tolerance = getattr(ev, "stage2_limit_tolerance", None)
-        precision_tolerance = (
-            0.001 if raw_precision_tolerance is None else float(raw_precision_tolerance)
+    if robust_mode:
+        precision_tolerance, stability_multiplier, bootstrap_samples = (
+            _resolve_robust_baseline_config(train_cfg, ev)
         )
-        raw_stability_multiplier = getattr(
-            train_cfg,
-            "stage2_stability_multiplier",
-            getattr(ev, "stage2_stability_multiplier", None),
-        )
-        stability_multiplier = (
-            2.0 if raw_stability_multiplier is None else float(raw_stability_multiplier)
-        )
-        raw_bootstrap_samples = getattr(train_cfg, "stage2_bootstrap_samples", None)
-        bootstrap_samples = 4096 if raw_bootstrap_samples is None else int(raw_bootstrap_samples)
         robust_reference, robust_summary = _collect_robust_baseline_reference(
             base_env=base_env,
             baseline_action_vec=baseline_action_vec,

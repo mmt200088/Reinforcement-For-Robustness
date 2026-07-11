@@ -29,6 +29,8 @@ from __future__ import annotations
 import operator
 from typing import List
 
+import numpy as np
+
 # Knuth multiplicative-hash constant — same as stage1_rl/seed_utils.py and
 # probe_runner._TRIAL_SEED_MULTIPLIER, so the trial mix stays consistent.
 _KNUTH = 2654435761
@@ -68,17 +70,22 @@ def derive_probe_seed(base_seed: int, global_episode_idx: int) -> int:
 
 def derive_baseline_group_probe_seed(base_seed: int, group_idx: int) -> int:
     """Deterministic probe seed for one robust-baseline evidence group."""
-    if isinstance(group_idx, bool):
-        raise TypeError("group_idx must be an integer, not bool")
-    try:
-        normalized_group_idx = operator.index(group_idx)
-    except TypeError as exc:
-        raise TypeError("group_idx must be an integer") from exc
-    if normalized_group_idx < 0:
-        raise ValueError("group_idx must be non-negative")
+    def nonnegative_integer(name: str, value: int) -> int:
+        if isinstance(value, (bool, np.bool_)):
+            raise TypeError(f"{name} must be an integer, not bool")
+        try:
+            normalized = operator.index(value)
+        except TypeError as exc:
+            raise TypeError(f"{name} must be an integer") from exc
+        if normalized < 0:
+            raise ValueError(f"{name} must be non-negative")
+        return int(normalized)
+
+    normalized_base_seed = nonnegative_integer("base_seed", base_seed)
+    normalized_group_idx = nonnegative_integer("group_idx", group_idx)
     return derive_probe_seed(
-        base_seed,
-        PREFLIGHT_EPISODE - 1 - int(normalized_group_idx),
+        normalized_base_seed,
+        PREFLIGHT_EPISODE - 1 - normalized_group_idx,
     )
 
 
