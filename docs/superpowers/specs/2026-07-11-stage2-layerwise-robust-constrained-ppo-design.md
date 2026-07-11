@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted in conversation on 2026-07-11.
+Accepted in conversation on 2026-07-11, including the correction that Block3
+fusion is absent but Block3 truncation K remains a policy decision.
 
 ## Goal
 
@@ -12,7 +13,8 @@ precision and stability constraints.
 
 The Stage-1 prerequisite is fixed to GELU degree 4 and Softmax degree 6 in every
 layer. Stage-2 fixes Block2 and Block5 to fusion count 1, lets PPO choose Block4
-fusion count 0 or 1 per layer, and lets PPO choose every active truncation K.
+fusion count 0 or 1 per layer, and lets PPO choose every active truncation K,
+including Block3 K. Block3 has no fusion-count action.
 
 The optimizer remains PPO. The design changes the decision granularity,
 statistical evidence, reward ordering, credit assignment, cost normalization,
@@ -51,25 +53,29 @@ The existing runtime is per-block sequential with 47 policy steps. The new
 runtime is per-layer sequential with exactly 12 policy steps, matching the
 earlier Stage-1 layerwise decision pattern.
 
-Every layer uses the same canonical five-slot layout:
+Every layer uses the same canonical six-slot layout:
 
 | Slot | Decision | Domain |
 |---|---|---|
 | 0 | Block4 fusion count | `{0, 1}` |
 | 1 | Block1 truncation K | configured `K_LEVELS` |
 | 2 | Block2 truncation K | configured `K_LEVELS` |
-| 3 | Block4 truncation K | configured `K_LEVELS` |
-| 4 | Block5 truncation K | configured `K_LEVELS` |
+| 3 | Block3 truncation K | configured `K_LEVELS` |
+| 4 | Block4 truncation K | configured `K_LEVELS` |
+| 5 | Block5 truncation K | configured `K_LEVELS` |
 
 Layer 0 has no Block1, so slot 1 is masked and contributes neither log
-probability nor entropy. Block3 remains outside the Stage-2 action space and
-stays at its baseline configuration.
+probability nor entropy. Block3 K is active in every layer. Its fusion count
+remains outside the action space, and all of its non-K fields stay at their
+static-skeleton baseline values. The retained `block3_exp_n6` skeleton and
+Block3 K decoder provide this path without a Block3 fusion map.
 
 At one policy step, all active decisions for that layer are sampled jointly
 from factorized categorical heads. The joint log probability is the sum of the
 active slot log probabilities. The environment then resolves the fixed
-Block2/5 fusion options, resolves the selected Block4 option, installs all K
-choices for the layer, and replans the active blocks. Optimizer signals are
+Block2/5 fusion options, resolves the selected Block4 option, installs all five
+applicable K choices for the layer (four in layer 0), and replans the active
+blocks including Block3. Optimizer signals are
 aggregated into one layer-step observation before the next layer is sampled.
 
 The policy receives exact layer and block-slot identities from the layerwise
@@ -170,7 +176,7 @@ Only policy-controlled cost variation enters the PPO objective:
 
 ```text
 F = mean(Block4 fusion_count over 12 layers)
-T = mean((13 - K) / (13 - 8) over all 47 active K slots)
+T = mean((13 - K) / (13 - 8) over all 59 active K slots)
 C = 0.5 * F + 0.5 * T
 ```
 
@@ -253,7 +259,7 @@ After training:
    constraints. Break equal-cost ties by minimum feasibility confidence, then
    loss, metric1, and metric2.
 5. Audit every one-coordinate neighbor of the winner: 12 Block4 flips and up
-   to five alternate K values for each of 47 K slots, at most 247 neighbors.
+   to five alternate K values for each of 59 K slots, at most 307 neighbors.
    Screen at five trials, promote plausible lower-cost candidates to 25 trials,
    and repeat until no strict-feasible one-coordinate cost improvement exists.
 
@@ -265,9 +271,11 @@ report must state that limitation rather than overclaiming.
 
 Focused tests must prove:
 
-1. the episode has 12 layer steps and the canonical five-slot layout;
-2. layer 0 masks Block1 K and all other layers expose all four active K slots;
-3. Block2/5 fusion is fixed to 1 and Block4 remains binary;
+1. the episode has 12 layer steps and the canonical six-slot layout;
+2. layer 0 masks Block1 K, Block3 K is active in every layer, and layers 1-11
+   expose Block1/2/3/4/5 K;
+3. Block3 has no fusion action, Block2/5 fusion is fixed to 1, and Block4
+   fusion remains binary;
 4. baseline calibration consumes 5 x 5 raw trials and uses `ddof=1`;
 5. zero-variance calibration extends to 50 then fails loudly if unresolved;
 6. loss, metric1, and metric2 independently gate precision and stability;
@@ -283,4 +291,4 @@ Server verification consists of focused tests, a short integrity smoke that is
 not interpreted as a quality result, and then the full convergence run. The
 final HTML report must show baseline and winner distributions, reward and
 entropy curves, all six constraint results, and a compact per-layer table of
-Block4 fusion count plus Block1/2/4/5 truncation K.
+Block4 fusion count plus Block1/2/3/4/5 truncation K.
