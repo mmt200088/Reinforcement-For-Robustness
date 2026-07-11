@@ -1,0 +1,39 @@
+{
+  "source_commit": "2a32d91",
+  "candidate": "compact replan omits unused baseline_q_bits diagnostics",
+  "samples_seconds": {
+    "baseline": [
+      1.2168376080226153,
+      1.1903205910348333,
+      1.1927349419565871,
+      1.1950025839614682,
+      1.1966801960370503,
+      1.1969431429752149,
+      1.2051914610201493
+    ],
+    "candidate": [
+      1.1753660909598693,
+      1.1757513680495322,
+      1.1783718090155162,
+      1.1812313540140167,
+      1.17123222904047,
+      1.1750039950129576,
+      1.1737887989729643
+    ]
+  },
+  "median_seconds": {
+    "baseline": 1.1966801960370503,
+    "candidate": 1.1753660909598693
+  },
+  "speedup": 1.018134013939244,
+  "result_signature": [
+    769,
+    1,
+    "bb33ac65f751f6900b1a9bba8e5513b7743b3a8c3b1582dd385c290da49acbc6"
+  ],
+  "results_equal": true,
+  "verify": {
+    "checked": 10,
+    "num_random": 8
+  }
+}
