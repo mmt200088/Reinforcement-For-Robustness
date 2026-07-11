@@ -209,6 +209,49 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertIs(type(payload["metric2"][0]), float)
         json.dumps(payload, allow_nan=False)
 
+    def test_recording_env_forwards_trial_seeds_to_current_base_contract(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        class TrialSeedRequiredBase:
+            def _aggregate_probe_trials(
+                    self,
+                    per_trial_loss,
+                    per_trial_metric1,
+                    per_trial_metric2,
+                    *,
+                    trial_seeds,
+                    ):
+                self.base_call = {
+                    "loss": per_trial_loss,
+                    "metric1": per_trial_metric1,
+                    "metric2": per_trial_metric2,
+                    "trial_seeds": trial_seeds,
+                }
+                return "aggregated"
+
+        RecordingEnv = rlpath._recording_blb_stage2_env_class(
+            TrialSeedRequiredBase
+        )
+        env = RecordingEnv()
+
+        result = env._aggregate_probe_trials(
+            [0.2, 0.3],
+            [0.8, 0.9],
+            [0.7, 0.75],
+            trial_seeds=[101, 202],
+        )
+
+        self.assertEqual(result, "aggregated")
+        self.assertEqual(env.base_call["trial_seeds"], [101, 202])
+        self.assertEqual(
+            env.fixed_eval_trial_metrics,
+            {
+                "loss": [0.2, 0.3],
+                "metric1": [0.8, 0.9],
+                "metric2": [0.7, 0.75],
+            },
+        )
+
     def test_fixed_map_option_uses_explicit_override_on_canonical_env_path(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
 
