@@ -67,6 +67,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
             config_name: str
             graph_key: str
             optimizer_wall_seconds: float
+            bridge_error_type: object = None
             boosted_field_values: object = None
             replan_application: dict = dataclasses.field(default_factory=dict)
             optimizer_cfg_overrides: list = dataclasses.field(default_factory=list)
@@ -239,6 +240,225 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(self.env.action_history[0][0], 1)
         with self.assertRaisesRegex(RuntimeError, "terminated"):
             self.env.step([0] * 6)
+
+
+class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
+    """Exercise the real shared block runtime through the layerwise env."""
+
+    @classmethod
+    def setUpClass(cls):
+        pkg_name = "_blb_layerwise_real_helper_test_pkg"
+        for name in list(sys.modules):
+            if name == pkg_name or name.startswith(f"{pkg_name}."):
+                del sys.modules[name]
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(BLB_DIR)]
+        sys.modules[pkg_name] = pkg
+        cls.events = []
+
+        def load(name, path):
+            loader = importlib.machinery.SourceFileLoader(name, str(path))
+            spec = importlib.util.spec_from_loader(name, loader)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            loader.exec_module(module)
+            return module
+
+        cls.fcm = load(f"{pkg_name}.fusion_count_map", BLB_DIR / "fusion_count_map.py")
+        cls.layerwise_action = load(
+            f"{pkg_name}.layerwise_action", BLB_DIR / "layerwise_action.py",
+        )
+
+        action_space = types.ModuleType(f"{pkg_name}.action_space")
+        action_space._BLOCK_SPECS = {
+            block_idx: types.SimpleNamespace(
+                fields=tuple((f"block{block_idx}_field_{slot_idx}",) for slot_idx in range(width)),
+            )
+            for block_idx, width in {1: 9, 2: 23, 3: 8, 4: 17, 5: 16}.items()
+        }
+        action_space._block_default_N = lambda block_idx, **kwargs: 1000 + int(block_idx)
+        action_space._degree_for_layer = (
+            lambda value, layer_idx, num_layers, **kwargs:
+            int(value[layer_idx] if isinstance(value, (list, tuple)) else value)
+        )
+        action_space.K_LEVELS = cls.layerwise_action.K_LEVELS
+        action_space.BlockStepSpec = object
+
+        def all_max(num_layers):
+            vector = np.full(int(num_layers) * 73 + 1, 14, dtype=int)
+            k_index = cls.layerwise_action.K_LEVELS.index(13)
+            for layer_idx in range(int(num_layers)):
+                for start, width in ((0, 9), (9, 23), (32, 8), (40, 17), (57, 16)):
+                    vector[layer_idx * 73 + start + width - 1] = k_index
+            vector[-1] = 4
+            return vector
+
+        action_space.make_all_max_action_vector = all_max
+
+        def decode(vector, max_sfs, **kwargs):
+            layer_idx, block_idx = kwargs["only"]
+            cls.events.append(("decode", int(layer_idx), int(block_idx)))
+            cfg = types.SimpleNamespace(
+                marker=f"decoded-b{int(block_idx)}",
+                layer_idx=int(layer_idx),
+                block_idx=int(block_idx),
+            )
+            return types.SimpleNamespace(
+                cfgs_dict=lambda: {f"block{int(block_idx)}": {int(layer_idx): cfg}},
+            )
+
+        def build(block_idx, layer_idx, values, **kwargs):
+            cls.events.append(("build", int(layer_idx), int(block_idx), dict(values)))
+            return types.SimpleNamespace(
+                marker=f"boosted-b{int(block_idx)}",
+                layer_idx=int(layer_idx),
+                block_idx=int(block_idx),
+                values=dict(values),
+            )
+
+        action_space.action_vector_to_cfgs = decode
+        action_space.build_block_cfg_from_field_values = build
+        action_space.fusion_step_schedule = lambda *args, **kwargs: []
+        action_space.horizon_for_num_layers = lambda layers: int(layers)
+        action_space.resolve_fusion_map_option_id = lambda spec, index: int(index)
+        action_space.splice_fusion_step_into_full_vec = lambda *args: None
+        action_space.splice_step_action_into_full_vec = lambda *args: None
+        action_space.step_schedule = lambda *args, **kwargs: []
+        action_space.step_schedule_max_dim = lambda layers: 2
+        sys.modules[action_space.__name__] = action_space
+
+        env_module = types.ModuleType(f"{pkg_name}.env")
+        env_module.BLBStage2Env = object
+        sys.modules[env_module.__name__] = env_module
+        fusion_cost = types.ModuleType(f"{pkg_name}.fusion_cost")
+        fusion_cost.BlockChoice = object
+        fusion_cost.compute_fusion_cost_saving = lambda *args, **kwargs: None
+        sys.modules[fusion_cost.__name__] = fusion_cost
+        reward = types.ModuleType(f"{pkg_name}.reward")
+        reward.FUSION_COST_BUDGET_FRACTION = 0.5
+        reward.FUSION_COST_W = 0.5
+        reward.FUSION_SATURATION_TAU = 0.0
+        reward.TRUNC_COST_W = 0.5
+        reward.stage1_dense_cost_reward = lambda *args, **kwargs: 0.0
+        sys.modules[reward.__name__] = reward
+        optimizer = types.ModuleType(f"{pkg_name}.optimizer_cost")
+
+        def apply_optimizer(**kwargs):
+            config_name = next(iter(kwargs["opt_outputs"]))
+            cfg = next(iter(next(iter(kwargs["cfgs_dict"].values())).values()))
+            cls.events.append(("apply", config_name, cfg.marker))
+            cfg.marker = f"{cfg.marker}:applied"
+            overrides = [{"cfg_attr": "marker", "new_value": cfg.marker}]
+            return {
+                "model_uses_replan_config": True,
+                "optimizer_cfg_overrides": {config_name: overrides},
+            }
+
+        optimizer.apply_optimizer_outputs_to_cfgs = apply_optimizer
+        sys.modules[optimizer.__name__] = optimizer
+
+        cls.sequential = load(
+            f"{pkg_name}.sequential_env", BLB_DIR / "sequential_env.py",
+        )
+        cls.layerwise_env = load(
+            f"{pkg_name}.layerwise_env", BLB_DIR / "layerwise_env.py",
+        )
+        cls.fusion_map = cls._fusion_map()
+
+    @classmethod
+    def _fusion_map(cls):
+        def option(option_id, fusion_count, width, marker, *, boosted=False):
+            payload = {
+                "option_id": option_id,
+                "fusion_count": fusion_count,
+                "tie_index": 0,
+                "total_variance": 1.0,
+                "total_bits": 100,
+                "slots": {},
+                "action_indices": [marker] * width,
+            }
+            if boosted:
+                payload["boosted"] = True
+                payload["explicit_field_values"] = {
+                    "boosted_sf": 61,
+                    "output_truncation_k": 13,
+                }
+            return payload
+
+        def graph(key, width, options):
+            return {
+                "graph_key": key,
+                "k_slot_index": width - 1,
+                "block_num_slots": width,
+                "options": options,
+            }
+
+        return cls.fcm.FusionCountMap.from_payload({
+            "profile": "mrpc",
+            "graphs": {
+                "block1_mrpc": graph("block1_mrpc", 9, [option(0, 0, 9, 14)]),
+                "block2_mrpc": graph("block2_mrpc", 23, [
+                    option(0, 0, 23, 14), option(1, 1, 23, 9),
+                ]),
+                "block4": graph("block4", 17, [
+                    option(0, 0, 17, 14), option(1, 1, 17, 8),
+                ]),
+                "block5_n4": graph("block5_n4", 16, [
+                    option(0, 0, 16, 14), option(1, 1, 16, 7, boosted=True),
+                ]),
+            },
+        })
+
+    def test_layerwise_ordinary_block2_and_boosted_block5_use_real_helper_chain(self):
+        self.events.clear()
+
+        class Bridge:
+            invoker = types.SimpleNamespace(baselines={})
+
+            def evaluate(inner_self, **kwargs):
+                cfg = kwargs["cfg"]
+                self.events.append(("bridge", kwargs["config_name"], cfg.marker))
+                return types.SimpleNamespace(
+                    valid=True,
+                    total_bits=100 + int(cfg.block_idx),
+                    fusion_count=1 if int(cfg.block_idx) in (2, 5) else 0,
+                    invalid_chain=None,
+                )
+
+        base = types.SimpleNamespace(
+            num_layers=12,
+            max_sfs=object(),
+            gelu_degree=[4] * 12,
+            attn_degree=[6] * 12,
+            gelu_degree_state=4,
+            attn_degree_state=6,
+            env_cfg=types.SimpleNamespace(profile="mrpc", rotation_name_map={}),
+            rescale_bridge=Bridge(),
+            reset=lambda **kwargs: np.zeros(1, dtype=np.float32),
+            step=lambda *args, **kwargs: self.fail("terminal base step must not run at layer 0"),
+        )
+        env = self.layerwise_env.BLBStage2LayerwiseEnv(
+            base_env=base, fusion_map=self.fusion_map,
+        )
+        self.assertIs(
+            self.layerwise_env.evaluate_block_from_full_vector,
+            self.sequential.evaluate_block_from_full_vector,
+        )
+
+        env.reset(seed=17)
+        _obs, reward, done, info = env.step([0, 99, 0, 0, 0, 0])
+
+        self.assertEqual((reward, done), (0.0, False))
+        self.assertEqual([row["block_idx"] for row in info["layer_summary"]["blocks"]], [2, 3, 4, 5])
+        self.assertIn(("decode", 0, 2), self.events)
+        self.assertNotIn(("build", 0, 2), [event[:3] for event in self.events])
+        self.assertIn(("bridge", "block2_mrpc_L0", "decoded-b2"), self.events)
+        self.assertIn(("apply", "block2_mrpc_L0", "decoded-b2"), self.events)
+        self.assertIn(("decode", 0, 5), self.events)
+        self.assertIn(("build", 0, 5), [event[:3] for event in self.events])
+        self.assertIn(("bridge", "block5_n4_L0", "boosted-b5"), self.events)
+        self.assertIn(("apply", "block5_n4_L0", "boosted-b5"), self.events)
+        self.assertEqual(len([event for event in self.events if event[0] == "apply"]), 4)
 
 
 if __name__ == "__main__":

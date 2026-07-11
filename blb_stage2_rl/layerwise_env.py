@@ -296,6 +296,7 @@ class BLBStage2LayerwiseEnv:
             "fusion_count": int(runtime.fusion_count),
             "invalid_chain": copy.deepcopy(runtime.invalid_chain),
             "bridge_error": runtime.bridge_error,
+            "bridge_error_type": runtime.bridge_error_type,
             "optimizer_wall_seconds": float(runtime.optimizer_wall_seconds),
             "boosted_field_values": copy.deepcopy(runtime.boosted_field_values),
             "replan_application": copy.deepcopy(runtime.replan_application),

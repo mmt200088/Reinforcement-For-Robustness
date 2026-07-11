@@ -59,6 +59,9 @@ from .reward import (
 )
 
 
+_BRIDGE_OPERATIONAL_ERRORS = (RuntimeError, OSError)
+
+
 @dataclass
 class SequentialEnvConfig:
     """Tunable knobs for the per-step reward shaping.
@@ -111,6 +114,7 @@ class BlockRuntimeResult:
     fusion_count: int
     invalid_chain: Optional[Any]
     bridge_error: Optional[str]
+    bridge_error_type: Optional[str]
     config_name: str
     graph_key: str
     optimizer_wall_seconds: float
@@ -182,7 +186,7 @@ def evaluate_block_from_full_vector(
             block_name=f"block{block}",
             cfg=block_cfg,
         )
-    except Exception as exc:
+    except _BRIDGE_OPERATIONAL_ERRORS as exc:
         return BlockRuntimeResult(
             block_cfg=None,
             optimizer_output=None,
@@ -191,6 +195,7 @@ def evaluate_block_from_full_vector(
             fusion_count=0,
             invalid_chain={"reason": f"bridge_error: {exc}"},
             bridge_error=str(exc),
+            bridge_error_type=type(exc).__name__,
             config_name=config_name,
             graph_key=str(graph_key),
             optimizer_wall_seconds=float(time.perf_counter() - optimizer_t0),
@@ -229,6 +234,7 @@ def evaluate_block_from_full_vector(
         fusion_count=int(output.fusion_count),
         invalid_chain=output.invalid_chain,
         bridge_error=None,
+        bridge_error_type=None,
         config_name=config_name,
         graph_key=str(graph_key),
         optimizer_wall_seconds=optimizer_wall,
@@ -464,6 +470,7 @@ class BLBStage2SequentialEnv:
             "fusion_count": runtime.fusion_count,
             "invalid_chain": runtime.invalid_chain,
             "bridge_error": runtime.bridge_error,
+            "bridge_error_type": runtime.bridge_error_type,
             "config_name": runtime.config_name,
             "optimizer_wall_seconds": runtime.optimizer_wall_seconds,
             "fusion_choice": fusion_choice,
@@ -515,6 +522,7 @@ class BLBStage2SequentialEnv:
                 "graph_key": config_name,
                 "valid": False,
                 "bridge_error": str(eval_info["bridge_error"]),
+                "bridge_error_type": eval_info.get("bridge_error_type"),
                 "early_terminated": True,
             }
             return self._build_obs(), -float(self.cfg.invalid_penalty), True, info

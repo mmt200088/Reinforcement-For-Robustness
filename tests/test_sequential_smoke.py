@@ -34,7 +34,6 @@ Run::
 """
 from __future__ import annotations
 
-import dataclasses
 import importlib.machinery
 import importlib.util
 import json
@@ -1108,9 +1107,41 @@ class BlockRuntimeHelperTest(unittest.TestCase):
 
         self.assertFalse(result.valid)
         self.assertEqual(result.bridge_error, "bridge down")
+        self.assertEqual(result.bridge_error_type, "RuntimeError")
         self.assertEqual(result.invalid_chain, {"reason": "bridge_error: bridge down"})
         self.assertIsNone(result.block_cfg)
         self.assertEqual(result.replan_application, {})
+
+    def test_helper_propagates_bridge_contract_defects_without_optimizer_apply(self):
+        original_apply = self.mod.apply_optimizer_outputs_to_cfgs
+        apply_calls = []
+
+        def unexpected_apply(**kwargs):
+            apply_calls.append(kwargs)
+            raise AssertionError("optimizer apply must not run")
+
+        self.mod.apply_optimizer_outputs_to_cfgs = unexpected_apply
+        try:
+            for error_type in (TypeError, AttributeError, AssertionError):
+                with self.subTest(error_type=error_type.__name__):
+                    def fail(**kwargs):
+                        raise error_type("contract defect")
+
+                    with self.assertRaisesRegex(error_type, "contract defect"):
+                        self.mod.evaluate_block_from_full_vector(
+                            base_env=self._base(types.SimpleNamespace(
+                                invoker=types.SimpleNamespace(baselines={}),
+                                evaluate=fail,
+                            )),
+                            full_vec=np.zeros(12 * 73 + 1, dtype=int),
+                            layer_idx=0,
+                            block_idx=2,
+                            graph_key="block2_mrpc",
+                        )
+        finally:
+            self.mod.apply_optimizer_outputs_to_cfgs = original_apply
+
+        self.assertEqual(apply_calls, [])
 
     def test_helper_preserves_optimizer_invalid_result(self):
         output = types.SimpleNamespace(
@@ -1156,15 +1187,12 @@ class BlockRuntimeHelperTest(unittest.TestCase):
 
         self.mod.apply_optimizer_outputs_to_cfgs = counted_apply
         try:
-            runtime = self.mod.evaluate_block_from_full_vector(
-                base_env=self._base(bridge),
-                full_vec=np.zeros(12 * 73 + 1, dtype=int),
-                layer_idx=0,
-                block_idx=2,
-                graph_key="block2_mrpc",
-            )
             spec = self.FakeSpec()
             env = self.mod.BLBStage2SequentialEnv.__new__(self.mod.BLBStage2SequentialEnv)
+            env.base = self._base(bridge)
+            env.num_layers = 12
+            env._schedule = [spec]
+            env._fusion_map = None
             env._terminated_early = False
             env._pending_full_vec = np.zeros(12 * 73 + 1, dtype=int)
             env._record_step = lambda *args, **kwargs: None
@@ -1176,13 +1204,8 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             env.cfg = self.mod.SequentialEnvConfig()
             env._lookup_baseline_block_total_bits = lambda graph_key: None
             env._build_obs = lambda: np.zeros(3, dtype=np.float32)
-            info = {
-                "spec": spec,
-                "action": np.asarray([0, 0]),
-                "temp_vec": np.ones(12 * 73 + 1, dtype=int),
-                **dataclasses.asdict(runtime),
-            }
-            _obs, reward, done, commit_info = env.commit_step(info)
+            eval_info = env.evaluate_step([0])
+            _obs, reward, done, commit_info = env.commit_step(eval_info)
         finally:
             self.mod.apply_optimizer_outputs_to_cfgs = original_apply
 
