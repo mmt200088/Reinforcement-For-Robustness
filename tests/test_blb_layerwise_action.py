@@ -6,6 +6,7 @@ from dataclasses import replace
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -215,6 +216,79 @@ class VariableCostTest(unittest.TestCase):
             layerwise.compute_variable_cost(actions)
 
 
+class KLevelsContractTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.map = fcm.FusionCountMap.load("mrpc")
+        cls.spec = layerwise.layerwise_schedule(12, cls.map)[1]
+
+    def test_rejects_unsupported_k_levels_at_every_public_entry_point(self):
+        actions = [layerwise.LayerwiseDecodedAction(0, {2: 13, 3: 13, 4: 13, 5: 13})]
+        actions.extend(
+            layerwise.LayerwiseDecodedAction(0, {1: 13, 2: 13, 3: 13, 4: 13, 5: 13})
+            for _ in range(11)
+        )
+        baseline = _legacy_all_max()
+        matrix = [[0, 0, 0, 0, 0, 0] for _ in range(12)]
+        with mock.patch.object(layerwise, "K_LEVELS", (8, 9, 10, 11, 12, 14)):
+            with self.assertRaisesRegex(ValueError, "K_LEVELS"):
+                layerwise.layerwise_schedule(12, self.map)
+            with self.assertRaisesRegex(ValueError, "K_LEVELS"):
+                layerwise.apply_layer_action(baseline, [0, 0, 0, 0, 0, 0], self.spec, self.map)
+            with self.assertRaisesRegex(ValueError, "K_LEVELS"):
+                layerwise.compute_variable_cost(actions)
+            with self.assertRaisesRegex(ValueError, "K_LEVELS"):
+                list(layerwise.one_coordinate_neighbors(matrix))
+
+    def test_reordered_supported_k_levels_decode_and_cost_by_value(self):
+        reordered = (13, 8, 10, 9, 11, 12)
+        with mock.patch.object(layerwise, "K_LEVELS", reordered):
+            spec = layerwise.layerwise_schedule(12, self.map)[1]
+            action = [0, reordered.index(8), reordered.index(9), reordered.index(10), reordered.index(11), reordered.index(12)]
+            result = layerwise.apply_layer_action(_legacy_all_max(), action, spec, self.map)
+            self.assertEqual(result.decoded.k_by_block, {1: 8, 2: 9, 3: 10, 4: 11, 5: 12})
+
+            actions = [layerwise.LayerwiseDecodedAction(0, {2: 8, 3: 8, 4: 8, 5: 8})]
+            actions.extend(
+                layerwise.LayerwiseDecodedAction(0, {1: 8, 2: 8, 3: 8, 4: 8, 5: 8})
+                for _ in range(11)
+            )
+            self.assertEqual(layerwise.compute_variable_cost(actions).normalized, 0.5)
+
+
+class LayerwiseOwnershipTest(unittest.TestCase):
+    def test_decoded_action_owns_an_immutable_mapping(self):
+        source = {2: 8}
+        decoded = layerwise.LayerwiseDecodedAction(0, source)
+        source[2] = 13
+        self.assertEqual(decoded.k_by_block[2], 8)
+        with self.assertRaises(TypeError):
+            decoded.k_by_block[2] = 13
+
+    def test_application_owns_read_only_vector_and_frozen_metadata(self):
+        source_vector = np.arange(4, dtype=int)
+        source_options = {2: 88}
+        source_boosted = {2: {"output_truncation_k": 8}}
+        application = layerwise.LayerActionApplication(
+            source_vector,
+            layerwise.LayerwiseDecodedAction(0, {2: 8}),
+            source_options,
+            source_boosted,
+        )
+        source_vector[0] = 99
+        source_options[2] = 0
+        source_boosted[2]["output_truncation_k"] = 13
+        self.assertEqual(int(application.full_vector[0]), 0)
+        self.assertEqual(application.fusion_option_ids[2], 88)
+        self.assertEqual(application.boosted_field_values_by_block[2]["output_truncation_k"], 8)
+        with self.assertRaises(ValueError):
+            application.full_vector[0] = 99
+        with self.assertRaises(TypeError):
+            application.fusion_option_ids[2] = 0
+        with self.assertRaises(TypeError):
+            application.boosted_field_values_by_block[2]["output_truncation_k"] = 13
+
+
 class LayerwiseNeighborTest(unittest.TestCase):
     def test_neighbors_are_complete_unique_and_non_mutating(self):
         action = [[0, layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13)] for _ in range(12)]
@@ -228,6 +302,27 @@ class LayerwiseNeighborTest(unittest.TestCase):
             self.assertEqual(len(changes), 1)
             self.assertNotEqual(changes[0], (0, 1))
             self.assertIsNot(neighbor[0], action[0])
+
+    def test_validates_late_coordinates_before_first_yield(self):
+        action = [[0, 0, 0, 0, 0, 0] for _ in range(12)]
+        action[11][5] = len(layerwise.K_LEVELS)
+        iterator = layerwise.one_coordinate_neighbors(action)
+        with self.assertRaises(ValueError):
+            next(iterator)
+
+    def test_masked_layer_zero_block1_k_is_ignored_everywhere(self):
+        fusion_map = fcm.FusionCountMap.load("mrpc")
+        spec = layerwise.layerwise_schedule(12, fusion_map)[0]
+        result = layerwise.apply_layer_action(
+            _legacy_all_max(), [0, 999, 0, 0, 0, 0], spec, fusion_map,
+        )
+        self.assertNotIn(1, result.decoded.k_by_block)
+
+        action = [[0, 0, 0, 0, 0, 0] for _ in range(12)]
+        action[0][1] = 999
+        neighbors = list(layerwise.one_coordinate_neighbors(action))
+        self.assertEqual(len(neighbors), 307)
+        self.assertTrue(all(neighbor[0][1] == 999 for neighbor in neighbors))
 
 
 class LayerwiseValidationTest(unittest.TestCase):
@@ -298,6 +393,11 @@ class LayerwiseValidationTest(unittest.TestCase):
         invalid_k_slot = _non_contiguous_fusion_map()
         invalid_k_slot.graphs["block2_mrpc"].k_slot_index = 23
         cases.append(("out of range K slot", invalid_k_slot, ValueError, "K slot"))
+
+        boosted_without_values = _non_contiguous_fusion_map()
+        graph = boosted_without_values.graphs["block2_mrpc"]
+        graph.options[1] = replace(graph.options[1], explicit_field_values=None)
+        cases.append(("boosted option lacks explicit values", boosted_without_values, ValueError, "boosted"))
 
         for name, fusion_map, error_type, message in cases:
             with self.subTest(name=name), self.assertRaisesRegex(error_type, message):

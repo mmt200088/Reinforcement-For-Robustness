@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence, Tuple
 
 import numpy as np
@@ -44,6 +45,17 @@ def _load_k_levels() -> Tuple[int, ...]:
 
 
 K_LEVELS = _load_k_levels()
+_REQUIRED_K_VALUES = frozenset((8, 9, 10, 11, 12, 13))
+
+
+def _validate_k_levels() -> Tuple[int, ...]:
+    levels = tuple(int(value) for value in K_LEVELS)
+    if len(levels) != len(_REQUIRED_K_VALUES) or frozenset(levels) != _REQUIRED_K_VALUES:
+        raise ValueError(
+            "K_LEVELS must contain each supported K value exactly once: "
+            f"{sorted(_REQUIRED_K_VALUES)}, got {levels}"
+        )
+    return levels
 
 # These are the stable legacy action_space._BLOCK_SPECS field counts, in block
 # order.  All blocks put output_truncation_k in their last slot.
@@ -69,6 +81,13 @@ class LayerwiseDecodedAction:
     block4_fusion: int
     k_by_block: Mapping[int, int]
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "k_by_block",
+            MappingProxyType({int(block): int(k_value) for block, k_value in self.k_by_block.items()}),
+        )
+
 
 @dataclass(frozen=True)
 class LayerActionApplication:
@@ -76,6 +95,29 @@ class LayerActionApplication:
     decoded: LayerwiseDecodedAction
     fusion_option_ids: Mapping[int, int]
     boosted_field_values_by_block: Mapping[int, Mapping[str, int]]
+
+    def __post_init__(self) -> None:
+        full_vector = np.asarray(self.full_vector, dtype=int).reshape(-1).copy()
+        full_vector.setflags(write=False)
+        object.__setattr__(self, "full_vector", full_vector)
+        object.__setattr__(
+            self,
+            "decoded",
+            LayerwiseDecodedAction(self.decoded.block4_fusion, self.decoded.k_by_block),
+        )
+        object.__setattr__(
+            self,
+            "fusion_option_ids",
+            MappingProxyType({int(block): int(option_id) for block, option_id in self.fusion_option_ids.items()}),
+        )
+        object.__setattr__(
+            self,
+            "boosted_field_values_by_block",
+            MappingProxyType({
+                int(block): MappingProxyType({str(name): int(value) for name, value in values.items()})
+                for block, values in self.boosted_field_values_by_block.items()
+            }),
+        )
 
 
 @dataclass(frozen=True)
@@ -126,6 +168,10 @@ def _validate_graph_options(graph_key: str, graph: Any, expected_slots: int) -> 
                 f"{graph_key} option {option.option_id}: action_indices has {vector.size} slots, "
                 f"expected {expected_slots}"
             )
+        if bool(getattr(option, "boosted", False)) and not getattr(option, "explicit_field_values", None):
+            raise ValueError(
+                f"{graph_key} option {option.option_id}: boosted options require explicit_field_values"
+            )
 
 
 def _validate_graphs(spec: LayerwiseStepSpec, fusion_map: Any) -> None:
@@ -154,13 +200,14 @@ def layerwise_schedule(
         gelu_degrees: Sequence[int] | None = None,
         ) -> list[LayerwiseStepSpec]:
     """Return one six-slot policy step per Transformer layer."""
+    levels = _validate_k_levels()
     layers = int(num_layers)
     if layers < 1:
         raise ValueError(f"num_layers must be >= 1, got {layers}")
     if gelu_degrees is not None and len(gelu_degrees) != layers:
         raise ValueError(f"gelu_degrees has {len(gelu_degrees)} values, expected {layers}")
 
-    slot_dims = (2,) + (len(K_LEVELS),) * 5
+    slot_dims = (2,) + (len(levels),) * 5
     specs = []
     for layer_idx in range(layers):
         gelu_degree = int(gelu_degrees[layer_idx]) if gelu_degrees is not None else 4
@@ -230,6 +277,7 @@ def apply_layer_action(
         ) -> LayerActionApplication:
     """Copy a legacy vector and apply exactly one layer's policy action."""
     del profile, gelu_degree  # Graph identity is fixed by the schedule metadata.
+    _validate_k_levels()
     action = _validate_layer_action(layer_action, step_spec)
     expected_size = int(step_spec.num_layers) * _LAYER_WIDTH + 1
     result = np.asarray(full_vector, dtype=int).reshape(-1).copy()
@@ -272,6 +320,7 @@ def apply_layer_action(
 
 def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> VariableCost:
     """Compute the learnable BERT-base variable cost from decoded actions."""
+    _validate_k_levels()
     if len(actions) != 12:
         raise ValueError(f"variable cost requires 12 layer actions, got {len(actions)}")
     fusion_values = []
@@ -305,16 +354,22 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
 
 def one_coordinate_neighbors(action_matrix: Sequence[Sequence[int]]) -> Iterator[list[list[int]]]:
     """Yield every legal one-coordinate alternative for a 12x6 policy action."""
+    levels = _validate_k_levels()
     rows = [list(map(int, row)) for row in action_matrix]
     if len(rows) != 12 or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
         raise ValueError("action_matrix must have shape 12x6")
-    dims = (2,) + (len(K_LEVELS),) * 5
+    dims = (2,) + (len(levels),) * 5
     for layer_idx, row in enumerate(rows):
         for slot_idx, value in enumerate(row):
+            if layer_idx == 0 and slot_idx == 1:
+                continue
             if not 0 <= value < dims[slot_idx]:
                 raise ValueError(
                     f"action_matrix[{layer_idx}][{slot_idx}]={value} outside [0, {dims[slot_idx]})"
                 )
+
+    for layer_idx, row in enumerate(rows):
+        for slot_idx, value in enumerate(row):
             if layer_idx == 0 and slot_idx == 1:
                 continue
             for alternative in range(dims[slot_idx]):
