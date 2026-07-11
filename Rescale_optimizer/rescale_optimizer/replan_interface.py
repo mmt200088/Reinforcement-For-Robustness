@@ -568,11 +568,17 @@ class ReplanSession:
         self._graphs: Dict[str, RescaleGraph] = {}
         self._delta_baselines: Dict[str, List[Tuple[int, Optional[int]]]] = {}
         self._stage_paths: Dict[str, Tuple[Tuple[ComputeNode, ...], ...]] = {}
+        self._delta_nodes: Dict[str, Dict[str, ComputeNode]] = {}
         for graph_key, path in self.configs.items():
             graph, _opt_cfg, _amp = load_graph_from_json(path)
             build_feasibility_dag(graph)
             self._graphs[graph_key] = graph
             self._delta_baselines[graph_key] = _snapshot_graph_delta_state(graph)
+            self._delta_nodes[graph_key] = {
+                node.name: node
+                for node in graph.nodes
+                if node.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
+            }
             baseline = self.baselines.get(graph_key)
             if baseline is not None:
                 skeleton = list(baseline.skeleton)
@@ -664,6 +670,7 @@ class ReplanSession:
             ),
             baseline_q_bits=list(baseline.q_bits_baseline),
             stage_paths=self._stage_paths.get(key),
+            delta_nodes=self._delta_nodes.get(key),
         )
 
         if _compact_result:

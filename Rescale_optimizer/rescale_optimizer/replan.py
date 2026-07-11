@@ -76,7 +76,7 @@ mutation happens on local copies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
 from .modulus_chain import ModulusChain
@@ -277,6 +277,8 @@ def _recompute_drops(
 def _apply_delta_overrides(
     graph: RescaleGraph,
     delta_overrides: Optional[Dict[str, Union[int, str]]],
+    *,
+    delta_nodes: Optional[Mapping[str, ComputeNode]] = None,
 ) -> Dict[str, Union[int, str]]:
     """
     Apply user-provided propagation delta overrides in-place on ``graph``.
@@ -287,7 +289,11 @@ def _apply_delta_overrides(
     if not delta_overrides:
         return {}
 
-    by_name = {n.name: n for n in graph.nodes if n.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)}
+    by_name = delta_nodes if delta_nodes is not None else {
+        n.name: n
+        for n in graph.nodes
+        if n.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
+    }
     applied: Dict[str, Union[int, str]] = {}
 
     for name, raw in delta_overrides.items():
@@ -510,6 +516,7 @@ def replan_with_user_actions(
     baseline_q_bits: Optional[Sequence[int]] = None,
     *,
     stage_paths: Optional[Sequence[Sequence[ComputeNode]]] = None,
+    delta_nodes: Optional[Mapping[str, ComputeNode]] = None,
 ) -> ReplanResult:
     """
     Re-run scale propagation under user-supplied ``t_new``, then run
@@ -554,7 +561,11 @@ def replan_with_user_actions(
         )
 
     try:
-        applied_delta_overrides = _apply_delta_overrides(graph, inputs.delta_overrides)
+        applied_delta_overrides = _apply_delta_overrides(
+            graph,
+            inputs.delta_overrides,
+            delta_nodes=delta_nodes,
+        )
     except ValueError as e:
         return ReplanResult(message=f"delta override failed: {e}")
 
