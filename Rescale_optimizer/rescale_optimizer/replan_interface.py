@@ -681,7 +681,9 @@ class ReplanSession:
                 delta_overrides=(deltas or None),
                 allowed_fusion_pairs=fusion_pairs,
             ),
-            baseline_q_bits=list(baseline.q_bits_baseline),
+            baseline_q_bits=(
+                None if _compact_result else list(baseline.q_bits_baseline)
+            ),
             stage_paths=self._stage_paths.get(key),
             delta_nodes=self._delta_nodes.get(key),
             record_applied_delta_overrides=not _compact_result,
