@@ -65,9 +65,14 @@ class TrialSeries:
             raise ValueError("trial channels must contain at least one value")
 
         try:
-            seeds = tuple(operator.index(seed) for seed in self.seeds)
+            normalized_seeds = []
+            for seed in self.seeds:
+                if isinstance(seed, (bool, np.bool_)):
+                    raise TypeError
+                normalized_seeds.append(operator.index(seed))
         except (TypeError, ValueError) as exc:
             raise ValueError("seeds must be an integer sequence") from exc
+        seeds = tuple(normalized_seeds)
         if seeds and len(seeds) != trial_count:
             raise ValueError(
                 f"seeds length {len(seeds)} does not match trial count {trial_count}"
@@ -102,6 +107,28 @@ class BaselineReference:
     metric2_std_limit: float
     bootstrap_means: Mapping[str, np.ndarray]
     bootstrap_stds: Mapping[str, np.ndarray]
+
+    def __post_init__(self) -> None:
+        sample_count = _positive_integer("bootstrap_samples", self.bootstrap_samples)
+        object.__setattr__(self, "bootstrap_samples", sample_count)
+        object.__setattr__(
+            self,
+            "bootstrap_means",
+            _validated_bootstrap_mapping(
+                "bootstrap_means",
+                self.bootstrap_means,
+                sample_count,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "bootstrap_stds",
+            _validated_bootstrap_mapping(
+                "bootstrap_stds",
+                self.bootstrap_stds,
+                sample_count,
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -151,9 +178,43 @@ def _positive_integer(name: str, value: int) -> int:
 
 
 def _readonly_array(values: np.ndarray) -> np.ndarray:
-    result = np.asarray(values, dtype=np.float64).copy()
-    result.setflags(write=False)
-    return result
+    array = np.asarray(values, dtype=np.float64)
+    return np.frombuffer(array.tobytes(), dtype=np.float64).reshape(array.shape)
+
+
+def _validated_bootstrap_mapping(
+    name: str,
+    mapping: Mapping[str, np.ndarray],
+    sample_count: int,
+) -> Mapping[str, np.ndarray]:
+    if not isinstance(mapping, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    copied_mapping = dict(mapping)
+    required_keys = set(_CHANNELS)
+    actual_keys = set(copied_mapping)
+    if actual_keys != required_keys:
+        missing = sorted(required_keys - actual_keys)
+        extra = sorted(repr(key) for key in actual_keys - required_keys)
+        raise ValueError(
+            f"{name} must contain exactly {_CHANNELS}; "
+            f"missing={missing}, extra={extra}"
+        )
+
+    normalized = {}
+    for channel in _CHANNELS:
+        try:
+            values = np.asarray(copied_mapping[channel], dtype=np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name}[{channel!r}] must be a finite numeric array") from exc
+        expected_shape = (sample_count,)
+        if values.shape != expected_shape:
+            raise ValueError(
+                f"{name}[{channel!r}] shape {values.shape} != {expected_shape}"
+            )
+        if not np.all(np.isfinite(values)):
+            raise ValueError(f"{name}[{channel!r}] must contain only finite values")
+        normalized[channel] = _readonly_array(values)
+    return MappingProxyType(normalized)
 
 
 def _bootstrap_summaries(
@@ -165,9 +226,9 @@ def _bootstrap_summaries(
     with np.errstate(over="ignore", invalid="ignore"):
         for channel in _CHANNELS:
             samples = arrays[channel][indices]
-            means[channel] = _readonly_array(np.mean(samples, axis=1))
-            stds[channel] = _readonly_array(np.std(samples, axis=1, ddof=1))
-    return MappingProxyType(means), MappingProxyType(stds)
+            means[channel] = np.mean(samples, axis=1)
+            stds[channel] = np.std(samples, axis=1, ddof=1)
+    return means, stds
 
 
 def build_baseline_reference(
