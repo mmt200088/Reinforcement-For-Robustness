@@ -587,9 +587,21 @@ def _input_aggregates(
     for row_index, row in enumerate(prediction_rows):
         if row_index not in valid_row_indexes or not isinstance(row, Mapping):
             continue
+        run_seed = row.get("run_seed")
         group_name = row.get("group")
+        trial_index = row.get("trial_index")
         dataset_idx = row.get("dataset_idx")
-        if group_name in grouped and isinstance(dataset_idx, int):
+        valid_route = (
+            isinstance(run_seed, int)
+            and not isinstance(run_seed, bool)
+            and run_seed in EXPECTED_SEEDS
+            and isinstance(group_name, str)
+            and group_name in grouped
+            and isinstance(trial_index, int)
+            and not isinstance(trial_index, bool)
+            and 0 <= trial_index < TRIAL_COUNT
+        )
+        if valid_route and isinstance(dataset_idx, int) and not isinstance(dataset_idx, bool):
             grouped[group_name].setdefault(dataset_idx, []).append(row)
     result: dict[str, dict[str, Any]] = {}
     for group_name in GROUP_SPECS:
