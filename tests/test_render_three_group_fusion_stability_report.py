@@ -64,7 +64,7 @@ def _step_schedule(pattern):
                     "k_value": 13,
                     "valid": True,
                     "fusion_count_replan": fusion_count,
-                    "boosted": True,
+                    "boosted": bool(fusion_count),
                     "replan_application": {
                         "applied_before_forward": True,
                         "model_uses_replan_config": True,
