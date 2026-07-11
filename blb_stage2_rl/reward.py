@@ -542,6 +542,95 @@ class RewardBreakdown:
     optimizer_diagnostic_terms: Any = field(default_factory=lambda: ["q_bits", "q_head_bits", "q_tail_bits"])
     mpc_truncation_cost_enabled: bool = True
     mpc_truncation_term: str = "avg_k"
+    loss_precision_probability: float = 0.0
+    metric1_precision_probability: float = 0.0
+    metric2_precision_probability: float = 0.0
+    loss_stability_probability: float = 0.0
+    metric1_stability_probability: float = 0.0
+    metric2_stability_probability: float = 0.0
+    variable_cost: float = 0.0
+    constraint_policy: str = ""
+
+
+def boundary_signal(p: float, eps: float = 1.0e-8) -> float:
+    """Return the clipped log-distance from the online probability gate."""
+    probability = float(p)
+    epsilon = float(eps)
+    if not math.isfinite(probability):
+        raise ValueError("p must be finite")
+    if not math.isfinite(epsilon) or epsilon <= 0.0:
+        raise ValueError("eps must be finite and positive")
+    probability = float(np.clip(probability, 0.0, 1.0))
+    return float(np.clip(
+        math.log((probability + epsilon) / (0.5 + epsilon)), -1.0, 1.0,
+    ))
+
+
+def robust_constrained_reward(
+        assessment: Any,
+        invalid: bool,
+        variable_cost: float,
+        eps: float = 1.0e-8,
+        ) -> RewardBreakdown:
+    """Compute the bootstrap-constrained Stage-2 terminal reward."""
+    cost = float(variable_cost)
+    if not math.isfinite(cost):
+        raise ValueError("variable_cost must be finite")
+    cost = float(np.clip(cost, 0.0, 1.0))
+
+    probability_fields = (
+        "loss_precision_probability",
+        "metric1_precision_probability",
+        "metric2_precision_probability",
+        "loss_stability_probability",
+        "metric1_stability_probability",
+        "metric2_stability_probability",
+    )
+    if assessment is None:
+        if not invalid:
+            raise ValueError("robust constrained reward requires a statistical assessment")
+        probabilities = {field_name: 0.0 for field_name in probability_fields}
+    else:
+        probabilities = {
+            field_name: float(np.clip(float(getattr(assessment, field_name)), 0.0, 1.0))
+            for field_name in probability_fields
+        }
+
+    q_precision = min(probabilities[field_name] for field_name in probability_fields[:3])
+    q_stability = min(probabilities[field_name] for field_name in probability_fields[3:])
+    metric_ok = bool(q_precision >= 0.5) and not bool(invalid)
+    stab_ok = bool(q_stability >= 0.5) and metric_ok
+
+    if invalid:
+        reward = -5.0
+        priority = 1
+        effective_cost = 0.0
+    elif not metric_ok:
+        reward = -3.0 + 0.5 * boundary_signal(q_precision, eps)
+        priority = 1
+        effective_cost = 0.0
+    elif not stab_ok:
+        reward = -1.5 + 0.5 * boundary_signal(q_stability, eps)
+        priority = 2
+        effective_cost = 0.0
+    else:
+        reward = 1.0 + cost + 0.0005 * (
+            boundary_signal(q_precision, eps) + boundary_signal(q_stability, eps)
+        )
+        priority = 3
+        effective_cost = cost
+
+    return RewardBreakdown(
+        reward=float(reward),
+        priority=int(priority),
+        invalid=bool(invalid),
+        metric_ok=bool(metric_ok),
+        stab_ok=bool(stab_ok),
+        cost_score=float(effective_cost),
+        variable_cost=float(cost),
+        constraint_policy="bootstrap_5x5_v1",
+        **probabilities,
+    )
 
 
 @dataclass(frozen=True)
@@ -1096,6 +1185,7 @@ def compute_reward(
         external_cost_score: Optional[float] = None,
         external_cost_rank: Optional[float] = None,
         loss_threshold: Optional[float] = None,
+        constraint_assessment: Any = None,
         ) -> RewardBreakdown:
     """v3 reward with loss/m1/m2 precision gates and std stability gates.
 
@@ -1130,6 +1220,13 @@ def compute_reward(
     invalid = bool(any_invalid) if any_invalid is not None else bool(
         getattr(opt_signals, "any_invalid", False)
     )
+
+    if str(getattr(weights, "reward_design", "tiered")) == "robust_constrained":
+        return robust_constrained_reward(
+            constraint_assessment,
+            invalid=invalid,
+            variable_cost=(0.0 if external_cost_score is None else external_cost_score),
+        )
 
     m1 = _safe_float(metrics.metric1_mean, 0.0)
     m2 = _safe_float(metrics.metric2_mean, 0.0)

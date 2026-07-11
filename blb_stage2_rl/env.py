@@ -6,12 +6,13 @@ from __future__ import annotations
 
 import copy
 import contextlib
+import hashlib
 import math
 import operator
 import os
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -56,6 +57,7 @@ from .reward import (
     RewardWeights,
     compute_reward,
 )
+from .statistical_constraints import TrialSeries, assess_candidate
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +347,7 @@ class BLBStage2Env:
         # NOT a per-episode reward term (ADR-016 / the 77ffdc0 determinism fix), so it
         # is not threaded into compute_reward.
         self.loss_threshold: Optional[float] = None
+        self.statistical_reference = None
         self.max_sfs = max_sfs
         self.num_layers = int(num_layers)
         self.gelu_degree = self._normalize_degree_vector(gelu_degree, default=4, name="gelu_degree")
@@ -685,6 +688,8 @@ class BLBStage2Env:
             self,
             action_vec: np.ndarray,
             *,
+            external_cost_score: Optional[float] = None,
+            external_cost_rank: Optional[float] = None,
             boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
             ) -> Dict[str, Any]:
         """Prepare optimizer-adjusted cfgs for a terminal reward probe.
@@ -783,7 +788,7 @@ class BLBStage2Env:
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
 
-        return {
+        prepared = {
             "action_vec": action_vec,
             "action_hash": action_vec_hash,
             "decoded": decoded,
@@ -793,6 +798,77 @@ class BLBStage2Env:
             "info": info,
             "timing": timing,
         }
+        if external_cost_score is not None:
+            prepared["external_cost_score"] = float(external_cost_score)
+        if external_cost_rank is not None:
+            prepared["external_cost_rank"] = float(external_cost_rank)
+        return prepared
+
+    def _compute_terminal_reward(
+            self,
+            metrics: EpisodeMetrics,
+            opt_signals: Any,
+            *,
+            action_vec: np.ndarray,
+            action_vec_hash: str,
+            any_invalid: bool,
+            external_cost_score: Optional[float],
+            external_cost_rank: Optional[float],
+            info: Dict[str, Any],
+            ) -> RewardBreakdown:
+        assessment = None
+        if str(getattr(self.reward_weights, "reward_design", "")) == "robust_constrained":
+            if not any_invalid:
+                reference = getattr(self, "statistical_reference", None)
+                if reference is None:
+                    raise RuntimeError(
+                        "robust_constrained terminal reward requires statistical_reference"
+                    )
+                trials = TrialSeries(
+                    loss=metrics.loss_trials,
+                    metric1=metrics.metric1_trials,
+                    metric2=metrics.metric2_trials,
+                    seeds=metrics.trial_seeds,
+                )
+                seed_material = (
+                    f"{action_vec_hash}:{int(reference.bootstrap_seed)}"
+                ).encode("utf-8")
+                bootstrap_seed = int.from_bytes(
+                    hashlib.sha256(seed_material).digest()[:8], "big",
+                ) & 0x7FFFFFFFFFFFFFFF
+                assessment = assess_candidate(
+                    trials,
+                    reference,
+                    gate_probability=0.50,
+                    bootstrap_seed=bootstrap_seed,
+                )
+                info["statistical_assessment"] = {
+                    **asdict(assessment),
+                    "bootstrap_seed": int(bootstrap_seed),
+                }
+                info["statistical_trials"] = {
+                    "loss": [float(value) for value in trials.loss],
+                    "metric1": [float(value) for value in trials.metric1],
+                    "metric2": [float(value) for value in trials.metric2],
+                    "seeds": [int(value) for value in trials.seeds],
+                }
+
+        return compute_reward(
+            metrics, opt_signals,
+            action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
+            baseline=self.baseline,
+            weights=self.reward_weights,
+            acc_threshold=self.acc_threshold,
+            acc_threshold_m2=self.acc_threshold_m2,
+            stab_threshold=self.stab_threshold,
+            any_invalid=any_invalid,
+            pareto_archive=self.pareto_cost_archive,
+            action_hash=action_vec_hash,
+            external_cost_score=external_cost_score,
+            external_cost_rank=external_cost_rank,
+            loss_threshold=self.loss_threshold,
+            constraint_assessment=assessment,
+        )
 
     def _finish_prepared_terminal_probe(
             self,
@@ -824,18 +900,15 @@ class BLBStage2Env:
             diag.update(timing)
             info["probe_diagnostics"] = diag
 
-        breakdown = compute_reward(
-            metrics, opt_signals,
-            action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-            baseline=self.baseline,
-            weights=self.reward_weights,
-            acc_threshold=self.acc_threshold,
-            acc_threshold_m2=self.acc_threshold_m2,
-            stab_threshold=self.stab_threshold,
+        breakdown = self._compute_terminal_reward(
+            metrics,
+            opt_signals,
+            action_vec=action_vec,
+            action_vec_hash=action_vec_hash,
             any_invalid=any_invalid,
-            pareto_archive=self.pareto_cost_archive,
-            action_hash=action_vec_hash,
-            loss_threshold=self.loss_threshold,
+            external_cost_score=prepared.get("external_cost_score"),
+            external_cost_rank=prepared.get("external_cost_rank"),
+            info=info,
         )
         info["reward_breakdown"] = breakdown
         info["action_hash"] = action_vec_hash
@@ -1198,18 +1271,15 @@ class BLBStage2Env:
                 metric1_min=placeholder_metric1,
                 metric2_min=placeholder_metric2,
             )
-            breakdown = compute_reward(
-                metrics, opt_signals,
-                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-                baseline=self.baseline,
-                weights=self.reward_weights,
-                acc_threshold=self.acc_threshold,
-                acc_threshold_m2=self.acc_threshold_m2,
-                stab_threshold=self.stab_threshold,
+            breakdown = self._compute_terminal_reward(
+                metrics,
+                opt_signals,
+                action_vec=action_vec,
+                action_vec_hash=action_vec_hash,
                 any_invalid=True,
-                pareto_archive=self.pareto_cost_archive,
-                action_hash=action_vec_hash,
-                loss_threshold=self.loss_threshold,
+                external_cost_score=external_cost_score,
+                external_cost_rank=external_cost_rank,
+                info=info,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1258,18 +1328,15 @@ class BLBStage2Env:
             timing["probe_install_skipped"] = float(0.0)
             # 互斥校验失败，按 invalid 处理
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
-            breakdown = compute_reward(
-                metrics, opt_signals,
-                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-                baseline=self.baseline,
-                weights=self.reward_weights,
-                acc_threshold=self.acc_threshold,
-                acc_threshold_m2=self.acc_threshold_m2,
-                stab_threshold=self.stab_threshold,
+            breakdown = self._compute_terminal_reward(
+                metrics,
+                opt_signals,
+                action_vec=action_vec,
+                action_vec_hash=action_vec_hash,
                 any_invalid=True,
-                pareto_archive=self.pareto_cost_archive,
-                action_hash=action_vec_hash,
-                loss_threshold=self.loss_threshold,
+                external_cost_score=external_cost_score,
+                external_cost_rank=external_cost_rank,
+                info=info,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1303,18 +1370,15 @@ class BLBStage2Env:
             except Exception:
                 pass
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
-            breakdown = compute_reward(
-                metrics, opt_signals,
-                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-                baseline=self.baseline,
-                weights=self.reward_weights,
-                acc_threshold=self.acc_threshold,
-                acc_threshold_m2=self.acc_threshold_m2,
-                stab_threshold=self.stab_threshold,
+            breakdown = self._compute_terminal_reward(
+                metrics,
+                opt_signals,
+                action_vec=action_vec,
+                action_vec_hash=action_vec_hash,
                 any_invalid=True,
-                pareto_archive=self.pareto_cost_archive,
-                action_hash=action_vec_hash,
-                loss_threshold=self.loss_threshold,
+                external_cost_score=external_cost_score,
+                external_cost_rank=external_cost_rank,
+                info=info,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1344,20 +1408,15 @@ class BLBStage2Env:
                 info["probe_diagnostics"] = diag
 
         # 6) reward
-        breakdown = compute_reward(
-            metrics, opt_signals,
-            action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-            baseline=self.baseline,
-            weights=self.reward_weights,
-            acc_threshold=self.acc_threshold,
-            acc_threshold_m2=self.acc_threshold_m2,
-            stab_threshold=self.stab_threshold,
+        breakdown = self._compute_terminal_reward(
+            metrics,
+            opt_signals,
+            action_vec=action_vec,
+            action_vec_hash=action_vec_hash,
             any_invalid=any_invalid,
-            pareto_archive=self.pareto_cost_archive,
-            action_hash=action_vec_hash,
             external_cost_score=external_cost_score,
             external_cost_rank=external_cost_rank,
-            loss_threshold=self.loss_threshold,
+            info=info,
         )
 
         info["reward_breakdown"] = breakdown
