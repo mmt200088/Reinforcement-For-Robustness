@@ -11,6 +11,75 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class Stage2PersistentLauncherTest(unittest.TestCase):
+    def test_stage2_launcher_defaults_fixed_config_to_all4(self):
+        with tempfile.TemporaryDirectory(prefix="stage2_all4_launcher_") as td:
+            tmp = Path(td)
+            capture = tmp / "python_argv.nul"
+            fakebin = tmp / "fakebin"
+            fakebin.mkdir()
+            fake_python = fakebin / "python"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\0' "$@" > {str(capture)!r}
+                    exit 0
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_python.chmod(0o755)
+
+            env = os.environ.copy()
+            env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
+            env["CUDA_VISIBLE_DEVICES"] = ""
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    "llama_7B_LayerImportance.sh",
+                    "run",
+                    "rl",
+                    "--preset",
+                    "mrpc-blb-stage2-rl",
+                    "--mode",
+                    "stage2-only",
+                    "--persistent-root",
+                    str(tmp / "persistent"),
+                    "--stage2-search-episodes",
+                    "170",
+                    "--fresh",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
+            for _ in range(50):
+                if capture.is_file():
+                    break
+                import time
+
+                time.sleep(0.1)
+            self.assertTrue(capture.is_file(), msg="launcher did not invoke python")
+            argv = [
+                part.decode("utf-8")
+                for part in capture.read_bytes().split(b"\0")
+                if part
+            ]
+
+        self.assertEqual(
+            argv[argv.index("--stage2_fixed_config_source") + 1],
+            "all4",
+        )
+        self.assertEqual(
+            argv[argv.index("--stage2_fixed_config_path") + 1],
+            "",
+        )
+
     def test_stage2_launcher_warns_when_visible_gpus_are_not_forwarded_to_gpu_flags(self):
         with tempfile.TemporaryDirectory(prefix="stage2_gpu_audit_") as td:
             tmp = Path(td)
