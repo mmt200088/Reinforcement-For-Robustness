@@ -5,6 +5,7 @@ fidelity ordering, and the hard-priority rank key used by the playbook.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 import hashlib
@@ -12,10 +13,16 @@ import json
 import math
 import os
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from json_utils import stable_json_hash
+from json_utils import stable_json_hash, to_jsonable
 from jsonl_utils import iter_jsonl
+
+try:
+    from .statistical_constraints import TrialSeries
+except ImportError:  # Standalone diagnostics/tests load this module from its path.
+    from statistical_constraints import TrialSeries
 
 FIDELITY_ORDER = {
     "F0": 0,
@@ -349,11 +356,34 @@ def candidate_rank_key(record: Mapping[str, Any]) -> Tuple[float, ...]:
     )
 
 
+@dataclass(frozen=True)
+class CandidateTrialEvidence:
+    """Pooled robust trial groups for one canonical candidate identity."""
+
+    candidate_key: str
+    action_indices: Tuple[int, ...]
+    trials: TrialSeries
+    groups: Tuple[Mapping[str, Any], ...]
+    promotion_attempted: bool = False
+    promotion_status: str = ""
+
+    @property
+    def trial_count(self) -> int:
+        return len(self.trials.loss)
+
+    @property
+    def promoted(self) -> bool:
+        return self.promotion_status == "promoted"
+
+
 class CandidateStore:
     """Append-only JSONL store keyed by stable action hash."""
 
     def __init__(self, path: os.PathLike[str] | str):
         self.path = Path(path)
+        self._trial_records_by_candidate_key: Optional[
+            Dict[str, List[Dict[str, Any]]]
+        ] = None
 
     def read_all(self) -> List[Dict[str, Any]]:
         if not self.path.exists():
@@ -399,7 +429,143 @@ class CandidateStore:
         with self.path.open("a", encoding="utf-8") as f:
             f.writelines(_CANDIDATE_JSONL_ENCODER.iterencode(payload))
             f.write("\n")
+        if (
+                self._trial_records_by_candidate_key is not None
+                and payload.get("record_type") in (
+                    "candidate_trial_group_v1", "candidate_promotion_status_v1",
+                )
+                and payload.get("candidate_key")
+        ):
+            self._trial_records_by_candidate_key.setdefault(
+                str(payload["candidate_key"]), [],
+            ).append(payload)
         return payload
+
+    def _trial_records_for_candidate_key(
+            self,
+            candidate_key_value: str,
+            ) -> Sequence[Mapping[str, Any]]:
+        if self._trial_records_by_candidate_key is None:
+            indexed: Dict[str, List[Dict[str, Any]]] = {}
+            for record in self.read_all():
+                if record.get("record_type") not in (
+                        "candidate_trial_group_v1", "candidate_promotion_status_v1",
+                ):
+                    continue
+                key = record.get("candidate_key")
+                if key:
+                    indexed.setdefault(str(key), []).append(record)
+            self._trial_records_by_candidate_key = indexed
+        return self._trial_records_by_candidate_key.get(str(candidate_key_value), ())
+
+    def append_trial_group(
+            self,
+            action_indices: Any,
+            trials: TrialSeries,
+            metadata: Mapping[str, Any],
+            ) -> Dict[str, Any]:
+        """Append one aligned raw robust-evidence group for a candidate."""
+        if not isinstance(trials, TrialSeries):
+            raise TypeError("trials must be a TrialSeries")
+        if not isinstance(metadata, Mapping):
+            raise TypeError("metadata must be a mapping")
+        identity_context = metadata.get("identity_context")
+        if not isinstance(identity_context, Mapping):
+            raise ValueError("trial group metadata requires identity_context")
+        if not trials.seeds or len(trials.seeds) != len(trials.loss):
+            raise ValueError("robust trial evidence requires nonempty aligned seeds")
+        if len(set(trials.seeds)) != len(trials.seeds):
+            raise ValueError("duplicate trial seeds within trial group")
+
+        normalized_action = normalize_action_indices(action_indices)
+        existing = self.trial_evidence_for_action(
+            normalized_action, identity_context,
+        )
+        existing_seeds = set(existing.trials.seeds) if existing is not None else set()
+        overlap = sorted(existing_seeds.intersection(trials.seeds))
+        if overlap:
+            raise ValueError(f"duplicate trial seeds for candidate identity: {overlap}")
+
+        metadata_payload = to_jsonable(dict(metadata), stringify_unknown=True)
+        return self.append({
+            "record_type": "candidate_trial_group_v1",
+            "action_indices": normalized_action,
+            "effective_action_indices": normalized_action,
+            "identity_context": dict(identity_context),
+            "fidelity": str(metadata.get("fidelity", "F1")),
+            "valid": bool(metadata.get("valid", True)),
+            "trial_group": {
+                "loss": [float(value) for value in trials.loss],
+                "metric1": [float(value) for value in trials.metric1],
+                "metric2": [float(value) for value in trials.metric2],
+                "seeds": [int(value) for value in trials.seeds],
+            },
+            "trial_group_metadata": metadata_payload,
+        })
+
+    def trial_evidence_for_action(
+            self,
+            action_indices: Any,
+            identity_context: Mapping[str, Any],
+            ) -> Optional[CandidateTrialEvidence]:
+        """Pool all raw groups matching canonical action plus run context."""
+        if not isinstance(identity_context, Mapping):
+            raise TypeError("identity_context must be a mapping")
+        normalized_action = normalize_action_indices(action_indices)
+        wanted_key = candidate_key(normalized_action, identity_context)
+        loss: List[float] = []
+        metric1: List[float] = []
+        metric2: List[float] = []
+        seeds: List[int] = []
+        groups: List[Mapping[str, Any]] = []
+        promotion_attempted = False
+        promotion_status = ""
+
+        for record in self._trial_records_for_candidate_key(wanted_key):
+            record_type = str(record.get("record_type", ""))
+            if record_type == "candidate_promotion_status_v1":
+                promotion_attempted = True
+                promotion_status = str(record.get("promotion_status", promotion_status))
+                continue
+            if record_type != "candidate_trial_group_v1":
+                continue
+            group = record.get("trial_group")
+            if not isinstance(group, Mapping):
+                continue
+            trial_group = TrialSeries(
+                loss=group.get("loss", ()),
+                metric1=group.get("metric1", ()),
+                metric2=group.get("metric2", ()),
+                seeds=group.get("seeds", ()),
+            )
+            loss.extend(trial_group.loss)
+            metric1.extend(trial_group.metric1)
+            metric2.extend(trial_group.metric2)
+            seeds.extend(trial_group.seeds)
+            group_metadata = record.get("trial_group_metadata")
+            metadata_dict = dict(group_metadata) if isinstance(group_metadata, Mapping) else {}
+            groups.append(MappingProxyType(metadata_dict))
+            marker = str(metadata_dict.get("promotion_marker", ""))
+            status = str(metadata_dict.get("promotion_status", ""))
+            if marker in ("fresh_top_up", "promoted") or status:
+                promotion_attempted = True
+            if status == "promoted" or marker == "promoted":
+                promotion_status = "promoted"
+
+        if not loss:
+            return None
+        if len(set(seeds)) != len(seeds):
+            raise ValueError("stored candidate trial evidence contains duplicate seeds")
+        return CandidateTrialEvidence(
+            candidate_key=wanted_key,
+            action_indices=tuple(normalized_action),
+            trials=TrialSeries(
+                loss=loss, metric1=metric1, metric2=metric2, seeds=seeds,
+            ),
+            groups=tuple(groups),
+            promotion_attempted=promotion_attempted,
+            promotion_status=promotion_status,
+        )
 
     def best_for_action(
             self,

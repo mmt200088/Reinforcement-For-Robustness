@@ -321,3 +321,119 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             self.assertEqual(saved["action_hash"], saved["raw_action_hash"])
             self.assertEqual(saved["effective_action_hash"], action_hash(effective_action))
             self.assertEqual(saved["candidate_key_basis"], "effective_action_hash + identity_context")
+
+    def test_trial_groups_pool_raw_evidence_by_canonical_action_and_context(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [3, 2, 1, 0]
+        context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
+        first = TrialSeries(
+            loss=[0.10, 0.11, 0.12, 0.13, 0.14],
+            metric1=[0.90, 0.89, 0.91, 0.88, 0.92],
+            metric2=[0.80, 0.79, 0.81, 0.78, 0.82],
+            seeds=[10, 11, 12, 13, 14],
+        )
+        second = TrialSeries(
+            loss=[0.15, 0.16, 0.17, 0.18, 0.19],
+            metric1=[0.87, 0.86, 0.85, 0.84, 0.83],
+            metric2=[0.77, 0.76, 0.75, 0.74, 0.73],
+            seeds=[20, 21, 22, 23, 24],
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidate_store.jsonl")
+            store.append_trial_group(action, first, {
+                "identity_context": context,
+                "action_matrix": [[0, 0, 1, 2, 3, 4]],
+                "variable_cost": 0.25,
+                "group_index": 0,
+            })
+            store.append_trial_group(action, second, {
+                "identity_context": context,
+                "action_matrix": [[0, 5, 1, 2, 3, 4]],
+                "variable_cost": 0.25,
+                "group_index": 1,
+                "promotion_marker": "fresh_top_up",
+            })
+            pooled = store.trial_evidence_for_action(action, context)
+            isolated = store.trial_evidence_for_action(
+                action, {**context, "profile": "rte"},
+            )
+
+        self.assertIsNotNone(pooled)
+        self.assertEqual(pooled.trial_count, 10)
+        self.assertEqual(pooled.trials.seeds, (10, 11, 12, 13, 14, 20, 21, 22, 23, 24))
+        self.assertEqual(pooled.trials.loss, first.loss + second.loss)
+        self.assertEqual(len(pooled.groups), 2)
+        self.assertEqual(pooled.groups[1]["promotion_marker"], "fresh_top_up")
+        self.assertIsNone(isolated)
+
+    def test_trial_group_rejects_missing_and_duplicate_seeds_for_same_identity(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [3, 2, 1, 0]
+        context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
+        metadata = {"identity_context": context}
+
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidate_store.jsonl")
+            with self.assertRaisesRegex(ValueError, "nonempty aligned seeds"):
+                store.append_trial_group(
+                    action,
+                    TrialSeries(loss=[0.1], metric1=[0.9], metric2=[0.8]),
+                    metadata,
+                )
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.1, 0.2], metric1=[0.9, 0.8], metric2=[0.8, 0.7],
+                    seeds=[1, 2],
+                ),
+                metadata,
+            )
+            with self.assertRaisesRegex(ValueError, "duplicate trial seeds.*2"):
+                store.append_trial_group(
+                    action,
+                    TrialSeries(
+                        loss=[0.3, 0.4], metric1=[0.7, 0.6], metric2=[0.6, 0.5],
+                        seeds=[2, 3],
+                    ),
+                    metadata,
+                )
+
+    def test_trial_evidence_index_reads_jsonl_once_and_tracks_new_appends(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [1, 2, 3]
+        context = {"action_space_version": "layerwise-v1"}
+        metadata = {"identity_context": context}
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            store = CandidateStore(path)
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.1, 0.2], metric1=[0.9, 0.8], metric2=[0.8, 0.7],
+                    seeds=[1, 2],
+                ),
+                metadata,
+            )
+            store = CandidateStore(path)
+            with mock.patch.object(store, "read_all", wraps=store.read_all) as read_all:
+                first = store.trial_evidence_for_action(action, context)
+                store.append_trial_group(
+                    action,
+                    TrialSeries(
+                        loss=[0.3, 0.4], metric1=[0.7, 0.6], metric2=[0.6, 0.5],
+                        seeds=[3, 4],
+                    ),
+                    metadata,
+                )
+                second = store.trial_evidence_for_action(action, context)
+
+        self.assertEqual(first.trial_count, 2)
+        self.assertEqual(second.trial_count, 4)
+        read_all.assert_called_once_with()

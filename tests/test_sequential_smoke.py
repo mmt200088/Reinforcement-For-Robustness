@@ -578,6 +578,29 @@ class OutputHygieneRegressionTest(unittest.TestCase):
                 msg=f"{symbol!r} missing from sequential_runner.py — legacy v2 parity broken",
             )
 
+    def test_runner_dispatches_layerwise_and_preserves_explicit_block_rollback(self):
+        runner_src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        config_src = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+
+        for needle in (
+            "resolve_decision_path(",
+            "BLBStage2LayerwiseEnv(",
+            "train_layerwise(",
+            "decision_path == \"layerwise\"",
+            "BLBStage2SequentialEnv(",
+            "train_sequential(",
+            "horizon=12",
+            "max_step_dim=6",
+            "max_num_levels=6",
+            "metadata_width=0",
+            "signal_width=4",
+            "step_layer_indices=tuple(range(12))",
+            "step_block_indices=(3,) * 12",
+        ):
+            self.assertIn(needle, runner_src)
+        self.assertIn('decision_granularity: str = "block"', config_src)
+        self.assertIn('("layer", "block")', config_src)
+
     def test_sequential_runner_has_noisy_baseline_preflight(self):
         """Regression: previously the sequential path skipped the noisy
         baseline preflight, leaving stab_threshold at ~0.001 (driven by

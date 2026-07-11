@@ -3356,6 +3356,282 @@ def _collect_robust_baseline_reference(
     raise AssertionError("robust baseline collection exhausted without a result")
 
 
+def _build_layerwise_candidate_identity_context(
+        *,
+        train_cfg: Any,
+        evaluator: Any,
+        fusion_map: Any,
+        max_sfs: Any,
+        fixed_gelu: np.ndarray,
+        fixed_softmax: np.ndarray,
+        robust_reference: Any,
+        schedule: Sequence[Any],
+        static_skeletons_baseline: Any,
+        ) -> Dict[str, Any]:
+    """Bind layerwise raw evidence to the complete effective run context."""
+    from .candidate_store import build_candidate_identity_context, sha256_json
+
+    stage1_degrees = {
+        "gelu": [int(value) for value in fixed_gelu.reshape(-1)],
+        "softmax": [int(value) for value in fixed_softmax.reshape(-1)],
+    }
+    threshold_policy = {
+        "precision_tolerance": float(robust_reference.precision_tolerance),
+        "stability_multiplier": float(robust_reference.stability_multiplier),
+        "bootstrap_seed": int(robust_reference.bootstrap_seed),
+        "bootstrap_samples": int(robust_reference.bootstrap_samples),
+        "limits": {
+            "loss": float(robust_reference.loss_limit),
+            "metric1": float(robust_reference.metric1_limit),
+            "metric2": float(robust_reference.metric2_limit),
+            "loss_std": float(robust_reference.loss_std_limit),
+            "metric1_std": float(robust_reference.metric1_std_limit),
+            "metric2_std": float(robust_reference.metric2_std_limit),
+        },
+    }
+    rescale_root = os.path.realpath(str(train_cfg.inproc_rescale_optimizer_root))
+    return build_candidate_identity_context(
+        action_space_version="stage2_layerwise_12x6_v1",
+        registry_hash=sha256_json(fusion_map),
+        max_sfs_hash=sha256_json(max_sfs),
+        stage1_config_content_hash=sha256_json(stage1_degrees),
+        stage1_gelu_degrees=stage1_degrees["gelu"],
+        stage1_softmax_degrees=stage1_degrees["softmax"],
+        profile=str(train_cfg.profile),
+        rescale_optimizer_mode="in_process_real",
+        rescale_optimizer_root=rescale_root,
+        rescale_optimizer_canonical_hash=sha256_json({
+            "root": rescale_root,
+            "static_skeletons": static_skeletons_baseline,
+        }),
+        decode_version="layerwise_action_v1",
+        dataset=str(train_cfg.profile),
+        model=str(getattr(evaluator, "model_type", "bert-base") or "bert-base"),
+        metric_policy_version="robust_bootstrap_5x5_v1",
+        threshold_policy_hash=sha256_json(threshold_policy),
+        mask_schedule_hash=sha256_json(schedule),
+    )
+
+
+def _run_layerwise_training_branch(
+        *,
+        train_cfg: Any,
+        evaluator: Any,
+        base_env: Any,
+        fusion_map: Any,
+        max_sfs: Any,
+        robust_reference: Any,
+        static_skeletons_baseline: Any,
+        fixed_gelu: np.ndarray,
+        fixed_softmax: np.ndarray,
+        blb_progress_dir: str,
+        baseline_preflight_metrics: Mapping[str, Any],
+        status: Any,
+        resume_checkpoint_path: Any,
+        ) -> Dict[str, Any]:
+    """Run Task-7 layerwise PPO without entering legacy block scaffolds."""
+    if robust_reference is None:
+        raise RuntimeError("layerwise robust PPO requires a calibrated statistical reference")
+    if resume_checkpoint_path:
+        raise RuntimeError(
+            "layerwise checkpoint resume is not wired until Task 8; start a fresh window"
+        )
+    if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
+        raise RuntimeError(
+            "layerwise PPO does not use the legacy block episode-parallel runner; "
+            "configure reward_devices for terminal probe parallelism"
+        )
+
+    from .candidate_store import CandidateStore
+    from .layerwise_env import BLBStage2LayerwiseEnv
+    from .layerwise_runner import initialize_layerwise_policy, train_layerwise
+    from .runner import _build_legacy_compatible_best_noise_config
+
+    layerwise_env = BLBStage2LayerwiseEnv(
+        base_env=base_env,
+        fusion_map=fusion_map,
+        profile=str(train_cfg.profile),
+    )
+    policy_cfg = SequentialPolicyConfig(
+        state_dim=int(layerwise_env.state_dim),
+        max_step_dim=6,
+        max_num_levels=6,
+        horizon=12,
+        num_layers=12,
+        metadata_width=0,
+        signal_width=4,
+        step_layer_indices=tuple(range(12)),
+        step_block_indices=(3,) * 12,
+    )
+    torch.manual_seed(int(train_cfg.seed))
+    np.random.seed(int(train_cfg.seed) % (2**32))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
+    initialize_layerwise_policy(policy)
+    optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
+    ppo = SequentialPPOConfig(
+        lr=float(train_cfg.ppo.lr),
+        clip_range=float(train_cfg.ppo.clip_range),
+        n_epochs=int(train_cfg.ppo.n_epochs),
+        minibatch_size=int(train_cfg.ppo.minibatch_size),
+        ent_coef=float(train_cfg.ppo.ent_coef),
+        value_coef=float(train_cfg.ppo.value_coef),
+        max_grad_norm=float(train_cfg.ppo.max_grad_norm),
+        gamma=1.0,
+        gae_lambda=1.0,
+    )
+    layerwise_train_cfg = SequentialTrainConfig(
+        total_episodes=int(train_cfg.total_episodes),
+        update_every_n_episodes=max(1, int(train_cfg.rollout_size)),
+        log_every_n_episodes=max(1, int(train_cfg.rollout_size)),
+        seed=int(train_cfg.seed),
+        ppo=ppo,
+        rl_algo="ppo",
+        ent_coef_schedule="cosine",
+        ent_coef_cosine_start=float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
+        ent_coef_cosine_end=float(getattr(train_cfg, "ent_coef_cosine_end", 0.001)),
+        ent_coef_cosine_plateau=float(
+            getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)
+        ),
+        ent_coef_cosine_lower_bound=float(
+            getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012)
+        ),
+        reward_design="robust_constrained",
+    )
+    identity_context = _build_layerwise_candidate_identity_context(
+        train_cfg=train_cfg,
+        evaluator=evaluator,
+        fusion_map=fusion_map,
+        max_sfs=max_sfs,
+        fixed_gelu=fixed_gelu,
+        fixed_softmax=fixed_softmax,
+        robust_reference=robust_reference,
+        schedule=layerwise_env.schedule,
+        static_skeletons_baseline=static_skeletons_baseline,
+    )
+    candidate_store = CandidateStore(
+        os.path.join(blb_progress_dir, "candidate_store.jsonl")
+    )
+    status.set_phase("PPO training (12-step layerwise robust)")
+    try:
+        summary = train_layerwise(
+            env=layerwise_env,
+            policy=policy,
+            train_cfg=layerwise_train_cfg,
+            candidate_store=candidate_store,
+            identity_context=identity_context,
+            device=device,
+            optimizer=optimizer,
+        )
+    finally:
+        try:
+            base_env.clear_installed_blb()
+        finally:
+            for restore_name in (
+                    "restore_layer_block5_noise", "restore_layer_block4_noise",
+                    "restore_layer_block3_noise", "restore_layer_block2_noise",
+                    "restore_layer_block1_noise", "restore_blb_first_input_noise",
+            ):
+                method = getattr(evaluator.reversible_handler, restore_name, None)
+                if method is None:
+                    continue
+                try:
+                    method(layer_indices=list(range(evaluator.total_layers)))
+                except Exception:
+                    pass
+            evaluator.apply_configuration(fixed_gelu, fixed_softmax)
+    status.set_phase("completed")
+
+    best_full_vector = summary.get("best_full_vector")
+    best_action_matrix = summary.get("best_action_matrix")
+    boosted = summary.get("best_boosted_overrides") or {}
+    boosted_rows = [
+        {
+            "block_idx": int(block_idx),
+            "layer_idx": int(layer_idx),
+            "field_values": {str(name): int(value) for name, value in values.items()},
+        }
+        for (block_idx, layer_idx), values in sorted(
+            boosted.items(), key=lambda item: (int(item[0][1]), int(item[0][0]))
+        )
+    ]
+    best_action_group = (
+        {
+            "schema_version": "stage2_layerwise_action_v1",
+            "policy_actions": best_action_matrix,
+            "boosted_overrides": boosted_rows,
+        }
+        if best_full_vector is not None else None
+    )
+    cost_reference_noise_config = evaluator._get_max_noise_configuration()
+    cost_reference_tot_c, _ = evaluator.get_noise_simulated_cost(
+        **cost_reference_noise_config
+    )
+    legacy_best = _build_legacy_compatible_best_noise_config(evaluator)
+    rewards = list(summary.get("episode_rewards") or [])
+    best_reward = max(rewards) if rewards else -float("inf")
+    limits = {
+        "loss": float(robust_reference.loss_limit),
+        "metric1": float(robust_reference.metric1_limit),
+        "metric2": float(robust_reference.metric2_limit),
+        "loss_std": float(robust_reference.loss_std_limit),
+        "metric1_std": float(robust_reference.metric1_std_limit),
+        "metric2_std": float(robust_reference.metric2_std_limit),
+    }
+    return {
+        "fixed_gelu": fixed_gelu.copy(),
+        "fixed_softmax": fixed_softmax.copy(),
+        "baseline_noise_config": {
+            key: value.copy() for key, value in cost_reference_noise_config.items()
+        },
+        "baseline_tot_c": float(cost_reference_tot_c),
+        "best_noise_config": {key: value.copy() for key, value in legacy_best.items()},
+        "stable_search_best_noise_config": {
+            key: value.copy() for key, value in legacy_best.items()
+        },
+        "stable_joint_best_noise_config": {
+            key: value.copy() for key, value in legacy_best.items()
+        },
+        "limit_loss": limits["loss"],
+        "limit_p": limits["metric1"],
+        "limit_s": limits["metric2"],
+        "proxy_limit_loss": limits["loss"],
+        "proxy_limit_p": limits["metric1"],
+        "proxy_limit_s": limits["metric2"],
+        "search_limits": limits,
+        "all_max_blb_baseline_metrics": dict(baseline_preflight_metrics),
+        "status": "completed",
+        "blb_v3_best_action_vec": best_full_vector,
+        "blb_v3_best_action_group": None,
+        "blb_v3_layerwise_best_action_group": best_action_group,
+        "blb_v3_best_reward": float(best_reward),
+        "blb_v3_profile": str(train_cfg.profile),
+        "blb_v3_fusion_count_action": True,
+        "blb_v3_total_episodes": int(train_cfg.total_episodes),
+        "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
+        "selection_diagnostics": {
+            "selection_mode": "layerwise_robust_variable_cost_strict",
+            "best_action_vec": best_full_vector,
+            "best_action_matrix": best_action_matrix,
+            "best_assessment": summary.get("best_assessment"),
+            "best_metrics": summary.get("best_metrics"),
+            "best_variable_cost": summary.get("best_variable_cost"),
+        },
+        "sequential_diagnostics": {
+            "horizon": 12,
+            "max_step_dim": 6,
+            "state_dim": int(layerwise_env.state_dim),
+            "episode_count": len(rewards),
+            "ppo_metric_count": len(summary.get("ppo_metrics") or []),
+            "block4_entropy": summary.get("block4_entropy"),
+            "k_entropy": summary.get("k_entropy"),
+            "converged": bool(summary.get("converged", False)),
+            "extension_required": bool(summary.get("extension_required", False)),
+        },
+        "layerwise_summary": summary,
+    }
+
+
 def run_sequential_via_runner(
         *,
         runner,                           # BLBStage2RLRunner (avoid circular import)
@@ -3417,6 +3693,14 @@ def run_sequential_via_runner(
     robust_mode = (
         str(getattr(train_cfg, "reward_design", "")).strip().lower()
         == "robust_constrained"
+    )
+    from .layerwise_runner import resolve_decision_path
+    decision_path = resolve_decision_path(
+        fusion_count_action=bool(getattr(train_cfg, "fusion_count_action", False)),
+        decision_granularity=str(
+            getattr(train_cfg, "decision_granularity", "block")
+        ),
+        reward_design=str(getattr(train_cfg, "reward_design", "stage1_aligned")),
     )
     bullet = "*"
     log = runner._make_log_safe(ev.log)
@@ -3968,6 +4252,22 @@ def run_sequential_via_runner(
                 f"  {bullet} [fusion] fast-reward (online-K=1) disabled so every episode "
                 "gets a real K-trial stability std."
             )
+    if decision_path == "layerwise":
+        return _run_layerwise_training_branch(
+            train_cfg=train_cfg,
+            evaluator=ev,
+            base_env=base_env,
+            fusion_map=fusion_map,
+            max_sfs=max_sfs,
+            robust_reference=robust_reference,
+            static_skeletons_baseline=ss_baseline_obj,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            blb_progress_dir=blb_progress_dir,
+            baseline_preflight_metrics=baseline_preflight_metrics,
+            status=status,
+            resume_checkpoint_path=resume_checkpoint_path,
+        )
     seq_env = BLBStage2SequentialEnv(base_env=base_env, env_cfg=seq_env_cfg, fusion_map=fusion_map)
 
     # ---------- 5.05) Episode-parallel rollout (fusion mode, opt-in 2026-06-10) ----------

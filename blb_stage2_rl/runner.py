@@ -599,6 +599,17 @@ class BLBStage2TrainConfig:
             self.rl_algo, context="BLBStage2TrainConfig.rl_algo"
         )
         self.grpo_kl_beta = 0.0
+        self.validate_decision_granularity()
+
+    def validate_decision_granularity(self) -> str:
+        value = str(self.decision_granularity or "block").strip().lower()
+        if value not in ("layer", "block"):
+            raise ValueError(
+                "decision_granularity must be 'layer' or 'block', "
+                f"got {self.decision_granularity!r}"
+            )
+        self.decision_granularity = value
+        return value
     # 环境
     # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
     # making one outlier trial blow up the std and trip priority-2 (stability)
@@ -719,6 +730,9 @@ class BLBStage2TrainConfig:
     # SF heads. Disables safe-neighbor / guarded-radius2 / invalid masks (the map
     # holds only valid configs). Mutually exclusive with substage_mode.
     fusion_count_action: bool = False
+    # Task 7 keeps the active default on the legacy block path until launcher
+    # wiring switches the accepted robust preset in Task 8.
+    decision_granularity: str = "block"
     # Fusion-mode block-granularity safe-neighbor curriculum (additive 2026-06-05).
     # Default ON: gently widens how many blocks may leave the baseline (option 0,
     # baseline K) each episode, dissolving to the unrestricted open mask after the
@@ -2876,6 +2890,9 @@ class BLBStage2RLRunner:
             cfg.fusion_count_action = str(v).strip().lower() in (
                 "1", "true", "yes", "on",
             )
+        v = getattr(ev, "blb_v3_decision_granularity", None)
+        if v not in (None, ""):
+            cfg.decision_granularity = str(v).strip().lower()
         v = getattr(ev, "blb_v3_fusion_neighbor_curriculum", None)
         if v not in (None, ""):
             cfg.fusion_neighbor_curriculum_enabled = str(v).strip().lower() in (
@@ -3017,6 +3034,7 @@ class BLBStage2RLRunner:
         cfg.ent_coef_ramp_episodes = max(
             0, min(int(cfg.ent_coef_ramp_episodes), int(cfg.total_episodes))
         )
+        cfg.validate_decision_granularity()
         return cfg
 
     def _build_probe_batches(
