@@ -10,7 +10,7 @@ import math
 import statistics
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 from scripts.render_three_group_fusion_stability_report import (
     EXPECTED_SEEDS,
@@ -54,12 +54,52 @@ def _group_map(run: Any) -> dict[str, Mapping[str, Any]]:
     }
 
 
-def _runs_by_seed(payloads: Sequence[Any]) -> dict[Any, Mapping[str, Any]]:
-    return {
-        run.get("seed"): run
-        for run in payloads
-        if isinstance(run, Mapping) and "seed" in run
-    }
+def _index_runs(
+    payloads: Sequence[Any], *, source: str
+) -> tuple[dict[int, Mapping[str, Any]], list[dict[str, Any]]]:
+    indexed: dict[int, Mapping[str, Any]] = {}
+    failures: list[dict[str, Any]] = []
+    for run_index, run in enumerate(payloads):
+        if not isinstance(run, Mapping):
+            failures.append(
+                _failure(
+                    f"{source}_run_mapping",
+                    run_index=run_index,
+                    detail=type(run).__name__,
+                )
+            )
+            continue
+        seed = run.get("seed")
+        if not isinstance(seed, int) or isinstance(seed, bool):
+            failures.append(
+                _failure(
+                    f"{source}_run_seed_type",
+                    run_index=run_index,
+                    seed=seed,
+                    detail=type(seed).__name__,
+                )
+            )
+            continue
+        if seed not in EXPECTED_SEEDS:
+            failures.append(
+                _failure(
+                    f"{source}_run_seed_value",
+                    run_index=run_index,
+                    seed=seed,
+                )
+            )
+            continue
+        if seed in indexed:
+            failures.append(
+                _failure(
+                    f"{source}_duplicate_run_seed",
+                    run_index=run_index,
+                    seed=seed,
+                )
+            )
+            continue
+        indexed[seed] = run
+    return indexed, failures
 
 
 def _trial_seeds(group: Any) -> list[Any]:
@@ -144,8 +184,11 @@ def _weighted_f1(gold: Sequence[int], predicted: Sequence[int]) -> float:
     return weighted / total
 
 
-def _base_gate(base_summary: Mapping[str, Any]) -> dict[str, Any]:
-    failures = []
+def _base_gate(
+    base_summary: Mapping[str, Any],
+    input_failures: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    failures = list(input_failures)
     for gate in base_summary.get("gates", []):
         if isinstance(gate, Mapping) and not gate.get("passed"):
             failures.append(
@@ -193,13 +236,25 @@ def _index_rows(
             and not isinstance(trial_index, bool)
             and 0 <= trial_index < TRIAL_COUNT
         )
-        if seed not in expected_seed_set:
+        valid_seed_type = isinstance(seed, int) and not isinstance(seed, bool)
+        valid_group_type = isinstance(group, str)
+        if not valid_seed_type:
+            failures.append(_failure("row_run_seed_type", **context))
+        elif seed not in expected_seed_set:
             failures.append(_failure("unexpected_run_seed", **context))
-        if group not in expected_groups:
+        if not valid_group_type:
+            failures.append(_failure("row_group_type", **context))
+        elif group not in expected_groups:
             failures.append(_failure("unexpected_group", **context))
         if not valid_trial_index:
             failures.append(_failure("unexpected_trial_index", **context))
-        if seed in expected_seed_set and group in expected_groups and valid_trial_index:
+        if (
+            valid_seed_type
+            and seed in expected_seed_set
+            and valid_group_type
+            and group in expected_groups
+            and valid_trial_index
+        ):
             buckets.setdefault((seed, group, trial_index), []).append((row_index, row))
     return buckets, failures
 
@@ -268,7 +323,7 @@ def _identity_gate(
 ) -> tuple[dict[str, Any], dict[Any, dict[str, Any]]]:
     failures: list[dict[str, Any]] = []
     canonical: dict[Any, dict[str, Any]] = {}
-    expected_ids: set[Any] | None = None
+    expected_ids: Optional[set[Any]] = None
     for seed in EXPECTED_SEEDS:
         for group_name in GROUP_SPECS:
             for trial_index in range(TRIAL_COUNT):
@@ -483,18 +538,11 @@ def _shared_trial_seeds_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
 
 
 def _prior_equivalence_gate(
-    run_payloads: Sequence[Any], prior_run_payloads: Sequence[Any]
+    current_by_seed: Mapping[int, Mapping[str, Any]],
+    prior_by_seed: Mapping[int, Mapping[str, Any]],
+    input_failures: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
-    failures: list[dict[str, Any]] = []
-    if len(prior_run_payloads) != 5:
-        failures.append(
-            _failure(
-                "prior_run_count",
-                detail=f"expected 5, found {len(prior_run_payloads)}",
-            )
-        )
-    current_by_seed = _runs_by_seed(run_payloads)
-    prior_by_seed = _runs_by_seed(prior_run_payloads)
+    failures = list(input_failures)
     for seed in EXPECTED_SEEDS:
         current_groups = _group_map(current_by_seed.get(seed))
         prior_groups = _group_map(prior_by_seed.get(seed))
@@ -547,7 +595,13 @@ def _input_aggregates(
     for group_name in GROUP_SPECS:
         inputs: dict[str, Any] = {}
         for dataset_idx in sorted(grouped[group_name]):
-            rows = grouped[group_name][dataset_idx]
+            rows = sorted(
+                grouped[group_name][dataset_idx],
+                key=lambda row: (
+                    EXPECTED_SEEDS.index(row["run_seed"]),
+                    row["trial_index"],
+                ),
+            )
             logits0 = [float(row["logits"][0]) for row in rows]
             logits1 = [float(row["logits"][1]) for row in rows]
             identity = canonical.get(dataset_idx, {})
@@ -557,6 +611,7 @@ def _input_aggregates(
                 "trial_count": len(rows),
                 "correct_count": correct_count,
                 "correct_rate": correct_count / len(rows),
+                "correctness_pattern": [row["correct"] for row in rows],
                 "mean_logits": [statistics.fmean(logits0), statistics.fmean(logits1)],
                 "std_logits": [statistics.pstdev(logits0), statistics.pstdev(logits1)],
                 "gold_label": identity.get("gold_label"),
@@ -578,22 +633,56 @@ def _changed_examples(groups: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]
     )
     changed = []
     for dataset_idx in all_ids:
-        rates = {
+        group_rates = {
             group_name: groups[group_name].get("inputs", {}).get(
                 str(dataset_idx), {}
             ).get("correct_rate")
             for group_name in GROUP_SPECS
         }
-        finite_rates = [rate for rate in rates.values() if _finite_number(rate)]
-        if len(finite_rates) == len(GROUP_SPECS) and max(finite_rates) != min(finite_rates):
+        group_patterns = {
+            group_name: groups[group_name].get("inputs", {}).get(
+                str(dataset_idx), {}
+            ).get("correctness_pattern", [])
+            for group_name in GROUP_SPECS
+        }
+        pattern_values = list(group_patterns.values())
+        cross_group_difference = any(
+            pattern != pattern_values[0] for pattern in pattern_values[1:]
+        )
+        within_group_variation = any(
+            any(value is True for value in pattern)
+            and any(value is False for value in pattern)
+            for pattern in pattern_values
+        )
+        if cross_group_difference or within_group_variation:
+            finite_rates = [
+                rate for rate in group_rates.values() if _finite_number(rate)
+            ]
             changed.append(
                 {
                     "dataset_idx": dataset_idx,
-                    "correct_rates": rates,
-                    "rate_range": max(finite_rates) - min(finite_rates),
+                    "reasons": {
+                        "cross_group_pattern_difference": cross_group_difference,
+                        "within_group_noise_variation": within_group_variation,
+                    },
+                    "group_patterns": group_patterns,
+                    "group_rates": group_rates,
+                    "correct_rates": group_rates,
+                    "rate_range": (
+                        max(finite_rates) - min(finite_rates)
+                        if finite_rates
+                        else None
+                    ),
                 }
             )
-    changed.sort(key=lambda item: (-item["rate_range"], item["dataset_idx"]))
+    changed.sort(
+        key=lambda item: (
+            not item["reasons"]["cross_group_pattern_difference"],
+            not item["reasons"]["within_group_noise_variation"],
+            -item["rate_range"] if _finite_number(item["rate_range"]) else 0.0,
+            item["dataset_idx"],
+        )
+    )
     return {
         "count": len(changed),
         "dataset_indices": [item["dataset_idx"] for item in changed],
@@ -615,7 +704,15 @@ def build_prediction_summary(
     rows = list(prediction_rows) if isinstance(prediction_rows, Sequence) else []
     priors = list(prior_run_payloads) if isinstance(prior_run_payloads, Sequence) else []
     base_summary = build_summary(run_payloads=runs, source_commit=source_commit)
-    runs_by_seed = _runs_by_seed(runs)
+    runs_by_seed, current_input_failures = _index_runs(runs, source="current")
+    prior_by_seed, prior_input_failures = _index_runs(priors, source="prior")
+    if len(priors) != 5:
+        prior_input_failures.append(
+            _failure(
+                "prior_run_count",
+                detail=f"expected 5, found {len(priors)}",
+            )
+        )
     buckets, index_failures = _index_rows(rows)
     completeness_gate = _prediction_completeness_gate(
         rows,
@@ -660,13 +757,17 @@ def build_prediction_summary(
             }
         )
     gates = [
-        _base_gate(base_summary),
+        _base_gate(base_summary, current_input_failures),
         completeness_gate,
         identity_gate,
         logits_gate,
         _gate("recomputed_metrics", recomputed_failures),
         _shared_trial_seeds_gate(runs),
-        _prior_equivalence_gate(runs, priors),
+        _prior_equivalence_gate(
+            runs_by_seed,
+            prior_by_seed,
+            prior_input_failures,
+        ),
     ]
     expected_row_count = 5 * len(GROUP_SPECS) * TRIAL_COUNT * expected_examples
     summary = {
@@ -971,7 +1072,7 @@ def _load_jsonl(paths: Sequence[str]) -> list[Any]:
     return rows
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
     run_payloads = [_load_json(path) for path in args.run_json]
     prior_payloads = [_load_json(path) for path in args.prior_run_json]
