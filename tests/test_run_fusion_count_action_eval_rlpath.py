@@ -35,6 +35,133 @@ class NoCopyMapping:
         raise AssertionError("unique config selection should not copy mappings")
 
 
+class FakePredictionRecorder:
+    def __init__(self, *, rows=None, finish_error=None):
+        self.rows = list(rows or [{"dataset_idx": 7}, {"dataset_idx": 9}])
+        self.finish_error = finish_error
+        self.begin_calls = []
+        self.finish_calls = []
+        self.abort_count = 0
+
+    def begin_group(self, *, run_seed, group):
+        self.begin_calls.append((run_seed, group))
+
+    def finish_group(self, *, trial_seeds):
+        self.finish_calls.append(list(trial_seeds))
+        if self.finish_error is not None:
+            raise self.finish_error
+        return self.rows
+
+    def abort_group(self):
+        self.abort_count += 1
+
+
+class FakePredictionWriter:
+    def __init__(self):
+        self.written_rows = []
+
+    def write_rows(self, rows):
+        self.written_rows.extend(rows)
+
+
+class FakeCaptureSeqEnv:
+    def __init__(self, *, commit_error=None):
+        self.base = SimpleNamespace(probe_noise_seed=None)
+        self._step_idx = 0
+        self._schedule = [SimpleNamespace(
+            step_idx=0,
+            layer_idx=0,
+            block_idx=2,
+            graph_key_suffix="block2_mrpc",
+        )]
+        self.commit_error = commit_error
+
+    def reset(self, *, seed):
+        self._step_idx = 0
+
+    def evaluate_step(self, action, *, map_option_id_override=None):
+        return {
+            "valid": True,
+            "fusion_count": 0,
+            "boosted_field_values": None,
+        }
+
+    def commit_step(self, _eval_info, *, defer_terminal_forward):
+        if self.commit_error is not None:
+            raise self.commit_error
+        self._step_idx = 1
+        self.base.fixed_eval_trial_metrics = {
+            "loss": [0.3, 0.31],
+            "metric1": [0.88, 0.89],
+            "metric2": [0.87, 0.88],
+        }
+        return np.zeros(1), 1.0, True, {
+            "terminal_info": {
+                "metrics": {"loss_mean": 0.305},
+                "probe_diagnostics": {
+                    "per_worker_trial_seeds": [[42, 2654435739]],
+                },
+            },
+            "replan_application": {
+                "applied_before_forward": True,
+                "model_uses_replan_config": True,
+            },
+        }
+
+
+class FakeDataset:
+    def __init__(self, rows):
+        self._rows = [dict(row) for row in rows]
+        self._columns = None
+
+    def shuffle(self, *, seed):
+        return self
+
+    def map(self, fn):
+        for row in self._rows:
+            row.update(fn(row))
+        return self
+
+    def rename_column(self, old, new):
+        for row in self._rows:
+            row[new] = row.pop(old)
+        return self
+
+    def set_format(self, *, type, columns):
+        self._columns = tuple(columns)
+
+    def __iter__(self):
+        for row in self._rows:
+            if self._columns is None:
+                yield dict(row)
+            else:
+                yield {key: row[key] for key in self._columns}
+
+    def __getitem__(self, index):
+        row = self._rows[index]
+        if self._columns is None:
+            return dict(row)
+        return {key: row[key] for key in self._columns}
+
+
+class FakeHookHandle:
+    def __init__(self):
+        self.remove_count = 0
+
+    def remove(self):
+        self.remove_count += 1
+
+
+class FakeHookModel:
+    def __init__(self):
+        self.register_calls = []
+        self.handle = FakeHookHandle()
+
+    def register_forward_hook(self, hook, *, with_kwargs):
+        self.register_calls.append((hook, with_kwargs))
+        return self.handle
+
+
 class FusionCountActionEvalRLPathTest(unittest.TestCase):
     def test_group_seed_offsets_independent_groups(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
@@ -169,6 +296,290 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         )
         self.assertEqual(result["trial_metrics"]["loss"], [0.29, 0.31])
         self.assertEqual(result["fusion_total"], 0)
+        self.assertNotIn("prediction_capture", result)
+
+    def test_run_group_arms_finishes_and_writes_prediction_rows(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        env = FakeCaptureSeqEnv()
+        recorder = FakePredictionRecorder()
+        writer = FakePredictionWriter()
+        cfg = {
+            "name": "fixed_b2",
+            "path": Path("fixed_b2.json"),
+            "baseline_k_index": 3,
+            "group": {"option_by_graph": {"block2_mrpc": 0}},
+        }
+        old_deps = rlpath._RUNTIME_DEPS
+        try:
+            rlpath._RUNTIME_DEPS = {"K_LEVELS": (8, 9, 11, 13, 10, 12)}
+            result = rlpath._run_group(
+                env,
+                cfg,
+                seed=42,
+                prediction_recorder=recorder,
+                prediction_writer=writer,
+            )
+        finally:
+            rlpath._RUNTIME_DEPS = old_deps
+
+        self.assertEqual(recorder.begin_calls, [(42, "fixed_b2")])
+        self.assertEqual(recorder.finish_calls, [[42, 2654435739]])
+        self.assertEqual(writer.written_rows, recorder.rows)
+        self.assertEqual(result["prediction_capture"], {"row_count": 2})
+        self.assertEqual(recorder.abort_count, 0)
+
+    def test_run_group_aborts_prediction_recorder_on_commit_error(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        recorder = FakePredictionRecorder()
+        writer = FakePredictionWriter()
+        env = FakeCaptureSeqEnv(commit_error=RuntimeError("terminal failure"))
+        cfg = {
+            "name": "fixed_b2",
+            "path": Path("fixed_b2.json"),
+            "baseline_k_index": 3,
+            "group": {},
+        }
+        old_deps = rlpath._RUNTIME_DEPS
+        try:
+            rlpath._RUNTIME_DEPS = {"K_LEVELS": (8, 9, 11, 13, 10, 12)}
+            with self.assertRaisesRegex(RuntimeError, "terminal failure"):
+                rlpath._run_group(
+                    env,
+                    cfg,
+                    seed=42,
+                    prediction_recorder=recorder,
+                    prediction_writer=writer,
+                )
+        finally:
+            rlpath._RUNTIME_DEPS = old_deps
+
+        self.assertEqual(recorder.abort_count, 1)
+        self.assertEqual(writer.written_rows, [])
+
+    def test_run_group_aborts_prediction_recorder_on_finish_error(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        recorder = FakePredictionRecorder(
+            finish_error=RuntimeError("terminal capture failure")
+        )
+        env = FakeCaptureSeqEnv()
+        cfg = {
+            "name": "fixed_b2",
+            "path": Path("fixed_b2.json"),
+            "baseline_k_index": 3,
+            "group": {},
+        }
+        old_deps = rlpath._RUNTIME_DEPS
+        try:
+            rlpath._RUNTIME_DEPS = {"K_LEVELS": (8, 9, 11, 13, 10, 12)}
+            with self.assertRaisesRegex(RuntimeError, "terminal capture failure"):
+                rlpath._run_group(
+                    env,
+                    cfg,
+                    seed=42,
+                    prediction_recorder=recorder,
+                    prediction_writer=FakePredictionWriter(),
+                )
+        finally:
+            rlpath._RUNTIME_DEPS = old_deps
+
+        self.assertEqual(recorder.finish_calls, [[42, 2654435739]])
+        self.assertEqual(recorder.abort_count, 1)
+
+    def test_prediction_capture_is_disabled_by_default(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        args = rlpath._parser().parse_args([
+            "--action-dir", "actions",
+            "--original-json", "original.json",
+            "--output-json", "result.json",
+            "--output-html", "result.html",
+        ])
+
+        self.assertEqual(args.prediction_jsonl, "")
+
+    def test_tokenize_glue_preserves_mrpc_idx_in_identity_catalog(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        rows = [
+            {"idx": 17, "sentence1": "left", "sentence2": "right", "label": 1},
+            {"idx": 9, "sentence1": "up", "sentence2": "down", "label": 0},
+        ]
+        data = {
+            "train": FakeDataset(rows),
+            "validation": FakeDataset(rows),
+        }
+
+        def tokenizer(sentence1, sentence2, **kwargs):
+            del sentence2, kwargs
+            token = 11 if sentence1 == "left" else 12
+            return {
+                "input_ids": [101, token, 102],
+                "attention_mask": [1, 1, 1],
+                "token_type_ids": [0, 0, 0],
+            }
+
+        _train, validation, catalog = rlpath._tokenize_glue(
+            data,
+            task="mrpc",
+            tokenizer=tokenizer,
+            seed=42,
+            include_identity_catalog=True,
+        )
+
+        self.assertEqual(catalog.dataset_indices, (17, 9))
+        self.assertNotIn("idx", validation[0])
+        resolver = catalog.new_trial_resolver()
+        self.assertEqual(
+            resolver.resolve([101, 11, 102], [1, 1, 1], [0, 0, 0], 1),
+            17,
+        )
+
+    def test_tokenize_glue_default_does_not_build_identity_catalog(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        rows = [
+            {"idx": 17, "sentence1": "left", "sentence2": "right", "label": 1},
+        ]
+        data = {
+            "train": FakeDataset(rows),
+            "validation": FakeDataset(rows),
+        }
+
+        def tokenizer(sentence1, sentence2, **kwargs):
+            del sentence1, sentence2, kwargs
+            return {
+                "input_ids": [101, 11, 102],
+                "attention_mask": [1, 1, 1],
+                "token_type_ids": [0, 0, 0],
+            }
+
+        tokenized = rlpath._tokenize_glue(
+            data,
+            task="mrpc",
+            tokenizer=tokenizer,
+            seed=42,
+        )
+
+        self.assertEqual(len(tokenized), 2)
+
+    def test_main_without_prediction_opt_in_registers_no_hook_or_metadata(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            output_json = root / "result.json"
+            model = FakeHookModel()
+            evaluator = SimpleNamespace(model=model)
+            config = {
+                "name": "fixed_b2",
+                "path": Path("fixed_b2.json"),
+                "baseline_k_index": 3,
+                "group": {},
+                "group_key": "fixed",
+            }
+            argv = [
+                "run_fusion_count_action_eval_rlpath.py",
+                "--action-dir", str(root),
+                "--original-json", str(root / "original.json"),
+                "--output-json", str(output_json),
+                "--output-html", str(root / "result.html"),
+            ]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                rlpath, "load_rlpath_action_configs", return_value=[config]
+            ), mock.patch.object(
+                rlpath, "unique_rlpath_action_configs", return_value=[config]
+            ), mock.patch.object(
+                rlpath, "_build_evaluator", return_value=evaluator
+            ), mock.patch.object(
+                rlpath, "_build_seq_env", return_value=(SimpleNamespace(), {})
+            ), mock.patch.object(
+                rlpath, "read_json_file", return_value={"group_results": []}
+            ), mock.patch.object(
+                rlpath,
+                "_run_group",
+                return_value={"name": "fixed_b2", "metrics": {}},
+            ), mock.patch.object(rlpath, "write_rendered_html"):
+                self.assertEqual(rlpath.main(), 0)
+
+            result = json.loads(output_json.read_text(encoding="utf-8"))
+
+        self.assertEqual(model.register_calls, [])
+        self.assertNotIn("prediction_artifact", result)
+
+    def test_main_removes_prediction_hook_when_group_evaluation_fails(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        class Recorder:
+            def __init__(self, *, catalog, probe_batch_count):
+                self.catalog = catalog
+                self.probe_batch_count = probe_batch_count
+
+            def hook(self, module, args, kwargs, output):
+                pass
+
+        class Writer:
+            def __init__(self, path):
+                self.path = path
+                self.row_count = 0
+                self.close_count = 0
+
+            def close(self):
+                self.close_count += 1
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            model = FakeHookModel()
+            catalog = SimpleNamespace(dataset_indices=(17, 9))
+            evaluator = SimpleNamespace(
+                model=model,
+                fixed_eval_identity_catalog=catalog,
+            )
+            seq_env = SimpleNamespace(
+                base=SimpleNamespace(
+                    env_cfg=SimpleNamespace(probe_batch_count=7),
+                ),
+            )
+            config = {
+                "name": "fixed_b2",
+                "path": Path("fixed_b2.json"),
+                "baseline_k_index": 3,
+                "group": {},
+                "group_key": "fixed",
+            }
+            argv = [
+                "run_fusion_count_action_eval_rlpath.py",
+                "--action-dir", str(root),
+                "--original-json", str(root / "original.json"),
+                "--output-json", str(root / "result.json"),
+                "--output-html", str(root / "result.html"),
+                "--prediction-jsonl", str(root / "predictions.jsonl"),
+            ]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                rlpath, "load_rlpath_action_configs", return_value=[config]
+            ), mock.patch.object(
+                rlpath, "unique_rlpath_action_configs", return_value=[config]
+            ), mock.patch.object(
+                rlpath, "_build_evaluator", return_value=evaluator
+            ), mock.patch.object(
+                rlpath, "_build_seq_env", return_value=(seq_env, {})
+            ), mock.patch.object(
+                rlpath, "read_json_file", return_value={"group_results": []}
+            ), mock.patch.object(
+                rlpath, "_run_group", side_effect=RuntimeError("group failed")
+            ), mock.patch.object(
+                rlpath, "ForwardPredictionRecorder", Recorder, create=True
+            ), mock.patch.object(
+                rlpath, "PredictionJsonlWriter", Writer, create=True
+            ):
+                with self.assertRaisesRegex(RuntimeError, "group failed"):
+                    rlpath.main()
+
+        self.assertEqual(len(model.register_calls), 1)
+        self.assertTrue(model.register_calls[0][1])
+        self.assertEqual(model.handle.remove_count, 1)
 
     def test_run_group_clears_stale_trials_and_requires_committed_replan_evidence(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
