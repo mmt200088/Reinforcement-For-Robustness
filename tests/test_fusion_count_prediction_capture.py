@@ -192,6 +192,56 @@ class ExampleIdentityCatalogTest(unittest.TestCase):
                 {"idx": 1, "input_ids": [102], "token_type_ids": [0], "labels": 1},
             ])
 
+    def test_catalog_rejects_malformed_identity_integer_values(self):
+        from scripts.fusion_count_prediction_capture import ExampleIdentityCatalog
+
+        int64 = np.iinfo(np.int64)
+        valid_row = {
+            "idx": 10,
+            "input_ids": [101, 11, 102],
+            "attention_mask": [1, 1, 1],
+            "token_type_ids": [0, 0, 0],
+            "labels": 0,
+        }
+        cases = (
+            ("fractional input_ids", "input_ids", [101, 11.5, 102], "input_ids"),
+            ("NaN attention_mask", "attention_mask", [1, float("nan"), 1], "attention_mask"),
+            ("infinite token_type_ids", "token_type_ids", [0, float("inf"), 0], "token_type_ids"),
+            ("boolean input_ids", "input_ids", [101, True, 102], "input_ids"),
+            ("boolean label", "labels", False, "label"),
+            ("above int64", "input_ids", [101, int64.max + 1, 102], "input_ids"),
+            ("below int64", "token_type_ids", [0, int64.min - 1, 0], "token_type_ids"),
+        )
+
+        for name, field, value, error_field in cases:
+            with self.subTest(name=name):
+                row = {**valid_row, field: value}
+                with self.assertRaisesRegex(ValueError, error_field):
+                    ExampleIdentityCatalog.from_tokenized_rows([row])
+
+    def test_catalog_rejects_malformed_dataset_indices(self):
+        from scripts.fusion_count_prediction_capture import ExampleIdentityCatalog
+
+        int64 = np.iinfo(np.int64)
+        invalid_indices = (
+            10.5,
+            float("nan"),
+            float("inf"),
+            True,
+            int64.max + 1,
+            int64.min - 1,
+        )
+
+        for dataset_idx in invalid_indices:
+            with self.subTest(dataset_idx=dataset_idx):
+                with self.assertRaisesRegex(ValueError, "dataset idx"):
+                    ExampleIdentityCatalog.from_tokenized_rows([{
+                        "idx": dataset_idx,
+                        "input_ids": [101, 11, 102],
+                        "token_type_ids": [0, 0, 0],
+                        "labels": 0,
+                    }])
+
 
 class ForwardPredictionRecorderTest(unittest.TestCase):
     def test_partitions_exact_batches_into_trials_and_emits_complete_rows(self):
@@ -311,6 +361,73 @@ class ForwardPredictionRecorderTest(unittest.TestCase):
 
         self.assertNotIn("token_type_ids", rows[0])
         self.assertEqual(rows[0]["dataset_idx"], 4)
+
+    def test_hook_rejects_malformed_identity_integer_values(self):
+        from scripts.fusion_count_prediction_capture import ForwardPredictionRecorder
+
+        int64 = np.iinfo(np.int64)
+        valid_kwargs = {
+            "input_ids": [[101, 11, 102, 0]],
+            "attention_mask": [[1, 1, 1, 0]],
+            "token_type_ids": [[0, 0, 0, 0]],
+            "labels": [0],
+        }
+        cases = (
+            ("fractional input_ids", "input_ids", [[101, 11.5, 102, 0]], "input_ids"),
+            ("NaN attention_mask", "attention_mask", [[1, float("nan"), 1, 0]], "attention_mask"),
+            ("infinite token_type_ids", "token_type_ids", [[0, float("inf"), 0, 0]], "token_type_ids"),
+            ("boolean input_ids", "input_ids", [[101, True, 102, 0]], "input_ids"),
+            ("boolean label", "labels", np.asarray([False], dtype=np.bool_), "labels"),
+            ("above int64", "input_ids", [[101, int64.max + 1, 102, 0]], "input_ids"),
+            ("below int64", "token_type_ids", [[0, int64.min - 1, 0, 0]], "token_type_ids"),
+        )
+
+        for name, field, value, error_field in cases:
+            with self.subTest(name=name):
+                recorder = ForwardPredictionRecorder(
+                    catalog=_single_example_catalog(),
+                    probe_batch_count=1,
+                )
+                recorder.begin_group(run_seed=1, group=name)
+                with self.assertRaisesRegex(ValueError, error_field):
+                    recorder.hook(
+                        None,
+                        (),
+                        {**valid_kwargs, field: value},
+                        SimpleNamespace(logits=[[2.0, -1.0]]),
+                    )
+
+    def test_accepts_mathematically_integral_float_identity_values(self):
+        from scripts.fusion_count_prediction_capture import (
+            ExampleIdentityCatalog,
+            ForwardPredictionRecorder,
+        )
+
+        catalog = ExampleIdentityCatalog.from_tokenized_rows([{
+            "idx": np.float64(10.0),
+            "input_ids": np.asarray([101.0, 11.0, 102.0]),
+            "attention_mask": np.asarray([1.0, 1.0, 1.0]),
+            "token_type_ids": np.asarray([0.0, 0.0, 0.0]),
+            "labels": np.float64(0.0),
+        }])
+        recorder = ForwardPredictionRecorder(catalog=catalog, probe_batch_count=1)
+        recorder.begin_group(run_seed=1, group="integral_float")
+        recorder.hook(
+            None,
+            (),
+            {
+                "input_ids": np.asarray([[101.0, 11.0, 102.0, 0.0]]),
+                "attention_mask": np.asarray([[1.0, 1.0, 1.0, 0.0]]),
+                "token_type_ids": np.asarray([[0.0, 0.0, 0.0, 0.0]]),
+                "labels": np.asarray([0.0]),
+            },
+            SimpleNamespace(logits=[[2.0, -1.0]]),
+        )
+
+        rows = recorder.finish_group(trial_seeds=[2])
+
+        self.assertEqual(rows[0]["dataset_idx"], 10)
+        self.assertEqual(rows[0]["input_ids"], [101, 11, 102, 0])
 
     def test_rejects_hook_and_group_lifecycle_misuse_and_abort_discards_capture(self):
         from scripts.fusion_count_prediction_capture import ForwardPredictionRecorder
