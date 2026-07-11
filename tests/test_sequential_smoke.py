@@ -984,17 +984,22 @@ class BlockRuntimeHelperTest(unittest.TestCase):
         )
 
     def test_constructor_rejects_robust_reward_before_blockwise_rollout(self):
-        base = self._base(types.SimpleNamespace())
-        base.reward_weights = types.SimpleNamespace(reward_design="robust_constrained")
-
-        with self.assertRaisesRegex(
-                ValueError,
-                "robust_constrained.*BLBStage2LayerwiseEnv.*train_layerwise",
+        for reward_design in (
+                "robust_constrained", " ROBUST_CONSTRAINED ", "Robust_Constrained",
         ):
-            self.mod.BLBStage2SequentialEnv(base_env=base)
+            base = self._base(types.SimpleNamespace())
+            base.reward_weights = types.SimpleNamespace(reward_design=reward_design)
+
+            with self.assertRaisesRegex(
+                    ValueError,
+                    "robust_constrained.*BLBStage2LayerwiseEnv.*train_layerwise",
+            ):
+                self.mod.BLBStage2SequentialEnv(base_env=base)
 
     def test_constructor_preserves_explicit_rollback_reward_designs(self):
-        for reward_design in ("stage1_aligned", "continuous", "tiered"):
+        for reward_design in (
+                "stage1_aligned", "continuous", "tiered", "robust-constrained",
+        ):
             base = self._base(types.SimpleNamespace())
             base.reward_weights = types.SimpleNamespace(reward_design=reward_design)
 

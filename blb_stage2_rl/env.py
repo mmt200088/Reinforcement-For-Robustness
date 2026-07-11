@@ -817,7 +817,10 @@ class BLBStage2Env:
             info: Dict[str, Any],
             ) -> RewardBreakdown:
         assessment = None
-        if str(getattr(self.reward_weights, "reward_design", "")) == "robust_constrained":
+        if (
+                str(getattr(self.reward_weights, "reward_design", "")).strip().lower()
+                == "robust_constrained"
+        ):
             if not any_invalid:
                 reference = getattr(self, "statistical_reference", None)
                 if reference is None:

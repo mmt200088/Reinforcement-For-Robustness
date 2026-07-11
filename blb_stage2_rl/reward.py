@@ -1226,7 +1226,7 @@ def compute_reward(
         getattr(opt_signals, "any_invalid", False)
     )
 
-    if str(getattr(weights, "reward_design", "tiered")) == "robust_constrained":
+    if str(getattr(weights, "reward_design", "tiered")).strip().lower() == "robust_constrained":
         if not invalid and external_cost_score is None:
             raise ValueError(
                 "robust_constrained valid candidate requires external_cost_score"

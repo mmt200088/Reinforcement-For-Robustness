@@ -265,7 +265,7 @@ class BLBStage2SequentialEnv:
             ):
         reward_design = str(
             getattr(getattr(base_env, "reward_weights", None), "reward_design", "")
-        )
+        ).strip().lower()
         if reward_design == "robust_constrained":
             raise ValueError(
                 "robust_constrained requires BLBStage2LayerwiseEnv/train_layerwise; "

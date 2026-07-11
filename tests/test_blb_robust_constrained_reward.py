@@ -274,6 +274,27 @@ def test_compute_reward_dispatches_only_when_robust_design_is_selected():
     assert result.constraint_policy == "bootstrap_5x5_v1"
 
 
+def test_compute_reward_canonicalizes_robust_design_without_routing_unknown_names():
+    for reward_design in (" ROBUST_CONSTRAINED ", "Robust_Constrained"):
+        result = compute_reward(
+            EpisodeMetrics(), SimpleNamespace(any_invalid=False),
+            action_avg_k=13.0,
+            baseline=BaselineCostStats(),
+            weights=RewardWeights(reward_design=reward_design),
+            external_cost_score=0.25,
+            constraint_assessment=_assessment(),
+        )
+        assert result.constraint_policy == "bootstrap_5x5_v1"
+
+    result = compute_reward(
+        EpisodeMetrics(), SimpleNamespace(any_invalid=False),
+        action_avg_k=13.0,
+        baseline=BaselineCostStats(),
+        weights=RewardWeights(reward_design="robust-constrained"),
+    )
+    assert result.constraint_policy == ""
+
+
 def test_valid_robust_compute_reward_requires_explicit_normalized_cost():
     try:
         compute_reward(
@@ -596,6 +617,37 @@ def test_normal_terminal_runtime_assesses_trials_and_threads_external_cost():
     assert info["reward_breakdown"].variable_cost == 0.6
     assert info["statistical_assessment"]["precision_probability"] >= 0.5
     assert info["statistical_assessment"]["stability_probability"] >= 0.5
+
+
+def test_env_terminal_dispatch_canonicalizes_only_known_robust_spelling():
+    env_module, reward_module, statistical_constraints = _runtime_modules()
+    signals = SimpleNamespace(any_invalid=False, total_bits_sum=100.0, total_fusion_count=0.0)
+    for reward_design in (" ROBUST_CONSTRAINED ", "Robust_Constrained"):
+        env = _runtime_env(env_module, reward_module, statistical_constraints)
+        env.reward_weights.reward_design = reward_design
+        breakdown = env._compute_terminal_reward(
+            _runtime_metrics(reward_module), signals,
+            action_vec=np.asarray([1, 2, 3]),
+            action_vec_hash="canonical",
+            any_invalid=False,
+            external_cost_score=0.5,
+            external_cost_rank=0.5,
+            info={},
+        )
+        assert breakdown.constraint_policy == "bootstrap_5x5_v1"
+
+    env = _runtime_env(env_module, reward_module, statistical_constraints)
+    env.reward_weights.reward_design = "robust-constrained"
+    breakdown = env._compute_terminal_reward(
+        reward_module.EpisodeMetrics(), signals,
+        action_vec=np.asarray([1, 2, 3]),
+        action_vec_hash="unknown",
+        any_invalid=False,
+        external_cost_score=None,
+        external_cost_rank=None,
+        info={},
+    )
+    assert breakdown.constraint_policy == ""
 
 
 def test_robust_invalid_terminal_needs_no_reference_or_fake_trials():

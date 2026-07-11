@@ -252,6 +252,48 @@ def test_install_robust_reference_replaces_legacy_stability_and_margin_state():
     assert base_env.statistical_reference is reference
 
 
+@pytest.mark.parametrize("reward_design", [" ROBUST_CONSTRAINED ", "Robust_Constrained"])
+def test_collection_canonicalizes_robust_design_and_restores_display_value(reward_design):
+    env = FakeBaseEnv(_metrics)
+    env.reward_weights = SimpleNamespace(reward_design=reward_design)
+    original_reference = object()
+    env.statistical_reference = original_reference
+    observed_designs = []
+    original_step = env.step
+
+    def recording_step(action):
+        observed_designs.append(env.reward_weights.reward_design)
+        return original_step(action)
+
+    env.step = recording_step
+
+    reference, _summary = _collect(env)
+
+    assert reference.trial_count == 25
+    assert observed_designs == ["stage1_aligned"] * 5
+    assert env.reward_weights.reward_design == reward_design
+    assert env.statistical_reference is original_reference
+
+
+def test_collection_does_not_bypass_unknown_reward_design():
+    env = FakeBaseEnv(_metrics)
+    env.reward_weights = SimpleNamespace(reward_design="robust-constrained")
+    observed_designs = []
+    original_step = env.step
+
+    def recording_step(action):
+        observed_designs.append(env.reward_weights.reward_design)
+        return original_step(action)
+
+    env.step = recording_step
+
+    reference, _summary = _collect(env)
+
+    assert reference.trial_count == 25
+    assert observed_designs == ["robust-constrained"] * 5
+    assert env.reward_weights.reward_design == "robust-constrained"
+
+
 def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate(monkeypatch):
     from blb_stage2_rl import env as env_module
     from blb_stage2_rl.action_space import make_all_max_action_vector
@@ -261,7 +303,7 @@ def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate(m
 
     env = BLBStage2Env.__new__(BLBStage2Env)
     env.baseline = BaselineCostStats(total_bits_sum=100.0, avg_k=13.0)
-    env.reward_weights = RewardWeights(reward_design="robust_constrained")
+    env.reward_weights = RewardWeights(reward_design=" ROBUST_CONSTRAINED ")
     env.statistical_reference = None
     env.acc_threshold = 0.0
     env.acc_threshold_m2 = 0.0
@@ -324,7 +366,7 @@ def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate(m
     )
 
     assert reference.trial_count == 25
-    assert env.reward_weights.reward_design == "robust_constrained"
+    assert env.reward_weights.reward_design == " ROBUST_CONSTRAINED "
     assert env.statistical_reference is None
     with pytest.raises(RuntimeError, match="statistical_reference"):
         env._compute_terminal_reward(

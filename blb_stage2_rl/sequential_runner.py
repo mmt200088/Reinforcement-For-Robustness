@@ -3243,7 +3243,10 @@ def _collect_robust_baseline_reference(
     raw_groups: List[Dict[str, Any]] = []
 
     try:
-        if reward_weights is not None and original_reward_design == "robust_constrained":
+        if (
+                reward_weights is not None
+                and str(original_reward_design).strip().lower() == "robust_constrained"
+        ):
             reward_weights.reward_design = "stage1_aligned"
         if had_statistical_reference:
             base_env.statistical_reference = None
