@@ -1,0 +1,2 @@
+FIVE_RUN_GATE_PASS
+runs=5 groups=2 trials_per_group_per_run=5 validation=408 invalid=false fusion_totals=0,24
