@@ -1,0 +1,7 @@
+scripts/run_fusion_count_action_eval_rlpath.py
+--dataset mrpc --model-type bert-base
+--action-dir selected_actions --original-json dummy_original.json
+--stage1-gelu [4,4,4,4,4,4,4,4,4,4,4,4]
+--stage1-softmax [6,6,6,6,6,6,6,6,6,6,6,6]
+--repeat 5 --probe-size 408 --batch-size 64
+--seed <one of SEEDS> --shared-group-seed
