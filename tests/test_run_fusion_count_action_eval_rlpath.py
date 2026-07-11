@@ -34,6 +34,30 @@ class NoCopyMapping:
 
 
 class FusionCountActionEvalRLPathTest(unittest.TestCase):
+    def test_group_seed_offsets_independent_groups(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        self.assertEqual(rlpath._group_seed(100, 2, shared=False), 102)
+        self.assertEqual(rlpath._group_seed(100, 2, shared=True), 100)
+
+    def test_trial_metric_payload_preserves_float_trials(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        payload = rlpath._trial_metric_payload(
+            [0.2, 0.3],
+            [0.8, 0.9],
+            [0.7, 0.8],
+        )
+
+        self.assertEqual(
+            payload,
+            {
+                "loss": [0.2, 0.3],
+                "metric1": [0.8, 0.9],
+                "metric2": [0.7, 0.8],
+            },
+        )
+
     def test_fixed_map_option_uses_explicit_override_on_canonical_env_path(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
 
@@ -61,10 +85,19 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                     "valid": True,
                     "fusion_count": int(map_option_id_override or 0),
                     "boosted_field_values": None,
+                    "replan_application": {
+                        "applied_before_forward": True,
+                        "model_uses_replan_config": True,
+                    },
                 }
 
             def commit_step(self, _eval_info, *, defer_terminal_forward):
                 self._step_idx = 1
+                self.base.fixed_eval_trial_metrics = {
+                    "loss": [0.29, 0.31],
+                    "metric1": [0.87, 0.89],
+                    "metric2": [0.86, 0.88],
+                }
                 terminal_info = {
                     "metrics": SimpleNamespace(
                         loss_mean=0.3,
@@ -104,6 +137,8 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertEqual(env.map_option_overrides, [0])
         self.assertEqual(result["step_records"][0]["policy_option_index"], 0)
         self.assertEqual(result["step_records"][0]["map_option_id"], 0)
+        self.assertTrue(result["step_records"][0]["model_uses_replan_config"])
+        self.assertEqual(result["trial_metrics"]["loss"], [0.29, 0.31])
         self.assertEqual(result["fusion_total"], 0)
 
     def test_module_import_is_dependency_light(self):
