@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -57,6 +59,28 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                 "metric2": [0.7, 0.8],
             },
         )
+
+    def test_trial_metric_payload_is_strict_json_safe(self):
+        import scripts.run_fusion_count_action_eval_rlpath as rlpath
+
+        payload = rlpath._trial_metric_payload(
+            [np.float32(0.25), float("nan")],
+            [np.float64(0.75), float("inf")],
+            [np.float32(0.5), float("-inf")],
+        )
+
+        self.assertEqual(
+            payload,
+            {
+                "loss": [0.25, {"non_finite": "nan"}],
+                "metric1": [0.75, {"non_finite": "positive_infinity"}],
+                "metric2": [0.5, {"non_finite": "negative_infinity"}],
+            },
+        )
+        self.assertIs(type(payload["loss"][0]), float)
+        self.assertIs(type(payload["metric1"][0]), float)
+        self.assertIs(type(payload["metric2"][0]), float)
+        json.dumps(payload, allow_nan=False)
 
     def test_fixed_map_option_uses_explicit_override_on_canonical_env_path(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
@@ -146,10 +170,97 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertEqual(result["trial_metrics"]["loss"], [0.29, 0.31])
         self.assertEqual(result["fusion_total"], 0)
 
-    def test_module_import_is_dependency_light(self):
+    def test_run_group_clears_stale_trials_and_requires_committed_replan_evidence(self):
         import scripts.run_fusion_count_action_eval_rlpath as rlpath
 
-        self.assertTrue(callable(rlpath.load_rlpath_action_configs))
+        class FakeSeqEnv:
+            def __init__(self):
+                self.base = SimpleNamespace(probe_noise_seed=None)
+                self._step_idx = 0
+                self._schedule = [SimpleNamespace(
+                    step_idx=0,
+                    layer_idx=0,
+                    block_idx=2,
+                    graph_key_suffix="block2_mrpc",
+                )]
+                self.commit_count = 0
+
+            def reset(self, *, seed):
+                self._step_idx = 0
+
+            def evaluate_step(self, action, *, map_option_id_override=None):
+                return {
+                    "valid": True,
+                    "fusion_count": 0,
+                    "boosted_field_values": None,
+                }
+
+            def commit_step(self, _eval_info, *, defer_terminal_forward):
+                self._step_idx = 1
+                self.commit_count += 1
+                info = {"terminal_info": {}}
+                if self.commit_count == 1:
+                    self.base.fixed_eval_trial_metrics = {
+                        "loss": [0.3],
+                        "metric1": [0.88],
+                        "metric2": [0.87],
+                    }
+                    info["replan_application"] = {
+                        "applied_before_forward": True,
+                        "model_uses_replan_config": True,
+                    }
+                return np.zeros(1), 0.0, True, info
+
+        cfg = {
+            "name": "fixed_b2",
+            "path": Path("fixed_b2.json"),
+            "baseline_k_index": 3,
+            "group": {"option_by_graph": {"block2_mrpc": 0}},
+        }
+        env = FakeSeqEnv()
+        old_deps = rlpath._RUNTIME_DEPS
+        try:
+            rlpath._RUNTIME_DEPS = {"K_LEVELS": (8, 9, 11, 13, 10, 12)}
+            first = rlpath._run_group(env, cfg, seed=42)
+            second = rlpath._run_group(env, cfg, seed=43)
+        finally:
+            rlpath._RUNTIME_DEPS = old_deps
+
+        self.assertEqual(first["trial_metrics"]["loss"], [0.3])
+        self.assertTrue(first["step_records"][0]["model_uses_replan_config"])
+        self.assertEqual(second["trial_metrics"], {})
+        self.assertEqual(second["step_records"][0]["replan_application"], {})
+        self.assertFalse(second["step_records"][0]["model_uses_replan_config"])
+
+    def test_module_import_is_dependency_light(self):
+        code = """
+import builtins
+
+real_import = builtins.__import__
+blocked = ("torch", "transformers", "blb_stage2_rl")
+
+def guarded_import(name, *args, **kwargs):
+    if name.startswith(blocked):
+        raise AssertionError(f"heavy dependency imported: {name}")
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = guarded_import
+import scripts.run_fusion_count_action_eval_rlpath as rlpath
+assert callable(rlpath.load_rlpath_action_configs)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_load_action_configs_does_not_retain_full_payload(self):
         with tempfile.TemporaryDirectory() as td:
