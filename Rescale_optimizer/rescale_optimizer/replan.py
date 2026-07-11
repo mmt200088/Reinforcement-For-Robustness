@@ -593,8 +593,21 @@ def replan_with_user_actions(
     if baseline_q_bits is not None and len(baseline_q_bits) == R:
         delta_q = [int(qn) - int(qb) for qn, qb in zip(q_initial, baseline_q_bits)]
 
-    # any non-positive drop is unfixable by fusion semantically.  Report it.
-    if any(d <= 0 for d in q_initial):
+    q_min = graph.q_legal_min
+    q_max = graph.q_legal_max
+    has_non_positive = False
+    too_big: Optional[List[int]] = None
+    for r, q in enumerate(q_initial, start=1):
+        if q <= 0:
+            has_non_positive = True
+            break
+        if q > q_max:
+            if too_big is None:
+                too_big = []
+            too_big.append(r)
+
+    # Any non-positive drop is unfixable by fusion semantically. Report it.
+    if has_non_positive:
         bad_chain = ModulusChain(
             q_head_bits=inputs.q_head_bits,
             q_bits=list(q_initial),
@@ -616,11 +629,7 @@ def replan_with_user_actions(
             ),
         )
 
-    q_min = graph.q_legal_min
-    q_max = graph.q_legal_max
-
-    # quickly check oversized — fusion can't fix q > q_max
-    too_big = [r for r, q in enumerate(q_initial, start=1) if q > q_max]
+    # Quickly check oversized drops; fusion cannot fix q > q_max.
     if too_big:
         bad_chain = ModulusChain(
             q_head_bits=inputs.q_head_bits,
