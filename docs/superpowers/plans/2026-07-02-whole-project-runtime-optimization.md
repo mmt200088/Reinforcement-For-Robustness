@@ -77,18 +77,22 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `ffa58a5`, the conservative
-completion estimate is about 99% of the full goal: the plan/audit layer,
+not by raw commit count. As of source head `991329a`, the conservative
+completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
-All currently single-GPU-verifiable plan phases are green. Hardware-default
-promotion remains evidence-gated rather than automatic, and the multi-GPU
-gate that requires more than the current one-GPU server remains open.
+The latest low-conflict single-GPU gates are green, but the repository-wide
+suite is not: concurrent Stage-2 integration commit `16b68e3` left 19 Stage-2
+contract failures, including eight guards for previously landed runtime work.
+Those failures require a coordinated Stage-2 handoff instead of an overlapping
+algorithm edit. Hardware-default promotion remains evidence-gated, and the
+multi-GPU gate that requires more than the current one-GPU server remains open.
 
 Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Plan and audit | `991329a` | `experiments/server_command_runs/project_completion_audit_991329a_20260711/` | Audit the complete sparse checkout on the replacement server, verify 30/30 whole-flow files and all structured-artifact classes, fix experiments-index and PyTorch test-process pollution, and retain the 19 remaining Stage-2 contract failures as explicit red evidence. |
 | Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Plan and audit | `7030da2` | `experiments/server_command_runs/project_optimization_audit_7030da2_20260710_223053/` | Re-run the six-stage whole-project audit on the replacement server after Paean, Rescale, rendering, and artifact-contract work. |
 | Paean final eval | `567ad75` | `experiments/server_command_runs/final_eval_repeat_install_reuse_567ad75_20260703_203900/` | Reuse one clean-baseline install and one BLB bridge install across `repeat_n > 1` forwards. |
@@ -131,6 +135,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-1 eval | `343a5e3` | `experiments/server_command_runs/stage1_noise_validation_scan_343a5e3_20260704_055529/` | Scan layer-evaluator noise scaling validation arrays directly for unsupported values instead of materializing `arr.tolist()` sets. |
 | Stage-1 eval | `e17eee8` | `experiments/server_command_runs/stage1_reward_stats_window_e17eee8_20260704_060340/` | Maintain Stage-1 reward normalization window sum/sumsq incrementally instead of rescanning the bounded deque with `np.mean()` / `np.std()` every episode. |
 | Stage-1 eval | `dbd1b6f` | `experiments/server_command_runs/stage1_semantics_gate_dbd1b6f_20260704_080342/` | Restore the Stage-1 semantic gate after shared fast-path changes: coefficient-order low-allocation GELU polynomial evaluation, Stage-1 batch-loss averaging, and legacy sklearn metric precision. |
+| Stage-1 eval | `7b59a10` | `experiments/server_command_runs/stage1_validation_batches_7b59a10_20260711/` | Collate `validation_full` into reusable pinned CPU batch tuples once while leaving training loaders lazy, avoiding repeated dataset indexing and padding on every cache-miss evaluation. |
 | Stage-1 rollout | `b62743a` | `experiments/server_command_runs/stage1_timing_fields_b62743a_20260704_082005/` | Add Stage-1 rollout timing diagnostics for model-forward wall seconds, forward calls, and report-write wall seconds while preserving existing worker/cache/total timing log fields. |
 | Launcher gates | `4bca31a` | `experiments/server_command_runs/stage1_gpu_ab_4bca31a_20260704_084330/` | Make `scripts/launcher_gpu_audit.py` runnable as a script from repo root without relying on external `PYTHONPATH`, unblocking clean server launcher gates. |
 | Launcher gates | `bd99c65` | `experiments/server_command_runs/server_snapshot_md_stream_bd99c65_20260704_153000/` | Stream server resource snapshot Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
@@ -151,6 +156,8 @@ Server-verified optimization commits currently in the execution ledger:
 | Shared eval metrics | `f9bbb29` | `experiments/server_command_runs/eval_binary_f1_f9bbb29_20260704_034430/` | Compute 0/1 binary weighted F1 with direct count reductions instead of sorting a class union for every MRPC/QQP reward-probe trial. |
 | Shared eval metrics | `d0e8b8c` | `experiments/server_command_runs/eval_binary_mcc_d0e8b8c_20260704_035430/` | Compute 0/1 binary Matthews correlation with direct count reductions instead of sorting a class union for CoLA-style evals. |
 | Shared eval metrics | `211ca50` | `experiments/server_command_runs/eval_accuracy_count_211ca50_20260704_041100/` | Compute classification accuracy with `np.count_nonzero()` match counts instead of generic `np.mean()` over a boolean mask. |
+| Shared GELU forward | `5f18d1c` | `experiments/server_command_runs/gelu_piecewise_masks_5f18d1c_20260711_000158/` | Select GELU polynomial pieces with three scalar comparisons instead of two compound interval masks, removing four full-shape comparison/boolean operations. |
+| Shared GELU forward | `faa1679` | `experiments/server_command_runs/gelu_paired_eval_faa1679_20260711_002242/` | Pair negative/positive degree-2/4 polynomial evaluation for large CUDA float32 tensors while retaining the faster legacy path below the measured size crossover. |
 | Shared attention forward | `a416d46` | `experiments/server_command_runs/attention_tail_cursor_a416d46_20260703_214800/` | Parse positional attention tail args with an index cursor instead of front-of-list `pop(0)`. |
 | Shared logging | `5f877ca` | `experiments/server_command_runs/logging_json_encoder_5f877ca_20260704_124000/` | Reuse one module-level JSON encoder for BLB structured log records instead of constructing an encoder through `json.dumps()` for every record. |
 | Stage-2 artifacts | `cf4eed6` | `experiments/server_command_runs/candidate_action_hash_cf4eed6_20260703_221100/` | Stream normalized integer action hash payloads directly into sha256 instead of `json.dumps` materialization. |
@@ -162,6 +169,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Structured artifacts | `73cf14d` | `experiments/server_command_runs/stable_json_hash_73cf14d_20260703_222834/` | Stream canonical JSON chunks directly into sha256 for shared stable hashes instead of materializing full stable-key strings. |
 | Structured artifacts | `22b2fc8` | `experiments/server_command_runs/osr_baseline_hash_stream_22b2fc8_20260704_125000/` | Stream OSR baseline action vector JSON-array bytes directly into sha256, preserving fingerprint hashes without list and JSON-string materialization. |
 | Structured artifacts | `e0376a5` | `experiments/server_command_runs/jsonl_encoder_reuse_e0376a5_20260703_223743/` | Reuse one `JSONEncoder` for finite JSONL row writes instead of calling `json.dump()` for every row. |
+| Structured artifacts | `64727a9` | `experiments/server_command_runs/rl_jsonl_direct_64727a9_20260710_234402/` | Let the reused RL JSONL encoder normalize only non-native leaves instead of eagerly traversing every payload before encoding. |
 | Structured artifacts | `643ae60` | `experiments/server_command_runs/jsonl_resolve_once_643ae60_20260704_034331/` | Resolve JSONL paths once in shared readers and open the resolved file directly, avoiding duplicate filesystem checks in report/artifact scans. |
 | Structured artifacts | `a12c433` | `experiments/server_command_runs/run_manifest_md_stream_a12c433_20260704_141300/` | Stream BLB Trust-0 run manifest Markdown through the line writer instead of joining the full summary and writing it with `Path.write_text()`. |
 | Structured artifacts | `2ded3e7` | `experiments/server_command_runs/glue_json_reader_2ded3e7_20260704_040930/` | Read BLB GLUE action configs through the shared streaming JSON loader instead of `json.loads(open(...).read())`. |
@@ -214,6 +222,8 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 scheduling gate | `f3103d9` | `experiments/server_command_runs/stage2_ngpu_report_stream_f3103d9_20260710_154047/` | Stream the Stage-2 1GPU-vs-NGPU verdict to stdout and the optional output file without materializing the complete report string in the CLI path. |
 | Rescale/fusion maps | `2907e63` | `experiments/server_command_runs/rescale_scalar_restore_2907e63_20260710_204509/` | Snapshot and restore Rescale graph delta state with direct `int` / `None` assignment instead of per-node `deepcopy()` calls in every repeated replan. |
 | Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
+| Rescale/fusion maps | `511b3f2` | `experiments/server_command_runs/fusion_compact_replan_511b3f2_20260711/` | Return only validity, fusion count, total bits, and compact config to the fast Cartesian-product enum loop instead of expanding the full compatibility JSON result for every combination. |
+| Rescale/fusion maps | `031816a` | `experiments/server_command_runs/replan_stage_paths_031816a_20260711/` | Precompute baseline-skeleton stage node paths once per `ReplanSession`, eliminating repeated `nodes_between()` traversal and list allocation in every fusion-map combination. |
 | Rescale/fusion maps | `ffa58a5` | `experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/` | Make fusion schedule/replay verification derive expectations from the canonical map and close the 140-test Task 5 gate without changing runtime semantics. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
@@ -242,6 +252,18 @@ Server-verified optimization commits currently in the execution ledger:
 | Skeleton map discovery | `cb215bd` | `experiments/server_command_runs/skeleton_profile_config_discovery_cb215bd_20260703_213500/` | Discover profile config JSON files with `os.scandir()` and skip `.json` directories before parsing. |
 
 Remaining main-chain gates before this goal can be complete:
+
+Completion audit 2026-07-11: commit `991329a` passed the six-stage project
+inventory (30/30 expected files), 9 project-audit tests, 35 structured-artifact
+contract tests, and completion-tool compilation on the one-RTX-4090 server.
+The full 1,221-test run completed without test-process contamination but still
+reported 18 failures and one error, all in Stage-2 contract paths changed by
+concurrent integration commit `16b68e3`. Eight failures are runtime-regression
+guards (probe scheduling/preallocation, causal-prefix rollout, cached masks and
+static tensors, and deferred scalar synchronization). Do not mark those paths
+green or edit the Stage-2 algorithm concurrently; reconcile them at handoff.
+Evidence is in
+`experiments/server_command_runs/project_completion_audit_991329a_20260711/`.
 
 1. **Evidence loop:** every new source optimization must have a red/green or
    parity evidence directory committed back from the server.
@@ -563,6 +585,70 @@ now uses scalar `0.0` for the low/NaN branch instead of allocating
 `PolynomialGELU` and Block-5 noisy GELU, so this removes one full-shape zero
 tensor allocation from both installed forward paths while preserving the same
 piecewise boundaries.
+
+Progress 2026-07-11: the shared GELU piece selector now chooses the negative
+or positive polynomial with `x < 0`, preserves the low/NaN zero branch with
+`x >= -2.7`, and keeps the existing `x > 2.7` identity branch. This replaces
+two compound interval masks and removes four full-shape comparison/boolean
+operations per call. Server TDD used RED source `50e2ebd` and GREEN source
+`5f18d1c`; the relevant 71-test gate passed with 4 environment skips. Real
+MRPC validation_full A/B at batch 128 produced bit-identical logits and
+predictions for degree 1, degree 2, degree 4, and mixed configurations while
+improving complete eval wall time by `1.042x` to `1.065x` (about `21ms` per
+408-row eval). GPU sampling averaged `97.03%` utilization and peaked at 100%.
+Evidence is under
+`experiments/server_command_runs/gelu_piecewise_masks_5f18d1c_20260711_000158/`.
+
+Progress 2026-07-11: large CUDA float32 degree-2/4 GELU activations now evaluate
+the negative and positive polynomial pieces in one leading dimension, reusing
+the same powers and a cached coefficient pair. The path is gated at 12 million
+elements because server crossover scans proved the paired kernel is slower for
+small batches; degree 0/1, CPU, non-float32, and below-threshold tensors retain
+the old path. Server TDD used RED source `408da9e`, production source
+`faa1679`, and final CUDA gate commit `0fcca30`; 74 related tests passed with 4
+environment skips. Real MRPC validation_full kept logits and predictions
+bit-identical while improving all-degree2 by `1.027x`, all-degree4 by `1.086x`,
+and mixed `[4,2,1] x 4` by `1.043x`; the final 24-row batch correctly fell
+back below the gate. Evidence is under
+`experiments/server_command_runs/gelu_paired_eval_faa1679_20260711_002242/`.
+
+Progress 2026-07-11: Stage-1 now collates each `validation_full` dataloader
+once and retains its pinned CPU batches as an immutable tuple; training
+dataloaders stay lazy. This removes repeated Hugging Face dataset indexing and
+`DataCollatorWithPadding` work from every exact-config cache miss without
+reserving validation copies on each GPU. Server TDD used RED `c84973f` and
+GREEN `7b59a10`; 90 related tests passed. A production-path real MRPC A/B kept
+loss, metrics, labels, and logits bit-identical, used 1,256,640 bytes for four
+pinned batches, and improved median full-validation wall from `0.698002s` to
+`0.690052s` (`1.0115x`, `7.951ms` per eval). Evidence is under
+`experiments/server_command_runs/stage1_validation_batches_7b59a10_20260711/`.
+
+Rejected screening 2026-07-11: lowering Stage-1 detail flush cadence,
+in-place GELU accumulation, in-place approximate-Softmax temporaries, removing
+BLB LayerNorm expanded-input materialization, and reusing sampled-noise buffers
+all failed the full-path/common-batch gain threshold. The measured decisions
+are recorded in the paired-GELU evidence directory; none changed source.
+
+Rejected screening 2026-07-11: keeping validation batches resident on each GPU
+saved only another `57.9us` per eval beyond the pinned CPU tuple, so it was not
+worth per-worker VRAM copies and device-cache complexity. Suppressing roughly
+198,795 GELU/Softmax install-success lines across 50,000 configurations also
+projected only `0.052s` runtime savings on the actual redirected-log path.
+Both measurements are retained with the validation-batch evidence.
+
+Rejected screening 2026-07-11: dynamic Stage-1 padding reduced MRPC
+full-validation wall by `1.60x` to `1.73x`, but changed logits and loss for the
+original plaintext baseline, all-degree1, all-degree4, and mixed
+configurations. Maximum absolute logit drift ranged from `2.6e-6` to
+`1.19e-4`. Current MRPC labels and metrics happened to remain equal, but the
+loss drift can change strict zero-tolerance feasibility and therefore the PPO
+trajectory, so the fixed-padding protocol remains unchanged.
+
+Rejected screening 2026-07-11: replacing approximate-Softmax
+`x.max(dim)[0]` with `torch.amax()` preserved reduction values and NaN/Inf
+behavior, but at the promoted batch-128 shape saved only `0.00165ms` per
+attention layer, about `0.020ms` across a 12-layer eval. This is below the
+end-to-end gain threshold, so source remains unchanged.
 
 Progress 2026-07-03: Block-2 QK-merge, Block-2 BSGS, and Block-4 input /
 softmax-V ones-mask encode hooks in `function_handler.py` now sample the
@@ -1190,6 +1276,32 @@ compact outputs for all 12 MRPC graphs are byte-identical before/after. TDD,
 under
 `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/`.
 
+Progress 2026-07-11: cProfile of the fast fusion Cartesian-product loop showed
+that `build_replan_output_dict()` spent `1.23s` in a profiled 100,000-combo
+run expanding compatibility JSON fields that enumeration never reads. Source
+commit `511b3f2` adds `ReplanSession.replan_compact()` and routes only the fast
+enum loop through its validity/fusion/bits/compact result; full replan/CLI/JSON
+callers are unchanged. Six-repeat production A/B improved the same 100,000
+real `block1_mrpc` combinations from median `2.065481s` to `1.485932s`
+(`1.390x`) with identical valid counts, reduced rows, and result SHA256. A
+20-worker end-to-end block1 build improved from `14.17s` to `12.34s`
+(`1.148x`), and the generated maps were semantically equal after excluding
+wall metadata. Server TDD and 128 related tests are under
+`experiments/server_command_runs/fusion_compact_replan_511b3f2_20260711/`.
+
+Progress 2026-07-11: after compact-output promotion, a fresh 200,000-combo
+cProfile attributed about 6% of the remaining profile time to rebuilding the
+same baseline-skeleton `nodes_between()` paths. Source commit `031816a`
+precomputes those node-reference tuples once per `ReplanSession`; dynamic node
+delta mutations remain visible through the cached references. Eleven-repeat
+real `block1_mrpc` hot-loop A/B improved 100,000 combinations from median
+`1.516123s` to `1.423941s` (`1.0647x`) with identical result SHA256. Three
+20-worker full block1 builds improved median wall time from `12.35s` to
+`12.17s`, reduced median user CPU by `4.15s`, and produced semantically equal
+maps after excluding wall metadata. The 129-test related gate and raw evidence
+are under
+`experiments/server_command_runs/replan_stage_paths_031816a_20260711/`.
+
 Progress 2026-07-03: `rescale_optimizer_bridge.load_baseline_archive()` now
 caches parsed static-skeleton archives by absolute path, mtime, and size. The
 cache stores immutable tuples and returns fresh lists to callers, so repeated
@@ -1748,6 +1860,15 @@ Both independently launched deterministic single-candidate references match
 the batched baseline and candidate semantic fields exactly; only expected
 artifact paths and measured `time_ms` differ. Python compilation and all 58
 related tests passed.
+
+Rejected candidate 2026-07-10: real BERT-base MRPC test-set profiling found
+that combining `torch.inference_mode()`, a pinned DataLoader, and removal of a
+warmup synchronization improved the established GLUE submission loop by only
+`1.005x`, despite bit-identical logits. Batch-size 32 reached `1.072x`, but
+changed logits by about `1e-5`; batch sizes 128/256 were slower. No source
+change was accepted because the role requires efficiency gains without
+silently changing result values. Evidence is under
+`experiments/server_command_runs/glue_inference_profile_c448ee2_20260710_232539/`.
 
 Progress 2026-07-04: `UnifiedFinalEvaluationModule._summarize_random_results()`
 now streams final-eval random-result summaries through per-family and overall
@@ -2584,6 +2705,19 @@ training JSONL rows with a reused `JSONEncoder.iterencode()` into the existing
 buffered file handle. Required `rl_training_data_points/` schemas and flush
 cadence stay unchanged while long RL runs avoid one full JSON string allocation
 per manifest, summary, step, episode, and PPO diagnostic row.
+
+Progress 2026-07-10: the reused RL JSONL encoder now receives each payload
+directly and invokes `json_default` only for non-native leaves. This removes a
+redundant eager `to_jsonable(..., preserve_native=True)` traversal from every
+Stage-1 step/episode and Stage-2 episode/PPO row without changing buffering,
+flush cadence, schemas, sorting, whitespace, or newlines. Server TDD used RED
+commit `4225543` and GREEN source `64727a9`; all 25
+`tests.test_rl_data_points` tests passed. Seven-sample alternating-order
+benchmarks produced byte-identical rows and reduced representative Stage-1
+step serialization from `1.811772s` to `0.530645s` per 30,000 rows (`3.414x`),
+while a NumPy-heavy Stage-2 row improved from `1.978704s` to `1.799263s`
+(`1.100x`). Evidence is under
+`experiments/server_command_runs/rl_jsonl_direct_64727a9_20260710_234402/`.
 
 Progress 2026-07-03: `blb_stage2_rl/diagnostics.py` now reuses one
 `JSONEncoder` for primary Stage-2 diagnostic JSONL rows and streams encoder

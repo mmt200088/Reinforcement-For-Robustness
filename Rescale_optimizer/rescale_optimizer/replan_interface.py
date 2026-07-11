@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .config_loader import load_graph_from_json
 from .feasibility import build_feasibility_dag
-from .graph import NodeType, RescaleGraph, propagate_scale
+from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
 from .replan import ReplanInputs, ReplanResult, replan_with_user_actions
 
 DeltaValue = Union[int, str]
@@ -45,6 +45,16 @@ class BaselineRecord:
     t_baseline: List[int]
     q_bits_baseline: List[int]
     archive_entry: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class CompactReplanResult:
+    """Minimal repeated-replan result consumed by fusion enumeration."""
+
+    valid: bool
+    fusion_count: int
+    total_bits: int
+    compact_config: Optional[Dict[str, Any]]
 
 
 def _parse_delta_value(value: Any) -> DeltaValue:
@@ -557,11 +567,27 @@ class ReplanSession:
 
         self._graphs: Dict[str, RescaleGraph] = {}
         self._delta_baselines: Dict[str, List[Tuple[int, Optional[int]]]] = {}
+        self._stage_paths: Dict[str, Tuple[Tuple[ComputeNode, ...], ...]] = {}
+        self._delta_nodes: Dict[str, Dict[str, ComputeNode]] = {}
         for graph_key, path in self.configs.items():
             graph, _opt_cfg, _amp = load_graph_from_json(path)
             build_feasibility_dag(graph)
             self._graphs[graph_key] = graph
             self._delta_baselines[graph_key] = _snapshot_graph_delta_state(graph)
+            self._delta_nodes[graph_key] = {
+                node.name: node
+                for node in graph.nodes
+                if node.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
+            }
+            baseline = self.baselines.get(graph_key)
+            if baseline is not None:
+                skeleton = list(baseline.skeleton)
+                if skeleton and skeleton[-1] != graph.dummy_sink_index:
+                    skeleton.append(graph.dummy_sink_index)
+                self._stage_paths[graph_key] = tuple(
+                    tuple(graph.nodes_between(skeleton[r - 1], skeleton[r]))
+                    for r in range(1, len(skeleton) - 1)
+                )
 
     @classmethod
     def from_profile(
@@ -608,7 +634,8 @@ class ReplanSession:
         include_compact: bool = True,
         output_config_name: Optional[str] = None,
         metadata: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Dict[str, Any], ReplanResult]:
+        _compact_result: bool = False,
+    ) -> Union[Dict[str, Any], ReplanResult, CompactReplanResult]:
         """Run one replan call from variable inputs.
 
         If ``t_new`` is omitted, the baseline ``t_baseline`` is reused. This is
@@ -642,7 +669,24 @@ class ReplanSession:
                 allowed_fusion_pairs=fusion_pairs,
             ),
             baseline_q_bits=list(baseline.q_bits_baseline),
+            stage_paths=self._stage_paths.get(key),
+            delta_nodes=self._delta_nodes.get(key),
         )
+
+        if _compact_result:
+            compact = build_new_compact_config(graph, key, result)
+            if compact is not None:
+                compact["fusion_count"] = int(result.fusion_count)
+            output = CompactReplanResult(
+                valid=bool(result.valid and result.invalid_chain is None),
+                fusion_count=int(result.fusion_count),
+                total_bits=(
+                    int(result.chain.total_bits) if result.chain is not None else 0
+                ),
+                compact_config=compact,
+            )
+            _restore_graph_delta_state(graph, self._delta_baselines[key])
+            return output
 
         if not return_dict:
             _restore_graph_delta_state(graph, self._delta_baselines[key])
@@ -665,6 +709,24 @@ class ReplanSession:
         )
         _restore_graph_delta_state(graph, self._delta_baselines[key])
         return doc
+
+    def replan_compact(
+        self,
+        graph_key: str,
+        *,
+        t_new: Optional[Sequence[int]] = None,
+        delta_overrides: Optional[Mapping[str, Any]] = None,
+        allowed_fusion_pairs: Any = DEFAULT_FUSION_POLICY,
+    ) -> CompactReplanResult:
+        """Run replan without expanding the compatibility JSON document."""
+
+        return self.replan(  # type: ignore[return-value]
+            graph_key,
+            t_new=t_new,
+            delta_overrides=delta_overrides,
+            allowed_fusion_pairs=allowed_fusion_pairs,
+            _compact_result=True,
+        )
 
     def __call__(self, graph_key: str, payload: Any) -> Dict[str, Any]:
         """Compatibility invoker: ``session(graph_key, payload) -> dict``."""

@@ -123,8 +123,29 @@ class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
             "def _make_block5_gelu_forward",
         )
 
-        self.assertIn("torch.where((x >= -2.7) & (x < 0), y_neg, 0.0)", helper_region)
+        self.assertIn("out = torch.where(x < 0, y_neg, y_pos)", helper_region)
+        self.assertIn("out = torch.where(x >= -2.7, out, 0.0)", helper_region)
+        self.assertIn("return torch.where(x > 2.7, x, out)", helper_region)
+        self.assertEqual(helper_region.count("torch.where("), 3)
+        self.assertNotIn(" & ", helper_region)
         self.assertNotIn("torch.zeros_like", helper_region)
+
+    def test_large_cuda_gelu_pairs_piece_evaluation_behind_size_gate(self):
+        source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
+        gelu_region = _source_region(
+            source,
+            "class PolynomialGELU",
+            "# change BertsdpaAttention",
+        )
+
+        self.assertIn("_GELU_PAIRED_POLY_MIN_NUMEL = 12_000_000", source)
+        self.assertIn("def _paired_coeff_tensor(", gelu_region)
+        self.assertIn("def _poly_pair(", gelu_region)
+        self.assertIn("x.is_cuda", gelu_region)
+        self.assertIn("x.dtype == torch.float32", gelu_region)
+        self.assertIn("self.degree in (2, 4)", gelu_region)
+        self.assertIn("x.numel() >= _GELU_PAIRED_POLY_MIN_NUMEL", gelu_region)
+        self.assertIn("y1, y2 = self._poly_pair(x)", gelu_region)
 
     def test_softmax_lower_bound_zero_branch_uses_scalar_zero(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")
@@ -451,6 +472,61 @@ class Stage1RewardHistoryWindowSourceTest(unittest.TestCase):
 
 @unittest.skipUnless(_HAS_TORCH, "layer_importance_evaluator imports torch")
 class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
+    @staticmethod
+    def _empty_split_registry(evaluator):
+        evaluator.dataset_splits = {}
+        evaluator.dataloaders = {}
+        evaluator.dataset_splits_mm = {}
+        evaluator.dataloaders_mm = {}
+
+    def test_validation_full_batches_are_collated_once_for_repeated_evaluation(self):
+        from layer_importance_evaluator import LayerImportanceEvaluator
+
+        class CountingLoader:
+            def __init__(self, batch):
+                self.batch = batch
+                self.iter_calls = 0
+
+            def __iter__(self):
+                self.iter_calls += 1
+                yield self.batch
+
+        evaluator = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        self._empty_split_registry(evaluator)
+        validation_dataset = object()
+        validation_batch = {"input_ids": object(), "labels": object()}
+        validation_loader = CountingLoader(validation_batch)
+        evaluator._make_dataloader = lambda dataset: validation_loader
+
+        LayerImportanceEvaluator._register_dataset_split(
+            evaluator,
+            "validation_full",
+            validation_dataset,
+        )
+
+        self.assertEqual(evaluator.dataloaders["validation_full"], (validation_batch,))
+        self.assertEqual(validation_loader.iter_calls, 1)
+        list(evaluator.dataloaders["validation_full"])
+        list(evaluator.dataloaders["validation_full"])
+        self.assertEqual(validation_loader.iter_calls, 1)
+
+    def test_training_split_keeps_lazy_dataloader(self):
+        from layer_importance_evaluator import LayerImportanceEvaluator
+
+        evaluator = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        self._empty_split_registry(evaluator)
+        train_dataset = object()
+        train_loader = object()
+        evaluator._make_dataloader = lambda dataset: train_loader
+
+        LayerImportanceEvaluator._register_dataset_split(
+            evaluator,
+            "train",
+            train_dataset,
+        )
+
+        self.assertIs(evaluator.dataloaders["train"], train_loader)
+
     def test_repeated_same_config_skips_handler_reinstall_but_keeps_eval_mode(self):
         from layer_importance_evaluator import (
             LayerImportanceEvaluator,
@@ -657,6 +733,53 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
                     msg=f"degree={degree} sign={sign}",
                 )
 
+    def test_paired_polys_match_independent_piece_evaluation_exactly(self):
+        from function_handler import PolynomialGELU
+
+        x = self._x()
+        for degree in (2, 4):
+            mod = PolynomialGELU(degree=degree)
+            paired_neg, paired_pos = mod._poly_pair(x)
+
+            self.assertTrue(torch.equal(paired_neg, mod._poly(x, 1)))
+            self.assertTrue(torch.equal(paired_pos, mod._poly(x, 0)))
+
+            first = mod._paired_coeff_tensor(x.device, x.dtype)
+            second = mod._paired_coeff_tensor(x.device, x.dtype)
+            self.assertIs(first, second)
+
+    @unittest.skipUnless(
+        _HAS_TORCH and torch.cuda.is_available(),
+        "paired GELU size gate requires CUDA",
+    )
+    def test_cuda_forward_size_gate_matches_legacy_and_skips_small_tensors(self):
+        from function_handler import (
+            PolynomialGELU,
+            _GELU_PAIRED_POLY_MIN_NUMEL,
+            _select_piecewise_gelu_output,
+        )
+
+        torch.manual_seed(19)
+        small = torch.empty(1024, device="cuda").uniform_(-4.0, 4.0)
+        large = torch.empty(
+            _GELU_PAIRED_POLY_MIN_NUMEL,
+            device="cuda",
+        ).uniform_(-4.0, 4.0)
+        for degree in (2, 4):
+            mod = PolynomialGELU(degree=degree).cuda().eval()
+            mod(small)
+            self.assertEqual(len(mod._paired_coeff_cache), 0)
+
+            legacy = _select_piecewise_gelu_output(
+                large,
+                mod._poly(large, 1),
+                mod._poly(large, 0),
+            )
+            got = mod(large)
+
+            self.assertTrue(torch.equal(got, legacy))
+            self.assertEqual(len(mod._paired_coeff_cache), 1)
+
     def test_forward_matches_reference_piecewise(self):
         from function_handler import GELU_COEEF, PolynomialGELU, polynomial
         x = self._x()
@@ -676,6 +799,32 @@ class HornerPolyEquivalenceTest(unittest.TestCase):
             torch.testing.assert_close(
                 got, ref, rtol=1e-5, atol=1e-6, msg=f"degree={degree}",
             )
+
+    def test_piecewise_selector_matches_legacy_boundaries_and_special_values(self):
+        from function_handler import _select_piecewise_gelu_output
+
+        x = torch.tensor([
+            float("-inf"),
+            -3.0,
+            -2.7,
+            -1.0,
+            -0.0,
+            0.0,
+            1.0,
+            2.7,
+            3.0,
+            float("inf"),
+            float("nan"),
+        ])
+        y_neg = torch.arange(x.numel(), dtype=x.dtype) + 10.0
+        y_pos = torch.arange(x.numel(), dtype=x.dtype) + 20.0
+
+        legacy = torch.where((x >= -2.7) & (x < 0), y_neg, 0.0)
+        legacy = torch.where((x >= 0) & (x <= 2.7), y_pos, legacy)
+        legacy = torch.where(x > 2.7, x, legacy)
+        got = _select_piecewise_gelu_output(x, y_neg, y_pos)
+
+        self.assertTrue(torch.equal(got, legacy))
 
 
 @unittest.skipUnless(_HAS_TORCH, "torch unavailable")

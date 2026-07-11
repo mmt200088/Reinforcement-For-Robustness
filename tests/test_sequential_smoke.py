@@ -366,6 +366,14 @@ class SequentialArtifactContractsTest(unittest.TestCase):
         # Use a private registry path so we don't pollute the real one.
         reg_path = os.path.join(self.tmp, "registry.jsonl")
         idx_path = os.path.join(self.tmp, "index.md")
+        subprocess_env = os.environ.copy()
+        subprocess_env["PYTHONPATH"] = os.pathsep.join(
+            part for part in (
+                str(REPO_ROOT),
+                subprocess_env.get("PYTHONPATH", ""),
+            )
+            if part
+        )
         # Register one run
         rc = subprocess.run(
             [
@@ -383,7 +391,8 @@ class SequentialArtifactContractsTest(unittest.TestCase):
                 "--persistent-dir", "/tmp/fake",
                 "--registry-path", reg_path,
             ],
-            cwd=str(REPO_ROOT),
+            cwd=self.tmp,
+            env=subprocess_env,
             capture_output=True,
             text=True,
         )
@@ -1324,8 +1333,11 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         self.assertNotIn(".item()", action_dist_region)
 
     def test_truncated_policy_forward_matches_full_causal_prefix(self):
-        for name in ("torch", "torch.cuda", "torch.nn", "torch.nn.functional"):
-            sys.modules.pop(name, None)
+        torch_mod = sys.modules.get("torch")
+        if torch_mod is not None and not hasattr(getattr(torch_mod, "nn", None), "Module"):
+            for name in list(sys.modules):
+                if name == "torch" or name.startswith("torch."):
+                    del sys.modules[name]
         try:
             import numpy as np
             import torch

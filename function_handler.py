@@ -2028,8 +2028,8 @@ def _make_block5_wffn1_forward(
 
 def _select_piecewise_gelu_output(x: Tensor, y_neg: Tensor, y_pos: Tensor) -> Tensor:
     """Select GELU approximation pieces with a scalar-zero low/NaN branch."""
-    out = torch.where((x >= -2.7) & (x < 0), y_neg, 0.0)
-    out = torch.where((x >= 0) & (x <= 2.7), y_pos, out)
+    out = torch.where(x < 0, y_neg, y_pos)
+    out = torch.where(x >= -2.7, out, 0.0)
     return torch.where(x > 2.7, x, out)
 
 
@@ -2121,6 +2121,9 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
 
 
 # tensor polynomial approximation
+_GELU_PAIRED_POLY_MIN_NUMEL = 12_000_000
+
+
 def polynomial(x, coeff, sign):
     # x: Tensor, 可能在 cuda:0 或 cpu
     device = x.device
@@ -2149,6 +2152,7 @@ class PolynomialGELU(nn.Module):
         # registered buffer) so it stays out of state_dict; keyed by device so a
         # module moved to a new device rebuilds correctly.
         self._coeff_cache = {}
+        self._paired_coeff_cache = {}
 
     def _coeff_tensor(self, sign: int, device, dtype) -> Tensor:
         key = (sign, device, dtype)
@@ -2173,14 +2177,55 @@ class PolynomialGELU(nn.Module):
             out = torch.addcmul(out, coeff_tensor[i], power)
         return out
 
+    def _paired_coeff_tensor(self, device, dtype) -> Tensor:
+        key = (device, dtype)
+        paired = self._paired_coeff_cache.get(key)
+        if paired is None:
+            paired = torch.stack(
+                (
+                    self._coeff_tensor(1, device, dtype),
+                    self._coeff_tensor(0, device, dtype),
+                ),
+                dim=0,
+            )
+            self._paired_coeff_cache[key] = paired
+        return paired
+
+    def _poly_pair(self, x: Tensor) -> Tuple[Tensor, Tensor]:
+        coeff_tensor = self._paired_coeff_tensor(x.device, x.dtype)
+        view_shape = (2,) + (1,) * x.ndim
+        out = coeff_tensor[:, 0].view(view_shape).expand((2,) + tuple(x.shape)).clone()
+        power = x
+        out = torch.addcmul(
+            out,
+            coeff_tensor[:, 1].view(view_shape),
+            power.unsqueeze(0),
+        )
+        for i in range(2, coeff_tensor.shape[1]):
+            power = power * x
+            out = torch.addcmul(
+                out,
+                coeff_tensor[:, i].view(view_shape),
+                power.unsqueeze(0),
+            )
+        return out[0], out[1]
+
     def forward(self, x: Tensor) -> Tensor:
 
         if self.degree == 0:
             # Degree 0: skip piecewise comparison, directly use [-2.7, 0] interval polynomial
             return self._poly(x, 1)
 
-        y1 = self._poly(x, 1)
-        y2 = self._poly(x, 0)
+        if (
+            x.is_cuda
+            and x.dtype == torch.float32
+            and self.degree in (2, 4)
+            and x.numel() >= _GELU_PAIRED_POLY_MIN_NUMEL
+        ):
+            y1, y2 = self._poly_pair(x)
+        else:
+            y1 = self._poly(x, 1)
+            y2 = self._poly(x, 0)
         out = _select_piecewise_gelu_output(x, y1, y2)
 
         # print(f"X : {x}, Y : {out}, OriginGelu: {origin}")

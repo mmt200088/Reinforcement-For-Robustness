@@ -128,7 +128,7 @@ class RLDataPointWriter:
             ).open("a", encoding="utf-8", buffering=self._jsonl_buffer_size)
             self._files[name] = fh
             self._line_counts[name] = 0
-        fh.writelines(self._jsonl_encoder.iterencode(to_jsonable(payload, preserve_native=True)))
+        fh.writelines(self._jsonl_encoder.iterencode(payload))
         fh.write("\n")
         self._line_counts[name] = self._line_counts.get(name, 0) + 1
         if self._line_counts[name] % self._jsonl_flush_interval == 0:

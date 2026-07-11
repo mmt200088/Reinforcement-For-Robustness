@@ -224,6 +224,44 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(json.loads(rows[0]), {"episode": 1, "reward": 0.5})
 
+    def test_training_data_jsonl_writer_avoids_eager_payload_normalization(self):
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=Path(td),
+                run_id="direct-json-encoder-test",
+                stage="stage1",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            payload = {
+                "z": np.array([1, 2]),
+                "a": Path("x/y"),
+                "nested": {
+                    "scalar": np.float32(1.25),
+                    "native": [True, None, 3],
+                },
+            }
+
+            try:
+                with mock.patch.object(
+                    rl_data_points,
+                    "to_jsonable",
+                    side_effect=AssertionError(
+                        "JSONEncoder.default should normalize only non-native leaves"
+                    ),
+                ):
+                    writer.write_episode(payload)
+            finally:
+                writer.close()
+
+            row = (writer.run_dir / "episodes.jsonl").read_text(encoding="utf-8")
+
+        self.assertEqual(
+            row,
+            '{"a": "x/y", "nested": {"native": [true, null, 3], '
+            '"scalar": 1.25}, "z": [1, 2]}\n',
+        )
+
     def test_read_json_file_reads_artifact_payload(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "payload.json"

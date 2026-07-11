@@ -57,6 +57,22 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   dependencies, shared artifacts, and handoff contracts, then choose
   optimizations by end-to-end wall-clock impact and hardware utilization rather
   than by isolated local speedups.
+- Runtime-optimization completion audit, updated 2026-07-11: source commit
+  `991329a` was verified on replacement server `100.64.229.185:8722` (one RTX
+  4090, 20 logical CPUs). The six-stage audit found all 30 expected flow files
+  and every required artifact-evidence class; focused project-audit and
+  structured-artifact gates passed 9/9 and 35/35. The full 1,221-test process
+  still has 19 Stage-2 contract failures after concurrent integration commit
+  `16b68e3`, including eight guards for cached masks/static tensors, deferred
+  scalar synchronization, causal-prefix rollout, and probe scheduling. Do not
+  report the whole suite green or reapply those Stage-2 core optimizations
+  until the concurrent agent hands off. Evidence is under
+  `experiments/server_command_runs/project_completion_audit_991329a_20260711/`.
+- Replacement-server hardware limit, updated 2026-07-11: the current server
+  exposes only one GPU. It can close single-GPU correctness/parity gates but
+  cannot close the required Stage-2 1GPU-versus-NGPU promotion gate. Keep GPU
+  defaults evidence-gated until a server with at least two visible GPUs is
+  available.
 - Stage-2 shared evaluation-chain rule, added 2026-07-02: do not reimplement
   the BLB action-to-model pipeline in ad hoc callers. Optimizer/replan cfg
   write-back must go through
@@ -1515,6 +1531,10 @@ Key wires:
 
 - `InProcessInvoker.from_profile(...)` builds a `ReplanSession` over local graph
   configs and static baselines.
+- Repeated `ReplanSession` calls reuse precomputed node-reference paths for the
+  fixed baseline skeleton. Do not replace those references with copied node
+  values: per-action propagation-delta mutations must remain visible during
+  `propagate_scale()` while topology traversal stays cached.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.

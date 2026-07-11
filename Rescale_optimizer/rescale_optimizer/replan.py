@@ -76,9 +76,9 @@ mutation happens on local copies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
-from .graph import NodeType, RescaleGraph, propagate_scale
+from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
 from .modulus_chain import ModulusChain
 
 
@@ -227,6 +227,8 @@ def _recompute_drops(
     graph: RescaleGraph,
     skeleton: Sequence[int],
     t_new: Sequence[int],
+    *,
+    stage_paths: Optional[Sequence[Sequence[ComputeNode]]] = None,
 ) -> List[int]:
     """
     For each stage r = 1..R, compute the new drop bits
@@ -248,6 +250,10 @@ def _recompute_drops(
         raise ValueError(
             f"replan: t_new length must be R+1 = {R + 1}, got {len(t_new)}"
         )
+    if stage_paths is not None and len(stage_paths) != R:
+        raise ValueError(
+            f"replan: stage_paths length must be R = {R}, got {len(stage_paths)}"
+        )
 
     drops: List[int] = []
     for r in range(1, R + 1):
@@ -257,7 +263,11 @@ def _recompute_drops(
             raise ValueError(
                 f"replan: bad skeleton segment ({s_prev} -> {s_curr})"
             )
-        path = graph.nodes_between(s_prev, s_curr)
+        path = (
+            stage_paths[r - 1]
+            if stage_paths is not None
+            else graph.nodes_between(s_prev, s_curr)
+        )
         s_pre = propagate_scale(int(t_new[r - 1]), path)
         d = s_pre - int(t_new[r])
         drops.append(int(d))
@@ -267,6 +277,8 @@ def _recompute_drops(
 def _apply_delta_overrides(
     graph: RescaleGraph,
     delta_overrides: Optional[Dict[str, Union[int, str]]],
+    *,
+    delta_nodes: Optional[Mapping[str, ComputeNode]] = None,
 ) -> Dict[str, Union[int, str]]:
     """
     Apply user-provided propagation delta overrides in-place on ``graph``.
@@ -277,7 +289,11 @@ def _apply_delta_overrides(
     if not delta_overrides:
         return {}
 
-    by_name = {n.name: n for n in graph.nodes if n.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)}
+    by_name = delta_nodes if delta_nodes is not None else {
+        n.name: n
+        for n in graph.nodes
+        if n.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
+    }
     applied: Dict[str, Union[int, str]] = {}
 
     for name, raw in delta_overrides.items():
@@ -498,6 +514,9 @@ def replan_with_user_actions(
     graph: RescaleGraph,
     inputs: ReplanInputs,
     baseline_q_bits: Optional[Sequence[int]] = None,
+    *,
+    stage_paths: Optional[Sequence[Sequence[ComputeNode]]] = None,
+    delta_nodes: Optional[Mapping[str, ComputeNode]] = None,
 ) -> ReplanResult:
     """
     Re-run scale propagation under user-supplied ``t_new``, then run
@@ -542,12 +561,21 @@ def replan_with_user_actions(
         )
 
     try:
-        applied_delta_overrides = _apply_delta_overrides(graph, inputs.delta_overrides)
+        applied_delta_overrides = _apply_delta_overrides(
+            graph,
+            inputs.delta_overrides,
+            delta_nodes=delta_nodes,
+        )
     except ValueError as e:
         return ReplanResult(message=f"delta override failed: {e}")
 
     try:
-        q_initial = _recompute_drops(graph, skeleton, inputs.t_new)
+        q_initial = _recompute_drops(
+            graph,
+            skeleton,
+            inputs.t_new,
+            stage_paths=stage_paths,
+        )
     except ValueError as e:
         return ReplanResult(
             message=f"recompute_drops failed: {e}",

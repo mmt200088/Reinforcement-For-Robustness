@@ -13,6 +13,30 @@ if str(RESCALE_ROOT) not in sys.path:
 
 
 class RescaleOptimizerHotPathTests(unittest.TestCase):
+    def test_compact_replan_matches_full_result_without_building_full_output(self):
+        from rescale_optimizer import CompactReplanResult, ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        full = session.replan("block4")
+
+        with mock.patch.object(
+            replan_interface,
+            "build_replan_output_dict",
+            side_effect=AssertionError("built full replan output"),
+        ):
+            compact = session.replan_compact("block4")
+
+        self.assertIsInstance(compact, CompactReplanResult)
+        self.assertEqual(compact.valid, full["valid"])
+        self.assertEqual(compact.fusion_count, full["fusion_count"])
+        self.assertEqual(compact.total_bits, full["result"]["chain"]["total_bits"])
+        self.assertEqual(compact.compact_config, full["new_compact_config"])
+
     def test_compact_config_propagates_each_stage_without_nodes_between(self):
         from rescale_optimizer import ReplanSession
         from rescale_optimizer.graph import propagate_scale
@@ -75,6 +99,65 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
             compact = build_new_compact_config(graph, "block4", result)
 
         self.assertEqual(compact["cut_point_sf"], expected)
+
+    def test_replan_session_reuses_precomputed_baseline_stage_paths(self):
+        from rescale_optimizer import ReplanSession
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        graph = session._graphs["block4"]
+
+        with mock.patch.object(
+            graph,
+            "nodes_between",
+            side_effect=AssertionError("rebuilt baseline stage path"),
+        ):
+            compact = session.replan_compact("block4")
+
+        self.assertTrue(compact.valid)
+
+    def test_replan_session_reuses_precomputed_delta_node_lookup(self):
+        from rescale_optimizer import NodeType, ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        graph = session._graphs["block4"]
+        node = next(
+            item
+            for item in graph.nodes
+            if item.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
+        )
+        delta = (
+            int(node.scale_delta_bits)
+            if node.node_type == NodeType.CTPT_MUL
+            else (
+                "x2"
+                if node.other_ct_scale_bits is None
+                else int(node.other_ct_scale_bits)
+            )
+        )
+
+        with mock.patch.object(
+            replan_interface,
+            "replan_with_user_actions",
+            wraps=replan_interface.replan_with_user_actions,
+        ) as replan_call:
+            session.replan_compact(
+                "block4",
+                delta_overrides={node.name: delta},
+            )
+
+        self.assertIs(
+            replan_call.call_args.kwargs["delta_nodes"],
+            session._delta_nodes["block4"],
+        )
 
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
         from rescale_optimizer import replan_interface

@@ -225,24 +225,16 @@ def eval_combo_fast(
                 total += int(term.const_sf)
         deltas[str(spec.node)] = int(total)
 
-    raw = session.replan(
-        template.graph_key, t_new=t_new, delta_overrides=deltas, return_dict=True,
+    raw = session.replan_compact(
+        template.graph_key, t_new=t_new, delta_overrides=deltas,
     )
 
-    result = raw.get("result") or {}
-    invalid_chain = result.get("invalid_chain")
-    valid = (
-        invalid_chain is None
-        and bool(raw.get("valid", True))
-        and bool(result.get("valid", True))
-    )
-    if not valid:
+    if not raw.valid:
         return {"valid": False}
-    chain = result.get("chain") or {}
-    total_bits = int(chain.get("total_bits") or 0)
-    fusion_count = int(raw.get("fusion_count", 0))
+    total_bits = int(raw.total_bits)
+    fusion_count = int(raw.fusion_count)
 
-    compact = raw.get("new_compact_config") or {}
+    compact = raw.compact_config or {}
     cut_points: Dict[int, Mapping[str, Any]] = {}
     for entry in compact.get("cut_point_sf", []) or []:
         if isinstance(entry, Mapping) and "i" in entry:

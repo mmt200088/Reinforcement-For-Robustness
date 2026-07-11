@@ -1,0 +1,13 @@
+test_validation_full_batches_are_collated_once_for_repeated_evaluation (tests.test_stage1_eval_accel.Stage1ApplyConfigurationReuseTest) ... /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+ok
+test_training_split_keeps_lazy_dataloader (tests.test_stage1_eval_accel.Stage1ApplyConfigurationReuseTest) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.609s
+
+OK
