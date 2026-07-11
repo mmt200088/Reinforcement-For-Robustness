@@ -1,0 +1,29 @@
+[PPO] ppo_update_interval=20 (batch=240 steps, details chunk=60 episodes)
+stage1_rl_episodes: 51000
+stage2_rl_episodes: 20
+stage1_rl_episodes_specified: False
+stage2_rl_episodes_specified: True
+blb_v3_warmstart_anchor_episodes: None
+blb_v3_warmstart_neighbor_ramp_episodes: None
+blb_v3_guarded_radius2_min_episode: None
+blb_v3_guarded_radius2_episode_fraction: None
+blb_v3_guarded_radius2_cooldown_episodes: None
+blb_v3_ent_coef_ramp_episodes: None
+[Info] Stage-2 固定 GELU/Softmax 来源：Stage-2 all4 (softmax fixed deg6) (source=stage2_all4)
+  Stage-2 GELU   : [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  Stage-2 Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  * 训练概览：profile='mrpc'    total_episodes=20    PPO 更新间隔（rollout_size）= 20    seed=42
+  * Fusion-count action ENABLED：map graphs=7, max_options=2；per-slot radius2 停用，block 粒度 safe-neighbor curriculum 停用（对照组：全开）
+  * [stage2-parallel] episode-parallel rollout ENABLED: devices=[0] workers=1 K=1 trials serial per worker; global-episode seeding (policy/probe/update streams)
+  · 训练规模：total_episodes=20    rollout_size=20    save_interval=200    calibrate_baseline_samples=8
+  · Warmstart：decaying_logit_prior=False    initial_gain=1.2    force_baseline_episodes=0    
+  · Baseline prior schedule：anchor=1.20; ep60..600: 1.00→0.45; ep600..2000: 0.45→0.15; after ep2000: 0.15
+  · Guarded radius2：enabled=False    min_episode=1060    stall_window=600    max_mutations=4    fraction=0.15    cooldown=300
+  · 详细 trace：第 1 个 episode 会逐 step 打印；之后按窗口汇总
+  * 强制 baseline 锚点（forced-baseline anchor）: 前 0 个 episode 直接执行 baseline action，让 value head 学到 +45 基线 reward，policy 概率质量先聚到 baseline 附近，之后再切到 PPO sample。
+  [stage2-rollout] window_start=0 episodes=20 workers=1 assignment=interleaved rollout_sig=disabled
+  [stage2-rollout-timing] window_start=0 episodes=20 sync_s=0.000 collect_s=7.053 assignment=interleaved
+  【回合 1 · 训练过程新高（episode new best）】
+  【回合 5 · 训练过程新高（episode new best）】
+  【回合 9 · 训练过程新高（episode new best）】
+  PPO 窗口摘要 · 截至回合（through episode） 20  ·  时间 2026-07-11 13:08:25
