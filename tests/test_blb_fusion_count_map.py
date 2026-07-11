@@ -23,6 +23,7 @@ for _p in (str(_REPO_ROOT), str(_BLB_DIR), str(_RO_ROOT)):
 
 import fusion_count_map as fcm
 import fusion_enum
+import layerwise_action as layerwise
 
 import noise_tables
 
@@ -195,6 +196,33 @@ class FusionMapLoaderTest(unittest.TestCase):
 
         self.assertEqual(sorted(m.graphs), ["block1_mrpc"])
         self.assertEqual(m.num_options("block1_mrpc"), 2)
+
+
+class LayerwiseFusionMapSemanticsTest(unittest.TestCase):
+    """The layerwise codec consumes maps without giving Block3 a map option."""
+
+    def test_fixed_fusion_blocks_and_block3_k_restore(self):
+        fusion_map = fcm.FusionCountMap.load("mrpc")
+        spec = layerwise.layerwise_schedule(12, fusion_map)[0]
+        baseline = [14] * (12 * 73 + 1)
+        block3_sf = baseline[32:39]
+
+        result = layerwise.apply_layer_action(
+            baseline,
+            [0, 0, 0, 0, 0, 0],
+            spec,
+            fusion_map,
+        )
+
+        for block_idx, graph_key in ((2, "block2_mrpc"), (5, "block5_n4")):
+            option = next(
+                option for option in fusion_map.options(graph_key)
+                if int(option.option_id) == int(result.fusion_option_ids[block_idx])
+            )
+            self.assertEqual(option.fusion_count, 1)
+        self.assertNotIn(3, result.fusion_option_ids)
+        self.assertEqual(list(result.full_vector[32:39]), block3_sf)
+        self.assertEqual(int(result.full_vector[39]), 0)
 
 
 class GroupMinNoiseOptionsTest(unittest.TestCase):
