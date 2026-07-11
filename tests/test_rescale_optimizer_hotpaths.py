@@ -175,6 +175,28 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
             session._delta_nodes["block4"],
         )
 
+    def test_replan_session_skips_redundant_clean_state_restore(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        with mock.patch.object(
+            replan_interface,
+            "_restore_graph_delta_state",
+            wraps=replan_interface._restore_graph_delta_state,
+        ) as restore:
+            first = session.replan_compact("block4")
+            second = session.replan_compact("block4")
+
+        self.assertTrue(first.valid)
+        self.assertTrue(second.valid)
+        self.assertEqual(restore.call_count, 2)
+        self.assertTrue(session._delta_state_clean["block4"])
+
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
         from rescale_optimizer import replan_interface
 
