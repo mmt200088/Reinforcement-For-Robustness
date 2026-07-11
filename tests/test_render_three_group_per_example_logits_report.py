@@ -2,10 +2,15 @@ import copy
 import importlib
 import json
 import math
+import os
+import shutil
 import statistics
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.test_render_three_group_fusion_stability_report import make_run_payloads
 
@@ -340,6 +345,150 @@ class PredictionSummaryTests(unittest.TestCase):
         self.assertIn("prediction_file_count", failure_codes(wrong_files))
         self.assertIn("trial_row_count", failure_codes(missing_trial))
 
+    def test_required_row_fields_are_enforced_and_token_type_ids_is_optional(self):
+        required_fields = (
+            "schema_version",
+            "run_seed",
+            "group",
+            "trial_index",
+            "trial_seed",
+            "probe_position",
+            "dataset_idx",
+            "input_ids",
+            "attention_mask",
+            "gold_label",
+            "predicted_label",
+            "correct",
+            "logits",
+        )
+        for field in required_fields:
+            with self.subTest(field=field):
+                runs, rows, prior_runs = make_fixture()
+                rows[0].pop(field)
+                summary = self._summary(runs, rows, prior_runs)
+                self.assertFalse(summary["all_gates_pass"])
+                self.assertIn(
+                    "missing_required_field",
+                    failure_codes(summary, "prediction_completeness"),
+                )
+                first_trial = summary["trial_results"][0]
+                self.assertIsNone(first_trial["recomputed_loss"])
+
+        for token_type_value in (None, "missing"):
+            with self.subTest(token_type_value=token_type_value):
+                runs, rows, prior_runs = make_fixture()
+                for row in rows:
+                    if token_type_value == "missing":
+                        row.pop("token_type_ids")
+                    else:
+                        row["token_type_ids"] = None
+                summary = self._summary(runs, rows, prior_runs)
+                self.assertTrue(summary["all_gates_pass"])
+
+    def test_model_input_tensors_require_flat_nonempty_integer_lists(self):
+        mutations = {
+            "input_tensor_empty": lambda row: row.update({"input_ids": []}),
+            "input_tensor_element": lambda row: row.update(
+                {"input_ids": [101, "10", 102, 0]}
+            ),
+            "input_tensor_nested": lambda row: row.update(
+                {"input_ids": [101, [10], 102, 0]}
+            ),
+            "input_tensor_bool": lambda row: row.update(
+                {"token_type_ids": [0, False, 1, 0]}
+            ),
+            "input_length_mismatch": lambda row: row.update(
+                {"attention_mask": [1, 1, 1]}
+            ),
+            "attention_mask_value": lambda row: row.update(
+                {"attention_mask": [1, 2, 1, 0]}
+            ),
+        }
+
+        for expected_code, mutate in mutations.items():
+            with self.subTest(expected_code=expected_code):
+                runs, rows, prior_runs = make_fixture()
+                mutate(rows[0])
+                summary = self._summary(runs, rows, prior_runs)
+                self.assertIn(
+                    expected_code,
+                    failure_codes(summary, "input_identity"),
+                )
+                self.assertIsNone(summary["trial_results"][0]["recomputed_loss"])
+                aggregate = summary["groups"][GROUPS[0]]["inputs"]["10"]
+                self.assertEqual(aggregate["trial_count"], 24)
+
+    def test_probe_positions_are_complete_unique_and_order_independent(self):
+        runs, rows, prior_runs = make_fixture()
+        rows[0], rows[1] = rows[1], rows[0]
+        reordered = self._summary(runs, rows, prior_runs)
+        self.assertTrue(reordered["all_gates_pass"])
+
+        cases = {}
+        runs, rows, prior_runs = make_fixture()
+        rows[1]["probe_position"] = 0
+        cases["duplicate_probe_position"] = (runs, rows, prior_runs)
+        runs, rows, prior_runs = make_fixture()
+        rows.pop(1)
+        cases["probe_position_set"] = (runs, rows, prior_runs)
+        runs, rows, prior_runs = make_fixture()
+        rows[0]["probe_position"] = True
+        cases["probe_position_type"] = (runs, rows, prior_runs)
+
+        for expected_code, payloads in cases.items():
+            with self.subTest(expected_code=expected_code):
+                summary = self._summary(*payloads)
+                self.assertIn(
+                    expected_code,
+                    failure_codes(summary, "prediction_completeness"),
+                )
+                self.assertIsNone(summary["trial_results"][0]["recomputed_loss"])
+
+    def test_position_to_dataset_mapping_must_be_stable_across_trials(self):
+        runs, rows, prior_runs = make_fixture()
+        target = [
+            row
+            for row in rows
+            if row["run_seed"] == runs[0]["seed"]
+            and row["group"] == GROUPS[0]
+            and row["trial_index"] == 1
+        ]
+        target[0]["probe_position"], target[1]["probe_position"] = (
+            target[1]["probe_position"],
+            target[0]["probe_position"],
+        )
+
+        summary = self._summary(runs, rows, prior_runs)
+
+        self.assertIn(
+            "unstable_position_mapping",
+            failure_codes(summary, "input_identity"),
+        )
+        affected = next(
+            trial
+            for trial in summary["trial_results"]
+            if trial["seed"] == runs[0]["seed"]
+            and trial["group"] == GROUPS[0]
+            and trial["trial_index"] == 1
+        )
+        self.assertIsNone(affected["recomputed_loss"])
+
+    def test_trial_seed_requires_integer_nonbool_and_exact_terminal_value(self):
+        for replacement, expected_code in (
+            (True, "trial_seed_type"),
+            ([123], "trial_seed_type"),
+            (123, "trial_seed_mismatch"),
+        ):
+            with self.subTest(replacement=replacement):
+                runs, rows, prior_runs = make_fixture()
+                rows[0]["trial_seed"] = replacement
+                summary = self._summary(runs, rows, prior_runs)
+                self.assertIn(
+                    expected_code,
+                    failure_codes(summary, "prediction_completeness"),
+                )
+                self.assertIsNone(summary["trial_results"][0]["recomputed_loss"])
+
     def test_malformed_json_types_produce_structured_failures_without_type_error(self):
         mutations = {
             "current_run_seed_type": lambda runs, rows, priors: runs[0].update(
@@ -450,6 +599,81 @@ class PredictionSummaryTests(unittest.TestCase):
             2000.0,
         )
 
+    def test_metric_helpers_match_hard_coded_asymmetric_goldens(self):
+        self.assertAlmostEqual(
+            self.report._weighted_f1(
+                [0, 0, 0, 1, 1],
+                [0, 1, 1, 1, 1],
+            ),
+            0.5666666666666667,
+            places=15,
+        )
+        self.assertAlmostEqual(
+            self.report.stable_cross_entropy([1.2, -0.7], 1),
+            2.0393867582829603,
+            places=15,
+        )
+
+    def test_trial_loss_is_sample_weighted_across_unequal_batch_grouping(self):
+        runs, rows, _ = make_fixture(expected_examples=3)
+        logits_by_position = {
+            0: [0.2, -0.1],
+            1: [-0.3, 0.8],
+            2: [1.1, 0.4],
+        }
+        for row in rows:
+            row["logits"] = logits_by_position[row["probe_position"]]
+            row["predicted_label"] = row["gold_label"]
+            row["correct"] = True
+        _set_raw_metrics(
+            runs,
+            loss=0.41495887282313854,
+            accuracy=1.0,
+            weighted_f1=1.0,
+        )
+        prior_runs = copy.deepcopy(runs)
+
+        summary = self.report.build_prediction_summary(
+            run_payloads=runs,
+            prediction_rows=rows,
+            prior_run_payloads=prior_runs,
+            source_commit="golden-loss",
+            expected_examples=3,
+        )
+
+        self.assertTrue(summary["all_gates_pass"])
+        self.assertAlmostEqual(
+            summary["trial_results"][0]["recomputed_loss"],
+            0.41495887282313854,
+            places=15,
+        )
+
+    def test_prior_runs_require_exact_unique_groups_but_allow_shuffled_order(self):
+        mutations = {
+            "prior_duplicate_groups": lambda priors: priors[0][
+                "group_results"
+            ].append(copy.deepcopy(priors[0]["group_results"][0])),
+            "prior_required_groups": lambda priors: priors[0][
+                "group_results"
+            ].pop(),
+        }
+        for expected_code, mutate in mutations.items():
+            with self.subTest(expected_code=expected_code):
+                runs, rows, prior_runs = make_fixture()
+                mutate(prior_runs)
+                summary = self._summary(runs, rows, prior_runs)
+                self.assertIn(
+                    expected_code,
+                    failure_codes(summary, "prior_equivalence"),
+                )
+
+        runs, rows, prior_runs = make_fixture()
+        prior_runs.reverse()
+        for prior in prior_runs:
+            prior["group_results"].reverse()
+        summary = self._summary(runs, rows, prior_runs)
+        self.assertTrue(summary["all_gates_pass"])
+
 
 class HtmlReportTests(unittest.TestCase):
     def setUp(self):
@@ -521,6 +745,193 @@ class PythonCompatibilityTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertNotIn(" | ", source)
+
+    def test_renderer_imports_with_real_python39_when_available(self):
+        candidates = [
+            os.environ.get("PYTHON39"),
+            shutil.which("python3.9"),
+            "/usr/bin/python3",
+        ]
+        interpreter = None
+        for candidate in candidates:
+            if not candidate or not Path(candidate).is_file():
+                continue
+            version = subprocess.run(
+                [
+                    candidate,
+                    "-c",
+                    "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if version.returncode == 0 and version.stdout.strip() == "3.9":
+                interpreter = candidate
+                break
+        if interpreter is None:
+            self.skipTest("Python 3.9 interpreter is not available")
+
+        completed = subprocess.run(
+            [
+                interpreter,
+                "-c",
+                (
+                    "import scripts.render_three_group_per_example_logits_report "
+                    "as report; assert report.SCHEMA_VERSION == "
+                    "'three-group-per-example-logits-v1'"
+                ),
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
+
+class OutputTransactionTests(unittest.TestCase):
+    def setUp(self):
+        self.report = _load_report_module()
+
+    @staticmethod
+    def _args(output_json, output_html):
+        return [
+            "--run-json",
+            "run.json",
+            "--prediction-jsonl",
+            "predictions.jsonl",
+            "--prior-run-json",
+            "prior.json",
+            "--source-commit",
+            "transaction-test",
+            "--output-json",
+            str(output_json),
+            "--output-html",
+            str(output_html),
+        ]
+
+    def test_cli_rejects_outputs_resolving_to_same_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / "report.out"
+            output.write_text("existing", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "distinct"):
+                self.report.main(self._args(output, output))
+            self.assertEqual(output.read_text(encoding="utf-8"), "existing")
+            self.assertEqual([path.name for path in Path(td).iterdir()], ["report.out"])
+
+    def test_render_failure_preserves_existing_outputs_without_temp_leaks(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            output_json = root / "summary.json"
+            output_html = root / "report.html"
+            output_json.write_text("old-json", encoding="utf-8")
+            output_html.write_text("old-html", encoding="utf-8")
+            with (
+                mock.patch.object(self.report, "_load_json", return_value={}),
+                mock.patch.object(self.report, "_load_jsonl", return_value=[]),
+                mock.patch.object(
+                    self.report,
+                    "build_prediction_summary",
+                    return_value={"all_gates_pass": True},
+                ),
+                mock.patch.object(
+                    self.report,
+                    "render_html",
+                    side_effect=RuntimeError("render failed"),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "render failed"):
+                    self.report.main(self._args(output_json, output_html))
+
+            self.assertEqual(output_json.read_text(encoding="utf-8"), "old-json")
+            self.assertEqual(output_html.read_text(encoding="utf-8"), "old-html")
+            self.assertEqual(
+                {path.name for path in root.iterdir()},
+                {"summary.json", "report.html"},
+            )
+
+    def test_partial_temp_write_failure_preserves_outputs_and_cleans_temps(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            output_json = root / "summary.json"
+            output_html = root / "report.html"
+            output_json.write_text("old-json", encoding="utf-8")
+            output_html.write_text("old-html", encoding="utf-8")
+            real_write = self.report._write_temp_file
+            call_count = 0
+
+            def fail_second_write(path, text):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 2:
+                    raise OSError("second write failed")
+                return real_write(path, text)
+
+            with mock.patch.object(
+                self.report, "_write_temp_file", side_effect=fail_second_write
+            ):
+                with self.assertRaisesRegex(OSError, "second write failed"):
+                    self.report._write_outputs_transactionally(
+                        output_json,
+                        output_html,
+                        '{"new":true}\n',
+                        "<html>new</html>",
+                    )
+
+            self.assertEqual(output_json.read_text(encoding="utf-8"), "old-json")
+            self.assertEqual(output_html.read_text(encoding="utf-8"), "old-html")
+            self.assertEqual(
+                {path.name for path in root.iterdir()},
+                {"summary.json", "report.html"},
+            )
+
+    def test_second_replace_failure_rolls_back_both_outputs_and_cleans_temps(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            output_json = root / "summary.json"
+            output_html = root / "report.html"
+            output_json.write_text("old-json", encoding="utf-8")
+            output_html.write_text("old-html", encoding="utf-8")
+            real_replace = os.replace
+            failed = False
+
+            def fail_html_promotion(source, destination):
+                nonlocal failed
+                source_path = Path(source)
+                destination_path = Path(destination)
+                if (
+                    not failed
+                    and destination_path == output_html
+                    and source_path.name.startswith(f".{output_html.name}.tmp-")
+                ):
+                    failed = True
+                    raise OSError("html replace failed")
+                return real_replace(source, destination)
+
+            with mock.patch.object(
+                self.report.os, "replace", side_effect=fail_html_promotion
+            ):
+                with self.assertRaisesRegex(OSError, "html replace failed"):
+                    self.report._write_outputs_transactionally(
+                        output_json,
+                        output_html,
+                        '{"new":true}\n',
+                        "<html>new</html>",
+                    )
+
+            self.assertTrue(failed)
+            self.assertEqual(output_json.read_text(encoding="utf-8"), "old-json")
+            self.assertEqual(output_html.read_text(encoding="utf-8"), "old-html")
+            self.assertEqual(
+                {path.name for path in root.iterdir()},
+                {"summary.json", "report.html"},
+            )
 
 
 class ProductionShapeAndCliTests(unittest.TestCase):
