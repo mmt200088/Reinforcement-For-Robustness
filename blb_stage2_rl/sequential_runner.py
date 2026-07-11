@@ -3496,6 +3496,9 @@ def _run_layerwise_training_branch(
         ent_coef_cosine_lower_bound=float(
             getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012)
         ),
+        online_num_trials_per_step=int(
+            getattr(train_cfg, "online_num_trials_per_step", 5)
+        ),
         reward_design="robust_constrained",
     )
     identity_context = _build_layerwise_candidate_identity_context(

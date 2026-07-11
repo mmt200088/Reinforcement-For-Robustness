@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import os
 from pathlib import Path
 import subprocess
@@ -11,6 +12,162 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class Stage2PersistentLauncherTest(unittest.TestCase):
+    def test_python_public_decision_fields_reach_evaluator_constructor(self):
+        tune_tree = ast.parse((REPO_ROOT / "rl_tune.py").read_text(encoding="utf-8"))
+        train_fn = next(
+            node for node in tune_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "train"
+        )
+        train_args = {arg.arg: ast.unparse(arg.annotation) for arg in train_fn.args.args}
+        self.assertEqual(train_args["blb_v3_decision_granularity"], "str")
+        self.assertEqual(train_args["blb_v3_reward_design"], "str")
+        evaluator_call = next(
+            node for node in ast.walk(train_fn)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "LayerImportanceEvaluator"
+        )
+        forwarded = {keyword.arg for keyword in evaluator_call.keywords}
+        self.assertIn("blb_v3_decision_granularity", forwarded)
+        self.assertIn("blb_v3_reward_design", forwarded)
+
+        evaluator_tree = ast.parse(
+            (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        )
+        evaluator_class = next(
+            node for node in evaluator_tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "LayerImportanceEvaluator"
+        )
+        init_fn = next(
+            node for node in evaluator_class.body
+            if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+        )
+        init_args = {arg.arg for arg in init_fn.args.args}
+        self.assertIn("blb_v3_decision_granularity", init_args)
+        self.assertIn("blb_v3_reward_design", init_args)
+        assigned_attrs = {
+            target.attr
+            for node in ast.walk(init_fn)
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+            for target in (
+                node.targets if isinstance(node, ast.Assign) else [node.target]
+            )
+            if isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "self"
+        }
+        self.assertIn("blb_v3_decision_granularity", assigned_attrs)
+        self.assertIn("blb_v3_reward_design", assigned_attrs)
+
+    def _capture_stage2_launcher_argv(self, extra_args):
+        with tempfile.TemporaryDirectory(prefix="stage2_public_config_") as td:
+            tmp = Path(td)
+            capture = tmp / "python_argv.nul"
+            fakebin = tmp / "fakebin"
+            fakebin.mkdir()
+            fake_python = fakebin / "python"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\0' "$@" > {str(capture)!r}
+                    exit 0
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_python.chmod(0o755)
+            env = os.environ.copy()
+            env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
+            env["CUDA_VISIBLE_DEVICES"] = ""
+            result = subprocess.run(
+                [
+                    "bash",
+                    "llama_7B_LayerImportance.sh",
+                    "run",
+                    "rl",
+                    "--preset",
+                    "mrpc-blb-stage2-rl",
+                    "--mode",
+                    "stage2-only",
+                    "--persistent-root",
+                    str(tmp / "persistent"),
+                    "--stage2-search-episodes",
+                    "170",
+                    "--fresh",
+                    *extra_args,
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                result.returncode, 0, msg=result.stdout + "\n" + result.stderr,
+            )
+            for _ in range(50):
+                if capture.is_file():
+                    break
+                import time
+
+                time.sleep(0.1)
+            self.assertTrue(capture.is_file(), msg="launcher did not invoke python")
+            return [
+                part.decode("utf-8")
+                for part in capture.read_bytes().split(b"\0")[:-1]
+            ]
+
+    def test_stage2_public_decision_and_reward_defaults_and_overrides_reach_python(self):
+        default_argv = self._capture_stage2_launcher_argv([])
+        self.assertEqual(
+            default_argv[default_argv.index("--blb_v3_decision_granularity") + 1],
+            "block",
+        )
+        self.assertEqual(
+            default_argv[default_argv.index("--blb_v3_reward_design") + 1],
+            "stage1_aligned",
+        )
+
+        explicit_argv = self._capture_stage2_launcher_argv([
+            "--blb-v3-decision-granularity",
+            "layer",
+            "--blb-v3-reward-design",
+            "robust_constrained",
+        ])
+        self.assertEqual(
+            explicit_argv[explicit_argv.index("--blb_v3_decision_granularity") + 1],
+            "layer",
+        )
+        self.assertEqual(
+            explicit_argv[explicit_argv.index("--blb_v3_reward_design") + 1],
+            "robust_constrained",
+        )
+
+    def test_stage2_public_decision_and_reward_options_reject_unknown_values(self):
+        for option, value in (
+            ("--blb-v3-decision-granularity", "token"),
+            ("--blb-v3-reward-design", "legacy_unknown"),
+        ):
+            with self.subTest(option=option):
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "llama_7B_LayerImportance.sh",
+                        "run",
+                        "rl",
+                        "--preset",
+                        "mrpc-blb-stage2-rl",
+                        option,
+                        value,
+                    ],
+                    cwd=REPO_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+
     def test_stage2_launcher_defaults_fixed_config_to_all4(self):
         with tempfile.TemporaryDirectory(prefix="stage2_all4_launcher_") as td:
             tmp = Path(td)

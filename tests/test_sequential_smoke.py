@@ -599,7 +599,8 @@ class OutputHygieneRegressionTest(unittest.TestCase):
         ):
             self.assertIn(needle, runner_src)
         self.assertIn('decision_granularity: str = "block"', config_src)
-        self.assertIn('("layer", "block")', config_src)
+        self.assertIn('reward_design: str = "stage1_aligned"', config_src)
+        self.assertIn("apply_public_stage2_decision_config(ev, cfg)", config_src)
 
     def test_sequential_runner_has_noisy_baseline_preflight(self):
         """Regression: previously the sequential path skipped the noisy

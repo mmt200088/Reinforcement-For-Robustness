@@ -25,6 +25,41 @@ _PROBABILITY_FIELDS = (
     "metric1_stability_probability",
     "metric2_stability_probability",
 )
+_DECISION_GRANULARITIES = frozenset(("layer", "block"))
+_REWARD_DESIGNS = frozenset((
+    "robust_constrained", "stage1_aligned", "continuous", "tiered",
+))
+
+
+def normalize_decision_granularity(value: Any) -> str:
+    normalized = str(value or "block").strip().lower()
+    if normalized not in _DECISION_GRANULARITIES:
+        raise ValueError(
+            "decision_granularity must be 'layer' or 'block', "
+            f"got {value!r}"
+        )
+    return normalized
+
+
+def normalize_reward_design(value: Any) -> str:
+    normalized = str(value or "stage1_aligned").strip().lower()
+    if normalized not in _REWARD_DESIGNS:
+        allowed = ", ".join(sorted(_REWARD_DESIGNS))
+        raise ValueError(f"reward_design must be one of {allowed}; got {value!r}")
+    return normalized
+
+
+def apply_public_stage2_decision_config(evaluator: Any, config: Any) -> Any:
+    """Apply and validate the public evaluator fields used for dispatch."""
+    granularity = getattr(evaluator, "blb_v3_decision_granularity", None)
+    reward_design = getattr(evaluator, "blb_v3_reward_design", None)
+    config.decision_granularity = normalize_decision_granularity(
+        config.decision_granularity if granularity in (None, "") else granularity
+    )
+    config.reward_design = normalize_reward_design(
+        config.reward_design if reward_design in (None, "") else reward_design
+    )
+    return config
 
 
 def resolve_decision_path(
@@ -34,13 +69,9 @@ def resolve_decision_path(
         reward_design: str,
         ) -> str:
     """Validate Stage-2 decision granularity and return the training path."""
-    granularity = str(decision_granularity or "block").strip().lower()
-    if granularity not in ("layer", "block"):
-        raise ValueError(
-            "decision_granularity must be 'layer' or 'block', "
-            f"got {decision_granularity!r}"
-        )
-    robust = str(reward_design or "").strip().lower() == "robust_constrained"
+    granularity = normalize_decision_granularity(decision_granularity)
+    normalized_reward = normalize_reward_design(reward_design)
+    robust = normalized_reward == "robust_constrained"
     if robust and granularity != "layer":
         raise ValueError(
             "robust_constrained Stage-2 training requires decision_granularity='layer'"
@@ -247,21 +278,36 @@ def _to_plain_mapping(value: Any) -> dict[str, Any]:
     return {}
 
 
-def _trial_series_from_info(info: Any) -> Optional[TrialSeries]:
+def _trial_series_from_info(
+        info: Any,
+        *,
+        required: bool = False,
+        expected_count: Optional[int] = None,
+        context: str = "terminal",
+        ) -> Optional[TrialSeries]:
     if not isinstance(info, Mapping):
+        if required:
+            raise RuntimeError(f"{context} info is required for raw evidence")
         return None
     raw = info.get("statistical_trials")
     if not isinstance(raw, Mapping):
+        if required:
+            raise RuntimeError(f"{context} statistical_trials are required")
         return None
-    try:
-        return TrialSeries(
-            loss=raw.get("loss", ()),
-            metric1=raw.get("metric1", ()),
-            metric2=raw.get("metric2", ()),
-            seeds=raw.get("seeds", ()),
+    trials = TrialSeries(
+        loss=raw.get("loss", ()),
+        metric1=raw.get("metric1", ()),
+        metric2=raw.get("metric2", ()),
+        seeds=raw.get("seeds", ()),
+    )
+    if not trials.seeds or len(trials.seeds) != len(trials.loss):
+        raise ValueError(f"{context} requires nonempty aligned trial seeds")
+    if expected_count is not None and len(trials.loss) != int(expected_count):
+        raise ValueError(
+            f"{context} expected exactly {int(expected_count)} raw trials; "
+            f"received {len(trials.loss)}"
         )
-    except (TypeError, ValueError):
-        return None
+    return trials
 
 
 def _metrics_from_trials(trials: TrialSeries) -> dict[str, float]:
@@ -309,12 +355,38 @@ def _promotion_probe_seed(
         candidate_key_value: str,
         bootstrap_seed: int,
         existing_trial_count: int,
-        ) -> int:
+        existing_seeds: Sequence[int],
+        fresh_trial_count: int,
+        ) -> tuple[int, tuple[int, ...]]:
+    from .seed_utils import (
+        derive_layerwise_promotion_probe_seed,
+        derive_probe_trial_seed,
+    )
+
     material = (
         f"layerwise-promotion:{candidate_key_value}:{int(bootstrap_seed)}:"
         f"{int(existing_trial_count)}"
     ).encode("utf-8")
-    return int.from_bytes(hashlib.sha256(material).digest()[:8], "big") & 0x7FFFFFFFFFFFFFFF
+    seed_material = (
+        int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+        & 0x7FFFFFFFFFFFFFFF
+    )
+    occupied = {int(seed) for seed in existing_seeds}
+    # Attempt domains are pairwise disjoint. With N occupied seeds, N+1
+    # attempts guarantee at least one trial set has no overlap.
+    for attempt_idx in range(len(occupied) + 1):
+        probe_seed = derive_layerwise_promotion_probe_seed(
+            seed_material,
+            attempt_idx,
+            trial_count=int(fresh_trial_count),
+        )
+        predicted = tuple(
+            derive_probe_trial_seed(probe_seed, trial_idx)
+            for trial_idx in range(int(fresh_trial_count))
+        )
+        if occupied.isdisjoint(predicted):
+            return probe_seed, predicted
+    raise RuntimeError("could not allocate disjoint layerwise promotion trial seeds")
 
 
 def promote_candidate_if_eligible(
@@ -375,12 +447,20 @@ def promote_candidate_if_eligible(
         "variable_cost": float(cost),
         "assessment_bootstrap_seed": int(bootstrap_seed),
     }
+    promotion_probe_seed: Optional[int] = None
+    predicted_trial_seeds: tuple[int, ...] = ()
+    if fresh_count:
+        promotion_probe_seed, predicted_trial_seeds = _promotion_probe_seed(
+            evidence.candidate_key,
+            bootstrap_seed,
+            trial_count,
+            evidence.trials.seeds,
+            fresh_count,
+        )
     try:
         if fresh_count:
             previous_probe_seed = getattr(env.base, "probe_noise_seed", None)
-            env.base.probe_noise_seed = _promotion_probe_seed(
-                evidence.candidate_key, bootstrap_seed, trial_count,
-            )
+            env.base.probe_noise_seed = promotion_probe_seed
             try:
                 prepared = env.base.prepare_action_for_terminal_probe(
                     list(action_indices),
@@ -402,10 +482,15 @@ def promote_candidate_if_eligible(
             terminal_info = evaluated[0][3]
             if not isinstance(terminal_info, Mapping) or bool(terminal_info.get("invalid", False)):
                 raise RuntimeError("promotion terminal evaluation was invalid")
-            fresh_trials = _trial_series_from_info(terminal_info)
-            if fresh_trials is None or len(fresh_trials.loss) != fresh_count:
+            fresh_trials = _trial_series_from_info(
+                terminal_info,
+                required=True,
+                expected_count=fresh_count,
+                context="promotion terminal",
+            )
+            if tuple(fresh_trials.seeds) != predicted_trial_seeds:
                 raise RuntimeError(
-                    "promotion terminal evaluation did not return the requested raw trials"
+                    "promotion terminal trial seeds did not match the predicted fresh set"
                 )
             candidate_store.append_trial_group(
                 action_indices,
@@ -592,6 +677,11 @@ def train_layerwise(
     total_episodes = max(0, int(getattr(train_cfg, "total_episodes", 0)))
     absolute_start = int(getattr(train_cfg, "absolute_episode_start", 0))
     base_seed = getattr(train_cfg, "seed", None)
+    expected_online_trials = int(
+        getattr(train_cfg, "online_num_trials_per_step", 5)
+    )
+    if expected_online_trials <= 0:
+        raise ValueError("online_num_trials_per_step must be positive")
     policy.eval()
 
     records: list[LayerwiseEpisodeRecord] = []
@@ -616,10 +706,12 @@ def train_layerwise(
             seed=(None if base_seed is None else int(base_seed) + absolute_episode)
         )
         if base_seed is not None and hasattr(env, "base"):
-            from .seed_utils import derive_probe_seed
+            from .seed_utils import derive_layerwise_episode_probe_seed
 
-            env.base.probe_noise_seed = derive_probe_seed(
-                int(base_seed), absolute_episode,
+            env.base.probe_noise_seed = derive_layerwise_episode_probe_seed(
+                int(base_seed),
+                absolute_episode,
+                trial_count=expected_online_trials,
             )
         step_infos: list[Mapping[str, Any]] = []
         terminal_info: Optional[Mapping[str, Any]] = None
@@ -691,14 +783,29 @@ def train_layerwise(
         )
         breakdown = runtime_info.get("reward_breakdown")
         priority = int(_field(breakdown, "priority", runtime_info.get("priority", 0)))
-        raw_trials = _trial_series_from_info(runtime_info)
+        invalid_terminal = bool(runtime_info.get("invalid", False))
+        if invalid_terminal and not math.isclose(episode_reward, -5.0, abs_tol=1.0e-9):
+            raise RuntimeError(
+                f"invalid layerwise terminal reward must be -5, got {episode_reward}"
+            )
+        raw_trials = (
+            None
+            if invalid_terminal
+            else _trial_series_from_info(
+                runtime_info,
+                required=True,
+                expected_count=expected_online_trials,
+                context="valid robust terminal",
+            )
+        )
         fresh_assessment = _to_plain_mapping(runtime_info.get("statistical_assessment"))
         metrics = _to_plain_mapping(runtime_info.get("metrics"))
         bootstrap_seed = int(fresh_assessment.get("bootstrap_seed", 0))
         pooled_assessment = None
         pooled_metrics = None
         promotion = PromotionResult(
-            "no_raw_evidence", 0, 0, None, None, None,
+            "invalid_terminal" if invalid_terminal else "not_evaluated",
+            0, 0, None, None, None,
         )
         if raw_trials is not None:
             candidate_store.append_trial_group(

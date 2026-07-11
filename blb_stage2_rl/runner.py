@@ -600,15 +600,20 @@ class BLBStage2TrainConfig:
         )
         self.grpo_kl_beta = 0.0
         self.validate_decision_granularity()
+        self.validate_reward_design()
 
     def validate_decision_granularity(self) -> str:
-        value = str(self.decision_granularity or "block").strip().lower()
-        if value not in ("layer", "block"):
-            raise ValueError(
-                "decision_granularity must be 'layer' or 'block', "
-                f"got {self.decision_granularity!r}"
-            )
+        from .layerwise_runner import normalize_decision_granularity
+
+        value = normalize_decision_granularity(self.decision_granularity)
         self.decision_granularity = value
+        return value
+
+    def validate_reward_design(self) -> str:
+        from .layerwise_runner import normalize_reward_design
+
+        value = normalize_reward_design(self.reward_design)
+        self.reward_design = value
         return value
     # 环境
     # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
@@ -2890,9 +2895,8 @@ class BLBStage2RLRunner:
             cfg.fusion_count_action = str(v).strip().lower() in (
                 "1", "true", "yes", "on",
             )
-        v = getattr(ev, "blb_v3_decision_granularity", None)
-        if v not in (None, ""):
-            cfg.decision_granularity = str(v).strip().lower()
+        from .layerwise_runner import apply_public_stage2_decision_config
+        apply_public_stage2_decision_config(ev, cfg)
         v = getattr(ev, "blb_v3_fusion_neighbor_curriculum", None)
         if v not in (None, ""):
             cfg.fusion_neighbor_curriculum_enabled = str(v).strip().lower() in (
@@ -3035,6 +3039,7 @@ class BLBStage2RLRunner:
             0, min(int(cfg.ent_coef_ramp_episodes), int(cfg.total_episodes))
         )
         cfg.validate_decision_granularity()
+        cfg.validate_reward_design()
         return cfg
 
     def _build_probe_batches(

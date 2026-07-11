@@ -620,6 +620,8 @@ def train(
         # (block 3 by design). See blb_stage2_rl/substage_runner.py.
         blb_v3_substage_mode: bool = False,
         blb_v3_fusion_count_action: bool = False,
+        blb_v3_decision_granularity: str = "block",
+        blb_v3_reward_design: str = "stage1_aligned",
         blb_v3_fusion_neighbor_curriculum: bool = False,
         blb_v3_fusion_probe_interval: int = 0,
         blb_v3_fusion_exploration_epsilon: float = 0.0,
@@ -695,6 +697,24 @@ def train(
     blb_v3_fusion_count_action = parse_bool_flag(
         blb_v3_fusion_count_action, "blb_v3_fusion_count_action"
     )
+    blb_v3_decision_granularity = str(
+        blb_v3_decision_granularity or "block"
+    ).strip().lower()
+    if blb_v3_decision_granularity not in ("layer", "block"):
+        raise ValueError(
+            "blb_v3_decision_granularity must be 'layer' or 'block', got "
+            f"{blb_v3_decision_granularity!r}"
+        )
+    blb_v3_reward_design = str(
+        blb_v3_reward_design or "stage1_aligned"
+    ).strip().lower().replace("-", "_")
+    if blb_v3_reward_design not in (
+            "robust_constrained", "stage1_aligned", "continuous", "tiered",
+    ):
+        raise ValueError(
+            "blb_v3_reward_design must be robust_constrained, stage1_aligned, "
+            f"continuous, or tiered; got {blb_v3_reward_design!r}"
+        )
     blb_v3_fusion_neighbor_curriculum = parse_bool_flag(
         blb_v3_fusion_neighbor_curriculum, "blb_v3_fusion_neighbor_curriculum"
     )
@@ -1288,6 +1308,8 @@ def train(
             blb_v3_promotion_margin_window=blb_v3_promotion_margin_window,
             blb_v3_substage_mode=blb_v3_substage_mode,
             blb_v3_fusion_count_action=blb_v3_fusion_count_action,
+            blb_v3_decision_granularity=blb_v3_decision_granularity,
+            blb_v3_reward_design=blb_v3_reward_design,
             blb_v3_fusion_neighbor_curriculum=blb_v3_fusion_neighbor_curriculum,
             blb_v3_fusion_probe_interval=blb_v3_fusion_probe_interval,
             blb_v3_fusion_exploration_epsilon=blb_v3_fusion_exploration_epsilon,

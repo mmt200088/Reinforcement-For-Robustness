@@ -142,6 +142,10 @@ GA / Greedy：
   --stage2-save-interval N                BLB v3 live checkpoint 保存间隔
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
   --stage2-calibrate-baseline-samples N   BLB v3 reward 权重校准样本数
+  --blb-v3-decision-granularity layer|block
+                                          Stage-2 决策粒度（默认 block）
+  --blb-v3-reward-design DESIGN           robust_constrained|stage1_aligned|continuous|tiered
+                                          Stage-2 奖励设计（默认 stage1_aligned）
   --blb-v3-warmstart-anchor-episodes N    BLB v3 前 N 个 episode 固定 all-max baseline
   --blb-v3-warmstart-neighbor-ramp-episodes N
                                           BLB v3 anchor 后邻域探索 ramp 长度
@@ -556,6 +560,8 @@ BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="false"; S_BLB_V3_SEQUENTIAL_EARLY_
 # static_skeletons baseline. See blb_stage2_rl/substage_runner.py.
 BLB_V3_SUBSTAGE_MODE="false"; S_BLB_V3_SUBSTAGE_MODE="false"
 BLB_V3_FUSION_COUNT_ACTION="false"; S_BLB_V3_FUSION_COUNT_ACTION="false"
+BLB_V3_DECISION_GRANULARITY="block"; S_BLB_V3_DECISION_GRANULARITY="false"
+BLB_V3_REWARD_DESIGN="stage1_aligned"; S_BLB_V3_REWARD_DESIGN="false"
 BLB_V3_FUSION_NEIGHBOR_CURRICULUM="false"; S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM="false"
 BLB_V3_FUSION_PROBE_INTERVAL="200"; S_BLB_V3_FUSION_PROBE_INTERVAL="false"
 BLB_V3_FUSION_EXPLORATION_EPSILON="0.05"; S_BLB_V3_FUSION_EXPLORATION_EPSILON="false"
@@ -773,6 +779,8 @@ while [ "$#" -gt 0 ]; do
     # 4-sub-stage Stage-2 RL (2026-05-27, opt-in)
     --blb-v3-substage-mode) needv "$@"; BLB_V3_SUBSTAGE_MODE="$2"; S_BLB_V3_SUBSTAGE_MODE="true"; shift 2 ;;
     --blb-v3-fusion-count-action) needv "$@"; BLB_V3_FUSION_COUNT_ACTION="$2"; S_BLB_V3_FUSION_COUNT_ACTION="true"; shift 2 ;;
+    --blb-v3-decision-granularity) needv "$@"; BLB_V3_DECISION_GRANULARITY="$2"; S_BLB_V3_DECISION_GRANULARITY="true"; shift 2 ;;
+    --blb-v3-reward-design) needv "$@"; BLB_V3_REWARD_DESIGN="$2"; S_BLB_V3_REWARD_DESIGN="true"; shift 2 ;;
     --blb-v3-fusion-neighbor-curriculum) needv "$@"; BLB_V3_FUSION_NEIGHBOR_CURRICULUM="$2"; S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM="true"; shift 2 ;;
     --blb-v3-fusion-probe-interval) needv "$@"; BLB_V3_FUSION_PROBE_INTERVAL="$2"; S_BLB_V3_FUSION_PROBE_INTERVAL="true"; shift 2 ;;
     --blb-v3-fusion-exploration-epsilon) needv "$@"; BLB_V3_FUSION_EXPLORATION_EPSILON="$2"; S_BLB_V3_FUSION_EXPLORATION_EPSILON="true"; shift 2 ;;
@@ -810,6 +818,10 @@ GA_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$GA_COMPARE_FINAL_EVAL_SOURCE" | tr
 COMPARE_CONFIG_MODE="$(printf '%s' "$COMPARE_CONFIG_MODE" | tr '[:upper:]' '[:lower:]')"
 STAGE2_RL_VARIANT="$(printf '%s' "$STAGE2_RL_VARIANT" | tr '[:upper:]' '[:lower:]')"
 BLB_V3_ACTION_MASK_MODE="$(printf '%s' "$BLB_V3_ACTION_MASK_MODE" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
+BLB_V3_DECISION_GRANULARITY="$(printf '%s' "$BLB_V3_DECISION_GRANULARITY" | tr '[:upper:]' '[:lower:]')"
+BLB_V3_REWARD_DESIGN="$(printf '%s' "$BLB_V3_REWARD_DESIGN" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
+case "$BLB_V3_DECISION_GRANULARITY" in layer|block) ;; *) err "--blb-v3-decision-granularity 只支持 layer 或 block。" ;; esac
+case "$BLB_V3_REWARD_DESIGN" in robust_constrained|stage1_aligned|continuous|tiered) ;; *) err "--blb-v3-reward-design 只支持 robust_constrained、stage1_aligned、continuous 或 tiered。" ;; esac
 
 case "$SEARCH_ALGORITHM" in
   rl|ppo) SEARCH_ALGORITHM="rl" ;;
@@ -1746,6 +1758,8 @@ else
     CMD+=(--rl_algo "$RL_ALGO")
     [ "$S_BLB_V3_SUBSTAGE_MODE" = "true" ] && CMD+=(--blb_v3_substage_mode "$BLB_V3_SUBSTAGE_MODE")
     [ "$S_BLB_V3_FUSION_COUNT_ACTION" = "true" ] && CMD+=(--blb_v3_fusion_count_action "$BLB_V3_FUSION_COUNT_ACTION")
+    CMD+=(--blb_v3_decision_granularity "$BLB_V3_DECISION_GRANULARITY")
+    CMD+=(--blb_v3_reward_design "$BLB_V3_REWARD_DESIGN")
     [ "$S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM" = "true" ] && CMD+=(--blb_v3_fusion_neighbor_curriculum "$BLB_V3_FUSION_NEIGHBOR_CURRICULUM")
     [ "$S_BLB_V3_FUSION_PROBE_INTERVAL" = "true" ] && CMD+=(--blb_v3_fusion_probe_interval "$BLB_V3_FUSION_PROBE_INTERVAL")
     [ "$S_BLB_V3_FUSION_EXPLORATION_EPSILON" = "true" ] && CMD+=(--blb_v3_fusion_exploration_epsilon "$BLB_V3_FUSION_EXPLORATION_EPSILON")

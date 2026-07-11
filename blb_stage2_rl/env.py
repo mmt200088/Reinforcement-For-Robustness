@@ -1697,6 +1697,7 @@ class BLBStage2Env:
         of interleaving order.
         """
         from function_handler import noise_rng_scope, reseed_noise_rng_for_device
+        from .seed_utils import derive_probe_trial_seed
 
         scope = getattr(self, "probe_noise_scope", None)
         lock = self.probe_device_lock
@@ -1725,9 +1726,7 @@ class BLBStage2Env:
         try:
             with torch.inference_mode():
                 for trial_idx in range(int(k)):
-                    seed = int(
-                        (base_seed ^ (trial_idx * 2654435761)) & 0x7FFFFFFFFFFFFFFF
-                    )
+                    seed = derive_probe_trial_seed(base_seed, trial_idx)
                     trial_outputs: List[Tuple[torch.Tensor, torch.Tensor]] = []
                     with noise_rng_scope(scope):
                         with lock:

@@ -303,3 +303,62 @@ class BLBActionMaskTests(unittest.TestCase):
         self.assertEqual(cfg.action_mask_file, "reports/mask.json")
         self.assertEqual(cfg.action_mask_baseline_logit_bonus, 2.5)
         self.assertEqual(cfg.action_mask_source, "phase1_f0_scan")
+
+    def test_runner_train_config_reads_public_layerwise_dispatch_fields(self):
+        from blb_stage2_rl.layerwise_runner import resolve_decision_path
+        from blb_stage2_rl.runner import BLBStage2RLRunner
+
+        layer_ev = SimpleNamespace(
+            stage2_rl_episodes=240,
+            stage2_ppo_lr_initial=1e-4,
+            dataset_key="mrpc",
+            stage2_k_trials=5,
+            blb_v3_fusion_count_action="true",
+            blb_v3_decision_granularity="layer",
+            blb_v3_reward_design="robust_constrained",
+        )
+        layer_cfg = BLBStage2RLRunner(layer_ev)._build_train_config_from_evaluator(
+            layer_ev
+        )
+        self.assertEqual(
+            resolve_decision_path(
+                fusion_count_action=layer_cfg.fusion_count_action,
+                decision_granularity=layer_cfg.decision_granularity,
+                reward_design=layer_cfg.reward_design,
+            ),
+            "layerwise",
+        )
+
+        block_ev = SimpleNamespace(
+            stage2_rl_episodes=240,
+            stage2_ppo_lr_initial=1e-4,
+            dataset_key="mrpc",
+            stage2_k_trials=5,
+            blb_v3_fusion_count_action="true",
+            blb_v3_decision_granularity="block",
+            blb_v3_reward_design="continuous",
+        )
+        block_cfg = BLBStage2RLRunner(block_ev)._build_train_config_from_evaluator(
+            block_ev
+        )
+        self.assertEqual(
+            resolve_decision_path(
+                fusion_count_action=block_cfg.fusion_count_action,
+                decision_granularity=block_cfg.decision_granularity,
+                reward_design=block_cfg.reward_design,
+            ),
+            "block",
+        )
+
+    def test_stage2_train_config_validates_public_dispatch_values(self):
+        from blb_stage2_rl.runner import BLBStage2TrainConfig
+
+        self.assertEqual(
+            BLBStage2TrainConfig().decision_granularity,
+            "block",
+        )
+        self.assertEqual(BLBStage2TrainConfig().reward_design, "stage1_aligned")
+        with self.assertRaisesRegex(ValueError, "decision_granularity"):
+            BLBStage2TrainConfig(decision_granularity="token")
+        with self.assertRaisesRegex(ValueError, "reward_design"):
+            BLBStage2TrainConfig(reward_design="legacy_unknown")

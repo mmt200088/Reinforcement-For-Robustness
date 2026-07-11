@@ -86,7 +86,9 @@ def _trial_seed(base_seed: int, trial_idx: int) -> int:
     values get truly independent noise streams (and reruns of the same
     (base_seed, trial_idx) reproduce the same noise — useful for diagnosis).
     """
-    return int((int(base_seed) ^ (int(trial_idx) * _TRIAL_SEED_MULTIPLIER)) & 0x7FFFFFFFFFFFFFFF)
+    from .seed_utils import derive_probe_trial_seed
+
+    return derive_probe_trial_seed(base_seed, trial_idx)
 
 
 def _split_round_robin(k: int, n_workers: int) -> List[List[int]]:

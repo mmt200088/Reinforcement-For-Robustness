@@ -1,13 +1,35 @@
 from __future__ import annotations
 
+import hashlib
+import inspect
 import math
 from pathlib import Path
-import inspect
 import tempfile
 import types
 import unittest
 
 import numpy as np
+
+
+class LayerwiseSeedTests(unittest.TestCase):
+    def test_adjacent_episode_trial_domains_are_disjoint_and_bounded(self):
+        from blb_stage2_rl.seed_utils import (
+            derive_layerwise_episode_probe_seed,
+            derive_probe_trial_seed,
+        )
+
+        first_base = derive_layerwise_episode_probe_seed(42, 100, trial_count=25)
+        second_base = derive_layerwise_episode_probe_seed(42, 101, trial_count=25)
+        first = {derive_probe_trial_seed(first_base, i) for i in range(25)}
+        second = {derive_probe_trial_seed(second_base, i) for i in range(25)}
+
+        self.assertEqual(len(first), 25)
+        self.assertEqual(len(second), 25)
+        self.assertTrue(first.isdisjoint(second))
+        with self.assertRaises(ValueError):
+            derive_layerwise_episode_probe_seed(42, -1, trial_count=5)
+        with self.assertRaises(ValueError):
+            derive_layerwise_episode_probe_seed(42, 0, trial_count=10_000)
 
 
 class LayerwiseRunnerPureRulesTests(unittest.TestCase):
@@ -145,6 +167,68 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
 
 class LayerwiseDispatchRulesTests(unittest.TestCase):
+    def test_public_config_builder_drives_real_dispatch_rules(self):
+        from blb_stage2_rl.layerwise_runner import (
+            apply_public_stage2_decision_config,
+            resolve_decision_path,
+        )
+
+        layer_cfg = types.SimpleNamespace(
+            decision_granularity="block",
+            reward_design="stage1_aligned",
+        )
+        apply_public_stage2_decision_config(
+            types.SimpleNamespace(
+                blb_v3_decision_granularity="layer",
+                blb_v3_reward_design="robust_constrained",
+            ),
+            layer_cfg,
+        )
+        self.assertEqual(layer_cfg.decision_granularity, "layer")
+        self.assertEqual(layer_cfg.reward_design, "robust_constrained")
+        self.assertEqual(
+            resolve_decision_path(
+                fusion_count_action=True,
+                decision_granularity=layer_cfg.decision_granularity,
+                reward_design=layer_cfg.reward_design,
+            ),
+            "layerwise",
+        )
+
+        block_cfg = types.SimpleNamespace(
+            decision_granularity="block",
+            reward_design="stage1_aligned",
+        )
+        apply_public_stage2_decision_config(
+            types.SimpleNamespace(
+                blb_v3_decision_granularity="block",
+                blb_v3_reward_design="continuous",
+            ),
+            block_cfg,
+        )
+        self.assertEqual(
+            resolve_decision_path(
+                fusion_count_action=True,
+                decision_granularity=block_cfg.decision_granularity,
+                reward_design=block_cfg.reward_design,
+            ),
+            "block",
+        )
+
+        for field, value in (
+            ("blb_v3_decision_granularity", "token"),
+            ("blb_v3_reward_design", "legacy_unknown"),
+        ):
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(ValueError):
+                    apply_public_stage2_decision_config(
+                        types.SimpleNamespace(**{field: value}),
+                        types.SimpleNamespace(
+                            decision_granularity="block",
+                            reward_design="stage1_aligned",
+                        ),
+                    )
+
     def test_dispatch_selects_layerwise_only_for_fusion_plus_layer(self):
         from blb_stage2_rl.layerwise_runner import resolve_decision_path
 
@@ -244,13 +328,18 @@ class _FakeLayerwiseEnv:
     max_step_dim = 6
     state_dim = 4
 
-    def __init__(self, probabilities=0.7):
+    def __init__(self, probabilities=0.7, evidence_mode="valid", invalid=False):
         self._step = 0
         self.actions = []
         self.boosted_overrides = {(4, 3): {"v_mask_rescale_sf": 47}}
-        self.base = types.SimpleNamespace(statistical_reference=object())
+        self.base = types.SimpleNamespace(
+            statistical_reference=object(),
+            probe_noise_seed=None,
+        )
         self.runtime_terminal_info = None
         self._probabilities = float(probabilities)
+        self._evidence_mode = str(evidence_mode)
+        self._invalid = bool(invalid)
 
     def reset(self, *, seed=None):
         self.seed = seed
@@ -286,21 +375,31 @@ class _FakeLayerwiseEnv:
                 "metric2_stability_probability",
             )
         }
+        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+
+        trial_count = 4 if self._evidence_mode == "wrong_count" else 5
+        statistical_trials = {
+            "loss": [0.30 + 0.001 * i for i in range(trial_count)],
+            "metric1": [0.90 - 0.001 * i for i in range(trial_count)],
+            "metric2": [0.80 - 0.001 * i for i in range(trial_count)],
+            "seeds": [
+                derive_probe_trial_seed(self.base.probe_noise_seed, i)
+                for i in range(trial_count)
+            ],
+        }
+        if self._evidence_mode == "malformed":
+            statistical_trials["loss"] = ["not-a-number"] * trial_count
         self.runtime_terminal_info = {
             "reward_breakdown": types.SimpleNamespace(priority=3),
-            "statistical_trials": {
-                "loss": [0.30, 0.31, 0.29, 0.30, 0.32],
-                "metric1": [0.90, 0.89, 0.91, 0.90, 0.88],
-                "metric2": [0.80, 0.79, 0.81, 0.80, 0.78],
-                "seeds": [100, 101, 102, 103, 104],
-            },
             "statistical_assessment": {**probability_fields, "bootstrap_seed": 77},
             "metrics": types.SimpleNamespace(
                 loss_mean=0.304, metric1_mean=0.896, metric2_mean=0.796,
             ),
-            "invalid": False,
+            "invalid": self._invalid,
         }
-        return np.zeros(4, dtype=np.float32), 7.5, True, {
+        if self._evidence_mode != "missing":
+            self.runtime_terminal_info["statistical_trials"] = statistical_trials
+        return np.zeros(4, dtype=np.float32), (-5.0 if self._invalid else 7.5), True, {
             "policy_actions": [row[:] for row in self.actions],
             "pending_full_vector": list(range(20)),
             "variable_cost": {"normalized": 0.4},
@@ -333,6 +432,24 @@ def _assessment(probability):
 
 
 class LayerwiseRolloutTests(unittest.TestCase):
+    @staticmethod
+    def _train_cfg(total_episodes=1, update_every=1):
+        return types.SimpleNamespace(
+            total_episodes=total_episodes,
+            update_every_n_episodes=update_every,
+            absolute_episode_start=0,
+            seed=42,
+            online_num_trials_per_step=5,
+            ent_coef_schedule="cosine",
+            ent_coef_cosine_start=0.05,
+            ent_coef_cosine_end=0.001,
+            ent_coef_cosine_plateau=0.25,
+            ent_coef_cosine_lower_bound=0.012,
+            ppo=types.SimpleNamespace(
+                lr=5e-5, gamma=0.99, gae_lambda=0.95, ent_coef=0.01,
+            ),
+        )
+
     def test_train_collects_exactly_12_terminal_credit_transitions(self):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
@@ -350,20 +467,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
             summary = train_layerwise(
                 env=env,
                 policy=policy,
-                train_cfg=types.SimpleNamespace(
-                    total_episodes=1,
-                    update_every_n_episodes=1,
-                    absolute_episode_start=0,
-                    seed=42,
-                    ent_coef_schedule="cosine",
-                    ent_coef_cosine_start=0.05,
-                    ent_coef_cosine_end=0.001,
-                    ent_coef_cosine_plateau=0.25,
-                    ent_coef_cosine_lower_bound=0.012,
-                    ppo=types.SimpleNamespace(
-                        lr=5e-5, gamma=0.99, gae_lambda=0.95, ent_coef=0.01,
-                    ),
-                ),
+                train_cfg=self._train_cfg(),
                 candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
                 identity_context={"action_space_version": "layerwise-v1"},
                 optimizer=object(),
@@ -390,6 +494,89 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertIn("best_action", summary)
         self.assertIsNone(summary["best_action"])
 
+    def test_adjacent_same_action_episodes_pool_ten_distinct_real_probe_seeds(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        identity_context = {"action_space_version": "layerwise-v1"}
+        env = _FakeLayerwiseEnv(probabilities=0.7)
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            train_layerwise(
+                env=env,
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=2, update_every=2),
+                candidate_store=store,
+                identity_context=identity_context,
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+            evidence = store.trial_evidence_for_action(
+                list(range(20)), identity_context,
+            )
+
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence.trial_count, 10)
+        self.assertEqual(len(set(evidence.trials.seeds)), 10)
+
+    def test_valid_terminal_requires_exact_aligned_raw_evidence(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        for evidence_mode, message in (
+            ("missing", "statistical_trials"),
+            ("malformed", "finite numeric sequence"),
+            ("wrong_count", "expected exactly 5"),
+        ):
+            with self.subTest(evidence_mode=evidence_mode):
+                with tempfile.TemporaryDirectory() as td:
+                    with self.assertRaisesRegex((RuntimeError, ValueError), message):
+                        train_layerwise(
+                            env=_FakeLayerwiseEnv(evidence_mode=evidence_mode),
+                            policy=_FakePolicy(),
+                            train_cfg=self._train_cfg(),
+                            candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                            identity_context={"action_space_version": "layerwise-v1"},
+                            optimizer=object(),
+                            rollout_buffer=_FakeBuffer(),
+                            ppo_update_fn=lambda *_args, **_kwargs: {},
+                            assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                            step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                                np.asarray(spec.slot_mask, dtype=bool),
+                                np.asarray(spec.slot_dims, dtype=np.int64),
+                            ),
+                        )
+
+    def test_invalid_terminal_may_omit_raw_evidence(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["episode_rewards"], [-5.0])
+        self.assertEqual(summary["episode_records"][0].promotion_status, "invalid_terminal")
+
     def test_layerwise_loop_contains_no_retired_blockwise_scaffolds(self):
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
@@ -413,12 +600,15 @@ class _PromotionBase:
         self.prepare_calls = []
         self.evaluate_calls = []
         self.fresh_probability = fresh_probability
+        self.probe_noise_seed = None
 
     def prepare_action_for_terminal_probe(self, full_vec, **kwargs):
         self.prepare_calls.append((list(full_vec), dict(kwargs)))
         return {"prepared": True, "action": list(full_vec)}
 
     def evaluate_prepared_terminal_batch(self, prepared, **kwargs):
+        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+
         self.evaluate_calls.append((prepared, dict(kwargs)))
         count = int(kwargs["num_trials_per_action"])
         fields = {
@@ -437,7 +627,10 @@ class _PromotionBase:
                 "loss": [0.3 + i * 0.001 for i in range(count)],
                 "metric1": [0.9 - i * 0.001 for i in range(count)],
                 "metric2": [0.8 - i * 0.001 for i in range(count)],
-                "seeds": list(range(1000, 1000 + count)),
+                "seeds": [
+                    derive_probe_trial_seed(self.probe_noise_seed, i)
+                    for i in range(count)
+                ],
             },
             "statistical_assessment": {**fields, "bootstrap_seed": 77},
             "metrics": types.SimpleNamespace(
@@ -447,7 +640,7 @@ class _PromotionBase:
 
 
 class LayerwisePromotionTests(unittest.TestCase):
-    def _store_with_five(self, root):
+    def _store_with_five(self, root, seeds=None):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.statistical_constraints import TrialSeries
 
@@ -458,7 +651,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 loss=[0.3] * 5,
                 metric1=[0.9] * 5,
                 metric2=[0.8] * 5,
-                seeds=[1, 2, 3, 4, 5],
+                seeds=[1, 2, 3, 4, 5] if seeds is None else seeds,
             ),
             {"identity_context": {"action_space_version": "layerwise-v1"}},
         )
@@ -503,6 +696,45 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
         self.assertEqual(base.evaluate_calls[0][1]["num_trials_per_action"], 20)
         self.assertTrue(base.evaluate_calls[0][1]["validation_required"])
+
+    def test_promotion_selects_fresh_trial_seeds_disjoint_from_existing_evidence(self):
+        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
+        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+
+        action = list(range(20))
+        context = {"action_space_version": "layerwise-v1"}
+        key = candidate_key(action, context)
+        material = f"layerwise-promotion:{key}:77:5".encode("utf-8")
+        colliding_base = int.from_bytes(
+            hashlib.sha256(material).digest()[:8], "big"
+        ) & 0x7FFFFFFFFFFFFFFF
+        existing_seeds = [derive_probe_trial_seed(colliding_base, i) for i in range(5)]
+
+        with tempfile.TemporaryDirectory() as td:
+            store = self._store_with_five(td, seeds=existing_seeds)
+            base = _PromotionBase()
+            result = promote_candidate_if_eligible(
+                env=types.SimpleNamespace(base=base),
+                candidate_store=store,
+                action_indices=action,
+                identity_context=context,
+                action_matrix=[[0] * 6 for _ in range(12)],
+                assessment=_assessment(0.85),
+                priority=3,
+                variable_cost=0.6,
+                frontier_cost=0.5,
+                boosted_overrides={},
+                bootstrap_seed=77,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+            )
+            evidence = store.trial_evidence_for_action(action, context)
+
+        self.assertEqual(result.status, "promoted")
+        self.assertEqual(evidence.trial_count, 25)
+        fresh_seeds = set(evidence.trials.seeds[5:])
+        self.assertTrue(fresh_seeds.isdisjoint(existing_seeds))
+        self.assertEqual(len(fresh_seeds), 20)
 
     def test_promotion_rejects_priority_confidence_and_dominated_candidates(self):
         from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible

@@ -2373,6 +2373,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_substage_promotion_top_k=5,
                   blb_v3_substage_promotion_trials=8,
                   blb_v3_fusion_count_action=False,
+                  blb_v3_decision_granularity="block",
+                  blb_v3_reward_design="stage1_aligned",
                   blb_v3_fusion_neighbor_curriculum=False,
                   blb_v3_fusion_probe_interval=0,
                   blb_v3_fusion_exploration_epsilon=0.0,
@@ -3130,6 +3132,16 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         self.blb_v3_fusion_count_action = self._coerce_bool_flag(
             blb_v3_fusion_count_action, 'blb_v3_fusion_count_action',
+        )
+        from blb_stage2_rl.layerwise_runner import (
+            normalize_decision_granularity,
+            normalize_reward_design,
+        )
+        self.blb_v3_decision_granularity = normalize_decision_granularity(
+            blb_v3_decision_granularity
+        )
+        self.blb_v3_reward_design = normalize_reward_design(
+            blb_v3_reward_design
         )
         self.blb_v3_fusion_neighbor_curriculum = self._coerce_bool_flag(
             blb_v3_fusion_neighbor_curriculum, 'blb_v3_fusion_neighbor_curriculum',
