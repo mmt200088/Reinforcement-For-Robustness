@@ -1555,6 +1555,10 @@ Key wires:
   not expose `delta_q_vs_baseline`. Full replan, CLI, and diagnostic callers
   must continue receiving the baseline and emitting that diagnostic; do not
   remove it globally to optimize fusion-map enumeration.
+- Replan initial-drop bounds share one scan. A non-positive drop must retain
+  precedence and return immediately; otherwise every 1-indexed stage above
+  `q_max` must remain in the diagnostic. Do not restore separate `any(...)`
+  and over-limit list-comprehension scans in the combination hot path.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.
