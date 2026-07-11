@@ -197,6 +197,48 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertEqual(restore.call_count, 2)
         self.assertTrue(session._delta_state_clean["block4"])
 
+    def test_delta_override_can_skip_unused_applied_record(self):
+        from rescale_optimizer import NodeType
+        from rescale_optimizer import replan
+
+        node = SimpleNamespace(
+            name="ctpt_weight",
+            node_type=NodeType.CTPT_MUL,
+            scale_delta_bits=3,
+            other_ct_scale_bits=None,
+        )
+        graph = SimpleNamespace(nodes=[node])
+
+        applied = replan._apply_delta_overrides(
+            graph,
+            {node.name: 17},
+            collect_applied=False,
+        )
+
+        self.assertEqual(applied, {})
+        self.assertEqual(node.scale_delta_bits, 17)
+
+    def test_compact_replan_skips_unused_applied_delta_record(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        with mock.patch.object(
+            replan_interface,
+            "replan_with_user_actions",
+            wraps=replan_interface.replan_with_user_actions,
+        ) as replan_call:
+            compact = session.replan_compact("block4")
+
+        self.assertTrue(compact.valid)
+        self.assertFalse(
+            replan_call.call_args.kwargs["record_applied_delta_overrides"]
+        )
+
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):
         from rescale_optimizer import replan_interface
 
