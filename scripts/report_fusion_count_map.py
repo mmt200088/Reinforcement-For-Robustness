@@ -634,10 +634,10 @@ def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Map
     ]
     target_graph_set = set(target_graphs)
     for graph_key in graph_order:
-        required = graph_key in target_graph_set
-        opt, count, clamped = choose(graph_key, 1 if required else 0)
-        if required and (clamped or count != 1):
-            raise ValueError(f"{graph_key} does not provide fusion count 1")
+        target = 1 if graph_key in target_graph_set else 0
+        opt, count, clamped = choose(graph_key, target)
+        if clamped or count != target:
+            raise ValueError(f"{graph_key} does not provide fusion count {target}")
         option_by_graph[graph_key] = opt
         count_by_graph[graph_key] = count
     specs.append({
