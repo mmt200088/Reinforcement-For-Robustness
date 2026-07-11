@@ -1,0 +1,95 @@
+<!doctype html><html><head><meta charset='utf-8'>
+<title>MRPC Fusion Count RL-Path Eval</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:28px;color:#111827;background:#fbfcfd}table{border-collapse:collapse;width:100%;background:white;margin:14px 0}th,td{border:1px solid #d9e2ec;padding:6px 8px;font-size:12px;text-align:left;vertical-align:top}th{background:#eef2f7}.note{background:#eef6ff;border-left:4px solid #2563eb;padding:10px 12px;margin:12px 0}</style>
+</head><body>
+<h1>MRPC Fusion Count Evaluation: RL Training Install Path</h1>
+<p>Generated: 2026-07-11T04:39:40+00:00</p>
+<div class='note'>RL-path = SequentialEnv.evaluate_step/commit_step + BLBStage2Env.step(boosted_overrides). Original = Paean final-eval action-config decoder.</div>
+<h2>Context</h2>
+<table><thead><tr>
+<th>Stage1 GELU</th>
+<th>Stage1 Softmax</th>
+<th>repeat/K trials</th>
+<th>probe size</th>
+<th>groups</th>
+</tr></thead><tbody>
+<tr>
+<td>[4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]</td>
+<td>[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]</td>
+<td>5</td>
+<td>408</td>
+<td>2</td>
+</tr>
+</tbody></table>
+<h2>RL Path vs Original Paean Path</h2>
+<table><thead><tr>
+<th>group</th>
+<th>RL loss</th>
+<th>RL loss std</th>
+<th>RL m1</th>
+<th>RL m1 std</th>
+<th>RL m2</th>
+<th>RL m2 std</th>
+<th>orig loss</th>
+<th>orig loss std</th>
+<th>orig acc</th>
+<th>orig acc std</th>
+<th>orig f1</th>
+<th>orig f1 std</th>
+<th>Δloss</th>
+<th>Δm1</th>
+<th>Δm2</th>
+<th>fusion</th>
+<th>fusion by block</th>
+<th>K dist</th>
+<th>block5 graphs</th>
+<th>priority</th>
+</tr></thead><tbody>
+<tr>
+<td>all_fusion0</td>
+<td>0.342493</td>
+<td>0.001505</td>
+<td>0.883824</td>
+<td>0.004546</td>
+<td>0.881623</td>
+<td>0.004847</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>nan</td>
+<td>nan</td>
+<td>nan</td>
+<td>0</td>
+<td>{&quot;2&quot;: 0, &quot;4&quot;: 0, &quot;5&quot;: 0, &quot;1&quot;: 0}</td>
+<td>{&quot;13&quot;: 47}</td>
+<td>{&quot;block5_n4&quot;: 12}</td>
+<td>None</td>
+</tr>
+<tr>
+<td>block2_block5_all_layers_fusionmax</td>
+<td>0.344103</td>
+<td>0.001064</td>
+<td>0.882353</td>
+<td>0.002685</td>
+<td>0.879973</td>
+<td>0.002798</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td>nan</td>
+<td>nan</td>
+<td>nan</td>
+<td>24</td>
+<td>{&quot;2&quot;: 12, &quot;4&quot;: 0, &quot;5&quot;: 12, &quot;1&quot;: 0}</td>
+<td>{&quot;13&quot;: 47}</td>
+<td>{&quot;block5_n4&quot;: 12}</td>
+<td>None</td>
+</tr>
+</tbody></table>
+</body></html>
