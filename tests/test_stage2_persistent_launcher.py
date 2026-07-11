@@ -65,11 +65,9 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
 
                 time.sleep(0.1)
             self.assertTrue(capture.is_file(), msg="launcher did not invoke python")
-            argv = [
-                part.decode("utf-8")
-                for part in capture.read_bytes().split(b"\0")
-                if part
-            ]
+            raw_argv = capture.read_bytes().split(b"\0")
+            self.assertEqual(raw_argv[-1], b"")
+            argv = [part.decode("utf-8") for part in raw_argv[:-1]]
 
         self.assertEqual(
             argv[argv.index("--stage2_fixed_config_source") + 1],
