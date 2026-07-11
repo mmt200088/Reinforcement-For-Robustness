@@ -358,6 +358,58 @@ class LayerwisePolicyTest(unittest.TestCase):
         torch.testing.assert_close(changed_log_prob, replay_log_prob)
         torch.testing.assert_close(changed_entropy, masked_entropy)
 
+    def test_stochastic_sampling_zeros_masked_slot_without_changing_active_semantics(self):
+        policy = self._policy()
+        fusion_probs = {0: 0.60, 1: 0.40}
+        k_probs = {13: 0.50, 12: 0.20, 11: 0.12, 10: 0.08, 9: 0.06, 8: 0.04}
+        k_values = (13, 8, 12, 9, 11, 10)
+        policy.set_initial_slot_probabilities(
+            [fusion_probs] + [k_probs] * 5,
+            [(0, 1)] + [k_values] * 5,
+        )
+        policy.eval()
+
+        batch_size = 64
+        states = torch.zeros(batch_size, policy.cfg.state_dim)
+        states[:, 4] = 1.0
+        levels = torch.tensor([[2, 6, 6, 6, 6, 6]]).expand(batch_size, -1)
+        slot_mask = torch.ones((batch_size, 6), dtype=torch.bool)
+        slot_mask[:, 1] = False
+        generator = torch.Generator().manual_seed(20260712)
+
+        actions, sampled_log_prob, _ = policy.sample_action(
+            states,
+            slot_mask,
+            levels,
+            generator=generator,
+        )
+        replay_log_prob, replay_entropy, _ = policy.evaluate_action(
+            states,
+            actions,
+            slot_mask,
+            levels,
+        )
+
+        self.assertTrue(torch.all(actions[:, 1] == 0))
+        self.assertTrue(torch.all((actions[:, 0] >= 0) & (actions[:, 0] < 2)))
+        self.assertTrue(torch.all((actions[:, 2:] >= 0) & (actions[:, 2:] < 6)))
+        self.assertGreater(torch.unique(actions[:, 0]).numel(), 1)
+        self.assertGreater(torch.unique(actions[:, 2:]).numel(), 1)
+
+        fusion_by_index = torch.tensor([fusion_probs[0], fusion_probs[1]])
+        k_by_index = torch.tensor([k_probs[value] for value in k_values])
+        expected_log_prob = torch.log(fusion_by_index[actions[:, 0]])
+        expected_log_prob += torch.log(k_by_index[actions[:, 2:]]).sum(dim=-1)
+        torch.testing.assert_close(sampled_log_prob, expected_log_prob)
+        torch.testing.assert_close(replay_log_prob, expected_log_prob)
+
+        fusion_entropy = -sum(prob * np.log(prob) for prob in fusion_probs.values())
+        k_entropy = -sum(prob * np.log(prob) for prob in k_probs.values())
+        torch.testing.assert_close(
+            replay_entropy,
+            torch.full((batch_size,), fusion_entropy + 4.0 * k_entropy),
+        )
+
     def test_terminal_reward_has_undiscounted_credit_at_every_layer(self):
         from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
 

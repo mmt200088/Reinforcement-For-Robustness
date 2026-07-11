@@ -732,6 +732,11 @@ class BLBStage2SequentialPolicy(nn.Module):
             ).reshape(probs.shape[:-1])
         else:
             actions = dist.sample()
+        actions = torch.where(
+            slot_mask.to(device=actions.device, dtype=torch.bool),
+            actions,
+            torch.zeros_like(actions),
+        )
         log_prob_per_slot = dist.log_prob(actions)            # [B, max_step_dim]
         # zero out log_prob for padding rows
         log_prob_per_slot = log_prob_per_slot * slot_mask.float()
