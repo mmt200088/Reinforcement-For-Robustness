@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
+import math
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -18,6 +19,107 @@ from .layerwise_action import (
     layerwise_schedule,
 )
 from .sequential_env import BlockRuntimeResult, evaluate_block_from_full_vector
+
+
+_SNAPSHOT_OMIT = object()
+_SNAPSHOT_MAX_DEPTH = 5
+_SNAPSHOT_MAX_ITEMS = 256
+_TERMINAL_INFO_SNAPSHOT_FIELDS = (
+    "metrics",
+    "reward_breakdown",
+    "action_hash",
+    "invalid",
+    "apply_failed",
+    "eval_failed",
+    "forward_ran",
+    "forward_skipped_reason",
+    "error",
+    "optimizer_baseline_action",
+    "optimizer_eval_mode",
+    "optimizer_invalid_summary",
+    "model_degree_sync",
+    "optimizer_cfg_overrides",
+    "opt_outputs_keys",
+    "opt_signals",
+    "timing",
+    "probe_diagnostics",
+    "raw_trials",
+    "trial_metrics",
+    "priority",
+    "reward",
+    "fusion_count_b2",
+    "fusion_count_b4",
+    "fusion_count_b5",
+    "fusion_action_steps",
+    "fusion_cost_fusion_norm",
+    "fusion_cost_fusion_norm_saturated",
+    "fusion_saturation_tau",
+    "fusion_cost_trunc_norm",
+    "fusion_cost_rank",
+    "fusion_cost_max_actual",
+)
+
+
+def _bounded_json_value(value: Any, *, depth: int = 0) -> Any:
+    """Convert one selected diagnostic value without traversing opaque objects."""
+    if depth > _SNAPSHOT_MAX_DEPTH:
+        return _SNAPSHOT_OMIT
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, np.generic):
+        return _bounded_json_value(value.item(), depth=depth)
+    if isinstance(value, np.ndarray):
+        if int(value.size) > _SNAPSHOT_MAX_ITEMS:
+            return _SNAPSHOT_OMIT
+        return _bounded_json_value(value.tolist(), depth=depth + 1)
+    if is_dataclass(value) and not isinstance(value, type):
+        result: Dict[str, Any] = {}
+        for field_def in fields(value)[:_SNAPSHOT_MAX_ITEMS]:
+            converted = _bounded_json_value(
+                getattr(value, field_def.name), depth=depth + 1,
+            )
+            if converted is not _SNAPSHOT_OMIT:
+                result[str(field_def.name)] = converted
+        return result
+    if isinstance(value, Mapping):
+        result = {}
+        for index, (key, item) in enumerate(value.items()):
+            if index >= _SNAPSHOT_MAX_ITEMS:
+                break
+            if isinstance(key, np.generic):
+                key = key.item()
+            if not isinstance(key, (str, bool, int, float)):
+                continue
+            converted = _bounded_json_value(item, depth=depth + 1)
+            if converted is not _SNAPSHOT_OMIT:
+                result[str(key)] = converted
+        return result
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        result = []
+        for index, item in enumerate(value):
+            if index >= _SNAPSHOT_MAX_ITEMS:
+                break
+            converted = _bounded_json_value(item, depth=depth + 1)
+            if converted is not _SNAPSHOT_OMIT:
+                result.append(converted)
+        return result
+    return _SNAPSHOT_OMIT
+
+
+def _snapshot_terminal_info(terminal_info: Any) -> Dict[str, Any]:
+    """Take a compact report snapshot from the production terminal payload."""
+    if not isinstance(terminal_info, Mapping):
+        return {}
+    snapshot: Dict[str, Any] = {}
+    for name in _TERMINAL_INFO_SNAPSHOT_FIELDS:
+        if name not in terminal_info:
+            continue
+        converted = _bounded_json_value(terminal_info[name], depth=1)
+        if converted is not _SNAPSHOT_OMIT:
+            snapshot[name] = converted
+    return snapshot
 
 
 @dataclass(frozen=True)
@@ -77,6 +179,7 @@ class BLBStage2LayerwiseEnv:
         self._step_idx = 0
         self._has_reset = False
         self._done = False
+        self._runtime_terminal_info: Optional[Any] = None
         self._action_history: List[List[int]] = []
         self._decoded_actions: List[LayerwiseDecodedAction] = []
         self._fusion_option_ids: List[Dict[int, int]] = []
@@ -125,6 +228,11 @@ class BLBStage2LayerwiseEnv:
     def boosted_overrides(self) -> Dict[Tuple[int, int], Dict[str, int]]:
         return copy.deepcopy(self._boosted_overrides)
 
+    @property
+    def runtime_terminal_info(self) -> Optional[Any]:
+        """Original base-env terminal payload for in-process runtime consumers."""
+        return self._runtime_terminal_info
+
     def current_spec(self) -> LayerwiseStepSpec:
         if self._done or self._step_idx >= self.horizon:
             raise RuntimeError("episode terminated; call reset() before current_spec()")
@@ -139,6 +247,7 @@ class BLBStage2LayerwiseEnv:
         self._step_idx = 0
         self._has_reset = True
         self._done = False
+        self._runtime_terminal_info = None
         self._action_history = []
         self._decoded_actions = []
         self._fusion_option_ids = []
@@ -239,6 +348,7 @@ class BLBStage2LayerwiseEnv:
             boosted_overrides=(copy.deepcopy(self._boosted_overrides) or None),
         )
         del terminal_state
+        self._runtime_terminal_info = terminal_info
         self._done = True
         info.update(self._terminal_handoff(
             variable_cost,
@@ -359,7 +469,7 @@ class BLBStage2LayerwiseEnv:
             )
         ]
         return {
-            "terminal_info": copy.deepcopy(terminal_info),
+            "terminal_info": _snapshot_terminal_info(terminal_info),
             "terminal_reward": float(terminal_reward),
             "external_cost_score": float(external_cost_score),
             "external_cost_rank": float(external_cost_rank),

@@ -131,6 +131,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
             self.attn_degree_state = 6
             self.reset_seeds = []
             self.step_calls = []
+            self.terminal_info = {"priority": 3}
 
         def reset(self, *, seed=None):
             self.reset_seeds.append(seed)
@@ -138,7 +139,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
 
         def step(self, action, **kwargs):
             self.step_calls.append((np.asarray(action, dtype=int).copy(), kwargs))
-            return np.asarray([999.0], dtype=np.float32), 7.25, True, {"priority": 3}
+            return np.asarray([999.0], dtype=np.float32), 7.25, True, self.terminal_info
 
     def test_reset_has_stable_geometry_and_owned_state(self):
         observation = self.env.reset(seed=17)
@@ -300,6 +301,77 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(layer0_graphs[5], "block5_n4")
         self.assertEqual(layer1_graphs[3], "block3_exp_n4")
         self.assertEqual(layer1_graphs[5], "block5_n2")
+
+    def test_terminal_info_snapshot_is_bounded_json_safe_and_runtime_info_is_private(self):
+        @dataclasses.dataclass
+        class Metrics:
+            loss_mean: object
+            metric1_mean: object
+            loss_trials: object
+            trial_seeds: object
+
+        @dataclasses.dataclass
+        class Breakdown:
+            reward: object
+            priority: object
+            invalid: object
+            cost_score: object
+            acc_barrier_sat: object
+
+        class HeavyDecoded:
+            def __init__(self):
+                self.large_cfgs = [object()] * 1000
+
+        runtime_info = {
+            "metrics": Metrics(
+                loss_mean=np.float32(0.25),
+                metric1_mean=np.float64(0.875),
+                loss_trials=np.asarray([0.2, 0.3], dtype=np.float32),
+                trial_seeds=(np.int64(11), np.int64(12)),
+            ),
+            "reward_breakdown": Breakdown(
+                reward=np.float64(1.75),
+                priority=np.int64(3),
+                invalid=np.bool_(False),
+                cost_score=np.float32(0.75),
+                acc_barrier_sat=np.float64(2.5),
+            ),
+            "action_hash": "abc123",
+            "invalid": np.bool_(False),
+            "eval_failed": False,
+            "forward_ran": True,
+            "probe_diagnostics": {
+                "wall_seconds": np.float64(1.25),
+                "devices": ("cuda:0", "cuda:1"),
+                "per_worker_trial_counts": np.asarray([1, 1], dtype=np.int64),
+            },
+            "timing": {"cost_eval_wall_seconds": np.float32(0.125)},
+            "fusion_count_b2": np.int64(12),
+            "fusion_count_b4": np.int64(6),
+            "fusion_action_steps": [{"layer_idx": np.int64(0), "option_id": np.int64(1)}],
+            "decoded": HeavyDecoded(),
+        }
+        self.base.terminal_info = runtime_info
+        self.env.reset()
+        for _ in range(12):
+            _obs, _reward, _done, info = self.env.step([0] * 6)
+
+        snapshot = info["terminal_info"]
+        self.assertIs(self.env.runtime_terminal_info, runtime_info)
+        with self.assertRaises(AttributeError):
+            self.env.runtime_terminal_info = {}
+        self.assertNotIn("decoded", snapshot)
+        self.assertEqual(snapshot["metrics"]["loss_mean"], 0.25)
+        np.testing.assert_allclose(snapshot["metrics"]["loss_trials"], [0.2, 0.3])
+        self.assertEqual(snapshot["metrics"]["trial_seeds"], [11, 12])
+        self.assertEqual(snapshot["reward_breakdown"]["priority"], 3)
+        self.assertEqual(snapshot["reward_breakdown"]["cost_score"], 0.75)
+        self.assertEqual(snapshot["probe_diagnostics"]["per_worker_trial_counts"], [1, 1])
+        self.assertEqual(snapshot["fusion_count_b2"], 12)
+        json.dumps(info)
+
+        self.env.reset(seed=99)
+        self.assertIsNone(self.env.runtime_terminal_info)
 
 
 class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
