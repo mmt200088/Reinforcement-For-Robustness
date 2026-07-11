@@ -85,10 +85,6 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                     "valid": True,
                     "fusion_count": int(map_option_id_override or 0),
                     "boosted_field_values": None,
-                    "replan_application": {
-                        "applied_before_forward": True,
-                        "model_uses_replan_config": True,
-                    },
                 }
 
             def commit_step(self, _eval_info, *, defer_terminal_forward):
@@ -114,7 +110,13 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
                         "graph_key": "block2_mrpc_L0",
                     }],
                 }
-                return np.zeros(1), 1.0, True, {"terminal_info": terminal_info}
+                return np.zeros(1), 1.0, True, {
+                    "terminal_info": terminal_info,
+                    "replan_application": {
+                        "applied_before_forward": True,
+                        "model_uses_replan_config": True,
+                    },
+                }
 
         env = FakeSeqEnv()
         old_deps = rlpath._RUNTIME_DEPS
@@ -138,6 +140,9 @@ class FusionCountActionEvalRLPathTest(unittest.TestCase):
         self.assertEqual(result["step_records"][0]["policy_option_index"], 0)
         self.assertEqual(result["step_records"][0]["map_option_id"], 0)
         self.assertTrue(result["step_records"][0]["model_uses_replan_config"])
+        self.assertTrue(
+            result["step_records"][0]["replan_application"]["model_uses_replan_config"]
+        )
         self.assertEqual(result["trial_metrics"]["loss"], [0.29, 0.31])
         self.assertEqual(result["fusion_total"], 0)
 
