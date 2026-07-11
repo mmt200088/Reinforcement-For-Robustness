@@ -17,6 +17,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import html
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -51,15 +52,26 @@ def _group_seed(base_seed: int, group_index: int, *, shared: bool) -> int:
     return int(base_seed) if shared else int(base_seed) + int(group_index)
 
 
+def _trial_metric_value(value: Any) -> Any:
+    numeric = float(value)
+    if math.isfinite(numeric):
+        return numeric
+    if math.isnan(numeric):
+        return {"non_finite": "nan"}
+    if numeric > 0:
+        return {"non_finite": "positive_infinity"}
+    return {"non_finite": "negative_infinity"}
+
+
 def _trial_metric_payload(
         losses: Sequence[float],
         metric1s: Sequence[float],
         metric2s: Sequence[float],
         ) -> dict:
     return {
-        "loss": [float(value) for value in losses],
-        "metric1": [float(value) for value in metric1s],
-        "metric2": [float(value) for value in metric2s],
+        "loss": [_trial_metric_value(value) for value in losses],
+        "metric1": [_trial_metric_value(value) for value in metric1s],
+        "metric2": [_trial_metric_value(value) for value in metric2s],
     }
 
 
