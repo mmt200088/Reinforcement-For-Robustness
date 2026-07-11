@@ -175,6 +175,49 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
             session._delta_nodes["block4"],
         )
 
+    def test_replan_session_reuses_prepared_default_fusion_policy(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer import replan
+        from rescale_optimizer import replan_interface
+
+        with mock.patch.object(
+            replan_interface,
+            "resolve_allowed_fusion_pairs",
+            wraps=replan_interface.resolve_allowed_fusion_pairs,
+        ) as resolve_policy, mock.patch.object(
+            replan,
+            "_normalize_allowed_fusion_pairs",
+            wraps=replan._normalize_allowed_fusion_pairs,
+        ) as normalize_policy:
+            session = ReplanSession.from_profile(
+                profile="mrpc",
+                root=RESCALE_ROOT,
+                include=["block4"],
+            )
+            constructor_counts = (
+                resolve_policy.call_count,
+                normalize_policy.call_count,
+            )
+
+            first = session.replan_compact("block4")
+            second = session.replan_compact("block4")
+
+            self.assertTrue(first.valid)
+            self.assertTrue(second.valid)
+            self.assertEqual(
+                (resolve_policy.call_count, normalize_policy.call_count),
+                constructor_counts,
+            )
+
+            custom = session.replan_compact(
+                "block4",
+                allowed_fusion_pairs="none",
+            )
+
+        self.assertIsNotNone(custom)
+        self.assertEqual(resolve_policy.call_count, constructor_counts[0] + 1)
+        self.assertEqual(normalize_policy.call_count, constructor_counts[1] + 1)
+
     def test_replan_session_skips_redundant_clean_state_restore(self):
         from rescale_optimizer import ReplanSession
         from rescale_optimizer import replan_interface
