@@ -182,13 +182,56 @@ def test_invalid_without_assessment_has_floor_signals():
     )
 
 
-def test_variable_cost_is_clipped_before_entering_p3():
-    for raw, accepted in ((-10.0, 0.0), (2.0, 1.0)):
-        reward, priority, _precision_signal, _stability_signal = robust_constrained_reward(
-            _assessment(), invalid=False, variable_cost=raw,
-        )
-        assert priority == 3
-        assert 1.0 + accepted <= reward <= 1.001 + accepted
+def _captured_value_error(call):
+    try:
+        call()
+    except ValueError as exc:
+        return str(exc)
+    raise AssertionError("call did not reject invalid unit-interval input")
+
+
+def test_helper_and_dispatcher_reject_bad_variable_cost_identically():
+    for value in (-0.01, 1.01, float("nan"), float("inf"), float("-inf")):
+        helper_message = _captured_value_error(lambda: robust_constrained_reward(
+            _assessment(), invalid=False, variable_cost=value,
+        ))
+        dispatcher_message = _captured_value_error(lambda: compute_reward(
+            EpisodeMetrics(), SimpleNamespace(any_invalid=False),
+            action_avg_k=13.0,
+            baseline=BaselineCostStats(),
+            weights=RewardWeights(reward_design="robust_constrained"),
+            external_cost_score=value,
+            constraint_assessment=_assessment(),
+        ))
+        assert helper_message == dispatcher_message
+        assert "variable_cost" in helper_message
+
+
+def test_helper_and_dispatcher_reject_all_bad_probabilities_identically():
+    fields = (
+        "loss_precision_probability",
+        "metric1_precision_probability",
+        "metric2_precision_probability",
+        "loss_stability_probability",
+        "metric1_stability_probability",
+        "metric2_stability_probability",
+    )
+    for field in fields:
+        for value in (-0.01, 1.01, float("nan"), float("inf")):
+            assessment = _assessment(**{field: value})
+            helper_message = _captured_value_error(lambda: robust_constrained_reward(
+                assessment, invalid=False, variable_cost=0.5,
+            ))
+            dispatcher_message = _captured_value_error(lambda: compute_reward(
+                EpisodeMetrics(), SimpleNamespace(any_invalid=False),
+                action_avg_k=13.0,
+                baseline=BaselineCostStats(),
+                weights=RewardWeights(reward_design="robust_constrained"),
+                external_cost_score=0.5,
+                constraint_assessment=assessment,
+            ))
+            assert helper_message == dispatcher_message
+            assert field in helper_message
 
 
 def test_robust_breakdown_exposes_probability_q_signal_and_cost_fields():
@@ -232,20 +275,19 @@ def test_compute_reward_dispatches_only_when_robust_design_is_selected():
 
 
 def test_valid_robust_compute_reward_requires_explicit_normalized_cost():
-    for cost in (None, -0.01, 1.01):
-        try:
-            compute_reward(
-                EpisodeMetrics(), SimpleNamespace(any_invalid=False),
-                action_avg_k=13.0,
-                baseline=BaselineCostStats(),
-                weights=RewardWeights(reward_design="robust_constrained"),
-                external_cost_score=cost,
-                constraint_assessment=_assessment(),
-            )
-        except ValueError as exc:
-            assert "external_cost_score" in str(exc)
-        else:
-            raise AssertionError(f"robust cost {cost!r} did not fail")
+    try:
+        compute_reward(
+            EpisodeMetrics(), SimpleNamespace(any_invalid=False),
+            action_avg_k=13.0,
+            baseline=BaselineCostStats(),
+            weights=RewardWeights(reward_design="robust_constrained"),
+            external_cost_score=None,
+            constraint_assessment=_assessment(),
+        )
+    except ValueError as exc:
+        assert "external_cost_score" in str(exc)
+    else:
+        raise AssertionError("robust candidate without cost did not fail")
 
 
 def test_invalid_robust_compute_reward_needs_neither_assessment_nor_cost():
@@ -505,7 +547,7 @@ def test_valid_robust_prepared_terminal_rejects_missing_or_out_of_range_cost():
         try:
             env._finish_prepared_terminal_probe(prepared, _runtime_metrics(reward_module))
         except ValueError as exc:
-            assert "external_cost_score" in str(exc)
+            assert "cost" in str(exc)
         else:
             raise AssertionError(f"prepared robust cost {cost!r} did not fail")
 

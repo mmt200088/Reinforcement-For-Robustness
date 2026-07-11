@@ -983,6 +983,25 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             rescale_bridge=bridge,
         )
 
+    def test_constructor_rejects_robust_reward_before_blockwise_rollout(self):
+        base = self._base(types.SimpleNamespace())
+        base.reward_weights = types.SimpleNamespace(reward_design="robust_constrained")
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "robust_constrained.*BLBStage2LayerwiseEnv.*train_layerwise",
+        ):
+            self.mod.BLBStage2SequentialEnv(base_env=base)
+
+    def test_constructor_preserves_explicit_rollback_reward_designs(self):
+        for reward_design in ("stage1_aligned", "continuous", "tiered"):
+            base = self._base(types.SimpleNamespace())
+            base.reward_weights = types.SimpleNamespace(reward_design=reward_design)
+
+            env = self.mod.BLBStage2SequentialEnv(base_env=base)
+
+            self.assertIs(env.base, base)
+
     def test_helper_decodes_evaluates_and_applies_optimizer_once(self):
         output = types.SimpleNamespace(
             valid=True, total_bits=321, fusion_count=2, invalid_chain=None,

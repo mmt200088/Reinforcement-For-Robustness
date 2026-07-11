@@ -263,6 +263,14 @@ class BLBStage2SequentialEnv:
             env_cfg: Optional[SequentialEnvConfig] = None,
             fusion_map: Optional[Any] = None,
             ):
+        reward_design = str(
+            getattr(getattr(base_env, "reward_weights", None), "reward_design", "")
+        )
+        if reward_design == "robust_constrained":
+            raise ValueError(
+                "robust_constrained requires BLBStage2LayerwiseEnv/train_layerwise; "
+                "the retired BLBStage2SequentialEnv blockwise path is rollback-only"
+            )
         self.base = base_env
         self.cfg = env_cfg or SequentialEnvConfig()
         self.num_layers = int(base_env.num_layers)
