@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable, Mapping, Sequence
 import json
+from numbers import Integral, Real
 import operator
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,38 @@ import numpy as np
 PREDICTION_ROW_SCHEMA = "fusion-count-per-example-v1"
 
 _IdentityKey = tuple[tuple[int, ...], tuple[int, ...] | None, int]
+_INT64_MIN = int(np.iinfo(np.int64).min)
+_INT64_MAX = int(np.iinfo(np.int64).max)
+
+
+def _validated_int64_array(value: Any, *, name: str) -> np.ndarray:
+    message = (
+        f"{name} must contain finite, integral, non-boolean signed int64 values"
+    )
+    try:
+        values = np.asarray(value, dtype=object)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+
+    normalized: list[int] = []
+    for item in values.flat:
+        if isinstance(item, (bool, np.bool_)):
+            raise ValueError(message)
+        if isinstance(item, (Integral, np.integer)):
+            integer = int(item)
+        elif isinstance(item, (Real, np.floating)):
+            if not bool(np.isfinite(item)):
+                raise ValueError(message)
+            integer = int(item)
+            if item != integer:
+                raise ValueError(message)
+        else:
+            raise ValueError(message)
+        if integer < _INT64_MIN or integer > _INT64_MAX:
+            raise ValueError(message)
+        normalized.append(integer)
+
+    return np.asarray(normalized, dtype=np.int64).reshape(values.shape)
 
 
 def _array(
@@ -38,8 +71,14 @@ def _array(
         to_list = getattr(converted, "tolist", None)
         if callable(to_list):
             converted = to_list()
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be a regular numeric array") from exc
+
+    if np.dtype(dtype) == np.dtype(np.int64):
+        return _validated_int64_array(converted, name=name)
+    try:
         return np.asarray(converted, dtype=dtype)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{name} must be a regular numeric array") from exc
 
 
@@ -111,7 +150,7 @@ class ExampleIdentityCatalog:
         seen_indices: set[int] = set()
 
         for row in rows:
-            dataset_idx = int(row["idx"])
+            dataset_idx = _integer_scalar(row["idx"], name="dataset idx")
             if dataset_idx in seen_indices:
                 raise ValueError(f"duplicate dataset idx: {dataset_idx}")
 
