@@ -473,6 +473,34 @@ class PredictionSummaryTests(unittest.TestCase):
         )
         self.assertIsNone(affected["recomputed_loss"])
 
+    def test_position_mapping_allows_distinct_complete_permutations_between_seeds(self):
+        runs, rows, prior_runs = make_fixture()
+        permuted_seed = runs[1]["seed"]
+        for row in rows:
+            if row["run_seed"] == permuted_seed:
+                row["probe_position"] = 1 - row["probe_position"]
+
+        summary = self._summary(runs, rows, prior_runs)
+
+        self.assertTrue(summary["all_gates_pass"])
+        self.assertNotIn("unstable_position_mapping", failure_codes(summary))
+
+    def test_position_mapping_rejects_group_drift_within_one_seed(self):
+        runs, rows, prior_runs = make_fixture()
+        drift_seed = runs[0]["seed"]
+        drift_group = GROUPS[1]
+        for row in rows:
+            if row["run_seed"] == drift_seed and row["group"] == drift_group:
+                row["probe_position"] = 1 - row["probe_position"]
+
+        summary = self._summary(runs, rows, prior_runs)
+
+        self.assertFalse(summary["all_gates_pass"])
+        self.assertIn(
+            "unstable_position_mapping",
+            failure_codes(summary, "input_identity"),
+        )
+
     def test_trial_seed_requires_integer_nonbool_and_exact_terminal_value(self):
         for replacement, expected_code in (
             (True, "trial_seed_type"),
