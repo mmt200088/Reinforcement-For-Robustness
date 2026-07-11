@@ -26,6 +26,7 @@ preflight so threshold calibration is reproducible too.
 
 from __future__ import annotations
 
+import operator
 from typing import List
 
 # Knuth multiplicative-hash constant — same as stage1_rl/seed_utils.py and
@@ -63,6 +64,22 @@ def derive_probe_seed(base_seed: int, global_episode_idx: int) -> int:
     h ^= _PROBE_SALT
     h ^= (int(global_episode_idx) * _KNUTH) & _MASK
     return h & _MASK
+
+
+def derive_baseline_group_probe_seed(base_seed: int, group_idx: int) -> int:
+    """Deterministic probe seed for one robust-baseline evidence group."""
+    if isinstance(group_idx, bool):
+        raise TypeError("group_idx must be an integer, not bool")
+    try:
+        normalized_group_idx = operator.index(group_idx)
+    except TypeError as exc:
+        raise TypeError("group_idx must be an integer") from exc
+    if normalized_group_idx < 0:
+        raise ValueError("group_idx must be non-negative")
+    return derive_probe_seed(
+        base_seed,
+        PREFLIGHT_EPISODE - 1 - int(normalized_group_idx),
+    )
 
 
 def derive_probe_trial_seed(probe_seed: int, trial_idx: int) -> int:

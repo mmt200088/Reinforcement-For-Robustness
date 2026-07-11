@@ -15,6 +15,34 @@ import numpy as np
 import torch
 
 
+class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
+    def test_aggregate_probe_trials_preserves_sanitized_trials_and_unbiased_std(self):
+        from blb_stage2_rl.env import BLBStage2Env
+
+        metrics = BLBStage2Env._aggregate_probe_trials(
+            object(),
+            [float("nan"), 2.0, float("inf")],
+            [float("nan"), 0.5, float("inf")],
+            [float("-inf"), 0.25, float("nan")],
+            trial_seeds=[101, 102, 103],
+        )
+
+        self.assertEqual(metrics.loss_trials, (100.0, 2.0, 100.0))
+        self.assertEqual(metrics.metric1_trials, (0.0, 0.5, 1.0))
+        self.assertEqual(metrics.metric2_trials, (0.0, 0.25, 0.0))
+        self.assertEqual(metrics.trial_seeds, (101, 102, 103))
+        self.assertAlmostEqual(metrics.loss_std, np.std([100.0, 2.0, 100.0], ddof=1))
+        self.assertAlmostEqual(metrics.metric1_std, np.std([0.0, 0.5, 1.0], ddof=1))
+        self.assertAlmostEqual(metrics.metric2_std, np.std([0.0, 0.25, 0.0], ddof=1))
+
+        single_trial = BLBStage2Env._aggregate_probe_trials(
+            object(), [0.5], [0.8], [0.7], trial_seeds=[104],
+        )
+        self.assertEqual(single_trial.loss_std, 0.0)
+        self.assertEqual(single_trial.metric1_std, 0.0)
+        self.assertEqual(single_trial.metric2_std, 0.0)
+
+
 @contextlib.contextmanager
 def _workspace_tempdir():
     root = Path(__file__).resolve().parents[1] / "tmp_tests"

@@ -67,7 +67,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import numpy as np
 
@@ -454,6 +454,16 @@ class EpisodeMetrics:
     loss_max: float = 0.0
     metric1_min: float = 0.0
     metric2_min: float = 0.0
+    loss_trials: Tuple[float, ...] = field(default_factory=tuple)
+    metric1_trials: Tuple[float, ...] = field(default_factory=tuple)
+    metric2_trials: Tuple[float, ...] = field(default_factory=tuple)
+    trial_seeds: Tuple[int, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        self.loss_trials = tuple(float(value) for value in self.loss_trials)
+        self.metric1_trials = tuple(float(value) for value in self.metric1_trials)
+        self.metric2_trials = tuple(float(value) for value in self.metric2_trials)
+        self.trial_seeds = tuple(int(value) for value in self.trial_seeds)
 
 
 @dataclass

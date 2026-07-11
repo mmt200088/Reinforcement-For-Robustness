@@ -21,7 +21,7 @@ import math
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import torch
@@ -52,6 +52,9 @@ from .sequential_policy import (
     sequential_ppo_update,
     step_to_mask_and_levels,
 )
+
+if TYPE_CHECKING:
+    from .statistical_constraints import BaselineReference
 
 
 def _normalize_supported_rl_algo(value: Any, *, context: str = "rl_algo") -> str:
@@ -3156,6 +3159,132 @@ def _register_run_in_experiments_log(
         log(f"  [experiments][warning] register failed: {exc}")
 
 
+def _collect_robust_baseline_reference(
+        *,
+        base_env: Any,
+        baseline_action_vec: Sequence[int],
+        base_seed: int,
+        precision_tolerance: float,
+        stability_multiplier: float,
+        bootstrap_samples: int,
+        ) -> Tuple["BaselineReference", Dict[str, Any]]:
+    """Collect deterministic 5-trial baseline groups for robust constraints."""
+    from .seed_utils import derive_baseline_group_probe_seed
+    from .statistical_constraints import (
+        DegenerateBaselineVariance,
+        TrialSeries,
+        build_baseline_reference,
+    )
+
+    original_trials = getattr(base_env.env_cfg, "num_trials_per_step", 1)
+    original_probe_seed = getattr(base_env, "probe_noise_seed", None)
+    action = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1).copy()
+    groups: List[Any] = []
+    raw_groups: List[Dict[str, Any]] = []
+
+    try:
+        base_env.env_cfg.num_trials_per_step = 5
+        for group_idx in range(10):
+            group_probe_seed = derive_baseline_group_probe_seed(base_seed, group_idx)
+            base_env.probe_noise_seed = group_probe_seed
+            base_env.clear_installed_blb()
+            base_env.reset(seed=group_probe_seed)
+            _state, _reward, _done, info = base_env.step(action)
+            metrics = info.get("metrics") if isinstance(info, Mapping) else None
+            if metrics is None:
+                raise ValueError("robust baseline probe did not return EpisodeMetrics")
+
+            loss_trials = tuple(float(value) for value in metrics.loss_trials)
+            metric1_trials = tuple(float(value) for value in metrics.metric1_trials)
+            metric2_trials = tuple(float(value) for value in metrics.metric2_trials)
+            trial_seeds = tuple(int(value) for value in metrics.trial_seeds)
+            if not (
+                    len(loss_trials) == len(metric1_trials) == len(metric2_trials) == 5
+                    and len(trial_seeds) == 5
+            ):
+                raise ValueError(
+                    "robust baseline groups require exactly five raw trials and seeds"
+                )
+            group = TrialSeries(
+                loss=loss_trials,
+                metric1=metric1_trials,
+                metric2=metric2_trials,
+                seeds=trial_seeds,
+            )
+            groups.append(group)
+            raw_groups.append({
+                "group_index": int(group_idx),
+                "group_probe_seed": int(group_probe_seed),
+                "trial_seeds": [int(value) for value in trial_seeds],
+                "loss_trials": [float(value) for value in loss_trials],
+                "metric1_trials": [float(value) for value in metric1_trials],
+                "metric2_trials": [float(value) for value in metric2_trials],
+            })
+            if len(groups) < 5:
+                continue
+            try:
+                reference = build_baseline_reference(
+                    groups,
+                    precision_tolerance=precision_tolerance,
+                    stability_multiplier=stability_multiplier,
+                    bootstrap_samples=bootstrap_samples,
+                    seed=base_seed,
+                )
+            except DegenerateBaselineVariance as exc:
+                if group_idx == 9:
+                    exc.raw_groups = tuple(raw_groups)
+                    raise
+                continue
+
+            summary = {
+                "ok": True,
+                "threshold_source": "robust_all_max_blb_baseline",
+                "trial_count": int(reference.trial_count),
+                "group_count": int(len(groups)),
+                "groups": raw_groups,
+                "pooled": {
+                    "trial_count": int(reference.trial_count),
+                    "loss_mean": float(reference.loss_mean),
+                    "metric1_mean": float(reference.metric1_mean),
+                    "metric2_mean": float(reference.metric2_mean),
+                    "loss_std": float(reference.loss_std),
+                    "metric1_std": float(reference.metric1_std),
+                    "metric2_std": float(reference.metric2_std),
+                    "limits": {
+                        "loss": float(reference.loss_limit),
+                        "metric1": float(reference.metric1_limit),
+                        "metric2": float(reference.metric2_limit),
+                        "loss_std": float(reference.loss_std_limit),
+                        "metric1_std": float(reference.metric1_std_limit),
+                        "metric2_std": float(reference.metric2_std_limit),
+                    },
+                },
+                "limits": {
+                    "loss": float(reference.loss_limit),
+                    "metric1": float(reference.metric1_limit),
+                    "metric2": float(reference.metric2_limit),
+                    "loss_std": float(reference.loss_std_limit),
+                    "metric1_std": float(reference.metric1_std_limit),
+                    "metric2_std": float(reference.metric2_std_limit),
+                },
+                "bootstrap": {
+                    "samples": int(reference.bootstrap_samples),
+                    "seed": int(reference.bootstrap_seed),
+                },
+                "precision_tolerance": float(reference.precision_tolerance),
+                "stability_multiplier": float(reference.stability_multiplier),
+            }
+            return reference, summary
+    finally:
+        try:
+            base_env.clear_installed_blb()
+        finally:
+            base_env.env_cfg.num_trials_per_step = original_trials
+            base_env.probe_noise_seed = original_probe_seed
+
+    raise AssertionError("robust baseline collection exhausted without a result")
+
+
 def run_sequential_via_runner(
         *,
         runner,                           # BLBStage2RLRunner (avoid circular import)
@@ -3581,6 +3710,71 @@ def run_sequential_via_runner(
         "stability_floor": float(stab_floor),
         "threshold_source": "noisy_all_max_blb_baseline",
     }
+
+    robust_reference = None
+    if str(getattr(train_cfg, "reward_design", "")).strip().lower() == "robust_constrained":
+        raw_precision_tolerance = getattr(ev, "stage2_limit_tolerance", None)
+        precision_tolerance = (
+            0.001 if raw_precision_tolerance is None else float(raw_precision_tolerance)
+        )
+        raw_stability_multiplier = getattr(
+            train_cfg,
+            "stage2_stability_multiplier",
+            getattr(ev, "stage2_stability_multiplier", None),
+        )
+        stability_multiplier = (
+            2.0 if raw_stability_multiplier is None else float(raw_stability_multiplier)
+        )
+        raw_bootstrap_samples = getattr(train_cfg, "stage2_bootstrap_samples", None)
+        bootstrap_samples = 4096 if raw_bootstrap_samples is None else int(raw_bootstrap_samples)
+        robust_reference, robust_summary = _collect_robust_baseline_reference(
+            base_env=base_env,
+            baseline_action_vec=baseline_action_vec,
+            base_seed=int(train_cfg.seed),
+            precision_tolerance=precision_tolerance,
+            stability_multiplier=stability_multiplier,
+            bootstrap_samples=bootstrap_samples,
+        )
+        base_env.statistical_reference = robust_reference
+        noisy_baseline_loss_mean = float(robust_reference.loss_mean)
+        noisy_baseline_metric1 = float(robust_reference.metric1_mean)
+        noisy_baseline_metric2 = float(robust_reference.metric2_mean)
+        noisy_baseline_loss_std = float(robust_reference.loss_std)
+        noisy_baseline_metric1_std = float(robust_reference.metric1_std)
+        noisy_baseline_metric2_std = float(robust_reference.metric2_std)
+        baseline.loss_mean = noisy_baseline_loss_mean
+        baseline.metric1_mean = noisy_baseline_metric1
+        baseline.metric2_mean = noisy_baseline_metric2
+        baseline.loss_std = noisy_baseline_loss_std
+        baseline.metric1_std = noisy_baseline_metric1_std
+        baseline.metric2_std = noisy_baseline_metric2_std
+        base_env.loss_threshold = float(robust_reference.loss_limit)
+        base_env.acc_threshold = float(robust_reference.metric1_limit)
+        base_env.acc_threshold_m2 = float(robust_reference.metric2_limit)
+        base_env.stab_threshold = float(robust_reference.loss_std_limit)
+        allowed_acc_drop = float(robust_reference.precision_tolerance)
+        stability_tol = float(robust_reference.stability_multiplier)
+        stab_threshold_loss = float(robust_reference.loss_std_limit)
+        stab_threshold_m1 = float(robust_reference.metric1_std_limit)
+        stab_threshold_m2 = float(robust_reference.metric2_std_limit)
+        baseline_preflight_metrics["robust_reference"] = robust_summary
+        baseline_preflight_metrics.update(robust_summary)
+        baseline_preflight_metrics.update({
+            "metric1_mean": noisy_baseline_metric1,
+            "metric2_mean": noisy_baseline_metric2,
+            "loss_mean": noisy_baseline_loss_mean,
+            "metric1_std": noisy_baseline_metric1_std,
+            "metric2_std": noisy_baseline_metric2_std,
+            "loss_std": noisy_baseline_loss_std,
+            "metric1_threshold": float(robust_reference.metric1_limit),
+            "metric2_threshold": float(robust_reference.metric2_limit),
+            "loss_threshold": float(robust_reference.loss_limit),
+            "metric1_std_threshold": float(robust_reference.metric1_std_limit),
+            "metric2_std_threshold": float(robust_reference.metric2_std_limit),
+            "loss_std_threshold": float(robust_reference.loss_std_limit),
+            "limit_tolerance": float(robust_reference.precision_tolerance),
+            "stability_tolerance": float(robust_reference.stability_multiplier),
+        })
 
     log(
         f"  {bullet} 基线噪声预热（noisy baseline preflight）："

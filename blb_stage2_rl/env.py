@@ -7,6 +7,7 @@ from __future__ import annotations
 import copy
 import contextlib
 import math
+import operator
 import os
 import random
 import time
@@ -1431,12 +1432,17 @@ class BLBStage2Env:
         per_trial_loss: List[float] = []
         per_trial_metric1: List[float] = []
         per_trial_metric2: List[float] = []
+        trial_seeds: Optional[List[int]] = None
         probe_wall_start = time.perf_counter()
 
         try:
             if self.probe_runner is not None:
                 # ---- Multi-GPU path: fan out via ProbeRunner ----
-                base_seed = self._derive_probe_base_seed()
+                base_seed = (
+                    int(self.probe_noise_seed)
+                    if self.probe_noise_seed is not None
+                    else self._derive_probe_base_seed()
+                )
                 self._probe_eval_counter += 1
                 results = self.probe_runner.run_trials(k, base_seed=base_seed)
                 diag = self.probe_runner.last_diagnostics
@@ -1452,6 +1458,15 @@ class BLBStage2Env:
                         "speedup_vs_sequential": float(diag.speedup_vs_sequential),
                         "line": format_diagnostics_line(diag),
                     }
+                    if self.probe_noise_seed is not None:
+                        seed_by_trial = {}
+                        for indices, seeds in zip(
+                                diag.per_worker_trial_indices,
+                                diag.per_worker_trial_seeds,
+                        ):
+                            seed_by_trial.update(zip(indices, seeds))
+                        if len(seed_by_trial) == k:
+                            trial_seeds = [int(seed_by_trial[idx]) for idx in range(k)]
                 for (loss, m1, m2) in results:
                     if loss is None or (isinstance(loss, float) and not math.isfinite(loss)):
                         # NaN/inf from a probe trial is kept and handled below
@@ -1543,6 +1558,7 @@ class BLBStage2Env:
 
         return self._aggregate_probe_trials(
             per_trial_loss, per_trial_metric1, per_trial_metric2,
+            trial_seeds=trial_seeds,
         )
 
     def _eval_on_probe_deterministic(self, k: int) -> EpisodeMetrics:
@@ -1675,6 +1691,10 @@ class BLBStage2Env:
         }
         return self._aggregate_probe_trials(
             per_trial_loss, per_trial_metric1, per_trial_metric2,
+            trial_seeds=[
+                int((base_seed ^ (t * 2654435761)) & 0x7FFFFFFFFFFFFFFF)
+                for t in range(int(k))
+            ],
         )
 
     def _aggregate_probe_trials(
@@ -1682,9 +1702,32 @@ class BLBStage2Env:
             per_trial_loss: List[float],
             per_trial_metric1: List[float],
             per_trial_metric2: List[float],
+            trial_seeds: Optional[Sequence[int]] = None,
             ) -> EpisodeMetrics:
         if not per_trial_loss:
             return EpisodeMetrics()
+
+        trial_count = len(per_trial_loss)
+        if len(per_trial_metric1) != trial_count or len(per_trial_metric2) != trial_count:
+            raise ValueError("probe trial channels must have equal lengths")
+        normalized_trial_seeds: Tuple[int, ...] = ()
+        if trial_seeds is not None:
+            try:
+                raw_trial_seeds = tuple(trial_seeds)
+            except TypeError as exc:
+                raise ValueError("trial_seeds must be an integer sequence") from exc
+            if any(isinstance(seed, (bool, np.bool_)) for seed in raw_trial_seeds):
+                raise ValueError("trial_seeds must be an integer sequence")
+            try:
+                normalized_trial_seeds = tuple(
+                    operator.index(seed) for seed in raw_trial_seeds
+                )
+            except TypeError as exc:
+                raise ValueError("trial_seeds must be an integer sequence") from exc
+            if normalized_trial_seeds and len(normalized_trial_seeds) != trial_count:
+                raise ValueError(
+                    "trial_seeds length must match the number of probe trials"
+                )
 
         loss_arr = np.array(per_trial_loss, dtype=float)
         m1_arr = np.array(per_trial_metric1, dtype=float)
@@ -1705,14 +1748,18 @@ class BLBStage2Env:
 
         return EpisodeMetrics(
             loss_mean=float(loss_arr.mean()),
-            loss_std=float(loss_arr.std(ddof=0)) if loss_arr.size > 1 else 0.0,
+            loss_std=float(loss_arr.std(ddof=1)) if loss_arr.size > 1 else 0.0,
             metric1_mean=float(m1_arr.mean()),
             metric2_mean=float(m2_arr.mean()),
-            metric1_std=float(m1_arr.std(ddof=0)) if m1_arr.size > 1 else 0.0,
-            metric2_std=float(m2_arr.std(ddof=0)) if m2_arr.size > 1 else 0.0,
+            metric1_std=float(m1_arr.std(ddof=1)) if m1_arr.size > 1 else 0.0,
+            metric2_std=float(m2_arr.std(ddof=1)) if m2_arr.size > 1 else 0.0,
             loss_max=float(loss_arr.max()),
             metric1_min=float(m1_arr.min()),
             metric2_min=float(m2_arr.min()),
+            loss_trials=tuple(float(value) for value in loss_arr.tolist()),
+            metric1_trials=tuple(float(value) for value in m1_arr.tolist()),
+            metric2_trials=tuple(float(value) for value in m2_arr.tolist()),
+            trial_seeds=normalized_trial_seeds,
         )
 
     # ------------------------------------------------------------------
