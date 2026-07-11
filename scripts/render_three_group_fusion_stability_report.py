@@ -168,6 +168,21 @@ def _raw_metric_summary(group: Any) -> dict[str, float] | None:
     }
 
 
+def _evaluator_metric_summary(group: Any) -> dict[str, float] | None:
+    summary = _raw_metric_summary(group)
+    if summary is None:
+        return None
+    clipped_losses = [
+        min(max(value, 0.0), 100.0) for value in _metric_array(group, "loss")
+    ]
+    return {
+        **summary,
+        "loss_mean": statistics.fmean(clipped_losses),
+        "loss_std": statistics.pstdev(clipped_losses),
+        "loss_max": max(clipped_losses),
+    }
+
+
 def _finite_or_none(value: Any) -> int | float | None:
     return value if _is_finite_number(value) else None
 
@@ -330,7 +345,7 @@ def _metric_consistency_gate(run_payloads: Sequence[Any]) -> dict[str, Any]:
             group = _group_map(run).get(group_name)
             if group is None:
                 continue
-            expected = _raw_metric_summary(group)
+            expected = _evaluator_metric_summary(group)
             if expected is None:
                 continue
             reported = group.get("metrics")
