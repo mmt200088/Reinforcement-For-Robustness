@@ -1,0 +1,45 @@
+{
+  "profile": "mrpc",
+  "max_num_options": 6,
+  "graph_keys": [
+    "block1_mrpc"
+  ],
+  "per_type": {
+    "block1_mrpc": {
+      "active_rescale_fields": [
+        "mean_rescale_sf",
+        "var_rescale_sf"
+      ],
+      "enum_positions": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "pinned_positions": [],
+      "enum_total_combos": 3913140,
+      "valid_configs": 1592886,
+      "kept_configs": 159,
+      "num_options": 1,
+      "fusion_counts": [
+        0
+      ],
+      "wall_seconds": 9.36,
+      "workers": 20,
+      "k_independence": {
+        "k_independent": true,
+        "violations": [],
+        "samples_checked": 1
+      },
+      "enum_path_requested": "fast",
+      "enum_path_effective": "fast",
+      "fast_fallback_reason": "",
+      "enum_path": "fast",
+      "fast_verified_probes": 66,
+      "fast_shards": 160,
+      "fast_wall_seconds": 9.35
+    }
+  }
+}

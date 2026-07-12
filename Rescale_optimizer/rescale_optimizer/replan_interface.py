@@ -17,7 +17,13 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from .config_loader import load_graph_from_json
 from .feasibility import build_feasibility_dag
 from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
-from .replan import ReplanInputs, ReplanResult, replan_with_user_actions
+from .replan import (
+    ReplanInputs,
+    ReplanResult,
+    _PreparedFusionPairs,
+    _prepare_allowed_fusion_pairs,
+    replan_with_user_actions,
+)
 
 DeltaValue = Union[int, str]
 FusionPair = Tuple[int, int]
@@ -71,6 +77,15 @@ def _normalize_delta_overrides(
 ) -> Dict[str, DeltaValue]:
     if not delta_overrides:
         return {}
+    if type(delta_overrides) is dict:
+        for key, value in delta_overrides.items():
+            if type(key) is not str or not (
+                type(value) is int
+                or (type(value) is str and value == "x2")
+            ):
+                break
+        else:
+            return delta_overrides
     return {str(k): _parse_delta_value(v) for k, v in delta_overrides.items()}
 
 
@@ -569,16 +584,27 @@ class ReplanSession:
         self._delta_baselines: Dict[str, List[Tuple[int, Optional[int]]]] = {}
         self._stage_paths: Dict[str, Tuple[Tuple[ComputeNode, ...], ...]] = {}
         self._delta_nodes: Dict[str, Dict[str, ComputeNode]] = {}
+        self._delta_state_clean: Dict[str, bool] = {}
+        self._default_fusion_policies: Dict[
+            str,
+            Tuple[Optional[List[FusionPair]], _PreparedFusionPairs],
+        ] = {}
         for graph_key, path in self.configs.items():
             graph, _opt_cfg, _amp = load_graph_from_json(path)
             build_feasibility_dag(graph)
             self._graphs[graph_key] = graph
             self._delta_baselines[graph_key] = _snapshot_graph_delta_state(graph)
+            self._delta_state_clean[graph_key] = True
             self._delta_nodes[graph_key] = {
                 node.name: node
                 for node in graph.nodes
                 if node.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
             }
+            default_fusion_pairs = resolve_allowed_fusion_pairs(graph_key)
+            self._default_fusion_policies[graph_key] = (
+                default_fusion_pairs,
+                _prepare_allowed_fusion_pairs(default_fusion_pairs),
+            )
             baseline = self.baselines.get(graph_key)
             if baseline is not None:
                 skeleton = list(baseline.skeleton)
@@ -650,14 +676,20 @@ class ReplanSession:
 
         graph = self._graphs[key]
         baseline = self.baselines[key]
-        _restore_graph_delta_state(graph, self._delta_baselines[key])
+        if not self._delta_state_clean[key]:
+            _restore_graph_delta_state(graph, self._delta_baselines[key])
+        self._delta_state_clean[key] = False
 
         skeleton = list(baseline.skeleton)
         if skeleton[-1] != graph.dummy_sink_index:
             skeleton.append(graph.dummy_sink_index)
         t_eff = [int(x) for x in (t_new if t_new is not None else baseline.t_baseline)]
         deltas = _normalize_delta_overrides(delta_overrides)
-        fusion_pairs = resolve_allowed_fusion_pairs(key, allowed_fusion_pairs)
+        if allowed_fusion_pairs == DEFAULT_FUSION_POLICY:
+            fusion_pairs, replan_fusion_pairs = self._default_fusion_policies[key]
+        else:
+            fusion_pairs = resolve_allowed_fusion_pairs(key, allowed_fusion_pairs)
+            replan_fusion_pairs = fusion_pairs
 
         result = replan_with_user_actions(
             graph,
@@ -666,11 +698,14 @@ class ReplanSession:
                 t_baseline=list(baseline.t_baseline),
                 t_new=t_eff,
                 delta_overrides=(deltas or None),
-                allowed_fusion_pairs=fusion_pairs,
+                allowed_fusion_pairs=replan_fusion_pairs,
             ),
-            baseline_q_bits=list(baseline.q_bits_baseline),
+            baseline_q_bits=(
+                None if _compact_result else list(baseline.q_bits_baseline)
+            ),
             stage_paths=self._stage_paths.get(key),
             delta_nodes=self._delta_nodes.get(key),
+            record_applied_delta_overrides=not _compact_result,
         )
 
         if _compact_result:
@@ -686,10 +721,12 @@ class ReplanSession:
                 compact_config=compact,
             )
             _restore_graph_delta_state(graph, self._delta_baselines[key])
+            self._delta_state_clean[key] = True
             return output
 
         if not return_dict:
             _restore_graph_delta_state(graph, self._delta_baselines[key])
+            self._delta_state_clean[key] = True
             return result
 
         doc = build_replan_output_dict(
@@ -708,6 +745,7 @@ class ReplanSession:
             include_compact=include_compact,
         )
         _restore_graph_delta_state(graph, self._delta_baselines[key])
+        self._delta_state_clean[key] = True
         return doc
 
     def replan_compact(

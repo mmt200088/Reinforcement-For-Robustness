@@ -1,0 +1,73 @@
+{
+  "graph_key": "block1_mrpc",
+  "profile": "mrpc",
+  "block_idx": 1,
+  "gelu_degree": 4,
+  "attn_degree": 2,
+  "k_slot_index": 8,
+  "block_num_slots": 9,
+  "options": [
+    {
+      "option_id": 0,
+      "fusion_count": 0,
+      "tie_index": 0,
+      "total_variance": 4.152227201928805e-09,
+      "total_bits": 213,
+      "slots": {
+        "gelu_out_sf": 30,
+        "wffn2_sf": 20,
+        "mean_inv_d_sf": 20,
+        "var_inv_d_sf": 20,
+        "mean_rescale_sf": 30,
+        "var_rescale_sf": 27
+      },
+      "action_indices": [
+        14,
+        14,
+        14,
+        14,
+        14,
+        14,
+        0,
+        0,
+        3
+      ]
+    }
+  ],
+  "build_meta": {
+    "active_rescale_fields": [
+      "mean_rescale_sf",
+      "var_rescale_sf"
+    ],
+    "enum_positions": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "pinned_positions": [],
+    "enum_total_combos": 3913140,
+    "valid_configs": 1592886,
+    "kept_configs": 159,
+    "num_options": 1,
+    "fusion_counts": [
+      0
+    ],
+    "wall_seconds": 9.78,
+    "workers": 20,
+    "k_independence": {
+      "k_independent": true,
+      "violations": [],
+      "samples_checked": 1
+    },
+    "enum_path_requested": "fast",
+    "enum_path_effective": "fast",
+    "fast_fallback_reason": "",
+    "enum_path": "fast",
+    "fast_verified_probes": 66,
+    "fast_shards": 160,
+    "fast_wall_seconds": 9.77
+  }
+}

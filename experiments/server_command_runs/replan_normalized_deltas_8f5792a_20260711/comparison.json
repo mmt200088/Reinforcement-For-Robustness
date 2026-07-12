@@ -1,0 +1,37 @@
+{
+  "source_parent": "51c58306",
+  "source_production": "8f5792ac",
+  "micro": {
+    "parent_median_seconds": 1.3025309480144642,
+    "production_median_seconds": 1.2571343969902955,
+    "speedup": 1.0361111358760469,
+    "saved_seconds_per_100k": 0.04539655102416873,
+    "result_equal": true
+  },
+  "builder_block1_20_workers": {
+    "combos": 3913140,
+    "parent_elapsed_samples": [
+      11.4,
+      11.5,
+      11.48
+    ],
+    "production_elapsed_samples": [
+      11.45,
+      11.41,
+      11.37
+    ],
+    "parent_elapsed_median": 11.48,
+    "production_elapsed_median": 11.41,
+    "speedup": 1.0061349693251533,
+    "parent_user_median": 195.04,
+    "production_user_median": 193.3,
+    "user_cpu_saved_seconds": 1.7399999999999807,
+    "semantic_maps_equal_excluding_wall_metadata": true,
+    "canonical_map_sha256": "b96031eeff4f44ac76a1df3930493ef766847cf4cab23b59e5eed9911f10fc26"
+  },
+  "projection": {
+    "block4_combos": 2207205000,
+    "single_core_seconds_saved_linear": 1001.9949440330034,
+    "note": "linear projection only; not a completed block4 wall-clock claim"
+  }
+}

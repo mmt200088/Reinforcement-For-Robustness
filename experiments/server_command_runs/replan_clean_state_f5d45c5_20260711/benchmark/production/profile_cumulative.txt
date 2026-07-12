@@ -1,0 +1,58 @@
+         13652146 function calls (13504618 primitive calls) in 5.057 seconds
+
+   Ordered by: cumulative time
+   List reduced from 64 to 50 due to restriction <50>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.143    0.143    5.350    5.350 fusion_enum_fast.py:304(enumerate_range_fast)
+   200000    0.448    0.000    5.091    0.000 fusion_enum_fast.py:195(eval_combo_fast)
+   200000    0.116    0.000    4.505    0.000 replan_interface.py:729(replan_compact)
+   200000    0.702    0.000    4.389    0.000 replan_interface.py:637(replan)
+   200000    0.726    0.000    2.708    0.000 replan.py:513(replan_with_user_actions)
+   200000    0.361    0.000    0.703    0.000 replan.py:226(_recompute_drops)
+   196865    0.316    0.000    0.456    0.000 replan.py:367(_fuse_chain)
+   200000    0.369    0.000    0.453    0.000 replan.py:277(_apply_delta_overrides)
+   432784    0.271    0.000    0.271    0.000 graph.py:423(propagate_scale)
+   200000    0.208    0.000    0.208    0.000 replan_interface.py:250(_restore_graph_delta_state)
+   200000    0.097    0.000    0.166    0.000 replan_interface.py:283(build_new_compact_config)
+   200000    0.124    0.000    0.137    0.000 replan_interface.py:69(_normalize_delta_overrides)
+   200000    0.061    0.000    0.113    0.000 {built-in method builtins.any}
+  3036645    0.113    0.000    0.113    0.000 {built-in method builtins.len}
+845880/698352    0.047    0.000    0.110    0.000 {built-in method builtins.isinstance}
+   616392    0.085    0.000    0.109    0.000 graph.py:508(M)
+  1645880    0.094    0.000    0.094    0.000 {method 'get' of 'dict' objects}
+   200000    0.041    0.000    0.078    0.000 replan_interface.py:119(resolve_allowed_fusion_pairs)
+   208196    0.039    0.000    0.076    0.000 graph.py:513(dummy_sink_index)
+   200001    0.071    0.000    0.071    0.000 fusion_enum_fast.py:80(iter_combo_range)
+   205061    0.049    0.000    0.070    0.000 modulus_chain.py:79(total_bits)
+    73764    0.016    0.000    0.069    0.000 typing.py:993(__instancecheck__)
+   200000    0.055    0.000    0.055    0.000 replan.py:588(<listcomp>)
+    73764    0.022    0.000    0.053    0.000 typing.py:1154(__subclasscheck__)
+   600000    0.052    0.000    0.052    0.000 replan.py:591(<genexpr>)
+   200000    0.045    0.000    0.045    0.000 replan_interface.py:671(<listcomp>)
+   208196    0.031    0.000    0.039    0.000 replan.py:189(fusion_count)
+   200000    0.037    0.000    0.037    0.000 replan_interface.py:112(default_allowed_fusion_pairs_for_graph)
+   196865    0.035    0.000    0.035    0.000 replan.py:333(_normalize_allowed_fusion_pairs)
+   522940    0.034    0.000    0.034    0.000 {method 'append' of 'list' objects}
+   196865    0.033    0.000    0.033    0.000 replan.py:426(<listcomp>)
+   200000    0.033    0.000    0.033    0.000 replan.py:617(<listcomp>)
+   400000    0.027    0.000    0.027    0.000 {method 'items' of 'dict' objects}
+    73764    0.010    0.000    0.025    0.000 {built-in method builtins.issubclass}
+    49176    0.016    0.000    0.022    0.000 fusion_enum_fast.py:184(_var_of)
+     8196    0.020    0.000    0.021    0.000 replan_interface.py:259(_extract_current_propagation_deltas)
+   205061    0.020    0.000    0.020    0.000 {built-in method builtins.sum}
+   188669    0.020    0.000    0.020    0.000 replan.py:352(_is_fusion_boundary_allowed)
+     8196    0.003    0.000    0.017    0.000 fusion_enum.py:395(_installed_signature)
+    73764    0.009    0.000    0.015    0.000 abc.py:121(__subclasscheck__)
+     8196    0.006    0.000    0.014    0.000 {built-in method builtins.sorted}
+    40980    0.008    0.000    0.011    0.000 types.py:176(__get__)
+    57372    0.008    0.000    0.008    0.000 fusion_enum.py:396(<genexpr>)
+    73764    0.006    0.000    0.006    0.000 {built-in method _abc._abc_subclasscheck}
+    81960    0.006    0.000    0.006    0.000 fusion_enum_fast.py:329(<genexpr>)
+     8196    0.005    0.000    0.006    0.000 fusion_enum.py:231(add)
+     8196    0.005    0.000    0.005    0.000 <string>:2(__init__)
+    40980    0.003    0.000    0.003    0.000 enum.py:796(name)
+     8196    0.002    0.000    0.002    0.000 replan_interface.py:294(<listcomp>)
+     8196    0.002    0.000    0.002    0.000 replan_interface.py:299(<dictcomp>)
+
+

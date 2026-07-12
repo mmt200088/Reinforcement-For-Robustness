@@ -1,0 +1,14 @@
+test_replan_session_reuses_precomputed_delta_node_lookup (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ERROR
+
+======================================================================
+ERROR: test_replan_session_reuses_precomputed_delta_node_lookup (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_rescale_optimizer_hotpaths.py", line 158, in test_replan_session_reuses_precomputed_delta_node_lookup
+    replan_call.call_args.kwargs["delta_nodes"],
+KeyError: 'delta_nodes'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+FAILED (errors=1)

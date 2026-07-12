@@ -13,6 +13,22 @@ if str(RESCALE_ROOT) not in sys.path:
 
 
 class RescaleOptimizerHotPathTests(unittest.TestCase):
+    def test_normalized_delta_override_dict_is_reused_without_reparsing(self):
+        from rescale_optimizer import replan_interface
+
+        overrides = {
+            "ctpt_weight": 17,
+            "ctct_square": "x2",
+        }
+        with mock.patch.object(
+            replan_interface,
+            "_parse_delta_value",
+            side_effect=AssertionError("reparsed normalized delta"),
+        ):
+            normalized = replan_interface._normalize_delta_overrides(overrides)
+
+        self.assertIs(normalized, overrides)
+
     def test_compact_replan_matches_full_result_without_building_full_output(self):
         from rescale_optimizer import CompactReplanResult, ReplanSession
         from rescale_optimizer import replan_interface
@@ -157,6 +173,151 @@ class RescaleOptimizerHotPathTests(unittest.TestCase):
         self.assertIs(
             replan_call.call_args.kwargs["delta_nodes"],
             session._delta_nodes["block4"],
+        )
+
+    def test_replan_session_reuses_prepared_default_fusion_policy(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer import replan
+        from rescale_optimizer import replan_interface
+
+        with mock.patch.object(
+            replan_interface,
+            "resolve_allowed_fusion_pairs",
+            wraps=replan_interface.resolve_allowed_fusion_pairs,
+        ) as resolve_policy, mock.patch.object(
+            replan,
+            "_normalize_allowed_fusion_pairs",
+            wraps=replan._normalize_allowed_fusion_pairs,
+        ) as normalize_policy:
+            session = ReplanSession.from_profile(
+                profile="mrpc",
+                root=RESCALE_ROOT,
+                include=["block4"],
+            )
+            constructor_counts = (
+                resolve_policy.call_count,
+                normalize_policy.call_count,
+            )
+
+            first = session.replan_compact("block4")
+            second = session.replan_compact("block4")
+
+            self.assertTrue(first.valid)
+            self.assertTrue(second.valid)
+            self.assertEqual(
+                (resolve_policy.call_count, normalize_policy.call_count),
+                constructor_counts,
+            )
+
+            custom = session.replan_compact(
+                "block4",
+                allowed_fusion_pairs="none",
+            )
+
+        self.assertIsNotNone(custom)
+        self.assertEqual(resolve_policy.call_count, constructor_counts[0] + 1)
+        self.assertEqual(normalize_policy.call_count, constructor_counts[1] + 1)
+
+    def test_replan_session_skips_redundant_clean_state_restore(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        with mock.patch.object(
+            replan_interface,
+            "_restore_graph_delta_state",
+            wraps=replan_interface._restore_graph_delta_state,
+        ) as restore:
+            first = session.replan_compact("block4")
+            second = session.replan_compact("block4")
+
+        self.assertTrue(first.valid)
+        self.assertTrue(second.valid)
+        self.assertEqual(restore.call_count, 2)
+        self.assertTrue(session._delta_state_clean["block4"])
+
+    def test_delta_override_can_skip_unused_applied_record(self):
+        from rescale_optimizer import NodeType
+        from rescale_optimizer import replan
+
+        node = SimpleNamespace(
+            name="ctpt_weight",
+            node_type=NodeType.CTPT_MUL,
+            scale_delta_bits=3,
+            other_ct_scale_bits=None,
+        )
+        graph = SimpleNamespace(nodes=[node])
+
+        applied = replan._apply_delta_overrides(
+            graph,
+            {node.name: 17},
+            collect_applied=False,
+        )
+
+        self.assertEqual(applied, {})
+        self.assertEqual(node.scale_delta_bits, 17)
+
+    def test_compact_replan_skips_unused_applied_delta_record(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        with mock.patch.object(
+            replan_interface,
+            "replan_with_user_actions",
+            wraps=replan_interface.replan_with_user_actions,
+        ) as replan_call:
+            compact = session.replan_compact("block4")
+
+        self.assertTrue(compact.valid)
+        self.assertFalse(
+            replan_call.call_args.kwargs["record_applied_delta_overrides"]
+        )
+
+    def test_only_full_replan_requests_baseline_delta_diagnostics(self):
+        from rescale_optimizer import ReplanSession
+        from rescale_optimizer import replan_interface
+
+        session = ReplanSession.from_profile(
+            profile="mrpc",
+            root=RESCALE_ROOT,
+            include=["block4"],
+        )
+        with mock.patch.object(
+            replan_interface,
+            "replan_with_user_actions",
+            wraps=replan_interface.replan_with_user_actions,
+        ) as replan_call:
+            compact = session.replan_compact("block4")
+            full = session.replan("block4", return_dict=False)
+
+        self.assertTrue(compact.valid)
+        self.assertTrue(full.valid)
+        self.assertIsNone(
+            replan_call.call_args_list[0].kwargs["baseline_q_bits"]
+        )
+        self.assertEqual(
+            replan_call.call_args_list[1].kwargs["baseline_q_bits"],
+            session.baselines["block4"].q_bits_baseline,
+        )
+
+    def test_replan_validates_drop_bounds_in_one_scan(self):
+        from rescale_optimizer import replan
+
+        source = inspect.getsource(replan.replan_with_user_actions)
+
+        self.assertNotIn("any(d <= 0 for d in q_initial)", source)
+        self.assertNotIn(
+            "[r for r, q in enumerate(q_initial, start=1) if q > q_max]",
+            source,
         )
 
     def test_delta_state_restore_does_not_deepcopy_scalar_fields(self):

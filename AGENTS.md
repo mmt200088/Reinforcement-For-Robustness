@@ -67,16 +67,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   optimizations by end-to-end wall-clock impact and hardware utilization rather
   than by isolated local speedups.
 - Runtime-optimization completion audit, updated 2026-07-11: source commit
-  `991329a` was verified on replacement server `100.64.229.185:8722` (one RTX
+  `9ab82f0` was verified on replacement server `100.64.229.185:8722` (one RTX
   4090, 20 logical CPUs). The six-stage audit found all 30 expected flow files
   and every required artifact-evidence class; focused project-audit and
-  structured-artifact gates passed 9/9 and 35/35. The full 1,221-test process
+  structured-artifact gates passed 9/9 and 35/35. The full 1,229-test process
   still has 19 Stage-2 contract failures after concurrent integration commit
-  `16b68e3`, including eight guards for cached masks/static tensors, deferred
-  scalar synchronization, causal-prefix rollout, and probe scheduling. Do not
-  report the whole suite green or reapply those Stage-2 core optimizations
-  until the concurrent agent hands off. Evidence is under
-  `experiments/server_command_runs/project_completion_audit_991329a_20260711/`.
+  `16b68e3`; the failure set is exactly equal to the earlier `991329a` audit,
+  with zero added or removed cases. Do not report the whole suite green or
+  reapply those Stage-2 core optimizations until the concurrent agent hands
+  off. Evidence is under
+  `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/`.
 - Replacement-server hardware limit, updated 2026-07-11: the current server
   exposes only one GPU. It can close single-GPU correctness/parity gates but
   cannot close the required Stage-2 1GPU-versus-NGPU promotion gate. Keep GPU
@@ -1544,6 +1544,34 @@ Key wires:
   fixed baseline skeleton. Do not replace those references with copied node
   values: per-action propagation-delta mutations must remain visible during
   `propagate_scale()` while topology traversal stays cached.
+- `ReplanSession` also owns a cached multiplication-node `name -> node`
+  reference mapping per graph. Reuse it for repeated delta application; retain
+  the generic on-demand lookup for standalone replan callers and keep all
+  per-action CTPT/CTCT type validation intact.
+- Exact built-in `dict[str, int | "x2"]` delta overrides are already normalized
+  and may be reused without a copy. Do not broaden that fast path to bools,
+  numpy scalars, subclasses, or custom mappings; those must keep the generic
+  coercion and validation behavior.
+- A `ReplanSession` tracks whether each graph's delta state is clean. Normal
+  calls restore once before returning and let the next call skip a redundant
+  entry restore; abnormal dirty state must still trigger entry recovery. Keep
+  that recovery invariant when changing session return or exception paths.
+- Compact session replans skip materializing the unused
+  `applied_delta_overrides` echo dictionary. Full replan, CLI, and diagnostic
+  callers retain it by default; do not remove their record or bypass delta
+  lookup, mutation, and validation when maintaining this fast path.
+- Compact session replans also omit `baseline_q_bits` because their result does
+  not expose `delta_q_vs_baseline`. Full replan, CLI, and diagnostic callers
+  must continue receiving the baseline and emitting that diagnostic; do not
+  remove it globally to optimize fusion-map enumeration.
+- Replan initial-drop bounds share one scan. A non-positive drop must retain
+  precedence and return immediately; otherwise every 1-indexed stage above
+  `q_max` must remain in the diagnostic. Do not restore separate `any(...)`
+  and over-limit list-comprehension scans in the combination hot path.
+- `ReplanSession` prepares each graph's default fusion policy once as both an
+  ordered diagnostic list and an internal immutable normalized set. Reuse the
+  prepared set for default-policy math, preserve ordered JSON output, and keep
+  explicit custom policies on the normal parser/validator path.
 - `RescaleOptimizerBridge.evaluate(...)` strips `_L<i>` suffixes from layered
   RL names before calling the invoker. RL names look like `block1_mrpc_L3`; RO
   graph baselines are keyed like `block1_mrpc`.

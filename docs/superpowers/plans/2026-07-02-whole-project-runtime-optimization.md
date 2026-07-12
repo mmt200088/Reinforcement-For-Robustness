@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `991329a`, the conservative
+not by raw commit count. As of source head `13a9854`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -92,6 +92,7 @@ Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Plan and audit | `9ab82f0` | `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/` | Refresh the complete six-stage audit after the Rescale optimization series, verify 30/30 flow files and all artifact classes, align the session-construction test fixture with the current baseline contract, and prove the remaining 19-item Stage-2 failure set is exactly unchanged. |
 | Plan and audit | `991329a` | `experiments/server_command_runs/project_completion_audit_991329a_20260711/` | Audit the complete sparse checkout on the replacement server, verify 30/30 whole-flow files and all structured-artifact classes, fix experiments-index and PyTorch test-process pollution, and retain the 19 remaining Stage-2 contract failures as explicit red evidence. |
 | Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
 | Plan and audit | `7030da2` | `experiments/server_command_runs/project_optimization_audit_7030da2_20260710_223053/` | Re-run the six-stage whole-project audit on the replacement server after Paean, Rescale, rendering, and artifact-contract work. |
@@ -224,6 +225,13 @@ Server-verified optimization commits currently in the execution ledger:
 | Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
 | Rescale/fusion maps | `511b3f2` | `experiments/server_command_runs/fusion_compact_replan_511b3f2_20260711/` | Return only validity, fusion count, total bits, and compact config to the fast Cartesian-product enum loop instead of expanding the full compatibility JSON result for every combination. |
 | Rescale/fusion maps | `031816a` | `experiments/server_command_runs/replan_stage_paths_031816a_20260711/` | Precompute baseline-skeleton stage node paths once per `ReplanSession`, eliminating repeated `nodes_between()` traversal and list allocation in every fusion-map combination. |
+| Rescale/fusion maps | `8d0e1b3` | `experiments/server_command_runs/replan_delta_nodes_8d0e1b3_20260711/` | Cache each preloaded graph's multiplication-node name lookup once per `ReplanSession` instead of rebuilding it for every propagation-delta update. |
+| Rescale/fusion maps | `8f5792a` | `experiments/server_command_runs/replan_normalized_deltas_8f5792a_20260711/` | Reuse exact already-normalized `str -> int/'x2'` delta dictionaries without reparsing values or allocating a replacement dictionary. |
+| Rescale/fusion maps | `f5d45c5` | `experiments/server_command_runs/replan_clean_state_f5d45c5_20260711/` | Track clean graph-delta state per session so successful repeated replans perform one exit restore instead of redundant entry-plus-exit restores, while dirty recovery remains intact. |
+| Rescale/fusion maps | `805e0ed` | `experiments/server_command_runs/replan_skip_applied_805e0ed_20260711/` | Skip materializing the unused applied-delta echo dictionary only for compact fusion-map replans while preserving full replan diagnostics and all validation/mutation work. |
+| Rescale/fusion maps | `f4bec49` | `experiments/server_command_runs/replan_skip_baseline_diag_f4bec49_20260711/` | Skip the unused baseline drop-delta diagnostic only for compact fusion-map replans while preserving it for full replan, CLI, and diagnostic callers. |
+| Rescale/fusion maps | `3e99adc` | `experiments/server_command_runs/replan_single_pass_bounds_3e99adc_20260711/` | Validate non-positive and over-limit initial drops in one pass while preserving non-positive error precedence and the complete over-limit stage list. |
+| Rescale/fusion maps | `13a9854` | `experiments/server_command_runs/replan_default_fusion_policy_13a9854_20260711/` | Resolve and validate each session graph's default fusion policy once, reusing an immutable normalized set for math while retaining ordered diagnostics and per-call validation for custom policies. |
 | Rescale/fusion maps | `ffa58a5` | `experiments/server_command_runs/task5_map_aware_gate_ffa58a5_20260710_231235/` | Make fusion schedule/replay verification derive expectations from the canonical map and close the 140-test Task 5 gate without changing runtime semantics. |
 | Rescale/fusion maps | `0f12311` | `experiments/server_command_runs/rescale_adjacency_0f12311_20260703_230927/` | Reuse per-source stage-edge adjacency in reachability and backward DP instead of rescanning all stage edges per cut point. |
 | Rescale/fusion maps | `0812807` | `experiments/server_command_runs/feasibility_incremental_0812807_20260703_232545/` | Accumulate feasibility-DAG stage nodes, scale propagation, and edge costs incrementally instead of rebuilding lists and rescanning path nodes for every candidate edge. |
@@ -264,6 +272,17 @@ static tensors, and deferred scalar synchronization). Do not mark those paths
 green or edit the Stage-2 algorithm concurrently; reconcile them at handoff.
 Evidence is in
 `experiments/server_command_runs/project_completion_audit_991329a_20260711/`.
+
+Completion audit refresh 2026-07-11: final source commit `9ab82f0` again found
+all 30 expected flow files and every artifact class, passed 9 project-audit
+tests, 35 structured-artifact tests, completion-tool compilation, and the
+current Replan session-construction fixture. The full suite now contains 1,229
+tests after the added Rescale guards and reports 18 failures plus one error.
+Its 19-item failure set is exactly equal to the earlier `991329a` Stage-2 set,
+with no added or removed failures. The first refresh at `9c2a3a4` exposed one
+outdated non-Stage-2 fake baseline without the now-required `skeleton`; commit
+`9ab82f0` corrected only that fixture before the final rerun. Evidence is in
+`experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/`.
 
 1. **Evidence loop:** every new source optimization must have a red/green or
    parity evidence directory committed back from the server.
@@ -1301,6 +1320,91 @@ real `block1_mrpc` hot-loop A/B improved 100,000 combinations from median
 maps after excluding wall metadata. The 129-test related gate and raw evidence
 are under
 `experiments/server_command_runs/replan_stage_paths_031816a_20260711/`.
+
+Progress 2026-07-11: the next production cProfile showed
+`_apply_delta_overrides()` rebuilding the same multiplication-node name index
+for every combination. Source commit `8d0e1b3` caches reference mappings per
+preloaded graph while preserving per-action type validation and writes.
+Eleven-repeat real hot-loop A/B improved 100,000 combinations from median
+`1.422549s` to `1.301853s` (`1.0927x`) with identical result SHA256. Three
+20-worker full block1 builds improved median wall from `12.10s` to `11.54s`
+(`1.0485x`), reduced median user CPU by `12.48s`, and produced semantically
+equal maps after excluding wall metadata. The 130-test related gate and raw
+evidence are under
+`experiments/server_command_runs/replan_delta_nodes_8d0e1b3_20260711/`.
+
+Progress 2026-07-11: fusion templates already emit exact built-in
+`str -> int/'x2'` delta dictionaries, but the session interface still parsed
+and copied them for every combination. Source commit `8f5792a` returns only
+that exact normalized representation by reference; all coercible or custom
+inputs retain the original parser. Eleven-repeat hot-loop A/B improved 100,000
+combinations from median `1.302531s` to `1.257134s` (`1.0361x`) with identical
+result SHA256. The short three-repeat 20-worker block1 gate improved median
+wall from `11.48s` to `11.41s` and reduced median user CPU by `1.74s`; all maps
+were semantically equal after excluding wall metadata. The 131-test related
+gate and evidence are under
+`experiments/server_command_runs/replan_normalized_deltas_8f5792a_20260711/`.
+
+Progress 2026-07-11: the session restored identical baseline graph-delta state
+both before and after every successful replan. Source commit `f5d45c5` tracks
+clean/dirty state per graph, skips only a redundant entry restore after a
+normal clean return, and retains entry recovery after abnormal dirty state.
+Eleven-repeat hot-loop A/B improved 100,000 combinations from median
+`1.246418s` to `1.218758s` (`1.0227x`) with identical result SHA256. Three
+20-worker full block1 builds improved median wall from `11.36s` to `11.05s`
+(`1.0281x`), reduced median user CPU by `6.27s`, and produced semantically
+equal maps. The 132-test related gate and explicit dirty-recovery parity are
+under
+`experiments/server_command_runs/replan_clean_state_f5d45c5_20260711/`.
+
+Progress 2026-07-11: the compact fusion-map caller never consumes the
+`applied_delta_overrides` echo dictionary, although the generic replan core
+still allocated and filled it for every combination. Source commit `805e0ed`
+lets only `ReplanSession.replan_compact()` skip that record; lookup, mutation,
+and validation remain unchanged, and full replan diagnostics retain the
+original default. Eleven-repeat hot-loop A/B improved 100,000 combinations
+from median `1.197590s` to `1.179304s` (`1.0155x`) with identical result
+SHA256. The short three-repeat 20-worker block1 builder gate was wall-neutral
+(`11.05s` versus `11.09s`) while median user CPU fell by `0.46s`; all maps
+were semantically equal after excluding wall metadata. The 134-test related
+gate and raw evidence are under
+`experiments/server_command_runs/replan_skip_applied_805e0ed_20260711/`.
+
+Progress 2026-07-11: compact enumeration also passed baseline drop bits into
+the generic replan core solely to construct `delta_q_vs_baseline`, a diagnostic
+field that `CompactReplanResult` does not expose. Source commit `f4bec49`
+passes no baseline only for compact calls, while full replan/CLI diagnostics
+retain their original vector and output. Eleven-repeat hot-loop A/B improved
+100,000 combinations from median `1.170702s` to `1.115188s` (`1.0498x`) with
+identical result SHA256. Three 20-worker full block1 builds improved median
+wall from `11.01s` to `10.84s` (`1.0157x`) and produced semantically equal
+maps. The 135-test related gate, candidate screens, cProfile, and raw evidence
+are under
+`experiments/server_command_runs/replan_skip_baseline_diag_f4bec49_20260711/`.
+
+Progress 2026-07-11: the generic replan core scanned `q_initial` once through
+`any(...)` for non-positive values and again through a list comprehension for
+over-`q_max` stages. Source commit `3e99adc` classifies both bounds in one
+loop, preserves immediate non-positive precedence, and still records every
+1-indexed over-limit stage when all drops are positive. Eleven-repeat hot-loop
+A/B improved 100,000 combinations from median `1.107091s` to `1.027356s`
+(`1.0776x`) with identical result SHA256. Three 20-worker full block1 builds
+improved median wall from `10.84s` to `10.63s` (`1.0198x`), reduced median
+user CPU by `2.95s`, and produced semantically equal maps. The 136-test gate,
+explicit abnormal-bound parity, cProfile, and evidence are under
+`experiments/server_command_runs/replan_single_pass_bounds_3e99adc_20260711/`.
+
+Progress 2026-07-11: repeated session replans still rebuilt the graph-default
+fusion-policy list and normalized set for every combination. Source commit
+`13a9854` prepares both once per graph: ordered pairs remain available to full
+JSON/diagnostics, while an internal immutable set feeds the replan hot path;
+custom policies retain per-call parsing and validation. Eleven-repeat hot-loop
+A/B improved 100,000 combinations from median `1.043888s` to `1.015084s`
+(`1.0284x`) with identical result SHA256. The short three-repeat 20-worker
+builder gate was wall-neutral (`10.55s` versus `10.56s`) while median user CPU
+fell by `0.99s`; all maps were semantically equal. The 138-test related gate,
+1,230-test full-suite comparison, profile, and evidence are under
+`experiments/server_command_runs/replan_default_fusion_policy_13a9854_20260711/`.
 
 Progress 2026-07-03: `rescale_optimizer_bridge.load_baseline_archive()` now
 caches parsed static-skeleton archives by absolute path, mtime, and size. The

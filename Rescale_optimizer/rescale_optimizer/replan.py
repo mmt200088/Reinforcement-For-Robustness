@@ -76,7 +76,7 @@ mutation happens on local copies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import AbstractSet, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .graph import ComputeNode, NodeType, RescaleGraph, propagate_scale
 from .modulus_chain import ModulusChain
@@ -85,6 +85,13 @@ from .modulus_chain import ModulusChain
 # ---------------------------------------------------------------------------
 # Inputs / outputs
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _PreparedFusionPairs:
+    """Validated immutable fusion policy reused by a preloaded session."""
+
+    pairs: Optional[frozenset[Tuple[int, int]]]
 
 
 @dataclass
@@ -126,7 +133,9 @@ class ReplanInputs:
     #: For example, [(1, 2)] means only the first and second rescale
     #: stages may be fused. None keeps the legacy behaviour where any
     #: adjacent pair is considered; [] disables fusion entirely.
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]] = None
+    allowed_fusion_pairs: Optional[
+        Union[Sequence[Tuple[int, int]], _PreparedFusionPairs]
+    ] = None
 
 
 @dataclass
@@ -279,6 +288,7 @@ def _apply_delta_overrides(
     delta_overrides: Optional[Dict[str, Union[int, str]]],
     *,
     delta_nodes: Optional[Mapping[str, ComputeNode]] = None,
+    collect_applied: bool = True,
 ) -> Dict[str, Union[int, str]]:
     """
     Apply user-provided propagation delta overrides in-place on ``graph``.
@@ -294,7 +304,7 @@ def _apply_delta_overrides(
         for n in graph.nodes
         if n.node_type in (NodeType.CTPT_MUL, NodeType.CTCT_MUL)
     }
-    applied: Dict[str, Union[int, str]] = {}
+    applied: Optional[Dict[str, Union[int, str]]] = {} if collect_applied else None
 
     for name, raw in delta_overrides.items():
         node = by_name.get(name)
@@ -307,22 +317,25 @@ def _apply_delta_overrides(
                     f"delta_overrides[{name}] for CTPT_MUL must be int, got {raw!r}"
                 )
             node.scale_delta_bits = int(raw)
-            applied[name] = int(raw)
+            if applied is not None:
+                applied[name] = int(raw)
             continue
 
         # CTCT_MUL
         if raw == "x2":
             node.other_ct_scale_bits = None
-            applied[name] = "x2"
+            if applied is not None:
+                applied[name] = "x2"
         elif isinstance(raw, int):
             node.other_ct_scale_bits = int(raw)
-            applied[name] = int(raw)
+            if applied is not None:
+                applied[name] = int(raw)
         else:
             raise ValueError(
                 f"delta_overrides[{name}] for CTCT_MUL must be int or 'x2', got {raw!r}"
             )
 
-    return applied
+    return applied if applied is not None else {}
 
 
 # ---------------------------------------------------------------------------
@@ -331,8 +344,12 @@ def _apply_delta_overrides(
 
 
 def _normalize_allowed_fusion_pairs(
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]],
-) -> Optional[set[Tuple[int, int]]]:
+    allowed_fusion_pairs: Optional[
+        Union[Sequence[Tuple[int, int]], _PreparedFusionPairs]
+    ],
+) -> Optional[AbstractSet[Tuple[int, int]]]:
+    if isinstance(allowed_fusion_pairs, _PreparedFusionPairs):
+        return allowed_fusion_pairs.pairs
     if allowed_fusion_pairs is None:
         return None
 
@@ -349,8 +366,17 @@ def _normalize_allowed_fusion_pairs(
     return out
 
 
+def _prepare_allowed_fusion_pairs(
+    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]],
+) -> _PreparedFusionPairs:
+    normalized = _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
+    return _PreparedFusionPairs(
+        None if normalized is None else frozenset(normalized)
+    )
+
+
 def _is_fusion_boundary_allowed(
-    allowed_pairs: Optional[set[Tuple[int, int]]],
+    allowed_pairs: Optional[AbstractSet[Tuple[int, int]]],
     left_group: Sequence[int],
     right_group: Sequence[int],
 ) -> bool:
@@ -370,7 +396,9 @@ def _fuse_chain(
     t_vec: Sequence[int],
     q_min: int,
     q_max: int,
-    allowed_fusion_pairs: Optional[Sequence[Tuple[int, int]]] = None,
+    allowed_fusion_pairs: Optional[
+        Union[Sequence[Tuple[int, int]], _PreparedFusionPairs]
+    ] = None,
 ) -> Tuple[bool, List[int], List[int], List[int], List[FusionEvent], Optional[ModulusChain]]:
     """
     Apply rescale-fusion until no q < q_min remains, OR until fusion is
@@ -419,7 +447,11 @@ def _fuse_chain(
     q = list(q_bits)
     t = list(t_vec)
     events: List[FusionEvent] = []
-    allowed_pairs = _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
+    allowed_pairs = (
+        allowed_fusion_pairs.pairs
+        if isinstance(allowed_fusion_pairs, _PreparedFusionPairs)
+        else _normalize_allowed_fusion_pairs(allowed_fusion_pairs)
+    )
     # Each q slot tracks the original stage ids it has absorbed.  This keeps
     # legal-fusion decisions tied to the baseline graph, not to shifted indices
     # after an earlier fusion.
@@ -517,6 +549,7 @@ def replan_with_user_actions(
     *,
     stage_paths: Optional[Sequence[Sequence[ComputeNode]]] = None,
     delta_nodes: Optional[Mapping[str, ComputeNode]] = None,
+    record_applied_delta_overrides: bool = True,
 ) -> ReplanResult:
     """
     Re-run scale propagation under user-supplied ``t_new``, then run
@@ -565,6 +598,7 @@ def replan_with_user_actions(
             graph,
             inputs.delta_overrides,
             delta_nodes=delta_nodes,
+            collect_applied=record_applied_delta_overrides,
         )
     except ValueError as e:
         return ReplanResult(message=f"delta override failed: {e}")
@@ -587,8 +621,21 @@ def replan_with_user_actions(
     if baseline_q_bits is not None and len(baseline_q_bits) == R:
         delta_q = [int(qn) - int(qb) for qn, qb in zip(q_initial, baseline_q_bits)]
 
-    # any non-positive drop is unfixable by fusion semantically.  Report it.
-    if any(d <= 0 for d in q_initial):
+    q_min = graph.q_legal_min
+    q_max = graph.q_legal_max
+    has_non_positive = False
+    too_big: Optional[List[int]] = None
+    for r, q in enumerate(q_initial, start=1):
+        if q <= 0:
+            has_non_positive = True
+            break
+        if q > q_max:
+            if too_big is None:
+                too_big = []
+            too_big.append(r)
+
+    # Any non-positive drop is unfixable by fusion semantically. Report it.
+    if has_non_positive:
         bad_chain = ModulusChain(
             q_head_bits=inputs.q_head_bits,
             q_bits=list(q_initial),
@@ -610,11 +657,7 @@ def replan_with_user_actions(
             ),
         )
 
-    q_min = graph.q_legal_min
-    q_max = graph.q_legal_max
-
-    # quickly check oversized — fusion can't fix q > q_max
-    too_big = [r for r, q in enumerate(q_initial, start=1) if q > q_max]
+    # Quickly check oversized drops; fusion cannot fix q > q_max.
     if too_big:
         bad_chain = ModulusChain(
             q_head_bits=inputs.q_head_bits,

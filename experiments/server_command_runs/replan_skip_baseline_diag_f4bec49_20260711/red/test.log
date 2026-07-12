@@ -1,0 +1,14 @@
+test_only_full_replan_requests_baseline_delta_diagnostics (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... FAIL
+
+======================================================================
+FAIL: test_only_full_replan_requests_baseline_delta_diagnostics (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_rescale_optimizer_hotpaths.py", line 261, in test_only_full_replan_requests_baseline_delta_diagnostics
+    self.assertIsNone(
+AssertionError: [57, 56, 31] is not None
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+FAILED (failures=1)

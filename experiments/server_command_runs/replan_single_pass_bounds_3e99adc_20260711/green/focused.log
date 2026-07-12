@@ -1,0 +1,6 @@
+test_replan_validates_drop_bounds_in_one_scan (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.011s
+
+OK

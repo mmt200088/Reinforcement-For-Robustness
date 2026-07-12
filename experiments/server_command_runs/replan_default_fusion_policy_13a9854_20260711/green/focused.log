@@ -1,0 +1,6 @@
+test_replan_session_reuses_prepared_default_fusion_policy (tests.test_rescale_optimizer_hotpaths.RescaleOptimizerHotPathTests) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.012s
+
+OK

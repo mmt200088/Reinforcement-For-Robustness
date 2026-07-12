@@ -21,7 +21,12 @@ class ReplanSessionConstructionTest(unittest.TestCase):
 
         def fake_loader(path):
             calls.append(Path(path).name)
-            return {"graph_a": SimpleNamespace(config_name="graph_a")}
+            return {
+                "graph_a": SimpleNamespace(
+                    config_name="graph_a",
+                    skeleton=[],
+                )
+            }
 
         def fake_load_graph(_path):
             return SimpleNamespace(nodes=[]), None, None
