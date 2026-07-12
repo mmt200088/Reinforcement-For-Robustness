@@ -3484,21 +3484,22 @@ def _run_layerwise_training_branch(
     from .runner import _build_legacy_compatible_best_noise_config
     from json_utils import to_jsonable
 
-    write_strict_json_file(
-        os.path.join(blb_progress_dir, "layerwise_run_manifest.json"),
-        {
-            "schema_version": "stage2_layerwise_robust_run_v1",
-            "status": "running",
-            "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
-            "profile": str(train_cfg.profile),
-            "decision_granularity": "layer",
-            "reward_design": "robust_constrained",
-            "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
-            "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
-            "planned_episodes": int(train_cfg.total_episodes),
-            "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        },
+    layerwise_manifest_path = os.path.join(
+        blb_progress_dir, "layerwise_run_manifest.json",
     )
+    run_manifest = {
+        "schema_version": "stage2_layerwise_robust_run_v1",
+        "status": "running",
+        "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
+        "profile": str(train_cfg.profile),
+        "decision_granularity": "layer",
+        "reward_design": "robust_constrained",
+        "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
+        "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
+        "planned_episodes": int(train_cfg.total_episodes),
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    write_strict_json_file(layerwise_manifest_path, run_manifest)
 
     layerwise_env = BLBStage2LayerwiseEnv(
         base_env=base_env,
@@ -3997,6 +3998,47 @@ def _run_layerwise_training_branch(
             strict_best=strict_best,
             convergence_state=metrics.get("convergence_state"),
         )
+        status.update_after_ppo_update(
+            int(ppo_update_counter),
+            {
+                "completed_episodes": int(completed),
+                "policy_loss": float(update_stats.policy_loss),
+                "value_loss": float(update_stats.value_loss),
+                "entropy": float(update_stats.entropy),
+                "clip_fraction": float(update_stats.clip_fraction),
+                "approx_kl": float(update_stats.approx_kl),
+                "window_mean_return": float(update_stats.window_mean_return),
+                "window_max_return": float(update_stats.window_max_return),
+                "window_min_return": float(update_stats.window_min_return),
+                "window_mean_invalid": float(update_stats.window_mean_invalid),
+                "block4_entropy": update_stats.block4_entropy,
+                "k_entropy": update_stats.k_entropy,
+                "stall_update_windows": int(update_stats.stall_update_windows),
+                "converged": bool(update_stats.converged),
+                "extension_required": bool(update_stats.extension_required),
+                "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
+            },
+        )
+        if strict_best.get("reward") is not None and strict_best.get("full_vector"):
+            best_full_vector = [int(value) for value in strict_best["full_vector"]]
+            current_full_vector = [
+                int(value) for value in record.pending_full_vector
+            ]
+            status.set_best(
+                best_reward=float(strict_best["reward"]),
+                best_action_vec=best_full_vector,
+                best_breakdown={
+                    "priority": 3,
+                    "variable_cost": strict_best.get("variable_cost"),
+                    "action_matrix": strict_best.get("action_matrix"),
+                    "assessment": strict_best.get("assessment"),
+                    "metrics": strict_best.get("metrics"),
+                },
+                best_episode=(
+                    int(record.episode_index) + 1
+                    if current_full_vector == best_full_vector else None
+                ),
+            )
         if int(completed) % max(1, int(train_cfg.save_interval)) == 0:
             diag_recorder.flush_periodic()
     status.set_phase("PPO training (12-step layerwise robust)")
@@ -4023,26 +4065,37 @@ def _run_layerwise_training_branch(
         training_completed = True
     finally:
         try:
-            diag_recorder.finalize(
-                status=("completed" if training_completed else "failed")
-            )
+            if not training_completed:
+                status.set_phase("failed")
+            run_manifest.update({
+                "status": ("completed" if training_completed else "failed"),
+                "completed_episodes": int(start_episode + len(episode_records)),
+                "ppo_update_count": int(ppo_update_counter),
+                "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
+            write_strict_json_file(layerwise_manifest_path, run_manifest)
         finally:
             try:
-                base_env.clear_installed_blb()
+                diag_recorder.finalize(
+                    status=("completed" if training_completed else "failed")
+                )
             finally:
-                for restore_name in (
-                        "restore_layer_block5_noise", "restore_layer_block4_noise",
-                        "restore_layer_block3_noise", "restore_layer_block2_noise",
-                        "restore_layer_block1_noise", "restore_blb_first_input_noise",
-                ):
-                    method = getattr(evaluator.reversible_handler, restore_name, None)
-                    if method is None:
-                        continue
-                    try:
-                        method(layer_indices=list(range(evaluator.total_layers)))
-                    except Exception:
-                        pass
-                evaluator.apply_configuration(fixed_gelu, fixed_softmax)
+                try:
+                    base_env.clear_installed_blb()
+                finally:
+                    for restore_name in (
+                            "restore_layer_block5_noise", "restore_layer_block4_noise",
+                            "restore_layer_block3_noise", "restore_layer_block2_noise",
+                            "restore_layer_block1_noise", "restore_blb_first_input_noise",
+                    ):
+                        method = getattr(evaluator.reversible_handler, restore_name, None)
+                        if method is None:
+                            continue
+                        try:
+                            method(layer_indices=list(range(evaluator.total_layers)))
+                        except Exception:
+                            pass
+                    evaluator.apply_configuration(fixed_gelu, fixed_softmax)
     status.set_phase("completed")
 
     compact_summary = {

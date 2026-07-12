@@ -411,6 +411,32 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("write_strict_json_file(", branch_source)
         self.assertNotIn("write_json_file(\n        os.path.join(blb_progress_dir, \"layerwise_summary.json\")", branch_source)
 
+    def test_layerwise_branch_finalizes_live_status_and_run_manifest(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn("status.update_after_ppo_update(", branch_source)
+        self.assertIn("status.set_best(", branch_source)
+        self.assertIn("run_manifest.update({", branch_source)
+        self.assertIn(
+            '"status": ("completed" if training_completed else "failed")',
+            branch_source,
+        )
+        self.assertIn('"completed_episodes": int(', branch_source)
+        self.assertIn('"ppo_update_count": int(ppo_update_counter)', branch_source)
+        self.assertGreaterEqual(
+            branch_source.count("write_strict_json_file(layerwise_manifest_path"),
+            2,
+        )
+
     def test_layerwise_online_trial_count_uses_authoritative_stage2_k_trials(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
