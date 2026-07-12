@@ -1,0 +1,136 @@
+[info] groups=3 unique_group_actions=3
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:942: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+[dataset] task='mrpc' → route=hf_remote endpoint=nyu-mll/glue
+Map:   0%|          | 0/408 [00:00<?, ? examples/s]Map: 100%|██████████| 408/408 [00:00<00:00, 6265.63 examples/s]
+You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+[信息] 数据集（Dataset）'mrpc' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, F1
+[数据集协议（Dataset Protocol）] 完整验证集（validation_full）=408  （统一使用 validation_full，不再拆分 search/holdout/proxy）
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+  * Rescale_optimizer 根目录：/var/tmp/root-home/rfr_runs/stage2_three_group_red_08fa2ba/Rescale_optimizer
+  * Rescale optimizer 模式：in_process_real
+[run] all_fusion0
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=28, fresh_x_centered=28, encode_gamma=20, encode_wq/wk/wv=22/22/22, encode_qkt_merge_mask=15, rescale=[normalize=off, gamma=28, wk=off, wq=off, wv=off, qkt=28, merge_mask=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 12 层启用 BLB Block 5 噪声 (gelu_degree∈{4,4,4,4,4,4,4,4,4,4,4,4}, N=16384, fresh_inv_std/x_centered=31/31, encode_gamma/wffn1/gelu_coeff=20/22/20, rescale=[normalize=31, gamma=off, wffn1=31, gelu_powers=[31,off,off], gelu_coeff_muls=[off,off,off,31]])
+[run] block2_block4_block5_all_layers_fusion1
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=21/17, encode_masks(sm/V/sm_v)=13/13/14, encode_wo=14, encode_ln_inv_d=14/21, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=off, sm_v_mask=off, wo=off, ln_mean=46, ln_sq=32, ln_var=off])
+已为 12 层启用 BLB Block 5 噪声 (gelu_degree∈{4,4,4,4,4,4,4,4,4,4,4,4}, N=16384, fresh_inv_std/x_centered=26/26, encode_gamma/wffn1/gelu_coeff=21/22/25, rescale=[normalize=off, gamma=off, wffn1=35, gelu_powers=[39,off,off], gelu_coeff_muls=[off,off,off,43]])
+[run] block2_block5_all_layers_fusionmax
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 1 噪声 (N=16384, fresh_gelu_out=30, encode_wffn2=20, encode_inv_d=20/20, rescale=[wffn2_result=off, mean=30, square=off, var=27])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 2 噪声 (N=16384, fresh_inv_std=21, fresh_x_centered=21, encode_gamma=15, encode_wq/wk/wv=16/16/22, encode_qkt_merge_mask=16, rescale=[normalize=off, gamma=off, wk=off, wq=off, wv=off, qkt=30, merge_mask=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 1 层启用 BLB Block 4 噪声 (N=16384, fresh_softmax/V=35/25, encode_masks(sm/V/sm_v)=14/14/14, encode_wo=22, encode_ln_inv_d=20/20, rescale=[sm_mask=off, v_mask=off, sm_v_matmul=31, sm_v_mask=off, wo=off, ln_mean=31, ln_sq=31, ln_var=off])
+已为 12 层启用 BLB Block 5 噪声 (gelu_degree∈{4,4,4,4,4,4,4,4,4,4,4,4}, N=16384, fresh_inv_std/x_centered=26/26, encode_gamma/wffn1/gelu_coeff=21/22/25, rescale=[normalize=off, gamma=off, wffn1=35, gelu_powers=[39,off,off], gelu_coeff_muls=[off,off,off,43]])
+{
+  "output_json": "/var/tmp/root-home/rfr_outputs/stage2_three_group_per_example_logits_20260712_171826/runs/seed_20261721/results.json",
+  "output_html": "/var/tmp/root-home/rfr_outputs/stage2_three_group_per_example_logits_20260712_171826/runs/seed_20261721/results.html"
+}
