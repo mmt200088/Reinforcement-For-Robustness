@@ -437,6 +437,35 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             2,
         )
 
+    def test_layerwise_branch_persists_complete_ppo_update_metrics(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn(
+            'kl_early_stop=bool(metrics.get("kl_early_stop", False))',
+            branch_source,
+        )
+        for field in (
+            "lr", "lr_scale", "entropy_recovery_delta", "return_mean", "return_std",
+        ):
+            self.assertIn(
+                f'metrics.get("{field}",',
+                branch_source,
+            )
+        for status_field in ("ent_coef", "lr", "lr_scale", "kl_early_stop"):
+            self.assertIn(
+                f'"{status_field}": update_stats.{status_field}',
+                branch_source,
+            )
+
     def test_layerwise_online_trial_count_uses_authoritative_stage2_k_trials(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
