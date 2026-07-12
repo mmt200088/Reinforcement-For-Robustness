@@ -1716,6 +1716,10 @@ class BLBStage2Env:
             and getattr(self._device, "type", None) == "cuda"
         )
         base_seed = int(self.probe_noise_seed)
+        trial_seeds = [
+            derive_probe_trial_seed(base_seed, trial_idx)
+            for trial_idx in range(int(k))
+        ]
         per_trial_loss: List[float] = []
         per_trial_metric1: List[float] = []
         per_trial_metric2: List[float] = []
@@ -1726,7 +1730,7 @@ class BLBStage2Env:
         try:
             with torch.inference_mode():
                 for trial_idx in range(int(k)):
-                    seed = derive_probe_trial_seed(base_seed, trial_idx)
+                    seed = trial_seeds[trial_idx]
                     trial_outputs: List[Tuple[torch.Tensor, torch.Tensor]] = []
                     with noise_rng_scope(scope):
                         with lock:
@@ -1794,10 +1798,7 @@ class BLBStage2Env:
             "per_worker_seconds": [float(wall_elapsed)],
             "per_worker_trial_counts": [int(k)],
             "per_worker_trial_indices": [list(range(int(k)))],
-            "per_worker_trial_seeds": [[
-                int((base_seed ^ (t * 2654435761)) & 0x7FFFFFFFFFFFFFFF)
-                for t in range(int(k))
-            ]],
+            "per_worker_trial_seeds": [list(trial_seeds)],
             "devices": [str(self._device)],
             "speedup_vs_sequential": 1.0,
             "deterministic_probe_seed": int(base_seed),
@@ -1808,10 +1809,7 @@ class BLBStage2Env:
         }
         return self._aggregate_probe_trials(
             per_trial_loss, per_trial_metric1, per_trial_metric2,
-            trial_seeds=[
-                int((base_seed ^ (t * 2654435761)) & 0x7FFFFFFFFFFFFFFF)
-                for t in range(int(k))
-            ],
+            trial_seeds=trial_seeds,
         )
 
     def _aggregate_probe_trials(

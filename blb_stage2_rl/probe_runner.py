@@ -53,9 +53,6 @@ except Exception:  # pragma: no cover — torch-free import path
 # Trial / split helpers
 # ---------------------------------------------------------------------------
 
-_TRIAL_SEED_MULTIPLIER = 2654435761  # Knuth's multiplicative-hash constant
-
-
 def enable_cuda_reward_probe_fast_math() -> None:
     """Enable fast FP32 matmul modes that are appropriate for reward probes.
 

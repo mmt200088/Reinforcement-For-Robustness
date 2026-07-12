@@ -10,6 +10,8 @@ import pathlib
 import sys
 import unittest
 
+from tests.source_inspection_utils import source_text
+
 _REPO = pathlib.Path(__file__).resolve().parents[1]
 # Load the module by file path under a unique name — importing blb_stage2_rl
 # as a package would pull torch, and a bare ``import seed_utils`` would
@@ -135,6 +137,17 @@ class TrialMixConsistencyTest(unittest.TestCase):
                 self.assertEqual(
                     seed_utils.derive_probe_trial_seed(base, i), expected
                 )
+
+    def test_deterministic_env_reuses_shared_trial_seed_list(self):
+        source = source_text("blb_stage2_rl/env.py")
+        region = source.split("    def _eval_on_probe_deterministic", 1)[1].split(
+            "    def _aggregate_probe_trials", 1
+        )[0]
+
+        self.assertIn("trial_seeds = [", region)
+        self.assertIn('"per_worker_trial_seeds": [list(trial_seeds)]', region)
+        self.assertIn("trial_seeds=trial_seeds", region)
+        self.assertNotIn("2654435761", region)
 
 
 if __name__ == "__main__":
