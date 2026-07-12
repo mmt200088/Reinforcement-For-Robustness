@@ -1,0 +1,11 @@
+{
+  "schema_version": "mrpc-allfusion1-installed-sf-audit-v1",
+  "source_sync_commit": "669cc137814ebf0e6f0c4ef7ce2d1458bd2b43d8",
+  "output_json": "/var/tmp/root-home/rfr_runs/mrpc_allfusion1_sf_audit_669cc13_20260712_2034/experiments/server_command_runs/stage2_mrpc_allfusion1_installed_sf_audit_20260712_203425/audit.json",
+  "output_json_sha256": "a4a168aa42467e7c4367b0dd61a4a44eac0615540e98b8347c400f5d5a75d4f6",
+  "output_html": "/var/tmp/root-home/rfr_runs/mrpc_allfusion1_sf_audit_669cc13_20260712_2034/experiments/server_command_runs/stage2_mrpc_allfusion1_installed_sf_audit_20260712_203425/mrpc_allfusion1_actual_sf_audit.html",
+  "output_html_sha256": "e5a99035df0753c3c64ffdb15d036530595f678ca147393a01c3c32dfdd4c8d6",
+  "validation_row_count": 408,
+  "installed_config_row_count": 672,
+  "gate_passed": true
+}

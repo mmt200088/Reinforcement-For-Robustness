@@ -1,0 +1,45 @@
+{
+  "schema_version": "mrpc-allfusion1-installed-sf-audit-verification-v1",
+  "all_gates_pass": true,
+  "source_sync_commit": "669cc137814ebf0e6f0c4ef7ce2d1458bd2b43d8",
+  "audit_json_sha256": "a4a168aa42467e7c4367b0dd61a4a44eac0615540e98b8347c400f5d5a75d4f6",
+  "html_sha256": "e5a99035df0753c3c64ffdb15d036530595f678ca147393a01c3c32dfdd4c8d6",
+  "bridge_apply_seen": true,
+  "handler_cfg_object_identity_match": true,
+  "handler_active_layers": {
+    "block2": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    "block4": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    "block5": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+  },
+  "installed_config_rows": 672,
+  "authoritative_provenance_rows": 672,
+  "truncation_k13_rows": 36,
+  "fused_away_rows": {
+    "block2": 12,
+    "block4": 12,
+    "block5": 12
+  },
+  "stage2_steps": 47,
+  "valid_stage2_steps": 47,
+  "fusion_by_block": {
+    "block2": 12,
+    "block4": 12,
+    "block5": 12
+  },
+  "validation_row_ids": {
+    "minimum": 0,
+    "maximum": 407,
+    "count": 408,
+    "contiguous": true
+  },
+  "historical_outcomes_per_group_per_row": 25,
+  "historical_group_count": 3,
+  "obsolete_html_identifier_labels_absent": [
+    "dataset_idx",
+    "input_ids",
+    "probe_position"
+  ],
+  "server_test_count": 41,
+  "server_tests_passed": true,
+  "visual_top_view_passed": true
+}
