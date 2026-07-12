@@ -112,13 +112,13 @@ def _synchronize_metrics(run_payloads, rows):
             group["trial_metrics"] = values
             group["metrics"] = {
                 "loss_mean": statistics.fmean(values["loss"]),
-                "loss_std": statistics.pstdev(values["loss"]),
+                "loss_std": statistics.stdev(values["loss"]),
                 "loss_max": max(values["loss"]),
                 "metric1_mean": statistics.fmean(values["metric1"]),
-                "metric1_std": statistics.pstdev(values["metric1"]),
+                "metric1_std": statistics.stdev(values["metric1"]),
                 "metric1_min": min(values["metric1"]),
                 "metric2_mean": statistics.fmean(values["metric2"]),
-                "metric2_std": statistics.pstdev(values["metric2"]),
+                "metric2_std": statistics.stdev(values["metric2"]),
                 "metric2_min": min(values["metric2"]),
             }
 

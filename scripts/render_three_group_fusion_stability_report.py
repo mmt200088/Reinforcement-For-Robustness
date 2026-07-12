@@ -157,13 +157,13 @@ def _raw_metric_summary(group: Any) -> dict[str, float] | None:
         return None
     return {
         "loss_mean": statistics.fmean(arrays["loss"]),
-        "loss_std": statistics.pstdev(arrays["loss"]),
+        "loss_std": statistics.stdev(arrays["loss"]),
         "loss_max": max(arrays["loss"]),
         "metric1_mean": statistics.fmean(arrays["metric1"]),
-        "metric1_std": statistics.pstdev(arrays["metric1"]),
+        "metric1_std": statistics.stdev(arrays["metric1"]),
         "metric1_min": min(arrays["metric1"]),
         "metric2_mean": statistics.fmean(arrays["metric2"]),
-        "metric2_std": statistics.pstdev(arrays["metric2"]),
+        "metric2_std": statistics.stdev(arrays["metric2"]),
         "metric2_min": min(arrays["metric2"]),
     }
 
@@ -178,7 +178,7 @@ def _evaluator_metric_summary(group: Any) -> dict[str, float] | None:
     return {
         **summary,
         "loss_mean": statistics.fmean(clipped_losses),
-        "loss_std": statistics.pstdev(clipped_losses),
+        "loss_std": statistics.stdev(clipped_losses),
         "loss_max": max(clipped_losses),
     }
 

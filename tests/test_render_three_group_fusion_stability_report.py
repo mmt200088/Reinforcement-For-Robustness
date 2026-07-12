@@ -97,11 +97,11 @@ def _group_payload(name, run_index, group_index):
     trial_values = _trial_values(run_index, group_index)
     metrics = {
         "loss_mean": statistics.fmean(trial_values["loss"]),
-        "loss_std": statistics.pstdev(trial_values["loss"]),
+        "loss_std": statistics.stdev(trial_values["loss"]),
         "metric1_mean": statistics.fmean(trial_values["metric1"]),
-        "metric1_std": statistics.pstdev(trial_values["metric1"]),
+        "metric1_std": statistics.stdev(trial_values["metric1"]),
         "metric2_mean": statistics.fmean(trial_values["metric2"]),
-        "metric2_std": statistics.pstdev(trial_values["metric2"]),
+        "metric2_std": statistics.stdev(trial_values["metric2"]),
         "loss_max": max(trial_values["loss"]),
         "metric1_min": min(trial_values["metric1"]),
         "metric2_min": min(trial_values["metric2"]),
@@ -280,6 +280,28 @@ class BuildSummaryTests(unittest.TestCase):
         self.assertIn("loss_mean", failures)
         self.assertIn("mismatch", failures)
 
+    def test_metric_consistency_uses_production_sample_standard_deviation(self):
+        report = _load_report_module()
+        payloads = make_run_payloads()
+        for run in payloads:
+            for group in run["group_results"]:
+                values = group["trial_metrics"]
+                group["metrics"].update(
+                    {
+                        "loss_std": statistics.stdev(values["loss"]),
+                        "metric1_std": statistics.stdev(values["metric1"]),
+                        "metric2_std": statistics.stdev(values["metric2"]),
+                    }
+                )
+
+        summary = report.build_summary(
+            run_payloads=payloads,
+            source_commit="abc123",
+        )
+
+        self.assertTrue(_gate(summary, "metric_consistency")["passed"])
+        self.assertTrue(summary["all_gates_pass"])
+
     def test_metric_consistency_matches_evaluator_loss_clipping_only(self):
         report = _load_report_module()
         payloads = make_run_payloads()
@@ -292,7 +314,7 @@ class BuildSummaryTests(unittest.TestCase):
         group["metrics"].update(
             {
                 "loss_mean": statistics.fmean(clipped_losses),
-                "loss_std": statistics.pstdev(clipped_losses),
+                "loss_std": statistics.stdev(clipped_losses),
                 "loss_max": max(clipped_losses),
             }
         )
