@@ -144,6 +144,41 @@ def strict_rank_key(candidate: Any) -> tuple[float, ...]:
     )
 
 
+def _strict_best_snapshot(
+        accepted_candidates: Mapping[str, Mapping[str, Any]],
+        ) -> Optional[dict[str, Any]]:
+    """Return a detached snapshot of the current feasible frontier winner."""
+    if not accepted_candidates:
+        return None
+    best = min(accepted_candidates.values(), key=strict_rank_key)
+    promotion_trials = best.get("promotion_trials")
+    promotion_evidence = None
+    if isinstance(promotion_trials, TrialSeries):
+        promotion_evidence = {
+            "status": "promoted",
+            "trial_count": len(promotion_trials.loss),
+            "trials": {
+                "loss": list(promotion_trials.loss),
+                "metric1": list(promotion_trials.metric1),
+                "metric2": list(promotion_trials.metric2),
+                "seeds": list(promotion_trials.seeds),
+            },
+        }
+    return {
+        "rank_key": list(strict_rank_key(best)),
+        "action_matrix": [list(row) for row in best["action_matrix"]],
+        "full_vector": list(best["full_vector"]),
+        "assessment": _to_plain_mapping(best["assessment"]),
+        "metrics": dict(best["metrics"]),
+        "variable_cost": float(best["variable_cost"]),
+        "reward": (
+            None if best.get("reward") is None else float(best["reward"])
+        ),
+        "boosted_overrides": copy.deepcopy(best["boosted_overrides"]),
+        "promotion_evidence": promotion_evidence,
+    }
+
+
 def normalized_entropy_snapshot(
         entropy_per_slot: Any,
         slot_masks: Any,
@@ -179,9 +214,9 @@ class LayerwiseConvergenceState:
     block4_entropy: Optional[float]
     k_entropy: Optional[float]
     stall_update_windows: int
-    best_robust_feasible_cost: Optional[float]
     converged: bool
     extension_required: bool
+    best_robust_feasible_cost: Optional[float]
 
 
 class LayerwiseConvergenceTracker:
@@ -189,7 +224,49 @@ class LayerwiseConvergenceTracker:
 
     def __init__(self) -> None:
         self._best_cost: Optional[float] = None
+        self._current_frontier_cost: Optional[float] = None
         self._stall_windows = 0
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "best_robust_feasible_cost": self._best_cost,
+            "current_robust_feasible_cost": self._current_frontier_cost,
+            "stall_update_windows": int(self._stall_windows),
+        }
+
+    def load_state_dict(self, state: Optional[Mapping[str, Any]]) -> None:
+        if not isinstance(state, Mapping):
+            return
+        best_cost = state.get("best_robust_feasible_cost")
+        self._best_cost = (
+            None if best_cost is None else _finite(best_cost, name="best_robust_feasible_cost")
+        )
+        current_cost = state.get("current_robust_feasible_cost")
+        self._current_frontier_cost = (
+            None if current_cost is None
+            else _finite(current_cost, name="current_robust_feasible_cost")
+        )
+        stall_windows = int(state.get("stall_update_windows", 0))
+        if stall_windows < 0:
+            raise ValueError("stall_update_windows must be nonnegative")
+        self._stall_windows = stall_windows
+
+    def reconcile_frontier(self, robust_feasible_cost: Optional[float]) -> None:
+        """Align restored convergence state with the revalidated frontier."""
+        if robust_feasible_cost is None:
+            self._current_frontier_cost = None
+            self._stall_windows = 0
+            return
+        cost = _finite(robust_feasible_cost, name="robust_feasible_cost")
+        if (
+                self._current_frontier_cost is None
+                or not math.isclose(
+                    cost, self._current_frontier_cost, rel_tol=0.0, abs_tol=1.0e-12,
+                )
+        ):
+            self._best_cost = cost
+            self._stall_windows = 0
+        self._current_frontier_cost = cost
 
     def observe_update(
             self,
@@ -201,17 +278,24 @@ class LayerwiseConvergenceTracker:
             ) -> LayerwiseConvergenceState:
         episodes = int(completed_episodes)
         if robust_feasible_cost is None:
-            if self._best_cost is None:
-                self._stall_windows = 0
-            else:
-                self._stall_windows += 1
+            self._current_frontier_cost = None
+            self._stall_windows = 0
         else:
             cost = _finite(robust_feasible_cost, name="robust_feasible_cost")
-            if self._best_cost is None or cost > self._best_cost + 1.0e-12:
+            frontier_restarted = self._current_frontier_cost is None
+            frontier_retracted = bool(
+                self._current_frontier_cost is not None
+                and cost < self._current_frontier_cost - 1.0e-12
+            )
+            if frontier_restarted or frontier_retracted:
+                self._best_cost = cost
+                self._stall_windows = 0
+            elif self._best_cost is None or cost > self._best_cost + 1.0e-12:
                 self._best_cost = cost
                 self._stall_windows = 0
             else:
                 self._stall_windows += 1
+            self._current_frontier_cost = cost
 
         b4 = None if block4_entropy is None else _finite(
             block4_entropy, name="block4_entropy",
@@ -221,6 +305,7 @@ class LayerwiseConvergenceTracker:
             episodes >= 30_000
             and b4 is not None and b4 < 0.1
             and k_value is not None and k_value < 0.1
+            and robust_feasible_cost is not None
             and self._best_cost is not None
             and self._stall_windows >= 100
         )
@@ -254,6 +339,11 @@ class LayerwiseEpisodeRecord:
     pending_full_vector: tuple[int, ...]
     variable_cost: float
     raw_trials: Optional[TrialSeries]
+    pooled_trials: Optional[TrialSeries]
+    fresh_trial_count: int
+    pooled_trial_count: int
+    reward_evidence: str
+    ranking_evidence: str
     fresh_assessment: Optional[Mapping[str, Any]]
     assessment: Optional[Any]
     metrics: Mapping[str, float]
@@ -264,6 +354,10 @@ class LayerwiseEpisodeRecord:
     step_count: int
     block4_entropy: Optional[float]
     k_entropy: Optional[float]
+    stall_update_windows: int
+    converged: bool
+    extension_required: bool
+    best_robust_feasible_cost: Optional[float]
 
 
 def _to_plain_mapping(value: Any) -> dict[str, Any]:
@@ -351,6 +445,124 @@ def _append_promotion_status(
     })
 
 
+def _serialize_boosted_overrides(overrides: Mapping[Any, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for key, values in sorted(
+            dict(overrides).items(),
+            key=lambda item: (int(item[0][1]), int(item[0][0])),
+    ):
+        block_idx, layer_idx = key
+        rows.append({
+            "block_idx": int(block_idx),
+            "layer_idx": int(layer_idx),
+            "field_values": {
+                str(name): int(value) for name, value in dict(values).items()
+            },
+        })
+    return rows
+
+
+def _deserialize_boosted_overrides(rows: Any) -> dict[tuple[int, int], dict[str, int]]:
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+        raise ValueError("boosted_overrides must be a sequence of rows")
+    overrides: dict[tuple[int, int], dict[str, int]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError("boosted_overrides rows must be mappings")
+        values = row.get("field_values")
+        if not isinstance(values, Mapping):
+            raise ValueError("boosted_overrides field_values must be a mapping")
+        key = (int(row["block_idx"]), int(row["layer_idx"]))
+        overrides[key] = {str(name): int(value) for name, value in values.items()}
+    return overrides
+
+
+def restore_promoted_candidates(
+        *,
+        candidate_store: CandidateStore,
+        identity_context: Mapping[str, Any],
+        statistical_reference: Any,
+        assess_candidate_fn: Callable[..., Any] = assess_candidate,
+        promotion_probability: float = 0.80,
+        assessment_trial_limit: int = 25,
+        ) -> dict[str, dict[str, Any]]:
+    """Rebuild the current promoted frontier from append-only raw evidence."""
+    latest_status: dict[
+        str, tuple[str, tuple[int, ...], dict[str, Any]]
+    ] = {}
+    wanted_context_hash = sha256_json(dict(identity_context))
+    for record in candidate_store.iter_active_records():
+        if record.get("record_type") != "candidate_promotion_status_v1":
+            continue
+        if str(record.get("identity_context_hash", "")) != wanted_context_hash:
+            continue
+        key = str(record.get("candidate_key", ""))
+        if not key:
+            continue
+        latest_status[key] = (
+            str(record.get("promotion_status", "")),
+            tuple(int(value) for value in record.get("action_indices", ())),
+            dict(record.get("promotion_metadata") or {}),
+        )
+
+    restored: dict[str, dict[str, Any]] = {}
+    for key, (status, action_indices, promotion_metadata) in latest_status.items():
+        if status != "promoted" or not action_indices:
+            continue
+        evidence = candidate_store.trial_evidence_for_action(
+            action_indices, identity_context,
+            max_trials=int(assessment_trial_limit),
+        )
+        if evidence is None or not evidence.promoted:
+            continue
+        metadata: dict[str, Any] = {}
+        for group in evidence.groups:
+            for name in (
+                    "action_matrix", "variable_cost", "episode_reward",
+                    "assessment_bootstrap_seed", "boosted_overrides",
+            ):
+                if name in group:
+                    metadata[name] = group[name]
+        for name in (
+                "action_matrix", "variable_cost", "episode_reward",
+                "assessment_bootstrap_seed", "boosted_overrides",
+        ):
+            if name in promotion_metadata:
+                metadata[name] = promotion_metadata[name]
+        if not all(name in metadata for name in (
+                "action_matrix", "variable_cost", "boosted_overrides",
+        )):
+            continue
+        assessment = assess_candidate_fn(
+            evidence.trials,
+            statistical_reference,
+            gate_probability=float(promotion_probability),
+            bootstrap_seed=int(metadata.get("assessment_bootstrap_seed", 0)),
+        )
+        if not _assessment_passes(assessment, promotion_probability):
+            continue
+        action_matrix = tuple(
+            tuple(int(value) for value in row)
+            for row in metadata["action_matrix"]
+        )
+        if len(action_matrix) != 12 or any(len(row) != 6 for row in action_matrix):
+            raise ValueError("persisted layerwise action_matrix must be 12x6")
+        reward = metadata.get("episode_reward")
+        restored[key] = {
+            "variable_cost": _finite(metadata["variable_cost"], name="variable_cost"),
+            "assessment": assessment,
+            "metrics": _metrics_from_trials(evidence.trials),
+            "action_matrix": action_matrix,
+            "full_vector": tuple(action_indices),
+            "boosted_overrides": _deserialize_boosted_overrides(
+                metadata["boosted_overrides"]
+            ),
+            "reward": None if reward is None else _finite(reward, name="episode_reward"),
+            "promotion_trials": evidence.trials,
+        }
+    return restored
+
+
 def _promotion_probe_seed(
         candidate_key_value: str,
         bootstrap_seed: int,
@@ -402,6 +614,7 @@ def promote_candidate_if_eligible(
         frontier_cost: Optional[float],
         boosted_overrides: Mapping[Any, Any],
         bootstrap_seed: int,
+        episode_reward: Optional[float] = None,
         assess_candidate_fn: Callable[..., Any] = assess_candidate,
         promotion_probability: float = 0.80,
         target_trial_count: int = 25,
@@ -409,8 +622,11 @@ def promote_candidate_if_eligible(
     """Promote one robust frontier improvement using fresh real probes."""
     evidence = candidate_store.trial_evidence_for_action(
         action_indices, identity_context,
+        max_trials=int(target_trial_count),
     )
-    trial_count = evidence.trial_count if evidence is not None else 0
+    trial_count = candidate_store.trial_count_for_action(
+        action_indices, identity_context,
+    )
     pooled_metrics = _metrics_from_trials(evidence.trials) if evidence is not None else None
     if int(priority) != 3:
         return PromotionResult(
@@ -433,20 +649,31 @@ def promote_candidate_if_eligible(
         return PromotionResult(
             "already_promoted", trial_count, 0, evidence, assessment, pooled_metrics,
         )
-    if evidence.promotion_attempted:
+    target = int(target_trial_count)
+    if target <= 0:
+        raise ValueError("target_trial_count must be positive")
+    pending_reassessment = bool(
+        evidence.promotion_attempted
+        and not evidence.promotion_status
+        and trial_count >= target
+    )
+    if evidence.promotion_attempted and not pending_reassessment:
         return PromotionResult(
             "promotion_already_attempted", trial_count, 0,
             evidence, assessment, pooled_metrics,
         )
 
-    target = int(target_trial_count)
     fresh_count = max(0, target - trial_count)
     status_metadata = {
         "existing_trial_count": int(trial_count),
         "requested_fresh_trial_count": int(fresh_count),
         "variable_cost": float(cost),
         "assessment_bootstrap_seed": int(bootstrap_seed),
+        "action_matrix": [list(map(int, row)) for row in action_matrix],
+        "boosted_overrides": _serialize_boosted_overrides(boosted_overrides),
     }
+    if episode_reward is not None:
+        status_metadata["episode_reward"] = float(episode_reward)
     promotion_probe_seed: Optional[int] = None
     predicted_trial_seeds: tuple[int, ...] = ()
     if fresh_count:
@@ -501,6 +728,7 @@ def promote_candidate_if_eligible(
                     "variable_cost": float(cost),
                     "action_matrix": [list(map(int, row)) for row in action_matrix],
                     "boosted_overrides_hash": sha256_json(boosted_overrides),
+                    "boosted_overrides": _serialize_boosted_overrides(boosted_overrides),
                     "boosted_overrides_provenance": "layerwise_env",
                     "assessment_bootstrap_seed": int(bootstrap_seed),
                     "promotion_marker": "fresh_top_up",
@@ -509,11 +737,15 @@ def promote_candidate_if_eligible(
             )
         evidence = candidate_store.trial_evidence_for_action(
             action_indices, identity_context,
+            max_trials=target,
         )
-        if evidence is None or evidence.trial_count != target:
+        trial_count = candidate_store.trial_count_for_action(
+            action_indices, identity_context,
+        )
+        if evidence is None or trial_count < target:
             raise RuntimeError(
-                f"promotion evidence count {0 if evidence is None else evidence.trial_count} "
-                f"!= target {target}"
+                f"promotion evidence count {trial_count} "
+                f"is below target {target}"
             )
         pooled_assessment = assess_candidate_fn(
             evidence.trials,
@@ -539,11 +771,15 @@ def promote_candidate_if_eligible(
     )
     evidence = candidate_store.trial_evidence_for_action(
         action_indices, identity_context,
+        max_trials=target,
+    )
+    total_trial_count = candidate_store.trial_count_for_action(
+        action_indices, identity_context,
     )
     return PromotionResult(
         status=promotion_status,
-        trial_count=(evidence.trial_count if evidence is not None else trial_count),
-        fresh_trial_count=(fresh_count if evidence is not None and evidence.trial_count == target else 0),
+        trial_count=total_trial_count,
+        fresh_trial_count=(fresh_count if evidence is not None and total_trial_count >= target else 0),
         evidence=evidence,
         assessment=pooled_assessment,
         metrics=(_metrics_from_trials(evidence.trials) if evidence is not None else pooled_metrics),
@@ -575,7 +811,11 @@ def _policy_input(value: np.ndarray, device: Any) -> Any:
 
 
 def _cosine_entropy_coefficient(train_cfg: Any, completed_episodes: int) -> float:
-    total = max(1, int(getattr(train_cfg, "total_episodes", 1)))
+    total = max(1, int(getattr(
+        train_cfg,
+        "planned_total_episodes",
+        getattr(train_cfg, "total_episodes", 1),
+    )))
     progress = float(completed_episodes) / float(total)
     plateau = min(1.0, max(0.0, float(
         getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)
@@ -682,21 +922,74 @@ def train_layerwise(
     )
     if expected_online_trials <= 0:
         raise ValueError("online_num_trials_per_step must be positive")
+    online_probability = float(
+        getattr(train_cfg, "online_constraint_probability", 0.50)
+    )
+    promotion_probability = float(
+        getattr(train_cfg, "promotion_constraint_probability", 0.80)
+    )
+    promotion_trials = int(getattr(train_cfg, "promotion_validation_trials", 25))
+    if not 0.0 < online_probability <= promotion_probability <= 1.0:
+        raise ValueError(
+            "constraint probabilities must satisfy 0 < online <= promotion <= 1"
+        )
+    if promotion_trials < expected_online_trials:
+        raise ValueError("promotion_validation_trials must cover the online trial group")
     policy.eval()
 
     records: list[LayerwiseEpisodeRecord] = []
     rewards: list[float] = []
     ppo_diagnostics: list[dict[str, Any]] = []
-    accepted_candidates: dict[str, dict[str, Any]] = {}
+    accepted_candidates = restore_promoted_candidates(
+        candidate_store=candidate_store,
+        identity_context=identity_context,
+        statistical_reference=env.base.statistical_reference,
+        assess_candidate_fn=assess_candidate_fn,
+        promotion_probability=promotion_probability,
+        assessment_trial_limit=promotion_trials,
+    )
+    convergence_resume_state = getattr(train_cfg, "convergence_resume_state", None)
+    convergence_resume_state = (
+        dict(convergence_resume_state)
+        if isinstance(convergence_resume_state, Mapping) else {}
+    )
     convergence_tracker = LayerwiseConvergenceTracker()
+    convergence_tracker.load_state_dict(convergence_resume_state)
+    restored_frontier_cost = (
+        max(row["variable_cost"] for row in accepted_candidates.values())
+        if accepted_candidates else None
+    )
+    convergence_tracker.reconcile_frontier(restored_frontier_cost)
+    restored_tracker_state = convergence_tracker.state_dict()
+    restored_block4_entropy = convergence_resume_state.get("block4_entropy")
+    restored_k_entropy = convergence_resume_state.get("k_entropy")
+    restored_converged = bool(
+        restored_frontier_cost is not None
+        and absolute_start >= 30_000
+        and restored_block4_entropy is not None
+        and float(restored_block4_entropy) < 0.1
+        and restored_k_entropy is not None
+        and float(restored_k_entropy) < 0.1
+        and int(restored_tracker_state["stall_update_windows"]) >= 100
+        and convergence_resume_state.get("converged", False)
+    )
     convergence_state = LayerwiseConvergenceState(
         completed_episodes=absolute_start,
-        block4_entropy=None,
-        k_entropy=None,
-        stall_update_windows=0,
-        best_robust_feasible_cost=None,
-        converged=False,
-        extension_required=False,
+        block4_entropy=(
+            None if restored_block4_entropy is None
+            else _finite(restored_block4_entropy, name="block4_entropy")
+        ),
+        k_entropy=(
+            None if restored_k_entropy is None
+            else _finite(restored_k_entropy, name="k_entropy")
+        ),
+        stall_update_windows=int(restored_tracker_state["stall_update_windows"]),
+        best_robust_feasible_cost=restored_tracker_state["best_robust_feasible_cost"],
+        converged=restored_converged,
+        extension_required=bool(
+            convergence_resume_state.get("extension_required", False)
+            or (absolute_start >= 60_000 and not restored_converged)
+        ),
     )
     entropy_samples: list[dict[str, np.ndarray]] = []
 
@@ -803,6 +1096,7 @@ def train_layerwise(
         bootstrap_seed = int(fresh_assessment.get("bootstrap_seed", 0))
         pooled_assessment = None
         pooled_metrics = None
+        pooled_trials = None
         promotion = PromotionResult(
             "invalid_terminal" if invalid_terminal else "not_evaluated",
             0, 0, None, None, None,
@@ -820,23 +1114,29 @@ def train_layerwise(
                     "boosted_overrides_hash": sha256_json(
                         getattr(env, "boosted_overrides", {})
                     ),
+                    "boosted_overrides": _serialize_boosted_overrides(
+                        getattr(env, "boosted_overrides", {})
+                    ),
                     "boosted_overrides_provenance": "layerwise_env",
                     "assessment_bootstrap_seed": int(bootstrap_seed),
+                    "episode_reward": float(episode_reward),
                     "promotion_marker": "online_group",
                 },
             )
             evidence = candidate_store.trial_evidence_for_action(
                 full_vector, identity_context,
+                max_trials=promotion_trials,
             )
             if evidence is None:
                 raise RuntimeError("candidate evidence append was not readable")
             pooled_assessment = assess_candidate_fn(
                 evidence.trials,
                 env.base.statistical_reference,
-                gate_probability=0.80,
+                gate_probability=promotion_probability,
                 bootstrap_seed=bootstrap_seed,
             )
             pooled_metrics = _metrics_from_trials(evidence.trials)
+            pooled_trials = evidence.trials
             frontier_cost = (
                 max(row["variable_cost"] for row in accepted_candidates.values())
                 if accepted_candidates else None
@@ -853,7 +1153,10 @@ def train_layerwise(
                 frontier_cost=frontier_cost,
                 boosted_overrides=getattr(env, "boosted_overrides", {}),
                 bootstrap_seed=bootstrap_seed,
+                episode_reward=episode_reward,
                 assess_candidate_fn=assess_candidate_fn,
+                promotion_probability=promotion_probability,
+                target_trial_count=promotion_trials,
             )
             if promotion.assessment is not None:
                 pooled_assessment = promotion.assessment
@@ -861,11 +1164,13 @@ def train_layerwise(
                 pooled_metrics = promotion.metrics
             candidate_key_value = evidence.candidate_key
             promotion_evidence = promotion.evidence or evidence
+            pooled_trials = promotion_evidence.trials
             if (
                     promotion_evidence.promoted
-                    and promotion_evidence.trial_count >= 25
-                    and _assessment_passes(pooled_assessment, 0.80)
+                    and promotion_evidence.trial_count >= promotion_trials
+                    and _assessment_passes(pooled_assessment, promotion_probability)
             ):
+                existing_candidate = accepted_candidates.get(candidate_key_value)
                 accepted_candidates[candidate_key_value] = {
                     "variable_cost": float(variable_cost),
                     "assessment": pooled_assessment,
@@ -875,6 +1180,13 @@ def train_layerwise(
                     "boosted_overrides": copy.deepcopy(
                         getattr(env, "boosted_overrides", {})
                     ),
+                    "reward": (
+                        float(existing_candidate["reward"])
+                        if existing_candidate is not None
+                        and existing_candidate.get("reward") is not None
+                        else float(episode_reward)
+                    ),
+                    "promotion_trials": promotion_evidence.trials,
                 }
             else:
                 accepted_candidates.pop(candidate_key_value, None)
@@ -889,7 +1201,9 @@ def train_layerwise(
         update_due = completed % update_window == 0 or completed == total_episodes
         ppo_metrics: Optional[dict[str, Any]] = None
         if update_due:
-            ent_coef = _cosine_entropy_coefficient(train_cfg, completed)
+            ent_coef = _cosine_entropy_coefficient(
+                train_cfg, absolute_start + completed,
+            )
             ppo_metrics = dict(ppo_update_fn(
                 policy,
                 optimizer,
@@ -909,12 +1223,23 @@ def train_layerwise(
                 k_entropy=entropy_snapshot["k"],
                 robust_feasible_cost=best_cost,
             )
+            persisted_convergence_state = {
+                **convergence_tracker.state_dict(),
+                "block4_entropy": convergence_state.block4_entropy,
+                "k_entropy": convergence_state.k_entropy,
+                "converged": convergence_state.converged,
+                "extension_required": convergence_state.extension_required,
+            }
             ppo_metrics.update({
                 "completed_episodes": absolute_start + completed,
                 "block4_entropy": entropy_snapshot["block4"],
                 "k_entropy": entropy_snapshot["k"],
                 "stall_update_windows": convergence_state.stall_update_windows,
                 "converged": convergence_state.converged,
+                "extension_required": convergence_state.extension_required,
+                "best_robust_feasible_cost": convergence_state.best_robust_feasible_cost,
+                "convergence_state": persisted_convergence_state,
+                "strict_best": _strict_best_snapshot(accepted_candidates),
             })
             ppo_diagnostics.append(ppo_metrics)
 
@@ -930,6 +1255,11 @@ def train_layerwise(
             pending_full_vector=full_vector,
             variable_cost=float(variable_cost),
             raw_trials=raw_trials,
+            pooled_trials=pooled_trials,
+            fresh_trial_count=(0 if raw_trials is None else len(raw_trials.loss)),
+            pooled_trial_count=(0 if pooled_trials is None else len(pooled_trials.loss)),
+            reward_evidence="fresh_trials",
+            ranking_evidence="pooled_prefix_trials",
             fresh_assessment=fresh_assessment or None,
             assessment=pooled_assessment,
             metrics={
@@ -947,6 +1277,10 @@ def train_layerwise(
             step_count=12,
             block4_entropy=entropy_snapshot["block4"],
             k_entropy=entropy_snapshot["k"],
+            stall_update_windows=int(convergence_state.stall_update_windows),
+            converged=bool(convergence_state.converged),
+            extension_required=bool(convergence_state.extension_required),
+            best_robust_feasible_cost=convergence_state.best_robust_feasible_cost,
         )
         records.append(record)
         if on_episode_end is not None:
@@ -957,23 +1291,47 @@ def train_layerwise(
             rollout_buffer.clear()
             entropy_samples.clear()
 
-    ranked = sorted(accepted_candidates.values(), key=strict_rank_key)
-    best = ranked[0] if ranked else None
+    strict_best = _strict_best_snapshot(accepted_candidates)
+    final_convergence_state = {
+        **convergence_tracker.state_dict(),
+        "block4_entropy": convergence_state.block4_entropy,
+        "k_entropy": convergence_state.k_entropy,
+        "converged": convergence_state.converged,
+        "extension_required": convergence_state.extension_required,
+    }
     return {
-        "best_action": (list(best["full_vector"]) if best is not None else None),
+        "strict_best": strict_best,
+        "convergence_state": final_convergence_state,
+        "best_action": (
+            list(strict_best["full_vector"]) if strict_best is not None else None
+        ),
         "best_action_matrix": (
-            [list(row) for row in best["action_matrix"]] if best is not None else None
+            [list(row) for row in strict_best["action_matrix"]]
+            if strict_best is not None else None
         ),
-        "best_full_vector": (list(best["full_vector"]) if best is not None else None),
+        "best_full_vector": (
+            list(strict_best["full_vector"]) if strict_best is not None else None
+        ),
         "best_assessment": (
-            _to_plain_mapping(best["assessment"]) if best is not None else None
+            dict(strict_best["assessment"]) if strict_best is not None else None
         ),
-        "best_metrics": (dict(best["metrics"]) if best is not None else None),
+        "best_metrics": (
+            dict(strict_best["metrics"]) if strict_best is not None else None
+        ),
         "best_variable_cost": (
-            float(best["variable_cost"]) if best is not None else None
+            float(strict_best["variable_cost"]) if strict_best is not None else None
+        ),
+        "best_reward": (
+            None if strict_best is None or strict_best.get("reward") is None
+            else float(strict_best["reward"])
         ),
         "best_boosted_overrides": (
-            copy.deepcopy(best["boosted_overrides"]) if best is not None else None
+            copy.deepcopy(strict_best["boosted_overrides"])
+            if strict_best is not None else None
+        ),
+        "best_promotion_evidence": (
+            copy.deepcopy(strict_best.get("promotion_evidence"))
+            if strict_best is not None else None
         ),
         "episode_rewards": rewards,
         "ppo_metrics": ppo_diagnostics,

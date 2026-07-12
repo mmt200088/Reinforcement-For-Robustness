@@ -598,8 +598,8 @@ class OutputHygieneRegressionTest(unittest.TestCase):
             "step_block_indices=(3,) * 12",
         ):
             self.assertIn(needle, runner_src)
-        self.assertIn('decision_granularity: str = "block"', config_src)
-        self.assertIn('reward_design: str = "stage1_aligned"', config_src)
+        self.assertIn('decision_granularity: str = "layer"', config_src)
+        self.assertIn('reward_design: str = "robust_constrained"', config_src)
         self.assertIn("apply_public_stage2_decision_config(ev, cfg)", config_src)
 
     def test_sequential_runner_has_noisy_baseline_preflight(self):
@@ -1867,7 +1867,7 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
         src = open("llama_7B_LayerImportance.sh", encoding="utf-8").read()
         # Main slug should be EXACTLY the three tolerances — no _rdv2 suffix.
         self.assertIn(
-            'CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"',
+            'CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${_STAGE2_PERSISTED_STABILITY_VALUE}"',
             src,
         )
         # Only allow _rdv2 in comments (the rollback rationale line). No

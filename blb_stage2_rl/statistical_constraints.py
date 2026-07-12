@@ -12,6 +12,7 @@ import numpy as np
 
 _CHANNELS = ("loss", "metric1", "metric2")
 _MINIMUM_BASELINE_TRIALS = 25
+_MAX_BOOTSTRAP_INDEX_ELEMENTS = 1_000_000
 
 
 class InsufficientBaselineTrials(ValueError):
@@ -364,41 +365,50 @@ def assess_candidate(
         channel: np.asarray(getattr(trials, channel), dtype=np.float64)
         for channel in _CHANNELS
     }
-    rng = np.random.default_rng(candidate_seed)
-    indices = rng.integers(
-        0,
-        trial_count,
-        size=(reference.bootstrap_samples, trial_count),
-    )
-    candidate_means, candidate_stds = _bootstrap_summaries(arrays, indices)
-
     tolerance = reference.precision_tolerance
     multiplier = reference.stability_multiplier
-    probabilities = {
-        "loss_precision": _probability(
+    sample_count = reference.bootstrap_samples
+    rows_per_chunk = max(1, _MAX_BOOTSTRAP_INDEX_ELEMENTS // trial_count)
+    pass_counts = {
+        "loss_precision": 0,
+        "metric1_precision": 0,
+        "metric2_precision": 0,
+        "loss_stability": 0,
+        "metric1_stability": 0,
+        "metric2_stability": 0,
+    }
+    rng = np.random.default_rng(candidate_seed)
+    for start in range(0, sample_count, rows_per_chunk):
+        stop = min(sample_count, start + rows_per_chunk)
+        indices = rng.integers(0, trial_count, size=(stop - start, trial_count))
+        candidate_means, candidate_stds = _bootstrap_summaries(arrays, indices)
+        pass_counts["loss_precision"] += int(np.count_nonzero(
             candidate_means["loss"]
-            <= reference.bootstrap_means["loss"] * (1.0 + tolerance)
-        ),
-        "metric1_precision": _probability(
+            <= reference.bootstrap_means["loss"][start:stop] * (1.0 + tolerance)
+        ))
+        pass_counts["metric1_precision"] += int(np.count_nonzero(
             candidate_means["metric1"]
-            >= reference.bootstrap_means["metric1"] * (1.0 - tolerance)
-        ),
-        "metric2_precision": _probability(
+            >= reference.bootstrap_means["metric1"][start:stop] * (1.0 - tolerance)
+        ))
+        pass_counts["metric2_precision"] += int(np.count_nonzero(
             candidate_means["metric2"]
-            >= reference.bootstrap_means["metric2"] * (1.0 - tolerance)
-        ),
-        "loss_stability": _probability(
+            >= reference.bootstrap_means["metric2"][start:stop] * (1.0 - tolerance)
+        ))
+        pass_counts["loss_stability"] += int(np.count_nonzero(
             candidate_stds["loss"]
-            <= multiplier * reference.bootstrap_stds["loss"]
-        ),
-        "metric1_stability": _probability(
+            <= multiplier * reference.bootstrap_stds["loss"][start:stop]
+        ))
+        pass_counts["metric1_stability"] += int(np.count_nonzero(
             candidate_stds["metric1"]
-            <= multiplier * reference.bootstrap_stds["metric1"]
-        ),
-        "metric2_stability": _probability(
+            <= multiplier * reference.bootstrap_stds["metric1"][start:stop]
+        ))
+        pass_counts["metric2_stability"] += int(np.count_nonzero(
             candidate_stds["metric2"]
-            <= multiplier * reference.bootstrap_stds["metric2"]
-        ),
+            <= multiplier * reference.bootstrap_stds["metric2"][start:stop]
+        ))
+    probabilities = {
+        name: float(np.clip(count / sample_count, 0.0, 1.0))
+        for name, count in pass_counts.items()
     }
     precision_probability = min(
         probabilities["loss_precision"],

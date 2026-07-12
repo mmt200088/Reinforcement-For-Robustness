@@ -24,7 +24,9 @@
 from __future__ import annotations
 
 import argparse
+import html
 import importlib.util
+import math
 import os
 import re
 import sys
@@ -34,7 +36,18 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 from jsonl_utils import iter_jsonl  # noqa: E402
+from json_utils import read_json_file  # noqa: E402
 import rl_local_optimum  # noqa: E402
+
+
+_CONSTRAINT_PROBABILITY_KEYS = (
+    "loss_precision_probability",
+    "metric1_precision_probability",
+    "metric2_precision_probability",
+    "loss_stability_probability",
+    "metric1_stability_probability",
+    "metric2_stability_probability",
+)
 
 
 def _load_persistence_module():
@@ -46,6 +59,352 @@ def _load_persistence_module():
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+def _layerwise_k_levels():
+    path = os.path.join(_REPO_ROOT, "blb_stage2_rl", "layerwise_action.py")
+    spec = importlib.util.spec_from_file_location("blb_layerwise_action_standalone", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return tuple(int(value) for value in mod.K_LEVELS)
+
+
+def _layerwise_action_table(action_matrix):
+    """Decode the compact 12x6 policy matrix into one readable row per layer."""
+    matrix = [list(row) for row in action_matrix]
+    if len(matrix) != 12 or any(len(row) != 6 for row in matrix):
+        raise ValueError("layerwise action matrix must be 12x6")
+    k_levels = _layerwise_k_levels()
+    rows = []
+    for layer_idx, raw_row in enumerate(matrix):
+        values = [int(value) for value in raw_row]
+        if values[0] not in (0, 1):
+            raise ValueError(f"layer {layer_idx} Block4 fusion must be 0 or 1")
+        for slot_idx in range(1, 6):
+            if not 0 <= values[slot_idx] < len(k_levels):
+                raise ValueError(
+                    f"layer {layer_idx} K slot {slot_idx} index {values[slot_idx]} is invalid"
+                )
+        rows.append({
+            "layer": layer_idx,
+            "block4_fusion": values[0],
+            "k_b1": None if layer_idx == 0 else k_levels[values[1]],
+            "k_b2": k_levels[values[2]],
+            "k_b3": k_levels[values[3]],
+            "k_b4": k_levels[values[4]],
+            "k_b5": k_levels[values[5]],
+        })
+    return rows
+
+
+def _html_table(headers, rows):
+    out = ["<table><thead><tr>"]
+    out.extend(f"<th>{html.escape(str(label))}</th>" for _key, label in headers)
+    out.append("</tr></thead><tbody>")
+    for row in rows:
+        out.append("<tr>")
+        for key, _label in headers:
+            value = row.get(key)
+            out.append(f"<td>{html.escape('-' if value is None else str(value))}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "".join(out)
+
+
+def _line_chart_svg(title, series, *, y_domain=None):
+    active = [(label, points) for label, points in series if points]
+    if not active:
+        return ""
+    all_points = [point for _label, points in active for point in points]
+    x_min = min(point[0] for point in all_points)
+    x_max = max(point[0] for point in all_points)
+    if x_min == x_max:
+        x_max = x_min + 1.0
+    if y_domain is None:
+        y_min = min(point[1] for point in all_points)
+        y_max = max(point[1] for point in all_points)
+        if y_min == y_max:
+            pad = max(abs(y_min) * 0.05, 0.01)
+            y_min -= pad
+            y_max += pad
+    else:
+        y_min, y_max = (float(value) for value in y_domain)
+    width, plot_height = 960.0, 280.0
+    left, right, top, bottom = 70.0, 24.0, 20.0, 46.0
+    legend_rows = (len(active) + 2) // 3
+    height = plot_height + top + bottom + 28.0 * legend_rows
+    plot_width = width - left - right
+
+    def sx(value):
+        return left + (float(value) - x_min) * plot_width / (x_max - x_min)
+
+    def sy(value):
+        return top + (y_max - float(value)) * plot_height / (y_max - y_min)
+
+    colors = ("#1565c0", "#d84315", "#2e7d32", "#6a1b9a", "#00838f", "#c62828")
+    parts = [
+        f"<section class='curve-section'><h2>{html.escape(title)}</h2>",
+        f"<svg class='line-chart' viewBox='0 0 {width:.0f} {height:.0f}' role='img' "
+        f"aria-label='{html.escape(title)}'>",
+    ]
+    for tick in range(5):
+        value = y_min + (y_max - y_min) * tick / 4.0
+        y = sy(value)
+        parts.append(
+            f"<line x1='{left:.1f}' y1='{y:.1f}' x2='{width - right:.1f}' y2='{y:.1f}' "
+            "stroke='#e0e3e7' stroke-width='1'/>"
+            f"<text x='{left - 10:.1f}' y='{y + 4:.1f}' text-anchor='end'>{value:.3f}</text>"
+        )
+    parts.extend((
+        f"<line x1='{left:.1f}' y1='{top + plot_height:.1f}' x2='{width - right:.1f}' "
+        f"y2='{top + plot_height:.1f}' stroke='#5f6368'/>",
+        f"<text x='{left:.1f}' y='{top + plot_height + 25:.1f}'>{x_min:g}</text>",
+        f"<text x='{width - right:.1f}' y='{top + plot_height + 25:.1f}' "
+        f"text-anchor='end'>{x_max:g}</text>",
+        f"<text x='{width / 2:.1f}' y='{top + plot_height + 25:.1f}' "
+        "text-anchor='middle'>Episode</text>",
+    ))
+    legend_top = top + plot_height + bottom
+    for index, (label, points) in enumerate(active):
+        color = colors[index % len(colors)]
+        coordinates = " ".join(f"{sx(x):.2f},{sy(y):.2f}" for x, y in points)
+        parts.append(
+            f"<polyline points='{coordinates}' fill='none' stroke='{color}' "
+            "stroke-width='2.5' stroke-linejoin='round' stroke-linecap='round'/>"
+        )
+        legend_x = left + (index % 3) * (plot_width / 3.0)
+        legend_y = legend_top + (index // 3) * 28.0
+        parts.append(
+            f"<line x1='{legend_x:.1f}' y1='{legend_y:.1f}' x2='{legend_x + 24:.1f}' "
+            f"y2='{legend_y:.1f}' stroke='{color}' stroke-width='3'/>"
+            f"<text x='{legend_x + 32:.1f}' y='{legend_y + 4:.1f}'>"
+            f"{html.escape(label)}</text>"
+        )
+    parts.append("</svg></section>")
+    return "".join(parts)
+
+
+def _write_layerwise_html_report(
+        out_dir, *, summary, baseline, curve_paths, layerwise_curves=None,
+):
+    """Write a compact auditable report for the robust layerwise result."""
+    os.makedirs(out_dir, exist_ok=True)
+    action_matrix = summary.get("best_action_matrix")
+    action_rows = _layerwise_action_table(action_matrix) if action_matrix else []
+    assessment = summary.get("best_assessment") or {}
+    metrics = summary.get("best_metrics") or {}
+    probability_rows = [
+        {"channel": name, "probability": f"{float(value):.6f}"}
+        for name, value in assessment.items()
+        if str(name).endswith("_probability")
+    ]
+    metric_rows = [
+        {"metric": name, "best": f"{float(value):.9f}"}
+        for name, value in metrics.items()
+    ]
+    baseline_rows = [
+        {"metric": name, "baseline": value}
+        for name, value in baseline.items()
+        if name in ("loss_mean", "metric1_mean", "metric2_mean", "loss_std", "metric1_std", "metric2_std")
+    ]
+    baseline_reference = summary.get("baseline_reference") or {}
+    baseline_groups = baseline_reference.get("groups") or []
+
+    def mean_std(values):
+        numbers = [float(value) for value in values or ()]
+        if not numbers:
+            return "-"
+        mean = sum(numbers) / len(numbers)
+        if len(numbers) < 2:
+            return f"{mean:.9f} +/- 0.000000000"
+        variance = sum((value - mean) ** 2 for value in numbers) / (len(numbers) - 1)
+        return f"{mean:.9f} +/- {math.sqrt(variance):.9f}"
+
+    baseline_group_rows = [
+        {
+            "group": int(group.get("group_index", index)),
+            "trials": len(group.get("loss_trials") or ()),
+            "loss": mean_std(group.get("loss_trials")),
+            "metric1": mean_std(group.get("metric1_trials")),
+            "metric2": mean_std(group.get("metric2_trials")),
+        }
+        for index, group in enumerate(baseline_groups)
+        if isinstance(group, dict)
+    ]
+    promotion = summary.get("best_promotion_evidence") or {}
+    promotion_rows = [
+        {"field": "status", "value": promotion.get("status", "missing")},
+        {"field": "trial_count", "value": promotion.get("trial_count", 0)},
+        {
+            "field": "seed_count",
+            "value": len((promotion.get("trials") or {}).get("seeds") or ()),
+        },
+    ]
+    final_evidence = summary.get("final_evidence") or {}
+    final_rows = [
+        {"field": "status", "value": final_evidence.get("status", "missing")},
+        {
+            "field": "required_probability",
+            "value": final_evidence.get("required_probability", "-"),
+        },
+        {
+            "field": "required_trial_count",
+            "value": final_evidence.get("required_trial_count", "-"),
+        },
+    ]
+    images = []
+    for label, path in curve_paths.items():
+        if path and str(path).lower().endswith(".png"):
+            images.append(
+                f"<figure><img src='{html.escape(os.path.basename(path))}' "
+                f"alt='{html.escape(str(label))}'><figcaption>{html.escape(str(label))}</figcaption></figure>"
+            )
+    layerwise_curves = layerwise_curves or {}
+    entropy_curves = layerwise_curves.get("entropy") or {}
+    entropy_chart = _line_chart_svg(
+        "Policy Entropy by Action Type",
+        (
+            ("Block4 fusion entropy", entropy_curves.get("block4_entropy", [])),
+            ("Truncation K entropy", entropy_curves.get("k_entropy", [])),
+        ),
+    )
+    fresh_probability_curves = (
+        layerwise_curves.get("fresh_constraint_probabilities") or {}
+    )
+    fresh_probability_chart = _line_chart_svg(
+        "Fresh Five-Trial Reward Constraint Probabilities",
+        tuple((key, fresh_probability_curves.get(key, [])) for key in _CONSTRAINT_PROBABILITY_KEYS),
+        y_domain=(0.0, 1.0),
+    )
+    pooled_probability_curves = (
+        layerwise_curves.get("pooled_constraint_probabilities") or {}
+    )
+    pooled_probability_chart = _line_chart_svg(
+        "Pooled Ranking and Promotion Constraint Probabilities",
+        tuple((key, pooled_probability_curves.get(key, [])) for key in _CONSTRAINT_PROBABILITY_KEYS),
+        y_domain=(0.0, 1.0),
+    )
+    best_cost = summary.get("best_variable_cost")
+    cost_text = "N/A" if best_cost is None else f"{float(best_cost):.6f}"
+    candidate_status = (
+        "" if action_rows else
+        "<p><strong>No strict feasible candidate selected.</strong> "
+        "Baseline and evidence status remain available below.</p>"
+    )
+    document = "".join([
+        "<!doctype html><html><head><meta charset='utf-8'><title>Stage-2 Layerwise Robust PPO</title>",
+        "<style>body{font-family:Arial,sans-serif;margin:28px;color:#202124}h1,h2{letter-spacing:0}",
+        "table{border-collapse:collapse;width:100%;margin:12px 0 24px}th,td{border:1px solid #d5d9df;padding:7px;text-align:right}",
+        "th:first-child,td:first-child{text-align:left}th{background:#f2f4f7}img{max-width:100%;height:auto}",
+        ".curve-section{margin:24px 0}.line-chart{display:block;width:100%;height:auto;overflow:visible}",
+        ".line-chart text{font-size:12px;fill:#3c4043}</style></head><body>",
+        "<h1>Stage-2 Layerwise Robust PPO</h1>",
+        candidate_status,
+        f"<p><strong>Best variable cost:</strong> {cost_text}</p>",
+        "<h2>Best Metrics</h2>",
+        _html_table((("metric", "Metric"), ("best", "Best")), metric_rows),
+        "<h2>Baseline</h2>",
+        _html_table((("metric", "Metric"), ("baseline", "Baseline")), baseline_rows),
+        "<h2>Baseline Trial Distributions</h2>",
+        _html_table((
+            ("group", "Group"), ("trials", "Trials"), ("loss", "Loss mean +/- std"),
+            ("metric1", "Metric1 mean +/- std"), ("metric2", "Metric2 mean +/- std"),
+        ), baseline_group_rows),
+        "<h2>Best Pooled Ranking Constraint Probabilities</h2>",
+        _html_table((("channel", "Channel"), ("probability", "Probability")), probability_rows),
+        "<h2>Promotion Evidence</h2>",
+        _html_table((("field", "Field"), ("value", "Value")), promotion_rows),
+        "<h2>Final Revalidation Evidence</h2>",
+        _html_table((("field", "Field"), ("value", "Value")), final_rows),
+        "<h2>Selected Layerwise Configuration</h2>",
+        _html_table((
+            ("layer", "Layer"), ("block4_fusion", "Block4 Fusion"),
+            ("k_b1", "K B1"), ("k_b2", "K B2"), ("k_b3", "K B3"),
+            ("k_b4", "K B4"), ("k_b5", "K B5"),
+        ), action_rows),
+        entropy_chart,
+        fresh_probability_chart,
+        pooled_probability_chart,
+        "<h2>Other Curves</h2>", "".join(images),
+        "</body></html>",
+    ])
+    path = os.path.join(out_dir, "blb_stage2_layerwise_report.html")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(document)
+    return path
+
+
+def _read_layerwise_summary(progress_dir):
+    manifest = read_json_file(
+        os.path.join(progress_dir, "layerwise_run_manifest.json"), default={},
+    )
+    summary = read_json_file(
+        os.path.join(progress_dir, "layerwise_summary.json"), default={},
+    )
+    merged = dict(manifest) if isinstance(manifest, dict) else {}
+    if isinstance(summary, dict):
+        merged.update(summary)
+    return merged
+
+
+def _read_layerwise_curves(progress_dir):
+    """Read optional layerwise diagnostics without requiring torch or plotting libs."""
+    entropy = {"block4_entropy": [], "k_entropy": []}
+    fresh_probabilities = {key: [] for key in _CONSTRAINT_PROBABILITY_KEYS}
+    pooled_probabilities = {key: [] for key in _CONSTRAINT_PROBABILITY_KEYS}
+    try:
+        for index, row in enumerate(iter_jsonl(
+                _progress_jsonl_path(progress_dir, "ppo_updates.jsonl"),
+                gzip_fallback=True,
+        )):
+            x_value = row.get("completed_episodes", index + 1)
+            for key in entropy:
+                value = row.get(key)
+                if value is None:
+                    continue
+                point = (float(x_value), float(value))
+                if all(math.isfinite(component) for component in point):
+                    entropy[key].append(point)
+    except FileNotFoundError:
+        pass
+    try:
+        for index, row in enumerate(iter_jsonl(
+                _progress_jsonl_path(progress_dir, "episodes.jsonl"),
+                gzip_fallback=True,
+        )):
+            x_value = row.get("episode", index + 1)
+            for source_key, target in (
+                    ("fresh_constraint_probabilities", fresh_probabilities),
+                    ("pooled_constraint_probabilities", pooled_probabilities),
+            ):
+                values = row.get(source_key)
+                if not isinstance(values, dict):
+                    continue
+                for key in _CONSTRAINT_PROBABILITY_KEYS:
+                    value = values.get(key)
+                    if value is None:
+                        continue
+                    point = (float(x_value), float(value))
+                    if all(math.isfinite(component) for component in point):
+                        target[key].append(point)
+            if not isinstance(row.get("pooled_constraint_probabilities"), dict):
+                values = row.get("constraint_probabilities")
+                if isinstance(values, dict):
+                    for key in _CONSTRAINT_PROBABILITY_KEYS:
+                        value = values.get(key)
+                        if value is None:
+                            continue
+                        point = (float(x_value), float(value))
+                        if all(math.isfinite(component) for component in point):
+                            pooled_probabilities[key].append(point)
+    except FileNotFoundError:
+        pass
+    return {
+        "entropy": entropy,
+        "fresh_constraint_probabilities": fresh_probabilities,
+        "pooled_constraint_probabilities": pooled_probabilities,
+    }
 
 
 def _resolve_progress_dir(path: str) -> str:
@@ -155,6 +514,18 @@ _SUMMARY_AVG_K_PATTERN = re.compile(r"baseline avg_k.*?\*\*([\d.]+)\*\*")
 def _parse_baselines(progress_dir: str):
     """从 blb_stage2_report.md §3 baseline 表解析参考线值（缺失则返回部分/空）。"""
     out = {}
+    layerwise_summary = _read_layerwise_summary(progress_dir)
+    baseline_reference = layerwise_summary.get("baseline_reference")
+    if isinstance(baseline_reference, dict):
+        pooled = baseline_reference.get("pooled")
+        if isinstance(pooled, dict):
+            for key in (
+                    "loss_mean", "loss_std", "metric1_mean", "metric1_std",
+                    "metric2_mean", "metric2_std",
+            ):
+                if pooled.get(key) is not None:
+                    out[key] = float(pooled[key])
+            out.setdefault("avg_k", 13.0)
     report = os.path.join(progress_dir, "blb_stage2_report.md")
     if os.path.isfile(report):
         try:
@@ -164,7 +535,7 @@ def _parse_baselines(progress_dir: str):
                     for key in tuple(missing):
                         m = _BASELINE_PATTERNS[key].search(line)
                         if m:
-                            out[key] = float(m.group(1))
+                            out.setdefault(key, float(m.group(1)))
                             missing.remove(key)
                     if not missing:
                         break
@@ -184,6 +555,61 @@ def _parse_baselines(progress_dir: str):
             except Exception:
                 pass
     return out
+
+
+def _write_search_health_report(
+        out_dir,
+        *,
+        persistence,
+        layerwise_summary,
+        episode_returns,
+        entropies,
+        priority,
+        fusion_count,
+        worst_signed_margin,
+        log_fn,
+):
+    """Use the accepted layerwise convergence contract instead of legacy plateau logic."""
+    if str(layerwise_summary.get("schema_version", "")).startswith(
+            "stage2_layerwise_robust_"
+    ):
+        final_evidence = layerwise_summary.get("final_evidence") or {}
+        path = os.path.join(out_dir, persistence.BLB_SEARCH_LOG_TXT)
+        lines = [
+            "Stage-2 layerwise robust PPO search status",
+            f"completed_episodes: {int(layerwise_summary.get('completed_episodes', 0) or 0)}",
+            f"converged: {bool(layerwise_summary.get('converged', False))}",
+            f"block4_entropy: {layerwise_summary.get('block4_entropy')}",
+            f"k_entropy: {layerwise_summary.get('k_entropy')}",
+            f"stall_update_windows: {int(layerwise_summary.get('stall_update_windows', 0) or 0)}",
+            f"final_evidence_status: {final_evidence.get('status', 'missing')}",
+            f"P1: {sum(1 for value in priority if int(value) == 1)}",
+            f"P2: {sum(1 for value in priority if int(value) == 2)}",
+            f"P3: {sum(1 for value in priority if int(value) == 3)}",
+        ]
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+        log_fn(f"[regen] layerwise convergence status -> {path}")
+        return path
+    return rl_local_optimum.write_local_optimum_report(
+        os.path.join(out_dir, persistence.BLB_SEARCH_LOG_TXT),
+        episode_returns=episode_returns,
+        episode_entropies=entropies or None,
+        best_score_history=None,
+        completed_episodes=len(episode_returns),
+        title="BLB Stage-2 RL",
+        extra_lines=[
+            "",
+            "--- priority histogram ---",
+            f"  P1(acc): {sum(1 for value in priority if int(value) == 1)}",
+            f"  P2(stab): {sum(1 for value in priority if int(value) == 2)}",
+            f"  P3(cost): {sum(1 for value in priority if int(value) == 3)}",
+        ],
+        priority=priority,
+        fusion_count=fusion_count,
+        worst_signed_margin=worst_signed_margin,
+        log_fn=log_fn,
+    )
 
 
 def main(argv=None):
@@ -268,21 +694,13 @@ def main(argv=None):
     elif not present:
         print("[regen]   diagnostics → skipped (run predates ADR-014 debug fields)")
 
-    # 局部最优 / 健康检测报告（Stage-1 同款版式）。
-    report_path = rl_local_optimum.write_local_optimum_report(
-        os.path.join(out_dir, persistence.BLB_SEARCH_LOG_TXT),
+    layerwise_summary = _read_layerwise_summary(progress_dir)
+    report_path = _write_search_health_report(
+        out_dir,
+        persistence=persistence,
+        layerwise_summary=layerwise_summary,
         episode_returns=ep["returns"],
-        episode_entropies=ent or None,
-        best_score_history=None,
-        completed_episodes=n,
-        title="BLB Stage-2 RL",
-        extra_lines=[
-            "",
-            "--- 优先级分布（priority histogram）---",
-            f"  P1(acc): {sum(1 for p in ep['priority'] if p == 1)}",
-            f"  P2(stab): {sum(1 for p in ep['priority'] if p == 2)}",
-            f"  P3(cost): {sum(1 for p in ep['priority'] if p == 3)}",
-        ],
+        entropies=ent,
         priority=ep["priority"],
         fusion_count=ep["fusion"],
         worst_signed_margin=_opt("worst_signed_margin"),
@@ -290,6 +708,17 @@ def main(argv=None):
     )
     if report_path:
         print(f"[regen]   search_log  → {report_path}")
+    if str(layerwise_summary.get("schema_version", "")).startswith(
+            "stage2_layerwise_robust_"
+    ):
+        html_path = _write_layerwise_html_report(
+            out_dir,
+            summary=layerwise_summary,
+            baseline=baselines,
+            curve_paths=curve_paths,
+            layerwise_curves=_read_layerwise_curves(progress_dir),
+        )
+        print(f"[regen]   layerwise_html → {html_path}")
     print("[regen] done.")
     return 0
 

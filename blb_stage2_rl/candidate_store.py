@@ -14,7 +14,7 @@ import math
 import os
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from json_utils import stable_json_hash, to_jsonable
 from jsonl_utils import iter_jsonl
@@ -30,6 +30,7 @@ FIDELITY_ORDER = {
     "F4": 2,
 }
 _CANDIDATE_JSONL_ENCODER = json.JSONEncoder(ensure_ascii=True, sort_keys=True)
+_RECOVERY_RECORD_TYPE = "candidate_store_recovery_v1"
 # Note: F2 / F3 were intermediate tiers in the original spec; deprecated and
 # removed 2026-05-16. The active ladder is F0 (optimizer-only, no model
 # forward) → F1 (small probe + few MC trials during training) → F4 (full
@@ -381,18 +382,245 @@ class CandidateStore:
 
     def __init__(self, path: os.PathLike[str] | str):
         self.path = Path(path)
-        self._trial_records_by_candidate_key: Optional[
-            Dict[str, List[Dict[str, Any]]]
+        self._recovery_layout_size: Optional[int] = None
+        self._recovery_markers: Tuple[Tuple[int, int, int, int], ...] = ()
+        self._active_spans: Tuple[Tuple[int, int], ...] = ()
+        self._logical_generation = 0
+        self._trial_offsets_by_candidate_key: Optional[
+            Dict[str, List[int]]
+        ] = None
+        self._trial_seeds_by_candidate_key: Optional[
+            Dict[str, set[int]]
+        ] = None
+        self._promotion_state_by_candidate_key: Optional[
+            Dict[str, Tuple[bool, str]]
         ] = None
 
-    def read_all(self) -> List[Dict[str, Any]]:
+    def _reset_trial_indices(self) -> None:
+        self._trial_offsets_by_candidate_key = None
+        self._trial_seeds_by_candidate_key = None
+        self._promotion_state_by_candidate_key = None
+
+    def _invalidate_recovery_layout(self) -> None:
+        self._recovery_layout_size = None
+        self._recovery_markers = ()
+        self._active_spans = ()
+
+    @staticmethod
+    def _resolve_active_spans(
+            markers: Sequence[Tuple[int, int, int, int]],
+            file_size: int,
+            ) -> Tuple[Tuple[int, int], ...]:
+        spans: List[Tuple[int, int]] = []
+        end = int(file_size)
+        marker_index = len(markers) - 1
+        while end > 0:
+            while marker_index >= 0 and markers[marker_index][0] >= end:
+                marker_index -= 1
+            if marker_index < 0:
+                spans.append((0, end))
+                break
+            _marker_start, marker_end, checkpoint_size, _generation = (
+                markers[marker_index]
+            )
+            if marker_end < end:
+                spans.append((marker_end, end))
+            end = checkpoint_size
+            marker_index -= 1
+        spans.reverse()
+        return tuple(spans)
+
+    def _extend_active_tail(self, row_offset: int, row_end: int) -> None:
+        if self._recovery_layout_size != row_offset:
+            self._invalidate_recovery_layout()
+            return
+        spans = list(self._active_spans)
+        if spans and spans[-1][1] == row_offset:
+            spans[-1] = (spans[-1][0], row_end)
+        else:
+            spans.append((row_offset, row_end))
+        self._active_spans = tuple(spans)
+        self._recovery_layout_size = row_end
+
+    @staticmethod
+    def _decode_jsonl_row(
+            line: bytes,
+            *,
+            path: Path,
+            offset: int,
+            ) -> Optional[Dict[str, Any]]:
+        if not line or line.isspace():
+            return None
+        try:
+            payload = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"{path}: byte {offset}: invalid JSON") from exc
+        if not isinstance(payload, dict):
+            return None
+        return payload
+
+    def _load_recovery_layout(self) -> None:
+        self._repair_unterminated_tail()
+        file_size = self.path.stat().st_size if self.path.exists() else 0
+        if self._recovery_layout_size == file_size:
+            return
+
+        markers: List[Tuple[int, int, int, int]] = []
+        if file_size:
+            with self.path.open("rb") as handle:
+                while True:
+                    offset = handle.tell()
+                    line = handle.readline()
+                    if not line:
+                        break
+                    if _RECOVERY_RECORD_TYPE.encode("ascii") not in line:
+                        continue
+                    payload = self._decode_jsonl_row(
+                        line, path=self.path, offset=offset,
+                    )
+                    if payload is None or payload.get("record_type") != _RECOVERY_RECORD_TYPE:
+                        continue
+                    checkpoint_size = payload.get("checkpoint_size")
+                    generation = payload.get("logical_generation")
+                    if (
+                            isinstance(checkpoint_size, bool)
+                            or not isinstance(checkpoint_size, int)
+                            or checkpoint_size < 0
+                            or checkpoint_size > offset
+                    ):
+                        raise ValueError("invalid candidate-store recovery checkpoint")
+                    if (
+                            isinstance(generation, bool)
+                            or not isinstance(generation, int)
+                            or generation <= 0
+                    ):
+                        raise ValueError("invalid candidate-store logical generation")
+                    markers.append(
+                        (offset, handle.tell(), checkpoint_size, generation)
+                    )
+
+        # The newest marker selects a checkpointed logical prefix plus its own
+        # tail. Repeating that rule through older markers excludes every
+        # abandoned branch without rewriting any complete physical row.
+        self._recovery_layout_size = file_size
+        self._recovery_markers = tuple(markers)
+        self._active_spans = self._resolve_active_spans(markers, file_size)
+        self._logical_generation = max(
+            (marker[3] for marker in markers),
+            default=0,
+        )
+
+    def _iter_active_records(self) -> Iterator[Tuple[int, Dict[str, Any]]]:
+        self._load_recovery_layout()
         if not self.path.exists():
-            return []
-        records: List[Dict[str, Any]] = []
-        for payload in iter_jsonl(self.path, errors="raise"):
+            return
+        with self.path.open("rb") as handle:
+            for span_start, span_end in self._active_spans:
+                handle.seek(span_start)
+                while handle.tell() < span_end:
+                    offset = handle.tell()
+                    line = handle.readline()
+                    if not line:
+                        break
+                    payload = self._decode_jsonl_row(
+                        line, path=self.path, offset=offset,
+                    )
+                    if payload is None or payload.get("record_type") == _RECOVERY_RECORD_TYPE:
+                        continue
+                    yield offset, payload
+
+    def recover_to_checkpoint_size(self, committed_size: int) -> None:
+        """Hide complete post-checkpoint rows without rewriting append-only history."""
+        if isinstance(committed_size, bool):
+            raise TypeError("committed_size must be a non-negative integer")
+        size = int(committed_size)
+        if size < 0:
+            raise ValueError("committed_size must be non-negative")
+        self._repair_unterminated_tail()
+        current = self.path.stat().st_size if self.path.exists() else 0
+        if size > current:
+            raise ValueError(
+                f"candidate store is shorter than checkpoint: {current} < {size}"
+            )
+        if size and self.path.exists():
+            with self.path.open("rb") as handle:
+                handle.seek(size - 1)
+                if handle.read(1) != b"\n":
+                    raise ValueError("checkpoint candidate-store size is not a JSONL boundary")
+        if current > size:
+            self._load_recovery_layout()
+            next_generation = self._logical_generation + 1
+            marker = {
+                "record_type": _RECOVERY_RECORD_TYPE,
+                "checkpoint_size": size,
+                "logical_generation": next_generation,
+                "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(_CANDIDATE_JSONL_ENCODER.encode(marker) + "\n")
+            marker_end = self.path.stat().st_size
+            markers = self._recovery_markers + (
+                (current, marker_end, size, next_generation),
+            )
+            self._recovery_layout_size = marker_end
+            self._recovery_markers = markers
+            self._active_spans = self._resolve_active_spans(markers, marker_end)
+            self._logical_generation = next_generation
+        self._reset_trial_indices()
+
+    def _repair_unterminated_tail(self) -> None:
+        """Recover only the final row when an append was interrupted."""
+        if not self.path.exists() or self.path.stat().st_size == 0:
+            return
+        with self.path.open("r+b") as handle:
+            handle.seek(0, os.SEEK_END)
+            end = handle.tell()
+            handle.seek(end - 1)
+            if handle.read(1) == b"\n":
+                return
+
+            cursor = end
+            row_start = 0
+            while cursor > 0:
+                chunk_size = min(64 * 1024, cursor)
+                cursor -= chunk_size
+                handle.seek(cursor)
+                chunk = handle.read(chunk_size)
+                newline = chunk.rfind(b"\n")
+                if newline >= 0:
+                    row_start = cursor + newline + 1
+                    break
+            handle.seek(row_start)
+            tail = handle.read(end - row_start)
+            try:
+                payload = json.loads(tail.decode("utf-8"))
+                if not isinstance(payload, Mapping):
+                    raise ValueError("candidate JSONL rows must be objects")
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                handle.truncate(row_start)
+                self._invalidate_recovery_layout()
+            else:
+                handle.seek(end)
+                handle.write(b"\n")
+                self._invalidate_recovery_layout()
+
+    def read_all(self) -> List[Dict[str, Any]]:
+        return list(self.iter_active_records())
+
+    def iter_active_records(self) -> Iterator[Dict[str, Any]]:
+        """Stream the current logical generation without materializing JSONL."""
+        if not self.path.exists():
+            return
+        self._load_recovery_layout()
+        payloads: Iterable[Dict[str, Any]]
+        if self._recovery_markers:
+            payloads = (payload for _offset, payload in self._iter_active_records())
+        else:
+            payloads = iter_jsonl(self.path, errors="raise")
+        for payload in payloads:
             payload.setdefault("legacy_record", is_legacy_record(payload))
-            records.append(payload)
-        return records
+            yield payload
 
     def append(self, record: Mapping[str, Any]) -> Dict[str, Any]:
         payload = dict(record)
@@ -425,38 +653,124 @@ class CandidateStore:
         payload.setdefault("legacy_record", is_legacy_record(payload))
         payload.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
         payload.setdefault("rank_key", list(candidate_rank_key(payload)))
+        self._load_recovery_layout()
+        payload.setdefault("logical_generation", self._logical_generation)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._repair_unterminated_tail()
+        row_offset = self.path.stat().st_size if self.path.exists() else 0
         with self.path.open("a", encoding="utf-8") as f:
-            f.writelines(_CANDIDATE_JSONL_ENCODER.iterencode(payload))
-            f.write("\n")
+            f.write(_CANDIDATE_JSONL_ENCODER.encode(payload) + "\n")
+        if self.path.exists():
+            self._extend_active_tail(row_offset, self.path.stat().st_size)
+        else:
+            self._invalidate_recovery_layout()
         if (
-                self._trial_records_by_candidate_key is not None
+                self._trial_offsets_by_candidate_key is not None
                 and payload.get("record_type") in (
                     "candidate_trial_group_v1", "candidate_promotion_status_v1",
                 )
                 and payload.get("candidate_key")
         ):
-            self._trial_records_by_candidate_key.setdefault(
-                str(payload["candidate_key"]), [],
-            ).append(payload)
+            self._index_trial_record(payload, offset=row_offset)
         return payload
+
+    @staticmethod
+    def _trial_group_from_record(
+            record: Mapping[str, Any],
+            ) -> Optional[TrialSeries]:
+        group = record.get("trial_group")
+        if not isinstance(group, Mapping):
+            return None
+        return TrialSeries(
+            loss=group.get("loss", ()),
+            metric1=group.get("metric1", ()),
+            metric2=group.get("metric2", ()),
+            seeds=group.get("seeds", ()),
+        )
+
+    def _index_trial_record(
+            self,
+            record: Mapping[str, Any],
+            *,
+            offset: int,
+            ) -> None:
+        if (
+                self._trial_offsets_by_candidate_key is None
+                or self._trial_seeds_by_candidate_key is None
+                or self._promotion_state_by_candidate_key is None
+        ):
+            return
+        key = str(record.get("candidate_key", ""))
+        if not key:
+            return
+        record_type = str(record.get("record_type", ""))
+        attempted, status = self._promotion_state_by_candidate_key.get(
+            key, (False, ""),
+        )
+        if record_type == "candidate_promotion_status_v1":
+            self._promotion_state_by_candidate_key[key] = (
+                True, str(record.get("promotion_status", status)),
+            )
+            return
+        if record_type != "candidate_trial_group_v1":
+            return
+        trials = self._trial_group_from_record(record)
+        if trials is None:
+            return
+        seed_index = self._trial_seeds_by_candidate_key.setdefault(key, set())
+        for seed in trials.seeds:
+            if int(seed) in seed_index:
+                raise ValueError("stored candidate trial evidence contains duplicate seeds")
+            seed_index.add(int(seed))
+        self._trial_offsets_by_candidate_key.setdefault(key, []).append(int(offset))
+        metadata = record.get("trial_group_metadata")
+        metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
+        marker = str(metadata.get("promotion_marker", ""))
+        metadata_status = str(metadata.get("promotion_status", ""))
+        if marker in ("fresh_top_up", "promoted") or metadata_status:
+            attempted = True
+        if metadata_status == "promoted" or marker == "promoted":
+            status = "promoted"
+        self._promotion_state_by_candidate_key[key] = (attempted, status)
+
+    def _ensure_trial_indices(self) -> None:
+        if (
+                self._trial_offsets_by_candidate_key is not None
+                and self._trial_seeds_by_candidate_key is not None
+                and self._promotion_state_by_candidate_key is not None
+        ):
+            return
+        self._trial_offsets_by_candidate_key = {}
+        self._trial_seeds_by_candidate_key = {}
+        self._promotion_state_by_candidate_key = {}
+        for offset, record in self._iter_active_records():
+            if record.get("record_type") not in (
+                    "candidate_trial_group_v1", "candidate_promotion_status_v1",
+            ):
+                continue
+            key = record.get("candidate_key")
+            if not key:
+                continue
+            self._index_trial_record(record, offset=offset)
 
     def _trial_records_for_candidate_key(
             self,
             candidate_key_value: str,
-            ) -> Sequence[Mapping[str, Any]]:
-        if self._trial_records_by_candidate_key is None:
-            indexed: Dict[str, List[Dict[str, Any]]] = {}
-            for record in self.read_all():
-                if record.get("record_type") not in (
-                        "candidate_trial_group_v1", "candidate_promotion_status_v1",
-                ):
-                    continue
-                key = record.get("candidate_key")
-                if key:
-                    indexed.setdefault(str(key), []).append(record)
-            self._trial_records_by_candidate_key = indexed
-        return self._trial_records_by_candidate_key.get(str(candidate_key_value), ())
+            ) -> Iterator[Mapping[str, Any]]:
+        self._ensure_trial_indices()
+        offsets = self._trial_offsets_by_candidate_key.get(
+            str(candidate_key_value), (),
+        )
+        if not offsets or not self.path.exists():
+            return
+        with self.path.open("rb") as handle:
+            for offset in offsets:
+                handle.seek(offset)
+                record = self._decode_jsonl_row(
+                    handle.readline(), path=self.path, offset=offset,
+                )
+                if record is not None:
+                    yield record
 
     def append_trial_group(
             self,
@@ -478,15 +792,58 @@ class CandidateStore:
             raise ValueError("duplicate trial seeds within trial group")
 
         normalized_action = normalize_action_indices(action_indices)
-        existing = self.trial_evidence_for_action(
-            normalized_action, identity_context,
+        wanted_key = candidate_key(normalized_action, identity_context)
+        self._ensure_trial_indices()
+        existing_seeds = self._trial_seeds_by_candidate_key.get(wanted_key, set())
+        overlap = sorted(
+            int(seed) for seed in trials.seeds if int(seed) in existing_seeds
         )
-        existing_seeds = set(existing.trials.seeds) if existing is not None else set()
-        overlap = sorted(existing_seeds.intersection(trials.seeds))
+        metadata_payload = to_jsonable(dict(metadata), stringify_unknown=True)
         if overlap:
+            if len(overlap) == len(trials.seeds):
+                replay_values = tuple(
+                    (
+                        float(trials.loss[idx]),
+                        float(trials.metric1[idx]),
+                        float(trials.metric2[idx]),
+                    )
+                    for idx in range(len(trials.seeds))
+                )
+                exact_match = next((
+                    (record, stored)
+                    for record in self._trial_records_for_candidate_key(wanted_key)
+                    if (
+                        (stored := self._trial_group_from_record(record)) is not None
+                        and tuple(stored.seeds) == tuple(trials.seeds)
+                    )
+                ), None)
+                if exact_match is not None:
+                    exact_record, stored = exact_match
+                    existing_values = tuple(
+                        (
+                            float(stored.loss[idx]),
+                            float(stored.metric1[idx]),
+                            float(stored.metric2[idx]),
+                        )
+                        for idx in range(len(stored.seeds))
+                    )
+                    existing_metadata = exact_record.get("trial_group_metadata")
+                    if (
+                            replay_values == existing_values
+                            and existing_metadata == metadata_payload
+                    ):
+                        return {
+                            "record_type": "candidate_trial_group_v1",
+                            "candidate_key": wanted_key,
+                            "action_indices": normalized_action,
+                            "idempotent_replay": True,
+                        }
+                    if replay_values == existing_values:
+                        raise ValueError(
+                            "duplicate trial seeds replayed with different metadata"
+                        )
             raise ValueError(f"duplicate trial seeds for candidate identity: {overlap}")
 
-        metadata_payload = to_jsonable(dict(metadata), stringify_unknown=True)
         return self.append({
             "record_type": "candidate_trial_group_v1",
             "action_indices": normalized_action,
@@ -507,12 +864,19 @@ class CandidateStore:
             self,
             action_indices: Any,
             identity_context: Mapping[str, Any],
+            *,
+            max_trials: Optional[int] = None,
             ) -> Optional[CandidateTrialEvidence]:
         """Pool all raw groups matching canonical action plus run context."""
         if not isinstance(identity_context, Mapping):
             raise TypeError("identity_context must be a mapping")
         normalized_action = normalize_action_indices(action_indices)
         wanted_key = candidate_key(normalized_action, identity_context)
+        trial_limit = None
+        if max_trials is not None:
+            if isinstance(max_trials, bool) or int(max_trials) <= 0:
+                raise ValueError("max_trials must be a positive integer")
+            trial_limit = int(max_trials)
         loss: List[float] = []
         metric1: List[float] = []
         metric2: List[float] = []
@@ -523,39 +887,34 @@ class CandidateStore:
 
         for record in self._trial_records_for_candidate_key(wanted_key):
             record_type = str(record.get("record_type", ""))
-            if record_type == "candidate_promotion_status_v1":
-                promotion_attempted = True
-                promotion_status = str(record.get("promotion_status", promotion_status))
-                continue
             if record_type != "candidate_trial_group_v1":
                 continue
-            group = record.get("trial_group")
-            if not isinstance(group, Mapping):
+            trial_group = self._trial_group_from_record(record)
+            if trial_group is None:
                 continue
-            trial_group = TrialSeries(
-                loss=group.get("loss", ()),
-                metric1=group.get("metric1", ()),
-                metric2=group.get("metric2", ()),
-                seeds=group.get("seeds", ()),
-            )
-            loss.extend(trial_group.loss)
-            metric1.extend(trial_group.metric1)
-            metric2.extend(trial_group.metric2)
-            seeds.extend(trial_group.seeds)
+            take = len(trial_group.loss)
+            if trial_limit is not None:
+                take = min(take, trial_limit - len(loss))
+            if take <= 0:
+                break
+            loss.extend(trial_group.loss[:take])
+            metric1.extend(trial_group.metric1[:take])
+            metric2.extend(trial_group.metric2[:take])
+            seeds.extend(trial_group.seeds[:take])
             group_metadata = record.get("trial_group_metadata")
             metadata_dict = dict(group_metadata) if isinstance(group_metadata, Mapping) else {}
             groups.append(MappingProxyType(metadata_dict))
-            marker = str(metadata_dict.get("promotion_marker", ""))
-            status = str(metadata_dict.get("promotion_status", ""))
-            if marker in ("fresh_top_up", "promoted") or status:
-                promotion_attempted = True
-            if status == "promoted" or marker == "promoted":
-                promotion_status = "promoted"
+            if trial_limit is not None and len(loss) >= trial_limit:
+                break
 
         if not loss:
             return None
         if len(set(seeds)) != len(seeds):
             raise ValueError("stored candidate trial evidence contains duplicate seeds")
+        self._ensure_trial_indices()
+        promotion_attempted, promotion_status = (
+            self._promotion_state_by_candidate_key.get(wanted_key, (False, ""))
+        )
         return CandidateTrialEvidence(
             candidate_key=wanted_key,
             action_indices=tuple(normalized_action),
@@ -566,6 +925,19 @@ class CandidateStore:
             promotion_attempted=promotion_attempted,
             promotion_status=promotion_status,
         )
+
+    def trial_count_for_action(
+            self,
+            action_indices: Any,
+            identity_context: Mapping[str, Any],
+            ) -> int:
+        """Return the complete raw-trial count without materializing evidence."""
+        if not isinstance(identity_context, Mapping):
+            raise TypeError("identity_context must be a mapping")
+        normalized_action = normalize_action_indices(action_indices)
+        wanted_key = candidate_key(normalized_action, identity_context)
+        self._ensure_trial_indices()
+        return len(self._trial_seeds_by_candidate_key.get(wanted_key, {}))
 
     def best_for_action(
             self,

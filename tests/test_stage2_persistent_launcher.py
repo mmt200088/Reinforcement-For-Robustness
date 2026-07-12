@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -58,6 +59,33 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         }
         self.assertIn("blb_v3_decision_granularity", assigned_attrs)
         self.assertIn("blb_v3_reward_design", assigned_attrs)
+
+    def test_python_robust_constraint_fields_reach_evaluator_constructor(self):
+        expected = {
+            "stage2_stability_multiplier": "float",
+            "blb_v3_baseline_groups": "int",
+            "blb_v3_baseline_trials_per_group": "int",
+            "blb_v3_constraint_bootstrap_samples": "int",
+            "blb_v3_online_constraint_probability": "float",
+            "blb_v3_promotion_constraint_probability": "float",
+            "blb_v3_final_constraint_probability": "float",
+        }
+        tune_tree = ast.parse((REPO_ROOT / "rl_tune.py").read_text(encoding="utf-8"))
+        train_fn = next(
+            node for node in tune_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "train"
+        )
+        train_args = {arg.arg: ast.unparse(arg.annotation) for arg in train_fn.args.args}
+        for name, annotation in expected.items():
+            self.assertEqual(train_args[name], annotation)
+        evaluator_call = next(
+            node for node in ast.walk(train_fn)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "LayerImportanceEvaluator"
+        )
+        forwarded = {keyword.arg for keyword in evaluator_call.keywords}
+        self.assertTrue(set(expected).issubset(forwarded))
 
     def _capture_stage2_launcher_argv(self, extra_args):
         with tempfile.TemporaryDirectory(prefix="stage2_public_config_") as td:
@@ -118,15 +146,77 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 for part in capture.read_bytes().split(b"\0")[:-1]
             ]
 
+    def _capture_persistent_slug_and_metadata(self, extra_args):
+        with tempfile.TemporaryDirectory(prefix="stage2_constraint_identity_") as td:
+            tmp = Path(td)
+            capture = tmp / "python_argv.nul"
+            fakebin = tmp / "fakebin"
+            fakebin.mkdir()
+            fake_python = fakebin / "python"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\0' "$@" > {str(capture)!r}
+                    exit 0
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_python.chmod(0o755)
+            env = os.environ.copy()
+            env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
+            env["CUDA_VISIBLE_DEVICES"] = ""
+            result = subprocess.run(
+                [
+                    "bash",
+                    "llama_7B_LayerImportance.sh",
+                    "run",
+                    "rl",
+                    "--preset",
+                    "mrpc-blb-stage2-rl",
+                    "--mode",
+                    "stage2-only",
+                    "--persistent-root",
+                    str(tmp / "persistent"),
+                    "--stage2-search-episodes",
+                    "170",
+                    "--fresh",
+                    *extra_args,
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                result.returncode, 0, msg=result.stdout + "\n" + result.stderr,
+            )
+            for _ in range(50):
+                if capture.is_file():
+                    break
+                import time
+
+                time.sleep(0.1)
+            self.assertTrue(capture.is_file(), msg="launcher did not invoke python")
+            argv = [
+                part.decode("utf-8")
+                for part in capture.read_bytes().split(b"\0")[:-1]
+            ]
+            output_dir = Path(argv[argv.index("--output_dir") + 1])
+            metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+            return output_dir.name, metadata
+
     def test_stage2_public_decision_and_reward_defaults_and_overrides_reach_python(self):
         default_argv = self._capture_stage2_launcher_argv([])
         self.assertEqual(
             default_argv[default_argv.index("--blb_v3_decision_granularity") + 1],
-            "block",
+            "layer",
         )
         self.assertEqual(
             default_argv[default_argv.index("--blb_v3_reward_design") + 1],
-            "stage1_aligned",
+            "robust_constrained",
         )
 
         explicit_argv = self._capture_stage2_launcher_argv([
@@ -143,6 +233,143 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             explicit_argv[explicit_argv.index("--blb_v3_reward_design") + 1],
             "robust_constrained",
         )
+
+    def test_active_layerwise_robust_defaults_reach_python(self):
+        argv = self._capture_stage2_launcher_argv([])
+        expected = {
+            "--stage2_limit_tolerance": "0.001",
+            "--stage2_stability_multiplier": "2.0",
+            "--stage2_k_trials": "5",
+            "--blb_v3_baseline_groups": "5",
+            "--blb_v3_baseline_trials_per_group": "5",
+            "--blb_v3_constraint_bootstrap_samples": "4096",
+            "--blb_v3_online_constraint_probability": "0.50",
+            "--blb_v3_promotion_constraint_probability": "0.80",
+            "--blb_v3_final_constraint_probability": "0.95",
+            "--blb_v3_promotion_validation_trials": "25",
+            "--blb_v3_final_selection_validation_trials": "25",
+            "--blb_v3_rollout_size": "120",
+            "--stage2_rl_lr": "5e-5",
+        }
+        for option, value in expected.items():
+            with self.subTest(option=option):
+                self.assertIn(option, argv)
+                self.assertEqual(argv[argv.index(option) + 1], value)
+        self.assertEqual(argv[argv.index("--blb_v3_substage_mode") + 1], "false")
+        self.assertNotIn("--blb_v3_warmstart_neighbor_sampling", argv)
+        self.assertNotIn("--blb_v3_fusion_probe_interval", argv)
+        self.assertNotIn("--blb_v3_fusion_exploration_epsilon", argv)
+
+    def test_constraint_probability_gates_must_be_monotonic(self):
+        with tempfile.TemporaryDirectory(prefix="stage2_probability_order_") as td:
+            tmp = Path(td)
+            fakebin = tmp / "fakebin"
+            fakebin.mkdir()
+            fake_python = fakebin / "python"
+            fake_python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            fake_python.chmod(0o755)
+            env = os.environ.copy()
+            env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "llama_7B_LayerImportance.sh",
+                    "run",
+                    "rl",
+                    "--preset",
+                    "mrpc-blb-stage2-rl",
+                    "--persistent-root",
+                    str(tmp / "persistent"),
+                    "--fresh",
+                    "--blb-v3-online-constraint-probability",
+                    "0.90",
+                    "--blb-v3-promotion-constraint-probability",
+                    "0.80",
+                    "--blb-v3-final-constraint-probability",
+                    "0.95",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("online <= promotion <= final", result.stdout + result.stderr)
+
+    def test_layerwise_robust_persistence_uses_stability_multiplier(self):
+        slug, metadata = self._capture_persistent_slug_and_metadata([
+            "--stage2-stability-tolerance",
+            "3.0",
+            "--stage2-stability-multiplier",
+            "2.25",
+        ])
+
+        self.assertEqual(slug, "s1t0.001_s2t0.001_s2st2.25")
+        self.assertEqual(metadata["stage2_stability_multiplier"], 2.25)
+        self.assertNotIn("stage2_stability_tolerance", metadata)
+        self.assertEqual(metadata["blb_v3_decision_granularity"], "layer")
+        self.assertEqual(metadata["blb_v3_reward_design"], "robust_constrained")
+
+    def test_block_stage1_aligned_rollback_persistence_uses_legacy_tolerance(self):
+        slug, metadata = self._capture_persistent_slug_and_metadata([
+            "--blb-v3-decision-granularity",
+            "block",
+            "--blb-v3-reward-design",
+            "stage1_aligned",
+            "--stage2-stability-tolerance",
+            "3.0",
+            "--stage2-stability-multiplier",
+            "2.25",
+        ])
+
+        self.assertEqual(slug, "s1t0.001_s2t0.001_s2st3.0")
+        self.assertEqual(metadata["stage2_stability_tolerance"], 3.0)
+        self.assertNotIn("stage2_stability_multiplier", metadata)
+        self.assertEqual(metadata["blb_v3_decision_granularity"], "block")
+        self.assertEqual(metadata["blb_v3_reward_design"], "stage1_aligned")
+
+    def test_layerwise_resume_rejects_legacy_metadata_without_multiplier(self):
+        with tempfile.TemporaryDirectory(prefix="stage2_legacy_metadata_") as td:
+            root = Path(td) / "persistent"
+            run_dir = (
+                root / "rl" / "bert-base" / "mrpc"
+                / "s1t0.001_s2t0.001_s2st2.0"
+            )
+            run_dir.mkdir(parents=True)
+            (run_dir / "metadata.json").write_text(
+                json.dumps({
+                    "stage1_accuracy_tolerance": 0.001,
+                    "stage2_limit_tolerance": 0.001,
+                    "stage2_stability_tolerance": 2.0,
+                }),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "llama_7B_LayerImportance.sh",
+                    "run",
+                    "rl",
+                    "--preset",
+                    "mrpc-blb-stage2-rl",
+                    "--mode",
+                    "stage2-only",
+                    "--persistent-root",
+                    str(root),
+                    "--stage2-search-episodes",
+                    "170",
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("CONSTRAINT_MISMATCH", result.stdout + result.stderr)
+        self.assertIn("stage2_stability_multiplier", result.stdout + result.stderr)
 
     def test_stage2_public_decision_and_reward_options_reject_unknown_values(self):
         for option, value in (
@@ -320,7 +547,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 / "rl"
                 / "bert-base"
                 / "mrpc"
-                / "s1t0.001_s2t0.001_s2st3.0"
+                / "s1t0.001_s2t0.001_s2st2.0"
             )
 
             env = os.environ.copy()
@@ -412,7 +639,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 / "rl"
                 / "bert-base"
                 / "mrpc"
-                / "s1t0.001_s2t0.001_s2st3.0__gate_gN_20260625"
+                / "s1t0.001_s2t0.001_s2st2.0__gate_gN_20260625"
             )
 
             env = os.environ.copy()
@@ -501,7 +728,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 / "rl"
                 / "bert-base"
                 / "mrpc"
-                / "s1t0.001_s2t0.001_s2st3.0"
+                / "s1t0.001_s2t0.001_s2st2.0"
             )
 
             env = os.environ.copy()
@@ -554,7 +781,8 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--output_dir") + 1], str(expected_output_dir))
         self.assertEqual(argv[argv.index("--stage1_accuracy_tolerance") + 1], "0.001")
         self.assertEqual(argv[argv.index("--stage2_limit_tolerance") + 1], "0.001")
-        self.assertEqual(argv[argv.index("--stage2_stability_tolerance") + 1], "3.0")
+        self.assertEqual(argv[argv.index("--stage2_stability_tolerance") + 1], "1.2")
+        self.assertEqual(argv[argv.index("--stage2_stability_multiplier") + 1], "2.0")
 
     def test_server_command_short_rl_runs_use_tagged_persistent_dirs(self):
         source = (REPO_ROOT / "SERVER_COMMAND.md").read_text(encoding="utf-8")

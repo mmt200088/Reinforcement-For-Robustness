@@ -376,6 +376,48 @@ def test_candidate_assessment_is_deterministic_for_the_same_seed():
         assert 0.0 <= probability <= 1.0
 
 
+def test_candidate_assessment_chunks_bootstrap_without_changing_result(monkeypatch):
+    from blb_stage2_rl import statistical_constraints as constraints
+
+    reference = _reference()
+    candidate = _candidate(
+        loss=np.linspace(0.93, 0.97, 25),
+        metric1=np.linspace(0.82, 0.88, 25),
+        metric2=np.linspace(0.72, 0.78, 25),
+    )
+    monkeypatch.setattr(
+        constraints,
+        "_MAX_BOOTSTRAP_INDEX_ELEMENTS",
+        10_000_000,
+    )
+    unchunked = constraints.assess_candidate(
+        candidate,
+        reference,
+        gate_probability=0.5,
+        bootstrap_seed=101,
+    )
+
+    observed_index_shapes = []
+    original = constraints._bootstrap_summaries
+
+    def recording_bootstrap(arrays, indices):
+        observed_index_shapes.append(indices.shape)
+        return original(arrays, indices)
+
+    monkeypatch.setattr(constraints, "_MAX_BOOTSTRAP_INDEX_ELEMENTS", 64)
+    monkeypatch.setattr(constraints, "_bootstrap_summaries", recording_bootstrap)
+    chunked = constraints.assess_candidate(
+        candidate,
+        reference,
+        gate_probability=0.5,
+        bootstrap_seed=101,
+    )
+
+    assert chunked == unchunked
+    assert len(observed_index_shapes) > 1
+    assert max(rows * columns for rows, columns in observed_index_shapes) <= 64
+
+
 def test_build_baseline_reference_requires_at_least_25_pooled_trials():
     groups, *_ = _baseline_groups()
 

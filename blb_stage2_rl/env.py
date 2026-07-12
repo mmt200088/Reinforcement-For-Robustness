@@ -348,6 +348,7 @@ class BLBStage2Env:
         # is not threaded into compute_reward.
         self.loss_threshold: Optional[float] = None
         self.statistical_reference = None
+        self.statistical_gate_probability = 0.50
         self.max_sfs = max_sfs
         self.num_layers = int(num_layers)
         self.gelu_degree = self._normalize_degree_vector(gelu_degree, default=4, name="gelu_degree")
@@ -842,7 +843,9 @@ class BLBStage2Env:
                 assessment = assess_candidate(
                     trials,
                     reference,
-                    gate_probability=0.50,
+                    gate_probability=float(getattr(
+                        self, "statistical_gate_probability", 0.50,
+                    )),
                     bootstrap_seed=bootstrap_seed,
                 )
                 info["statistical_assessment"] = {

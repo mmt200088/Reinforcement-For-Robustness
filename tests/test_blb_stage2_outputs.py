@@ -26,6 +26,7 @@ import builtins
 import importlib.util
 import json
 import os
+from pathlib import Path
 import sys
 import tempfile
 import types
@@ -592,6 +593,313 @@ class EpisodeTraceMigrationTest(unittest.TestCase):
 
 
 class RegeneratorEndToEndTest(unittest.TestCase):
+    def test_layerwise_action_table_decodes_all_twelve_layers_and_block3_k(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_table_test", "scripts/blb_regen_stage2_outputs.py"
+        )
+        action_matrix = [[0, 0, 2, 3, 4, 5]]
+        action_matrix.extend([[1, 0, 1, 2, 3, 4] for _ in range(11)])
+
+        rows = regen._layerwise_action_table(action_matrix)
+
+        self.assertEqual(len(rows), 12)
+        self.assertEqual(
+            list(rows[0]),
+            ["layer", "block4_fusion", "k_b1", "k_b2", "k_b3", "k_b4", "k_b5"],
+        )
+        self.assertIsNone(rows[0]["k_b1"])
+        self.assertEqual(rows[0]["k_b3"], 13)
+        self.assertEqual(rows[1]["block4_fusion"], 1)
+        self.assertEqual(rows[1]["k_b3"], 11)
+
+    def test_layerwise_html_report_shows_best_config_and_six_gates(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_html_test", "scripts/blb_regen_stage2_outputs.py"
+        )
+        matrix = [[0, 0, 3, 3, 3, 3]] + [[1, 3, 3, 3, 3, 3]] * 11
+        summary = {
+            "best_action_matrix": matrix,
+            "best_variable_cost": 0.5,
+            "best_metrics": {"loss_mean": 0.3, "metric1_mean": 0.88, "metric2_mean": 0.87},
+            "best_assessment": {
+                "loss_precision_probability": 0.96,
+                "metric1_precision_probability": 0.97,
+                "metric2_precision_probability": 0.98,
+                "loss_stability_probability": 0.99,
+                "metric1_stability_probability": 0.95,
+                "metric2_stability_probability": 0.96,
+            },
+            "baseline_reference": {
+                "groups": [
+                    {
+                        "group_index": 0,
+                        "loss_trials": [0.30, 0.31, 0.32, 0.30, 0.31],
+                        "metric1_trials": [0.88, 0.87, 0.89, 0.88, 0.88],
+                        "metric2_trials": [0.87, 0.86, 0.88, 0.87, 0.87],
+                    }
+                ],
+                "pooled": {
+                    "trial_count": 25,
+                    "loss_mean": 0.31,
+                    "loss_std": 0.01,
+                    "metric1_mean": 0.88,
+                    "metric1_std": 0.01,
+                    "metric2_mean": 0.87,
+                    "metric2_std": 0.01,
+                },
+            },
+            "best_promotion_evidence": {
+                "status": "promoted",
+                "trial_count": 25,
+                "trials": {"seeds": list(range(25))},
+            },
+            "final_evidence": {
+                "status": "pending_post_search_revalidation",
+                "required_probability": 0.95,
+                "required_trial_count": 25,
+            },
+        }
+        with tempfile.TemporaryDirectory() as td:
+            path = regen._write_layerwise_html_report(
+                td,
+                summary=summary,
+                baseline={"loss_mean": 0.31, "metric1_mean": 0.88, "metric2_mean": 0.87},
+                curve_paths={},
+            )
+            html = Path(path).read_text(encoding="utf-8")
+
+        self.assertIn("Block4 Fusion", html)
+        self.assertIn("K B3", html)
+        self.assertIn("metric2_stability_probability", html)
+        self.assertIn("0.500000", html)
+        self.assertIn("Baseline Trial Distributions", html)
+        self.assertIn("Promotion Evidence", html)
+        self.assertIn("Final Revalidation Evidence", html)
+        self.assertIn("pending_post_search_revalidation", html)
+        self.assertNotIn("Policy Entropy by Action Type", html)
+
+    def test_layerwise_baseline_parser_prefers_self_contained_summary(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_baseline_test", "scripts/blb_regen_stage2_outputs.py"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            progress = Path(td)
+            (progress / "layerwise_summary.json").write_text(json.dumps({
+                "baseline_reference": {
+                    "pooled": {
+                        "loss_mean": 0.31,
+                        "loss_std": 0.011,
+                        "metric1_mean": 0.88,
+                        "metric1_std": 0.012,
+                        "metric2_mean": 0.87,
+                        "metric2_std": 0.013,
+                    }
+                }
+            }), encoding="utf-8")
+
+            parsed = regen._parse_baselines(str(progress))
+
+        self.assertEqual(parsed["loss_mean"], 0.31)
+        self.assertEqual(parsed["loss_std"], 0.011)
+        self.assertEqual(parsed["metric1_std"], 0.012)
+        self.assertEqual(parsed["metric2_std"], 0.013)
+
+    def test_layerwise_search_report_uses_persisted_convergence_not_legacy_plateau(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_health_test", "scripts/blb_regen_stage2_outputs.py"
+        )
+        summary = {
+            "schema_version": "stage2_layerwise_robust_summary_v1",
+            "completed_episodes": 300,
+            "converged": False,
+            "block4_entropy": 0.4,
+            "k_entropy": 0.5,
+            "stall_update_windows": 2,
+            "final_evidence": {"status": "pending_post_search_revalidation"},
+        }
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(
+                regen.rl_local_optimum,
+                "write_local_optimum_report",
+                side_effect=AssertionError("legacy plateau heuristic must stay disabled"),
+            ):
+                path = regen._write_search_health_report(
+                    td,
+                    persistence=types.SimpleNamespace(
+                        BLB_SEARCH_LOG_TXT="blb_stage2_search_log.txt"
+                    ),
+                    layerwise_summary=summary,
+                    episode_returns=[1.0] * 300,
+                    entropies=[0.5],
+                    priority=[3] * 300,
+                    fusion_count=[24] * 300,
+                    worst_signed_margin=None,
+                    log_fn=lambda *_args: None,
+                )
+            text = Path(path).read_text(encoding="utf-8")
+
+        self.assertIn("converged: False", text)
+        self.assertIn("pending_post_search_revalidation", text)
+        self.assertNotIn("local optimum", text.lower())
+
+    def test_layerwise_html_report_renders_persisted_entropy_and_probability_curves(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_curve_test", "scripts/blb_regen_stage2_outputs.py"
+        )
+        probability_rows = [
+            {
+                "episode": episode,
+                "fresh_constraint_probabilities": {
+                    "loss_precision_probability": 0.50 + offset,
+                    "metric1_precision_probability": 0.51 + offset,
+                    "metric2_precision_probability": 0.52 + offset,
+                    "loss_stability_probability": 0.53 + offset,
+                    "metric1_stability_probability": 0.54 + offset,
+                    "metric2_stability_probability": 0.55 + offset,
+                },
+                "pooled_constraint_probabilities": {
+                    "loss_precision_probability": 0.70 + offset,
+                    "metric1_precision_probability": 0.71 + offset,
+                    "metric2_precision_probability": 0.72 + offset,
+                    "loss_stability_probability": 0.73 + offset,
+                    "metric1_stability_probability": 0.74 + offset,
+                    "metric2_stability_probability": 0.75 + offset,
+                },
+            }
+            for episode, offset in ((1, 0.0), (2, 0.1))
+        ]
+        update_rows = [
+            {
+                "completed_episodes": 120,
+                "entropy": 1.5,
+                "block4_entropy": 0.61,
+                "k_entropy": 1.21,
+            },
+            {
+                "completed_episodes": 240,
+                "entropy": 1.4,
+                "block4_entropy": 0.57,
+                "k_entropy": 1.13,
+            },
+        ]
+        matrix = [[0, 0, 3, 3, 3, 3]] + [[1, 3, 3, 3, 3, 3]] * 11
+        with tempfile.TemporaryDirectory() as td:
+            progress_dir = Path(td) / "progress"
+            diagnostics_dir = progress_dir / "diagnostics"
+            diagnostics_dir.mkdir(parents=True)
+            (diagnostics_dir / "ppo_updates.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in update_rows),
+                encoding="utf-8",
+            )
+            (diagnostics_dir / "episodes.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in probability_rows),
+                encoding="utf-8",
+            )
+
+            curves = regen._read_layerwise_curves(str(progress_dir))
+            self.assertEqual(
+                curves["entropy"]["block4_entropy"],
+                [(120.0, 0.61), (240.0, 0.57)],
+            )
+            self.assertEqual(
+                curves["entropy"]["k_entropy"],
+                [(120.0, 1.21), (240.0, 1.13)],
+            )
+            self.assertEqual(len(curves["fresh_constraint_probabilities"]), 6)
+            self.assertEqual(len(curves["pooled_constraint_probabilities"]), 6)
+            self.assertEqual(
+                curves["fresh_constraint_probabilities"][
+                    "loss_precision_probability"
+                ][0][1],
+                0.50,
+            )
+            self.assertEqual(
+                curves["pooled_constraint_probabilities"][
+                    "loss_precision_probability"
+                ][0][1],
+                0.70,
+            )
+
+            path = regen._write_layerwise_html_report(
+                td,
+                summary={"best_action_matrix": matrix},
+                baseline={},
+                curve_paths={},
+                layerwise_curves=curves,
+            )
+            report_html = Path(path).read_text(encoding="utf-8")
+
+        self.assertIn("Policy Entropy by Action Type", report_html)
+        self.assertIn("Block4 fusion entropy", report_html)
+        self.assertIn("Truncation K entropy", report_html)
+        self.assertIn("Fresh Five-Trial Reward Constraint Probabilities", report_html)
+        self.assertIn("Pooled Ranking and Promotion Constraint Probabilities", report_html)
+        self.assertIn("loss_precision_probability", report_html)
+        self.assertIn("metric2_stability_probability", report_html)
+        self.assertGreaterEqual(report_html.count("<polyline"), 14)
+
+    def test_layerwise_start_manifest_disables_legacy_heuristic_before_summary_exists(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_manifest_test", "scripts/blb_regen_stage2_outputs.py"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            progress = Path(td) / "progress"
+            progress.mkdir()
+            (progress / "layerwise_run_manifest.json").write_text(
+                json.dumps({
+                    "schema_version": "stage2_layerwise_robust_run_v1",
+                    "status": "running",
+                    "completed_episodes": 120,
+                }),
+                encoding="utf-8",
+            )
+            summary = regen._read_layerwise_summary(str(progress))
+            with mock.patch.object(
+                regen.rl_local_optimum,
+                "write_local_optimum_report",
+                side_effect=AssertionError("legacy heuristic must stay disabled"),
+            ):
+                report = regen._write_search_health_report(
+                    td,
+                    persistence=types.SimpleNamespace(
+                        BLB_SEARCH_LOG_TXT="search.txt",
+                    ),
+                    layerwise_summary=summary,
+                    episode_returns=[1.0],
+                    entropies=[0.5],
+                    priority=[3],
+                    fusion_count=[24],
+                    worst_signed_margin=None,
+                    log_fn=lambda *_args: None,
+                )
+            report_text = Path(report).read_text(encoding="utf-8")
+
+        self.assertEqual(summary["status"], "running")
+        self.assertIn("layerwise robust ppo", report_text.lower())
+
+    def test_layerwise_html_report_exists_without_a_strict_candidate(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_no_candidate_test",
+            "scripts/blb_regen_stage2_outputs.py",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            report = regen._write_layerwise_html_report(
+                td,
+                summary={
+                    "schema_version": "stage2_layerwise_robust_run_v1",
+                    "status": "running",
+                    "baseline_reference": {"groups": []},
+                    "final_evidence": {"status": "no_candidate"},
+                },
+                baseline={"loss_mean": 0.3},
+                curve_paths={},
+                layerwise_curves={},
+            )
+            report_html = Path(report).read_text(encoding="utf-8")
+
+        self.assertIn("No strict feasible candidate selected", report_html)
+        self.assertIn("Final Revalidation Evidence", report_html)
+
     def _make_fake_run(self, d, gz=False):
         diag = os.path.join(d, "diagnostics")
         os.makedirs(diag, exist_ok=True)

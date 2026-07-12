@@ -2320,6 +2320,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage1_accuracy_tolerance=None,
                  stage2_limit_tolerance=None,
                  stage2_stability_tolerance=None,
+                 stage2_stability_multiplier=2.0,
                  stage2_k_trials=None,
                  stage2_probe_size=None,
                  stage2_rl_variant='blb_v3',
@@ -2362,19 +2363,25 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_fast_reward_mode_enabled=False,
                   blb_v3_online_k_trials=5,
                   blb_v3_terminal_eval_batch_size=4,
-                  blb_v3_promotion_validation_trials=4,
+                  blb_v3_promotion_validation_trials=25,
                   blb_v3_final_selection_top_n=20,
-                  blb_v3_final_selection_validation_trials=20,
+                  blb_v3_final_selection_validation_trials=25,
                   blb_v3_promotion_margin_window=0.25,
+                  blb_v3_baseline_groups=5,
+                  blb_v3_baseline_trials_per_group=5,
+                  blb_v3_constraint_bootstrap_samples=4096,
+                  blb_v3_online_constraint_probability=0.50,
+                  blb_v3_promotion_constraint_probability=0.80,
+                  blb_v3_final_constraint_probability=0.95,
                   blb_v3_substage_mode=False,
                   blb_v3_substage_block_order="1,2,4,5",
                   blb_v3_substage_frozen_blocks="3",
                   blb_v3_substage_episodes_each=15000,
                   blb_v3_substage_promotion_top_k=5,
                   blb_v3_substage_promotion_trials=8,
-                  blb_v3_fusion_count_action=False,
-                  blb_v3_decision_granularity="block",
-                  blb_v3_reward_design="stage1_aligned",
+                  blb_v3_fusion_count_action=True,
+                  blb_v3_decision_granularity="layer",
+                  blb_v3_reward_design="robust_constrained",
                   blb_v3_fusion_neighbor_curriculum=False,
                   blb_v3_fusion_probe_interval=0,
                   blb_v3_fusion_exploration_epsilon=0.0,
@@ -2603,6 +2610,9 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 2026-06-15: MULTIPLIER on baseline std (stab_threshold = baseline.X_std × tol),
         # not fractional slack. Default 1.2 mirrors the original Stage-2 1.2× gate.
         self.stage2_stability_tolerance = float(stage2_stability_tolerance) if stage2_stability_tolerance is not None else 1.2
+        self.stage2_stability_multiplier = float(stage2_stability_multiplier)
+        if self.stage2_stability_multiplier <= 0.0:
+            raise ValueError("stage2_stability_multiplier must be positive")
         # Stage-2 稳定性评测：K 次噪声 trial 在同一份固定分层探针上评测
         #   stage2_k_trials: 噪声 trial 次数（K）
         #   stage2_probe_size: 探针子集大小
@@ -3125,6 +3135,32 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.blb_v3_promotion_margin_window = max(0.0, float(blb_v3_promotion_margin_window))
         except Exception:
             self.blb_v3_promotion_margin_window = 0.25
+        self.blb_v3_baseline_groups = int(blb_v3_baseline_groups)
+        self.blb_v3_baseline_trials_per_group = int(blb_v3_baseline_trials_per_group)
+        self.blb_v3_constraint_bootstrap_samples = int(blb_v3_constraint_bootstrap_samples)
+        if min(
+                self.blb_v3_baseline_groups,
+                self.blb_v3_baseline_trials_per_group,
+                self.blb_v3_constraint_bootstrap_samples,
+        ) <= 0:
+            raise ValueError("robust baseline counts and bootstrap samples must be positive")
+        for field_name, raw_value in (
+                ("blb_v3_online_constraint_probability", blb_v3_online_constraint_probability),
+                ("blb_v3_promotion_constraint_probability", blb_v3_promotion_constraint_probability),
+                ("blb_v3_final_constraint_probability", blb_v3_final_constraint_probability),
+        ):
+            probability = float(raw_value)
+            if not 0.0 < probability <= 1.0:
+                raise ValueError(f"{field_name} must be in (0, 1]")
+            setattr(self, field_name, probability)
+        if not (
+                self.blb_v3_online_constraint_probability
+                <= self.blb_v3_promotion_constraint_probability
+                <= self.blb_v3_final_constraint_probability
+        ):
+            raise ValueError(
+                "constraint probabilities must satisfy online <= promotion <= final"
+            )
         # 4-sub-stage Stage-2 RL (opt-in 2026-05-27). Read by runner.py
         # into BLBStage2TrainConfig.substage_* fields.
         self.blb_v3_substage_mode = self._coerce_bool_flag(
@@ -5106,6 +5142,67 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         return path if os.path.isfile(path) else None
 
+    def _build_stage2_final_eval_handoff(self, noise_stage_result):
+        """Detach the Stage-2 best payload before handing it to final-eval."""
+        if not isinstance(noise_stage_result, Mapping):
+            raise TypeError("Stage-2 search result must be a mapping")
+
+        is_layerwise = str(
+            noise_stage_result.get("rl_variant", "") or ""
+        ).startswith("blb_v3_layerwise")
+        handoff = {}
+        best_noise_cfg = noise_stage_result.get("best_noise_config")
+        if isinstance(best_noise_cfg, Mapping):
+            handoff.update({
+                key: np.asarray(value, dtype=int).copy()
+                for key, value in best_noise_cfg.items()
+                if isinstance(key, str) and key.endswith("scaling_factors")
+            })
+
+        best_action = noise_stage_result.get("blb_v3_best_action_vec")
+        if is_layerwise and best_action is None:
+            raise ValueError("active layerwise Stage-2 result missing action")
+        if best_action is not None:
+            handoff["blb_v3_best_action_vec"] = np.asarray(
+                best_action, dtype=int,
+            ).copy()
+            handoff["blb_v3_profile"] = str(
+                noise_stage_result.get("blb_v3_profile")
+                or getattr(self, "dataset_key", "")
+                or ""
+            )
+            if (
+                    is_layerwise
+                    and "blb_v3_fusion_count_action" not in noise_stage_result
+            ):
+                raise ValueError(
+                    "active layerwise Stage-2 result missing fusion flag"
+                )
+            fusion_count_action = bool(
+                noise_stage_result.get("blb_v3_fusion_count_action", False)
+            )
+            handoff["blb_v3_fusion_count_action"] = fusion_count_action
+            best_group = noise_stage_result.get("blb_v3_best_action_group")
+            if fusion_count_action:
+                has_options = isinstance(best_group, Mapping) and (
+                    isinstance(best_group.get("option_by_step"), Mapping)
+                    or isinstance(best_group.get("option_by_graph"), Mapping)
+                )
+                overrides = (
+                    best_group.get("boosted_overrides")
+                    if isinstance(best_group, Mapping) else None
+                )
+                if not has_options or not isinstance(overrides, (list, tuple)):
+                    raise ValueError(
+                        "fusion-count Stage-2 final-eval requires a reloadable group"
+                    )
+            if best_group is not None:
+                if not isinstance(best_group, Mapping):
+                    raise ValueError("blb_v3_best_action_group must be a mapping")
+                handoff["blb_v3_best_action_group"] = copy.deepcopy(best_group)
+
+        return handoff or None
+
     def _load_prior_rl_search_results(self):
         """final_eval_only=True 时，从 resume_run_dir 或 run_output_dir 读取之前 RL 搜索得到的最优配置。
 
@@ -5130,156 +5227,196 @@ class LayerImportanceEvaluator(TrainerCallback):
             candidate_dirs.append(self.run_output_dir)
 
         stage1_best = None
-        stage2_best = None
         stage2_variant = str(getattr(self, "stage2_rl_variant", "blb_v3") or "blb_v3").lower()
         prefer_blb_stage2 = stage2_variant in ("blb_v3", "blb", "v3", "blb_stage2_rl")
 
-        def _try_load_blb_stage2_best_from_dir(_dir):
-            try:
-                from blb_stage2_rl.runner import (
-                    BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
-                    BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
-                )
-                for _blb_name in (
+        for _dir in candidate_dirs:
+            if stage1_best is not None:
+                break
+            s1_path = os.path.join(_dir, "stage1", STAGE1_CHECKPOINT_FILENAME)
+            if os.path.isfile(s1_path):
+                try:
+                    ckpt = torch.load(s1_path, map_location="cpu", weights_only=False)
+                    cfg = ckpt.get("best_config") or ckpt.get("global_best_config")
+                    if cfg and "gelu" in cfg and "softmax" in cfg:
+                        stage1_best = {
+                            "gelu": np.asarray(cfg["gelu"], dtype=int),
+                            "softmax": np.asarray(cfg["softmax"], dtype=int),
+                        }
+                        self.log(f"[final_eval_only] 加载 Stage-1 RL 最优配置: {s1_path}")
+                except Exception as exc:
+                    self.log(f"[final_eval_only][警告] 读取 {s1_path} 失败: {exc}")
+
+        def _raise_stage2_failures(label, failures):
+            details = "; ".join(
+                f"{path}: {type(exc).__name__}: {exc}"
+                for path, exc in failures
+            )
+            error = RuntimeError(f"no valid {label} checkpoint found; {details}")
+            raise error from failures[-1][1]
+
+        def _is_reloadable_fusion_group(group):
+            if not isinstance(group, Mapping):
+                return False
+            has_options = (
+                isinstance(group.get("option_by_step"), Mapping)
+                or isinstance(group.get("option_by_graph"), Mapping)
+            )
+            overrides = group.get("boosted_overrides")
+            if not has_options or not isinstance(overrides, (list, tuple)):
+                return False
+            return all(
+                isinstance(row, Mapping)
+                and "block_idx" in row
+                and "layer_idx" in row
+                and isinstance(row.get("field_values"), Mapping)
+                for row in overrides
+            )
+
+        def _load_blb_stage2_best():
+            from blb_stage2_rl.runner import (
+                BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
+                BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+            )
+
+            failures = []
+            for _dir in candidate_dirs:
+                for filename in (
                         BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
                         BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
                 ):
-                    blb_path = ""
-                    for _progress_dir_name in ("stage2_noise", "blb_stage2"):
-                        _candidate = os.path.join(
-                            _dir, _progress_dir_name, "progress", _blb_name,
+                    for progress_dir_name in ("stage2_noise", "blb_stage2"):
+                        path = os.path.join(
+                            _dir, progress_dir_name, "progress", filename,
                         )
-                        if os.path.isfile(_candidate):
-                            blb_path = _candidate
-                            break
-                    if not blb_path:
-                        continue
-                    out = {
-                        key: np.asarray(value, dtype=int)
-                        for key, value in self._get_max_noise_configuration().items()
-                        if isinstance(key, str) and key.endswith("scaling_factors")
-                    }
-                    try:
-                        blb_ckpt = torch.load(blb_path, map_location="cpu", weights_only=False)
-                        best_action = blb_ckpt.get("best_action")
-                        if best_action is None:
-                            best_action = blb_ckpt.get("blb_v3_best_action_vec")
-                        if best_action is not None:
-                            out["blb_v3_best_action_vec"] = np.asarray(best_action, dtype=int)
+                        if not os.path.isfile(path):
+                            continue
+                        try:
+                            checkpoint = torch.load(
+                                path, map_location="cpu", weights_only=False,
+                            )
+                            if not isinstance(checkpoint, Mapping):
+                                raise TypeError(
+                                    "BLB Stage-2 checkpoint must contain a mapping, "
+                                    f"got {type(checkpoint).__name__}"
+                                )
+                            strict_best = checkpoint.get("strict_best")
+                            strict_best = strict_best if isinstance(strict_best, Mapping) else {}
+                            best_action = checkpoint.get("best_action")
+                            if best_action is None:
+                                best_action = checkpoint.get("blb_v3_best_action_vec")
+                            if best_action is None:
+                                best_action = strict_best.get("full_vector")
+                            best_group = checkpoint.get("blb_v3_best_action_group")
+                            if best_group is None:
+                                best_group = strict_best.get("best_action_group")
+                            is_layerwise = str(
+                                checkpoint.get("rl_variant", "") or ""
+                            ).startswith("blb_v3_layerwise")
+                            missing = []
+                            if best_action is None:
+                                missing.append("action")
+                            if is_layerwise:
+                                if "blb_v3_fusion_count_action" not in checkpoint:
+                                    missing.append("fusion flag")
+                                elif not bool(checkpoint["blb_v3_fusion_count_action"]):
+                                    missing.append("enabled fusion flag")
+                                if not _is_reloadable_fusion_group(best_group):
+                                    missing.append("reloadable group")
+                            elif best_group is not None and not isinstance(best_group, Mapping):
+                                missing.append("valid group mapping")
+                            if missing:
+                                raise ValueError(
+                                    "active layerwise checkpoint missing "
+                                    + ", ".join(missing)
+                                    if is_layerwise else "BLB checkpoint missing " + ", ".join(missing)
+                                )
+
+                            out = {
+                                key: np.asarray(value, dtype=int).copy()
+                                for key, value in self._get_max_noise_configuration().items()
+                                if isinstance(key, str) and key.endswith("scaling_factors")
+                            }
+                            out["blb_v3_best_action_vec"] = np.asarray(
+                                best_action, dtype=int,
+                            ).copy()
                             out["blb_v3_profile"] = str(
-                                blb_ckpt.get("profile")
+                                checkpoint.get("profile")
+                                or checkpoint.get("blb_v3_profile")
                                 or getattr(self, "dataset_key", "")
                                 or ""
                             )
-                    except Exception:
-                        pass
-                    self.log(
-                        f"[final_eval_only] 检测到 BLB Stage-2 checkpoint，"
-                        f"使用 legacy baseline 兼容配置: {blb_path}"
-                    )
-                    return out
-            except Exception as exc:
-                self.log(f"[final_eval_only][警告] 读取 BLB Stage-2 checkpoint 失败: {exc}")
+                            out["blb_v3_fusion_count_action"] = bool(
+                                checkpoint.get("blb_v3_fusion_count_action", False)
+                            )
+                            if best_group is not None:
+                                out["blb_v3_best_action_group"] = copy.deepcopy(best_group)
+                        except Exception as exc:
+                            failures.append((path, exc))
+                            self.log(
+                                f"[final_eval_only][警告] BLB Stage-2 checkpoint "
+                                f"不可用，继续查找: {path}: {exc}"
+                            )
+                            continue
+                        self.log(f"[final_eval_only] 加载 BLB Stage-2 最优配置: {path}")
+                        return out
+            if failures:
+                _raise_stage2_failures("BLB Stage-2", failures)
             return None
 
-        for _dir in candidate_dirs:
-            if stage1_best is not None and stage2_best is not None:
-                break
-
-            if stage1_best is None:
-                s1_path = os.path.join(_dir, "stage1", STAGE1_CHECKPOINT_FILENAME)
-                if os.path.isfile(s1_path):
-                    try:
-                        ckpt = torch.load(s1_path, map_location="cpu", weights_only=False)
-                        cfg = ckpt.get("best_config") or ckpt.get("global_best_config")
-                        if cfg and "gelu" in cfg and "softmax" in cfg:
-                            stage1_best = {
-                                "gelu": np.asarray(cfg["gelu"], dtype=int),
-                                "softmax": np.asarray(cfg["softmax"], dtype=int),
-                            }
-                            self.log(f"[final_eval_only] 加载 Stage-1 RL 最优配置: {s1_path}")
-                    except Exception as exc:
-                        self.log(f"[final_eval_only][警告] 读取 {s1_path} 失败: {exc}")
-
-            if stage2_best is None:
-                if prefer_blb_stage2:
-                    stage2_best = _try_load_blb_stage2_best_from_dir(_dir)
-                if stage2_best is not None:
-                    continue
-                s2_path = os.path.join(
+        def _load_legacy_stage2_best():
+            failures = []
+            for _dir in candidate_dirs:
+                path = os.path.join(
                     _dir, "stage2_noise", "progress", NOISE_STAGE_CHECKPOINT_FILENAME,
                 )
-                if os.path.isfile(s2_path):
-                    try:
-                        ckpt = torch.load(s2_path, map_location="cpu", weights_only=False)
-                        cfg = (
-                            ckpt.get("best_noise_config")
-                            or ckpt.get("incumbent_best_noise_config")
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    checkpoint = torch.load(
+                        path, map_location="cpu", weights_only=False,
+                    )
+                    if not isinstance(checkpoint, Mapping):
+                        raise TypeError(
+                            "legacy Stage-2 checkpoint must contain a mapping, "
+                            f"got {type(checkpoint).__name__}"
                         )
-                        if cfg:
-                            extracted = {
-                                key: np.asarray(value, dtype=int)
-                                for key, value in cfg.items()
-                                if isinstance(key, str) and key.endswith("scaling_factors")
-                            }
-                            if extracted:
-                                stage2_best = extracted
-                                self.log(
-                                    f"[final_eval_only] 加载 Stage-2 RL 最优配置: {s2_path}"
-                                )
-                    except Exception as exc:
-                        self.log(f"[final_eval_only][警告] 读取 {s2_path} 失败: {exc}")
-                if stage2_best is None:
-                    try:
-                        from blb_stage2_rl.runner import (
-                            BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
-                            BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
+                    cfg = (
+                        checkpoint.get("best_noise_config")
+                        or checkpoint.get("incumbent_best_noise_config")
+                    )
+                    if not isinstance(cfg, Mapping):
+                        raise ValueError("legacy Stage-2 checkpoint missing best noise config")
+                    extracted = {
+                        key: np.asarray(value, dtype=int).copy()
+                        for key, value in cfg.items()
+                        if isinstance(key, str) and key.endswith("scaling_factors")
+                    }
+                    if not extracted:
+                        raise ValueError(
+                            "legacy Stage-2 best noise config has no scaling_factors"
                         )
-                        for _blb_name in (
-                                BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
-                                BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
-                        ):
-                            blb_path = ""
-                            for _progress_dir_name in ("stage2_noise", "blb_stage2"):
-                                _candidate = os.path.join(
-                                    _dir, _progress_dir_name, "progress", _blb_name,
-                                )
-                                if os.path.isfile(_candidate):
-                                    blb_path = _candidate
-                                    break
-                            if blb_path:
-                                # BLB v3 的真实最优配置是 block cfg/action vec，不是 legacy
-                                # *_scaling_factors。final-eval 的兼容输入仍使用 max-noise baseline。
-                                stage2_best = {
-                                    key: np.asarray(value, dtype=int)
-                                    for key, value in self._get_max_noise_configuration().items()
-                                    if isinstance(key, str) and key.endswith("scaling_factors")
-                                }
-                                try:
-                                    blb_ckpt = torch.load(
-                                        blb_path, map_location="cpu", weights_only=False
-                                    )
-                                    best_action = blb_ckpt.get("best_action")
-                                    if best_action is None:
-                                        best_action = blb_ckpt.get("blb_v3_best_action_vec")
-                                    if best_action is not None:
-                                        stage2_best["blb_v3_best_action_vec"] = np.asarray(
-                                            best_action, dtype=int
-                                        )
-                                        stage2_best["blb_v3_profile"] = str(
-                                            blb_ckpt.get("profile")
-                                            or getattr(self, "dataset_key", "")
-                                            or ""
-                                        )
-                                except Exception:
-                                    pass
-                                self.log(
-                                    f"[final_eval_only] 检测到 BLB Stage-2 checkpoint，"
-                                    f"使用 legacy baseline 兼容配置: {blb_path}"
-                                )
-                                break
-                    except Exception as exc:
-                        self.log(f"[final_eval_only][警告] 读取 BLB Stage-2 checkpoint 失败: {exc}")
+                except Exception as exc:
+                    failures.append((path, exc))
+                    self.log(
+                        f"[final_eval_only][警告] legacy Stage-2 checkpoint "
+                        f"不可用，继续查找: {path}: {exc}"
+                    )
+                    continue
+                self.log(f"[final_eval_only] 加载 Stage-2 RL 最优配置: {path}")
+                return extracted
+            if failures:
+                _raise_stage2_failures("legacy Stage-2", failures)
+            return None
+
+        if prefer_blb_stage2:
+            stage2_best = _load_blb_stage2_best()
+            if stage2_best is None:
+                stage2_best = _load_legacy_stage2_best()
+        else:
+            stage2_best = _load_legacy_stage2_best()
+            if stage2_best is None:
+                stage2_best = _load_blb_stage2_best()
 
         return stage1_best, stage2_best
 
@@ -7763,23 +7900,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                 noise_limit_p = limit_p
                 noise_limit_s = limit_s
                 if noise_stage_result is not None:
-                    best_noise_cfg = noise_stage_result.get("best_noise_config")
-                    if best_noise_cfg is not None:
-                        stage2_search_best = {
-                            k: v for k, v in best_noise_cfg.items()
-                            if k.endswith("scaling_factors")
-                        }
-                    if noise_stage_result.get("blb_v3_best_action_vec") is not None:
-                        if stage2_search_best is None:
-                            stage2_search_best = {}
-                        stage2_search_best["blb_v3_best_action_vec"] = np.asarray(
-                            noise_stage_result["blb_v3_best_action_vec"], dtype=int
-                        )
-                        stage2_search_best["blb_v3_profile"] = str(
-                            noise_stage_result.get("blb_v3_profile")
-                            or getattr(self, "dataset_key", "")
-                            or ""
-                        )
+                    stage2_search_best = self._build_stage2_final_eval_handoff(
+                        noise_stage_result,
+                    )
                     noise_limit_loss = noise_stage_result.get("limit_loss", limit_loss)
                     noise_limit_p = noise_stage_result.get("limit_p", limit_p)
                     noise_limit_s = noise_stage_result.get("limit_s", limit_s)

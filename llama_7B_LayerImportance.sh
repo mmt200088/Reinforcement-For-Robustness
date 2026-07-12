@@ -142,6 +142,13 @@ GA / Greedy：
   --stage2-save-interval N                BLB v3 live checkpoint 保存间隔
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
   --stage2-calibrate-baseline-samples N   BLB v3 reward 权重校准样本数
+  --stage2-stability-multiplier FLOAT     robust layerwise 的 baseline std 倍率
+  --blb-v3-baseline-groups N              robust baseline 初始组数
+  --blb-v3-baseline-trials-per-group N    robust baseline 每组 trial 数
+  --blb-v3-constraint-bootstrap-samples N bootstrap 重采样数
+  --blb-v3-online-constraint-probability P
+  --blb-v3-promotion-constraint-probability P
+  --blb-v3-final-constraint-probability P 三档六通道约束置信门槛
   --blb-v3-decision-granularity layer|block
                                           Stage-2 决策粒度（默认 block）
   --blb-v3-reward-design DESIGN           robust_constrained|stage1_aligned|continuous|tiered
@@ -508,6 +515,7 @@ DECOUPLED_LAYOUT="false"                     # RL Stage-1 record 布局开关；
 STAGE1_ACCURACY_TOLERANCE="0.005"; S_STAGE1_ACCURACY_TOLERANCE="false"
 STAGE2_LIMIT_TOLERANCE="0.05"; S_STAGE2_LIMIT_TOLERANCE="false"
 STAGE2_STABILITY_TOLERANCE="1.2"; S_STAGE2_STABILITY_TOLERANCE="false"
+STAGE2_STABILITY_MULTIPLIER="2.0"; S_STAGE2_STABILITY_MULTIPLIER="false"
 STAGE2_K_TRIALS="5"; S_STAGE2_K_TRIALS="false"
 STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
@@ -544,10 +552,16 @@ BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED=""; S_BLB_V3_STATIC_INVALID_LEVEL_MASK_
 BLB_V3_FAST_REWARD_MODE_ENABLED="false"; S_BLB_V3_FAST_REWARD_MODE_ENABLED="false"
 BLB_V3_ONLINE_K_TRIALS="5"; S_BLB_V3_ONLINE_K_TRIALS="false"
 BLB_V3_TERMINAL_EVAL_BATCH_SIZE="4"; S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE="false"
-BLB_V3_PROMOTION_VALIDATION_TRIALS="4"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="false"
+BLB_V3_PROMOTION_VALIDATION_TRIALS="25"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="false"
 BLB_V3_FINAL_SELECTION_TOP_N="20"; S_BLB_V3_FINAL_SELECTION_TOP_N="false"
-BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="20"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="false"
+BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="25"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="false"
 BLB_V3_PROMOTION_MARGIN_WINDOW="0.25"; S_BLB_V3_PROMOTION_MARGIN_WINDOW="false"
+BLB_V3_BASELINE_GROUPS="5"; S_BLB_V3_BASELINE_GROUPS="false"
+BLB_V3_BASELINE_TRIALS_PER_GROUP="5"; S_BLB_V3_BASELINE_TRIALS_PER_GROUP="false"
+BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES="4096"; S_BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES="false"
+BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="0.50"; S_BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="false"
+BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="0.80"; S_BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="false"
+BLB_V3_FINAL_CONSTRAINT_PROBABILITY="0.95"; S_BLB_V3_FINAL_CONSTRAINT_PROBABILITY="false"
 # Per-block sequential RL (default ON since 2026-05-15). Pass --blb-v3-sequential-rl=false to
 # get back the legacy single-shot 577-dim path.
 BLB_V3_SEQUENTIAL_RL="true"; S_BLB_V3_SEQUENTIAL_RL="false"
@@ -559,9 +573,9 @@ BLB_V3_SEQUENTIAL_EARLY_TERMINATE_ON_INVALID="false"; S_BLB_V3_SEQUENTIAL_EARLY_
 # the runner trains block 1→2→4→5 in 4 fresh GTrXL rounds; block 3 stays at
 # static_skeletons baseline. See blb_stage2_rl/substage_runner.py.
 BLB_V3_SUBSTAGE_MODE="false"; S_BLB_V3_SUBSTAGE_MODE="false"
-BLB_V3_FUSION_COUNT_ACTION="false"; S_BLB_V3_FUSION_COUNT_ACTION="false"
-BLB_V3_DECISION_GRANULARITY="block"; S_BLB_V3_DECISION_GRANULARITY="false"
-BLB_V3_REWARD_DESIGN="stage1_aligned"; S_BLB_V3_REWARD_DESIGN="false"
+BLB_V3_FUSION_COUNT_ACTION="true"; S_BLB_V3_FUSION_COUNT_ACTION="false"
+BLB_V3_DECISION_GRANULARITY="layer"; S_BLB_V3_DECISION_GRANULARITY="false"
+BLB_V3_REWARD_DESIGN="robust_constrained"; S_BLB_V3_REWARD_DESIGN="false"
 BLB_V3_FUSION_NEIGHBOR_CURRICULUM="false"; S_BLB_V3_FUSION_NEIGHBOR_CURRICULUM="false"
 BLB_V3_FUSION_PROBE_INTERVAL="200"; S_BLB_V3_FUSION_PROBE_INTERVAL="false"
 BLB_V3_FUSION_EXPLORATION_EPSILON="0.05"; S_BLB_V3_FUSION_EXPLORATION_EPSILON="false"
@@ -730,6 +744,7 @@ while [ "$#" -gt 0 ]; do
     --stage1-accuracy-tolerance) needv "$@"; STAGE1_ACCURACY_TOLERANCE="$2"; S_STAGE1_ACCURACY_TOLERANCE="true"; shift 2 ;;
     --stage2-limit-tolerance) needv "$@"; STAGE2_LIMIT_TOLERANCE="$2"; S_STAGE2_LIMIT_TOLERANCE="true"; shift 2 ;;
     --stage2-stability-tolerance) needv "$@"; STAGE2_STABILITY_TOLERANCE="$2"; S_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
+    --stage2-stability-multiplier) needv "$@"; STAGE2_STABILITY_MULTIPLIER="$2"; S_STAGE2_STABILITY_MULTIPLIER="true"; shift 2 ;;
     --stage2-k-trials) needv "$@"; STAGE2_K_TRIALS="$2"; S_STAGE2_K_TRIALS="true"; shift 2 ;;
     --stage2-probe-size) needv "$@"; STAGE2_PROBE_SIZE="$2"; S_STAGE2_PROBE_SIZE="true"; shift 2 ;;
     --stage2-rl-variant) needv "$@"; STAGE2_RL_VARIANT="$2"; S_STAGE2_RL_VARIANT="true"; shift 2 ;;
@@ -769,6 +784,12 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-final-selection-top-n) needv "$@"; BLB_V3_FINAL_SELECTION_TOP_N="$2"; S_BLB_V3_FINAL_SELECTION_TOP_N="true"; shift 2 ;;
     --blb-v3-final-selection-validation-trials) needv "$@"; BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="$2"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="true"; shift 2 ;;
     --blb-v3-promotion-margin-window) needv "$@"; BLB_V3_PROMOTION_MARGIN_WINDOW="$2"; S_BLB_V3_PROMOTION_MARGIN_WINDOW="true"; shift 2 ;;
+    --blb-v3-baseline-groups) needv "$@"; BLB_V3_BASELINE_GROUPS="$2"; S_BLB_V3_BASELINE_GROUPS="true"; shift 2 ;;
+    --blb-v3-baseline-trials-per-group) needv "$@"; BLB_V3_BASELINE_TRIALS_PER_GROUP="$2"; S_BLB_V3_BASELINE_TRIALS_PER_GROUP="true"; shift 2 ;;
+    --blb-v3-constraint-bootstrap-samples) needv "$@"; BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES="$2"; S_BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES="true"; shift 2 ;;
+    --blb-v3-online-constraint-probability) needv "$@"; BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="$2"; S_BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="true"; shift 2 ;;
+    --blb-v3-promotion-constraint-probability) needv "$@"; BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="$2"; S_BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="true"; shift 2 ;;
+    --blb-v3-final-constraint-probability) needv "$@"; BLB_V3_FINAL_CONSTRAINT_PROBABILITY="$2"; S_BLB_V3_FINAL_CONSTRAINT_PROBABILITY="true"; shift 2 ;;
     # Per-block sequential RL knobs (default sequential_rl=true since 2026-05-15)
     --blb-v3-sequential-rl) needv "$@"; BLB_V3_SEQUENTIAL_RL="$2"; S_BLB_V3_SEQUENTIAL_RL="true"; shift 2 ;;
     --blb-v3-no-sequential-rl) BLB_V3_SEQUENTIAL_RL="false"; S_BLB_V3_SEQUENTIAL_RL="true"; shift ;;
@@ -958,6 +979,21 @@ if [ "$FINAL_EVAL_ONLY" = "true" ]; then
   fi
 fi
 
+# The active layerwise robust Stage-2 path constrains standard deviations as a
+# multiple of the robust baseline. Rollback block/stage1_aligned runs retain the
+# legacy absolute tolerance identity and metadata key.
+_STAGE2_PERSISTED_STABILITY_KEY="stage2_stability_tolerance"
+_STAGE2_PERSISTED_STABILITY_VALUE="$STAGE2_STABILITY_TOLERANCE"
+_STAGE2_PERSISTED_STABILITY_SPECIFIED="$S_STAGE2_STABILITY_TOLERANCE"
+if [ "$SEARCH_ALGORITHM" = "rl" ] \
+  && [ "$SKIP_NOISE_SEARCH" = "false" ] \
+  && [ "$BLB_V3_DECISION_GRANULARITY" = "layer" ] \
+  && [ "$BLB_V3_REWARD_DESIGN" = "robust_constrained" ]; then
+  _STAGE2_PERSISTED_STABILITY_KEY="stage2_stability_multiplier"
+  _STAGE2_PERSISTED_STABILITY_VALUE="$STAGE2_STABILITY_MULTIPLIER"
+  _STAGE2_PERSISTED_STABILITY_SPECIFIED="$S_STAGE2_STABILITY_MULTIPLIER"
+fi
+
 if [ "$S_STAGE1_GENERATIONS" = "false" ]; then
   STAGE1_GENERATIONS="$(ga_default_stage1_generations_for_model "$MODEL_TYPE")"
 fi
@@ -980,6 +1016,7 @@ awk -v x="$STAGE1_ACCURACY_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || er
 is_pos_num "$STAGE2_LIMIT_TOLERANCE" || err "--stage2-limit-tolerance 必须是正数，当前为：$STAGE2_LIMIT_TOLERANCE"
 awk -v x="$STAGE2_LIMIT_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-limit-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_LIMIT_TOLERANCE"
 is_pos_num "$STAGE2_STABILITY_TOLERANCE" || err "--stage2-stability-tolerance 必须是正数，当前为：$STAGE2_STABILITY_TOLERANCE"
+is_pos_num "$STAGE2_STABILITY_MULTIPLIER" || err "--stage2-stability-multiplier 必须是正数，当前为：$STAGE2_STABILITY_MULTIPLIER"
 is_pos_int "$STAGE2_K_TRIALS" || err "--stage2-k-trials 必须是正整数，当前为：$STAGE2_K_TRIALS"
 is_pos_int "$STAGE2_PROBE_SIZE" || err "--stage2-probe-size 必须是正整数，当前为：$STAGE2_PROBE_SIZE"
 is_pos_int "$PPO_UPDATE_INTERVAL_VAL" || err "--ppo-update-interval 必须是正整数，当前为：$PPO_UPDATE_INTERVAL_VAL"
@@ -1008,6 +1045,24 @@ is_pos_int "$BLB_V3_ROLLOUT_SIZE" || err "--stage2-rollout-size 必须是正整�
 [ "$S_BLB_V3_FINAL_SELECTION_TOP_N" = "false" ] || is_pos_int "$BLB_V3_FINAL_SELECTION_TOP_N" || err "--blb-v3-final-selection-top-n 必须是正整数，当前为：$BLB_V3_FINAL_SELECTION_TOP_N"
 [ "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" = "false" ] || is_pos_int "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" || err "--blb-v3-final-selection-validation-trials 必须是正整数，当前为：$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS"
 [ "$S_BLB_V3_PROMOTION_MARGIN_WINDOW" = "false" ] || is_nonneg_num "$BLB_V3_PROMOTION_MARGIN_WINDOW" || err "--blb-v3-promotion-margin-window 必须是非负数，当前为：$BLB_V3_PROMOTION_MARGIN_WINDOW"
+is_pos_int "$BLB_V3_BASELINE_GROUPS" || err "--blb-v3-baseline-groups 必须是正整数"
+is_pos_int "$BLB_V3_BASELINE_TRIALS_PER_GROUP" || err "--blb-v3-baseline-trials-per-group 必须是正整数"
+is_pos_int "$BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES" || err "--blb-v3-constraint-bootstrap-samples 必须是正整数"
+for _probability_spec in \
+  "--blb-v3-online-constraint-probability:$BLB_V3_ONLINE_CONSTRAINT_PROBABILITY" \
+  "--blb-v3-promotion-constraint-probability:$BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY" \
+  "--blb-v3-final-constraint-probability:$BLB_V3_FINAL_CONSTRAINT_PROBABILITY"; do
+  _probability_name="${_probability_spec%%:*}"
+  _probability_value="${_probability_spec#*:}"
+  is_pos_num "$_probability_value" || err "$_probability_name 必须在 (0,1]"
+  awk -v x="$_probability_value" 'BEGIN { if ((x + 0) > 1) exit 1 }' || err "$_probability_name 必须在 (0,1]"
+done
+awk \
+  -v online="$BLB_V3_ONLINE_CONSTRAINT_PROBABILITY" \
+  -v promotion="$BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY" \
+  -v final="$BLB_V3_FINAL_CONSTRAINT_PROBABILITY" \
+  'BEGIN { if (!(online <= promotion && promotion <= final)) exit 1 }' \
+  || err "约束概率必须满足 online <= promotion <= final"
 case "$BLB_V3_ACTION_MASK_MODE" in
   ""|none|off|disabled) BLB_V3_ACTION_MASK_MODE="none" ;;
   baseline_only|near_baseline|from_file) BLB_V3_ACTION_MASK_ENABLED="true" ;;
@@ -1207,7 +1262,7 @@ else
   { [ "$S_GENERAL_MODE" = "false" ] && [ "$S_GENERAL_TASKS" = "false" ] && [ "$S_GENERAL_ROUNDS" = "false" ] && [ "$S_GENERAL_LR" = "false" ] && [ "$S_GENERAL_NUM_ROLLOUTS" = "false" ] && [ "$S_GENERAL_GREEDY" = "false" ] && [ "$S_GENERAL_STAGE1_POLICY" = "false" ] && [ "$S_GENERAL_STAGE2_POLICY" = "false" ] && [ "$S_GENERAL_SKIP_STAGE2" = "false" ] && [ "$S_GENERAL_STAGE1_CONFIG_JSON" = "false" ] && [ "$S_GENERAL_ACCURACY_TOLERANCES" = "false" ]; } || err "当前搜索算法不是 general-rl，请不要使用 --general-rl-* 参数。"
   # rl/ga 模式下 --resume-from 已废弃，改用持久化目录自动续训练
   [ "$S_RESUME_FROM" = "false" ] || [ "$FINAL_EVAL_ONLY" = "true" ] || err "rl / ga / greedy 训练模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。--mode eval 可使用 --resume-from 指向已有结果目录。"
-  _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
+  _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${_STAGE2_PERSISTED_STABILITY_VALUE}"
   _EARLY_PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
   if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "rl 模式不使用 GA 代数参数，请移除 --stage1-search-generations / --stage2-search-generations。"
@@ -1352,7 +1407,7 @@ GENERAL_TASKSET_ID=""
 # 持久化约束配置标识符（用于构建确定性目录）
 # 2026-05-18：回滚 _rdv2 后缀。用户反馈：每次 reward 改动都换 dir 容易遗漏旧训练，
 # 维护成本反而更高。单目录 + --fresh 强制重启已经够防混用。
-CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"
+CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${_STAGE2_PERSISTED_STABILITY_VALUE}"
 # --run-tag SUFFIX appends to the persistent dir so multi-seed sweeps
 # don't collide via auto-resume. Use [a-zA-Z0-9_-] only.
 if [ -n "$RUN_TAG" ]; then
@@ -1610,7 +1665,9 @@ METAEOF
   "dataset": "$DATASET",
   "stage1_accuracy_tolerance": $STAGE1_ACCURACY_TOLERANCE,
   "stage2_limit_tolerance": $STAGE2_LIMIT_TOLERANCE,
-  "stage2_stability_tolerance": $STAGE2_STABILITY_TOLERANCE,
+  "$_STAGE2_PERSISTED_STABILITY_KEY": $_STAGE2_PERSISTED_STABILITY_VALUE,
+  "blb_v3_decision_granularity": "$BLB_V3_DECISION_GRANULARITY",
+  "blb_v3_reward_design": "$BLB_V3_REWARD_DESIGN",
   "stage2_k_trials": $STAGE2_K_TRIALS,
   "stage2_probe_size": $STAGE2_PROBE_SIZE,
   "created_at": "$(date -Iseconds)",
@@ -1628,20 +1685,30 @@ METAEOF
   else
     # RL 续训练：先做约束一致性守卫（不同约束不静默续训练），再更新时间戳/计数。
     if [ "$SEARCH_ALGORITHM" = "rl" ] && command -v python3 &>/dev/null; then
-      python3 - "$_META_FILE" "$STAGE1_ACCURACY_TOLERANCE" "$STAGE2_LIMIT_TOLERANCE" "$STAGE2_STABILITY_TOLERANCE" <<'PYGUARD' || err "检测到当前约束与已持久化工作目录的 metadata 不一致（见上方 CONSTRAINT_MISMATCH）。不同约束不会静默续训练，请加 --fresh 重开该 stage，或改回原约束。工作目录：$PERSISTENT_DIR"
+      python3 - "$_META_FILE" "$STAGE1_ACCURACY_TOLERANCE" "$STAGE2_LIMIT_TOLERANCE" "$_STAGE2_PERSISTED_STABILITY_KEY" "$_STAGE2_PERSISTED_STABILITY_VALUE" <<'PYGUARD' || err "检测到当前约束与已持久化工作目录的 metadata 不一致（见上方 CONSTRAINT_MISMATCH）。不同约束不会静默续训练，请加 --fresh 重开该 stage，或改回原约束。工作目录：$PERSISTENT_DIR"
 import json, sys
-from config import run_layout as _rl
-meta_path, s1, s2, s2s = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+meta_path, s1, s2, stability_key, stability_value = sys.argv[1:]
 with open(meta_path) as f:
     m = json.load(f)
 cur = {
     "stage1_accuracy_tolerance": float(s1),
     "stage2_limit_tolerance": float(s2),
-    "stage2_stability_tolerance": float(s2s),
+    stability_key: float(stability_value),
 }
-msg = _rl.constraint_mismatch(m, cur)
-if msg:
-    sys.stderr.write("CONSTRAINT_MISMATCH: " + msg + "\n")
+mismatches = []
+for key, current_value in cur.items():
+    persisted_value = m.get(key)
+    if persisted_value is None:
+        mismatches.append(f"{key}: 已持久化缺失 当前={current_value}")
+        continue
+    try:
+        matches = abs(float(persisted_value) - current_value) <= 1e-9
+    except (TypeError, ValueError):
+        matches = str(persisted_value) == str(current_value)
+    if not matches:
+        mismatches.append(f"{key}: 已持久化={persisted_value} 当前={current_value}")
+if mismatches:
+    sys.stderr.write("CONSTRAINT_MISMATCH: " + "; ".join(mismatches) + "\n")
     sys.exit(1)
 PYGUARD
     fi
@@ -1692,7 +1759,7 @@ else
     RL_STAGE2_EPISODES_SPECIFIED="$S_STAGE2_EPISODES"
     [ "$SKIP_STAGE1_SEARCH" = "true" ] && RL_STAGE1_EPISODES_SPECIFIED="false"
     [ "$SKIP_NOISE_SEARCH" = "true" ] && RL_STAGE2_EPISODES_SPECIFIED="false"
-    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_stability_multiplier "$STAGE2_STABILITY_MULTIPLIER" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
     # 解耦布局开关 + stage2-only 的 stage1 record 选择（仅 rl）。
     CMD+=(--decoupled_layout "$DECOUPLED_LAYOUT" --stage1_run_id "$STAGE1_RUN_ID")
     # Optional multi-seed override (when --blb-v3-seed provided)
@@ -1746,6 +1813,12 @@ else
     [ "$S_BLB_V3_FINAL_SELECTION_TOP_N" = "true" ] && CMD+=(--blb_v3_final_selection_top_n "$BLB_V3_FINAL_SELECTION_TOP_N")
     [ "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" = "true" ] && CMD+=(--blb_v3_final_selection_validation_trials "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS")
     [ "$S_BLB_V3_PROMOTION_MARGIN_WINDOW" = "true" ] && CMD+=(--blb_v3_promotion_margin_window "$BLB_V3_PROMOTION_MARGIN_WINDOW")
+    CMD+=(--blb_v3_baseline_groups "$BLB_V3_BASELINE_GROUPS")
+    CMD+=(--blb_v3_baseline_trials_per_group "$BLB_V3_BASELINE_TRIALS_PER_GROUP")
+    CMD+=(--blb_v3_constraint_bootstrap_samples "$BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES")
+    CMD+=(--blb_v3_online_constraint_probability "$BLB_V3_ONLINE_CONSTRAINT_PROBABILITY")
+    CMD+=(--blb_v3_promotion_constraint_probability "$BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY")
+    CMD+=(--blb_v3_final_constraint_probability "$BLB_V3_FINAL_CONSTRAINT_PROBABILITY")
     # Sequential RL: default ON. Always pass the boolean so users can flip via
     # --blb-v3-no-sequential-rl. Shaping coeffs / early-terminate are only
     # forwarded when user explicitly set them.
@@ -1811,7 +1884,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARC
   show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
   show "Stage-1 准确度约束" "$STAGE1_ACCURACY_TOLERANCE" "$S_STAGE1_ACCURACY_TOLERANCE"
   show "Stage-2 指标约束百分比" "$STAGE2_LIMIT_TOLERANCE" "$S_STAGE2_LIMIT_TOLERANCE"
-  show "Stage-2 稳定性约束倍率" "$STAGE2_STABILITY_TOLERANCE" "$S_STAGE2_STABILITY_TOLERANCE"
+  show "Stage-2 稳定性约束 (${_STAGE2_PERSISTED_STABILITY_KEY})" "$_STAGE2_PERSISTED_STABILITY_VALUE" "$_STAGE2_PERSISTED_STABILITY_SPECIFIED"
   show "Stage-2 K 次噪声试验" "$STAGE2_K_TRIALS" "$S_STAGE2_K_TRIALS"
   show "Stage-2 探针子集大小" "$STAGE2_PROBE_SIZE" "$S_STAGE2_PROBE_SIZE"
 fi

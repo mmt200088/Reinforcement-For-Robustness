@@ -123,7 +123,7 @@ class Stage2Stage1AlignmentDefaultsTest(unittest.TestCase):
         self.assertEqual(defaults["fusion_probe_interval"], 0)
         self.assertEqual(defaults["fusion_exploration_epsilon"], 0.0)
         self.assertEqual(defaults["fusion_exploration_epsilon_k"], 0.0)
-        self.assertEqual(defaults["reward_design"], "stage1_aligned")
+        self.assertEqual(defaults["reward_design"], "robust_constrained")
         self.assertEqual(defaults["num_trials_per_step"], 5)
         self.assertEqual(defaults["online_num_trials_per_step"], 5)
 

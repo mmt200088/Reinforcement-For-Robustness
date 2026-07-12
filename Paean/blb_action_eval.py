@@ -791,6 +791,29 @@ class BLBActionFinalEvaluationModule:
                 "fusion_count_fixed_action_v1 requires group.option_by_step or "
                 "group.option_by_graph metadata"
             )
+        raw_boosted_overrides = group.get("boosted_overrides", ())
+        if raw_boosted_overrides is None:
+            raw_boosted_overrides = ()
+        if not isinstance(raw_boosted_overrides, (list, tuple)):
+            raise ValueError("group.boosted_overrides must be a sequence of rows")
+        boosted_overrides = {}
+        for row in raw_boosted_overrides:
+            if not isinstance(row, Mapping):
+                raise ValueError("group.boosted_overrides rows must be mappings")
+            field_values = row.get("field_values")
+            if not isinstance(field_values, Mapping):
+                raise ValueError(
+                    "group.boosted_overrides field_values must be a mapping"
+                )
+            key = (int(row["block_idx"]), int(row["layer_idx"]))
+            if key in boosted_overrides:
+                raise ValueError(
+                    "group.boosted_overrides contains duplicate "
+                    f"block/layer row {key}"
+                )
+            boosted_overrides[key] = {
+                str(name): int(value) for name, value in field_values.items()
+            }
 
         base_raw = None
         for key in ("legacy_action_vec", "base", "action_vec"):
@@ -886,14 +909,25 @@ class BLBActionFinalEvaluationModule:
                 except Exception:
                     k_field_name = None
                     selected_k_value = None
-            option_fields = (
-                option.explicit_field_values
-                if bool(getattr(option, "boosted", False)) and option.explicit_field_values
-                else option.slots
-            )
+            persisted_fields = boosted_overrides.get((block_idx, layer_idx))
+            if persisted_fields is not None:
+                option_fields = persisted_fields
+            else:
+                option_fields = (
+                    option.explicit_field_values
+                    if bool(getattr(option, "boosted", False)) and option.explicit_field_values
+                    else option.slots
+                )
             for field_name, value in option_fields.items():
                 field_values[str(field_name)] = int(value)
-            if k_field_name is not None and selected_k_value is not None:
+            if (
+                    k_field_name is not None
+                    and selected_k_value is not None
+                    and (
+                        persisted_fields is None
+                        or k_field_name not in persisted_fields
+                    )
+            ):
                 field_values[str(k_field_name)] = int(selected_k_value)
             if decoded.per_layer_field_values and 0 <= layer_idx < len(decoded.per_layer_field_values):
                 layer_values = decoded.per_layer_field_values[layer_idx]

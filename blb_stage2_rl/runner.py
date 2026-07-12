@@ -579,7 +579,7 @@ def _format_blb_train_iter_log(
 class BLBStage2TrainConfig:
     """``BLBStage2RLRunner`` 的可配置训练参数。"""
     total_episodes: int = 2000              # 默认 2000 episodes
-    rollout_size: int = 32                  # 每多少 episode 触发一次 PPO update
+    rollout_size: int = 120                 # 每多少 episode 触发一次 PPO update
     seed: int = 42
     eval_interval: int = 100                # 多少 episode 跑一次 deterministic eval
     save_interval: int = 200
@@ -601,6 +601,7 @@ class BLBStage2TrainConfig:
         self.grpo_kl_beta = 0.0
         self.validate_decision_granularity()
         self.validate_reward_design()
+        self.validate_robust_constraint_config()
 
     def validate_decision_granularity(self) -> str:
         from .layerwise_runner import normalize_decision_granularity
@@ -615,6 +616,36 @@ class BLBStage2TrainConfig:
         value = normalize_reward_design(self.reward_design)
         self.reward_design = value
         return value
+
+    def validate_robust_constraint_config(self) -> None:
+        for field_name in (
+                "baseline_groups", "baseline_trials_per_group",
+                "constraint_bootstrap_samples", "promotion_validation_trials",
+                "final_selection_validation_trials",
+        ):
+            value = int(getattr(self, field_name))
+            if value <= 0:
+                raise ValueError(f"{field_name} must be a positive integer")
+            setattr(self, field_name, value)
+        self.stage2_stability_multiplier = float(self.stage2_stability_multiplier)
+        if self.stage2_stability_multiplier <= 0.0:
+            raise ValueError("stage2_stability_multiplier must be positive")
+        for field_name in (
+                "online_constraint_probability", "promotion_constraint_probability",
+                "final_constraint_probability",
+        ):
+            value = float(getattr(self, field_name))
+            if not 0.0 < value <= 1.0:
+                raise ValueError(f"{field_name} must be in (0, 1]")
+            setattr(self, field_name, value)
+        if not (
+                self.online_constraint_probability
+                <= self.promotion_constraint_probability
+                <= self.final_constraint_probability
+        ):
+            raise ValueError(
+                "constraint probabilities must satisfy online <= promotion <= final"
+            )
     # 环境
     # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
     # making one outlier trial blow up the std and trip priority-2 (stability)
@@ -679,7 +710,7 @@ class BLBStage2TrainConfig:
     ent_coef_ramp_episodes: int = 600
     # ADR-015/Stage-1 alignment: Stage-1-style reward plus Stage-2 stability,
     # with Stage-1's high→low cosine entropy schedule.
-    reward_design: str = "stage1_aligned"
+    reward_design: str = "robust_constrained"
     ent_coef_schedule: str = "cosine"
     ent_coef_cosine_start: float = 0.05
     ent_coef_cosine_end: float = 0.001
@@ -711,10 +742,17 @@ class BLBStage2TrainConfig:
     fast_reward_mode_enabled: bool = False
     online_num_trials_per_step: int = 5
     terminal_eval_batch_size: int = 4
-    promotion_validation_trials: int = 4
+    promotion_validation_trials: int = 25
     promotion_margin_window: float = 0.25
     final_selection_top_n: int = 20
-    final_selection_validation_trials: int = 20
+    final_selection_validation_trials: int = 25
+    baseline_groups: int = 5
+    baseline_trials_per_group: int = 5
+    constraint_bootstrap_samples: int = 4096
+    online_constraint_probability: float = 0.50
+    promotion_constraint_probability: float = 0.80
+    final_constraint_probability: float = 0.95
+    stage2_stability_multiplier: float = 2.0
     # ---- 4-sub-stage mode (opt-in 2026-05-27) -----------------------------
     # When ``substage_mode`` is True, ``BLBStage2RLRunner.run`` dispatches to
     # ``substage_runner.run_substage_via_runner`` instead of the legacy
@@ -734,10 +772,8 @@ class BLBStage2TrainConfig:
     # the offline blb_stage2_rl/fusion_maps/<profile>/ map instead of all per-slot
     # SF heads. Disables safe-neighbor / guarded-radius2 / invalid masks (the map
     # holds only valid configs). Mutually exclusive with substage_mode.
-    fusion_count_action: bool = False
-    # Task 7 keeps the active default on the legacy block path until launcher
-    # wiring switches the accepted robust preset in Task 8.
-    decision_granularity: str = "block"
+    fusion_count_action: bool = True
+    decision_granularity: str = "layer"
     # Fusion-mode block-granularity safe-neighbor curriculum (additive 2026-06-05).
     # Default ON: gently widens how many blocks may leave the baseline (option 0,
     # baseline K) each episode, dissolving to the unrestricted open mask after the
@@ -2775,6 +2811,9 @@ class BLBStage2RLRunner:
                 ("promotion_validation_trials", "blb_v3_promotion_validation_trials"),
                 ("final_selection_top_n", "blb_v3_final_selection_top_n"),
                 ("final_selection_validation_trials", "blb_v3_final_selection_validation_trials"),
+                ("baseline_groups", "blb_v3_baseline_groups"),
+                ("baseline_trials_per_group", "blb_v3_baseline_trials_per_group"),
+                ("constraint_bootstrap_samples", "blb_v3_constraint_bootstrap_samples"),
                 ("seed", "final_eval_random_seed"),
         ):
             v = getattr(ev, attr_name, None)
@@ -2849,6 +2888,15 @@ class BLBStage2RLRunner:
                 cfg.promotion_margin_window = float(v)
             except Exception:
                 pass
+        for cfg_field, attr_name in (
+                ("stage2_stability_multiplier", "stage2_stability_multiplier"),
+                ("online_constraint_probability", "blb_v3_online_constraint_probability"),
+                ("promotion_constraint_probability", "blb_v3_promotion_constraint_probability"),
+                ("final_constraint_probability", "blb_v3_final_constraint_probability"),
+        ):
+            value = getattr(ev, attr_name, None)
+            if value not in (None, ""):
+                setattr(cfg, cfg_field, float(value))
         v = getattr(ev, "blb_v3_disable_warmstart_on_resume", None)
         if v not in (None, ""):
             cfg.disable_warmstart_on_resume = str(v).strip().lower() in (
@@ -3040,6 +3088,7 @@ class BLBStage2RLRunner:
         )
         cfg.validate_decision_granularity()
         cfg.validate_reward_design()
+        cfg.validate_robust_constraint_config()
         return cfg
 
     def _build_probe_batches(

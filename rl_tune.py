@@ -547,6 +547,7 @@ def train(
         stage1_accuracy_tolerance: float = None,
         stage2_limit_tolerance: float = None,
         stage2_stability_tolerance: float = None,
+        stage2_stability_multiplier: float = 2.0,
         stage2_k_trials: int = None,
         stage2_probe_size: int = None,
         # Stage-2 RL variant (新版 BLB v3 / 旧版 v2 二选一；默认新版)
@@ -610,18 +611,24 @@ def train(
         blb_v3_fast_reward_mode_enabled: bool = False,
         blb_v3_online_k_trials: int = 5,
         blb_v3_terminal_eval_batch_size: int = 4,
-        blb_v3_promotion_validation_trials: int = 4,
+        blb_v3_promotion_validation_trials: int = 25,
         blb_v3_final_selection_top_n: int = 20,
-        blb_v3_final_selection_validation_trials: int = 20,
+        blb_v3_final_selection_validation_trials: int = 25,
         blb_v3_promotion_margin_window: float = 0.25,
+        blb_v3_baseline_groups: int = 5,
+        blb_v3_baseline_trials_per_group: int = 5,
+        blb_v3_constraint_bootstrap_samples: int = 4096,
+        blb_v3_online_constraint_probability: float = 0.50,
+        blb_v3_promotion_constraint_probability: float = 0.80,
+        blb_v3_final_constraint_probability: float = 0.95,
         # 2026-05-27: 4-sub-stage Stage-2 RL (opt-in). When True, trains one
         # block per sub-stage in --blb_v3_substage_block_order; blocks listed
         # in --blb_v3_substage_frozen_blocks stay at static_skeletons baseline
         # (block 3 by design). See blb_stage2_rl/substage_runner.py.
         blb_v3_substage_mode: bool = False,
-        blb_v3_fusion_count_action: bool = False,
-        blb_v3_decision_granularity: str = "block",
-        blb_v3_reward_design: str = "stage1_aligned",
+        blb_v3_fusion_count_action: bool = True,
+        blb_v3_decision_granularity: str = "layer",
+        blb_v3_reward_design: str = "robust_constrained",
         blb_v3_fusion_neighbor_curriculum: bool = False,
         blb_v3_fusion_probe_interval: int = 0,
         blb_v3_fusion_exploration_epsilon: float = 0.0,
@@ -698,7 +705,7 @@ def train(
         blb_v3_fusion_count_action, "blb_v3_fusion_count_action"
     )
     blb_v3_decision_granularity = str(
-        blb_v3_decision_granularity or "block"
+        blb_v3_decision_granularity or "layer"
     ).strip().lower()
     if blb_v3_decision_granularity not in ("layer", "block"):
         raise ValueError(
@@ -706,7 +713,7 @@ def train(
             f"{blb_v3_decision_granularity!r}"
         )
     blb_v3_reward_design = str(
-        blb_v3_reward_design or "stage1_aligned"
+        blb_v3_reward_design or "robust_constrained"
     ).strip().lower().replace("-", "_")
     if blb_v3_reward_design not in (
             "robust_constrained", "stage1_aligned", "continuous", "tiered",
@@ -714,6 +721,34 @@ def train(
         raise ValueError(
             "blb_v3_reward_design must be robust_constrained, stage1_aligned, "
             f"continuous, or tiered; got {blb_v3_reward_design!r}"
+        )
+    stage2_stability_multiplier = float(stage2_stability_multiplier)
+    if stage2_stability_multiplier <= 0.0:
+        raise ValueError("stage2_stability_multiplier must be positive")
+    for name, value in (
+            ("blb_v3_baseline_groups", blb_v3_baseline_groups),
+            ("blb_v3_baseline_trials_per_group", blb_v3_baseline_trials_per_group),
+            ("blb_v3_constraint_bootstrap_samples", blb_v3_constraint_bootstrap_samples),
+            ("blb_v3_promotion_validation_trials", blb_v3_promotion_validation_trials),
+            ("blb_v3_final_selection_validation_trials", blb_v3_final_selection_validation_trials),
+    ):
+        if int(value) <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+    for name, value in (
+            ("blb_v3_online_constraint_probability", blb_v3_online_constraint_probability),
+            ("blb_v3_promotion_constraint_probability", blb_v3_promotion_constraint_probability),
+            ("blb_v3_final_constraint_probability", blb_v3_final_constraint_probability),
+    ):
+        probability = float(value)
+        if not 0.0 < probability <= 1.0:
+            raise ValueError(f"{name} must be in (0, 1]")
+    if not (
+            float(blb_v3_online_constraint_probability)
+            <= float(blb_v3_promotion_constraint_probability)
+            <= float(blb_v3_final_constraint_probability)
+    ):
+        raise ValueError(
+            "constraint probabilities must satisfy online <= promotion <= final"
         )
     blb_v3_fusion_neighbor_curriculum = parse_bool_flag(
         blb_v3_fusion_neighbor_curriculum, "blb_v3_fusion_neighbor_curriculum"
@@ -1256,6 +1291,7 @@ def train(
             stage1_accuracy_tolerance=stage1_accuracy_tolerance,
             stage2_limit_tolerance=stage2_limit_tolerance,
             stage2_stability_tolerance=stage2_stability_tolerance,
+            stage2_stability_multiplier=stage2_stability_multiplier,
             stage2_k_trials=stage2_k_trials,
             stage2_probe_size=stage2_probe_size,
             stage2_rl_variant=stage2_rl_variant,
@@ -1306,6 +1342,12 @@ def train(
             blb_v3_final_selection_top_n=blb_v3_final_selection_top_n,
             blb_v3_final_selection_validation_trials=blb_v3_final_selection_validation_trials,
             blb_v3_promotion_margin_window=blb_v3_promotion_margin_window,
+            blb_v3_baseline_groups=blb_v3_baseline_groups,
+            blb_v3_baseline_trials_per_group=blb_v3_baseline_trials_per_group,
+            blb_v3_constraint_bootstrap_samples=blb_v3_constraint_bootstrap_samples,
+            blb_v3_online_constraint_probability=blb_v3_online_constraint_probability,
+            blb_v3_promotion_constraint_probability=blb_v3_promotion_constraint_probability,
+            blb_v3_final_constraint_probability=blb_v3_final_constraint_probability,
             blb_v3_substage_mode=blb_v3_substage_mode,
             blb_v3_fusion_count_action=blb_v3_fusion_count_action,
             blb_v3_decision_granularity=blb_v3_decision_granularity,

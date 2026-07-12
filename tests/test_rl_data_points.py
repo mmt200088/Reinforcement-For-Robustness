@@ -25,6 +25,358 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class RLDataPointWriterTest(unittest.TestCase):
+    def test_diagnostics_restore_reconciles_primary_and_structured_mirror(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_reconcile_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        def episode(index):
+            return module.EpisodeStats(
+                episode=index,
+                total_reward=1.0,
+                terminal_reward=1.0,
+                per_step_sum=0.0,
+                valid_steps=12,
+                invalid_steps=0,
+                steps_taken=12,
+                total_bits=0,
+                fusion_count=24,
+                first_invalid_step=None,
+                first_invalid_block=None,
+                first_invalid_layer=None,
+                early_terminated=False,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            progress = Path(td) / "progress"
+            writer = RLDataPointWriter(
+                root_dir=Path(td) / "points",
+                run_id="reconcile",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            first = module.RLDiagnosticsRecorder(
+                output_dir=str(progress),
+                num_layers=12,
+                num_action_slots=3,
+                data_point_writer=writer,
+                strict_writes=True,
+            )
+            first.record_episode(
+                episode_stats=episode(0),
+                full_action_vec=np.array([0, 1, 2]),
+                is_new_best=False,
+                best_reward_so_far=1.0,
+            )
+            first.flush_mandatory()
+            # Simulate a crash after the primary append but before its mirror.
+            writer_episode_path = writer.run_dir / "episodes.jsonl"
+            writer_episode_path.write_text("", encoding="utf-8")
+            first._close_primary_jsonl()
+            writer.close()
+
+            resumed_writer = RLDataPointWriter(
+                root_dir=Path(td) / "points",
+                run_id="reconcile",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            resumed = module.RLDiagnosticsRecorder(
+                output_dir=str(progress),
+                num_layers=12,
+                num_action_slots=3,
+                data_point_writer=resumed_writer,
+                strict_writes=True,
+            )
+            restored = resumed.restore_existing()
+            resumed.flush_mandatory()
+
+            mirror_rows = [
+                json.loads(line)
+                for line in writer_episode_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual(restored["episodes"], 1)
+        self.assertEqual([row["episode"] for row in mirror_rows], [0])
+        self.assertEqual(mirror_rows[0]["full_action_vec"], [0, 1, 2])
+
+    def test_diagnostics_restore_rejects_primary_mirror_conflict(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_conflict_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as td:
+            progress = Path(td) / "progress"
+            diagnostics = progress / "diagnostics"
+            diagnostics.mkdir(parents=True)
+            primary = {
+                "episode": 0,
+                "total_reward": 1.0,
+                "terminal_reward": 1.0,
+                "per_step_sum": 0.0,
+                "valid_steps": 12,
+                "invalid_steps": 0,
+                "steps_taken": 12,
+                "total_bits": 0,
+                "fusion_count": 24,
+                "first_invalid_step": None,
+                "first_invalid_block": None,
+                "first_invalid_layer": None,
+                "early_terminated": False,
+            }
+            (diagnostics / "episodes.jsonl").write_text(
+                json.dumps(primary) + "\n", encoding="utf-8",
+            )
+            writer = RLDataPointWriter(
+                root_dir=Path(td) / "points",
+                run_id="conflict",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            writer.write_episode({**primary, "total_reward": 2.0})
+            writer.flush()
+            recorder = module.RLDiagnosticsRecorder(
+                output_dir=str(progress),
+                num_layers=12,
+                num_action_slots=3,
+                data_point_writer=writer,
+                strict_writes=True,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "conflict"):
+                recorder.restore_existing()
+
+    def test_diagnostics_restore_backfills_primary_from_structured_tail(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_primary_backfill_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        payload = {
+            "episode": 0,
+            "total_reward": 1.0,
+            "terminal_reward": 1.0,
+            "per_step_sum": 0.0,
+            "valid_steps": 12,
+            "invalid_steps": 0,
+            "steps_taken": 12,
+            "total_bits": 0,
+            "fusion_count": 24,
+            "first_invalid_step": None,
+            "first_invalid_block": None,
+            "first_invalid_layer": None,
+            "early_terminated": False,
+            "full_action_vec": [0, 1, 2],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=Path(td) / "points",
+                run_id="backfill",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            writer.write_episode(payload)
+            writer.flush()
+            recorder = module.RLDiagnosticsRecorder(
+                output_dir=str(Path(td) / "progress"),
+                num_layers=12,
+                num_action_slots=3,
+                data_point_writer=writer,
+                strict_writes=True,
+            )
+
+            restored = recorder.restore_existing()
+
+        self.assertEqual(restored, {"episodes": 1, "ppo_updates": 0})
+        self.assertEqual(recorder._all_episode_returns, [1.0])
+
+    def test_diagnostics_checkpoint_sizes_roll_back_both_jsonl_trees(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_sizes_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=Path(td) / "points",
+                run_id="sizes",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            recorder = module.RLDiagnosticsRecorder(
+                output_dir=str(Path(td) / "progress"),
+                num_layers=12,
+                num_action_slots=3,
+                data_point_writer=writer,
+                strict_writes=True,
+            )
+            recorder._write_primary_jsonl(recorder.episodes_path, {"episode": 0})
+            writer.write_episode({"episode": 0})
+            recorder.flush_mandatory()
+            committed = recorder.committed_jsonl_sizes()
+            recorder._write_primary_jsonl(recorder.episodes_path, {"episode": 1})
+            writer.write_episode({"episode": 1})
+            recorder.flush_mandatory()
+            recorder._close_primary_jsonl()
+            writer.close()
+
+            resumed_writer = RLDataPointWriter(
+                root_dir=Path(td) / "points",
+                run_id="sizes",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            resumed = module.RLDiagnosticsRecorder(
+                output_dir=str(Path(td) / "progress"),
+                num_layers=12,
+                num_action_slots=3,
+                data_point_writer=resumed_writer,
+                strict_writes=True,
+            )
+            resumed.recover_to_checkpoint_sizes(committed)
+
+            primary_rows = list(
+                json.loads(line)
+                for line in Path(resumed.episodes_path).read_text().splitlines()
+            )
+            mirror_rows = list(
+                json.loads(line)
+                for line in (resumed_writer.run_dir / "episodes.jsonl").read_text().splitlines()
+            )
+
+        self.assertEqual([row["episode"] for row in primary_rows], [0])
+        self.assertEqual([row["episode"] for row in mirror_rows], [0])
+
+    def test_layerwise_robust_episode_is_strict_json_and_auditable(self):
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=td,
+                run_id="layerwise-robust",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            probabilities = {
+                name: 0.9
+                for name in (
+                    "loss_precision_probability",
+                    "metric1_precision_probability",
+                    "metric2_precision_probability",
+                    "loss_stability_probability",
+                    "metric1_stability_probability",
+                    "metric2_stability_probability",
+                )
+            }
+            payload = {
+                "episode": 7,
+                "fresh_trials": {
+                    "loss": [0.3] * 5,
+                    "metric1": [0.88] * 5,
+                    "metric2": [0.87] * 5,
+                    "seeds": [11, 12, 13, 14, 15],
+                },
+                "pooled_trials": {
+                    "loss": [0.3] * 25,
+                    "metric1": [0.88] * 25,
+                    "metric2": [0.87] * 25,
+                    "seeds": list(range(25)),
+                },
+                "fresh_constraint_probabilities": probabilities,
+                "pooled_constraint_probabilities": probabilities,
+                "fresh_trial_count": 5,
+                "pooled_trial_count": 25,
+                "reward_evidence": "fresh_trials",
+                "ranking_evidence": "pooled_prefix_trials",
+                "constraint_thresholds": {
+                    "online": 0.50, "promotion": 0.80, "final": 0.95,
+                },
+                "variable_cost": 0.625,
+                "layer_action_matrix": [[0, 0, 3, 3, 3, 3]] + [[1, 3, 3, 3, 3, 3]] * 11,
+                "block4_entropy": 0.08,
+                "k_entropy": 0.09,
+                "promotion_trial_count": 25,
+                "promotion_status": "promoted",
+                "convergence_state": {"converged": False, "stall_update_windows": 4},
+            }
+            writer.write_episode(payload)
+            writer.write_summary({"strict_best_assessment": probabilities})
+            writer.close()
+
+            text = (writer.run_dir / "episodes.jsonl").read_text(encoding="utf-8")
+            row = json.loads(text, parse_constant=lambda value: self.fail(value))
+            self.assertEqual(len(row["layer_action_matrix"]), 12)
+            self.assertEqual(len(row["fresh_constraint_probabilities"]), 6)
+            self.assertEqual(len(row["pooled_constraint_probabilities"]), 6)
+            self.assertEqual(row["fresh_trials"]["seeds"], [11, 12, 13, 14, 15])
+            self.assertEqual(len(row["pooled_trials"]["seeds"]), 25)
+
+    def test_nonfinite_structured_values_are_written_as_json_null(self):
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=td,
+                run_id="finite-json",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            writer.write_episode({"episode": 0, "bad": float("nan")})
+            writer.close()
+            row = json.loads(
+                (writer.run_dir / "episodes.jsonl").read_text(encoding="utf-8"),
+                parse_constant=lambda value: self.fail(value),
+            )
+            self.assertIsNone(row["bad"])
+
+    def test_nonfinite_numpy_manifest_and_summary_values_are_json_null(self):
+        with tempfile.TemporaryDirectory() as td:
+            writer = RLDataPointWriter(
+                root_dir=td,
+                run_id="finite-numpy-json",
+                stage="stage2",
+                model_type="bert-base",
+                dataset="mrpc",
+            )
+            payload = {
+                "scalar": np.float32(float("nan")),
+                "array": np.asarray([1.0, float("inf")]),
+            }
+            writer.write_manifest(payload)
+            writer.write_summary(payload)
+            writer.close()
+
+            manifest = json.loads(
+                (writer.run_dir / "manifest.json").read_text(encoding="utf-8"),
+                parse_constant=lambda value: self.fail(value),
+            )
+            summary = json.loads(
+                (writer.run_dir / "summary.json").read_text(encoding="utf-8"),
+                parse_constant=lambda value: self.fail(value),
+            )
+
+        self.assertIsNone(manifest["scalar"])
+        self.assertEqual(manifest["array"], [1.0, None])
+        self.assertIsNone(summary["scalar"])
+        self.assertEqual(summary["array"], [1.0, None])
+
     def test_writes_stage1_training_data_points_as_jsonl(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -539,6 +891,60 @@ class RLDataPointWriterTest(unittest.TestCase):
             update = json.loads((stage2_dir / "ppo_updates.jsonl").read_text().splitlines()[0])
             self.assertEqual(update["completed_episodes"], 1)
 
+    def test_layerwise_strict_diagnostics_propagate_mandatory_write_failures(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_strict_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        writer = mock.Mock()
+        writer.write_manifest.side_effect = OSError("manifest disk failure")
+        with tempfile.TemporaryDirectory() as td:
+            recorder = module.RLDiagnosticsRecorder(
+                output_dir=str(Path(td) / "progress"),
+                num_layers=12,
+                num_action_slots=3,
+                data_point_writer=writer,
+                strict_writes=True,
+            )
+            with self.assertRaisesRegex(RuntimeError, "manifest"):
+                recorder.set_meta({"reward_design": "robust_constrained"})
+
+            writer.write_manifest.side_effect = None
+            with mock.patch.object(
+                recorder,
+                "_write_primary_jsonl",
+                side_effect=OSError("episode disk failure"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "episodes.jsonl"):
+                    recorder.record_episode(
+                        episode_stats=module.EpisodeStats(
+                            episode=0,
+                            total_reward=1.0,
+                            terminal_reward=1.0,
+                            per_step_sum=0.0,
+                            valid_steps=12,
+                            invalid_steps=0,
+                            steps_taken=12,
+                            total_bits=0,
+                            fusion_count=24,
+                            first_invalid_step=None,
+                            first_invalid_block=None,
+                            first_invalid_layer=None,
+                            early_terminated=False,
+                        ),
+                        full_action_vec=np.array([0, 1, 2]),
+                        is_new_best=False,
+                        best_reward_so_far=1.0,
+                    )
+
+    def test_layerwise_branch_enables_strict_diagnostics_writes(self):
+        source = (REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text()
+        self.assertIn("strict_writes=True", source)
+
     def test_stage2_diagnostics_reuses_primary_jsonl_handles(self):
         spec = importlib.util.spec_from_file_location(
             "blb_stage2_diagnostics_jsonl_reuse_for_test",
@@ -635,6 +1041,164 @@ class RLDataPointWriterTest(unittest.TestCase):
             ]
             self.assertEqual(len(episode_newlines), 2)
             self.assertEqual(len(ppo_newlines), 2)
+
+    def test_stage2_diagnostics_restore_rebuilds_full_history_without_reappend(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_resume_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        def episode(module, index):
+            return module.EpisodeStats(
+                episode=index,
+                total_reward=float(index + 1),
+                terminal_reward=float(index + 1),
+                per_step_sum=0.0,
+                valid_steps=12,
+                invalid_steps=0,
+                steps_taken=12,
+                total_bits=0,
+                fusion_count=24 + index,
+                first_invalid_step=None,
+                first_invalid_block=None,
+                first_invalid_layer=None,
+                early_terminated=False,
+            )
+
+        def update(module, index):
+            return module.PPOUpdateStats(
+                update=index,
+                completed_episodes=index * 120,
+                policy_loss=0.1,
+                value_loss=0.2,
+                entropy=0.3,
+                clip_fraction=0.4,
+                n_samples=1440,
+                window_mean_return=1.0,
+                window_max_return=1.0,
+                window_min_return=1.0,
+                window_mean_invalid=0.0,
+                best_reward_so_far=1.0,
+                elapsed_sec=2.0,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            output = str(Path(td) / "progress")
+            first = module.RLDiagnosticsRecorder(
+                output_dir=output, num_layers=12, num_action_slots=3,
+            )
+            first.record_episode(
+                episode_stats=episode(module, 0),
+                full_action_vec=np.array([0, 1, 2]),
+                is_new_best=False,
+                best_reward_so_far=1.0,
+            )
+            first.record_episode(
+                episode_stats=episode(module, 1),
+                full_action_vec=np.array([1, 2, 0]),
+                is_new_best=False,
+                best_reward_so_far=2.0,
+            )
+            first.record_ppo_update(update(module, 1))
+            first.finalize()
+
+            resumed = module.RLDiagnosticsRecorder(
+                output_dir=output, num_layers=12, num_action_slots=3,
+            )
+            restored = resumed.restore_existing()
+            self.assertEqual(restored, {"episodes": 2, "ppo_updates": 1})
+            self.assertEqual(resumed._all_episode_returns, [1.0, 2.0])
+            self.assertEqual(len(resumed._ppo_history), 1)
+            self.assertEqual(int(resumed._action_hist.sum()), 6)
+
+            resumed.record_episode(
+                episode_stats=episode(module, 2),
+                full_action_vec=np.array([2, 0, 1]),
+                is_new_best=False,
+                best_reward_so_far=3.0,
+            )
+            resumed.record_ppo_update(update(module, 2))
+            resumed.finalize()
+
+            episode_rows = (
+                Path(output) / "diagnostics" / "episodes.jsonl"
+            ).read_text(encoding="utf-8").splitlines()
+            update_rows = (
+                Path(output) / "diagnostics" / "ppo_updates.jsonl"
+            ).read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(len(episode_rows), 3)
+        self.assertEqual(len(update_rows), 2)
+
+    def test_stage2_diagnostics_restore_accepts_invalid_nonfinite_metrics(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_invalid_resume_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as td:
+            output = str(Path(td) / "progress")
+            first = module.RLDiagnosticsRecorder(
+                output_dir=output, num_layers=12, num_action_slots=3,
+                strict_writes=True,
+            )
+            first.record_episode(
+                episode_stats=module.EpisodeStats(
+                    episode=0,
+                    total_reward=-5.0,
+                    terminal_reward=-5.0,
+                    per_step_sum=0.0,
+                    valid_steps=11,
+                    invalid_steps=1,
+                    steps_taken=12,
+                    total_bits=0,
+                    fusion_count=24,
+                    first_invalid_step=11,
+                    first_invalid_block=4,
+                    first_invalid_layer=11,
+                    early_terminated=True,
+                    terminal_priority=1,
+                    terminal_loss_mean=float("inf"),
+                    terminal_loss_std=float("inf"),
+                ),
+                full_action_vec=np.array([0, 1, 2]),
+                is_new_best=False,
+                best_reward_so_far=-5.0,
+            )
+            first.finalize()
+
+            persisted = json.loads(
+                (Path(output) / "diagnostics" / "episodes.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()[0]
+            )
+            self.assertIsNone(persisted["terminal_loss_mean"])
+            self.assertIsNone(persisted["terminal_loss_std"])
+
+            resumed = module.RLDiagnosticsRecorder(
+                output_dir=output, num_layers=12, num_action_slots=3,
+                strict_writes=True,
+            )
+            restored = resumed.restore_existing()
+
+        self.assertEqual(restored, {"episodes": 1, "ppo_updates": 0})
+        self.assertEqual(resumed._all_priority, [1])
+        self.assertEqual(len(resumed._top_candidates), 1)
+        restored_payload = resumed._top_candidates[0][2]
+        self.assertTrue(np.isinf(restored_payload["terminal_loss_mean"]))
+        self.assertTrue(np.isinf(restored_payload["terminal_loss_std"]))
+
+    def test_layerwise_checkpoint_flushes_mandatory_logs_before_save(self):
+        source = (REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text()
+        flush_pos = source.index("diag_recorder.committed_jsonl_sizes()")
+        checkpoint_pos = source.index("torch.save(checkpoint, tmp_path)", flush_pos)
+        self.assertLess(flush_pos, checkpoint_pos)
 
     def test_stage2_diagnostics_streams_human_report_writes(self):
         spec = importlib.util.spec_from_file_location(

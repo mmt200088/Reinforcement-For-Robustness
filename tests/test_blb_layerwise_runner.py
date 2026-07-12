@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import inspect
 import math
@@ -7,6 +8,7 @@ from pathlib import Path
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -165,8 +167,293 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(state.stall_update_windows, 0)
         self.assertFalse(state.converged)
 
+    def test_convergence_cannot_trigger_while_current_frontier_is_empty(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker()
+        tracker.observe_update(
+            completed_episodes=30_000,
+            block4_entropy=0.05,
+            k_entropy=0.05,
+            robust_feasible_cost=0.4,
+        )
+        for update_idx in range(150):
+            state = tracker.observe_update(
+                completed_episodes=30_120 + update_idx * 120,
+                block4_entropy=0.05,
+                k_entropy=0.05,
+                robust_feasible_cost=None,
+            )
+
+        self.assertEqual(state.stall_update_windows, 0)
+        self.assertEqual(state.best_robust_feasible_cost, 0.4)
+        self.assertFalse(state.converged)
+
+    def test_convergence_tracker_state_round_trips_across_resume(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker()
+        tracker.observe_update(
+            completed_episodes=30_000,
+            block4_entropy=0.05,
+            k_entropy=0.05,
+            robust_feasible_cost=0.4,
+        )
+        for update_idx in range(7):
+            tracker.observe_update(
+                completed_episodes=30_120 + update_idx * 120,
+                block4_entropy=0.05,
+                k_entropy=0.05,
+                robust_feasible_cost=0.4,
+            )
+
+        restored = LayerwiseConvergenceTracker()
+        restored.load_state_dict(tracker.state_dict())
+        state = restored.observe_update(
+            completed_episodes=31_000,
+            block4_entropy=0.05,
+            k_entropy=0.05,
+            robust_feasible_cost=0.4,
+        )
+
+        self.assertEqual(state.stall_update_windows, 8)
+        self.assertEqual(state.best_robust_feasible_cost, 0.4)
+
+    def test_convergence_rebases_when_feasible_frontier_retracts(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker()
+        tracker.observe_update(
+            completed_episodes=30_000,
+            block4_entropy=0.05,
+            k_entropy=0.05,
+            robust_feasible_cost=0.8,
+        )
+        tracker.observe_update(
+            completed_episodes=30_120,
+            block4_entropy=0.05,
+            k_entropy=0.05,
+            robust_feasible_cost=None,
+        )
+        state = tracker.observe_update(
+            completed_episodes=30_240,
+            block4_entropy=0.05,
+            k_entropy=0.05,
+            robust_feasible_cost=0.6,
+        )
+
+        self.assertEqual(state.stall_update_windows, 0)
+        self.assertEqual(state.best_robust_feasible_cost, 0.6)
+        self.assertFalse(state.converged)
+
+    def test_entropy_schedule_uses_absolute_progress_across_resume(self):
+        from blb_stage2_rl.layerwise_runner import _cosine_entropy_coefficient
+
+        uninterrupted = types.SimpleNamespace(
+            total_episodes=60_000,
+            planned_total_episodes=60_000,
+            ent_coef_cosine_start=0.05,
+            ent_coef_cosine_end=0.001,
+            ent_coef_cosine_plateau=0.25,
+            ent_coef_cosine_lower_bound=0.0,
+        )
+        resumed = types.SimpleNamespace(
+            total_episodes=30_000,
+            planned_total_episodes=60_000,
+            ent_coef_cosine_start=0.05,
+            ent_coef_cosine_end=0.001,
+            ent_coef_cosine_plateau=0.25,
+            ent_coef_cosine_lower_bound=0.0,
+        )
+
+        self.assertEqual(
+            _cosine_entropy_coefficient(resumed, 30_000),
+            _cosine_entropy_coefficient(uninterrupted, 30_000),
+        )
+
 
 class LayerwiseDispatchRulesTests(unittest.TestCase):
+    def test_sequential_train_config_carries_layerwise_resume_state(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        config_class = next(
+            node for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "SequentialTrainConfig"
+        )
+        fields = {
+            node.target.id
+            for node in config_class.body
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+        }
+
+        self.assertIn("planned_total_episodes", fields)
+        self.assertIn("convergence_resume_state", fields)
+
+    def test_layerwise_checkpoint_preserves_long_run_search_state(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        for required in (
+            'checkpoint.get("convergence_state")',
+            'convergence_state=metrics.get("convergence_state")',
+            "planned_total_episodes=int(planned_total_episodes)",
+            "ppo_update_counter = start_episode //",
+            '"boosted_overrides":',
+            'best_reward = summary.get("best_reward")',
+            '"torch_rng_state": torch.get_rng_state()',
+            "torch.set_rng_state(",
+            '"numpy_rng_state": np.random.get_state()',
+            "np.random.set_state(",
+            '"python_rng_state": random.getstate()',
+            "random.setstate(",
+            "existing_diagnostic_episodes",
+            "existing_diagnostic_updates",
+            "weights_only=False",
+            'checkpoint.get("candidate_store_size")',
+            '"candidate_store_size": (',
+            "candidate_store.path.stat().st_size",
+            "candidate_store.recover_to_checkpoint_size",
+            'checkpoint.get("diagnostics_jsonl_sizes")',
+            '"diagnostics_jsonl_sizes": diag_recorder.committed_jsonl_sizes()',
+            "diag_recorder.recover_to_checkpoint_sizes",
+            "planned_total_episodes = int(checkpoint.get(",
+            '"planned_total_episodes", planned_total_episodes',
+        ):
+            self.assertIn(required, branch_source)
+
+    def test_layerwise_checkpoint_and_result_publish_reloadable_fusion_best(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn("build_fusion_fixed_config", branch_source)
+        self.assertIn('"best_action": checkpoint_best_action', branch_source)
+        self.assertIn('"blb_v3_best_action_vec": checkpoint_best_action', branch_source)
+        self.assertIn('"blb_v3_best_action_group": checkpoint_best_group', branch_source)
+        self.assertIn('"blb_v3_best_action_group": best_action_group', branch_source)
+        self.assertNotIn('"blb_v3_best_action_group": None', branch_source)
+
+        evaluator_source = Path("layer_importance_evaluator.py").read_text(
+            encoding="utf-8",
+        )
+        self.assertIn('checkpoint.get("strict_best")', evaluator_source)
+        self.assertIn("_build_stage2_final_eval_handoff", evaluator_source)
+        self.assertIn('out["blb_v3_best_action_group"]', evaluator_source)
+
+    def test_outer_layerwise_branch_does_not_resurrect_stale_checkpoint_best(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn(
+            'strict_best = dict(metrics.get("strict_best") or {})',
+            branch_source,
+        )
+        self.assertNotIn(
+            'summary.get("best_full_vector") is None and strict_best.get("full_vector")',
+            branch_source,
+        )
+
+    def test_layerwise_branch_rewrites_checkpoint_after_zero_episode_revalidation(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn("def save_layerwise_checkpoint(", branch_source)
+        self.assertGreaterEqual(branch_source.count("save_layerwise_checkpoint("), 3)
+        self.assertIn('strict_best=summary.get("strict_best")', branch_source)
+
+    def test_layerwise_branch_persists_authoritative_run_mode_and_strict_summary(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn('"stage2_layerwise_robust_run_v1"', branch_source)
+        self.assertIn('"layerwise_run_manifest.json"', branch_source)
+        self.assertIn("write_strict_json_file(", branch_source)
+        self.assertNotIn("write_json_file(\n        os.path.join(blb_progress_dir, \"layerwise_summary.json\")", branch_source)
+
+    def test_layerwise_online_trial_count_uses_authoritative_stage2_k_trials(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn(
+            "online_num_trials_per_step=int(train_cfg.num_trials_per_step)",
+            branch_source,
+        )
+        self.assertIn(
+            '"stage2_k_trials": int(train_cfg.num_trials_per_step)',
+            branch_source,
+        )
+        self.assertNotIn(
+            'getattr(train_cfg, "online_num_trials_per_step", 5)',
+            branch_source,
+        )
+
+    def test_layerwise_curves_rebuild_from_full_diagnostic_history(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn("for row in iter_jsonl(existing_episode_path", branch_source)
+        self.assertIn("for row in iter_jsonl(existing_update_path", branch_source)
+        self.assertIn("errors=\"raise\"", branch_source)
+        self.assertNotIn("list(iter_jsonl(", branch_source)
+        self.assertNotIn("if episode_records:\n        fusion_counts", branch_source)
+
     def test_public_config_builder_drives_real_dispatch_rules(self):
         from blb_stage2_rl.layerwise_runner import (
             apply_public_stage2_decision_config,
@@ -525,6 +812,69 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(evidence.trial_count, 10)
         self.assertEqual(len(set(evidence.trials.seeds)), 10)
 
+    def test_episode_record_labels_fresh_reward_and_pooled_ranking_evidence(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=2, update_every=2),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        second = summary["episode_records"][1]
+        self.assertEqual(len(second.raw_trials.loss), 5)
+        self.assertEqual(len(second.pooled_trials.loss), 10)
+        self.assertEqual(second.fresh_trial_count, 5)
+        self.assertEqual(second.pooled_trial_count, 10)
+        self.assertEqual(second.reward_evidence, "fresh_trials")
+        self.assertEqual(second.ranking_evidence, "pooled_prefix_trials")
+
+    def test_repeated_action_keeps_bootstrap_assessment_at_fixed_25_trial_budget(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        assessed_trial_counts = []
+
+        def assess(trials, *_args, **_kwargs):
+            assessed_trial_counts.append(len(trials.loss))
+            return _assessment(0.7)
+
+        identity_context = {"action_space_version": "layerwise-v1"}
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=10, update_every=10),
+                candidate_store=store,
+                identity_context=identity_context,
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=assess,
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+            raw = store.trial_evidence_for_action(list(range(20)), identity_context)
+
+        self.assertEqual(raw.trial_count, 50)
+        self.assertLessEqual(max(assessed_trial_counts), 25)
+        self.assertEqual(assessed_trial_counts[-1], 25)
+
     def test_valid_terminal_requires_exact_aligned_raw_evidence(self):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
@@ -592,6 +942,297 @@ class LayerwiseRolloutTests(unittest.TestCase):
             "exploration_epsilon",
         ):
             self.assertNotIn(retired, source)
+
+    def test_zero_remaining_resume_preserves_frontier_and_convergence_summary(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        action = list(range(20))
+        matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 25,
+                    metric1=[0.9] * 25,
+                    metric2=[0.8] * 25,
+                    seeds=list(range(1, 26)),
+                ),
+                {
+                    "identity_context": context,
+                    "action_matrix": matrix,
+                    "variable_cost": 0.6,
+                    "episode_reward": 1.25,
+                    "assessment_bootstrap_seed": 77,
+                    "boosted_overrides": [],
+                },
+            )
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": context,
+                "promotion_status": "promoted",
+                "fidelity": "F4",
+                "valid": True,
+            })
+            config = self._train_cfg(total_episodes=0)
+            config.absolute_episode_start = 60_000
+            config.planned_total_episodes = 60_000
+            config.convergence_resume_state = {
+                "best_robust_feasible_cost": 0.6,
+                "current_robust_feasible_cost": 0.6,
+                "stall_update_windows": 101,
+                "block4_entropy": 0.05,
+                "k_entropy": 0.06,
+                "converged": True,
+                "extension_required": False,
+            }
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.9),
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=store,
+                identity_context=context,
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["completed_episodes"], 60_000)
+        self.assertEqual(summary["best_full_vector"], action)
+        self.assertEqual(summary["best_reward"], 1.25)
+        self.assertEqual(summary["best_promotion_evidence"]["trial_count"], 25)
+        self.assertEqual(
+            len(summary["best_promotion_evidence"]["trials"]["seeds"]), 25,
+        )
+        self.assertEqual(summary["block4_entropy"], 0.05)
+        self.assertEqual(summary["k_entropy"], 0.06)
+        self.assertEqual(summary["stall_update_windows"], 101)
+        self.assertTrue(summary["converged"])
+        self.assertEqual(summary["strict_best"]["full_vector"], action)
+        self.assertTrue(summary["convergence_state"]["converged"])
+
+    def test_promoted_reward_and_install_metadata_restore_from_promotion_record(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import restore_promoted_candidates
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        action = list(range(20))
+        matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        overrides = [{
+            "block_idx": 4,
+            "layer_idx": 3,
+            "field_values": {"v_mask_rescale_sf": 47},
+        }]
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 5,
+                    metric1=[0.9] * 5,
+                    metric2=[0.8] * 5,
+                    seeds=list(range(1, 6)),
+                ),
+                {
+                    "identity_context": context,
+                    "action_matrix": matrix,
+                    "variable_cost": 0.6,
+                    "episode_reward": 9.0,
+                    "assessment_bootstrap_seed": 77,
+                    "boosted_overrides": [],
+                },
+            )
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": context,
+                "promotion_status": "promoted",
+                "promotion_metadata": {
+                    "action_matrix": matrix,
+                    "variable_cost": 0.6,
+                    "episode_reward": 1.25,
+                    "assessment_bootstrap_seed": 77,
+                    "boosted_overrides": overrides,
+                },
+                "fidelity": "F4",
+                "valid": True,
+            })
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 20,
+                    metric1=[0.9] * 20,
+                    metric2=[0.8] * 20,
+                    seeds=list(range(6, 26)),
+                ),
+                {
+                    "identity_context": context,
+                    "action_matrix": matrix,
+                    "variable_cost": 0.6,
+                    "episode_reward": 7.5,
+                    "assessment_bootstrap_seed": 77,
+                    "boosted_overrides": [],
+                },
+            )
+
+            with mock.patch.object(
+                store,
+                "read_all",
+                side_effect=AssertionError("frontier restore must stream active records"),
+            ):
+                restored = restore_promoted_candidates(
+                    candidate_store=store,
+                    identity_context=context,
+                    statistical_reference=object(),
+                    assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+                    promotion_probability=0.8,
+                    assessment_trial_limit=25,
+                )
+
+        candidate = next(iter(restored.values()))
+        self.assertEqual(candidate["reward"], 1.25)
+        self.assertEqual(
+            candidate["boosted_overrides"],
+            {(4, 3): {"v_mask_rescale_sf": 47}},
+        )
+
+    def test_zero_remaining_resume_clears_convergence_after_frontier_retraction(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        action = list(range(20))
+        matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 25,
+                    metric1=[0.9] * 25,
+                    metric2=[0.8] * 25,
+                    seeds=list(range(1, 26)),
+                ),
+                {
+                    "identity_context": context,
+                    "action_matrix": matrix,
+                    "variable_cost": 0.6,
+                    "episode_reward": 1.25,
+                    "assessment_bootstrap_seed": 77,
+                    "boosted_overrides": [],
+                },
+            )
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": context,
+                "promotion_status": "promoted",
+                "fidelity": "F4",
+                "valid": True,
+            })
+            config = self._train_cfg(total_episodes=0)
+            config.absolute_episode_start = 60_000
+            config.planned_total_episodes = 60_000
+            config.convergence_resume_state = {
+                "best_robust_feasible_cost": 0.8,
+                "current_robust_feasible_cost": 0.8,
+                "stall_update_windows": 101,
+                "block4_entropy": 0.05,
+                "k_entropy": 0.06,
+                "converged": True,
+                "extension_required": False,
+            }
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.9),
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=store,
+                identity_context=context,
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["best_variable_cost"], 0.6)
+        self.assertEqual(summary["stall_update_windows"], 0)
+        self.assertFalse(summary["converged"])
+
+    def test_ppo_update_exposes_current_strict_frontier_snapshot(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        action = list(range(20))
+        matrix = [[1, 0, 1, 2, 3, 4] for _ in range(12)]
+        observed_updates = []
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 25,
+                    metric1=[0.9] * 25,
+                    metric2=[0.8] * 25,
+                    seeds=list(range(1, 26)),
+                ),
+                {
+                    "identity_context": context,
+                    "action_matrix": matrix,
+                    "variable_cost": 0.6,
+                    "episode_reward": 1.25,
+                    "assessment_bootstrap_seed": 77,
+                    "boosted_overrides": [],
+                },
+            )
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": context,
+                "promotion_status": "promoted",
+                "fidelity": "F4",
+                "valid": True,
+            })
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.9),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=1, update_every=1),
+                candidate_store=store,
+                identity_context=context,
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+                on_ppo_update_end=lambda metrics, *_args: observed_updates.append(metrics),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(observed_updates[0]["strict_best"]["full_vector"], action)
+        self.assertEqual(observed_updates[0]["strict_best"]["variable_cost"], 0.4)
+        self.assertEqual(summary["best_reward"], 1.25)
 
 
 class _PromotionBase:
@@ -696,6 +1337,152 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
         self.assertEqual(base.evaluate_calls[0][1]["num_trials_per_action"], 20)
         self.assertTrue(base.evaluate_calls[0][1]["validation_required"])
+
+    def test_promotion_assesses_existing_evidence_above_target_without_new_probe(self):
+        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        action = list(range(20))
+        with tempfile.TemporaryDirectory() as td:
+            store = self._store_with_five(td)
+            for group_idx in range(1, 6):
+                seeds = list(range(group_idx * 5 + 1, group_idx * 5 + 6))
+                store.append_trial_group(
+                    action,
+                    TrialSeries(
+                        loss=[0.3] * 5,
+                        metric1=[0.9] * 5,
+                        metric2=[0.8] * 5,
+                        seeds=seeds,
+                    ),
+                    {"identity_context": context, "group_index": group_idx},
+                )
+            base = _PromotionBase()
+            result = promote_candidate_if_eligible(
+                env=types.SimpleNamespace(base=base),
+                candidate_store=store,
+                action_indices=action,
+                identity_context=context,
+                action_matrix=[[0] * 6 for _ in range(12)],
+                assessment=_assessment(0.85),
+                priority=3,
+                variable_cost=0.6,
+                frontier_cost=0.5,
+                boosted_overrides={},
+                bootstrap_seed=77,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+            )
+
+        self.assertEqual(result.status, "promoted")
+        self.assertEqual(result.trial_count, 30)
+        self.assertEqual(result.fresh_trial_count, 0)
+        self.assertEqual(base.prepare_calls, [])
+        self.assertEqual(base.evaluate_calls, [])
+
+    def test_promotion_recovers_pending_reassessment_after_top_up_crash(self):
+        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        action = list(range(20))
+        with tempfile.TemporaryDirectory() as td:
+            store = self._store_with_five(td)
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 20,
+                    metric1=[0.9] * 20,
+                    metric2=[0.8] * 20,
+                    seeds=list(range(100, 120)),
+                ),
+                {
+                    "identity_context": context,
+                    "promotion_marker": "fresh_top_up",
+                    "promotion_status": "pending_reassessment",
+                },
+            )
+            base = _PromotionBase()
+            result = promote_candidate_if_eligible(
+                env=types.SimpleNamespace(base=base),
+                candidate_store=store,
+                action_indices=action,
+                identity_context=context,
+                action_matrix=[[0] * 6 for _ in range(12)],
+                assessment=_assessment(0.85),
+                priority=3,
+                variable_cost=0.6,
+                frontier_cost=0.5,
+                boosted_overrides={},
+                bootstrap_seed=77,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+            )
+
+        self.assertEqual(result.status, "promoted")
+        self.assertEqual(result.trial_count, 25)
+        self.assertEqual(result.fresh_trial_count, 0)
+        self.assertEqual(base.prepare_calls, [])
+        self.assertEqual(base.evaluate_calls, [])
+
+    def test_restore_promoted_candidates_reassesses_persisted_frontier(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import restore_promoted_candidates
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        action = list(range(20))
+        matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 25,
+                    metric1=[0.9] * 25,
+                    metric2=[0.8] * 25,
+                    seeds=list(range(1, 26)),
+                ),
+                {
+                    "identity_context": context,
+                    "action_matrix": matrix,
+                    "variable_cost": 0.6,
+                    "episode_reward": 1.25,
+                    "assessment_bootstrap_seed": 77,
+                    "boosted_overrides": [{
+                        "block_idx": 4,
+                        "layer_idx": 3,
+                        "field_values": {"v_mask_rescale_sf": 47},
+                    }],
+                },
+            )
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": context,
+                "promotion_status": "promoted",
+                "fidelity": "F4",
+                "valid": True,
+            })
+
+            restored = restore_promoted_candidates(
+                candidate_store=store,
+                identity_context=context,
+                statistical_reference=object(),
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+                promotion_probability=0.8,
+            )
+
+        self.assertEqual(len(restored), 1)
+        candidate = next(iter(restored.values()))
+        self.assertEqual(candidate["action_matrix"], tuple(tuple(row) for row in matrix))
+        self.assertEqual(candidate["full_vector"], tuple(action))
+        self.assertEqual(candidate["variable_cost"], 0.6)
+        self.assertEqual(candidate["reward"], 1.25)
+        self.assertEqual(
+            candidate["boosted_overrides"],
+            {(4, 3): {"v_mask_rescale_sf": 47}},
+        )
 
     def test_promotion_selects_fresh_trial_seeds_disjoint_from_existing_evidence(self):
         from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
