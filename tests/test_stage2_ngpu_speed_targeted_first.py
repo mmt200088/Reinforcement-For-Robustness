@@ -111,7 +111,9 @@ class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
         ]
         self.assertEqual(len(command_lines), 2, output)
         one_command = next(line for line in command_lines if " one " in line)
-        many_command = next(line for line in command_lines if " many " in line)
+        many_command = next(
+            line for line in command_lines if " many " in line
+        ).replace("\\,", ",")
         self.assertIn("CUDA_VISIBLE_DEVICES=3", one_command)
         self.assertIn("--blb-v3-reward-devices 0", one_command)
         self.assertIn("CUDA_VISIBLE_DEVICES=2,4", many_command)
