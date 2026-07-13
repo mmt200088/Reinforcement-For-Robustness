@@ -12,32 +12,33 @@ except ModuleNotFoundError:  # pragma: no cover - local macOS env may be torch-f
 @unittest.skipIf(torch is None, "torch is required for deterministic probe tests")
 class DeterministicProbeLockTests(unittest.TestCase):
     def test_probe_batch_metrics_are_sample_weighted_with_tail_batch(self):
-        import blb_stage2_rl.env as env_mod
+        from blb_stage2_rl.eval_metrics import weighted_probe_batch_means
 
-        loss, m1, m2 = env_mod._weighted_probe_batch_means(
+        loss, m1, m2 = weighted_probe_batch_means(
             losses=[0.0, 10.0],
-            metric1s=[1.0, 0.0],
-            metric2s=[1.0, 0.0],
-            sample_counts=[4, 1],
+            m1s=[1.0, 0.0],
+            m2s=[1.0, 0.0],
+            counts=[4, 1],
         )
         self.assertAlmostEqual(loss, 2.0)
         self.assertAlmostEqual(m1, 0.8)
         self.assertAlmostEqual(m2, 0.8)
 
     def test_mrpc_metric2_is_weighted_f1_not_accuracy(self):
-        import blb_stage2_rl.env as env_mod
+        from blb_stage2_rl.eval_metrics import finalize_probe_trial_metrics
+        from blb_stage2_rl.inference_eval import run_installed_probe_trial
         import blb_stage2_rl.probe_runner as probe_mod
 
         kwargs = dict(
             losses=[0.2, 0.4],
-            metric1s=[0.5, 0.7],
-            metric2s=[0.5, 0.7],
-            sample_counts=[2, 3],
+            m1s=[0.5, 0.7],
+            m2s=[0.5, 0.7],
+            counts=[2, 3],
             preds=[0, 1, 0, 0, 1],
             labels=[0, 1, 1, 1, 1],
             is_regression=False,
         )
-        loss, m1, m2 = env_mod._finalize_probe_trial_metrics(
+        loss, m1, m2 = finalize_probe_trial_metrics(
             **kwargs,
             metric_profile="mrpc",
         )
@@ -45,25 +46,18 @@ class DeterministicProbeLockTests(unittest.TestCase):
         self.assertAlmostEqual(m1, 0.6)
         self.assertAlmostEqual(m2, 0.6333333333333333)
 
-        _loss, _m1, large_m2 = env_mod._finalize_probe_trial_metrics(
+        _loss, _m1, large_m2 = finalize_probe_trial_metrics(
             **kwargs,
             metric_profile="mrpc_large",
         )
         self.assertAlmostEqual(large_m2, m2)
 
-        _loss, _m1, sst2_m2 = env_mod._finalize_probe_trial_metrics(
+        _loss, _m1, sst2_m2 = finalize_probe_trial_metrics(
             **kwargs,
             metric_profile="sst2",
         )
         self.assertAlmostEqual(sst2_m2, 0.6)
-
-        runner_loss, runner_m1, runner_m2 = probe_mod._finalize_probe_trial_metrics_local(
-            **kwargs,
-            metric_profile="mrpc",
-        )
-        self.assertAlmostEqual(runner_loss, loss)
-        self.assertAlmostEqual(runner_m1, m1)
-        self.assertAlmostEqual(runner_m2, m2)
+        self.assertIs(probe_mod.run_installed_probe_trial, run_installed_probe_trial)
 
     def _make_env(self, *, seed: int, lock, scope=None, device=None, use_stream=False):
         import blb_stage2_rl.env as env_mod
@@ -119,19 +113,23 @@ class DeterministicProbeLockTests(unittest.TestCase):
         )
 
     def test_probe_metrics_are_computed_outside_device_lock(self):
-        import blb_stage2_rl.env as env_mod
+        import blb_stage2_rl.inference_eval as inference_eval
 
         lock = threading.Lock()
         probe_env = self._make_env(seed=123, lock=lock)
-        original = env_mod._compute_metrics_on_batch
+        original = inference_eval.tensor_scalar_sequences_to_float_lists
         calls = []
 
-        def checked_metrics(*args, **kwargs):
-            self.assertFalse(lock.locked(), "metrics should not run under probe_device_lock")
+        def checked_metric_sync(*args, **kwargs):
+            self.assertFalse(lock.locked(), "metric sync should not run under probe_device_lock")
             calls.append(True)
             return original(*args, **kwargs)
 
-        with mock.patch.object(env_mod, "_compute_metrics_on_batch", side_effect=checked_metrics):
+        with mock.patch.object(
+                inference_eval,
+                "tensor_scalar_sequences_to_float_lists",
+                side_effect=checked_metric_sync,
+        ):
             probe_env._eval_on_probe_deterministic(3)
         self.assertGreater(len(calls), 0)
 

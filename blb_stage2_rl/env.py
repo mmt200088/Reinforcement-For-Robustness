@@ -1371,7 +1371,9 @@ class BLBStage2Env:
                             self.model,
                             self.probe_batches,
                             is_regression=bool(self.is_regression),
-                            metric_profile=str(self.env_cfg.profile),
+                            metric_profile=str(
+                                getattr(getattr(self, "env_cfg", None), "profile", "") or ""
+                            ),
                             restore_training=False,
                         )
                         per_trial_loss.append(loss)
@@ -1456,30 +1458,38 @@ class BLBStage2Env:
         was_training = self.model.training
         if was_training:
             self.model.eval()
+
+        @contextlib.contextmanager
+        def _forward_context(seed: int):
+            with noise_rng_scope(scope):
+                with lock:
+                    reseed_noise_rng_for_device(self._device, seed)
+                    stream_ctx = (
+                        torch.cuda.stream(probe_stream)
+                        if use_probe_stream else _NULL_CTX
+                    )
+                    with stream_ctx:
+                        yield
+                    if use_probe_stream:
+                        torch.cuda.current_stream(self._device).wait_stream(
+                            probe_stream
+                        )
+                    if sync_before_unlock:
+                        torch.cuda.synchronize(self._device)
+
         try:
             for trial_idx in range(int(k)):
                 seed = trial_seeds[trial_idx]
-                with noise_rng_scope(scope):
-                    with lock:
-                        reseed_noise_rng_for_device(self._device, seed)
-                        stream_ctx = (
-                            torch.cuda.stream(probe_stream)
-                            if use_probe_stream else _NULL_CTX
-                        )
-                        with stream_ctx:
-                            loss, m1, m2 = run_installed_probe_trial(
-                                self.model,
-                                self.probe_batches,
-                                is_regression=bool(self.is_regression),
-                                metric_profile=str(self.env_cfg.profile),
-                                restore_training=False,
-                            )
-                        if use_probe_stream:
-                            torch.cuda.current_stream(self._device).wait_stream(
-                                probe_stream
-                            )
-                        if sync_before_unlock:
-                            torch.cuda.synchronize(self._device)
+                loss, m1, m2 = run_installed_probe_trial(
+                    self.model,
+                    self.probe_batches,
+                    is_regression=bool(self.is_regression),
+                    metric_profile=str(
+                        getattr(getattr(self, "env_cfg", None), "profile", "") or ""
+                    ),
+                    restore_training=False,
+                    forward_context=_forward_context(seed),
+                )
 
                 per_trial_loss.append(loss)
                 per_trial_metric1.append(m1)

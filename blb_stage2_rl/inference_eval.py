@@ -7,6 +7,7 @@ probe workers, Paean final/fixed eval, and fixed-action experiments.
 """
 from __future__ import annotations
 
+import contextlib
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, List, Optional, Sequence, Tuple
@@ -310,8 +311,15 @@ def run_installed_probe_trial(
         is_regression: bool,
         metric_profile: str,
         restore_training: bool = True,
+        forward_context: Optional[Any] = None,
         ) -> Tuple[float, float, float]:
-    """Run one already-installed noisy probe trial over probe batches."""
+    """Run one already-installed noisy probe trial over probe batches.
+
+    ``forward_context`` scopes only model forwards. Metric kernels and the
+    batched device-to-host synchronization run after it exits, so callers can
+    protect a shared noise generator without serializing metric aggregation.
+    """
+    trial_outputs: List[Tuple[torch.Tensor, torch.Tensor]] = []
     loss_tensors: List[torch.Tensor] = []
     m1_tensors: List[torch.Tensor] = []
     m2_tensors: List[torch.Tensor] = []
@@ -322,39 +330,50 @@ def run_installed_probe_trial(
     need_prediction_arrays = (
         bool(is_regression) or uses_weighted_f1_metric2(metric_profile)
     )
-    model.eval()
+    if was_training:
+        model.eval()
+    forward_ctx = (
+        forward_context
+        if forward_context is not None
+        else contextlib.nullcontext()
+    )
     try:
-        with torch.inference_mode():
-            for batch in probe_batches:
-                outputs = model(**probe_batch_to_model_kwargs(batch))
-                _loss_t, logits = output_loss_and_logits(outputs)
-                counts.append(probe_batch_sample_count(batch.labels))
-                if is_regression:
-                    preds = logits.view(-1).float()
-                    targets = batch.labels.view(-1).float()
-                    loss_t = torch.nn.functional.mse_loss(preds, targets)
-                    m1_t = -loss_t
-                    m2_t = -loss_t
-                    if need_prediction_arrays:
-                        trial_pred_tensors.append(preds.detach())
-                else:
-                    loss_t = torch.nn.functional.cross_entropy(
-                        logits.float(), batch.labels.long(), reduction="mean",
-                    )
-                    preds = logits_to_classes_tensor(logits.detach())
-                    labels = batch.labels.detach()
-                    m1_t = (preds.long() == labels.long()).float().mean()
-                    m2_t = m1_t
-                    if need_prediction_arrays:
-                        trial_pred_tensors.append(preds.detach())
-                loss_tensors.append(loss_t.detach().reshape(()))
-                m1_tensors.append(m1_t.detach().reshape(()))
-                m2_tensors.append(m2_t.detach().reshape(()))
-                if need_prediction_arrays:
-                    trial_label_tensors.append(batch.labels.detach().reshape(-1))
+        with forward_ctx:
+            with torch.inference_mode():
+                for batch in probe_batches:
+                    outputs = model(**probe_batch_to_model_kwargs(batch))
+                    _loss_t, logits = output_loss_and_logits(outputs)
+                    trial_outputs.append((logits, batch.labels))
     finally:
         if restore_training and was_training:
             model.train()
+
+    with torch.inference_mode():
+        for logits, labels in trial_outputs:
+            counts.append(probe_batch_sample_count(labels))
+            if is_regression:
+                preds = logits.view(-1).float()
+                targets = labels.view(-1).float()
+                loss_t = torch.nn.functional.mse_loss(preds, targets)
+                m1_t = -loss_t
+                m2_t = -loss_t
+                if need_prediction_arrays:
+                    trial_pred_tensors.append(preds.detach())
+            else:
+                loss_t = torch.nn.functional.cross_entropy(
+                    logits.float(), labels.long(), reduction="mean",
+                )
+                preds = logits_to_classes_tensor(logits.detach())
+                detached_labels = labels.detach()
+                m1_t = (preds.long() == detached_labels.long()).float().mean()
+                m2_t = m1_t
+                if need_prediction_arrays:
+                    trial_pred_tensors.append(preds.detach())
+            loss_tensors.append(loss_t.detach().reshape(()))
+            m1_tensors.append(m1_t.detach().reshape(()))
+            m2_tensors.append(m2_t.detach().reshape(()))
+            if need_prediction_arrays:
+                trial_label_tensors.append(labels.detach().reshape(-1))
 
     losses, m1s, m2s = tensor_scalar_sequences_to_float_lists(
         loss_tensors,

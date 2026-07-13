@@ -67,8 +67,9 @@ class InstalledInferenceEvalSourceTest(unittest.TestCase):
             region.index("with torch.inference_mode():"):region.index("finally:")
         ]
 
-        self.assertIn("loss_tensors.append(loss_t.detach()", loop_region)
-        self.assertIn("trial_pred_tensors.append", loop_region)
+        self.assertIn("trial_outputs.append((logits, batch.labels))", loop_region)
+        self.assertNotIn("loss_tensors.append", loop_region)
+        self.assertNotIn("trial_pred_tensors.append", loop_region)
         self.assertNotIn("compute_probe_batch_metrics(", loop_region)
         self.assertNotIn(".cpu().numpy()", loop_region)
 
