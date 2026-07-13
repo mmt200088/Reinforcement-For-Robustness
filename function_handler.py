@@ -24,7 +24,7 @@ _BLB_INSTALL_LOG_ENV = "BLB_NOISE_INSTALL_LOGS"
 
 
 def _print_blb_install(message: str) -> None:
-    raw = str(_os.environ.get(_BLB_INSTALL_LOG_ENV, "1")).strip().lower()
+    raw = str(_os.environ.get(_BLB_INSTALL_LOG_ENV, "0")).strip().lower()
     if raw in ("0", "false", "no", "off", "quiet"):
         return
     print(message)
