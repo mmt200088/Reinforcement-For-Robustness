@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Real Stage-2 1-GPU vs N-GPU throughput gate.
+# Real Stage-2 layerwise 1-GPU vs N-GPU throughput gate.
 #
 # This script intentionally compares full end-to-end short runs, not isolated
-# policy-forward timings. The verdict is strict on episode equality and uses
-# wrapper wall time for speed. Run only when no long training job owns the GPUs.
+# policy-forward timings. N-GPU parallelism mirrors production by splitting the
+# deterministic K reward trials across --blb-v3-reward-devices; the layerwise
+# runner rejects the legacy --stage2-rl-devices episode-parallel path. The
+# verdict is strict on episode/PPO equality and uses wrapper wall time for speed.
+# Run only when no long training job owns the GPUs.
 
 export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME="${HF_HOME:-/hy-tmp/hf_cache}"
@@ -29,11 +32,19 @@ STAGE1_RECORD_SOURCE="${STAGE1_RECORD_SOURCE:-Parting Chapter/stage1/record}"
 EPISODES_AB="${EPISODES_AB:-600}"
 KTRIALS="${KTRIALS:-5}"
 PROBE_SIZE="${PROBE_SIZE:-256}"
-ROLLOUT_SIZE="${ROLLOUT_SIZE:-60}"
+ROLLOUT_SIZE="${ROLLOUT_SIZE:-120}"
 PPO_UPDATE_INTERVAL="${PPO_UPDATE_INTERVAL:-120}"
-ANCHOR_EPISODES="${ANCHOR_EPISODES:-80}"
-FUSION_PROBE_INTERVAL="${FUSION_PROBE_INTERVAL:-200}"
-FUSION_EPS="${FUSION_EPS:-0.05}"
+BATCH_SIZE="${BATCH_SIZE:-64}"
+STAGE2_SEARCH_LR="${STAGE2_SEARCH_LR:-5e-5}"
+STAGE1_ACCURACY_TOLERANCE="${STAGE1_ACCURACY_TOLERANCE:-0.001}"
+STAGE2_LIMIT_TOLERANCE="${STAGE2_LIMIT_TOLERANCE:-0.001}"
+STAGE2_STABILITY_TOLERANCE="${STAGE2_STABILITY_TOLERANCE:-1.2}"
+STAGE2_STABILITY_MULTIPLIER="${STAGE2_STABILITY_MULTIPLIER:-2.0}"
+ONLINE_KTRIALS="${ONLINE_KTRIALS:-5}"
+SAVE_INTERVAL="${SAVE_INTERVAL:-200}"
+EVAL_INTERVAL="${EVAL_INTERVAL:-100}"
+CALIBRATE_BASELINE_SAMPLES="${CALIBRATE_BASELINE_SAMPLES:-8}"
+RANDOM_SEED="${RANDOM_SEED:-42}"
 ONE_DEVS="${ONE_DEVS:-0}"
 MANY_DEVS="${MANY_DEVS:-0,1,2,3,4}"
 ONE_WORKERS_PER_DEVICE="${ONE_WORKERS_PER_DEVICE:-1}"
@@ -50,6 +61,7 @@ REUSE_ONE_EPISODES="${REUSE_ONE_EPISODES:-}"
 REUSE_ONE_WALL="${REUSE_ONE_WALL:-}"
 REUSE_ONE_LOG="${REUSE_ONE_LOG:-}"
 REUSE_ONE_PPO="${REUSE_ONE_PPO:-}"
+PRINT_EFFECTIVE_COMMANDS="${PRINT_EFFECTIVE_COMMANDS:-0}"
 
 mkdir -p "$ARTIFACT_DIR"
 exec > >(tee "${ARTIFACT_DIR}/stage2_ngpu_speed_ab_stdout.log") 2>&1
@@ -57,13 +69,111 @@ exec > >(tee "${ARTIFACT_DIR}/stage2_ngpu_speed_ab_stdout.log") 2>&1
 echo "[ab] artifact_dir=${ARTIFACT_DIR}"
 echo "[ab] episodes=${EPISODES_AB} rollout_size=${ROLLOUT_SIZE} ppo_update=${PPO_UPDATE_INTERVAL}"
 echo "[ab] one=${ONE_DEVS} wpd=${ONE_WORKERS_PER_DEVICE}; many=${MANY_DEVS} wpd=${MANY_WORKERS_PER_DEVICE}"
-echo "[ab] policy_device=${POLICY_DEVICE}"
-echo "[ab] dynamic_assignment=${DYNAMIC_ASSIGNMENT}"
+echo "[ab] parallelism=layerwise reward-device K-split"
 echo "[ab] cpu_threads OMP=${OMP_NUM_THREADS} MKL=${MKL_NUM_THREADS} OPENBLAS=${OPENBLAS_NUM_THREADS}"
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git rev-parse HEAD > "${ARTIFACT_DIR}/HEAD.txt"
   git status --short > "${ARTIFACT_DIR}/git_status_short.txt" || true
+fi
+
+logical_device_spec() {
+  local visible_devices="$1"
+  local -a visible_ids=()
+  local token logical=""
+  IFS=',' read -r -a visible_ids <<< "$visible_devices"
+  if [ "${#visible_ids[@]}" -eq 0 ]; then
+    echo "[FATAL] empty CUDA device list" >&2
+    return 2
+  fi
+  for token in "${visible_ids[@]}"; do
+    case "$token" in
+      ''|*[!0-9]*)
+        echo "[FATAL] invalid CUDA device list: ${visible_devices}" >&2
+        return 2
+        ;;
+    esac
+  done
+  for ((token = 0; token < ${#visible_ids[@]}; token++)); do
+    if [ -n "$logical" ]; then
+      logical+=","
+    fi
+    logical+="$token"
+  done
+  printf '%s\n' "$logical"
+}
+
+build_case_command() {
+  local label="$1"
+  local visible_devices="$2"
+  local persistent_root="${ARTIFACT_DIR}/persistent_${label}"
+  local reward_devices
+  reward_devices="$(logical_device_spec "$visible_devices")"
+  CASE_COMMAND=(
+    bash llama_7B_LayerImportance.sh run rl
+    --preset mrpc-blb-stage2-rl
+    --persistent-root "$persistent_root"
+    --stage2-fixed-config-source all4
+    --blb-v3-fusion-count-action 1
+    --blb-v3-sequential-rl true
+    --blb-v3-substage-mode false
+    --blb-v3-decision-granularity layer
+    --blb-v3-reward-design robust_constrained
+    --blb-v3-sequential-invalid-penalty 1.0
+    --blb-v3-sequential-cost-shaping-coeff 0.0
+    --blb-v3-sequential-fusion-shaping-coeff 0.0
+    --stage2-search-episodes "$EPISODES_AB"
+    --stage2-search-lr "$STAGE2_SEARCH_LR"
+    --ppo-update-interval "$PPO_UPDATE_INTERVAL"
+    --stage2-rollout-size "$ROLLOUT_SIZE"
+    --stage2-k-trials "$KTRIALS"
+    --blb-v3-online-k-trials "$ONLINE_KTRIALS"
+    --stage2-probe-size "$PROBE_SIZE"
+    --batch-size "$BATCH_SIZE"
+    --stage1-accuracy-tolerance "$STAGE1_ACCURACY_TOLERANCE"
+    --stage2-limit-tolerance "$STAGE2_LIMIT_TOLERANCE"
+    --stage2-stability-tolerance "$STAGE2_STABILITY_TOLERANCE"
+    --stage2-stability-multiplier "$STAGE2_STABILITY_MULTIPLIER"
+    --stage2-calibrate-baseline-samples "$CALIBRATE_BASELINE_SAMPLES"
+    --blb-v3-promotion-validation-trials 25
+    --blb-v3-final-selection-validation-trials 25
+    --blb-v3-baseline-groups 5
+    --blb-v3-baseline-trials-per-group 5
+    --blb-v3-constraint-bootstrap-samples 4096
+    --blb-v3-online-constraint-probability 0.50
+    --blb-v3-promotion-constraint-probability 0.80
+    --blb-v3-final-constraint-probability 0.95
+    --blb-v3-reward-devices "$reward_devices"
+    --stage2-save-interval "$SAVE_INTERVAL"
+    --stage2-eval-interval "$EVAL_INTERVAL"
+    --random-seed "$RANDOM_SEED"
+    --rl-algo ppo
+    --skip-final-eval
+    --fresh
+  )
+}
+
+print_case_command() {
+  local label="$1"
+  local visible_devices="$2"
+  local arg
+  build_case_command "$label" "$visible_devices"
+  printf '[ab][effective] %s env CUDA_VISIBLE_DEVICES=%s timeout %s' \
+    "$label" "$visible_devices" "$TIMEOUT_SECONDS"
+  for arg in "${CASE_COMMAND[@]}"; do
+    printf ' %q' "$arg"
+  done
+  printf '\n'
+}
+
+{
+  print_case_command one "$ONE_DEVS"
+  print_case_command many "$MANY_DEVS"
+} | tee "${ARTIFACT_DIR}/effective_commands.txt"
+
+if [ "$PRINT_EFFECTIVE_COMMANDS" = "1" ]; then
+  echo "[ab] effective command preflight complete; GPU inventory was not queried"
+  exit 0
 fi
 
 nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv \
@@ -222,7 +332,7 @@ run_case() {
 
   echo ""
   echo "================================================================================"
-  echo "[ab] ${label}: CUDA_VISIBLE_DEVICES=${devices} --stage2-rl-devices ${devices}"
+  echo "[ab] ${label}: CUDA_VISIBLE_DEVICES=${devices} reward_devices=$(logical_device_spec "$devices")"
   echo "================================================================================"
 
   mkdir -p "$persistent_root"
@@ -232,33 +342,9 @@ run_case() {
   local start_s end_s launch_rc wait_rc rc job_pid ep_path ppo_path
   start_s="$(date +%s)"
   set +e
-  BLB_STAGE2_POLICY_DEVICE="$POLICY_DEVICE" \
-  BLB_STAGE2_DYNAMIC_ASSIGNMENT="$DYNAMIC_ASSIGNMENT" \
+  build_case_command "$label" "$devices"
   CUDA_VISIBLE_DEVICES="$devices" timeout "$TIMEOUT_SECONDS" \
-    bash llama_7B_LayerImportance.sh run rl \
-      --preset mrpc-blb-stage2-rl \
-      --persistent-root "$persistent_root" \
-      --blb-v3-fusion-count-action 1 \
-      --blb-v3-fusion-neighbor-curriculum 1 \
-      --stage2-search-episodes "$EPISODES_AB" \
-      --ppo-update-interval "$PPO_UPDATE_INTERVAL" \
-      --stage2-rollout-size "$ROLLOUT_SIZE" \
-      --stage2-k-trials "$KTRIALS" \
-      --stage2-probe-size "$PROBE_SIZE" \
-      --batch-size 512 \
-      --stage2-rl-devices "$devices" \
-      --blb-v3-warmstart-anchor-episodes "$ANCHOR_EPISODES" \
-      --stage2-stability-tolerance 5.0 \
-      --stage2-limit-tolerance 0.005 \
-      --blb-v3-fusion-probe-interval "$FUSION_PROBE_INTERVAL" \
-      --blb-v3-fusion-exploration-epsilon "$FUSION_EPS" \
-      --stage2-workers-per-device "$workers_per_device" \
-      --blb-v3-batched-rollout 0 \
-      --blb-v3-rollout-profile 0 \
-      --stage2-save-interval 1000 \
-      --stage2-eval-interval 1000 \
-      --skip-final-eval \
-      --fresh 2>&1 | tee "$launch_log"
+    "${CASE_COMMAND[@]}" 2>&1 | tee "$launch_log"
   launch_rc=${PIPESTATUS[0]}
   rc=$launch_rc
   job_pid="$(cat "$latest_pid_file" 2>/dev/null || true)"

@@ -126,10 +126,17 @@ class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
             "--stage2-limit-tolerance 0.001",
             "--stage2-stability-tolerance 1.2",
             "--stage2-stability-multiplier 2.0",
+            "--stage2-calibrate-baseline-samples 8",
             "--blb-v3-online-k-trials 5",
             "--blb-v3-baseline-groups 5",
             "--blb-v3-baseline-trials-per-group 5",
             "--blb-v3-constraint-bootstrap-samples 4096",
+            "--blb-v3-online-constraint-probability 0.50",
+            "--blb-v3-promotion-constraint-probability 0.80",
+            "--blb-v3-final-constraint-probability 0.95",
+            "--stage2-save-interval 200",
+            "--stage2-eval-interval 100",
+            "--random-seed 42",
         ):
             self.assertIn(expected, output)
         for stale in (
