@@ -83,6 +83,22 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   separate field and use sampled `nvidia-smi` utilization when classifying
   actual idle devices. Evidence at source `19c5a10` is under
   `experiments/server_command_runs/gpu_activity_classification_19c5a10_20260713/`.
+- BLB install-log rule, added 2026-07-13: `_print_blb_install()` is quiet when
+  `BLB_NOISE_INSTALL_LOGS` is unset; set `BLB_NOISE_INSTALL_LOGS=1` only for an
+  explicit diagnostic run. A streamed profile of the active source `24e919c`
+  log at 8,520 episodes found 1,543,515 install lines occupying 344,739,386
+  bytes, or 99.9865% of the file, projecting to about 2.43 GB at 60,000
+  episodes. Source `cb9a34c` passed RED/GREEN, compile, and explicit opt-in
+  behavior gates. It affects future processes only; do not restart or mutate
+  the formal run that started from the old source. Evidence is under
+  `experiments/server_command_runs/blb_install_log_quiet_cb9a34c_20260713/`.
+- Stage-2 final A/B handoff rule, added 2026-07-13: before the pending strict
+  1GPU-versus-5GPU gate, reconcile the gate launcher with the handed-off
+  production command. The current formal run uses layerwise decisions,
+  `robust_constrained` reward, batch 64, all-4 Stage-1 fixed config, and five
+  reward devices; the older A/B wrapper still carries legacy neighbor/fusion
+  probe settings. A result from that legacy command does not satisfy the final
+  equality or speed gate.
 - Stage-2 shared evaluation-chain rule, added 2026-07-02: do not reimplement
   the BLB action-to-model pipeline in ad hoc callers. Optimizer/replan cfg
   write-back must go through

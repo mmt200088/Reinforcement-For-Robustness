@@ -1,0 +1,22 @@
+test_blb_install_log_helper_defaults_quiet (tests.test_blb_stage2_rl_regressions.BLBInstallLogRegressionTests.test_blb_install_log_helper_defaults_quiet) ... /usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+FAIL
+
+======================================================================
+FAIL: test_blb_install_log_helper_defaults_quiet (tests.test_blb_stage2_rl_regressions.BLBInstallLogRegressionTests.test_blb_install_log_helper_defaults_quiet)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_stage2_rl_regressions.py", line 39, in test_blb_install_log_helper_defaults_quiet
+    self.assertEqual(quiet.getvalue(), "")
+AssertionError: 'hidden by default\n' != ''
+- hidden by default
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.621s
+
+FAILED (failures=1)
