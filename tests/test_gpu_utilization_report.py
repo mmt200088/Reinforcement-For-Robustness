@@ -121,6 +121,38 @@ class GpuUtilizationReportTest(unittest.TestCase):
         self.assertEqual(summary["gpu_utilization"]["cuda:1"]["active_sample_rate"], 0.5)
         self.assertTrue(any("cuda:1 max utilization 3.0%" in item for item in summary["warnings"]))
 
+    def test_sampled_active_gpu_is_not_reported_idle_without_probe_diagnostics(self):
+        report = _load_report_module()
+
+        summary = report.summarize_rows(
+            [{"episode": 0, "terminal_probe_devices": []}],
+            gpu_utilization={
+                "cuda:0": {
+                    "samples": 10,
+                    "mean_util_pct": 35.0,
+                    "max_util_pct": 60.0,
+                    "active_sample_rate": 1.0,
+                    "max_memory_mib": 3200.0,
+                },
+                "cuda:1": {
+                    "samples": 10,
+                    "mean_util_pct": 0.0,
+                    "max_util_pct": 0.0,
+                    "active_sample_rate": 0.0,
+                    "max_memory_mib": 0.0,
+                },
+            },
+            visible_devices=["0", "1"],
+        )
+
+        self.assertEqual(summary["sampled_active_devices"], ["cuda:0"])
+        self.assertEqual(summary["unattributed_visible_devices"], ["cuda:0", "cuda:1"])
+        self.assertEqual(summary["idle_visible_devices"], ["cuda:1"])
+        markdown = report.render_markdown(summary)
+        self.assertIn("Sampled active devices: cuda:0", markdown)
+        self.assertIn("Unattributed visible devices: cuda:0, cuda:1", markdown)
+        self.assertIn("Idle visible devices: cuda:1", markdown)
+
     def test_nvidia_smi_csv_summary_uses_running_aggregates(self):
         report = _load_report_module()
 
