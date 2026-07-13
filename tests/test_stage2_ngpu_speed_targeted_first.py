@@ -90,6 +90,10 @@ class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
                 "PRINT_EFFECTIVE_COMMANDS": "1",
                 "ONE_DEVS": "3",
                 "MANY_DEVS": "2,4",
+                "ONE_WORKERS_PER_DEVICE": "2",
+                "MANY_WORKERS_PER_DEVICE": "3",
+                "POLICY_DEVICE": "cpu",
+                "DYNAMIC_ASSIGNMENT": "0",
                 "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
             })
             proc = subprocess.run(
@@ -115,9 +119,15 @@ class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
             line for line in command_lines if " many " in line
         ).replace("\\,", ",")
         self.assertIn("CUDA_VISIBLE_DEVICES=3", one_command)
+        self.assertIn("BLB_STAGE2_POLICY_DEVICE=cpu", one_command)
+        self.assertIn("BLB_STAGE2_DYNAMIC_ASSIGNMENT=0", one_command)
         self.assertIn("--blb-v3-reward-devices 0", one_command)
+        self.assertIn("--stage2-workers-per-device 2", one_command)
         self.assertIn("CUDA_VISIBLE_DEVICES=2,4", many_command)
+        self.assertIn("BLB_STAGE2_POLICY_DEVICE=cpu", many_command)
+        self.assertIn("BLB_STAGE2_DYNAMIC_ASSIGNMENT=0", many_command)
         self.assertIn("--blb-v3-reward-devices 0,1", many_command)
+        self.assertIn("--stage2-workers-per-device 3", many_command)
         for expected in (
             "--stage2-fixed-config-source all4",
             "--blb-v3-decision-granularity layer",
