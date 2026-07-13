@@ -161,6 +161,7 @@ class ParetoCostArchiveTests(unittest.TestCase):
             typical_k_drop=0.001,
         )
         weights = reward.calibrate_weights_from_baseline(baseline)
+        weights.reward_design = "tiered"
         breakdown = reward.compute_reward(
             reward.EpisodeMetrics(
                 loss_mean=0.30,
@@ -214,6 +215,7 @@ class ParetoCostArchiveTests(unittest.TestCase):
             typical_k_drop=5.0,
         )
         weights = reward.calibrate_weights_from_baseline(baseline)
+        weights.reward_design = "tiered"
         # ADR-013: this asserts the legacy linear P3 metric-margin term, which
         # the log-barrier supersedes by default — test it with the barrier off.
         weights.acc_barrier_enabled = False
@@ -260,6 +262,7 @@ class ParetoCostArchiveTests(unittest.TestCase):
             typical_bits_drop=1000.0,
         )
         weights = reward.calibrate_weights_from_baseline(baseline)
+        weights.reward_design = "tiered"
         metrics = reward.EpisodeMetrics(
             loss_mean=0.30,
             loss_std=0.0,

@@ -1387,26 +1387,24 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "torch.as_tensor(levels_np, device=device).unsqueeze(0)",
         ):
             self.assertIn(needle, runner_src, msg=f"sequential_runner.py missing: {needle!r}")
-        for src_name, src in (
-            ("sequential_runner.py", runner_src),
-            ("parallel_runner.py", parallel_src),
+        train_region = _method_region_from_source(runner_src, "train_sequential")
+        for needle in (
+            "step_static_tensors = _get_cached_step_static_tensors(",
+            "step_static = step_static_tensors[int(spec.step_idx)]",
+            "slot_mask_t = step_static.slot_mask_t",
+            "levels_t = step_static.levels_t",
         ):
-            for needle in (
-                "step_static_tensors = _get_cached_step_static_tensors(",
-                "step_static = step_static_tensors[int(spec.step_idx)]",
-                "slot_mask_t = step_static.slot_mask_t",
-                "levels_t = step_static.levels_t",
-            ):
-                self.assertIn(needle, src, msg=f"{src_name} missing cache use: {needle!r}")
-            for old_pattern in (
-                "slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)",
-                "levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)",
-            ):
-                self.assertNotIn(
-                    old_pattern,
-                    src,
-                    msg=f"{src_name} still rebuilds static step tensors per step: {old_pattern!r}",
-                )
+            self.assertIn(needle, train_region)
+
+        collect_region = _method_region_from_source(parallel_src, "collect_fusion_episode")
+        for needle in (
+            "def _cached_slot_tensors(",
+            "_parallel_runner_tensor_cache",
+            "cache[key] = cached",
+        ):
+            self.assertIn(needle, parallel_src)
+        self.assertIn("_cached_slot_tensors(", collect_region)
+        self.assertNotIn("step_to_mask_and_levels(", collect_region)
 
     def test_stage2_fusion_action_level_masks_are_cached_per_device(self):
         runner_src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(
@@ -1423,18 +1421,18 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "torch.as_tensor(mask_np, device=device).unsqueeze(0)",
         ):
             self.assertIn(needle, runner_src, msg=f"sequential_runner.py missing: {needle!r}")
-        for src_name, src in (
-            ("sequential_runner.py", runner_src),
-            ("parallel_runner.py", parallel_src),
+        self.assertIn("_get_cached_fusion_action_level_mask(", runner_src)
+        for needle in (
+            "def _cached_action_level_mask(",
+            "_parallel_runner_tensor_cache",
+            "force_option_one=bool(force_option_one)",
         ):
-            self.assertIn(
-                "_get_cached_fusion_action_level_mask(",
-                src,
-                msg=f"{src_name} does not use the cached fusion mask helper",
-            )
+            self.assertIn(needle, parallel_src)
+        collect_region = _method_region_from_source(parallel_src, "collect_fusion_episode")
+        self.assertIn("_cached_action_level_mask(", collect_region)
         self.assertNotIn(
             "torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)",
-            parallel_src,
+            collect_region,
             msg="parallel fusion rollout still copies action-level masks to GPU each step",
         )
 

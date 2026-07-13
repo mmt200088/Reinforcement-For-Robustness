@@ -9,7 +9,6 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from json_utils import read_json_file
 from blb_stage2_rl.action_space import (
     K_LEVELS,
     NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
@@ -24,6 +23,8 @@ from blb_stage2_rl.action_space import (
     sf_from,
     sum_truncation_k_in_action,
 )
+from cli_parse_utils import parse_int_list_text
+from json_utils import read_json_file
 
 _K_LEVEL_INDEX: Dict[int, int] = {int(value): idx for idx, value in enumerate(K_LEVELS)}
 _SORTED_K_LEVEL_CHOICES: Tuple[int, ...] = tuple(sorted(int(value) for value in K_LEVELS))
@@ -613,7 +614,7 @@ def parse_action_spec(spec: str) -> Tuple[str, Tuple[int, ...]]:
         parsed = json.loads(raw_values)
         values = tuple(int(v) for v in parsed)
     else:
-        values = tuple(int(v.strip()) for v in raw_values.split(",") if v.strip())
+        values = tuple(parse_int_list_text(raw_values, allow_semicolon=False))
     return name, values
 
 
@@ -630,7 +631,7 @@ def _normalize_base_action(base_action_vec: Optional[Sequence[int]], num_layers:
         if text.startswith("["):
             base_action_vec = json.loads(text)
         else:
-            base_action_vec = [int(v.strip()) for v in text.split(",") if v.strip()]
+            base_action_vec = parse_int_list_text(text, allow_semicolon=False)
     arr = np.asarray(base_action_vec, dtype=int).reshape(-1)
     if arr.size != expected:
         raise ValueError(
@@ -658,7 +659,10 @@ def _parse_base_action_vec(base_raw, num_layers_hint: int) -> Optional[np.ndarra
             return text
         if text.startswith("["):
             return np.asarray(json.loads(text), dtype=int)
-        return np.asarray([int(v.strip()) for v in text.split(",") if v.strip()], dtype=int)
+        return np.asarray(
+            parse_int_list_text(text, allow_semicolon=False),
+            dtype=int,
+        )
     if isinstance(base_raw, Sequence):
         return np.asarray(base_raw, dtype=int)
     raise ValueError("action config base_action must be 'max', 'min', or an integer list")

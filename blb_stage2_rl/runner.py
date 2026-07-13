@@ -1847,8 +1847,8 @@ class BLBStage2RLRunner:
                         )
                     action_vec = action_t.squeeze(0).cpu().numpy().astype(np.int64)
                     rollout_policy_count += 1
-                log_prob = float(log_prob_t.item())
-                value = float(value_t.item())
+                log_prob = log_prob_t.detach().reshape(())
+                value = value_t.detach().reshape(())
                 mut_diag = mutation_diagnostics(action_vec)
                 record_mutation_rollup(mut_diag)
 

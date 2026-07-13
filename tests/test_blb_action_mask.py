@@ -45,7 +45,9 @@ class BLBActionMaskTests(unittest.TestCase):
             action_mask=mask,
         )
 
-        self.assertEqual(action.squeeze(0).tolist(), baseline.tolist())
+        expected = baseline.copy()
+        expected[-1] = 0  # Deprecated first-input tail is a fixed placeholder.
+        self.assertEqual(action.squeeze(0).tolist(), expected.tolist())
         self.assertTrue(torch.allclose(sampled_logprob, eval_logprob))
 
     def test_near_baseline_keeps_inactive_slots_baseline_only(self):
@@ -355,9 +357,9 @@ class BLBActionMaskTests(unittest.TestCase):
 
         self.assertEqual(
             BLBStage2TrainConfig().decision_granularity,
-            "block",
+            "layer",
         )
-        self.assertEqual(BLBStage2TrainConfig().reward_design, "stage1_aligned")
+        self.assertEqual(BLBStage2TrainConfig().reward_design, "robust_constrained")
         with self.assertRaisesRegex(ValueError, "decision_granularity"):
             BLBStage2TrainConfig(decision_granularity="token")
         with self.assertRaisesRegex(ValueError, "reward_design"):

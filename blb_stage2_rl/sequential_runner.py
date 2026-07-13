@@ -484,6 +484,173 @@ def _open_step_level_mask(
     return mask
 
 
+@dataclass(frozen=True)
+class _StepStaticTensors:
+    slot_mask_np: np.ndarray
+    levels_np: np.ndarray
+    slot_mask_t: torch.Tensor
+    levels_t: torch.Tensor
+
+
+@dataclass(frozen=True)
+class _CachedFusionActionLevelMask:
+    mask_np: np.ndarray
+    mask_t: torch.Tensor
+
+
+def _step_static_cache_key(
+        *,
+        schedule: Sequence[Any],
+        max_step_dim: int,
+        max_num_levels: int,
+        device: torch.device,
+        ) -> Tuple[str, int, int, Tuple[Tuple[Any, ...], ...]]:
+    items: List[Tuple[Any, ...]] = []
+    for pos, spec in enumerate(schedule):
+        step_idx = int(getattr(spec, "step_idx", pos))
+        if hasattr(spec, "fusion_num_options"):
+            items.append((
+                "fusion",
+                step_idx,
+                int(spec.fusion_num_options),
+                int(spec.k_num_levels),
+            ))
+        else:
+            items.append((
+                "per_slot",
+                step_idx,
+                tuple(int(dim) for dim in getattr(spec, "slot_dims", ())),
+            ))
+    return (
+        str(torch.device(device)),
+        int(max_step_dim),
+        int(max_num_levels),
+        tuple(items),
+    )
+
+
+def _get_cached_step_static_tensors(
+        env: BLBStage2SequentialEnv,
+        *,
+        max_step_dim: int,
+        max_num_levels: int,
+        device: torch.device,
+        ) -> List[_StepStaticTensors]:
+    """Build immutable per-step NumPy/device tensors once per schedule."""
+    schedule = env.schedule
+    key = _step_static_cache_key(
+        schedule=schedule,
+        max_step_dim=int(max_step_dim),
+        max_num_levels=int(max_num_levels),
+        device=torch.device(device),
+    )
+    cached = getattr(env, "_stage2_static_step_tensor_cache", None)
+    if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == key:
+        return cached[1]
+
+    by_step: Dict[int, _StepStaticTensors] = {}
+    for pos, spec in enumerate(schedule):
+        step_idx = int(getattr(spec, "step_idx", pos))
+        if step_idx in by_step:
+            raise ValueError(f"duplicate sequential step index {step_idx}")
+        slot_mask_np, levels_np = step_to_mask_and_levels(
+            spec,
+            int(max_step_dim),
+            int(max_num_levels),
+        )
+        slot_mask_np = np.asarray(slot_mask_np, dtype=bool)
+        levels_np = np.asarray(levels_np, dtype=np.int64)
+        static = _StepStaticTensors(
+            slot_mask_np=slot_mask_np,
+            levels_np=levels_np,
+            slot_mask_t=torch.as_tensor(slot_mask_np, device=device).unsqueeze(0),
+            levels_t=torch.as_tensor(levels_np, device=device).unsqueeze(0),
+        )
+        slot_mask_np.setflags(write=False)
+        levels_np.setflags(write=False)
+        by_step[step_idx] = static
+    step_static_tensors = [by_step[idx] for idx in range(len(schedule))]
+    setattr(env, "_stage2_static_step_tensor_cache", (key, step_static_tensors))
+    return step_static_tensors
+
+
+def _get_cached_fusion_action_level_mask(
+        env: BLBStage2SequentialEnv,
+        *,
+        spec: Any,
+        mode: str,
+        mutable: bool,
+        radius: int,
+        force_option_one: bool,
+        max_step_dim: int,
+        max_num_levels: int,
+        device: torch.device,
+        ) -> _CachedFusionActionLevelMask:
+    """Cache repeated fusion support masks and their device copies."""
+    mode_key = str(mode)
+    if mode_key not in {"curriculum", "open"}:
+        raise ValueError(f"unknown fusion action-level mask mode: {mode!r}")
+    device = torch.device(device)
+    n_opts = int(spec.fusion_num_options)
+    n_k = int(spec.k_num_levels)
+    baseline_k_index = int(_baseline_k_index_for_block(int(spec.block_idx)))
+    effective_mutable = bool(mutable) if mode_key == "curriculum" else True
+    effective_radius = max(0, int(radius)) if mode_key == "curriculum" else 0
+    effective_force = bool(force_option_one and n_opts > 1)
+    key = (
+        str(device),
+        mode_key,
+        int(getattr(spec, "step_idx", 0)),
+        int(spec.block_idx),
+        n_opts,
+        n_k,
+        effective_mutable,
+        effective_radius,
+        baseline_k_index,
+        effective_force,
+        int(max_step_dim),
+        int(max_num_levels),
+        tuple(int(value) for value in K_LEVELS[:n_k]),
+    )
+    cache = getattr(env, "_stage2_fusion_action_level_mask_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    if mode_key == "curriculum":
+        mask_np = build_fusion_step_level_mask(
+            fusion_num_options=n_opts,
+            k_num_levels=n_k,
+            k_level_values=list(K_LEVELS),
+            mutable=effective_mutable,
+            radius=effective_radius,
+            baseline_k_index=baseline_k_index,
+            max_step_dim=int(max_step_dim),
+            max_num_levels=int(max_num_levels),
+        )
+    else:
+        mask_np = _open_step_level_mask(
+            spec=spec,
+            max_step_dim=int(max_step_dim),
+            max_num_levels=int(max_num_levels),
+        )
+    if effective_force:
+        mask_np = np.array(mask_np, dtype=bool, copy=True)
+        mask_np[0, 1] = True
+    else:
+        mask_np = np.asarray(mask_np, dtype=bool)
+    cached = _CachedFusionActionLevelMask(
+        mask_np=mask_np,
+        mask_t=torch.as_tensor(mask_np, device=device).unsqueeze(0),
+    )
+    mask_np.setflags(write=False)
+    cache[key] = cached
+    setattr(env, "_stage2_fusion_action_level_mask_cache", cache)
+    return cached
+
+
 def _build_step_level_mask(
         *,
         spec: Any,
@@ -2015,6 +2182,13 @@ def train_sequential(
             "rejection_counters": dict(rejection_counters),
         }
 
+    step_static_tensors = _get_cached_step_static_tensors(
+        env,
+        max_step_dim=policy.cfg.max_step_dim,
+        max_num_levels=policy.cfg.max_num_levels,
+        device=device,
+    )
+
     for ep in range(int(train_cfg.total_episodes)):
         absolute_ep = int(absolute_episode_start + ep)
         # Only seed the env's RNG on the very first reset; subsequent resets
@@ -2271,12 +2445,12 @@ def train_sequential(
         while True:
             spec = env.current_spec()
             fusion_mode = hasattr(spec, "fusion_num_options")
-            slot_mask_np, levels_np = step_to_mask_and_levels(
-                spec, policy.cfg.max_step_dim, policy.cfg.max_num_levels,
-            )
+            step_static = step_static_tensors[int(spec.step_idx)]
+            slot_mask_np = step_static.slot_mask_np
+            levels_np = step_static.levels_np
             obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)
-            slot_mask_t = torch.from_numpy(slot_mask_np).to(device).unsqueeze(0)
-            levels_t = torch.from_numpy(levels_np).to(device).unsqueeze(0)
+            slot_mask_t = step_static.slot_mask_t
+            levels_t = step_static.levels_t
             n_active = int(slot_mask_np.sum())
             action_level_mask_np: Optional[np.ndarray] = None
             action_level_mask_t = None
@@ -2287,32 +2461,29 @@ def train_sequential(
                 # active (and not yet fully open), most blocks are pinned to baseline
                 # and only the episode's selected blocks may move within a widening
                 # neighborhood; the curriculum dissolves to the open mask after ramp.
-                if fusion_curriculum_active and not fusion_curriculum_open:
-                    action_level_mask_np = build_fusion_step_level_mask(
-                        fusion_num_options=int(spec.fusion_num_options),
-                        k_num_levels=int(spec.k_num_levels),
-                        k_level_values=list(K_LEVELS),
-                        mutable=(int(spec.step_idx) in fusion_mutable_steps),
-                        radius=int(fusion_neighbor_radius),
-                        baseline_k_index=int(_baseline_k_index_for_block(int(spec.block_idx))),
-                        max_step_dim=policy.cfg.max_step_dim,
-                        max_num_levels=policy.cfg.max_num_levels,
-                    )
-                else:
-                    action_level_mask_np = _open_step_level_mask(
-                        spec=spec,
-                        max_step_dim=policy.cfg.max_step_dim,
-                        max_num_levels=policy.cfg.max_num_levels,
-                    )
-                if (
-                        fusion_probe_block is not None
-                        and int(spec.block_idx) == int(fusion_probe_block)
-                        and int(spec.fusion_num_options) > 1
-                        and action_level_mask_np is not None
-                ):
-                    # ADR-012 probe: make the forced option level legal even
-                    # when the curriculum pins this block to baseline.
-                    action_level_mask_np[0, 1] = True
+                mask_mode = (
+                    "curriculum"
+                    if fusion_curriculum_active and not fusion_curriculum_open
+                    else "open"
+                )
+                force_option_one = (
+                    fusion_probe_block is not None
+                    and int(spec.block_idx) == int(fusion_probe_block)
+                    and int(spec.fusion_num_options) > 1
+                )
+                cached_action_mask = _get_cached_fusion_action_level_mask(
+                    env,
+                    spec=spec,
+                    mode=mask_mode,
+                    mutable=(int(spec.step_idx) in fusion_mutable_steps),
+                    radius=int(fusion_neighbor_radius),
+                    force_option_one=bool(force_option_one),
+                    max_step_dim=policy.cfg.max_step_dim,
+                    max_num_levels=policy.cfg.max_num_levels,
+                    device=device,
+                )
+                action_level_mask_np = cached_action_mask.mask_np
+                action_level_mask_t = cached_action_mask.mask_t
             elif neighbor_mask_active and base_action_vec_for_mask is not None:
                 action_level_mask_np = _build_step_level_mask(
                     spec=spec,
@@ -2365,11 +2536,6 @@ def train_sequential(
                 action_level_mask_t = (
                     torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
                 )
-            elif action_level_mask_np is not None:
-                # fusion mode: open mask passes straight through (no pruning)
-                action_level_mask_t = (
-                    torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
-                )
 
             # -- Forced-baseline anchor short-circuit --
             # Skip sampling + rejection-loop entirely; commit the baseline
@@ -2394,6 +2560,7 @@ def train_sequential(
                         action_level_mask=action_level_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
+                        truncate_seq_len=int(spec.step_idx) + 1,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(forced_action.tolist())
@@ -2407,8 +2574,8 @@ def train_sequential(
                             spec.layer_idx, spec.block_idx, forced_action.tolist()
                         )
                 chosen_action_np = forced_padded
-                chosen_log_prob = float(lp_t.item())
-                chosen_value = float(val_t.item())
+                chosen_log_prob = lp_t.detach().reshape(())
+                chosen_value = val_t.detach().reshape(())
                 rejection_counters["steps_forced_to_baseline_anchor"] += 1
 
                 action_np = chosen_action_np
@@ -2572,8 +2739,8 @@ def train_sequential(
             #      is available, commit the last sampled action even though
             #      it failed — caller will see invalid=True in the info dict.
             chosen_action_np: Optional[np.ndarray] = None
-            chosen_log_prob: float = 0.0
-            chosen_value: float = 0.0
+            chosen_log_prob: Any = 0.0
+            chosen_value: Any = 0.0
             chosen_eval_info: Optional[Dict[str, Any]] = None
             attempts_this_step = 0
 
@@ -2587,6 +2754,7 @@ def train_sequential(
                         action_level_mask=action_level_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
+                        truncate_seq_len=int(spec.step_idx) + 1,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
@@ -2613,6 +2781,7 @@ def train_sequential(
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
+                            truncate_seq_len=int(spec.step_idx) + 1,
                         )
                     policy_rollout_wall_seconds_val += float(
                         time.perf_counter() - policy_t1
@@ -2638,8 +2807,8 @@ def train_sequential(
                             spec.layer_idx, spec.block_idx, tup
                         )
                     chosen_action_np = action_np_try
-                    chosen_log_prob = float(log_prob_t.item())
-                    chosen_value = float(value_t.item())
+                    chosen_log_prob = log_prob_t.detach().reshape(())
+                    chosen_value = value_t.detach().reshape(())
                     chosen_eval_info = eval_info
                     break
 
@@ -2675,6 +2844,7 @@ def train_sequential(
                             action_level_mask=action_level_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
+                            truncate_seq_len=int(spec.step_idx) + 1,
                         )
                     policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                     chosen_eval_info = env.evaluate_step(fallback_action.tolist())
@@ -2688,16 +2858,16 @@ def train_sequential(
                                 spec.layer_idx, spec.block_idx, fallback_action.tolist()
                             )
                     chosen_action_np = fallback_padded
-                    chosen_log_prob = float(lp_t.item())
-                    chosen_value = float(val_t.item())
+                    chosen_log_prob = lp_t.detach().reshape(())
+                    chosen_value = val_t.detach().reshape(())
                     rejection_counters["steps_fallen_back_to_baseline"] += 1
                 else:
                     # Last-resort: commit the most-recently sampled action even
                     # though it failed. Should not happen in production because
                     # the runner always provides baseline_action_vec.
                     chosen_action_np = action_np_try
-                    chosen_log_prob = float(log_prob_t.item())
-                    chosen_value = float(value_t.item())
+                    chosen_log_prob = log_prob_t.detach().reshape(())
+                    chosen_value = value_t.detach().reshape(())
                     chosen_eval_info = eval_info
 
             assert chosen_action_np is not None and chosen_eval_info is not None

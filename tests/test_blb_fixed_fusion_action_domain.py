@@ -11,6 +11,7 @@ from blb_stage2_rl.sequential_env import BLBStage2SequentialEnv
 class _CapturingBridge:
     def __init__(self):
         self.cfg = None
+        self.invoker = SimpleNamespace(baselines={})
 
     def evaluate(self, *, config_name, block_name, cfg):
         self.cfg = cfg

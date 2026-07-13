@@ -242,6 +242,39 @@ def _default_terminal_snapshot() -> Dict[str, Any]:
     return snap
 
 
+def _materialize_transition_scalar_tensors(
+        transitions: List[Dict[str, Any]],
+        ) -> List[Dict[str, Any]]:
+    """Copy all pending policy scalars to CPU with one device synchronization."""
+    tensor_rows: List[torch.Tensor] = []
+    tensor_indices: List[int] = []
+    for idx, transition in enumerate(transitions):
+        log_prob = transition.get("log_prob", 0.0)
+        value = transition.get("value", 0.0)
+        if not (torch.is_tensor(log_prob) or torch.is_tensor(value)):
+            continue
+        device = log_prob.device if torch.is_tensor(log_prob) else value.device
+        log_prob_t = (
+            log_prob.detach().reshape(())
+            if torch.is_tensor(log_prob)
+            else torch.as_tensor(float(log_prob), device=device)
+        )
+        value_t = (
+            value.detach().reshape(())
+            if torch.is_tensor(value)
+            else torch.as_tensor(float(value), device=device)
+        )
+        tensor_rows.append(torch.stack((log_prob_t, value_t)))
+        tensor_indices.append(idx)
+    if not tensor_rows:
+        return transitions
+    packed = torch.stack(tensor_rows).detach().cpu().numpy()
+    for row_idx, transition_idx in enumerate(tensor_indices):
+        transitions[transition_idx]["log_prob"] = float(packed[row_idx, 0])
+        transitions[transition_idx]["value"] = float(packed[row_idx, 1])
+    return transitions
+
+
 # ---------------------------------------------------------------------------
 # Worker-side fusion episode collection
 # ---------------------------------------------------------------------------
@@ -319,6 +352,7 @@ def _cached_action_level_mask(
         levels_t: torch.Tensor,
         mutable: Optional[bool],
         radius: int,
+        force_option_one: bool = False,
         ) -> Tuple[np.ndarray, torch.Tensor, torch.Tensor]:
     cache = _parallel_tensor_cache(env)
     if mutable is None:
@@ -328,6 +362,7 @@ def _cached_action_level_mask(
             max_step_dim=int(policy.cfg.max_step_dim),
             max_num_levels=int(policy.cfg.max_num_levels),
             prefix="open_mask",
+            extra=(bool(force_option_one),),
         )
         cached = cache.get(key)
         if cached is None:
@@ -337,6 +372,9 @@ def _cached_action_level_mask(
                 max_num_levels=policy.cfg.max_num_levels,
             )
             mask_np = np.asarray(mask_np, dtype=bool)
+            if bool(force_option_one) and int(spec.fusion_num_options) > 1:
+                mask_np = mask_np.copy()
+                mask_np[0, 1] = True
             mask_t = torch.from_numpy(mask_np).to(device).unsqueeze(0)
             logit_mask_t = policy._build_logit_mask(
                 slot_mask_t,
@@ -360,6 +398,7 @@ def _cached_action_level_mask(
             bool(mutable),
             int(radius),
             int(_baseline_k_index_for_block(int(spec.block_idx))),
+            bool(force_option_one),
         ),
     )
     cached = cache.get(key)
@@ -375,6 +414,9 @@ def _cached_action_level_mask(
             max_num_levels=policy.cfg.max_num_levels,
         )
         mask_np = np.asarray(mask_np, dtype=bool)
+        if bool(force_option_one) and int(spec.fusion_num_options) > 1:
+            mask_np = mask_np.copy()
+            mask_np[0, 1] = True
         mask_t = torch.from_numpy(mask_np).to(device).unsqueeze(0)
         logit_mask_t = policy._build_logit_mask(
             slot_mask_t,
@@ -526,6 +568,11 @@ def collect_fusion_episode(
         obs_t_buf[0].copy_(torch.from_numpy(obs_np))
         obs_t = obs_t_buf
 
+        force_option_one = (
+            fusion_probe_block is not None
+            and int(spec.block_idx) == int(fusion_probe_block)
+            and int(spec.fusion_num_options) > 1
+        )
         if fusion_curriculum_active and not fusion_curriculum_open:
             action_level_mask_np, action_level_mask_t, logit_mask_t = _cached_action_level_mask(
                 env=env,
@@ -536,6 +583,7 @@ def collect_fusion_episode(
                 levels_t=levels_t,
                 mutable=(int(spec.step_idx) in fusion_mutable_steps),
                 radius=int(fusion_neighbor_radius),
+                force_option_one=bool(force_option_one),
             )
         else:
             action_level_mask_np, action_level_mask_t, logit_mask_t = _cached_action_level_mask(
@@ -547,30 +595,12 @@ def collect_fusion_episode(
                 levels_t=levels_t,
                 mutable=None,
                 radius=0,
-            )
-        if (
-                fusion_probe_block is not None
-                and int(spec.block_idx) == int(fusion_probe_block)
-                and int(spec.fusion_num_options) > 1
-        ):
-            # ADR-012 probe: make the forced option level legal even when the
-            # curriculum pins this block to baseline.
-            action_level_mask_np = np.array(action_level_mask_np, dtype=bool, copy=True)
-            action_level_mask_np[0, 1] = True
-            action_level_mask_t = (
-                torch.from_numpy(action_level_mask_np).to(device).unsqueeze(0)
-            )
-            logit_mask_t = policy._build_logit_mask(
-                slot_mask_t,
-                levels_t,
-                policy.cfg.max_num_levels,
-                action_level_mask=action_level_mask_t,
-                level_indices=policy._level_indices,
+                force_option_one=bool(force_option_one),
             )
 
         chosen_action_np: Optional[np.ndarray] = None
-        chosen_log_prob = 0.0
-        chosen_value = 0.0
+        chosen_log_prob: Any = 0.0
+        chosen_value: Any = 0.0
         chosen_eval_info: Optional[Dict[str, Any]] = None
 
         if force_this_ep:
@@ -589,12 +619,13 @@ def collect_fusion_episode(
                     logit_mask=logit_mask_t,
                     baseline_prior_scale=baseline_prior_scale,
                     truncate_to_current=True,
+                    truncate_seq_len=int(spec.step_idx) + 1,
                 )
             policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
             chosen_eval_info = env.evaluate_step(forced_action.tolist())
             chosen_action_np = forced_padded
-            chosen_log_prob = float(lp_t.item())
-            chosen_value = float(val_t.item())
+            chosen_log_prob = lp_t.detach().reshape(())
+            chosen_value = val_t.detach().reshape(())
         else:
             action_np_try: Optional[np.ndarray] = None
             log_prob_t = value_t = None
@@ -615,6 +646,7 @@ def collect_fusion_episode(
                         logit_mask=logit_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
+                        truncate_seq_len=int(spec.step_idx) + 1,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 action_np_try = action_t.squeeze(0).cpu().numpy().astype(np.int64)
@@ -641,6 +673,7 @@ def collect_fusion_episode(
                             logit_mask=logit_mask_t,
                             baseline_prior_scale=baseline_prior_scale,
                             truncate_to_current=True,
+                            truncate_seq_len=int(spec.step_idx) + 1,
                         )
                     policy_rollout_wall_seconds_val += float(
                         time.perf_counter() - policy_t1
@@ -656,8 +689,8 @@ def collect_fusion_episode(
                 eval_info = env.evaluate_step(step_action_try)
                 if eval_info["valid"]:
                     chosen_action_np = action_np_try
-                    chosen_log_prob = float(log_prob_t.item())
-                    chosen_value = float(value_t.item())
+                    chosen_log_prob = log_prob_t.detach().reshape(())
+                    chosen_value = value_t.detach().reshape(())
                     chosen_eval_info = eval_info
                     break
 
@@ -693,12 +726,13 @@ def collect_fusion_episode(
                         logit_mask=logit_mask_t,
                         baseline_prior_scale=baseline_prior_scale,
                         truncate_to_current=True,
+                        truncate_seq_len=int(spec.step_idx) + 1,
                     )
                 policy_rollout_wall_seconds_val += float(time.perf_counter() - policy_t0)
                 chosen_eval_info = env.evaluate_step(fallback_action.tolist())
                 chosen_action_np = fallback_padded
-                chosen_log_prob = float(lp_t.item())
-                chosen_value = float(val_t.item())
+                chosen_log_prob = lp_t.detach().reshape(())
+                chosen_value = val_t.detach().reshape(())
                 steps_fallen_back_to_baseline += 1
 
         assert chosen_action_np is not None and chosen_eval_info is not None
@@ -742,8 +776,8 @@ def collect_fusion_episode(
             slot_mask=slot_mask_np,
             per_slot_num_levels=levels_np,
             action_level_mask=action_level_mask_np,
-            log_prob=float(chosen_log_prob),
-            value=float(chosen_value),
+            log_prob=chosen_log_prob,
+            value=chosen_value,
             reward=float(reward),
             done=bool(done),
             baseline_prior_scale=float(baseline_prior_scale),
@@ -876,7 +910,7 @@ def collect_fusion_episode(
     return FusionEpisodeOutcome(
         rel_ep=int(rel_ep),
         absolute_ep=int(absolute_ep),
-        transitions=transitions,
+        transitions=_materialize_transition_scalar_tensors(transitions),
         record=record,
         pending_full_vec=(
             None if pending_full_vec is None

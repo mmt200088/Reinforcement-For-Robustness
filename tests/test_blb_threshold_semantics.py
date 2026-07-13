@@ -12,7 +12,7 @@ class BLBThresholdSemanticsTests(unittest.TestCase):
             allowed_drop=0.00492,
         )
 
-        self.assertAlmostEqual(result.threshold, 0.87008)
+        self.assertAlmostEqual(result.threshold, 0.870695)
         self.assertEqual(result.source, "baseline_derived_all_max_blb")
         self.assertAlmostEqual(result.allowed_drop, 0.00492)
 

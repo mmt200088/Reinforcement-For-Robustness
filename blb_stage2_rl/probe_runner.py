@@ -32,6 +32,7 @@ import copy
 import threading
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -89,18 +90,24 @@ def _trial_seed(base_seed: int, trial_idx: int) -> int:
     return derive_probe_trial_seed(base_seed, trial_idx)
 
 
+@lru_cache(maxsize=64)
+def _split_round_robin_cached(k: int, n_workers: int) -> Tuple[Tuple[int, ...], ...]:
+    """Return an immutable worker-to-trial assignment template."""
+    k = max(0, int(k))
+    n = max(1, int(n_workers))
+    out: List[List[int]] = [[] for _ in range(n)]
+    for trial_idx in range(k):
+        out[trial_idx % n].append(trial_idx)
+    return tuple(tuple(trials) for trials in out)
+
+
 def _split_round_robin(k: int, n_workers: int) -> List[List[int]]:
     """Return per-worker trial-index lists. Round-robin balances variance.
 
     Example for k=5, n_workers=2: ``[[0, 2, 4], [1, 3]]``.
     Example for k=5, n_workers=3: ``[[0, 3], [1, 4], [2]]``.
     """
-    k = max(0, int(k))
-    n = max(1, int(n_workers))
-    out: List[List[int]] = [[] for _ in range(n)]
-    for i in range(k):
-        out[i % n].append(i)
-    return out
+    return [list(trials) for trials in _split_round_robin_cached(k, n_workers)]
 
 
 # ---------------------------------------------------------------------------
@@ -300,12 +307,12 @@ class ProbeRunner:
             )
             return []
 
-        assignments = _split_round_robin(k, len(self.workers))
+        assignments = _split_round_robin_cached(k, len(self.workers))
         seed_assignments = [
             [_trial_seed(base_seed, ti) for ti in trials]
             for trials in assignments
         ]
-        results_per_trial: dict = {}
+        results_per_trial: List[Optional[Tuple[float, float, float]]] = [None] * k
         per_worker_seconds: List[float] = [0.0] * len(self.workers)
         errors: List[Tuple[int, BaseException]] = []
         lock = threading.Lock()
@@ -317,13 +324,9 @@ class ProbeRunner:
             worker = self.workers[w_idx]
             t0 = time.perf_counter()
             try:
-                local_results: List[Tuple[int, Tuple[float, float, float]]] = []
                 for ti in trials:
                     res = worker.run_trial(ti, base_seed)
-                    local_results.append((ti, res))
-                with lock:
-                    for ti, res in local_results:
-                        results_per_trial[ti] = res
+                    results_per_trial[ti] = res
             except BaseException as exc:  # noqa: BLE001
                 with lock:
                     errors.append((w_idx, exc))
@@ -364,11 +367,12 @@ class ProbeRunner:
 
         ordered: List[Tuple[float, float, float]] = []
         for ti in range(k):
-            if ti not in results_per_trial:
+            result = results_per_trial[ti]
+            if result is None:
                 raise RuntimeError(
                     f"probe-runner missing trial {ti} (assignments={assignments})"
                 )
-            ordered.append(results_per_trial[ti])
+            ordered.append(result)
         return ordered
 
     def run_action_trials_once(
@@ -400,7 +404,7 @@ class ProbeRunner:
                 f"{len(self.workers)} workers"
             )
 
-        results_per_trial: dict = {}
+        results_per_trial: List[Optional[Tuple[float, float, float]]] = [None] * k
         per_worker_seconds: List[float] = [0.0] * len(self.workers)
         assignments: List[List[int]] = [[] for _ in self.workers]
         seed_assignments: List[List[int]] = [[] for _ in self.workers]
@@ -422,8 +426,7 @@ class ProbeRunner:
                 decoded = actions[w_idx]
                 worker.install(decoded)
                 res = worker.run_trial(w_idx, base_seed)
-                with lock:
-                    results_per_trial[w_idx] = res
+                results_per_trial[w_idx] = res
             except BaseException as exc:  # noqa: BLE001
                 with lock:
                     errors.append((w_idx, exc))
@@ -464,11 +467,12 @@ class ProbeRunner:
 
         ordered: List[Tuple[float, float, float]] = []
         for ti in range(k):
-            if ti not in results_per_trial:
+            result = results_per_trial[ti]
+            if result is None:
                 raise RuntimeError(
                     f"probe-runner missing multi-action trial {ti}"
                 )
-            ordered.append(results_per_trial[ti])
+            ordered.append(result)
         return ordered
 
 
