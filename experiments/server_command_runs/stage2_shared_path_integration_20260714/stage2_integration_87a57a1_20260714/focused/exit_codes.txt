@@ -1,0 +1,5 @@
+bash_syntax_rc=0
+py_compile_rc=0
+effective_preflight_rc=0
+unittest_rc=0
+pytest_dependency_rc=3

@@ -47,7 +47,7 @@ post-run artifacts without weakening the validation protocol.
 | P1 | Structured artifacts | Keep required `rl_training_data_points/`, `episodes.jsonl`, PPO diagnostics, and manifests complete while streaming verification/report generation. | `tests/test_rl_data_points.py`, `tests/test_stage2_persistent_output_verifier.py`, and generated evidence bundle checks. |
 | P2 | Rescale/fusion maps | Reuse session-loaded graph/baseline data, stream large map builds and summaries, and avoid parsing sidecars as maps. | `tests/test_rescale_optimizer_bridge_cache.py`, `tests/test_blb_fusion_count_map.py`, fusion-map report tests, and server build logs for large maps. |
 | P2 | Stage-1 rollout | Add or consume timing fields for per-worker rollout, cache hit rate, forward wall, and report write wall before changing worker defaults. | Stage-1 local semantics tests plus server 1GPU/4GPU speed and deterministic-result evidence. |
-| P2 | Stage-2 GPU scheduling | Leave core Stage-2 RL algorithm changes to the active Stage-2 agent; optimize only tooling/gates unless a handoff is explicit. | `stage2_ngpu_ab_compare.py`, GPU utilization reports, rollout signatures, and PPO-visible equality gates. |
+| P2 | Stage-2 GPU scheduling | Keep the merged production algorithm fixed; run the prepared strict 1GPU-versus-5GPU gate after the formal 60k process releases the GPUs. | `stage2_ngpu_ab_compare.py`, GPU utilization reports, rollout signatures, and PPO-visible equality gates. |
 
 ### Recent Cross-Flow Runtime Commits
 
@@ -77,23 +77,24 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `28ab0c0`, the conservative
+not by raw commit count. As of source head `87a57a1`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
-The latest low-conflict single-GPU gates are green, but the repository-wide
-suite is not: concurrent Stage-2 integration commit `16b68e3` left 19 Stage-2
-contract failures, including eight guards for previously landed runtime work.
-Those failures require a coordinated Stage-2 handoff instead of an overlapping
-algorithm edit. The 2026-07-13 replacement server now exposes five RTX 5090s,
-so hardware inventory no longer blocks the N-GPU gate. Its GPUs are currently
-owned by the concurrent 60,000-episode Stage-2 run at source `24e919c`, however,
-so the clean 1GPU-versus-5GPU gate remains open until that run releases them.
+The published production source `24e919c` is now merged. Focused integration
+closed the stale Paean fixture and the three shared-path regressions introduced
+by `16b68e3`; source `87a57a1` passes 117 focused tests plus syntax, compile,
+and effective-command preflight gates on the five-RTX-5090 server. This does
+not make the old repository-wide audit green: rerunning that audit remains a
+final step after the hardware gate. The GPUs are currently owned by the formal
+60,000-episode Stage-2 run at source `24e919c`, so the clean
+1GPU-versus-5GPU gate remains open until that run releases them.
 
 Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Stage-2 integration | `87a57a1` | `experiments/server_command_runs/stage2_shared_path_integration_20260714/` | Merge the published production source, restore canonical optimizer/inference/diagnostics paths, keep metric synchronization outside the shared-device lock, and pass 117 focused server tests without touching the active formal process. |
 | Plan and audit | `9ab82f0` | `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/` | Refresh the complete six-stage audit after the Rescale optimization series, verify 30/30 flow files and all artifact classes, align the session-construction test fixture with the current baseline contract, and prove the remaining 19-item Stage-2 failure set is exactly unchanged. |
 | Plan and audit | `991329a` | `experiments/server_command_runs/project_completion_audit_991329a_20260711/` | Audit the complete sparse checkout on the replacement server, verify 30/30 whole-flow files and all structured-artifact classes, fix experiments-index and PyTorch test-process pollution, and retain the 19 remaining Stage-2 contract failures as explicit red evidence. |
 | Plan and audit | `bd2912d` | `experiments/server_command_runs/project_audit_md_stream_bd2912d_20260704_161500/` | Stream project optimization audit Markdown reports through the CLI writer instead of rendering the full report string before `Path.write_text()`. |
@@ -1254,9 +1255,17 @@ evidence is under
 The already-running old-source process was not changed, and no isolated
 wall-clock improvement is claimed from this I/O reduction alone.
 
-- [x] **Step 2: Do not change core RL during concurrent edits**
+- [x] **Step 2: Integrate the published production source without touching the active process**
 
-Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.
+The published `24e919c` branch was merged at `cd6fb55`. The active formal run
+directory remained isolated and unchanged. Focused TDD then restored three
+previously landed shared runtime paths that the production branch's historical
+`16b68e3` integration had expanded: optimizer cfg write-back, installed-model
+probe inference, and ProbeRunner diagnostics serialization. The shared probe
+helper now accepts a forward-only context, preserving deterministic noise
+scope, shared-device locking, and CUDA stream ordering while keeping metric
+kernels and the single batched host synchronization outside the device lock.
+Source `87a57a1` passed 117 focused tests on the server.
 
 - [ ] **Step 3: Server A/B before defaults**
 
@@ -1272,7 +1281,7 @@ is not equality or isolated speed evidence. Run the existing targeted-first
 1GPU-versus-5GPU gate only after the formal process exits and the GPUs satisfy
 the harness idle check.
 
-Handoff progress 2026-07-13: source `28ab0c0` reconciles the A/B launcher with
+Handoff progress 2026-07-14: source `28ab0c0` reconciles the A/B launcher with
 the published production source `24e919c`. The old command used
 `--stage2-rl-devices`, which the layerwise runner explicitly rejects, and
 overrode batch, rollout, tolerances, curriculum, warmstart, and fusion probes.
@@ -1281,8 +1290,19 @@ batch 64, rollout 120, all-4 fixed config, and the complete robust constraint
 contract for both cases. Its no-GPU preflight and all 18 launcher/comparator
 tests passed on the server; evidence is under
 `experiments/server_command_runs/stage2_layerwise_ab_contract_28ab0c0_20260713/`.
-This closes command readiness only. Merge the production branch and run the
-real strict equality/speed gate after the formal 60k process releases all GPUs.
+This closes command readiness only. The production branch is now merged; run
+the real strict equality/speed gate after the formal 60k process releases all
+GPUs.
+
+Integration progress 2026-07-14: the production branch is now merged and the
+focused RED/GREEN sequence is archived under
+`experiments/server_command_runs/stage2_shared_path_integration_20260714/`.
+The final `87a57a1` gate passed Bash syntax, Python compilation, the exact
+no-GPU command preflight, and 117 focused `unittest` cases with one CUDA-only
+skip. The server image still lacks pytest; this is recorded separately and did
+not hide any failure in the executed modules. At packaging time the formal
+process was at 12,360/60,000 episodes, so strict GPU equality/speed evidence
+remains pending.
 
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 

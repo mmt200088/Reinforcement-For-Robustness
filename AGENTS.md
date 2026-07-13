@@ -109,9 +109,23 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   fusion overrides. `PRINT_EFFECTIVE_COMMANDS=1` records the exact shared
   command arrays without querying GPUs. Command-contract evidence is under
   `experiments/server_command_runs/stage2_layerwise_ab_contract_28ab0c0_20260713/`.
-  This does not complete the gate: merge the published production source
-  `24e919c`, wait for the formal process to release all five GPUs, then require
-  strict episode/PPO equality and measured speedup before closing the goal.
+  This does not complete the gate: the published production source `24e919c`
+  is now merged, but the formal process must release all five GPUs before the
+  strict episode/PPO equality and measured-speedup run can close the goal.
+- Stage-2 production integration status, updated 2026-07-14: merge commit
+  `cd6fb55` integrated published source `24e919c` without touching its active
+  formal run directory. Source `87a57a1` then restored the canonical optimizer
+  write-back, installed probe inference, and ProbeRunner diagnostics paths that
+  historical integration commit `16b68e3` had expanded into duplicate code.
+  Deterministic noise scope, device locks, trial seeds, and CUDA streams remain;
+  only model forward is lock-scoped, while metric kernels and the batched host
+  synchronization execute after lock release. The final server gate passed
+  Bash syntax, Python compilation, exact A/B command preflight, and 117 focused
+  `unittest` cases (one CUDA-only skip). The image lacks pytest, recorded as an
+  environment dependency rather than a passing pytest claim. Evidence is under
+  `experiments/server_command_runs/stage2_shared_path_integration_20260714/`.
+  At evidence packaging the formal run was at 12,360/60,000 episodes; do not
+  start the strict GPU A/B until its process exits and the idle check passes.
 - Stage-2 shared evaluation-chain rule, added 2026-07-02: do not reimplement
   the BLB action-to-model pipeline in ad hoc callers. Optimizer/replan cfg
   write-back must go through
@@ -120,7 +134,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `blb_stage2_rl.inference_eval`: use
   `run_installed_model_on_dataloader()` for full-validation/final-eval style
   dataloaders and `run_installed_probe_trial()` for online Stage-2 reward probe
-  trials. Repeat-evaluation JSON payloads and mean/std trial summaries must use
+  trials. When deterministic probe execution needs a noise scope, shared-device
+  lock, or CUDA stream, pass a forward-only context to
+  `run_installed_probe_trial()` so metric aggregation and device-to-host sync do
+  not extend the lock's critical section. Repeat-evaluation JSON payloads and
+  mean/std trial summaries must use
   `blb_stage2_rl.eval_metrics.pack_repeat_evaluation()` /
   `summarize_eval_trials()`; do not hand-roll per-caller `trial: i + 1`,
   `loss_mean`, `p_std`, or `time_mean_ms` structures. If new special handling is

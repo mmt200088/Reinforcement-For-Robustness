@@ -1,0 +1,7 @@
+commit c786336909650a4a978cefcb4d1fecd0230aed8c
+Author:     彭俊凯 <pengjunkai@pengjunkaideMacBook-Pro.local>
+AuthorDate: Tue Jul 14 00:27:44 2026 +0800
+Commit:     彭俊凯 <pengjunkai@pengjunkaideMacBook-Pro.local>
+CommitDate: Tue Jul 14 00:27:44 2026 +0800
+
+    perf: keep probe metric sync outside device lock

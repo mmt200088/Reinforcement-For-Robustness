@@ -1,0 +1,7 @@
+commit 87a57a16d7cc15939b4a80ca4674bda96fcf290f
+Author:     彭俊凯 <pengjunkai@pengjunkaideMacBook-Pro.local>
+AuthorDate: Tue Jul 14 00:31:18 2026 +0800
+Commit:     彭俊凯 <pengjunkai@pengjunkaideMacBook-Pro.local>
+CommitDate: Tue Jul 14 00:31:18 2026 +0800
+
+    test: align probe metric fixture with batch contract
