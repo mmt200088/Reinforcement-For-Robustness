@@ -407,6 +407,13 @@ run_case() {
     echo "[FATAL] ${label} wrote ${episode_lines}/${EPISODES_AB} episodes; refusing to compare partial runs"
     exit 127
   fi
+  python3 scripts/gpu_utilization_report.py \
+    --episodes "$episodes_out" \
+    --nvidia-smi-csv "$gpu_sample_file" \
+    --visible-devices "$devices" \
+    --out-json "${ARTIFACT_DIR}/${label}_gpu_utilization.json" \
+    --out-md "${ARTIFACT_DIR}/${label}_gpu_utilization.md" \
+    --require-all-visible-sampled-active
   if ppo_path="$(find_ppo_updates_jsonl "$persistent_root")"; then
     cp "$ppo_path" "$ppo_out"
     echo "[ab] ${label} PPO updates -> ${ppo_out} ($(wc -l < "$ppo_out") lines)"
@@ -430,12 +437,26 @@ reuse_one_case() {
   fi
   cp "$REUSE_ONE_EPISODES" "${ARTIFACT_DIR}/one_episodes.jsonl"
   cp "$REUSE_ONE_WALL" "${ARTIFACT_DIR}/one_wall_seconds.txt"
+  local reuse_one_gpu_samples
+  reuse_one_gpu_samples="$(dirname "$REUSE_ONE_EPISODES")/one_nvidia_smi.csv"
+  if [ ! -f "$reuse_one_gpu_samples" ]; then
+    echo "[FATAL] reused one baseline lacks GPU samples: ${reuse_one_gpu_samples}"
+    exit 2
+  fi
+  cp "$reuse_one_gpu_samples" "${ARTIFACT_DIR}/one_nvidia_smi.csv"
   local episode_lines
   episode_lines="$(wc -l < "${ARTIFACT_DIR}/one_episodes.jsonl")"
   if [ "$episode_lines" -ne "$EPISODES_AB" ]; then
     echo "[FATAL] reused one baseline has ${episode_lines}/${EPISODES_AB} episodes; refusing to compare partial runs"
     exit 127
   fi
+  python3 scripts/gpu_utilization_report.py \
+    --episodes "${ARTIFACT_DIR}/one_episodes.jsonl" \
+    --nvidia-smi-csv "${ARTIFACT_DIR}/one_nvidia_smi.csv" \
+    --visible-devices "$ONE_DEVS" \
+    --out-json "${ARTIFACT_DIR}/one_gpu_utilization.json" \
+    --out-md "${ARTIFACT_DIR}/one_gpu_utilization.md" \
+    --require-all-visible-sampled-active
   if [ -n "$REUSE_ONE_LOG" ] && [ -f "$REUSE_ONE_LOG" ]; then
     cp "$REUSE_ONE_LOG" "${ARTIFACT_DIR}/one_launch.log"
   else

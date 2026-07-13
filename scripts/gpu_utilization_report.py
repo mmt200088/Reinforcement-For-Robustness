@@ -489,6 +489,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=LOW_UTIL_THRESHOLD_PCT,
         help="warn when sampled max GPU utilization is below this percent",
     )
+    parser.add_argument(
+        "--require-all-visible-sampled-active",
+        action="store_true",
+        help="exit nonzero unless nvidia-smi sampled every visible GPU above the utilization threshold",
+    )
     return parser
 
 
@@ -506,6 +511,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_markdown_file(args.out_md, summary)
     if not args.out_json and not args.out_md:
         sys.stdout.write(render_markdown(summary))
+    if args.require_all_visible_sampled_active:
+        visible = set(summary.get("visible_devices") or ())
+        sampled_active = set(summary.get("sampled_active_devices") or ())
+        missing = sorted(visible - sampled_active, key=_device_sort_key)
+        if missing:
+            sys.stderr.write(
+                "[FATAL] visible GPUs without sampled activity above "
+                f"{float(args.low_util_threshold_pct):.1f}%: {', '.join(missing)}\n"
+            )
+            return 2
     return 0
 
 

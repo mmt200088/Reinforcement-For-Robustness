@@ -237,6 +237,7 @@ def _device_breakdown(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Dict[str, 
     out: Dict[str, Dict[str, float]] = collections.defaultdict(
         lambda: {
             "episodes": 0.0,
+            "trials": 0.0,
             "probe_s": 0.0,
             "policy_s": 0.0,
             "optimizer_s": 0.0,
@@ -244,16 +245,25 @@ def _device_breakdown(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Dict[str, 
         }
     )
     for row in rows:
-        devices = row.get("terminal_probe_devices") or ["unknown"]
-        device = str(devices[0] if devices else "unknown")
+        devices = [str(item) for item in (row.get("terminal_probe_devices") or [])]
+        trial_counts = row.get("terminal_probe_trial_counts") or []
+        if not devices:
+            devices = ["unknown"]
         probe_s = float(row.get("terminal_probe_wall_seconds", 0.0) or 0.0)
         policy_s = float(row.get("policy_rollout_wall_seconds", 0.0) or 0.0)
         optimizer_s = float(row.get("per_step_optimizer_wall_seconds", 0.0) or 0.0)
-        out[device]["episodes"] += 1.0
-        out[device]["probe_s"] += probe_s
-        out[device]["policy_s"] += policy_s
-        out[device]["optimizer_s"] += optimizer_s
-        out[device]["component_s"] += probe_s + policy_s + optimizer_s
+        for index, device in enumerate(devices):
+            trials = (
+                float(trial_counts[index])
+                if index < len(trial_counts)
+                else 0.0
+            )
+            out[device]["episodes"] += 1.0
+            out[device]["trials"] += trials
+            out[device]["probe_s"] += probe_s
+            out[device]["policy_s"] += policy_s
+            out[device]["optimizer_s"] += optimizer_s
+            out[device]["component_s"] += probe_s + policy_s + optimizer_s
     return dict(out)
 
 

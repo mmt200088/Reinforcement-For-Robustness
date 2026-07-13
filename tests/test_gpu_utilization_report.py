@@ -510,8 +510,28 @@ class GpuUtilizationReportTest(unittest.TestCase):
                     "--require-all-visible-sampled-active",
                 ]
             )
+            smi.write_text(
+                "timestamp,index,utilization.gpu,memory.used\n"
+                "2026/07/14 00:00:00.000,0,45 %,3200 MiB\n"
+                "2026/07/14 00:00:00.000,1,35 %,3200 MiB\n",
+                encoding="utf-8",
+            )
+            passing_rc = report.main(
+                [
+                    "--episodes",
+                    str(episodes),
+                    "--nvidia-smi-csv",
+                    str(smi),
+                    "--visible-devices",
+                    "0,1",
+                    "--out-json",
+                    str(root / "gpu_report_passing.json"),
+                    "--require-all-visible-sampled-active",
+                ]
+            )
 
         self.assertEqual(rc, 2)
+        self.assertEqual(passing_rc, 0)
 
     def test_cli_streams_markdown_output_without_full_render_string(self):
         report = _load_report_module()
