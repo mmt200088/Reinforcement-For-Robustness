@@ -92,13 +92,17 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   behavior gates. It affects future processes only; do not restart or mutate
   the formal run that started from the old source. Evidence is under
   `experiments/server_command_runs/blb_install_log_quiet_cb9a34c_20260713/`.
-- Stage-2 final A/B handoff rule, added 2026-07-13: before the pending strict
-  1GPU-versus-5GPU gate, reconcile the gate launcher with the handed-off
-  production command. The current formal run uses layerwise decisions,
-  `robust_constrained` reward, batch 64, all-4 Stage-1 fixed config, and five
-  reward devices; the older A/B wrapper still carries legacy neighbor/fusion
-  probe settings. A result from that legacy command does not satisfy the final
-  equality or speed gate.
+- Stage-2 final A/B handoff rule, updated 2026-07-13: source `28ab0c0` aligns
+  `scripts/stage2_ngpu_speed_ab.sh` with the formal layerwise command. The gate
+  now uses `--blb-v3-reward-devices` K-trial splitting, batch 64, rollout 120,
+  all-4 Stage-1 fixed config, and `robust_constrained` reward; it removes the
+  incompatible `--stage2-rl-devices` path and legacy neighbor/warmstart/forced-
+  fusion overrides. `PRINT_EFFECTIVE_COMMANDS=1` records the exact shared
+  command arrays without querying GPUs. Command-contract evidence is under
+  `experiments/server_command_runs/stage2_layerwise_ab_contract_28ab0c0_20260713/`.
+  This does not complete the gate: merge the published production source
+  `24e919c`, wait for the formal process to release all five GPUs, then require
+  strict episode/PPO equality and measured speedup before closing the goal.
 - Stage-2 shared evaluation-chain rule, added 2026-07-02: do not reimplement
   the BLB action-to-model pipeline in ad hoc callers. Optimizer/replan cfg
   write-back must go through

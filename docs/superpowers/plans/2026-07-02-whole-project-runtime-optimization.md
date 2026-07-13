@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `cb9a34c`, the conservative
+not by raw commit count. As of source head `28ab0c0`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -225,6 +225,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 scheduling gate | `f3103d9` | `experiments/server_command_runs/stage2_ngpu_report_stream_f3103d9_20260710_154047/` | Stream the Stage-2 1GPU-vs-NGPU verdict to stdout and the optional output file without materializing the complete report string in the CLI path. |
 | Stage-2 scheduling gate | `19c5a10` | `experiments/server_command_runs/gpu_activity_classification_19c5a10_20260713/` | Combine sampled `nvidia-smi` activity with episode probe attribution so a sampled-active GPU is not falsely reported idle when the concurrent layerwise runner omits terminal-probe device fields. |
 | Stage-2 shared install path | `cb9a34c` | `experiments/server_command_runs/blb_install_log_quiet_cb9a34c_20260713/` | Default high-frequency BLB install diagnostics to quiet while retaining explicit `BLB_NOISE_INSTALL_LOGS=1` opt-in. The active-run profile projected about 10.87 million avoided lines and 2.43 GB of log output over 60,000 episodes. |
+| Stage-2 scheduling gate | `28ab0c0` | `experiments/server_command_runs/stage2_layerwise_ab_contract_28ab0c0_20260713/` | Replace the incompatible legacy episode-parallel A/B command with the production layerwise reward-device K-split contract, exact robust-run parameters, local CUDA-id remapping, and a no-GPU effective-command preflight. |
 | Rescale/fusion maps | `2907e63` | `experiments/server_command_runs/rescale_scalar_restore_2907e63_20260710_204509/` | Snapshot and restore Rescale graph delta state with direct `int` / `None` assignment instead of per-node `deepcopy()` calls in every repeated replan. |
 | Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
 | Rescale/fusion maps | `511b3f2` | `experiments/server_command_runs/fusion_compact_replan_511b3f2_20260711/` | Return only validity, fusion count, total bits, and compact config to the fast Cartesian-product enum loop instead of expanding the full compatibility JSON result for every combination. |
@@ -1271,13 +1272,17 @@ is not equality or isolated speed evidence. Run the existing targeted-first
 1GPU-versus-5GPU gate only after the formal process exits and the GPUs satisfy
 the harness idle check.
 
-Handoff audit 2026-07-13: the comparator/report scripts are present on the
-active source, but the current A/B launch wrapper still carries legacy
-block/neighbor-curriculum and fusion-probe arguments. The formal production
-run instead uses layerwise decisions, `robust_constrained` reward, batch 64,
-an all-4 fixed Stage-1 config, and five reward devices. Reconcile the final A/B
-command to the exact handed-off production semantics before running it; the
-legacy command cannot count as the required equality or speed gate.
+Handoff progress 2026-07-13: source `28ab0c0` reconciles the A/B launcher with
+the published production source `24e919c`. The old command used
+`--stage2-rl-devices`, which the layerwise runner explicitly rejects, and
+overrode batch, rollout, tolerances, curriculum, warmstart, and fusion probes.
+The new shared command builder uses logical `--blb-v3-reward-devices` ids,
+batch 64, rollout 120, all-4 fixed config, and the complete robust constraint
+contract for both cases. Its no-GPU preflight and all 18 launcher/comparator
+tests passed on the server; evidence is under
+`experiments/server_command_runs/stage2_layerwise_ab_contract_28ab0c0_20260713/`.
+This closes command readiness only. Merge the production branch and run the
+real strict equality/speed gate after the formal 60k process releases all GPUs.
 
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 
