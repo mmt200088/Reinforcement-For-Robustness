@@ -1,0 +1,109 @@
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+..........................................................................................................EsEE.E.EEEEE
+======================================================================
+ERROR: test_concurrent_same_device_probe_matches_serial_metrics (tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests.test_concurrent_same_device_probe_matches_serial_metrics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_deterministic_lock.py", line 239, in test_concurrent_same_device_probe_matches_serial_metrics
+    serial_a = self._metrics_tuple(self._make_env(seed=101, lock=lock)._eval_on_probe_deterministic(4))
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_runtime_optimization/blb_stage2_rl/env.py", line 1474, in _eval_on_probe_deterministic
+    metric_profile=str(self.env_cfg.profile),
+                       ^^^^^^^^^^^^
+AttributeError: 'BLBStage2Env' object has no attribute 'env_cfg'
+
+======================================================================
+ERROR: test_cuda_sync_only_when_shared_device_lock_requires_it (tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests.test_cuda_sync_only_when_shared_device_lock_requires_it)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_deterministic_lock.py", line 377, in test_cuda_sync_only_when_shared_device_lock_requires_it
+    probe_env._eval_on_probe_deterministic(2)
+  File "/hy-tmp/rfr_runtime_optimization/blb_stage2_rl/env.py", line 1474, in _eval_on_probe_deterministic
+    metric_profile=str(self.env_cfg.profile),
+                       ^^^^^^^^^^^^
+AttributeError: 'BLBStage2Env' object has no attribute 'env_cfg'
+
+======================================================================
+ERROR: test_eval_model_does_not_recurse_eval_every_probe (tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests.test_eval_model_does_not_recurse_eval_every_probe)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_deterministic_lock.py", line 234, in test_eval_model_does_not_recurse_eval_every_probe
+    probe_env._eval_on_probe_deterministic(2)
+  File "/hy-tmp/rfr_runtime_optimization/blb_stage2_rl/env.py", line 1474, in _eval_on_probe_deterministic
+    metric_profile=str(self.env_cfg.profile),
+                       ^^^^^^^^^^^^
+AttributeError: 'BLBStage2Env' object has no attribute 'env_cfg'
+
+======================================================================
+ERROR: test_mrpc_metric2_is_weighted_f1_not_accuracy (tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests.test_mrpc_metric2_is_weighted_f1_not_accuracy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_deterministic_lock.py", line 40, in test_mrpc_metric2_is_weighted_f1_not_accuracy
+    loss, m1, m2 = env_mod._finalize_probe_trial_metrics(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'blb_stage2_rl.env' has no attribute '_finalize_probe_trial_metrics'
+
+======================================================================
+ERROR: test_probe_batch_metrics_are_sample_weighted_with_tail_batch (tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests.test_probe_batch_metrics_are_sample_weighted_with_tail_batch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_deterministic_lock.py", line 17, in test_probe_batch_metrics_are_sample_weighted_with_tail_batch
+    loss, m1, m2 = env_mod._weighted_probe_batch_means(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'blb_stage2_rl.env' has no attribute '_weighted_probe_batch_means'
+
+======================================================================
+ERROR: test_probe_metrics_are_computed_outside_device_lock (tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests.test_probe_metrics_are_computed_outside_device_lock)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_deterministic_lock.py", line 126, in test_probe_metrics_are_computed_outside_device_lock
+    original = env_mod._compute_metrics_on_batch
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'blb_stage2_rl.env' has no attribute '_compute_metrics_on_batch'
+
+======================================================================
+ERROR: test_returned_metrics_and_diagnostics_reuse_shared_trial_seeds (tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests.test_returned_metrics_and_diagnostics_reuse_shared_trial_seeds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_deterministic_lock.py", line 149, in test_returned_metrics_and_diagnostics_reuse_shared_trial_seeds
+    metrics = probe_env._eval_on_probe_deterministic(3)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_runtime_optimization/blb_stage2_rl/env.py", line 1474, in _eval_on_probe_deterministic
+    metric_profile=str(self.env_cfg.profile),
+                       ^^^^^^^^^^^^
+AttributeError: 'BLBStage2Env' object has no attribute 'env_cfg'
+
+======================================================================
+ERROR: test_scoped_same_device_probe_skips_lock_and_matches_serial_metrics (tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests.test_scoped_same_device_probe_skips_lock_and_matches_serial_metrics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_deterministic_lock.py", line 275, in test_scoped_same_device_probe_skips_lock_and_matches_serial_metrics
+    )._eval_on_probe_deterministic(4)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_runtime_optimization/blb_stage2_rl/env.py", line 1474, in _eval_on_probe_deterministic
+    metric_profile=str(self.env_cfg.profile),
+                       ^^^^^^^^^^^^
+AttributeError: 'BLBStage2Env' object has no attribute 'env_cfg'
+
+======================================================================
+ERROR: test_blb_probe_metric_aggregation (unittest.loader._FailedTest.test_blb_probe_metric_aggregation)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_blb_probe_metric_aggregation
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/unittest/loader.py", line 162, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_blb_probe_metric_aggregation.py", line 4, in <module>
+    import pytest
+ModuleNotFoundError: No module named 'pytest'
+
+
+----------------------------------------------------------------------
+Ran 118 tests in 3.576s
+
+FAILED (errors=9, skipped=1)
