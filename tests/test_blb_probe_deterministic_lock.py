@@ -31,11 +31,11 @@ class DeterministicProbeLockTests(unittest.TestCase):
 
         kwargs = dict(
             losses=[0.2, 0.4],
-            m1s=[0.5, 0.7],
-            m2s=[0.5, 0.7],
+            m1s=[1.0, 1.0 / 3.0],
+            m2s=[1.0, 1.0 / 3.0],
             counts=[2, 3],
-            preds=[0, 1, 0, 0, 1],
-            labels=[0, 1, 1, 1, 1],
+            preds=[[0, 1], [0, 0, 1]],
+            labels=[[0, 1], [1, 1, 1]],
             is_regression=False,
         )
         loss, m1, m2 = finalize_probe_trial_metrics(
