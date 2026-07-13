@@ -69,6 +69,16 @@ class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
         )
         self.assertIn('ln -s "$source_abs" "$target"', script)
 
+    def test_ab_runner_requires_sampled_activity_on_every_requested_gpu(self):
+        script = (_REPO / "scripts" / "stage2_ngpu_speed_ab.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("scripts/gpu_utilization_report.py", script)
+        self.assertIn('--nvidia-smi-csv "$gpu_sample_file"', script)
+        self.assertIn('--visible-devices "$devices"', script)
+        self.assertIn("--require-all-visible-sampled-active", script)
+
     def test_ab_prints_layerwise_production_commands_without_touching_gpus(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

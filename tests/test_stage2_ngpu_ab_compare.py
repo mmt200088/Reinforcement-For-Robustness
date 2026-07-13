@@ -56,6 +56,26 @@ def _ppo_row(update, *, timestamp, elapsed_sec, entropy=0.1):
 
 
 class Stage2NgpuCompareTests(unittest.TestCase):
+    def test_device_breakdown_counts_every_probe_device_and_trial(self):
+        rows = [
+            {
+                "episode": 0,
+                "terminal_probe_devices": ["cuda:0", "cuda:1"],
+                "terminal_probe_trial_counts": [2, 3],
+                "terminal_probe_wall_seconds": 1.5,
+                "policy_rollout_wall_seconds": 0.2,
+                "per_step_optimizer_wall_seconds": 0.1,
+            }
+        ]
+
+        breakdown = ngpu_mod._device_breakdown(rows)
+
+        self.assertEqual(set(breakdown), {"cuda:0", "cuda:1"})
+        self.assertEqual(breakdown["cuda:0"]["episodes"], 1.0)
+        self.assertEqual(breakdown["cuda:1"]["episodes"], 1.0)
+        self.assertEqual(breakdown["cuda:0"]["trials"], 2.0)
+        self.assertEqual(breakdown["cuda:1"]["trials"], 3.0)
+
     def test_load_jsonl_uses_shared_iter_jsonl(self):
         calls = []
 

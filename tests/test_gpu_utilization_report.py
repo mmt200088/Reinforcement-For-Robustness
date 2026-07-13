@@ -473,6 +473,46 @@ class GpuUtilizationReportTest(unittest.TestCase):
             self.assertIn("- cuda:0: episodes=1", markdown)
             self.assertIn("Replan/optimizer mean seconds:", markdown)
 
+    def test_cli_can_require_every_visible_gpu_to_be_sampled_active(self):
+        report = _load_report_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            episodes = root / "episodes.jsonl"
+            _write_jsonl(
+                episodes,
+                [
+                    {
+                        "episode": 0,
+                        "terminal_probe_devices": ["cuda:0", "cuda:1"],
+                        "terminal_probe_trial_counts": [1, 1],
+                    }
+                ],
+            )
+            smi = root / "nvidia_smi.csv"
+            smi.write_text(
+                "timestamp,index,utilization.gpu,memory.used\n"
+                "2026/07/14 00:00:00.000,0,45 %,3200 MiB\n"
+                "2026/07/14 00:00:00.000,1,0 %,3200 MiB\n",
+                encoding="utf-8",
+            )
+
+            rc = report.main(
+                [
+                    "--episodes",
+                    str(episodes),
+                    "--nvidia-smi-csv",
+                    str(smi),
+                    "--visible-devices",
+                    "0,1",
+                    "--out-json",
+                    str(root / "gpu_report.json"),
+                    "--require-all-visible-sampled-active",
+                ]
+            )
+
+        self.assertEqual(rc, 2)
+
     def test_cli_streams_markdown_output_without_full_render_string(self):
         report = _load_report_module()
 
