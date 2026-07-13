@@ -1,0 +1,64 @@
+{
+  "all_gates_pass": true,
+  "runs": [
+    {
+      "groups": 3,
+      "seed": 20260721,
+      "trials": 15,
+      "wall_seconds": 90
+    },
+    {
+      "groups": 3,
+      "seed": 20261721,
+      "trials": 15,
+      "wall_seconds": 44
+    },
+    {
+      "groups": 3,
+      "seed": 20262721,
+      "trials": 15,
+      "wall_seconds": 44
+    },
+    {
+      "groups": 3,
+      "seed": 20263721,
+      "trials": 15,
+      "wall_seconds": 47
+    },
+    {
+      "groups": 3,
+      "seed": 20264721,
+      "trials": 15,
+      "wall_seconds": 50
+    }
+  ],
+  "source_commit": "bb87c69b31c26e3e0eb908446fdc53cce0c99907",
+  "summary_gates": [
+    {
+      "failures": [],
+      "name": "completeness",
+      "passed": true
+    },
+    {
+      "failures": [],
+      "name": "metric_consistency",
+      "passed": true
+    },
+    {
+      "failures": [],
+      "name": "trial_metadata",
+      "passed": true
+    },
+    {
+      "failures": [],
+      "name": "steps_install",
+      "passed": true
+    },
+    {
+      "failures": [],
+      "name": "fusion_pattern",
+      "passed": true
+    }
+  ],
+  "total_evaluations": 75
+}

@@ -15,10 +15,40 @@ from jsonl_utils import (
     read_jsonl,
     resolve_jsonl_path,
     write_jsonl_rows,
+    recover_jsonl_file,
 )
 
 
 class JsonlUtilsTest(unittest.TestCase):
+    def test_recover_jsonl_file_repairs_only_torn_tail(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "events.jsonl"
+            path.write_bytes(b'{"episode": 1}\n{"episode": 2')
+
+            recovered_size = recover_jsonl_file(path)
+
+            self.assertEqual(path.read_bytes(), b'{"episode": 1}\n')
+            self.assertEqual(recovered_size, path.stat().st_size)
+
+    def test_recover_jsonl_file_rolls_back_to_committed_boundary(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "events.jsonl"
+            first = b'{"episode": 1}\n'
+            path.write_bytes(first + b'{"episode": 2}\n')
+
+            recovered_size = recover_jsonl_file(path, committed_size=len(first))
+
+            self.assertEqual(path.read_bytes(), first)
+            self.assertEqual(recovered_size, len(first))
+
+    def test_recover_jsonl_file_rejects_non_boundary_commit(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "events.jsonl"
+            path.write_bytes(b'{"episode": 1}\n')
+
+            with self.assertRaisesRegex(ValueError, "JSONL boundary"):
+                recover_jsonl_file(path, committed_size=5)
+
     def test_iter_jsonl_skips_blank_bad_and_non_dict_rows_by_default(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "rows.jsonl"

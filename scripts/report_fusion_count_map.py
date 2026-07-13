@@ -625,6 +625,31 @@ def _group_specs(graphs: Mapping[str, Mapping[str, Any]], schedule: Sequence[Map
         "occurrence_counts": dict(occurrence_counts),
     })
 
+    option_by_graph = {}
+    count_by_graph = {}
+    target_graphs = [
+        g
+        for g in graph_order
+        if g == "block2_mrpc" or g == "block4" or g.startswith("block5_")
+    ]
+    target_graph_set = set(target_graphs)
+    for graph_key in graph_order:
+        target = 1 if graph_key in target_graph_set else 0
+        opt, count, clamped = choose(graph_key, target)
+        if clamped or count != target:
+            raise ValueError(f"{graph_key} does not provide fusion count {target}")
+        option_by_graph[graph_key] = opt
+        count_by_graph[graph_key] = count
+    specs.append({
+        "name": "block2_block4_block5_all_layers_fusion1",
+        "family": "combined",
+        "target_graphs": target_graphs,
+        "target_fusion_count": 1,
+        "option_by_graph": option_by_graph,
+        "fusion_count_by_graph": count_by_graph,
+        "occurrence_counts": dict(occurrence_counts),
+    })
+
     block4_graph = graphs.get("block4")
     if block4_graph is not None:
         b4_max_opt, b4_max_count, _clamped = choose("block4", "max")

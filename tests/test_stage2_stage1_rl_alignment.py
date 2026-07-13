@@ -123,7 +123,7 @@ class Stage2Stage1AlignmentDefaultsTest(unittest.TestCase):
         self.assertEqual(defaults["fusion_probe_interval"], 0)
         self.assertEqual(defaults["fusion_exploration_epsilon"], 0.0)
         self.assertEqual(defaults["fusion_exploration_epsilon_k"], 0.0)
-        self.assertEqual(defaults["reward_design"], "stage1_aligned")
+        self.assertEqual(defaults["reward_design"], "robust_constrained")
         self.assertEqual(defaults["num_trials_per_step"], 5)
         self.assertEqual(defaults["online_num_trials_per_step"], 5)
 
@@ -307,6 +307,16 @@ class Stage2Stage1AlignmentDefaultsTest(unittest.TestCase):
         self.assertIs(seq_defaults["use_kl_early_stop"], True)
         self.assertIs(seq_defaults["adaptive_lr_kl"], False)
         self.assertIs(seq_defaults["per_slot_entropy_recovery"], False)
+
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "torch is required")
+    def test_layerwise_terminal_credit_is_explicit_without_changing_legacy_defaults(self):
+        from blb_stage2_rl.sequential_policy import SequentialPPOConfig
+
+        legacy = SequentialPPOConfig()
+        layerwise = SequentialPPOConfig(gamma=1.0, gae_lambda=1.0)
+
+        self.assertEqual((legacy.gamma, legacy.gae_lambda), (0.99, 0.95))
+        self.assertEqual((layerwise.gamma, layerwise.gae_lambda), (1.0, 1.0))
 
 
 class Stage2Stage1RewardAlignmentTest(unittest.TestCase):

@@ -9,10 +9,149 @@ import shutil
 import unittest
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
 import torch
+
+
+class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
+    def test_aggregate_probe_trials_preserves_sanitized_trials_and_unbiased_std(self):
+        from blb_stage2_rl.env import BLBStage2Env
+
+        metrics = BLBStage2Env._aggregate_probe_trials(
+            object(),
+            [float("nan"), 2.0, float("inf")],
+            [float("nan"), 0.5, float("inf")],
+            [float("-inf"), 0.25, float("nan")],
+            trial_seeds=[101, 102, 103],
+        )
+
+        self.assertEqual(metrics.loss_trials, (100.0, 2.0, 100.0))
+        self.assertEqual(metrics.metric1_trials, (0.0, 0.5, 1.0))
+        self.assertEqual(metrics.metric2_trials, (0.0, 0.25, 0.0))
+        self.assertEqual(metrics.trial_seeds, (101, 102, 103))
+        self.assertAlmostEqual(metrics.loss_std, np.std([100.0, 2.0, 100.0], ddof=1))
+        self.assertAlmostEqual(metrics.metric1_std, np.std([0.0, 0.5, 1.0], ddof=1))
+        self.assertAlmostEqual(metrics.metric2_std, np.std([0.0, 0.25, 0.0], ddof=1))
+
+        single_trial = BLBStage2Env._aggregate_probe_trials(
+            object(), [0.5], [0.8], [0.7], trial_seeds=[104],
+        )
+        self.assertEqual(single_trial.loss_std, 0.0)
+        self.assertEqual(single_trial.metric1_std, 0.0)
+        self.assertEqual(single_trial.metric2_std, 0.0)
+
+    def test_metrics_from_trial_results_preserves_sanitized_trials_seeds_and_ddof_one(self):
+        from blb_stage2_rl.env import BLBStage2Env
+
+        metrics = BLBStage2Env._metrics_from_trial_results(
+            [(float("inf"), float("nan"), 0.4), (2.0, 0.6, float("inf"))],
+            trial_seeds=[41, 42],
+        )
+
+        self.assertEqual(metrics.loss_trials, (100.0, 2.0))
+        self.assertEqual(metrics.metric1_trials, (0.0, 0.6))
+        self.assertEqual(metrics.metric2_trials, (0.4, 1.0))
+        self.assertEqual(metrics.trial_seeds, (41, 42))
+        self.assertAlmostEqual(metrics.loss_std, np.std([100.0, 2.0], ddof=1))
+        self.assertAlmostEqual(metrics.metric1_std, np.std([0.0, 0.6], ddof=1))
+        self.assertAlmostEqual(metrics.metric2_std, np.std([0.4, 1.0], ddof=1))
+
+    def test_trial_aggregation_rejects_empty_explicit_seeds_for_nonempty_trials(self):
+        from blb_stage2_rl.env import BLBStage2Env
+
+        with self.assertRaisesRegex(ValueError, "trial_seeds length"):
+            BLBStage2Env._aggregate_probe_trials(
+                object(), [0.5], [0.8], [0.7], trial_seeds=[],
+            )
+        with self.assertRaisesRegex(ValueError, "equal lengths"):
+            BLBStage2Env._aggregate_probe_trials(
+                object(), [], [0.8], [], trial_seeds=[],
+            )
+        empty = BLBStage2Env._aggregate_probe_trials(
+            object(), [], [], [], trial_seeds=[],
+        )
+        self.assertEqual(empty.trial_seeds, ())
+
+    def test_metrics_from_trial_results_rejects_misaligned_seeds(self):
+        from blb_stage2_rl.env import BLBStage2Env
+
+        with self.assertRaisesRegex(ValueError, "trial_seeds length"):
+            BLBStage2Env._metrics_from_trial_results(
+                [(0.5, 0.8, 0.7), (0.6, 0.9, 0.8)],
+                trial_seeds=[1],
+            )
+
+    def test_probe_runner_reconstructs_trial_seeds_in_trial_index_order(self):
+        from blb_stage2_rl.env import BLBStage2Env
+
+        class FakeProbeRunner:
+            def __init__(self):
+                self.last_diagnostics = SimpleNamespace(
+                    k=2,
+                    wall_seconds=0.1,
+                    per_worker_seconds=[0.1, 0.1],
+                    per_worker_trial_counts=[1, 1],
+                    per_worker_trial_indices=[[1], [0]],
+                    per_worker_trial_seeds=[[701], [700]],
+                    devices=["cuda:0", "cuda:1"],
+                    speedup_vs_sequential=2.0,
+                )
+
+            def run_trials(self, k, *, base_seed):
+                self.base_seed = base_seed
+                self.k = k
+                return [(0.2, 0.8, 0.7), (0.3, 0.9, 0.8)]
+
+        env = BLBStage2Env.__new__(BLBStage2Env)
+        env.probe_runner = FakeProbeRunner()
+        env.probe_noise_seed = None
+        env._probe_eval_counter = 0
+        env._derive_probe_base_seed = lambda: 99
+        env._last_probe_diagnostics = {}
+
+        metrics = env._eval_on_probe(2)
+
+        self.assertEqual(metrics.trial_seeds, (700, 701))
+
+    def test_fast_multi_action_probe_attaches_each_candidate_seed_in_local_order(self):
+        from blb_stage2_rl.env import BLBStage2Env
+
+        class FakeProbeRunner:
+            def __init__(self):
+                self.last_diagnostics = SimpleNamespace(
+                    k=2,
+                    wall_seconds=0.1,
+                    per_worker_seconds=[0.1, 0.1],
+                    per_worker_trial_counts=[1, 1],
+                    per_worker_trial_indices=[[1], [0]],
+                    per_worker_trial_seeds=[[901], [900]],
+                    devices=["cuda:0", "cuda:1"],
+                    speedup_vs_sequential=2.0,
+                    multi_action=True,
+                )
+
+            def run_action_trials_once(self, decoded_by_trial, *, base_seed):
+                self.base_seed = base_seed
+                return [(0.2, 0.8, 0.7), (0.3, 0.9, 0.8)]
+
+        env = BLBStage2Env.__new__(BLBStage2Env)
+        env.probe_runner = FakeProbeRunner()
+        env._probe_eval_counter = 0
+        env._derive_probe_base_seed = lambda: 123
+        env._finish_prepared_terminal_probe = (
+            lambda item, metrics, **_kwargs: (None, 0.0, True, {"metrics": metrics})
+        )
+        prepared = [{"requires_forward": True, "decoded": object()} for _ in range(2)]
+
+        results = env.evaluate_prepared_terminal_batch(prepared, num_trials_per_action=1)
+
+        self.assertEqual(results[0][3]["metrics"].trial_seeds, (900,))
+        self.assertEqual(results[1][3]["metrics"].trial_seeds, (901,))
+        self.assertEqual(results[0][3]["metrics"].loss_trials, (0.2,))
+        self.assertEqual(results[1][3]["metrics"].metric1_trials, (0.9,))
 
 
 @contextlib.contextmanager

@@ -1,0 +1,660 @@
+{
+  "profiles": {
+    "mrpc_large": {
+      "graphs": [
+        {
+          "graph_key": "block2_mrpc_large",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 263,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 263
+            },
+            {
+              "base_total_bits": 238,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 264,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 264
+            },
+            {
+              "base_total_bits": 211,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n1",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 213,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 213
+            },
+            {
+              "base_total_bits": 180,
+              "boosted_total_bits": 180,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 180
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n2",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 244,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 244
+            },
+            {
+              "base_total_bits": 231,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 275,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 275
+            },
+            {
+              "base_total_bits": 262,
+              "boosted_total_bits": 271,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 271
+            }
+          ]
+        }
+      ],
+      "num_layers": 24,
+      "status": "pass"
+    },
+    "rte": {
+      "graphs": [
+        {
+          "graph_key": "block2_rte",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 263,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 263
+            },
+            {
+              "base_total_bits": 238,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 264,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 264
+            },
+            {
+              "base_total_bits": 211,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n1",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 213,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 213
+            },
+            {
+              "base_total_bits": 180,
+              "boosted_total_bits": 180,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 180
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n2",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 244,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 244
+            },
+            {
+              "base_total_bits": 231,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 275,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 275
+            },
+            {
+              "base_total_bits": 262,
+              "boosted_total_bits": 271,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 271
+            }
+          ]
+        }
+      ],
+      "num_layers": 12,
+      "status": "pass"
+    },
+    "rte_large": {
+      "graphs": [
+        {
+          "graph_key": "block2_rte_large",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 263,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 263
+            },
+            {
+              "base_total_bits": 238,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 264,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 264
+            },
+            {
+              "base_total_bits": 211,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n1",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 213,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 213
+            },
+            {
+              "base_total_bits": 180,
+              "boosted_total_bits": 180,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 180
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n2",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 244,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 244
+            },
+            {
+              "base_total_bits": 231,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 275,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 275
+            },
+            {
+              "base_total_bits": 262,
+              "boosted_total_bits": 271,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 271
+            }
+          ]
+        }
+      ],
+      "num_layers": 24,
+      "status": "pass"
+    },
+    "sst2": {
+      "graphs": [
+        {
+          "graph_key": "block2_sst2",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 263,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 263
+            },
+            {
+              "base_total_bits": 238,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 264,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 264
+            },
+            {
+              "base_total_bits": 211,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n1",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 213,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 213
+            },
+            {
+              "base_total_bits": 180,
+              "boosted_total_bits": 180,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 180
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n2",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 244,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 244
+            },
+            {
+              "base_total_bits": 231,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 275,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 275
+            },
+            {
+              "base_total_bits": 262,
+              "boosted_total_bits": 271,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 271
+            }
+          ]
+        }
+      ],
+      "num_layers": 12,
+      "status": "pass"
+    },
+    "sst2_large": {
+      "graphs": [
+        {
+          "graph_key": "block2_sst2_large",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 263,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 263
+            },
+            {
+              "base_total_bits": 238,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 264,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 264
+            },
+            {
+              "base_total_bits": 211,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n1",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 213,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 213
+            },
+            {
+              "base_total_bits": 180,
+              "boosted_total_bits": 180,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 180
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n2",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 244,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 244
+            },
+            {
+              "base_total_bits": 231,
+              "boosted_total_bits": 240,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 240
+            }
+          ]
+        },
+        {
+          "graph_key": "block5_n4",
+          "k_independence": {
+            "k_independent": true,
+            "samples_checked": 2,
+            "violations": []
+          },
+          "option0_equals_target_baseline": true,
+          "options": [
+            {
+              "base_total_bits": 275,
+              "boosted_total_bits": null,
+              "fusion_count": 0,
+              "option_id": 0,
+              "stored_total_bits": 275
+            },
+            {
+              "base_total_bits": 262,
+              "boosted_total_bits": 271,
+              "fusion_count": 1,
+              "option_id": 1,
+              "stored_total_bits": 271
+            }
+          ]
+        }
+      ],
+      "num_layers": 24,
+      "status": "pass"
+    }
+  },
+  "status": "pass"
+}

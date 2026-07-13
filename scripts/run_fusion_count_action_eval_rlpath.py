@@ -17,6 +17,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import html
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -37,14 +38,71 @@ from scripts.fusion_count_action_eval_common import (
     rlpath_config_group_key,
     unique_rlpath_action_configs,
 )
+from scripts.fusion_count_prediction_capture import (
+    PREDICTION_ROW_SCHEMA,
+    ExampleIdentityCatalog,
+    ForwardPredictionRecorder,
+    PredictionJsonlWriter,
+)
 
 
-DEFAULT_STAGE1_GELU = [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
+DEFAULT_STAGE1_GELU = [4] * 12
 DEFAULT_STAGE1_SOFTMAX = [6] * 12
 DEFAULT_STAGE1_GELU_JSON = json.dumps(DEFAULT_STAGE1_GELU)
 DEFAULT_STAGE1_SOFTMAX_JSON = json.dumps(DEFAULT_STAGE1_SOFTMAX)
 
 _RUNTIME_DEPS: dict[str, object] | None = None
+
+
+def _group_seed(base_seed: int, group_index: int, *, shared: bool) -> int:
+    return int(base_seed) if shared else int(base_seed) + int(group_index)
+
+
+def _trial_metric_value(value: Any) -> Any:
+    numeric = float(value)
+    if math.isfinite(numeric):
+        return numeric
+    if math.isnan(numeric):
+        return {"non_finite": "nan"}
+    if numeric > 0:
+        return {"non_finite": "positive_infinity"}
+    return {"non_finite": "negative_infinity"}
+
+
+def _trial_metric_payload(
+        losses: Sequence[float],
+        metric1s: Sequence[float],
+        metric2s: Sequence[float],
+        ) -> dict:
+    return {
+        "loss": [_trial_metric_value(value) for value in losses],
+        "metric1": [_trial_metric_value(value) for value in metric1s],
+        "metric2": [_trial_metric_value(value) for value in metric2s],
+    }
+
+
+def _recording_blb_stage2_env_class(base_env_class):
+    class RecordingBLBStage2Env(base_env_class):
+        def _aggregate_probe_trials(
+                self,
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+                trial_seeds=None,
+                ):
+            self.fixed_eval_trial_metrics = _trial_metric_payload(
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+            )
+            return super()._aggregate_probe_trials(
+                per_trial_loss,
+                per_trial_metric1,
+                per_trial_metric2,
+                trial_seeds=trial_seeds,
+            )
+
+    return RecordingBLBStage2Env
 
 
 class _HtmlPartsWriter:
@@ -130,7 +188,14 @@ def _base_model(model_type: str, dataset: str) -> str:
     return "textattack/bert-base-uncased-MRPC"
 
 
-def _tokenize_glue(data, *, task: str, tokenizer, seed: int):
+def _tokenize_glue(
+        data,
+        *,
+        task: str,
+        tokenizer,
+        seed: int,
+        include_identity_catalog: bool = False,
+        ):
     def tokenize_fn(examples):
         if task == "mrpc":
             return tokenizer(
@@ -147,9 +212,14 @@ def _tokenize_glue(data, *, task: str, tokenizer, seed: int):
     val_data = data["validation"].shuffle(seed=int(seed)).map(tokenize_fn)
     train_data = train_data.rename_column("label", "labels")
     val_data = val_data.rename_column("label", "labels")
+    identity_catalog = None
+    if include_identity_catalog:
+        identity_catalog = ExampleIdentityCatalog.from_tokenized_rows(val_data)
     cols = ["input_ids", "attention_mask", "token_type_ids", "labels"]
     train_data.set_format(type="torch", columns=cols)
     val_data.set_format(type="torch", columns=cols)
+    if include_identity_catalog:
+        return train_data, val_data, identity_catalog
     return train_data, val_data
 
 
@@ -185,7 +255,18 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
         args.dataset,
         route_log_dir=str(resolve_repo_path(args.output_json).parent / "logs"),
     )
-    train_data, val_data = _tokenize_glue(data, task=args.dataset, tokenizer=tokenizer, seed=int(args.seed))
+    tokenized = _tokenize_glue(
+        data,
+        task=args.dataset,
+        tokenizer=tokenizer,
+        seed=int(args.seed),
+        include_identity_catalog=bool(args.prediction_jsonl),
+    )
+    if args.prediction_jsonl:
+        train_data, val_data, identity_catalog = tokenized
+    else:
+        train_data, val_data = tokenized
+        identity_catalog = None
     collator = DataCollatorWithPadding(
         tokenizer=tokenizer,
         padding="max_length",
@@ -225,6 +306,8 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
         blb_v3_fusion_exploration_epsilon=0.0,
         rl_algo="ppo",
     )
+    if identity_catalog is not None:
+        ev.fixed_eval_identity_catalog = identity_catalog
     return ev
 
 
@@ -243,6 +326,8 @@ def _build_seq_env(args, ev, *, stage1_gelu: Sequence[int], stage1_softmax: Sequ
     FusionCountMap = deps["FusionCountMap"]
     BLBStage2SequentialEnv = deps["BLBStage2SequentialEnv"]
     SequentialEnvConfig = deps["SequentialEnvConfig"]
+
+    RecordingBLBStage2Env = _recording_blb_stage2_env_class(BLBStage2Env)
 
     runner = BLBStage2RLRunner(ev)
     train_cfg = BLBStage2TrainConfig(
@@ -280,7 +365,7 @@ def _build_seq_env(args, ev, *, stage1_gelu: Sequence[int], stage1_softmax: Sequ
         ss_baseline,
         snap_sf_to_noise_table=False,
     )
-    base_env = BLBStage2Env(
+    base_env = RecordingBLBStage2Env(
         handler=ev.reversible_handler,
         model=ev.model,
         probe_batches=probe_batches,
@@ -356,7 +441,7 @@ def _metric_dict(metrics: Any) -> Dict[str, float]:
     return out
 
 
-def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
+def _run_group_canonical(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     K_LEVELS = _load_runtime_deps()["K_LEVELS"]
     group = cfg.get("group") or {}
     option_by_graph = {str(k): int(v) for k, v in dict(group.get("option_by_graph") or {}).items()}
@@ -365,6 +450,7 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     if k_index < 0 or k_index >= len(K_LEVELS):
         raise ValueError(f"invalid baseline_k_index={k_index} for {cfg['name']}")
 
+    seq_env.base.fixed_eval_trial_metrics = {}
     seq_env.reset(seed=int(seed))
     seq_env.base.probe_noise_seed = int(seed)
     done = False
@@ -374,20 +460,35 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
     while not done:
         spec = seq_env._schedule[seq_env._step_idx]
         graph_key = str(spec.graph_key_suffix)
-        option_id = int(option_by_step.get(str(spec.step_idx), option_by_graph.get(graph_key, 0)))
-        eval_info = seq_env.evaluate_step([option_id, k_index])
+        map_option_id = int(option_by_step.get(str(spec.step_idx), option_by_graph.get(graph_key, 0)))
+        policy_option_index = 0
+        eval_info = seq_env.evaluate_step(
+            [policy_option_index, k_index],
+            map_option_id_override=map_option_id,
+        )
         _obs, reward, done, info = seq_env.commit_step(eval_info, defer_terminal_forward=False)
+        replan_application = info.get("replan_application") or {}
         step_records.append({
             "step_idx": int(spec.step_idx),
             "layer_idx": int(spec.layer_idx),
             "block_idx": int(spec.block_idx),
             "graph_key": graph_key,
-            "option_id": int(option_id),
+            "option_id": int(map_option_id),
+            "map_option_id": int(map_option_id),
+            "policy_option_index": int(policy_option_index),
             "k_index": int(k_index),
             "k_value": int(K_LEVELS[k_index]),
             "valid": bool(eval_info.get("valid", False)),
             "fusion_count_replan": int(eval_info.get("fusion_count", 0) or 0),
             "boosted": bool(eval_info.get("boosted_field_values")),
+            "replan_application": to_jsonable(
+                replan_application,
+                stringify_unknown=True,
+                preserve_native=True,
+            ),
+            "model_uses_replan_config": bool(
+                replan_application.get("model_uses_replan_config", False)
+            ),
         })
         if done:
             break
@@ -426,6 +527,11 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
         "reward": float(reward),
         "terminal_priority": terminal_info.get("terminal_priority"),
         "metrics": metrics,
+        "trial_metrics": to_jsonable(
+            seq_env.base.fixed_eval_trial_metrics,
+            stringify_unknown=True,
+            preserve_native=True,
+        ),
         "fusion_total": int(fusion_total),
         "fusion_by_block": fusion_by_block,
         "k_distribution": k_dist,
@@ -447,6 +553,35 @@ def _run_group(seq_env, cfg: Mapping[str, Any], *, seed: int) -> dict:
             preserve_native=True,
         ),
     }
+
+
+def _run_group(
+        seq_env,
+        cfg: Mapping[str, Any],
+        *,
+        seed: int,
+        prediction_recorder=None,
+        prediction_writer=None,
+        ) -> dict:
+    if prediction_recorder is None:
+        return _run_group_canonical(seq_env, cfg, seed=seed)
+    if prediction_writer is None:
+        raise ValueError("prediction_writer is required with prediction_recorder")
+
+    prediction_recorder.begin_group(run_seed=seed, group=str(cfg["name"]))
+    try:
+        result = _run_group_canonical(seq_env, cfg, seed=seed)
+        terminal_probe = result["terminal_probe"]
+        trial_seeds = terminal_probe["per_worker_trial_seeds"][0]
+        prediction_rows = prediction_recorder.finish_group(
+            trial_seeds=trial_seeds,
+        )
+        prediction_writer.write_rows(prediction_rows)
+        result["prediction_capture"] = {"row_count": len(prediction_rows)}
+        return result
+    except Exception:
+        prediction_recorder.abort_group()
+        raise
 
 
 def _emit_rendered_html(combined: Mapping[str, Any], parts: Any) -> None:
@@ -512,7 +647,7 @@ def write_rendered_html(output_html: Path, combined: Mapping[str, Any]) -> None:
         _emit_rendered_html(combined, parts)
 
 
-def main() -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="mrpc")
     parser.add_argument("--model-type", default="bert-base")
@@ -529,16 +664,31 @@ def main() -> int:
     parser.add_argument("--probe-size", type=int, default=408)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--shared-group-seed", action="store_true")
     parser.add_argument("--stage2-limit-tolerance", type=float, default=0.001)
     parser.add_argument("--stage2-stability-tolerance", type=float, default=3.5)
     parser.add_argument("--rescale-optimizer-root", default="Rescale_optimizer")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--prediction-jsonl",
+        default="",
+        help="optional per-example prediction JSONL captured from terminal probe forwards",
+    )
+    return parser
+
+
+def main() -> int:
+    args = _parser().parse_args()
 
     args.base_model = args.base_model or _base_model(args.model_type, args.dataset)
     action_dir = resolve_repo_path(args.action_dir)
     original_json = resolve_repo_path(args.original_json)
     output_json = resolve_repo_path(args.output_json)
     output_html = resolve_repo_path(args.output_html)
+    prediction_jsonl = (
+        resolve_repo_path(args.prediction_jsonl)
+        if args.prediction_jsonl
+        else None
+    )
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_html.parent.mkdir(parents=True, exist_ok=True)
 
@@ -558,9 +708,76 @@ def main() -> int:
     }
 
     result_by_key: Dict[str, dict] = {}
-    for idx, cfg in enumerate(unique):
-        print(f"[run] {cfg['name']}", flush=True)
-        result_by_key[rlpath_config_group_key(cfg)] = _run_group(seq_env, cfg, seed=int(args.seed) + idx)
+    prediction_recorder = None
+    prediction_writer = None
+    prediction_hook = None
+    primary_error = None
+    primary_traceback = None
+    try:
+        if prediction_jsonl is not None:
+            prediction_recorder = ForwardPredictionRecorder(
+                catalog=ev.fixed_eval_identity_catalog,
+                probe_batch_count=int(seq_env.base.env_cfg.probe_batch_count),
+            )
+            prediction_writer = PredictionJsonlWriter(prediction_jsonl)
+            prediction_hook = ev.model.register_forward_hook(
+                prediction_recorder.hook,
+                with_kwargs=True,
+            )
+
+        for idx, cfg in enumerate(unique):
+            print(f"[run] {cfg['name']}", flush=True)
+            group_seed = _group_seed(
+                args.seed,
+                idx,
+                shared=bool(args.shared_group_seed),
+            )
+            result_by_key[rlpath_config_group_key(cfg)] = _run_group(
+                seq_env,
+                cfg,
+                seed=group_seed,
+                prediction_recorder=prediction_recorder,
+                prediction_writer=prediction_writer,
+            )
+    except BaseException as exc:
+        primary_error = exc
+        primary_traceback = exc.__traceback__
+
+    cleanup_error = None
+    cleanup_traceback = None
+    try:
+        if prediction_hook is not None:
+            prediction_hook.remove()
+    except BaseException as exc:
+        cleanup_error = exc
+        cleanup_traceback = exc.__traceback__
+    try:
+        if prediction_writer is not None:
+            prediction_writer.close()
+    except BaseException as exc:
+        if cleanup_error is None:
+            cleanup_error = exc
+            cleanup_traceback = exc.__traceback__
+
+    if primary_error is not None or cleanup_error is not None:
+        if prediction_writer is not None:
+            try:
+                prediction_writer.abort()
+            except BaseException:
+                pass
+        if primary_error is not None:
+            raise primary_error.with_traceback(primary_traceback)
+        raise cleanup_error.with_traceback(cleanup_traceback)
+
+    if prediction_writer is not None:
+        try:
+            prediction_writer.commit()
+        except BaseException:
+            try:
+                prediction_writer.abort()
+            except BaseException:
+                pass
+            raise
 
     group_results = []
     for cfg in configs:
@@ -596,6 +813,8 @@ def main() -> int:
         "install_path": "BLBStage2SequentialEnv.evaluate_step -> commit_step -> BLBStage2Env.step(boosted_overrides)",
         "original_path": str(original_json),
         "action_dir": str(action_dir),
+        "seed": int(args.seed),
+        "shared_group_seed": bool(args.shared_group_seed),
         "stage1_gelu": [int(v) for v in stage1_gelu],
         "stage1_softmax": [int(v) for v in stage1_softmax],
         "repeat": int(args.repeat),
@@ -603,6 +822,13 @@ def main() -> int:
         "baseline": to_jsonable(baseline, stringify_unknown=True, preserve_native=True),
         "group_results": to_jsonable(group_results, stringify_unknown=True, preserve_native=True),
     }
+    if prediction_jsonl is not None:
+        combined["prediction_artifact"] = {
+            "schema_version": PREDICTION_ROW_SCHEMA,
+            "path": str(prediction_jsonl),
+            "row_count": int(prediction_writer.row_count),
+            "dataset_indices": list(ev.fixed_eval_identity_catalog.dataset_indices),
+        }
     write_json_file(output_json, combined)
     write_rendered_html(output_html, combined)
     json.dump({"output_json": str(output_json), "output_html": str(output_html)}, sys.stdout, ensure_ascii=False, indent=2)

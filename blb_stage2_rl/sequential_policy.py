@@ -75,6 +75,46 @@ class SequentialPolicyConfig:
     actor_dim: int = 64
     critic_dim: int = 64
     default_prior_scale: float = 0.0
+    metadata_width: int = 6
+    signal_width: int = 3
+    step_layer_indices: Optional[Sequence[int]] = None
+    step_block_indices: Optional[Sequence[int]] = None
+
+    def __post_init__(self) -> None:
+        if (self.step_layer_indices is None) != (self.step_block_indices is None):
+            raise ValueError(
+                "step_layer_indices and step_block_indices must be supplied together"
+            )
+        if int(self.metadata_width) < 0:
+            raise ValueError("metadata_width must be nonnegative")
+        if int(self.signal_width) <= 0:
+            raise ValueError("signal_width must be positive")
+        self.metadata_width = int(self.metadata_width)
+        self.signal_width = int(self.signal_width)
+        if self.step_layer_indices is None:
+            return
+        layer_indices = tuple(int(value) for value in self.step_layer_indices)
+        block_indices = tuple(int(value) for value in self.step_block_indices)
+        if len(layer_indices) != int(self.horizon):
+            raise ValueError(
+                f"step_layer_indices has {len(layer_indices)} values, "
+                f"expected horizon={self.horizon}"
+            )
+        if len(block_indices) != int(self.horizon):
+            raise ValueError(
+                f"step_block_indices has {len(block_indices)} values, "
+                f"expected horizon={self.horizon}"
+            )
+        if any(value < 0 or value >= int(self.num_layers) for value in layer_indices):
+            raise ValueError(
+                f"step_layer_indices values must be in [0, {self.num_layers})"
+            )
+        if any(value < 0 or value >= int(self.block_count) for value in block_indices):
+            raise ValueError(
+                f"step_block_indices values must be in [0, {self.block_count})"
+            )
+        self.step_layer_indices = layer_indices
+        self.step_block_indices = block_indices
 
 
 class RunningMeanStd:
@@ -230,12 +270,24 @@ class BLBStage2SequentialPolicy(nn.Module):
             torch.arange(cfg.max_num_levels, dtype=torch.long).view(1, 1, -1),
             persistent=False,
         )
+        action_decode_scales = torch.full(
+            (cfg.max_step_dim,), 8.0, dtype=torch.float32,
+        )
+        if cfg.metadata_width == 0 and cfg.signal_width == 4:
+            # Canonical layerwise observations encode fusion by /1 and K by /5.
+            action_decode_scales.fill_(float(max(1, cfg.max_num_levels - 1)))
+            action_decode_scales[0] = 1.0
+        self.register_buffer(
+            "_action_history_decode_scales",
+            action_decode_scales,
+            persistent=False,
+        )
         steps, layers, blocks = self._make_step_layer_block_indices(cfg)
         self.register_buffer("_step_indices", steps, persistent=False)
         self.register_buffer("_layer_indices", layers, persistent=False)
         self.register_buffer("_block_indices", blocks, persistent=False)
         self.fc_continuous = nn.Sequential(
-            nn.Linear(8, cfg.cont_proj_dim),
+            nn.Linear(4 + cfg.signal_width + 1, cfg.cont_proj_dim),
             nn.LayerNorm(cfg.cont_proj_dim),
             nn.SiLU(),
         )
@@ -355,6 +407,12 @@ class BLBStage2SequentialPolicy(nn.Module):
             cfg: SequentialPolicyConfig,
             ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         steps = torch.arange(cfg.horizon, dtype=torch.long)
+        if cfg.step_layer_indices is not None:
+            return (
+                steps,
+                torch.as_tensor(cfg.step_layer_indices, dtype=torch.long),
+                torch.as_tensor(cfg.step_block_indices, dtype=torch.long),
+            )
         layers = torch.where(
             steps < 4,
             torch.zeros_like(steps),
@@ -389,7 +447,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             step_oh = state[:, cursor: cursor + H]
             current_step = torch.argmax(step_oh, dim=-1).long()
         cursor += H
-        cursor += 5 + 1
+        cursor += int(self.cfg.metadata_width)
         seq_len = H
         if bool(truncate_to_current) and B == 1:
             if truncate_seq_len is not None:
@@ -397,18 +455,26 @@ class BLBStage2SequentialPolicy(nn.Module):
             else:
                 seq_len = int(current_step.detach().clamp(0, H - 1).item()) + 1
         prev_actions = torch.zeros(B, seq_len, S, dtype=torch.long, device=device)
-        prev_signals = torch.zeros(B, seq_len, 3, dtype=state.dtype, device=device)
+        signal_width = int(self.cfg.signal_width)
+        prev_signals = torch.zeros(
+            B, seq_len, signal_width, dtype=state.dtype, device=device,
+        )
         need_actions = H * S
         if width >= cursor + need_actions:
             raw_actions = state[:, cursor: cursor + seq_len * S].view(B, seq_len, S)
-            prev_actions = torch.round(raw_actions * 8.0).long().clamp(
+            decode_scales = self._action_history_decode_scales.to(
+                device=device, dtype=raw_actions.dtype,
+            ).view(1, 1, S)
+            prev_actions = torch.round(raw_actions * decode_scales).long().clamp(
                 min=0,
                 max=max(0, self.cfg.max_num_levels - 1),
             )
         cursor += need_actions
-        need_signals = H * 3
+        need_signals = H * signal_width
         if width >= cursor + need_signals:
-            prev_signals = state[:, cursor: cursor + seq_len * 3].view(B, seq_len, 3)
+            prev_signals = state[
+                :, cursor: cursor + seq_len * signal_width
+            ].view(B, seq_len, signal_width)
         return static, current_step, prev_actions, prev_signals
 
     def _get_causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
@@ -666,6 +732,11 @@ class BLBStage2SequentialPolicy(nn.Module):
             ).reshape(probs.shape[:-1])
         else:
             actions = dist.sample()
+        actions = torch.where(
+            slot_mask.to(device=actions.device, dtype=torch.bool),
+            actions,
+            torch.zeros_like(actions),
+        )
         log_prob_per_slot = dist.log_prob(actions)            # [B, max_step_dim]
         # zero out log_prob for padding rows
         log_prob_per_slot = log_prob_per_slot * slot_mask.float()
@@ -791,6 +862,78 @@ class BLBStage2SequentialPolicy(nn.Module):
             self._preferred_per_slot_idx.copy_(preferred)
             self._refresh_preferred_prior_template()
             self.default_prior_scale = float(gain)
+
+    def set_initial_slot_probabilities(
+            self,
+            probabilities_by_slot: Sequence[Mapping[int, float]],
+            action_values_by_index: Sequence[Sequence[int]],
+            ) -> None:
+        """Initialize independent slot heads from decoded-value probabilities.
+
+        The decoded action values define each slot's legal support and ordering.
+        Head weights are zeroed so these probabilities are exact initially;
+        normal gradient updates can subsequently learn both weights and biases.
+        Any preferred-action warmstart prior is cleared to avoid adding a hidden
+        logit offset to this explicit full-support initialization.
+        """
+        slot_count = int(self.cfg.max_step_dim)
+        if len(probabilities_by_slot) != slot_count:
+            raise ValueError(
+                f"probabilities_by_slot has {len(probabilities_by_slot)} slots, "
+                f"expected {slot_count}"
+            )
+        if len(action_values_by_index) != slot_count:
+            raise ValueError(
+                f"action_values_by_index has {len(action_values_by_index)} slots, "
+                f"expected {slot_count}"
+            )
+
+        log_probabilities: List[Tuple[float, ...]] = []
+        for slot_idx, (probability_map, action_values) in enumerate(zip(
+                probabilities_by_slot, action_values_by_index,
+        )):
+            if not isinstance(probability_map, Mapping):
+                raise ValueError(f"slot {slot_idx} probabilities must be a mapping")
+            values = tuple(int(value) for value in action_values)
+            if not values or len(values) > int(self.cfg.max_num_levels):
+                raise ValueError(
+                    f"slot {slot_idx} support size {len(values)} must be in "
+                    f"[1, {self.cfg.max_num_levels}]"
+                )
+            if len(set(values)) != len(values):
+                raise ValueError(f"slot {slot_idx} action values must be unique")
+            if set(probability_map.keys()) != set(values):
+                raise ValueError(
+                    f"slot {slot_idx} probability keys must exactly match "
+                    f"decoded support {values}"
+                )
+            probabilities = tuple(float(probability_map[value]) for value in values)
+            if any(not math.isfinite(probability) or probability <= 0.0
+                   for probability in probabilities):
+                raise ValueError(
+                    f"slot {slot_idx} probabilities must be finite and strictly positive"
+                )
+            if not math.isclose(sum(probabilities), 1.0, rel_tol=0.0, abs_tol=1e-8):
+                raise ValueError(
+                    f"slot {slot_idx} probabilities must sum to 1, "
+                    f"got {sum(probabilities):.12g}"
+                )
+            log_probabilities.append(tuple(math.log(value) for value in probabilities))
+
+        with torch.no_grad():
+            self.slot_head_weight.zero_()
+            self.slot_head_bias.zero_()
+            for slot_idx, values in enumerate(log_probabilities):
+                self.slot_head_bias[slot_idx, :len(values)] = torch.as_tensor(
+                    values,
+                    dtype=self.slot_head_bias.dtype,
+                    device=self.slot_head_bias.device,
+                )
+            self._preferred_per_slot_idx.fill_(-1)
+            self._refresh_preferred_prior_template()
+            self.default_prior_scale = 0.0
+            self._slot_exploration_epsilon.zero_()
+            self._slot_exploration_enabled = False
 
     def ppo_aux_state_dict(self) -> Dict[str, Any]:
         """State not owned by ``nn.Module.state_dict`` but needed for resume."""
@@ -1687,7 +1830,16 @@ def step_to_mask_and_levels(
     if n > max_step_dim:
         raise ValueError(f"step has {n} slots > max_step_dim={max_step_dim}")
     slot_mask = np.zeros(max_step_dim, dtype=bool)
-    slot_mask[:n] = True
+    explicit_slot_mask = getattr(spec, "slot_mask", None)
+    if explicit_slot_mask is None:
+        slot_mask[:n] = True
+    else:
+        explicit_slot_mask = tuple(bool(value) for value in explicit_slot_mask)
+        if len(explicit_slot_mask) != n:
+            raise ValueError(
+                f"step slot_mask has {len(explicit_slot_mask)} values for {n} slots"
+            )
+        slot_mask[:n] = explicit_slot_mask
     levels = np.zeros(max_step_dim, dtype=np.int64)
     for i, d in enumerate(per_slot):
         if int(d) > max_num_levels:

@@ -19,16 +19,21 @@ import json
 import logging
 import math
 import os
+import random
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import torch
 
 from report_format_utils import format_elapsed as _seq_fmt_elapsed
 from report_format_utils import progress_bar as _seq_progress_bar
-from rl_data_points import RLDataPointWriter, make_unique_run_id
+from rl_data_points import (
+    RLDataPointWriter,
+    make_unique_run_id,
+    write_strict_json_file,
+)
 
 from .action_mask import (
     EmpiricalInvalidLevelMask,
@@ -52,6 +57,9 @@ from .sequential_policy import (
     sequential_ppo_update,
     step_to_mask_and_levels,
 )
+
+if TYPE_CHECKING:
+    from .statistical_constraints import BaselineReference
 
 
 def _normalize_supported_rl_algo(value: Any, *, context: str = "rl_algo") -> str:
@@ -106,6 +114,8 @@ class SequentialTrainConfig:
     # "continuous" and "tiered" remain for historical A/B only.
     reward_design: str = "stage1_aligned"
     absolute_episode_start: int = 0
+    planned_total_episodes: Optional[int] = None
+    convergence_resume_state: Optional[Mapping[str, Any]] = None
     warmstart_neighbor_sampling: bool = False
     warmstart_neighbor_ramp_episodes: int = 0
     warmstart_neighbor_max_mutations: int = 12
@@ -155,6 +165,8 @@ class SequentialTrainConfig:
     promotion_margin_window: float = 0.25
     final_selection_top_n: int = 20
     final_selection_validation_trials: int = 20
+    online_constraint_probability: float = 0.50
+    promotion_constraint_probability: float = 0.80
 
 
 # ---------------------------------------------------------------------------
@@ -3156,6 +3168,1127 @@ def _register_run_in_experiments_log(
         log(f"  [experiments][warning] register failed: {exc}")
 
 
+def _resolve_robust_baseline_config(train_cfg: Any, evaluator: Any) -> Tuple[float, float, int]:
+    """Read robust constraint calibration inputs without legacy tolerance math."""
+    raw_precision_tolerance = getattr(evaluator, "stage2_limit_tolerance", None)
+    precision_tolerance = (
+        0.001 if raw_precision_tolerance is None else float(raw_precision_tolerance)
+    )
+    raw_stability_multiplier = getattr(
+        train_cfg,
+        "stage2_stability_multiplier",
+        getattr(evaluator, "stage2_stability_multiplier", None),
+    )
+    stability_multiplier = (
+        2.0 if raw_stability_multiplier is None else float(raw_stability_multiplier)
+    )
+    raw_bootstrap_samples = getattr(train_cfg, "constraint_bootstrap_samples", None)
+    bootstrap_samples = 4096 if raw_bootstrap_samples is None else int(raw_bootstrap_samples)
+    return precision_tolerance, stability_multiplier, bootstrap_samples
+
+
+def _run_legacy_preflight_if_needed(
+        *,
+        robust_mode: bool,
+        run_legacy_preflight: Callable[[], None],
+        ) -> None:
+    """Run the legacy one-shot preflight only outside robust mode."""
+    if not robust_mode:
+        run_legacy_preflight()
+
+
+def _install_robust_baseline_reference(
+        base_env: Any,
+        baseline: Any,
+        weights: Any,
+        reference: "BaselineReference",
+        ) -> None:
+    """Install pooled robust constraints into the reward and environment state."""
+    baseline.loss_mean = float(reference.loss_mean)
+    baseline.metric1_mean = float(reference.metric1_mean)
+    baseline.metric2_mean = float(reference.metric2_mean)
+    baseline.loss_std = float(reference.loss_std)
+    baseline.metric1_std = float(reference.metric1_std)
+    baseline.metric2_std = float(reference.metric2_std)
+    weights.baseline_metric1 = float(reference.metric1_mean)
+    weights.baseline_metric2 = float(reference.metric2_mean)
+    weights.stab_tolerance = float(reference.stability_multiplier)
+    weights.stab_floor = 0.0
+    base_env.statistical_reference = reference
+    base_env.loss_threshold = float(reference.loss_limit)
+    base_env.acc_threshold = float(reference.metric1_limit)
+    base_env.acc_threshold_m2 = float(reference.metric2_limit)
+    base_env.stab_threshold = float(reference.loss_std_limit)
+
+
+def _collect_robust_baseline_reference(
+        *,
+        base_env: Any,
+        baseline_action_vec: Sequence[int],
+        base_seed: int,
+        precision_tolerance: float,
+        stability_multiplier: float,
+        bootstrap_samples: int,
+        baseline_groups: int = 5,
+        trials_per_group: int = 5,
+        max_groups: int = 10,
+        ) -> Tuple["BaselineReference", Dict[str, Any]]:
+    """Collect deterministic grouped baseline trials for robust constraints."""
+    from .seed_utils import derive_baseline_group_probe_seed
+    from .statistical_constraints import (
+        DegenerateBaselineVariance,
+        TrialSeries,
+        build_baseline_reference,
+    )
+
+    original_trials = getattr(base_env.env_cfg, "num_trials_per_step", 1)
+    original_probe_seed = getattr(base_env, "probe_noise_seed", None)
+    reward_weights = getattr(base_env, "reward_weights", None)
+    original_reward_design = (
+        getattr(reward_weights, "reward_design", None)
+        if reward_weights is not None else None
+    )
+    had_statistical_reference = hasattr(base_env, "statistical_reference")
+    original_statistical_reference = getattr(base_env, "statistical_reference", None)
+    action = np.asarray(baseline_action_vec, dtype=np.int64).reshape(-1).copy()
+    groups: List[Any] = []
+    raw_groups: List[Dict[str, Any]] = []
+
+    try:
+        if (
+                reward_weights is not None
+                and str(original_reward_design).strip().lower() == "robust_constrained"
+        ):
+            reward_weights.reward_design = "stage1_aligned"
+        if had_statistical_reference:
+            base_env.statistical_reference = None
+        required_groups = int(baseline_groups)
+        group_trials = int(trials_per_group)
+        group_limit = int(max_groups)
+        if required_groups <= 0 or group_trials <= 0 or group_limit < required_groups:
+            raise ValueError("robust baseline group counts must be positive and ordered")
+        if required_groups * group_trials < 25:
+            raise ValueError("robust baseline calibration requires at least 25 total trials")
+        base_env.env_cfg.num_trials_per_step = group_trials
+        for group_idx in range(group_limit):
+            group_probe_seed = derive_baseline_group_probe_seed(base_seed, group_idx)
+            base_env.probe_noise_seed = group_probe_seed
+            base_env.clear_installed_blb()
+            base_env.reset(seed=group_probe_seed)
+            _state, _reward, _done, info = base_env.step(action)
+            metrics = info.get("metrics") if isinstance(info, Mapping) else None
+            if metrics is None:
+                raise ValueError("robust baseline probe did not return EpisodeMetrics")
+
+            loss_trials = tuple(float(value) for value in metrics.loss_trials)
+            metric1_trials = tuple(float(value) for value in metrics.metric1_trials)
+            metric2_trials = tuple(float(value) for value in metrics.metric2_trials)
+            trial_seeds = tuple(int(value) for value in metrics.trial_seeds)
+            if not (
+                    len(loss_trials) == len(metric1_trials) == len(metric2_trials) == group_trials
+                    and len(trial_seeds) == group_trials
+            ):
+                raise ValueError(
+                    "robust baseline group raw trials and seeds must match trials_per_group"
+                )
+            group = TrialSeries(
+                loss=loss_trials,
+                metric1=metric1_trials,
+                metric2=metric2_trials,
+                seeds=trial_seeds,
+            )
+            groups.append(group)
+            raw_groups.append({
+                "group_index": int(group_idx),
+                "group_probe_seed": int(group_probe_seed),
+                "trial_seeds": [int(value) for value in trial_seeds],
+                "loss_trials": [float(value) for value in loss_trials],
+                "metric1_trials": [float(value) for value in metric1_trials],
+                "metric2_trials": [float(value) for value in metric2_trials],
+            })
+            if len(groups) < required_groups:
+                continue
+            try:
+                reference = build_baseline_reference(
+                    groups,
+                    precision_tolerance=precision_tolerance,
+                    stability_multiplier=stability_multiplier,
+                    bootstrap_samples=bootstrap_samples,
+                    seed=base_seed,
+                )
+            except DegenerateBaselineVariance as exc:
+                if group_idx == group_limit - 1:
+                    exc.raw_groups = tuple(raw_groups)
+                    raise
+                continue
+
+            summary = {
+                "ok": True,
+                "threshold_source": "robust_all_max_blb_baseline",
+                "trial_count": int(reference.trial_count),
+                "group_count": int(len(groups)),
+                "groups": raw_groups,
+                "pooled": {
+                    "trial_count": int(reference.trial_count),
+                    "loss_mean": float(reference.loss_mean),
+                    "metric1_mean": float(reference.metric1_mean),
+                    "metric2_mean": float(reference.metric2_mean),
+                    "loss_std": float(reference.loss_std),
+                    "metric1_std": float(reference.metric1_std),
+                    "metric2_std": float(reference.metric2_std),
+                    "limits": {
+                        "loss": float(reference.loss_limit),
+                        "metric1": float(reference.metric1_limit),
+                        "metric2": float(reference.metric2_limit),
+                        "loss_std": float(reference.loss_std_limit),
+                        "metric1_std": float(reference.metric1_std_limit),
+                        "metric2_std": float(reference.metric2_std_limit),
+                    },
+                },
+                "limits": {
+                    "loss": float(reference.loss_limit),
+                    "metric1": float(reference.metric1_limit),
+                    "metric2": float(reference.metric2_limit),
+                    "loss_std": float(reference.loss_std_limit),
+                    "metric1_std": float(reference.metric1_std_limit),
+                    "metric2_std": float(reference.metric2_std_limit),
+                },
+                "bootstrap": {
+                    "samples": int(reference.bootstrap_samples),
+                    "seed": int(reference.bootstrap_seed),
+                },
+                "precision_tolerance": float(reference.precision_tolerance),
+                "stability_multiplier": float(reference.stability_multiplier),
+            }
+            return reference, summary
+    finally:
+        try:
+            base_env.clear_installed_blb()
+        finally:
+            base_env.env_cfg.num_trials_per_step = original_trials
+            base_env.probe_noise_seed = original_probe_seed
+            if reward_weights is not None and original_reward_design is not None:
+                reward_weights.reward_design = original_reward_design
+            if had_statistical_reference:
+                base_env.statistical_reference = original_statistical_reference
+
+    raise AssertionError("robust baseline collection exhausted without a result")
+
+
+def _build_layerwise_candidate_identity_context(
+        *,
+        train_cfg: Any,
+        evaluator: Any,
+        fusion_map: Any,
+        max_sfs: Any,
+        fixed_gelu: np.ndarray,
+        fixed_softmax: np.ndarray,
+        robust_reference: Any,
+        schedule: Sequence[Any],
+        static_skeletons_baseline: Any,
+        ) -> Dict[str, Any]:
+    """Bind layerwise raw evidence to the complete effective run context."""
+    from .candidate_store import build_candidate_identity_context, sha256_json
+
+    stage1_degrees = {
+        "gelu": [int(value) for value in fixed_gelu.reshape(-1)],
+        "softmax": [int(value) for value in fixed_softmax.reshape(-1)],
+    }
+    threshold_policy = {
+        "precision_tolerance": float(robust_reference.precision_tolerance),
+        "stability_multiplier": float(robust_reference.stability_multiplier),
+        "bootstrap_seed": int(robust_reference.bootstrap_seed),
+        "bootstrap_samples": int(robust_reference.bootstrap_samples),
+        "online_constraint_probability": float(
+            getattr(train_cfg, "online_constraint_probability", 0.50)
+        ),
+        "promotion_constraint_probability": float(
+            getattr(train_cfg, "promotion_constraint_probability", 0.80)
+        ),
+        "final_constraint_probability": float(
+            getattr(train_cfg, "final_constraint_probability", 0.95)
+        ),
+        "limits": {
+            "loss": float(robust_reference.loss_limit),
+            "metric1": float(robust_reference.metric1_limit),
+            "metric2": float(robust_reference.metric2_limit),
+            "loss_std": float(robust_reference.loss_std_limit),
+            "metric1_std": float(robust_reference.metric1_std_limit),
+            "metric2_std": float(robust_reference.metric2_std_limit),
+        },
+    }
+    rescale_root = os.path.realpath(str(train_cfg.inproc_rescale_optimizer_root))
+    return build_candidate_identity_context(
+        action_space_version="stage2_layerwise_12x6_v1",
+        registry_hash=sha256_json(fusion_map),
+        max_sfs_hash=sha256_json(max_sfs),
+        stage1_config_content_hash=sha256_json(stage1_degrees),
+        stage1_gelu_degrees=stage1_degrees["gelu"],
+        stage1_softmax_degrees=stage1_degrees["softmax"],
+        profile=str(train_cfg.profile),
+        rescale_optimizer_mode="in_process_real",
+        rescale_optimizer_root=rescale_root,
+        rescale_optimizer_canonical_hash=sha256_json({
+            "root": rescale_root,
+            "static_skeletons": static_skeletons_baseline,
+        }),
+        decode_version="layerwise_action_v1",
+        dataset=str(train_cfg.profile),
+        model=str(getattr(evaluator, "model_type", "bert-base") or "bert-base"),
+        metric_policy_version="robust_bootstrap_5x5_v1",
+        threshold_policy_hash=sha256_json(threshold_policy),
+        mask_schedule_hash=sha256_json(schedule),
+    )
+
+
+def _run_layerwise_training_branch(
+        *,
+        train_cfg: Any,
+        evaluator: Any,
+        base_env: Any,
+        fusion_map: Any,
+        max_sfs: Any,
+        robust_reference: Any,
+        static_skeletons_baseline: Any,
+        fixed_gelu: np.ndarray,
+        fixed_softmax: np.ndarray,
+        blb_progress_dir: str,
+        baseline_preflight_metrics: Mapping[str, Any],
+        status: Any,
+        resume_checkpoint_path: Any,
+        log: Callable[[str], None],
+        ) -> Dict[str, Any]:
+    """Run Task-7 layerwise PPO without entering legacy block scaffolds."""
+    if robust_reference is None:
+        raise RuntimeError("layerwise robust PPO requires a calibrated statistical reference")
+    if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
+        raise RuntimeError(
+            "layerwise PPO does not use the legacy block episode-parallel runner; "
+            "configure reward_devices for terminal probe parallelism"
+        )
+    bullet = "*"
+
+    from .candidate_store import CandidateStore
+    from .layerwise_env import BLBStage2LayerwiseEnv
+    from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
+    from .layerwise_action import K_LEVELS as LAYERWISE_K_LEVELS
+    from .fusion_fixed_action import build_fusion_fixed_config
+    from .layerwise_runner import (
+        _PROBABILITY_FIELDS,
+        _to_plain_mapping,
+        initialize_layerwise_policy,
+        strict_rank_key,
+        train_layerwise,
+    )
+    from .persistence import write_training_curves
+    from .runner import _build_legacy_compatible_best_noise_config
+    from json_utils import to_jsonable
+
+    layerwise_manifest_path = os.path.join(
+        blb_progress_dir, "layerwise_run_manifest.json",
+    )
+    run_manifest = {
+        "schema_version": "stage2_layerwise_robust_run_v1",
+        "status": "running",
+        "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
+        "profile": str(train_cfg.profile),
+        "decision_granularity": "layer",
+        "reward_design": "robust_constrained",
+        "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
+        "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
+        "planned_episodes": int(train_cfg.total_episodes),
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    write_strict_json_file(layerwise_manifest_path, run_manifest)
+
+    layerwise_env = BLBStage2LayerwiseEnv(
+        base_env=base_env,
+        fusion_map=fusion_map,
+        profile=str(train_cfg.profile),
+    )
+    policy_cfg = SequentialPolicyConfig(
+        state_dim=int(layerwise_env.state_dim),
+        max_step_dim=6,
+        max_num_levels=6,
+        horizon=12,
+        num_layers=12,
+        metadata_width=0,
+        signal_width=4,
+        step_layer_indices=tuple(range(12)),
+        step_block_indices=(3,) * 12,
+    )
+    torch.manual_seed(int(train_cfg.seed))
+    np.random.seed(int(train_cfg.seed) % (2**32))
+    random.seed(int(train_cfg.seed))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
+    initialize_layerwise_policy(policy)
+    optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
+    rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
+    save_path = os.path.join(blb_progress_dir, "blb_stage2_rl_checkpoint_live.pt")
+    candidate_store_path = os.path.join(blb_progress_dir, "candidate_store.jsonl")
+    effective_resume_path = resume_checkpoint_path
+    if not effective_resume_path and os.path.isfile(save_path):
+        effective_resume_path = save_path
+        log(f"  {bullet} 检测到 layerwise live checkpoint，自动 resume: {save_path}")
+    start_episode = 0
+    resumed_best: Dict[str, Any] = {}
+    resumed_convergence_state: Dict[str, Any] = {}
+    resumed_candidate_store_size: Optional[int] = None
+    resumed_diagnostics_jsonl_sizes: Optional[Mapping[str, Any]] = None
+    planned_total_episodes = int(train_cfg.total_episodes)
+    if effective_resume_path and os.path.isfile(effective_resume_path):
+        try:
+            checkpoint = torch.load(
+                effective_resume_path, map_location=device, weights_only=False,
+            )
+        except TypeError:
+            checkpoint = torch.load(effective_resume_path, map_location=device)
+        checkpoint_variant = str(checkpoint.get("rl_variant", "") or "")
+        if checkpoint_variant != rl_variant:
+            raise RuntimeError(
+                f"layerwise checkpoint variant {checkpoint_variant!r} != {rl_variant!r}"
+            )
+        policy.load_state_dict(checkpoint["policy"])
+        if checkpoint.get("policy_ppo_aux") is not None:
+            policy.load_ppo_aux_state_dict(checkpoint["policy_ppo_aux"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        if checkpoint.get("torch_rng_state") is not None:
+            torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
+        if torch.cuda.is_available() and checkpoint.get("cuda_rng_state_all") is not None:
+            torch.cuda.set_rng_state_all([
+                state.cpu() for state in checkpoint["cuda_rng_state_all"]
+            ])
+        if checkpoint.get("numpy_rng_state") is not None:
+            np.random.set_state(checkpoint["numpy_rng_state"])
+        if checkpoint.get("python_rng_state") is not None:
+            random.setstate(checkpoint["python_rng_state"])
+        start_episode = int(checkpoint.get("episode", 0))
+        resumed_best = dict(checkpoint.get("strict_best") or {})
+        resumed_convergence_state = dict(checkpoint.get("convergence_state") or {})
+        resumed_candidate_store_size = checkpoint.get("candidate_store_size")
+        resumed_diagnostics_jsonl_sizes = checkpoint.get("diagnostics_jsonl_sizes")
+        planned_total_episodes = int(checkpoint.get(
+            "planned_total_episodes", planned_total_episodes,
+        ))
+        log(f"  {bullet} layerwise resume @ episode {start_episode}")
+    if start_episode > int(train_cfg.total_episodes):
+        raise RuntimeError(
+            f"layerwise checkpoint episode {start_episode} exceeds requested "
+            f"total {int(train_cfg.total_episodes)}"
+        )
+    ppo = SequentialPPOConfig(
+        lr=float(train_cfg.ppo.lr),
+        clip_range=float(train_cfg.ppo.clip_range),
+        n_epochs=int(train_cfg.ppo.n_epochs),
+        minibatch_size=int(train_cfg.ppo.minibatch_size),
+        ent_coef=float(train_cfg.ppo.ent_coef),
+        value_coef=float(train_cfg.ppo.value_coef),
+        max_grad_norm=float(train_cfg.ppo.max_grad_norm),
+        gamma=1.0,
+        gae_lambda=1.0,
+    )
+    layerwise_train_cfg = SequentialTrainConfig(
+        total_episodes=max(0, int(train_cfg.total_episodes) - int(start_episode)),
+        update_every_n_episodes=max(1, int(train_cfg.rollout_size)),
+        log_every_n_episodes=max(1, int(train_cfg.rollout_size)),
+        seed=int(train_cfg.seed),
+        absolute_episode_start=int(start_episode),
+        planned_total_episodes=int(planned_total_episodes),
+        convergence_resume_state=resumed_convergence_state,
+        ppo=ppo,
+        rl_algo="ppo",
+        ent_coef_schedule="cosine",
+        ent_coef_cosine_start=float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
+        ent_coef_cosine_end=float(getattr(train_cfg, "ent_coef_cosine_end", 0.001)),
+        ent_coef_cosine_plateau=float(
+            getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)
+        ),
+        ent_coef_cosine_lower_bound=float(
+            getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012)
+        ),
+        online_num_trials_per_step=int(train_cfg.num_trials_per_step),
+        promotion_validation_trials=int(
+            getattr(train_cfg, "promotion_validation_trials", 25)
+        ),
+        online_constraint_probability=float(
+            getattr(train_cfg, "online_constraint_probability", 0.50)
+        ),
+        promotion_constraint_probability=float(
+            getattr(train_cfg, "promotion_constraint_probability", 0.80)
+        ),
+        reward_design="robust_constrained",
+    )
+    identity_context = _build_layerwise_candidate_identity_context(
+        train_cfg=train_cfg,
+        evaluator=evaluator,
+        fusion_map=fusion_map,
+        max_sfs=max_sfs,
+        fixed_gelu=fixed_gelu,
+        fixed_softmax=fixed_softmax,
+        robust_reference=robust_reference,
+        schedule=layerwise_env.schedule,
+        static_skeletons_baseline=static_skeletons_baseline,
+    )
+    candidate_store = CandidateStore(candidate_store_path)
+    if resumed_candidate_store_size is not None:
+        candidate_store.recover_to_checkpoint_size(
+            int(resumed_candidate_store_size),
+        )
+    from jsonl_utils import iter_jsonl
+
+    diagnostics_dir = os.path.join(blb_progress_dir, "diagnostics")
+    existing_diagnostic_episodes: Set[int] = set()
+    existing_diagnostic_updates: Set[int] = set()
+    existing_episode_path = os.path.join(diagnostics_dir, "episodes.jsonl")
+    existing_update_path = os.path.join(diagnostics_dir, "ppo_updates.jsonl")
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    run_id_marker = os.path.join(blb_progress_dir, "rl_data_points_run_id.txt")
+    if os.path.isfile(run_id_marker):
+        with open(run_id_marker, encoding="utf-8") as handle:
+            structured_run_id = handle.read().strip()
+    else:
+        run_source = (
+            str(getattr(evaluator, "run_output_dir", "") or "").strip()
+            or os.path.dirname(os.path.normpath(blb_progress_dir))
+        )
+        try:
+            run_id_base = os.path.relpath(run_source, repo_root)
+        except ValueError:
+            run_id_base = run_source
+        structured_run_id = make_unique_run_id(run_id_base)
+        marker_tmp = run_id_marker + ".tmp"
+        with open(marker_tmp, "w", encoding="utf-8") as handle:
+            handle.write(structured_run_id + "\n")
+        os.replace(marker_tmp, run_id_marker)
+    stage2_data_writer = RLDataPointWriter(
+        root_dir=os.path.join(repo_root, "rl_training_data_points"),
+        run_id=structured_run_id,
+        stage="stage2",
+        model_type=str(getattr(evaluator, "model_type", "bert-base") or "bert-base"),
+        dataset=str(train_cfg.profile),
+    )
+
+    def layerwise_slots_view(action_vec):
+        from .action_io import action_vec_to_slots_list
+
+        return action_vec_to_slots_list(
+            action_vec,
+            max_sfs=max_sfs,
+            num_layers=int(evaluator.total_layers),
+            gelu_degree=fixed_gelu,
+            attn_degree=fixed_softmax,
+            profile=str(train_cfg.profile),
+        )
+
+    diag_recorder = RLDiagnosticsRecorder(
+        output_dir=blb_progress_dir,
+        num_layers=12,
+        num_action_slots=int(getattr(base_env, "total_action_dim", 0) or 0),
+        max_action_levels=64,
+        top_k=20,
+        log_fn=log,
+        slots_view_builder=layerwise_slots_view,
+        schema_version="stage2_layerwise_action_v1",
+        data_point_writer=stage2_data_writer,
+        strict_writes=True,
+    )
+    diag_recorder.recover_to_checkpoint_sizes(
+        resumed_diagnostics_jsonl_sizes,
+    )
+    diag_recorder.set_baseline_action_vec(layerwise_env.pending_full_vector)
+    diag_recorder.restore_existing()
+    if os.path.isfile(existing_episode_path):
+        existing_diagnostic_episodes = {
+            int(row["episode"])
+            for row in iter_jsonl(existing_episode_path, errors="raise")
+            if row.get("episode") is not None
+        }
+    if os.path.isfile(existing_update_path):
+        existing_diagnostic_updates = {
+            int(row["completed_episodes"])
+            for row in iter_jsonl(existing_update_path, errors="raise")
+            if row.get("completed_episodes") is not None
+        }
+    probability_thresholds = {
+        "online": float(getattr(train_cfg, "online_constraint_probability", 0.50)),
+        "promotion": float(getattr(train_cfg, "promotion_constraint_probability", 0.80)),
+        "final": float(getattr(train_cfg, "final_constraint_probability", 0.95)),
+    }
+    constraint_limits = {
+        "loss": float(robust_reference.loss_limit),
+        "metric1": float(robust_reference.metric1_limit),
+        "metric2": float(robust_reference.metric2_limit),
+        "loss_std": float(robust_reference.loss_std_limit),
+        "metric1_std": float(robust_reference.metric1_std_limit),
+        "metric2_std": float(robust_reference.metric2_std_limit),
+    }
+    diag_recorder.set_meta({
+        "profile": str(train_cfg.profile),
+        "fixed_label": "gelu_all4_softmax_all6",
+        "fixed_source": "stage2_all4",
+        "rl_variant": rl_variant,
+        "decision_granularity": "layer",
+        "reward_design": "robust_constrained",
+        "total_episodes_planned": int(train_cfg.total_episodes),
+        "rollout_size": int(train_cfg.rollout_size),
+        "ppo_lr": float(train_cfg.ppo.lr),
+        "gamma": 1.0,
+        "gae_lambda": 1.0,
+        "stage2_k_trials": int(train_cfg.num_trials_per_step),
+        "baseline_groups": int(getattr(train_cfg, "baseline_groups", 5)),
+        "baseline_trials_per_group": int(
+            getattr(train_cfg, "baseline_trials_per_group", 5)
+        ),
+        "constraint_bootstrap_samples": int(
+            getattr(train_cfg, "constraint_bootstrap_samples", 4096)
+        ),
+        "constraint_probabilities": probability_thresholds,
+        "constraint_limits": constraint_limits,
+        "baseline_preflight_metrics": dict(baseline_preflight_metrics),
+        "borderline_retest_enabled": False,
+        "borderline_retest_trials_multiplier": 1,
+    })
+    log(f"  {bullet} [data-points] layerwise Stage-2 → {stage2_data_writer.run_dir}")
+
+    episode_records: List[Any] = []
+    best_rank: Optional[Tuple[float, ...]] = None
+    strict_best: Dict[str, Any] = dict(resumed_best)
+    if resumed_best.get("rank_key"):
+        best_rank = tuple(float(value) for value in resumed_best["rank_key"])
+    ppo_update_counter = start_episode // max(1, int(train_cfg.rollout_size))
+    started_at = time.time()
+
+    def build_reloadable_best_group(best_payload: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+        action_vec = best_payload.get("full_vector")
+        if action_vec is None:
+            return None
+        fixed_config = build_fusion_fixed_config(
+            action_vec,
+            profile=str(train_cfg.profile),
+            num_layers=int(evaluator.total_layers),
+            gelu=np.asarray(fixed_gelu, dtype=int),
+            softmax=np.asarray(fixed_softmax, dtype=int),
+            fusion_map=fusion_map,
+            source="stage2_layerwise_strict_best",
+        )
+        group = dict(fixed_config["group"])
+        group["policy_actions"] = best_payload.get("action_matrix")
+        overrides = best_payload.get("boosted_overrides") or {}
+        group["boosted_overrides"] = [
+            {
+                "block_idx": int(block_idx),
+                "layer_idx": int(layer_idx),
+                "field_values": {
+                    str(name): int(value) for name, value in values.items()
+                },
+            }
+            for (block_idx, layer_idx), values in sorted(
+                overrides.items(),
+                key=lambda item: (int(item[0][1]), int(item[0][0])),
+            )
+        ]
+        return group
+
+    def save_layerwise_checkpoint(
+            *,
+            completed: int,
+            strict_best: Optional[Mapping[str, Any]],
+            convergence_state: Optional[Mapping[str, Any]],
+            ) -> None:
+        best_payload = dict(strict_best or {})
+        checkpoint_best_action = best_payload.get("full_vector")
+        checkpoint_best_group = build_reloadable_best_group(best_payload)
+        checkpoint = {
+            "policy": policy.state_dict(),
+            "policy_ppo_aux": policy.ppo_aux_state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "episode": int(completed),
+            "strict_best": best_payload,
+            "best_action": checkpoint_best_action,
+            "blb_v3_best_action_vec": checkpoint_best_action,
+            "blb_v3_best_action_group": checkpoint_best_group,
+            "blb_v3_fusion_count_action": True,
+            "profile": str(train_cfg.profile),
+            "convergence_state": dict(convergence_state or {}),
+            "planned_total_episodes": int(planned_total_episodes),
+            "candidate_store_size": (
+                candidate_store.path.stat().st_size
+                if candidate_store.path.exists() else 0
+            ),
+            "diagnostics_jsonl_sizes": diag_recorder.committed_jsonl_sizes(),
+            "torch_rng_state": torch.get_rng_state(),
+            "cuda_rng_state_all": (
+                torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+            ),
+            "numpy_rng_state": np.random.get_state(),
+            "python_rng_state": random.getstate(),
+            "rl_variant": rl_variant,
+        }
+        tmp_path = save_path + ".tmp"
+        torch.save(checkpoint, tmp_path)
+        os.replace(tmp_path, save_path)
+
+    def on_layerwise_episode(record: Any) -> None:
+        nonlocal best_rank
+        episode_records.append(record)
+        pooled_assessment = _to_plain_mapping(record.assessment)
+        fresh_assessment = _to_plain_mapping(record.fresh_assessment)
+        fresh_metrics = dict(record.metrics or {})
+        pooled_metrics = dict(record.pooled_metrics or {})
+
+        def trials_payload(trials: Any) -> Dict[str, Any]:
+            if trials is None:
+                return {}
+            return {
+                "loss": [float(value) for value in trials.loss],
+                "metric1": [float(value) for value in trials.metric1],
+                "metric2": [float(value) for value in trials.metric2],
+                "seeds": [int(value) for value in trials.seeds],
+            }
+
+        fresh_trials = trials_payload(record.raw_trials)
+        pooled_trials = trials_payload(record.pooled_trials)
+        fresh_probabilities = {
+            name: float(fresh_assessment[name])
+            for name in _PROBABILITY_FIELDS if name in fresh_assessment
+        }
+        pooled_probabilities = {
+            name: float(pooled_assessment[name])
+            for name in _PROBABILITY_FIELDS if name in pooled_assessment
+        }
+        b4_count = sum(int(row[0]) for row in record.action_matrix)
+        k_values = []
+        for layer_idx, row in enumerate(record.action_matrix):
+            for slot_idx in range(1, 6):
+                if layer_idx == 0 and slot_idx == 1:
+                    continue
+                k_values.append(int(LAYERWISE_K_LEVELS[int(row[slot_idx])]))
+        avg_k = float(np.mean(k_values)) if k_values else 13.0
+        is_new_best = False
+        if (
+                record.promotion_status in ("promoted", "already_promoted")
+                and len(pooled_probabilities) == len(_PROBABILITY_FIELDS)
+        ):
+            rank = strict_rank_key({
+                "variable_cost": record.variable_cost,
+                "assessment": pooled_assessment,
+                "metrics": pooled_metrics,
+            })
+            if best_rank is None or rank < best_rank:
+                best_rank = rank
+                is_new_best = True
+        convergence_state = {
+            "stall_update_windows": int(record.stall_update_windows),
+            "converged": bool(record.converged),
+            "extension_required": bool(record.extension_required),
+            "best_robust_feasible_cost": record.best_robust_feasible_cost,
+        }
+        episode_stats = EpisodeStats(
+                episode=int(record.episode_index),
+                total_reward=float(record.reward),
+                terminal_reward=float(record.reward),
+                per_step_sum=0.0,
+                valid_steps=12 - int(record.invalid_steps),
+                invalid_steps=int(record.invalid_steps),
+                steps_taken=12,
+                total_bits=0,
+                fusion_count=24 + b4_count,
+                first_invalid_step=None,
+                first_invalid_block=None,
+                first_invalid_layer=None,
+                early_terminated=False,
+                fusion_count_b2=12,
+                fusion_count_b4=b4_count,
+                fusion_count_b5=12,
+                terminal_priority=int(record.priority),
+                terminal_loss_mean=float(fresh_metrics.get("loss_mean", 0.0)),
+                terminal_loss_std=float(fresh_metrics.get("loss_std", 0.0)),
+                terminal_metric1_mean=float(fresh_metrics.get("metric1_mean", 0.0)),
+                terminal_metric1_std=float(fresh_metrics.get("metric1_std", 0.0)),
+                terminal_metric2_mean=float(fresh_metrics.get("metric2_mean", 0.0)),
+                terminal_metric2_std=float(fresh_metrics.get("metric2_std", 0.0)),
+                terminal_k_gain=13.0 - avg_k,
+                terminal_fusion_gain=float(b4_count) / 12.0,
+                terminal_cost_score=float(record.variable_cost),
+                terminal_cost_rank_score=float(record.variable_cost),
+                raw_trials=fresh_trials,
+                constraint_probabilities=pooled_probabilities,
+                fresh_trials=fresh_trials,
+                pooled_trials=pooled_trials,
+                fresh_metrics={str(k): float(v) for k, v in fresh_metrics.items()},
+                pooled_metrics={str(k): float(v) for k, v in pooled_metrics.items()},
+                fresh_constraint_probabilities=fresh_probabilities,
+                pooled_constraint_probabilities=pooled_probabilities,
+                fresh_trial_count=int(record.fresh_trial_count),
+                pooled_trial_count=int(record.pooled_trial_count),
+                reward_evidence=str(record.reward_evidence),
+                ranking_evidence=str(record.ranking_evidence),
+                constraint_thresholds={
+                    **constraint_limits,
+                    **probability_thresholds,
+                },
+                variable_cost=float(record.variable_cost),
+                layer_action_matrix=[list(row) for row in record.action_matrix],
+                block4_entropy=record.block4_entropy,
+                k_entropy=record.k_entropy,
+                promotion_trial_count=int(record.promoted_trial_count),
+                promotion_status=str(record.promotion_status),
+                convergence_state=convergence_state,
+            )
+        if int(record.episode_index) not in existing_diagnostic_episodes:
+            diag_recorder.record_episode(
+                episode_stats=episode_stats,
+                full_action_vec=np.asarray(record.pending_full_vector, dtype=np.int64),
+                is_new_best=is_new_best,
+                best_reward_so_far=float(record.reward),
+            )
+            existing_diagnostic_episodes.add(int(record.episode_index))
+        status.update_after_episode(
+            int(record.episode_index) + 1,
+            float(record.reward),
+            {
+                "priority": int(record.priority),
+                "variable_cost": float(record.variable_cost),
+                "block4_entropy": record.block4_entropy,
+                "k_entropy": record.k_entropy,
+                **convergence_state,
+            },
+        )
+
+    def on_layerwise_update(metrics: Mapping[str, Any], completed: int, record: Any) -> None:
+        nonlocal ppo_update_counter, strict_best, best_rank
+        ppo_update_counter += 1
+        strict_best = dict(metrics.get("strict_best") or {})
+        best_rank = (
+            tuple(float(value) for value in strict_best["rank_key"])
+            if strict_best.get("rank_key") else None
+        )
+        recent = episode_records[-max(1, int(train_cfg.rollout_size)):]
+        recent_rewards = [float(item.reward) for item in recent] or [0.0]
+        update_stats = PPOUpdateStats(
+            update=ppo_update_counter,
+            completed_episodes=int(completed),
+            policy_loss=float(metrics.get("policy_loss", 0.0)),
+            value_loss=float(metrics.get("value_loss", 0.0)),
+            entropy=float(metrics.get("entropy", 0.0)),
+            clip_fraction=float(metrics.get("clip_fraction", 0.0)),
+            n_samples=int(metrics.get("n_samples", len(recent) * 12)),
+            window_mean_return=float(np.mean(recent_rewards)),
+            window_max_return=float(np.max(recent_rewards)),
+            window_min_return=float(np.min(recent_rewards)),
+            window_mean_invalid=float(np.mean([item.invalid_steps for item in recent])),
+            best_reward_so_far=float(max(item.reward for item in episode_records)),
+            elapsed_sec=float(time.time() - started_at),
+            ent_coef=float(metrics.get("ent_coef", 0.0)),
+            approx_kl=float(metrics.get("approx_kl", 0.0)),
+            kl_early_stop=bool(metrics.get("kl_early_stop", False)),
+            lr=float(metrics.get("lr", train_cfg.ppo.lr)),
+            lr_scale=float(metrics.get("lr_scale", 1.0)),
+            entropy_recovery_delta=float(
+                metrics.get("entropy_recovery_delta", 0.0)
+            ),
+            return_mean=float(metrics.get("return_mean", 0.0)),
+            return_std=float(metrics.get("return_std", 1.0)),
+            block4_entropy=metrics.get("block4_entropy"),
+            k_entropy=metrics.get("k_entropy"),
+            stall_update_windows=int(metrics.get("stall_update_windows", 0)),
+            converged=bool(metrics.get("converged", False)),
+            extension_required=bool(metrics.get("extension_required", False)),
+            best_robust_feasible_cost=metrics.get("best_robust_feasible_cost"),
+        )
+        if int(completed) not in existing_diagnostic_updates:
+            diag_recorder.record_ppo_update(update_stats)
+            existing_diagnostic_updates.add(int(completed))
+        save_layerwise_checkpoint(
+            completed=int(completed),
+            strict_best=strict_best,
+            convergence_state=metrics.get("convergence_state"),
+        )
+        status.update_after_ppo_update(
+            int(ppo_update_counter),
+            {
+                "completed_episodes": int(completed),
+                "policy_loss": float(update_stats.policy_loss),
+                "value_loss": float(update_stats.value_loss),
+                "entropy": float(update_stats.entropy),
+                "clip_fraction": float(update_stats.clip_fraction),
+                "ent_coef": update_stats.ent_coef,
+                "approx_kl": float(update_stats.approx_kl),
+                "kl_early_stop": update_stats.kl_early_stop,
+                "lr": update_stats.lr,
+                "lr_scale": update_stats.lr_scale,
+                "entropy_recovery_delta": update_stats.entropy_recovery_delta,
+                "return_mean": update_stats.return_mean,
+                "return_std": update_stats.return_std,
+                "window_mean_return": float(update_stats.window_mean_return),
+                "window_max_return": float(update_stats.window_max_return),
+                "window_min_return": float(update_stats.window_min_return),
+                "window_mean_invalid": float(update_stats.window_mean_invalid),
+                "block4_entropy": update_stats.block4_entropy,
+                "k_entropy": update_stats.k_entropy,
+                "stall_update_windows": int(update_stats.stall_update_windows),
+                "converged": bool(update_stats.converged),
+                "extension_required": bool(update_stats.extension_required),
+                "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
+            },
+        )
+        if strict_best.get("reward") is not None and strict_best.get("full_vector"):
+            best_full_vector = [int(value) for value in strict_best["full_vector"]]
+            current_full_vector = [
+                int(value) for value in record.pending_full_vector
+            ]
+            status.set_best(
+                best_reward=float(strict_best["reward"]),
+                best_action_vec=best_full_vector,
+                best_breakdown={
+                    "priority": 3,
+                    "variable_cost": strict_best.get("variable_cost"),
+                    "action_matrix": strict_best.get("action_matrix"),
+                    "assessment": strict_best.get("assessment"),
+                    "metrics": strict_best.get("metrics"),
+                },
+                best_episode=(
+                    int(record.episode_index) + 1
+                    if current_full_vector == best_full_vector else None
+                ),
+            )
+        if int(completed) % max(1, int(train_cfg.save_interval)) == 0:
+            diag_recorder.flush_periodic()
+    status.set_phase("PPO training (12-step layerwise robust)")
+    training_completed = False
+    summary: Dict[str, Any]
+    try:
+        summary = train_layerwise(
+            env=layerwise_env,
+            policy=policy,
+            train_cfg=layerwise_train_cfg,
+            candidate_store=candidate_store,
+            identity_context=identity_context,
+            device=device,
+            optimizer=optimizer,
+            on_episode_end=on_layerwise_episode,
+            on_ppo_update_end=on_layerwise_update,
+        )
+        strict_best = dict(summary.get("strict_best") or {})
+        save_layerwise_checkpoint(
+            completed=int(summary.get("completed_episodes", start_episode)),
+            strict_best=summary.get("strict_best"),
+            convergence_state=summary.get("convergence_state"),
+        )
+        training_completed = True
+    finally:
+        try:
+            if not training_completed:
+                status.set_phase("failed")
+            run_manifest.update({
+                "status": ("completed" if training_completed else "failed"),
+                "completed_episodes": int(start_episode + len(episode_records)),
+                "ppo_update_count": int(ppo_update_counter),
+                "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
+            write_strict_json_file(layerwise_manifest_path, run_manifest)
+        finally:
+            try:
+                diag_recorder.finalize(
+                    status=("completed" if training_completed else "failed")
+                )
+            finally:
+                try:
+                    base_env.clear_installed_blb()
+                finally:
+                    for restore_name in (
+                            "restore_layer_block5_noise", "restore_layer_block4_noise",
+                            "restore_layer_block3_noise", "restore_layer_block2_noise",
+                            "restore_layer_block1_noise", "restore_blb_first_input_noise",
+                    ):
+                        method = getattr(evaluator.reversible_handler, restore_name, None)
+                        if method is None:
+                            continue
+                        try:
+                            method(layer_indices=list(range(evaluator.total_layers)))
+                        except Exception:
+                            pass
+                    evaluator.apply_configuration(fixed_gelu, fixed_softmax)
+    status.set_phase("completed")
+
+    compact_summary = {
+        "schema_version": "stage2_layerwise_robust_summary_v1",
+        "status": "completed",
+        "rl_variant": rl_variant,
+        "completed_episodes": int(summary.get("completed_episodes", start_episode)),
+        "best_action_matrix": summary.get("best_action_matrix"),
+        "best_full_vector": summary.get("best_full_vector"),
+        "best_assessment": summary.get("best_assessment"),
+        "strict_best_assessment": summary.get("best_assessment"),
+        "best_metrics": summary.get("best_metrics"),
+        "best_variable_cost": summary.get("best_variable_cost"),
+        "best_reward": summary.get("best_reward"),
+        "best_promotion_evidence": summary.get("best_promotion_evidence"),
+        "final_evidence": {
+            "status": (
+                "pending_post_search_revalidation"
+                if summary.get("best_full_vector") is not None else "no_candidate"
+            ),
+            "required_probability": float(
+                getattr(train_cfg, "final_constraint_probability", 0.95)
+            ),
+            "required_trial_count": int(
+                getattr(train_cfg, "final_selection_validation_trials", 25)
+            ),
+            "current_assessment": summary.get("best_assessment"),
+            "note": (
+                "Promotion evidence is not final revalidation evidence; "
+                "Task-9 revalidation must complete before local-optimum claims."
+            ),
+        },
+        "block4_entropy": summary.get("block4_entropy"),
+        "k_entropy": summary.get("k_entropy"),
+        "stall_update_windows": summary.get("stall_update_windows"),
+        "converged": bool(summary.get("converged", False)),
+        "extension_required": bool(summary.get("extension_required", False)),
+        "recommended_extension_episodes": int(
+            summary.get("recommended_extension_episodes", 0) or 0
+        ),
+        "constraint_probability_thresholds": probability_thresholds,
+        "constraint_limits": constraint_limits,
+        "baseline_reference": dict(baseline_preflight_metrics),
+        "ppo_update_count": int(len(existing_diagnostic_updates)),
+        "candidate_store": candidate_store.path,
+        "checkpoint": save_path,
+        "structured_data_dir": stage2_data_writer.run_dir,
+    }
+    compact_summary = to_jsonable(compact_summary, stringify_unknown=True)
+    write_strict_json_file(
+        os.path.join(blb_progress_dir, "layerwise_summary.json"),
+        compact_summary,
+    )
+    stage2_data_writer.write_summary(compact_summary)
+    stage2_data_writer.close()
+
+    curve_series = {
+        "returns": [], "loss": [], "metric1": [], "metric2": [],
+        "fusion": [], "avg_k": [], "entropy": [], "entropy_episode": [],
+    }
+    if os.path.isfile(existing_episode_path):
+        for row in iter_jsonl(existing_episode_path, errors="raise"):
+            curve_series["returns"].append(float(row.get("total_reward", 0.0)))
+            curve_series["loss"].append(float(row.get("terminal_loss_mean", 0.0)))
+            curve_series["metric1"].append(float(row.get("terminal_metric1_mean", 0.0)))
+            curve_series["metric2"].append(float(row.get("terminal_metric2_mean", 0.0)))
+            curve_series["fusion"].append(int(row.get("fusion_count", 0)))
+            curve_series["avg_k"].append(
+                13.0 - float(row.get("terminal_k_gain", 0.0))
+            )
+    if os.path.isfile(existing_update_path):
+        for row in iter_jsonl(existing_update_path, errors="raise"):
+            curve_series["entropy"].append(float(row.get("entropy", 0.0)))
+            curve_series["entropy_episode"].append(
+                int(row.get("completed_episodes", 0))
+            )
+    if curve_series["returns"]:
+        write_training_curves(
+            blb_progress_dir,
+            episode_returns=curve_series["returns"],
+            episode_losses=curve_series["loss"],
+            episode_metric1s=curve_series["metric1"],
+            episode_metric2s=curve_series["metric2"],
+            episode_fusion_counts=curve_series["fusion"],
+            episode_avg_ks=curve_series["avg_k"],
+            baselines={
+                "loss": float(robust_reference.loss_mean),
+                "metric1": float(robust_reference.metric1_mean),
+                "metric2": float(robust_reference.metric2_mean),
+                "avg_k": 13.0,
+            },
+            entropy_series=curve_series["entropy"],
+            entropy_episodes=curve_series["entropy_episode"],
+            metric1_name="metric1",
+            metric2_name="metric2",
+            log_fn=log,
+        )
+
+    best_full_vector = summary.get("best_full_vector")
+    best_action_matrix = summary.get("best_action_matrix")
+    best_action_group = build_reloadable_best_group({
+        "full_vector": best_full_vector,
+        "action_matrix": best_action_matrix,
+        "boosted_overrides": summary.get("best_boosted_overrides") or {},
+    }) if best_full_vector is not None else None
+    cost_reference_noise_config = evaluator._get_max_noise_configuration()
+    cost_reference_tot_c, _ = evaluator.get_noise_simulated_cost(
+        **cost_reference_noise_config
+    )
+    legacy_best = _build_legacy_compatible_best_noise_config(evaluator)
+    rewards = list(summary.get("episode_rewards") or [])
+    best_reward = summary.get("best_reward")
+    if best_reward is None:
+        best_reward = -float("inf")
+    limits = {
+        "loss": float(robust_reference.loss_limit),
+        "metric1": float(robust_reference.metric1_limit),
+        "metric2": float(robust_reference.metric2_limit),
+        "loss_std": float(robust_reference.loss_std_limit),
+        "metric1_std": float(robust_reference.metric1_std_limit),
+        "metric2_std": float(robust_reference.metric2_std_limit),
+    }
+    return {
+        "fixed_gelu": fixed_gelu.copy(),
+        "fixed_softmax": fixed_softmax.copy(),
+        "baseline_noise_config": {
+            key: value.copy() for key, value in cost_reference_noise_config.items()
+        },
+        "baseline_tot_c": float(cost_reference_tot_c),
+        "best_noise_config": {key: value.copy() for key, value in legacy_best.items()},
+        "stable_search_best_noise_config": {
+            key: value.copy() for key, value in legacy_best.items()
+        },
+        "stable_joint_best_noise_config": {
+            key: value.copy() for key, value in legacy_best.items()
+        },
+        "limit_loss": limits["loss"],
+        "limit_p": limits["metric1"],
+        "limit_s": limits["metric2"],
+        "proxy_limit_loss": limits["loss"],
+        "proxy_limit_p": limits["metric1"],
+        "proxy_limit_s": limits["metric2"],
+        "search_limits": limits,
+        "all_max_blb_baseline_metrics": dict(baseline_preflight_metrics),
+        "status": "completed",
+        "blb_v3_best_action_vec": best_full_vector,
+        "blb_v3_best_action_group": best_action_group,
+        "blb_v3_layerwise_best_action_group": best_action_group,
+        "blb_v3_best_reward": float(best_reward),
+        "blb_v3_profile": str(train_cfg.profile),
+        "blb_v3_fusion_count_action": True,
+        "blb_v3_total_episodes": int(train_cfg.total_episodes),
+        "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
+        "selection_diagnostics": {
+            "selection_mode": "layerwise_robust_variable_cost_strict",
+            "best_action_vec": best_full_vector,
+            "best_action_matrix": best_action_matrix,
+            "best_assessment": summary.get("best_assessment"),
+            "best_metrics": summary.get("best_metrics"),
+            "best_variable_cost": summary.get("best_variable_cost"),
+            "best_promotion_evidence": summary.get("best_promotion_evidence"),
+            "final_evidence": compact_summary["final_evidence"],
+        },
+        "sequential_diagnostics": {
+            "horizon": 12,
+            "max_step_dim": 6,
+            "state_dim": int(layerwise_env.state_dim),
+            "episode_count": int(summary.get("completed_episodes", len(rewards))),
+            "ppo_metric_count": int(len(existing_diagnostic_updates)),
+            "block4_entropy": summary.get("block4_entropy"),
+            "k_entropy": summary.get("k_entropy"),
+            "converged": bool(summary.get("converged", False)),
+            "extension_required": bool(summary.get("extension_required", False)),
+        },
+        "layerwise_summary": summary,
+    }
+
+
 def run_sequential_via_runner(
         *,
         runner,                           # BLBStage2RLRunner (avoid circular import)
@@ -3214,8 +4347,24 @@ def run_sequential_via_runner(
     from .action_io import action_vec_to_slots_list
 
     ev = runner.evaluator
+    robust_mode = (
+        str(getattr(train_cfg, "reward_design", "")).strip().lower()
+        == "robust_constrained"
+    )
+    from .layerwise_runner import resolve_decision_path
+    decision_path = resolve_decision_path(
+        fusion_count_action=bool(getattr(train_cfg, "fusion_count_action", False)),
+        decision_granularity=str(
+            getattr(train_cfg, "decision_granularity", "block")
+        ),
+        reward_design=str(getattr(train_cfg, "reward_design", "stage1_aligned")),
+    )
     bullet = "*"
     log = runner._make_log_safe(ev.log)
+    active_rl_mode = (
+        "layerwise_robust" if decision_path == "layerwise"
+        else "sequential_per_block"
+    )
 
     # ---------- 0.1) Persistent dir ----------
     legacy_progress_dir = str(getattr(ev, "noise_stage_progress_dir", "") or "")
@@ -3227,9 +4376,20 @@ def run_sequential_via_runner(
 
     _seq_log_major_rule(
         log,
-        "阶段 5 · 二阶段噪声强化学习（BLB v3 · per-block sequential）",
+        (
+            "阶段 5 · 二阶段噪声强化学习（BLB v3 · 12-step layerwise robust）"
+            if decision_path == "layerwise"
+            else "阶段 5 · 二阶段噪声强化学习（BLB v3 · per-block sequential）"
+        ),
     )
-    log(f"  {bullet} 模式（mode）：horizon=59 per-block sequential（自 2026-05-15 起为默认）")
+    log(
+        f"  {bullet} 模式（mode）："
+        + (
+            "horizon=12 layerwise，max_step_dim=6"
+            if decision_path == "layerwise"
+            else "horizon=59 per-block sequential"
+        )
+    )
     log(f"  {bullet} 固定 GELU/Softmax 来源（source）：{fixed_source}    标签（label）：{fixed_label}")
     log(f"  {bullet} GELU 离散阶数向量:   {np.asarray(fixed_gelu, dtype=int).tolist()}")
     log(f"  {bullet} Softmax 离散阶数向量: {np.asarray(fixed_softmax, dtype=int).tolist()}")
@@ -3251,7 +4411,7 @@ def run_sequential_via_runner(
         extra_meta={
             "fixed_label": str(fixed_label),
             "fixed_source": str(fixed_source),
-            "rl_mode": "sequential_per_block",
+            "rl_mode": active_rl_mode,
             "rescale_optimizer": "in_process_real",
             "rescale_optimizer_root": str(train_cfg.inproc_rescale_optimizer_root),
         },
@@ -3433,39 +4593,52 @@ def run_sequential_via_runner(
     # (reserved pseudo-episode -1) so the calibrated acc/stab thresholds are
     # identical for any GPU count and across reruns. Legacy mode (flag unset)
     # keeps the true-random preflight bit-for-bit.
-    if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
-        from .seed_utils import PREFLIGHT_EPISODE, derive_probe_seed
-        base_env.probe_noise_seed = derive_probe_seed(
-            int(getattr(train_cfg, "seed", 42) or 42), PREFLIGHT_EPISODE,
-        )
-        log(
-            f"  {bullet} [stage2-parallel] deterministic preflight probe seed = "
-            f"{base_env.probe_noise_seed}"
-        )
-    try:
-        base_env.reset(seed=int(train_cfg.seed))
-        _, _preflight_reward, _, preflight_info = base_env.step(baseline_action_vec)
-        noisy_metrics = preflight_info.get("metrics")
-        if noisy_metrics is not None:
-            noisy_baseline_metric1 = float(getattr(noisy_metrics, "metric1_mean", baseline_clean_metric1))
-            noisy_baseline_metric2 = float(getattr(noisy_metrics, "metric2_mean", baseline_clean_metric2))
-            raw_std = float(getattr(noisy_metrics, "loss_std", 0.0))
-            noisy_baseline_loss_std = raw_std if np.isfinite(raw_std) else 0.0
-            raw_m1_std = float(getattr(noisy_metrics, "metric1_std", 0.0))
-            noisy_baseline_metric1_std = raw_m1_std if np.isfinite(raw_m1_std) else 0.0
-            raw_m2_std = float(getattr(noisy_metrics, "metric2_std", 0.0))
-            noisy_baseline_metric2_std = raw_m2_std if np.isfinite(raw_m2_std) else 0.0
-            raw_mean = float(getattr(noisy_metrics, "loss_mean", baseline.loss_mean))
-            noisy_baseline_loss_mean = raw_mean if np.isfinite(raw_mean) else float(baseline.loss_mean)
-            # Overwrite baseline std fields with the noisy preflight values —
-            # these feed v3 combined_stab_excess thresholds. Keep means tied to
-            # the clean reference so rank/report code has a stable frame.
-            baseline.loss_std = noisy_baseline_loss_std
-            baseline.metric1_std = noisy_baseline_metric1_std
-            baseline.metric2_std = noisy_baseline_metric2_std
-            preflight_ok = True
-    except Exception as exc:
-        log(f"  [baseline-preflight][warning] noisy probe failed: {exc}")
+    def run_legacy_preflight() -> None:
+        nonlocal noisy_baseline_metric1
+        nonlocal noisy_baseline_metric2
+        nonlocal noisy_baseline_loss_std
+        nonlocal noisy_baseline_metric1_std
+        nonlocal noisy_baseline_metric2_std
+        nonlocal noisy_baseline_loss_mean
+        nonlocal preflight_ok
+        if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
+            from .seed_utils import PREFLIGHT_EPISODE, derive_probe_seed
+            base_env.probe_noise_seed = derive_probe_seed(
+                int(getattr(train_cfg, "seed", 42) or 42), PREFLIGHT_EPISODE,
+            )
+            log(
+                f"  {bullet} [stage2-parallel] deterministic preflight probe seed = "
+                f"{base_env.probe_noise_seed}"
+            )
+        try:
+            base_env.reset(seed=int(train_cfg.seed))
+            _, _preflight_reward, _, preflight_info = base_env.step(baseline_action_vec)
+            noisy_metrics = preflight_info.get("metrics")
+            if noisy_metrics is not None:
+                noisy_baseline_metric1 = float(getattr(noisy_metrics, "metric1_mean", baseline_clean_metric1))
+                noisy_baseline_metric2 = float(getattr(noisy_metrics, "metric2_mean", baseline_clean_metric2))
+                raw_std = float(getattr(noisy_metrics, "loss_std", 0.0))
+                noisy_baseline_loss_std = raw_std if np.isfinite(raw_std) else 0.0
+                raw_m1_std = float(getattr(noisy_metrics, "metric1_std", 0.0))
+                noisy_baseline_metric1_std = raw_m1_std if np.isfinite(raw_m1_std) else 0.0
+                raw_m2_std = float(getattr(noisy_metrics, "metric2_std", 0.0))
+                noisy_baseline_metric2_std = raw_m2_std if np.isfinite(raw_m2_std) else 0.0
+                raw_mean = float(getattr(noisy_metrics, "loss_mean", baseline.loss_mean))
+                noisy_baseline_loss_mean = raw_mean if np.isfinite(raw_mean) else float(baseline.loss_mean)
+                # Overwrite baseline std fields with the noisy preflight values —
+                # these feed v3 combined_stab_excess thresholds. Keep means tied to
+                # the clean reference so rank/report code has a stable frame.
+                baseline.loss_std = noisy_baseline_loss_std
+                baseline.metric1_std = noisy_baseline_metric1_std
+                baseline.metric2_std = noisy_baseline_metric2_std
+                preflight_ok = True
+        except Exception as exc:
+            log(f"  [baseline-preflight][warning] noisy probe failed: {exc}")
+
+    _run_legacy_preflight_if_needed(
+        robust_mode=robust_mode,
+        run_legacy_preflight=run_legacy_preflight,
+    )
 
     # Resolve gates from the noisy preflight + the user's tolerances.
     # tolerances come from rl_tune.py CLI (stage2_limit_tolerance,
@@ -3581,6 +4754,61 @@ def run_sequential_via_runner(
         "stability_floor": float(stab_floor),
         "threshold_source": "noisy_all_max_blb_baseline",
     }
+
+    robust_reference = None
+    if robust_mode:
+        precision_tolerance, stability_multiplier, bootstrap_samples = (
+            _resolve_robust_baseline_config(train_cfg, ev)
+        )
+        configured_baseline_groups = int(getattr(train_cfg, "baseline_groups", 5))
+        robust_reference, robust_summary = _collect_robust_baseline_reference(
+            base_env=base_env,
+            baseline_action_vec=baseline_action_vec,
+            base_seed=int(train_cfg.seed),
+            precision_tolerance=precision_tolerance,
+            stability_multiplier=stability_multiplier,
+            bootstrap_samples=bootstrap_samples,
+            baseline_groups=configured_baseline_groups,
+            trials_per_group=int(getattr(train_cfg, "baseline_trials_per_group", 5)),
+            max_groups=max(10, 2 * configured_baseline_groups),
+        )
+        _install_robust_baseline_reference(
+            base_env, baseline, weights, robust_reference,
+        )
+        base_env.statistical_gate_probability = float(
+            getattr(train_cfg, "online_constraint_probability", 0.50)
+        )
+        stab_floor = float(weights.stab_floor)
+        noisy_baseline_loss_mean = float(robust_reference.loss_mean)
+        noisy_baseline_metric1 = float(robust_reference.metric1_mean)
+        noisy_baseline_metric2 = float(robust_reference.metric2_mean)
+        noisy_baseline_loss_std = float(robust_reference.loss_std)
+        noisy_baseline_metric1_std = float(robust_reference.metric1_std)
+        noisy_baseline_metric2_std = float(robust_reference.metric2_std)
+        allowed_acc_drop = float(robust_reference.precision_tolerance)
+        stability_tol = float(robust_reference.stability_multiplier)
+        stab_threshold_loss = float(robust_reference.loss_std_limit)
+        stab_threshold_m1 = float(robust_reference.metric1_std_limit)
+        stab_threshold_m2 = float(robust_reference.metric2_std_limit)
+        baseline_preflight_metrics["robust_reference"] = robust_summary
+        baseline_preflight_metrics.update(robust_summary)
+        baseline_preflight_metrics.update({
+            "metric1_mean": noisy_baseline_metric1,
+            "metric2_mean": noisy_baseline_metric2,
+            "loss_mean": noisy_baseline_loss_mean,
+            "metric1_std": noisy_baseline_metric1_std,
+            "metric2_std": noisy_baseline_metric2_std,
+            "loss_std": noisy_baseline_loss_std,
+            "metric1_threshold": float(robust_reference.metric1_limit),
+            "metric2_threshold": float(robust_reference.metric2_limit),
+            "loss_threshold": float(robust_reference.loss_limit),
+            "metric1_std_threshold": float(robust_reference.metric1_std_limit),
+            "metric2_std_threshold": float(robust_reference.metric2_std_limit),
+            "loss_std_threshold": float(robust_reference.loss_std_limit),
+            "limit_tolerance": float(robust_reference.precision_tolerance),
+            "stability_tolerance": float(robust_reference.stability_multiplier),
+            "stability_floor": float(weights.stab_floor),
+        })
 
     log(
         f"  {bullet} 基线噪声预热（noisy baseline preflight）："
@@ -3703,6 +4931,23 @@ def run_sequential_via_runner(
                 f"  {bullet} [fusion] fast-reward (online-K=1) disabled so every episode "
                 "gets a real K-trial stability std."
             )
+    if decision_path == "layerwise":
+        return _run_layerwise_training_branch(
+            train_cfg=train_cfg,
+            evaluator=ev,
+            base_env=base_env,
+            fusion_map=fusion_map,
+            max_sfs=max_sfs,
+            robust_reference=robust_reference,
+            static_skeletons_baseline=ss_baseline_obj,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            blb_progress_dir=blb_progress_dir,
+            baseline_preflight_metrics=baseline_preflight_metrics,
+            status=status,
+            resume_checkpoint_path=resume_checkpoint_path,
+            log=log,
+        )
     seq_env = BLBStage2SequentialEnv(base_env=base_env, env_cfg=seq_env_cfg, fusion_map=fusion_map)
 
     # ---------- 5.05) Episode-parallel rollout (fusion mode, opt-in 2026-06-10) ----------

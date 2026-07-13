@@ -1,0 +1,4044 @@
+{
+  "schema_version": "fusion_count_map_report_v1",
+  "generated_at_utc": "2026-07-10T13:57:15+00:00",
+  "profile": "mrpc",
+  "num_layers": 12,
+  "stage1_gelu": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+  ],
+  "stage1_softmax": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "k_levels": [
+    8,
+    9,
+    11,
+    13,
+    10,
+    12
+  ],
+  "baseline_k_index": 3,
+  "baseline_k_value": 13,
+  "schedule_occurrences": {
+    "block1_mrpc": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "block2_mrpc": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "block4": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "block5_n4": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  "graphs": [
+    {
+      "graph_key": "block1_mrpc",
+      "block_idx": 1,
+      "gelu_degree": 4,
+      "attn_degree": 2,
+      "k_slot_index": 8,
+      "block_num_slots": 9,
+      "available_fusion_counts": [
+        0
+      ],
+      "current_schedule_layers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "current_schedule_occurrences": 11,
+      "options": [
+        {
+          "option_id": 0,
+          "fusion_count": 0,
+          "total_bits": 213.0,
+          "total_variance": 4.152227201928805e-09,
+          "changed_raw_slots_vs_fusion0": [],
+          "changed_real_slots_vs_fusion0": [],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B1.F.gelu_out_sf",
+              "field": "gelu_out_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 30,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B1.W.wffn2_sf",
+              "field": "wffn2_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 2,
+              "label": "B1.S.mean_inv_d_sf",
+              "field": "mean_inv_d_sf",
+              "kind": "S",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 3,
+              "label": "B1.S.var_inv_d_sf",
+              "field": "var_inv_d_sf",
+              "kind": "S",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B1.R.mean_rescale_sf",
+              "field": "mean_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 30,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B1.R.var_rescale_sf",
+              "field": "var_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 27,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B1.R.wffn2_rescale_sf",
+              "field": "wffn2_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B1.R.square_rescale_sf",
+              "field": "square_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B1.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "gelu_out_sf": 30,
+            "wffn2_sf": 20,
+            "mean_inv_d_sf": 20,
+            "var_inv_d_sf": 20,
+            "mean_rescale_sf": 30,
+            "var_rescale_sf": 27
+          }
+        }
+      ]
+    },
+    {
+      "graph_key": "block2_mrpc",
+      "block_idx": 2,
+      "gelu_degree": 4,
+      "attn_degree": 2,
+      "k_slot_index": 22,
+      "block_num_slots": 23,
+      "available_fusion_counts": [
+        0,
+        1
+      ],
+      "current_schedule_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "current_schedule_occurrences": 12,
+      "options": [
+        {
+          "option_id": 0,
+          "fusion_count": 0,
+          "total_bits": 263.0,
+          "total_variance": 6.360233383562417e-06,
+          "changed_raw_slots_vs_fusion0": [],
+          "changed_real_slots_vs_fusion0": [],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B2.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 28,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B2.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 2,
+              "label": "B2.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 3,
+              "label": "B2.W.wk_sf",
+              "field": "wk_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B2.W.wv_sf",
+              "field": "wv_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B2.M.kt_mask1_sf",
+              "field": "kt_mask1_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 15,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B2.M.kt_mask2_sf",
+              "field": "kt_mask2_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 15,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B2.M.qkt_merge_mask_sf",
+              "field": "qkt_merge_mask_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 15,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B2.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 28,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B2.R.kt_mask2_rescale_sf",
+              "field": "kt_mask2_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B2.R.qkt_merge_mask_rescale_sf",
+              "field": "qkt_merge_mask_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B2.W.wq_sf",
+              "field": "wq_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B2.M.q_mask1_sf",
+              "field": "q_mask1_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B2.M.q_mask2_sf",
+              "field": "q_mask2_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B2.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B2.R.wk_rescale_sf",
+              "field": "wk_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 16,
+              "label": "B2.R.wq_rescale_sf",
+              "field": "wq_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 17,
+              "label": "B2.R.wv_rescale_sf",
+              "field": "wv_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 18,
+              "label": "B2.R.kt_mask1_rescale_sf",
+              "field": "kt_mask1_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 28,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 19,
+              "label": "B2.R.q_mask1_rescale_sf",
+              "field": "q_mask1_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 20,
+              "label": "B2.R.q_mask2_rescale_sf",
+              "field": "q_mask2_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 21,
+              "label": "B2.R.qkt_matmul_rescale_sf",
+              "field": "qkt_matmul_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 28,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 22,
+              "label": "B2.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "inv_std_fresh_sf": 28,
+            "gamma_sf": 20,
+            "wk_sf": 22,
+            "kt_mask1_sf": 15,
+            "kt_mask2_sf": 15,
+            "qkt_merge_mask_sf": 15,
+            "gamma_rescale_sf": 28,
+            "kt_mask1_rescale_sf": 28,
+            "qkt_matmul_rescale_sf": 28
+          }
+        },
+        {
+          "option_id": 1,
+          "fusion_count": 1,
+          "total_bits": 240.0,
+          "total_variance": 6.910460599023203e-06,
+          "changed_raw_slots_vs_fusion0": [
+            {
+              "slot_index": 0,
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "base_action_index": 14,
+              "action_index": 7
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_action_index": 14,
+              "action_index": 9
+            },
+            {
+              "slot_index": 3,
+              "field": "wk_sf",
+              "kind": "W",
+              "base_action_index": 14,
+              "action_index": 8
+            }
+          ],
+          "changed_real_slots_vs_fusion0": [
+            {
+              "slot_index": 0,
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "base_value": 28,
+              "value": 21
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_value": 20,
+              "value": 15
+            },
+            {
+              "slot_index": 3,
+              "field": "wk_sf",
+              "kind": "W",
+              "base_value": 22,
+              "value": 16
+            },
+            {
+              "slot_index": 5,
+              "field": "kt_mask1_sf",
+              "kind": "M",
+              "base_value": 15,
+              "value": 16
+            },
+            {
+              "slot_index": 6,
+              "field": "kt_mask2_sf",
+              "kind": "M",
+              "base_value": 15,
+              "value": 16
+            },
+            {
+              "slot_index": 7,
+              "field": "qkt_merge_mask_sf",
+              "kind": "M",
+              "base_value": 15,
+              "value": 16
+            },
+            {
+              "slot_index": 18,
+              "field": "kt_mask1_rescale_sf",
+              "kind": "R",
+              "base_value": 28,
+              "value": 29
+            },
+            {
+              "slot_index": 21,
+              "field": "qkt_matmul_rescale_sf",
+              "kind": "R",
+              "base_value": 28,
+              "value": 30
+            }
+          ],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B2.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 7,
+              "base_action_index": 14,
+              "decoded_value": 21,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 1,
+              "label": "B2.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 2,
+              "label": "B2.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 9,
+              "base_action_index": 14,
+              "decoded_value": 15,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 3,
+              "label": "B2.W.wk_sf",
+              "field": "wk_sf",
+              "kind": "W",
+              "action_index": 8,
+              "base_action_index": 14,
+              "decoded_value": 16,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 4,
+              "label": "B2.W.wv_sf",
+              "field": "wv_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B2.M.kt_mask1_sf",
+              "field": "kt_mask1_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 16,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 6,
+              "label": "B2.M.kt_mask2_sf",
+              "field": "kt_mask2_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 16,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 7,
+              "label": "B2.M.qkt_merge_mask_sf",
+              "field": "qkt_merge_mask_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 16,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 8,
+              "label": "B2.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 28,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B2.R.kt_mask2_rescale_sf",
+              "field": "kt_mask2_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B2.R.qkt_merge_mask_rescale_sf",
+              "field": "qkt_merge_mask_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B2.W.wq_sf",
+              "field": "wq_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B2.M.q_mask1_sf",
+              "field": "q_mask1_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B2.M.q_mask2_sf",
+              "field": "q_mask2_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B2.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B2.R.wk_rescale_sf",
+              "field": "wk_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 16,
+              "label": "B2.R.wq_rescale_sf",
+              "field": "wq_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 17,
+              "label": "B2.R.wv_rescale_sf",
+              "field": "wv_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 18,
+              "label": "B2.R.kt_mask1_rescale_sf",
+              "field": "kt_mask1_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 29,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 19,
+              "label": "B2.R.q_mask1_rescale_sf",
+              "field": "q_mask1_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 20,
+              "label": "B2.R.q_mask2_rescale_sf",
+              "field": "q_mask2_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 21,
+              "label": "B2.R.qkt_matmul_rescale_sf",
+              "field": "qkt_matmul_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 30,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 22,
+              "label": "B2.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "inv_std_fresh_sf": 21,
+            "gamma_sf": 15,
+            "wk_sf": 16,
+            "kt_mask1_sf": 16,
+            "kt_mask2_sf": 16,
+            "qkt_merge_mask_sf": 16,
+            "gamma_rescale_sf": 28,
+            "kt_mask1_rescale_sf": 29,
+            "qkt_matmul_rescale_sf": 30
+          }
+        }
+      ]
+    },
+    {
+      "graph_key": "block4",
+      "block_idx": 4,
+      "gelu_degree": 4,
+      "attn_degree": 2,
+      "k_slot_index": 16,
+      "block_num_slots": 17,
+      "available_fusion_counts": [
+        0,
+        1
+      ],
+      "current_schedule_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "current_schedule_occurrences": 12,
+      "options": [
+        {
+          "option_id": 0,
+          "fusion_count": 0,
+          "total_bits": 264.0,
+          "total_variance": 1.526802187966286e-05,
+          "changed_raw_slots_vs_fusion0": [],
+          "changed_real_slots_vs_fusion0": [],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B4.F.softmax_out_fresh_sf",
+              "field": "softmax_out_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 35,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B4.F.v_fresh_sf",
+              "field": "v_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 25,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 2,
+              "label": "B4.M.softmax_out_mask_sf",
+              "field": "softmax_out_mask_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 14,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 3,
+              "label": "B4.M.v_mask_sf",
+              "field": "v_mask_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B4.M.softmax_v_mask_sf",
+              "field": "softmax_v_mask_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 14,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B4.S.ln_mean_inv_d_sf",
+              "field": "ln_mean_inv_d_sf",
+              "kind": "S",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B4.S.ln_var_inv_d_sf",
+              "field": "ln_var_inv_d_sf",
+              "kind": "S",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B4.W.wo_sf",
+              "field": "wo_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B4.R.softmax_v_matmul_rescale_sf",
+              "field": "softmax_v_matmul_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B4.R.ln_mean_rescale_sf",
+              "field": "ln_mean_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B4.R.ln_var_rescale_sf",
+              "field": "ln_var_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B4.R.softmax_out_mask_rescale_sf",
+              "field": "softmax_out_mask_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B4.R.v_mask_rescale_sf",
+              "field": "v_mask_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B4.R.softmax_v_mask_rescale_sf",
+              "field": "softmax_v_mask_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B4.R.wo_rescale_sf",
+              "field": "wo_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B4.R.ln_square_rescale_sf",
+              "field": "ln_square_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 16,
+              "label": "B4.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "softmax_out_fresh_sf": 35,
+            "v_fresh_sf": 25,
+            "softmax_out_mask_sf": 14,
+            "softmax_v_mask_sf": 14,
+            "ln_mean_inv_d_sf": 20,
+            "ln_var_inv_d_sf": 20,
+            "wo_sf": 22,
+            "softmax_v_matmul_rescale_sf": 31,
+            "ln_mean_rescale_sf": 31,
+            "ln_square_rescale_sf": 31
+          }
+        },
+        {
+          "option_id": 1,
+          "fusion_count": 1,
+          "total_bits": 240.0,
+          "total_variance": 0.0004945825725177234,
+          "changed_raw_slots_vs_fusion0": [
+            {
+              "slot_index": 0,
+              "field": "softmax_out_fresh_sf",
+              "kind": "F",
+              "base_action_index": 14,
+              "action_index": 0
+            },
+            {
+              "slot_index": 1,
+              "field": "v_fresh_sf",
+              "kind": "F",
+              "base_action_index": 14,
+              "action_index": 6
+            },
+            {
+              "slot_index": 2,
+              "field": "softmax_out_mask_sf",
+              "kind": "M",
+              "base_action_index": 14,
+              "action_index": 0
+            },
+            {
+              "slot_index": 4,
+              "field": "softmax_v_mask_sf",
+              "kind": "M",
+              "base_action_index": 14,
+              "action_index": 11
+            },
+            {
+              "slot_index": 5,
+              "field": "ln_mean_inv_d_sf",
+              "kind": "S",
+              "base_action_index": 14,
+              "action_index": 5
+            },
+            {
+              "slot_index": 7,
+              "field": "wo_sf",
+              "kind": "W",
+              "base_action_index": 14,
+              "action_index": 3
+            }
+          ],
+          "changed_real_slots_vs_fusion0": [
+            {
+              "slot_index": 0,
+              "field": "softmax_out_fresh_sf",
+              "kind": "F",
+              "base_value": 35,
+              "value": 21
+            },
+            {
+              "slot_index": 1,
+              "field": "v_fresh_sf",
+              "kind": "F",
+              "base_value": 25,
+              "value": 17
+            },
+            {
+              "slot_index": 2,
+              "field": "softmax_out_mask_sf",
+              "kind": "M",
+              "base_value": 14,
+              "value": 13
+            },
+            {
+              "slot_index": 5,
+              "field": "ln_mean_inv_d_sf",
+              "kind": "S",
+              "base_value": 20,
+              "value": 14
+            },
+            {
+              "slot_index": 6,
+              "field": "ln_var_inv_d_sf",
+              "kind": "S",
+              "base_value": 20,
+              "value": 21
+            },
+            {
+              "slot_index": 7,
+              "field": "wo_sf",
+              "kind": "W",
+              "base_value": 22,
+              "value": 14
+            },
+            {
+              "slot_index": 8,
+              "field": "softmax_v_matmul_rescale_sf",
+              "kind": "R",
+              "base_value": 31,
+              "value": 37
+            },
+            {
+              "slot_index": 9,
+              "field": "ln_mean_rescale_sf",
+              "kind": "R",
+              "base_value": 31,
+              "value": 46
+            },
+            {
+              "slot_index": 15,
+              "field": "ln_square_rescale_sf",
+              "kind": "R",
+              "base_value": 31,
+              "value": 32
+            }
+          ],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B4.F.softmax_out_fresh_sf",
+              "field": "softmax_out_fresh_sf",
+              "kind": "F",
+              "action_index": 0,
+              "base_action_index": 14,
+              "decoded_value": 21,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 1,
+              "label": "B4.F.v_fresh_sf",
+              "field": "v_fresh_sf",
+              "kind": "F",
+              "action_index": 6,
+              "base_action_index": 14,
+              "decoded_value": 17,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 2,
+              "label": "B4.M.softmax_out_mask_sf",
+              "field": "softmax_out_mask_sf",
+              "kind": "M",
+              "action_index": 0,
+              "base_action_index": 14,
+              "decoded_value": 13,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 3,
+              "label": "B4.M.v_mask_sf",
+              "field": "v_mask_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B4.M.softmax_v_mask_sf",
+              "field": "softmax_v_mask_sf",
+              "kind": "M",
+              "action_index": 11,
+              "base_action_index": 14,
+              "decoded_value": 14,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B4.S.ln_mean_inv_d_sf",
+              "field": "ln_mean_inv_d_sf",
+              "kind": "S",
+              "action_index": 5,
+              "base_action_index": 14,
+              "decoded_value": 14,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 6,
+              "label": "B4.S.ln_var_inv_d_sf",
+              "field": "ln_var_inv_d_sf",
+              "kind": "S",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 21,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 7,
+              "label": "B4.W.wo_sf",
+              "field": "wo_sf",
+              "kind": "W",
+              "action_index": 3,
+              "base_action_index": 14,
+              "decoded_value": 14,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 8,
+              "label": "B4.R.softmax_v_matmul_rescale_sf",
+              "field": "softmax_v_matmul_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 37,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 9,
+              "label": "B4.R.ln_mean_rescale_sf",
+              "field": "ln_mean_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 46,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 10,
+              "label": "B4.R.ln_var_rescale_sf",
+              "field": "ln_var_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B4.R.softmax_out_mask_rescale_sf",
+              "field": "softmax_out_mask_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B4.R.v_mask_rescale_sf",
+              "field": "v_mask_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B4.R.softmax_v_mask_rescale_sf",
+              "field": "softmax_v_mask_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B4.R.wo_rescale_sf",
+              "field": "wo_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B4.R.ln_square_rescale_sf",
+              "field": "ln_square_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 32,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 16,
+              "label": "B4.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "softmax_out_fresh_sf": 21,
+            "v_fresh_sf": 17,
+            "softmax_out_mask_sf": 13,
+            "softmax_v_mask_sf": 14,
+            "ln_mean_inv_d_sf": 14,
+            "ln_var_inv_d_sf": 21,
+            "wo_sf": 14,
+            "softmax_v_matmul_rescale_sf": 37,
+            "ln_mean_rescale_sf": 46,
+            "ln_square_rescale_sf": 32
+          }
+        }
+      ]
+    },
+    {
+      "graph_key": "block5_n0",
+      "block_idx": 5,
+      "gelu_degree": 0,
+      "attn_degree": 2,
+      "k_slot_index": 15,
+      "block_num_slots": 16,
+      "available_fusion_counts": [
+        0,
+        1
+      ],
+      "current_schedule_layers": [],
+      "current_schedule_occurrences": 0,
+      "options": [
+        {
+          "option_id": 0,
+          "fusion_count": 0,
+          "total_bits": 192.0,
+          "total_variance": 2.5870941801859643e-09,
+          "changed_raw_slots_vs_fusion0": [],
+          "changed_real_slots_vs_fusion0": [],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B5.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B5.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": 30,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 2,
+              "label": "B5.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 3,
+              "label": "B5.W.wffn1_sf",
+              "field": "wffn1_sf",
+              "kind": "W",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B5.M.gelu_coeff_sf",
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B5.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": 30,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B5.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B5.R.wffn1_rescale_sf",
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": 30,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B5.R.gelu_power_rescale_sf_0",
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B5.R.gelu_power_rescale_sf_1",
+              "field": "gelu_power_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B5.R.gelu_power_rescale_sf_2",
+              "field": "gelu_power_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_0",
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_1",
+              "field": "gelu_coeff_mul_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_2",
+              "field": "gelu_coeff_mul_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_3",
+              "field": "gelu_coeff_mul_rescale_sf_3",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B5.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "x_centered_fresh_sf": 30,
+            "gamma_sf": 20,
+            "wffn1_sf": 22,
+            "normalize_rescale_sf": 30,
+            "wffn1_rescale_sf": 30
+          }
+        },
+        {
+          "option_id": 1,
+          "fusion_count": 1,
+          "total_bits": 180.0,
+          "total_variance": 2.5698175349215404e-08,
+          "changed_raw_slots_vs_fusion0": [
+            {
+              "slot_index": 1,
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "base_action_index": 9,
+              "action_index": 7
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_action_index": 9,
+              "action_index": 8
+            },
+            {
+              "slot_index": 3,
+              "field": "wffn1_sf",
+              "kind": "W",
+              "base_action_index": 9,
+              "action_index": 8
+            }
+          ],
+          "changed_real_slots_vs_fusion0": [
+            {
+              "slot_index": 1,
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "base_value": 30,
+              "value": 26
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_value": 20,
+              "value": 18
+            },
+            {
+              "slot_index": 3,
+              "field": "wffn1_sf",
+              "kind": "W",
+              "base_value": 22,
+              "value": 20
+            }
+          ],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B5.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B5.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 7,
+              "base_action_index": 9,
+              "decoded_value": 26,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 2,
+              "label": "B5.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 8,
+              "base_action_index": 9,
+              "decoded_value": 18,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 3,
+              "label": "B5.W.wffn1_sf",
+              "field": "wffn1_sf",
+              "kind": "W",
+              "action_index": 8,
+              "base_action_index": 9,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 4,
+              "label": "B5.M.gelu_coeff_sf",
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B5.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": 30,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B5.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B5.R.wffn1_rescale_sf",
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "action_index": 9,
+              "base_action_index": 9,
+              "decoded_value": 30,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B5.R.gelu_power_rescale_sf_0",
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B5.R.gelu_power_rescale_sf_1",
+              "field": "gelu_power_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B5.R.gelu_power_rescale_sf_2",
+              "field": "gelu_power_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_0",
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_1",
+              "field": "gelu_coeff_mul_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_2",
+              "field": "gelu_coeff_mul_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_3",
+              "field": "gelu_coeff_mul_rescale_sf_3",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B5.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "x_centered_fresh_sf": 26,
+            "gamma_sf": 18,
+            "wffn1_sf": 20,
+            "normalize_rescale_sf": 30,
+            "wffn1_rescale_sf": 30
+          }
+        }
+      ]
+    },
+    {
+      "graph_key": "block5_n1",
+      "block_idx": 5,
+      "gelu_degree": 1,
+      "attn_degree": 2,
+      "k_slot_index": 15,
+      "block_num_slots": 16,
+      "available_fusion_counts": [
+        0,
+        1
+      ],
+      "current_schedule_layers": [],
+      "current_schedule_occurrences": 0,
+      "options": [
+        {
+          "option_id": 0,
+          "fusion_count": 0,
+          "total_bits": 213.0,
+          "total_variance": 2.669498642156283e-09,
+          "changed_raw_slots_vs_fusion0": [],
+          "changed_real_slots_vs_fusion0": [],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B5.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B5.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 2,
+              "label": "B5.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 3,
+              "label": "B5.W.wffn1_sf",
+              "field": "wffn1_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B5.M.gelu_coeff_sf",
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B5.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 28,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B5.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B5.R.wffn1_rescale_sf",
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B5.R.gelu_power_rescale_sf_0",
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B5.R.gelu_power_rescale_sf_1",
+              "field": "gelu_power_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B5.R.gelu_power_rescale_sf_2",
+              "field": "gelu_power_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_0",
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_1",
+              "field": "gelu_coeff_mul_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_2",
+              "field": "gelu_coeff_mul_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_3",
+              "field": "gelu_coeff_mul_rescale_sf_3",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B5.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "x_centered_fresh_sf": 31,
+            "gamma_sf": 20,
+            "wffn1_sf": 22,
+            "gelu_coeff_sf": 20,
+            "normalize_rescale_sf": 28,
+            "gelu_coeff_mul_rescale_sf_0": 31
+          }
+        },
+        {
+          "option_id": 1,
+          "fusion_count": 1,
+          "total_bits": 180.0,
+          "total_variance": 8.540708482520093e-07,
+          "changed_raw_slots_vs_fusion0": [
+            {
+              "slot_index": 1,
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "base_action_index": 14,
+              "action_index": 5
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_action_index": 14,
+              "action_index": 9
+            },
+            {
+              "slot_index": 3,
+              "field": "wffn1_sf",
+              "kind": "W",
+              "base_action_index": 14,
+              "action_index": 8
+            },
+            {
+              "slot_index": 4,
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "base_action_index": 14,
+              "action_index": 10
+            }
+          ],
+          "changed_real_slots_vs_fusion0": [
+            {
+              "slot_index": 1,
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "base_value": 31,
+              "value": 22
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_value": 20,
+              "value": 21
+            },
+            {
+              "slot_index": 3,
+              "field": "wffn1_sf",
+              "kind": "W",
+              "base_value": 22,
+              "value": 21
+            },
+            {
+              "slot_index": 4,
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "base_value": 20,
+              "value": 22
+            },
+            {
+              "slot_index": 11,
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "base_value": 31,
+              "value": 48
+            }
+          ],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B5.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B5.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 5,
+              "base_action_index": 14,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 2,
+              "label": "B5.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 9,
+              "base_action_index": 14,
+              "decoded_value": 21,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 3,
+              "label": "B5.W.wffn1_sf",
+              "field": "wffn1_sf",
+              "kind": "W",
+              "action_index": 8,
+              "base_action_index": 14,
+              "decoded_value": 21,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 4,
+              "label": "B5.M.gelu_coeff_sf",
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "action_index": 10,
+              "base_action_index": 14,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 5,
+              "label": "B5.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 28,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B5.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B5.R.wffn1_rescale_sf",
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B5.R.gelu_power_rescale_sf_0",
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B5.R.gelu_power_rescale_sf_1",
+              "field": "gelu_power_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B5.R.gelu_power_rescale_sf_2",
+              "field": "gelu_power_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_0",
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 48,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 12,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_1",
+              "field": "gelu_coeff_mul_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_2",
+              "field": "gelu_coeff_mul_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_3",
+              "field": "gelu_coeff_mul_rescale_sf_3",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B5.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "x_centered_fresh_sf": 22,
+            "gamma_sf": 21,
+            "wffn1_sf": 21,
+            "gelu_coeff_sf": 22,
+            "normalize_rescale_sf": 28,
+            "gelu_coeff_mul_rescale_sf_0": 48
+          }
+        }
+      ]
+    },
+    {
+      "graph_key": "block5_n2",
+      "block_idx": 5,
+      "gelu_degree": 2,
+      "attn_degree": 2,
+      "k_slot_index": 15,
+      "block_num_slots": 16,
+      "available_fusion_counts": [
+        0,
+        1
+      ],
+      "current_schedule_layers": [],
+      "current_schedule_occurrences": 0,
+      "options": [
+        {
+          "option_id": 0,
+          "fusion_count": 0,
+          "total_bits": 244.0,
+          "total_variance": 2.5708599994083115e-09,
+          "changed_raw_slots_vs_fusion0": [],
+          "changed_real_slots_vs_fusion0": [],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B5.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B5.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 2,
+              "label": "B5.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 3,
+              "label": "B5.W.wffn1_sf",
+              "field": "wffn1_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B5.M.gelu_coeff_sf",
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B5.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B5.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B5.R.wffn1_rescale_sf",
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B5.R.gelu_power_rescale_sf_0",
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B5.R.gelu_power_rescale_sf_1",
+              "field": "gelu_power_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B5.R.gelu_power_rescale_sf_2",
+              "field": "gelu_power_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_0",
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_1",
+              "field": "gelu_coeff_mul_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_2",
+              "field": "gelu_coeff_mul_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_3",
+              "field": "gelu_coeff_mul_rescale_sf_3",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B5.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "x_centered_fresh_sf": 31,
+            "gamma_sf": 20,
+            "wffn1_sf": 22,
+            "gelu_coeff_sf": 20,
+            "normalize_rescale_sf": 31,
+            "wffn1_rescale_sf": 31,
+            "gelu_coeff_mul_rescale_sf_0": 31
+          }
+        },
+        {
+          "option_id": 1,
+          "fusion_count": 1,
+          "total_bits": 240.0,
+          "total_variance": 3.3589512576535526e-09,
+          "changed_raw_slots_vs_fusion0": [
+            {
+              "slot_index": 1,
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "base_action_index": 14,
+              "action_index": 9
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_action_index": 14,
+              "action_index": 13
+            },
+            {
+              "slot_index": 3,
+              "field": "wffn1_sf",
+              "kind": "W",
+              "base_action_index": 14,
+              "action_index": 12
+            }
+          ],
+          "changed_real_slots_vs_fusion0": [
+            {
+              "slot_index": 1,
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "base_value": 31,
+              "value": 26
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_value": 20,
+              "value": 23
+            },
+            {
+              "slot_index": 3,
+              "field": "wffn1_sf",
+              "kind": "W",
+              "base_value": 22,
+              "value": 24
+            },
+            {
+              "slot_index": 4,
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "base_value": 20,
+              "value": 25
+            },
+            {
+              "slot_index": 7,
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "base_value": 31,
+              "value": 39
+            },
+            {
+              "slot_index": 11,
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "base_value": 31,
+              "value": 43
+            }
+          ],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B5.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B5.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 9,
+              "base_action_index": 14,
+              "decoded_value": 26,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 2,
+              "label": "B5.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 13,
+              "base_action_index": 14,
+              "decoded_value": 23,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 3,
+              "label": "B5.W.wffn1_sf",
+              "field": "wffn1_sf",
+              "kind": "W",
+              "action_index": 12,
+              "base_action_index": 14,
+              "decoded_value": 24,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 4,
+              "label": "B5.M.gelu_coeff_sf",
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 25,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 5,
+              "label": "B5.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B5.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B5.R.wffn1_rescale_sf",
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 39,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 8,
+              "label": "B5.R.gelu_power_rescale_sf_0",
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B5.R.gelu_power_rescale_sf_1",
+              "field": "gelu_power_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B5.R.gelu_power_rescale_sf_2",
+              "field": "gelu_power_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_0",
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 43,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 12,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_1",
+              "field": "gelu_coeff_mul_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_2",
+              "field": "gelu_coeff_mul_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_3",
+              "field": "gelu_coeff_mul_rescale_sf_3",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B5.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "x_centered_fresh_sf": 26,
+            "gamma_sf": 23,
+            "wffn1_sf": 24,
+            "gelu_coeff_sf": 25,
+            "normalize_rescale_sf": 31,
+            "wffn1_rescale_sf": 39,
+            "gelu_coeff_mul_rescale_sf_0": 43
+          }
+        }
+      ]
+    },
+    {
+      "graph_key": "block5_n4",
+      "block_idx": 5,
+      "gelu_degree": 4,
+      "attn_degree": 2,
+      "k_slot_index": 15,
+      "block_num_slots": 16,
+      "available_fusion_counts": [
+        0,
+        1
+      ],
+      "current_schedule_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "current_schedule_occurrences": 12,
+      "options": [
+        {
+          "option_id": 0,
+          "fusion_count": 0,
+          "total_bits": 275.0,
+          "total_variance": 2.5724770270056877e-09,
+          "changed_raw_slots_vs_fusion0": [],
+          "changed_real_slots_vs_fusion0": [],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B5.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B5.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 2,
+              "label": "B5.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 3,
+              "label": "B5.W.wffn1_sf",
+              "field": "wffn1_sf",
+              "kind": "W",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B5.M.gelu_coeff_sf",
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 20,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 5,
+              "label": "B5.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B5.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B5.R.wffn1_rescale_sf",
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 8,
+              "label": "B5.R.gelu_power_rescale_sf_0",
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 9,
+              "label": "B5.R.gelu_power_rescale_sf_1",
+              "field": "gelu_power_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B5.R.gelu_power_rescale_sf_2",
+              "field": "gelu_power_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_0",
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 12,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_1",
+              "field": "gelu_coeff_mul_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_2",
+              "field": "gelu_coeff_mul_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_3",
+              "field": "gelu_coeff_mul_rescale_sf_3",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B5.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "x_centered_fresh_sf": 31,
+            "gamma_sf": 20,
+            "wffn1_sf": 22,
+            "gelu_coeff_sf": 20,
+            "normalize_rescale_sf": 31,
+            "wffn1_rescale_sf": 31,
+            "gelu_power_rescale_sf_0": 31,
+            "gelu_coeff_mul_rescale_sf_0": 31
+          }
+        },
+        {
+          "option_id": 1,
+          "fusion_count": 1,
+          "total_bits": 271.0,
+          "total_variance": 3.722761680693287e-09,
+          "changed_raw_slots_vs_fusion0": [
+            {
+              "slot_index": 1,
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "base_action_index": 14,
+              "action_index": 9
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_action_index": 14,
+              "action_index": 13
+            },
+            {
+              "slot_index": 3,
+              "field": "wffn1_sf",
+              "kind": "W",
+              "base_action_index": 14,
+              "action_index": 12
+            }
+          ],
+          "changed_real_slots_vs_fusion0": [
+            {
+              "slot_index": 1,
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "base_value": 31,
+              "value": 26
+            },
+            {
+              "slot_index": 2,
+              "field": "gamma_sf",
+              "kind": "M",
+              "base_value": 20,
+              "value": 21
+            },
+            {
+              "slot_index": 4,
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "base_value": 20,
+              "value": 25
+            },
+            {
+              "slot_index": 7,
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "base_value": 31,
+              "value": 35
+            },
+            {
+              "slot_index": 8,
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "base_value": 31,
+              "value": 39
+            },
+            {
+              "slot_index": 11,
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "base_value": 31,
+              "value": 43
+            }
+          ],
+          "added_real_slots_vs_fusion0": [],
+          "removed_real_slots_vs_fusion0": [],
+          "slot_rows": [
+            {
+              "slot_index": 0,
+              "label": "B5.F.inv_std_fresh_sf",
+              "field": "inv_std_fresh_sf",
+              "kind": "F",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 1,
+              "label": "B5.F.x_centered_fresh_sf",
+              "field": "x_centered_fresh_sf",
+              "kind": "F",
+              "action_index": 9,
+              "base_action_index": 14,
+              "decoded_value": 26,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 2,
+              "label": "B5.M.gamma_sf",
+              "field": "gamma_sf",
+              "kind": "M",
+              "action_index": 13,
+              "base_action_index": 14,
+              "decoded_value": 21,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 3,
+              "label": "B5.W.wffn1_sf",
+              "field": "wffn1_sf",
+              "kind": "W",
+              "action_index": 12,
+              "base_action_index": 14,
+              "decoded_value": 22,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": true,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 4,
+              "label": "B5.M.gelu_coeff_sf",
+              "field": "gelu_coeff_sf",
+              "kind": "M",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 25,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 5,
+              "label": "B5.R.normalize_rescale_sf",
+              "field": "normalize_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 31,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 6,
+              "label": "B5.R.gamma_rescale_sf",
+              "field": "gamma_rescale_sf",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 7,
+              "label": "B5.R.wffn1_rescale_sf",
+              "field": "wffn1_rescale_sf",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 35,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 8,
+              "label": "B5.R.gelu_power_rescale_sf_0",
+              "field": "gelu_power_rescale_sf_0",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 39,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 9,
+              "label": "B5.R.gelu_power_rescale_sf_1",
+              "field": "gelu_power_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 10,
+              "label": "B5.R.gelu_power_rescale_sf_2",
+              "field": "gelu_power_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 11,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_0",
+              "field": "gelu_coeff_mul_rescale_sf_0",
+              "kind": "R",
+              "action_index": 14,
+              "base_action_index": 14,
+              "decoded_value": 43,
+              "real_status": "real_replan_slot",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": true
+            },
+            {
+              "slot_index": 12,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_1",
+              "field": "gelu_coeff_mul_rescale_sf_1",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 13,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_2",
+              "field": "gelu_coeff_mul_rescale_sf_2",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 14,
+              "label": "B5.R.gelu_coeff_mul_rescale_sf_3",
+              "field": "gelu_coeff_mul_rescale_sf_3",
+              "kind": "R",
+              "action_index": 0,
+              "base_action_index": 0,
+              "decoded_value": null,
+              "real_status": "not_in_replan_slots",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            },
+            {
+              "slot_index": 15,
+              "label": "B5.K.output_truncation_k",
+              "field": "output_truncation_k",
+              "kind": "K",
+              "action_index": 3,
+              "base_action_index": 3,
+              "decoded_value": 13,
+              "real_status": "truncation_k",
+              "changed_raw_vs_fusion0": false,
+              "changed_real_vs_fusion0": false
+            }
+          ],
+          "real_slots": {
+            "x_centered_fresh_sf": 26,
+            "gamma_sf": 21,
+            "wffn1_sf": 22,
+            "gelu_coeff_sf": 25,
+            "normalize_rescale_sf": 31,
+            "wffn1_rescale_sf": 35,
+            "gelu_power_rescale_sf_0": 39,
+            "gelu_coeff_mul_rescale_sf_0": 43
+          }
+        }
+      ]
+    }
+  ],
+  "eval_group_specs": [
+    {
+      "name": "all_fusion0",
+      "family": "global",
+      "target": 0,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "clamped_graphs": [],
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "all_fusion1_available",
+      "family": "global",
+      "target": 1,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 1,
+        "block4": 1,
+        "block5_n0": 1,
+        "block5_n1": 1,
+        "block5_n2": 1,
+        "block5_n4": 1
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 1,
+        "block4": 1,
+        "block5_n0": 1,
+        "block5_n1": 1,
+        "block5_n2": 1,
+        "block5_n4": 1
+      },
+      "clamped_graphs": [
+        "block1_mrpc"
+      ],
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "all_fusionmax",
+      "family": "global",
+      "target": "max",
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 1,
+        "block4": 1,
+        "block5_n0": 1,
+        "block5_n1": 1,
+        "block5_n2": 1,
+        "block5_n4": 1
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 1,
+        "block4": 1,
+        "block5_n0": 1,
+        "block5_n1": 1,
+        "block5_n2": 1,
+        "block5_n4": 1
+      },
+      "clamped_graphs": [],
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "one_hot_block1_mrpc",
+      "family": "one_hot",
+      "target_graph": "block1_mrpc",
+      "no_op": true,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "one_hot_block2_mrpc",
+      "family": "one_hot",
+      "target_graph": "block2_mrpc",
+      "no_op": false,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 1,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 1,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "one_hot_block4",
+      "family": "one_hot",
+      "target_graph": "block4",
+      "no_op": false,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 1,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 1,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "one_hot_block5_n0",
+      "family": "one_hot",
+      "target_graph": "block5_n0",
+      "no_op": true,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 1,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 1,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "one_hot_block5_n1",
+      "family": "one_hot",
+      "target_graph": "block5_n1",
+      "no_op": true,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 1,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 1,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "one_hot_block5_n2",
+      "family": "one_hot",
+      "target_graph": "block5_n2",
+      "no_op": true,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 1,
+        "block5_n4": 0
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 1,
+        "block5_n4": 0
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "one_hot_block5_n4",
+      "family": "one_hot",
+      "target_graph": "block5_n4",
+      "no_op": false,
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 1
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 1
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "block2_block5_all_layers_fusionmax",
+      "family": "combined",
+      "target_graphs": [
+        "block2_mrpc",
+        "block5_n0",
+        "block5_n1",
+        "block5_n2",
+        "block5_n4"
+      ],
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 1,
+        "block4": 0,
+        "block5_n0": 1,
+        "block5_n1": 1,
+        "block5_n2": 1,
+        "block5_n4": 1
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 1,
+        "block4": 0,
+        "block5_n0": 1,
+        "block5_n1": 1,
+        "block5_n2": 1,
+        "block5_n4": 1
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "block4_fusionmax_1_layer",
+      "family": "partial_block4",
+      "target_graph": "block4",
+      "selected_layers": [
+        0
+      ],
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "option_by_step": {
+        "1": 1
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0,
+        "block4_selected_layers": 1
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "block4_fusionmax_2_layers",
+      "family": "partial_block4",
+      "target_graph": "block4",
+      "selected_layers": [
+        0,
+        6
+      ],
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "option_by_step": {
+        "1": 1,
+        "25": 1
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0,
+        "block4_selected_layers": 1
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    },
+    {
+      "name": "block4_fusionmax_4_layers",
+      "family": "partial_block4",
+      "target_graph": "block4",
+      "selected_layers": [
+        0,
+        3,
+        6,
+        9
+      ],
+      "option_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0
+      },
+      "option_by_step": {
+        "1": 1,
+        "13": 1,
+        "25": 1,
+        "37": 1
+      },
+      "fusion_count_by_graph": {
+        "block1_mrpc": 0,
+        "block2_mrpc": 0,
+        "block4": 0,
+        "block5_n0": 0,
+        "block5_n1": 0,
+        "block5_n2": 0,
+        "block5_n4": 0,
+        "block4_selected_layers": 1
+      },
+      "occurrence_counts": {
+        "block2_mrpc": 12,
+        "block4": 12,
+        "block5_n4": 12,
+        "block1_mrpc": 11
+      }
+    }
+  ],
+  "action_config_paths": {
+    "all_fusion0": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/all_fusion0.json",
+    "all_fusion1_available": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/all_fusion1_available.json",
+    "all_fusionmax": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/all_fusionmax.json",
+    "one_hot_block1_mrpc": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/one_hot_block1_mrpc.json",
+    "one_hot_block2_mrpc": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/one_hot_block2_mrpc.json",
+    "one_hot_block4": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/one_hot_block4.json",
+    "one_hot_block5_n0": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/one_hot_block5_n0.json",
+    "one_hot_block5_n1": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/one_hot_block5_n1.json",
+    "one_hot_block5_n2": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/one_hot_block5_n2.json",
+    "one_hot_block5_n4": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/one_hot_block5_n4.json",
+    "block2_block5_all_layers_fusionmax": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/block2_block5_all_layers_fusionmax.json",
+    "block4_fusionmax_1_layer": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/block4_fusionmax_1_layer.json",
+    "block4_fusionmax_2_layers": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/block4_fusionmax_2_layers.json",
+    "block4_fusionmax_4_layers": "/var/tmp/root-home/rfr_runs/fixed_b2b5_fusion_20260710_2148_sparse/experiments/server_command_runs/stage2_b2b5_fixed1_mrpc_20260710_215658/gelu4/map_report/action_configs/block4_fusionmax_4_layers.json"
+  },
+  "interpretation_note": "fusion_count is the Rescale_optimizer/replan measured fusion count for an option. The map does not store a separate 'slot was fused away' flag; this report therefore shows the full raw action slots, the real replan slots, and the real slot changes relative to fusion_count=0."
+}

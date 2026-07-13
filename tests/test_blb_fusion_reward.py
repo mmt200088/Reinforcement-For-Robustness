@@ -10,6 +10,7 @@ from __future__ import annotations
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
@@ -20,6 +21,7 @@ for _p in (str(_REPO_ROOT), str(_BLB_DIR)):
 import fusion_cost
 import fusion_count_map as fcm
 import fusion_enum
+import layerwise_action
 import reward as rwd
 
 try:  # action_space transitively imports torch (blb_rl_bridge) — skip locally if absent
@@ -38,6 +40,72 @@ class _Sig:
     any_invalid = False
     total_bits_sum = 100
     total_fusion_count = 0
+
+
+def _layerwise_actions(*, block4_fusion=0, k=13):
+    actions = []
+    for layer_idx in range(12):
+        k_by_block = {2: k, 3: k, 4: k, 5: k}
+        if layer_idx:
+            k_by_block[1] = k
+        actions.append(layerwise_action.LayerwiseDecodedAction(block4_fusion, k_by_block))
+    return actions
+
+
+class LayerwiseVariableCostContractTest(unittest.TestCase):
+    def test_higher_block4_fusion_increases_only_fusion_half(self):
+        baseline = layerwise_action.compute_variable_cost(
+            _layerwise_actions(block4_fusion=0, k=13)
+        )
+        fused = layerwise_action.compute_variable_cost(
+            _layerwise_actions(block4_fusion=1, k=13)
+        )
+
+        self.assertEqual(baseline.normalized, 0.0)
+        self.assertEqual(fused.fusion_saving, 1.0)
+        self.assertEqual(fused.truncation_saving, baseline.truncation_saving)
+        self.assertEqual(fused.normalized, 0.5)
+
+    def test_lowering_each_actual_k_slot_increases_cost(self):
+        baseline_actions = _layerwise_actions(block4_fusion=0, k=13)
+        baseline = layerwise_action.compute_variable_cost(baseline_actions).normalized
+        changed = 0
+        for layer_idx, action in enumerate(baseline_actions):
+            for block_idx in action.k_by_block:
+                candidate = _layerwise_actions(block4_fusion=0, k=13)
+                updated = dict(candidate[layer_idx].k_by_block)
+                updated[block_idx] = 12
+                candidate[layer_idx] = layerwise_action.LayerwiseDecodedAction(0, updated)
+                self.assertGreater(
+                    layerwise_action.compute_variable_cost(candidate).normalized,
+                    baseline,
+                    msg=f"layer={layer_idx} block={block_idx}",
+                )
+                changed += 1
+        self.assertEqual(changed, 59)
+
+    def test_actual_k_values_not_category_order_drive_cost(self):
+        actions = _layerwise_actions(block4_fusion=0, k=8)
+        expected = layerwise_action.compute_variable_cost(actions)
+        reordered = (13, 8, 10, 9, 11, 12)
+
+        with mock.patch.object(layerwise_action, "K_LEVELS", reordered):
+            actual = layerwise_action.compute_variable_cost(actions)
+
+        self.assertEqual(actual, expected)
+        self.assertEqual(actual.truncation_saving, 1.0)
+
+    def test_fixed_block2_and_block5_fusion_are_not_variable_cost_inputs(self):
+        with self.assertRaises(TypeError):
+            layerwise_action.LayerwiseDecodedAction(
+                block4_fusion=0,
+                k_by_block={2: 13, 3: 13, 4: 13, 5: 13},
+                block2_fusion=1,
+            )
+        self.assertEqual(
+            set(layerwise_action.LayerwiseDecodedAction.__dataclass_fields__),
+            {"block4_fusion", "k_by_block"},
+        )
 
 
 def _baseline():

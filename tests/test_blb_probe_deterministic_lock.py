@@ -135,6 +135,26 @@ class DeterministicProbeLockTests(unittest.TestCase):
             probe_env._eval_on_probe_deterministic(3)
         self.assertGreater(len(calls), 0)
 
+    def test_returned_metrics_and_diagnostics_reuse_shared_trial_seeds(self):
+        import blb_stage2_rl.seed_utils as seed_utils
+
+        probe_env = self._make_env(seed=123, lock=threading.Lock())
+        expected = (9001, 9002, 9003)
+
+        with mock.patch.object(
+                seed_utils,
+                "derive_probe_trial_seed",
+                side_effect=lambda _base, trial_idx: expected[int(trial_idx)],
+        ) as derive_mock:
+            metrics = probe_env._eval_on_probe_deterministic(3)
+
+        self.assertEqual(metrics.trial_seeds, expected)
+        self.assertEqual(
+            probe_env._last_probe_diagnostics["per_worker_trial_seeds"],
+            [list(expected)],
+        )
+        self.assertEqual(derive_mock.call_count, 3)
+
     def test_noise_rng_scope_isolates_and_restores_thread_local_generator(self):
         from function_handler import (
             _noise_generator_key,

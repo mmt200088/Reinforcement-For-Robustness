@@ -38,10 +38,10 @@ from .action_space import (
     BlockStepSpec,
     action_vector_to_cfgs,
     build_block_cfg_from_field_values,
-    expand_fusion_step_action,
     fusion_step_schedule,
     horizon_for_num_layers,
     make_all_max_action_vector,
+    resolve_fusion_map_option_id,
     splice_fusion_step_into_full_vec,
     splice_step_action_into_full_vec,
     step_schedule,
@@ -57,6 +57,9 @@ from .reward import (
     TRUNC_COST_W,
     stage1_dense_cost_reward,
 )
+
+
+_BRIDGE_OPERATIONAL_ERRORS = (RuntimeError, OSError)
 
 
 @dataclass
@@ -100,6 +103,147 @@ class SequentialEnvConfig:
     fusion_count_norm) features."""
 
 
+@dataclass
+class BlockRuntimeResult:
+    """Result of decoding, replanning, and binding one block configuration."""
+
+    block_cfg: Optional[Any]
+    optimizer_output: Optional[Any]
+    valid: bool
+    total_bits: int
+    fusion_count: int
+    invalid_chain: Optional[Any]
+    bridge_error: Optional[str]
+    bridge_error_type: Optional[str]
+    config_name: str
+    graph_key: str
+    optimizer_wall_seconds: float
+    boosted_field_values: Optional[Dict[str, int]] = None
+    replan_application: Dict[str, Any] = field(default_factory=dict)
+    optimizer_cfg_overrides: List[Any] = field(default_factory=list)
+
+
+def evaluate_block_from_full_vector(
+        *,
+        base_env: BLBStage2Env,
+        full_vec: Sequence[int],
+        layer_idx: int,
+        block_idx: int,
+        graph_key: str,
+        boosted_field_values: Optional[Mapping[str, int]] = None,
+        ) -> BlockRuntimeResult:
+    """Run the canonical decode, optimizer, and cfg binding path for one block."""
+    layer = int(layer_idx)
+    block = int(block_idx)
+    vector = np.asarray(full_vec, dtype=int).reshape(-1).copy()
+    expected_size = np.asarray(
+        make_all_max_action_vector(int(base_env.num_layers)), dtype=int,
+    ).reshape(-1).size
+    if vector.size != expected_size:
+        raise ValueError(f"full_vec has {vector.size} slots, expected {expected_size}")
+    if not 0 <= layer < int(base_env.num_layers):
+        raise ValueError(f"layer_idx {layer} outside [0, {int(base_env.num_layers)})")
+    if block not in _BLOCK_SPECS:
+        raise ValueError(f"unsupported block_idx {block}")
+
+    decoded = action_vector_to_cfgs(
+        vector,
+        base_env.max_sfs,
+        num_layers=int(base_env.num_layers),
+        gelu_degree=base_env.gelu_degree,
+        attn_degree=base_env.attn_degree,
+        only=(layer, block),
+    )
+    block_cfg = decoded.cfgs_dict()[f"block{block}"][layer]
+
+    boosted_copy: Optional[Dict[str, int]] = None
+    if boosted_field_values is not None:
+        boosted_copy = {
+            str(name): int(value) for name, value in boosted_field_values.items()
+        }
+        deg_g = _degree_for_layer(
+            base_env.gelu_degree, layer, int(base_env.num_layers),
+            default=4, name="gelu_degree",
+        )
+        deg_a = _degree_for_layer(
+            base_env.attn_degree, layer, int(base_env.num_layers),
+            default=4, name="attn_degree",
+        )
+        block_cfg = build_block_cfg_from_field_values(
+            block, layer, boosted_copy,
+            N=int(_block_default_N(
+                block, gelu_degree=deg_g, attn_degree=deg_a,
+            )),
+            gelu_degree=deg_g,
+            attn_degree=deg_a,
+        )
+
+    config_name = f"{graph_key}_L{layer}"
+    optimizer_t0 = time.perf_counter()
+    try:
+        output = base_env.rescale_bridge.evaluate(
+            config_name=config_name,
+            block_name=f"block{block}",
+            cfg=block_cfg,
+        )
+    except _BRIDGE_OPERATIONAL_ERRORS as exc:
+        return BlockRuntimeResult(
+            block_cfg=None,
+            optimizer_output=None,
+            valid=False,
+            total_bits=0,
+            fusion_count=0,
+            invalid_chain={"reason": f"bridge_error: {exc}"},
+            bridge_error=str(exc),
+            bridge_error_type=type(exc).__name__,
+            config_name=config_name,
+            graph_key=str(graph_key),
+            optimizer_wall_seconds=float(time.perf_counter() - optimizer_t0),
+            boosted_field_values=boosted_copy,
+        )
+    optimizer_wall = float(time.perf_counter() - optimizer_t0)
+
+    replan_application: Dict[str, Any] = {}
+    optimizer_cfg_overrides: List[Any] = []
+    if bool(output.valid):
+        invoker_baselines: Mapping[str, Any] = (
+            getattr(base_env.rescale_bridge.invoker, "baselines", {}) or {}
+        )
+
+        def _rotation_provider(runtime_block_idx: int, profile: str) -> Mapping[str, str]:
+            return (base_env.env_cfg.rotation_name_map or {}).get(
+                (int(runtime_block_idx), str(profile)), {}
+            )
+
+        replan_application = apply_optimizer_outputs_to_cfgs(
+            profile=str(base_env.env_cfg.profile),
+            cfgs_dict={f"block{block}": {layer: block_cfg}},
+            opt_outputs={config_name: output},
+            invoker_baselines=invoker_baselines,
+            rotation_name_map_provider=_rotation_provider,
+        )
+        per_config = replan_application.get("optimizer_cfg_overrides", {})
+        if per_config:
+            optimizer_cfg_overrides = list(per_config.get(config_name, []))
+
+    return BlockRuntimeResult(
+        block_cfg=block_cfg,
+        optimizer_output=output,
+        valid=bool(output.valid),
+        total_bits=int(output.total_bits),
+        fusion_count=int(output.fusion_count),
+        invalid_chain=output.invalid_chain,
+        bridge_error=None,
+        bridge_error_type=None,
+        config_name=config_name,
+        graph_key=str(graph_key),
+        optimizer_wall_seconds=optimizer_wall,
+        boosted_field_values=boosted_copy,
+        replan_application=replan_application,
+        optimizer_cfg_overrides=optimizer_cfg_overrides,
+    )
+
+
 class BLBStage2SequentialEnv:
     """Sequential per-block RL env.
 
@@ -119,6 +263,14 @@ class BLBStage2SequentialEnv:
             env_cfg: Optional[SequentialEnvConfig] = None,
             fusion_map: Optional[Any] = None,
             ):
+        reward_design = str(
+            getattr(getattr(base_env, "reward_weights", None), "reward_design", "")
+        ).strip().lower()
+        if reward_design == "robust_constrained":
+            raise ValueError(
+                "robust_constrained requires BLBStage2LayerwiseEnv/train_layerwise; "
+                "the retired BLBStage2SequentialEnv blockwise path is rollback-only"
+            )
         self.base = base_env
         self.cfg = env_cfg or SequentialEnvConfig()
         self.num_layers = int(base_env.num_layers)
@@ -209,6 +361,8 @@ class BLBStage2SequentialEnv:
     def evaluate_step(
             self,
             per_step_action: Sequence[int],
+            *,
+            map_option_id_override: Optional[int] = None,
             ) -> Dict[str, Any]:
         """Run the optimizer for the candidate action WITHOUT mutating env state.
 
@@ -227,6 +381,8 @@ class BLBStage2SequentialEnv:
         spec = self.current_spec()
         action = np.asarray(per_step_action, dtype=int).reshape(-1)
         fusion_choice: Optional[BlockChoice] = None
+        policy_option_index: Optional[int] = None
+        map_option_id: Optional[int] = None
         # 加大精度: explicit boosted SFs (with the decided K) for this block, if
         # the chosen fusion option is a boosted one. Captured here so commit_step
         # can carry it to the TERMINAL model-forward install (the index-only
@@ -247,14 +403,32 @@ class BLBStage2SequentialEnv:
                 raise ValueError(
                     f"fusion step {spec.step_idx} expects 2 slots (option, K), got {action.size}"
                 )
-            block_vec = expand_fusion_step_action(spec, self._fusion_map, int(action[0]), int(action[1]))
+            policy_option_index = int(action[0])
+            map_option_id = (
+                int(map_option_id_override)
+                if map_option_id_override is not None
+                else resolve_fusion_map_option_id(spec, policy_option_index)
+            )
+            _opts = self._fusion_map.options(spec.graph_key_suffix)
+            _opt_obj = next(
+                (option for option in _opts if int(option.option_id) == map_option_id),
+                None,
+            )
+            if _opt_obj is None:
+                raise ValueError(
+                    f"step {spec.step_idx} map fusion option {map_option_id} does not exist "
+                    f"for {spec.graph_key_suffix}"
+                )
+            block_vec = self._fusion_map.expand(
+                spec.graph_key_suffix,
+                map_option_id,
+                int(action[1]),
+            )
             splice_fusion_step_into_full_vec(temp_vec, spec, block_vec)
             # Record the per-block (fusion_count, max_fusion, K) for the terminal
             # weighted-cost reward. Use the MAP's declared option fusion_count
             # (what the policy chose), not the optimizer's re-derived value.
-            _opts = self._fusion_map.options(spec.graph_key_suffix)
-            _oid = int(action[0])
-            _chosen_fusion = int(_opts[_oid].fusion_count) if 0 <= _oid < len(_opts) else 0
+            _chosen_fusion = int(_opt_obj.fusion_count)
             _max_fusion = max((int(o.fusion_count) for o in _opts), default=0)
             _kidx = int(action[1])
             _kval = int(K_LEVELS[_kidx]) if 0 <= _kidx < len(K_LEVELS) else int(K_LEVELS[-1])
@@ -272,90 +446,47 @@ class BLBStage2SequentialEnv:
                 )
             splice_step_action_into_full_vec(temp_vec, spec, action)
 
-        # only=(layer, block): this per-step replan consumes exactly one cfg;
-        # decoding all 12 layers x 4 blocks per step was the dominant python
-        # cost of the 47-step rollout. Per-(layer, block) decode independence
-        # makes the consumed cfg bit-identical to the full decode's.
-        decoded = action_vector_to_cfgs(
-            temp_vec,
-            self.base.max_sfs,
-            num_layers=self.num_layers,
-            gelu_degree=self.base.gelu_degree,
-            attn_degree=self.base.attn_degree,
-            only=(int(spec.layer_idx), int(spec.block_idx)),
-        )
-        cfgs_by_block = decoded.cfgs_dict()
-        block_cfg = cfgs_by_block[f"block{spec.block_idx}"][spec.layer_idx]
-
         # 加大精度 boosted option: above-baseline SF has no action_index, so the
-        # grid decode above used the (in-grid) base SFs. Rebuild this block's cfg
-        # SF-direct from the option's explicit field_values, with the separately
-        # decided K spliced in. Everything downstream (replan/override/install) is
-        # unchanged. Non-boosted options never enter this branch.
+        # index vector carries the in-grid base SFs. Pass the explicit values to
+        # the shared runtime so it rebuilds and binds the real boosted cfg.
         if self._fusion_map is not None:
-            _opt_obj = _opts[_oid] if 0 <= _oid < len(_opts) else None
             if _opt_obj is not None and getattr(_opt_obj, "boosted", False) and _opt_obj.explicit_field_values:
                 fv = dict(_opt_obj.explicit_field_values)
                 k_field = _BLOCK_SPECS[int(spec.block_idx)].fields[
                     int(self._fusion_map.k_slot_index(spec.graph_key_suffix))
                 ][0]
                 fv[k_field] = int(_kval)
-                deg_g = _degree_for_layer(
-                    self.base.gelu_degree, int(spec.layer_idx), self.num_layers,
-                    default=4, name="gelu_degree",
-                )
-                deg_a = _degree_for_layer(
-                    self.base.attn_degree, int(spec.layer_idx), self.num_layers,
-                    default=4, name="attn_degree",
-                )
-                block_cfg = build_block_cfg_from_field_values(
-                    int(spec.block_idx), int(spec.layer_idx), fv,
-                    N=int(_block_default_N(int(spec.block_idx), gelu_degree=deg_g, attn_degree=deg_a)),
-                    gelu_degree=deg_g, attn_degree=deg_a,
-                )
                 boosted_field_values = fv
-        config_name = f"{spec.graph_key_suffix}_L{spec.layer_idx}"
 
-        optimizer_t0 = time.perf_counter()
-        try:
-            out = self.base.rescale_bridge.evaluate(
-                config_name=config_name,
-                block_name=f"block{spec.block_idx}",
-                cfg=block_cfg,
-            )
-        except Exception as exc:
-            optimizer_wall = float(time.perf_counter() - optimizer_t0)
-            return {
-                "spec": spec,
-                "action": action,
-                "temp_vec": temp_vec,
-                "block_cfg": None,
-                "optimizer_output": None,
-                "valid": False,
-                "total_bits": 0,
-                "fusion_count": 0,
-                "invalid_chain": {"reason": f"bridge_error: {exc}"},
-                "bridge_error": str(exc),
-                "config_name": config_name,
-                "optimizer_wall_seconds": optimizer_wall,
-                "fusion_choice": fusion_choice,
-            }
-        optimizer_wall = float(time.perf_counter() - optimizer_t0)
+        runtime = evaluate_block_from_full_vector(
+            base_env=self.base,
+            full_vec=temp_vec,
+            layer_idx=int(spec.layer_idx),
+            block_idx=int(spec.block_idx),
+            graph_key=str(spec.graph_key_suffix),
+            boosted_field_values=boosted_field_values,
+        )
 
         return {
             "spec": spec,
             "action": action,
             "temp_vec": temp_vec,
-            "block_cfg": block_cfg,
-            "optimizer_output": out,
-            "valid": bool(out.valid),
-            "total_bits": int(out.total_bits),
-            "fusion_count": int(out.fusion_count),
-            "invalid_chain": out.invalid_chain,
-            "config_name": config_name,
-            "optimizer_wall_seconds": optimizer_wall,
+            "block_cfg": runtime.block_cfg,
+            "optimizer_output": runtime.optimizer_output,
+            "valid": runtime.valid,
+            "total_bits": runtime.total_bits,
+            "fusion_count": runtime.fusion_count,
+            "invalid_chain": runtime.invalid_chain,
+            "bridge_error": runtime.bridge_error,
+            "bridge_error_type": runtime.bridge_error_type,
+            "config_name": runtime.config_name,
+            "optimizer_wall_seconds": runtime.optimizer_wall_seconds,
             "fusion_choice": fusion_choice,
-            "boosted_field_values": boosted_field_values,
+            "policy_option_index": policy_option_index,
+            "map_option_id": map_option_id,
+            "boosted_field_values": runtime.boosted_field_values,
+            "replan_application": runtime.replan_application,
+            "optimizer_cfg_overrides": runtime.optimizer_cfg_overrides,
         }
 
     def commit_step(
@@ -399,6 +530,7 @@ class BLBStage2SequentialEnv:
                 "graph_key": config_name,
                 "valid": False,
                 "bridge_error": str(eval_info["bridge_error"]),
+                "bridge_error_type": eval_info.get("bridge_error_type"),
                 "early_terminated": True,
             }
             return self._build_obs(), -float(self.cfg.invalid_penalty), True, info
@@ -418,7 +550,13 @@ class BLBStage2SequentialEnv:
                 "layer_idx": int(spec.layer_idx),
                 "block_idx": int(spec.block_idx),
                 "graph_key": str(config_name),
-                "option_id": int(_action[0]) if _action.size > 0 else 0,
+                # ``option_id`` remains the real map ID for backward-compatible
+                # reports. Keep the policy-local index separately for PPO debug.
+                "option_id": int(eval_info.get("map_option_id", _action[0] if _action.size > 0 else 0)),
+                "map_option_id": int(eval_info.get("map_option_id", _action[0] if _action.size > 0 else 0)),
+                "policy_option_index": int(eval_info.get(
+                    "policy_option_index", _action[0] if _action.size > 0 else 0,
+                )),
                 "fusion_count": int(getattr(_fc, "fusion_count", 0)),
                 "max_fusion": int(getattr(_fc, "max_fusion", 0)),
                 "k_index": int(_action[1]) if _action.size > 1 else 0,
@@ -455,38 +593,19 @@ class BLBStage2SequentialEnv:
             "valid": valid,
             "total_bits": total_bits,
             "fusion_count": fusion_count,
+            "policy_option_index": eval_info.get("policy_option_index"),
+            "map_option_id": eval_info.get("map_option_id"),
             "invalid_chain": eval_info.get("invalid_chain"),
             "optimizer_wall_seconds": float(eval_info.get("optimizer_wall_seconds", 0.0) or 0.0),
         }
 
-        # 3) Apply optimizer cfg overrides on the (now committed) block_cfg.
-        #    Use the same canonical write-back helper as full-action RL and
-        #    Paean final eval so block2/block4/block5 binding mirrors cannot
-        #    drift between training and evaluation.
-        if valid and eval_info.get("optimizer_output") is not None:
-            out = eval_info["optimizer_output"]
-            block_cfg = eval_info["block_cfg"]
-            invoker_baselines: Mapping[str, Any] = (
-                getattr(self.base.rescale_bridge.invoker, "baselines", {}) or {}
-            )
-            cfgs_dict = {f"block{int(spec.block_idx)}": {int(spec.layer_idx): block_cfg}}
-
-            def _rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
-                return (self.base.env_cfg.rotation_name_map or {}).get(
-                    (int(block_idx), str(profile)), {}
-                )
-
-            replan_application = apply_optimizer_outputs_to_cfgs(
-                profile=str(self.profile),
-                cfgs_dict=cfgs_dict,
-                opt_outputs={str(config_name): out},
-                invoker_baselines=invoker_baselines,
-                rotation_name_map_provider=_rotation_provider,
-            )
+        # 3) The shared runtime already applied canonical optimizer bindings.
+        replan_application = eval_info.get("replan_application")
+        if replan_application:
             info["replan_application"] = replan_application
-            per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
-            if per_config_overrides:
-                info["optimizer_cfg_overrides"] = per_config_overrides.get(str(config_name), [])
+        optimizer_cfg_overrides = eval_info.get("optimizer_cfg_overrides")
+        if optimizer_cfg_overrides:
+            info["optimizer_cfg_overrides"] = optimizer_cfg_overrides
 
         # 4) Advance step counter + terminal handoff.
         self._step_idx += 1

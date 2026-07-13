@@ -16,16 +16,16 @@ from rescale_optimizer_bridge import (
     sync_block5_aux_fresh_binding,
 )
 
-try:  # torch-free test lane (blb_stage2_rl on sys.path)
-    from action_space import (
+if __package__:  # package/runtime context
+    from .action_space import (
         ActionDecodeResult,
         MaxSFsTable,
         action_vector_to_cfgs,
         build_optimizer_requests,
         parse_config_name,
     )
-except ImportError:  # package context
-    from .action_space import (
+else:  # torch-free test lane (blb_stage2_rl on sys.path)
+    from action_space import (
         ActionDecodeResult,
         MaxSFsTable,
         action_vector_to_cfgs,
@@ -284,14 +284,14 @@ def evaluate_action_for_cost(
         attn_degree=attn_degree,
     )
     if boosted_overrides:
-        try:  # torch-free test lane (blb_stage2_rl on sys.path)
-            from action_space import (
+        if __package__:  # package/runtime context
+            from .action_space import (
                 _block_default_N,
                 _degree_for_layer,
                 build_block_cfg_from_field_values,
             )
-        except ImportError:  # package context
-            from .action_space import (
+        else:  # torch-free test lane (blb_stage2_rl on sys.path)
+            from action_space import (
                 _block_default_N,
                 _degree_for_layer,
                 build_block_cfg_from_field_values,

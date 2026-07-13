@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import copy
 import contextlib
+import hashlib
 import math
+import operator
 import os
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -55,6 +57,7 @@ from .reward import (
     RewardWeights,
     compute_reward,
 )
+from .statistical_constraints import TrialSeries, assess_candidate
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +347,8 @@ class BLBStage2Env:
         # NOT a per-episode reward term (ADR-016 / the 77ffdc0 determinism fix), so it
         # is not threaded into compute_reward.
         self.loss_threshold: Optional[float] = None
+        self.statistical_reference = None
+        self.statistical_gate_probability = 0.50
         self.max_sfs = max_sfs
         self.num_layers = int(num_layers)
         self.gelu_degree = self._normalize_degree_vector(gelu_degree, default=4, name="gelu_degree")
@@ -578,11 +583,59 @@ class BLBStage2Env:
         return self._build_state()
 
     @staticmethod
+    def _normalize_trial_seeds(
+            trial_seeds: Optional[Sequence[int]],
+            trial_count: int,
+            ) -> Tuple[int, ...]:
+        if trial_seeds is None:
+            return ()
+        try:
+            raw_trial_seeds = tuple(trial_seeds)
+        except TypeError as exc:
+            raise ValueError("trial_seeds must be an integer sequence") from exc
+        if any(isinstance(seed, (bool, np.bool_)) for seed in raw_trial_seeds):
+            raise ValueError("trial_seeds must be an integer sequence")
+        try:
+            normalized = tuple(operator.index(seed) for seed in raw_trial_seeds)
+        except TypeError as exc:
+            raise ValueError("trial_seeds must be an integer sequence") from exc
+        if len(normalized) != int(trial_count):
+            raise ValueError("trial_seeds length must match the number of probe trials")
+        return normalized
+
+    @classmethod
+    def _trial_seeds_from_probe_diagnostics(
+            cls,
+            diagnostics: Any,
+            trial_count: int,
+            ) -> Tuple[int, ...]:
+        seeds_by_trial: List[Optional[int]] = [None] * int(trial_count)
+        for indices, seeds in zip(
+                diagnostics.per_worker_trial_indices,
+                diagnostics.per_worker_trial_seeds,
+        ):
+            if len(indices) != len(seeds):
+                raise ValueError("probe diagnostics trial indices and seeds must align")
+            for trial_idx, seed in zip(indices, seeds):
+                index = operator.index(trial_idx)
+                if not 0 <= index < int(trial_count) or seeds_by_trial[index] is not None:
+                    raise ValueError("probe diagnostics trial indices must be unique and in range")
+                seeds_by_trial[index] = seed
+        if any(seed is None for seed in seeds_by_trial):
+            raise ValueError("probe diagnostics must provide every trial seed")
+        return cls._normalize_trial_seeds(seeds_by_trial, trial_count)
+
+    @staticmethod
     def _metrics_from_trial_results(
             results: Sequence[Tuple[float, float, float]],
+            *,
+            trial_seeds: Optional[Sequence[int]] = None,
             ) -> EpisodeMetrics:
+        normalized_trial_seeds = BLBStage2Env._normalize_trial_seeds(
+            trial_seeds, len(results),
+        ) if trial_seeds is not None else ()
         if not results:
-            return EpisodeMetrics()
+            return EpisodeMetrics(trial_seeds=normalized_trial_seeds)
         loss_arr = np.array([float(x[0]) for x in results], dtype=float)
         m1_arr = np.array([float(x[1]) for x in results], dtype=float)
         m2_arr = np.array([float(x[2]) for x in results], dtype=float)
@@ -593,14 +646,18 @@ class BLBStage2Env:
         m2_arr = np.nan_to_num(m2_arr, nan=0.0, posinf=1.0, neginf=0.0)
         return EpisodeMetrics(
             loss_mean=float(loss_arr.mean()),
-            loss_std=float(loss_arr.std(ddof=0)) if loss_arr.size > 1 else 0.0,
+            loss_std=float(loss_arr.std(ddof=1)) if loss_arr.size > 1 else 0.0,
             metric1_mean=float(m1_arr.mean()),
             metric2_mean=float(m2_arr.mean()),
-            metric1_std=float(m1_arr.std(ddof=0)) if m1_arr.size > 1 else 0.0,
-            metric2_std=float(m2_arr.std(ddof=0)) if m2_arr.size > 1 else 0.0,
+            metric1_std=float(m1_arr.std(ddof=1)) if m1_arr.size > 1 else 0.0,
+            metric2_std=float(m2_arr.std(ddof=1)) if m2_arr.size > 1 else 0.0,
             loss_max=float(loss_arr.max()),
             metric1_min=float(m1_arr.min()),
             metric2_min=float(m2_arr.min()),
+            loss_trials=tuple(float(value) for value in loss_arr.tolist()),
+            metric1_trials=tuple(float(value) for value in m1_arr.tolist()),
+            metric2_trials=tuple(float(value) for value in m2_arr.tolist()),
+            trial_seeds=normalized_trial_seeds,
         )
 
     def _placeholder_metrics_for_invalid(self) -> EpisodeMetrics:
@@ -632,6 +689,8 @@ class BLBStage2Env:
             self,
             action_vec: np.ndarray,
             *,
+            external_cost_score: Optional[float] = None,
+            external_cost_rank: Optional[float] = None,
             boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
             ) -> Dict[str, Any]:
         """Prepare optimizer-adjusted cfgs for a terminal reward probe.
@@ -730,7 +789,7 @@ class BLBStage2Env:
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
 
-        return {
+        prepared = {
             "action_vec": action_vec,
             "action_hash": action_vec_hash,
             "decoded": decoded,
@@ -740,6 +799,82 @@ class BLBStage2Env:
             "info": info,
             "timing": timing,
         }
+        if external_cost_score is not None:
+            prepared["external_cost_score"] = float(external_cost_score)
+        if external_cost_rank is not None:
+            prepared["external_cost_rank"] = float(external_cost_rank)
+        return prepared
+
+    def _compute_terminal_reward(
+            self,
+            metrics: EpisodeMetrics,
+            opt_signals: Any,
+            *,
+            action_vec: np.ndarray,
+            action_vec_hash: str,
+            any_invalid: bool,
+            external_cost_score: Optional[float],
+            external_cost_rank: Optional[float],
+            info: Dict[str, Any],
+            ) -> RewardBreakdown:
+        assessment = None
+        if (
+                str(getattr(self.reward_weights, "reward_design", "")).strip().lower()
+                == "robust_constrained"
+        ):
+            if not any_invalid:
+                reference = getattr(self, "statistical_reference", None)
+                if reference is None:
+                    raise RuntimeError(
+                        "robust_constrained terminal reward requires statistical_reference"
+                    )
+                trials = TrialSeries(
+                    loss=metrics.loss_trials,
+                    metric1=metrics.metric1_trials,
+                    metric2=metrics.metric2_trials,
+                    seeds=metrics.trial_seeds,
+                )
+                seed_material = (
+                    f"{action_vec_hash}:{int(reference.bootstrap_seed)}"
+                ).encode("utf-8")
+                bootstrap_seed = int.from_bytes(
+                    hashlib.sha256(seed_material).digest()[:8], "big",
+                ) & 0x7FFFFFFFFFFFFFFF
+                assessment = assess_candidate(
+                    trials,
+                    reference,
+                    gate_probability=float(getattr(
+                        self, "statistical_gate_probability", 0.50,
+                    )),
+                    bootstrap_seed=bootstrap_seed,
+                )
+                info["statistical_assessment"] = {
+                    **asdict(assessment),
+                    "bootstrap_seed": int(bootstrap_seed),
+                }
+                info["statistical_trials"] = {
+                    "loss": [float(value) for value in trials.loss],
+                    "metric1": [float(value) for value in trials.metric1],
+                    "metric2": [float(value) for value in trials.metric2],
+                    "seeds": [int(value) for value in trials.seeds],
+                }
+
+        return compute_reward(
+            metrics, opt_signals,
+            action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
+            baseline=self.baseline,
+            weights=self.reward_weights,
+            acc_threshold=self.acc_threshold,
+            acc_threshold_m2=self.acc_threshold_m2,
+            stab_threshold=self.stab_threshold,
+            any_invalid=any_invalid,
+            pareto_archive=self.pareto_cost_archive,
+            action_hash=action_vec_hash,
+            external_cost_score=external_cost_score,
+            external_cost_rank=external_cost_rank,
+            loss_threshold=self.loss_threshold,
+            constraint_assessment=assessment,
+        )
 
     def _finish_prepared_terminal_probe(
             self,
@@ -771,18 +906,15 @@ class BLBStage2Env:
             diag.update(timing)
             info["probe_diagnostics"] = diag
 
-        breakdown = compute_reward(
-            metrics, opt_signals,
-            action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-            baseline=self.baseline,
-            weights=self.reward_weights,
-            acc_threshold=self.acc_threshold,
-            acc_threshold_m2=self.acc_threshold_m2,
-            stab_threshold=self.stab_threshold,
+        breakdown = self._compute_terminal_reward(
+            metrics,
+            opt_signals,
+            action_vec=action_vec,
+            action_vec_hash=action_vec_hash,
             any_invalid=any_invalid,
-            pareto_archive=self.pareto_cost_archive,
-            action_hash=action_vec_hash,
-            loss_threshold=self.loss_threshold,
+            external_cost_score=prepared.get("external_cost_score"),
+            external_cost_rank=prepared.get("external_cost_rank"),
+            info=info,
         )
         info["reward_breakdown"] = breakdown
         info["action_hash"] = action_vec_hash
@@ -836,7 +968,11 @@ class BLBStage2Env:
                 )
                 diag_obj = self.probe_runner.last_diagnostics
                 diag = {}
+                local_trial_seeds: Optional[Tuple[int, ...]] = None
                 if diag_obj is not None:
+                    local_trial_seeds = self._trial_seeds_from_probe_diagnostics(
+                        diag_obj, len(forward_indices),
+                    )
                     diag = {
                         "k": int(diag_obj.k),
                         "wall_seconds": float(diag_obj.wall_seconds),
@@ -865,7 +1001,13 @@ class BLBStage2Env:
                 })
                 for local_idx, result in enumerate(trial_results):
                     item_idx = forward_indices[local_idx]
-                    metrics = self._metrics_from_trial_results([result])
+                    metrics = self._metrics_from_trial_results(
+                        [result],
+                        trial_seeds=(
+                            [local_trial_seeds[local_idx]]
+                            if local_trial_seeds is not None else None
+                        ),
+                    )
                     out[item_idx] = self._finish_prepared_terminal_probe(
                         prepared_items[item_idx], metrics,
                         probe_diagnostics=diag,
@@ -1135,18 +1277,15 @@ class BLBStage2Env:
                 metric1_min=placeholder_metric1,
                 metric2_min=placeholder_metric2,
             )
-            breakdown = compute_reward(
-                metrics, opt_signals,
-                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-                baseline=self.baseline,
-                weights=self.reward_weights,
-                acc_threshold=self.acc_threshold,
-                acc_threshold_m2=self.acc_threshold_m2,
-                stab_threshold=self.stab_threshold,
+            breakdown = self._compute_terminal_reward(
+                metrics,
+                opt_signals,
+                action_vec=action_vec,
+                action_vec_hash=action_vec_hash,
                 any_invalid=True,
-                pareto_archive=self.pareto_cost_archive,
-                action_hash=action_vec_hash,
-                loss_threshold=self.loss_threshold,
+                external_cost_score=external_cost_score,
+                external_cost_rank=external_cost_rank,
+                info=info,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1195,18 +1334,15 @@ class BLBStage2Env:
             timing["probe_install_skipped"] = float(0.0)
             # 互斥校验失败，按 invalid 处理
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
-            breakdown = compute_reward(
-                metrics, opt_signals,
-                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-                baseline=self.baseline,
-                weights=self.reward_weights,
-                acc_threshold=self.acc_threshold,
-                acc_threshold_m2=self.acc_threshold_m2,
-                stab_threshold=self.stab_threshold,
+            breakdown = self._compute_terminal_reward(
+                metrics,
+                opt_signals,
+                action_vec=action_vec,
+                action_vec_hash=action_vec_hash,
                 any_invalid=True,
-                pareto_archive=self.pareto_cost_archive,
-                action_hash=action_vec_hash,
-                loss_threshold=self.loss_threshold,
+                external_cost_score=external_cost_score,
+                external_cost_rank=external_cost_rank,
+                info=info,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1240,18 +1376,15 @@ class BLBStage2Env:
             except Exception:
                 pass
             metrics = EpisodeMetrics(loss_mean=float("inf"), loss_std=float("inf"))
-            breakdown = compute_reward(
-                metrics, opt_signals,
-                action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-                baseline=self.baseline,
-                weights=self.reward_weights,
-                acc_threshold=self.acc_threshold,
-                acc_threshold_m2=self.acc_threshold_m2,
-                stab_threshold=self.stab_threshold,
+            breakdown = self._compute_terminal_reward(
+                metrics,
+                opt_signals,
+                action_vec=action_vec,
+                action_vec_hash=action_vec_hash,
                 any_invalid=True,
-                pareto_archive=self.pareto_cost_archive,
-                action_hash=action_vec_hash,
-                loss_threshold=self.loss_threshold,
+                external_cost_score=external_cost_score,
+                external_cost_rank=external_cost_rank,
+                info=info,
             )
             info["reward_breakdown"] = breakdown
             info["action_hash"] = action_vec_hash
@@ -1281,20 +1414,15 @@ class BLBStage2Env:
                 info["probe_diagnostics"] = diag
 
         # 6) reward
-        breakdown = compute_reward(
-            metrics, opt_signals,
-            action_avg_k=avg_truncation_k_in_action(action_vec, self.num_layers),
-            baseline=self.baseline,
-            weights=self.reward_weights,
-            acc_threshold=self.acc_threshold,
-            acc_threshold_m2=self.acc_threshold_m2,
-            stab_threshold=self.stab_threshold,
+        breakdown = self._compute_terminal_reward(
+            metrics,
+            opt_signals,
+            action_vec=action_vec,
+            action_vec_hash=action_vec_hash,
             any_invalid=any_invalid,
-            pareto_archive=self.pareto_cost_archive,
-            action_hash=action_vec_hash,
             external_cost_score=external_cost_score,
             external_cost_rank=external_cost_rank,
-            loss_threshold=self.loss_threshold,
+            info=info,
         )
 
         info["reward_breakdown"] = breakdown
@@ -1431,12 +1559,17 @@ class BLBStage2Env:
         per_trial_loss: List[float] = []
         per_trial_metric1: List[float] = []
         per_trial_metric2: List[float] = []
+        trial_seeds: Optional[List[int]] = None
         probe_wall_start = time.perf_counter()
 
         try:
             if self.probe_runner is not None:
                 # ---- Multi-GPU path: fan out via ProbeRunner ----
-                base_seed = self._derive_probe_base_seed()
+                base_seed = (
+                    int(self.probe_noise_seed)
+                    if self.probe_noise_seed is not None
+                    else self._derive_probe_base_seed()
+                )
                 self._probe_eval_counter += 1
                 results = self.probe_runner.run_trials(k, base_seed=base_seed)
                 diag = self.probe_runner.last_diagnostics
@@ -1452,6 +1585,9 @@ class BLBStage2Env:
                         "speedup_vs_sequential": float(diag.speedup_vs_sequential),
                         "line": format_diagnostics_line(diag),
                     }
+                    trial_seeds = list(
+                        self._trial_seeds_from_probe_diagnostics(diag, k)
+                    )
                 for (loss, m1, m2) in results:
                     if loss is None or (isinstance(loss, float) and not math.isfinite(loss)):
                         # NaN/inf from a probe trial is kept and handled below
@@ -1543,6 +1679,7 @@ class BLBStage2Env:
 
         return self._aggregate_probe_trials(
             per_trial_loss, per_trial_metric1, per_trial_metric2,
+            trial_seeds=trial_seeds,
         )
 
     def _eval_on_probe_deterministic(self, k: int) -> EpisodeMetrics:
@@ -1563,6 +1700,7 @@ class BLBStage2Env:
         of interleaving order.
         """
         from function_handler import noise_rng_scope, reseed_noise_rng_for_device
+        from .seed_utils import derive_probe_trial_seed
 
         scope = getattr(self, "probe_noise_scope", None)
         lock = self.probe_device_lock
@@ -1581,6 +1719,10 @@ class BLBStage2Env:
             and getattr(self._device, "type", None) == "cuda"
         )
         base_seed = int(self.probe_noise_seed)
+        trial_seeds = [
+            derive_probe_trial_seed(base_seed, trial_idx)
+            for trial_idx in range(int(k))
+        ]
         per_trial_loss: List[float] = []
         per_trial_metric1: List[float] = []
         per_trial_metric2: List[float] = []
@@ -1591,9 +1733,7 @@ class BLBStage2Env:
         try:
             with torch.inference_mode():
                 for trial_idx in range(int(k)):
-                    seed = int(
-                        (base_seed ^ (trial_idx * 2654435761)) & 0x7FFFFFFFFFFFFFFF
-                    )
+                    seed = trial_seeds[trial_idx]
                     trial_outputs: List[Tuple[torch.Tensor, torch.Tensor]] = []
                     with noise_rng_scope(scope):
                         with lock:
@@ -1661,10 +1801,7 @@ class BLBStage2Env:
             "per_worker_seconds": [float(wall_elapsed)],
             "per_worker_trial_counts": [int(k)],
             "per_worker_trial_indices": [list(range(int(k)))],
-            "per_worker_trial_seeds": [[
-                int((base_seed ^ (t * 2654435761)) & 0x7FFFFFFFFFFFFFFF)
-                for t in range(int(k))
-            ]],
+            "per_worker_trial_seeds": [list(trial_seeds)],
             "devices": [str(self._device)],
             "speedup_vs_sequential": 1.0,
             "deterministic_probe_seed": int(base_seed),
@@ -1675,6 +1812,7 @@ class BLBStage2Env:
         }
         return self._aggregate_probe_trials(
             per_trial_loss, per_trial_metric1, per_trial_metric2,
+            trial_seeds=trial_seeds,
         )
 
     def _aggregate_probe_trials(
@@ -1682,9 +1820,16 @@ class BLBStage2Env:
             per_trial_loss: List[float],
             per_trial_metric1: List[float],
             per_trial_metric2: List[float],
+            trial_seeds: Optional[Sequence[int]] = None,
             ) -> EpisodeMetrics:
+        trial_count = len(per_trial_loss)
+        if len(per_trial_metric1) != trial_count or len(per_trial_metric2) != trial_count:
+            raise ValueError("probe trial channels must have equal lengths")
+        normalized_trial_seeds = BLBStage2Env._normalize_trial_seeds(
+            trial_seeds, trial_count,
+        )
         if not per_trial_loss:
-            return EpisodeMetrics()
+            return EpisodeMetrics(trial_seeds=normalized_trial_seeds)
 
         loss_arr = np.array(per_trial_loss, dtype=float)
         m1_arr = np.array(per_trial_metric1, dtype=float)
@@ -1705,14 +1850,18 @@ class BLBStage2Env:
 
         return EpisodeMetrics(
             loss_mean=float(loss_arr.mean()),
-            loss_std=float(loss_arr.std(ddof=0)) if loss_arr.size > 1 else 0.0,
+            loss_std=float(loss_arr.std(ddof=1)) if loss_arr.size > 1 else 0.0,
             metric1_mean=float(m1_arr.mean()),
             metric2_mean=float(m2_arr.mean()),
-            metric1_std=float(m1_arr.std(ddof=0)) if m1_arr.size > 1 else 0.0,
-            metric2_std=float(m2_arr.std(ddof=0)) if m2_arr.size > 1 else 0.0,
+            metric1_std=float(m1_arr.std(ddof=1)) if m1_arr.size > 1 else 0.0,
+            metric2_std=float(m2_arr.std(ddof=1)) if m2_arr.size > 1 else 0.0,
             loss_max=float(loss_arr.max()),
             metric1_min=float(m1_arr.min()),
             metric2_min=float(m2_arr.min()),
+            loss_trials=tuple(float(value) for value in loss_arr.tolist()),
+            metric1_trials=tuple(float(value) for value in m1_arr.tolist()),
+            metric2_trials=tuple(float(value) for value in m2_arr.tolist()),
+            trial_seeds=normalized_trial_seeds,
         )
 
     # ------------------------------------------------------------------

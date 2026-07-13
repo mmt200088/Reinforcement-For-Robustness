@@ -3,12 +3,90 @@ from __future__ import annotations
 
 import gzip
 import json
+import operator
 from pathlib import Path
 from typing import Any, Iterable, Literal, TextIO
 
 from json_utils import json_default, to_jsonable
 
 JsonlErrorMode = Literal["skip", "raise"]
+
+
+def recover_jsonl_file(
+        path: str | Path,
+        *,
+        committed_size: int | None = None,
+        ) -> int:
+    """Repair a torn tail or roll a log back to a committed byte boundary.
+
+    This helper is for checkpoint-coupled diagnostic mirrors. A supplied
+    ``committed_size`` is authoritative and may discard later, uncommitted
+    rows. Without it, only the final unterminated row is inspected: a complete
+    JSON value gets its missing newline, while malformed tail bytes are
+    removed. Earlier rows are never rewritten.
+    """
+    jsonl_path = Path(path)
+    if committed_size is not None:
+        if isinstance(committed_size, bool):
+            raise TypeError("committed_size must be a non-negative integer")
+        try:
+            target_size = operator.index(committed_size)
+        except TypeError as exc:
+            raise TypeError(
+                "committed_size must be a non-negative integer"
+            ) from exc
+        if target_size < 0:
+            raise ValueError("committed_size must be non-negative")
+        current_size = jsonl_path.stat().st_size if jsonl_path.exists() else 0
+        if target_size > current_size:
+            raise ValueError(
+                f"JSONL file is shorter than checkpoint: "
+                f"{current_size} < {target_size}"
+            )
+        if target_size:
+            with jsonl_path.open("rb") as handle:
+                handle.seek(target_size - 1)
+                if handle.read(1) != b"\n":
+                    raise ValueError(
+                        "committed_size is not a complete JSONL boundary"
+                    )
+        if current_size != target_size:
+            jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+            with jsonl_path.open("r+b") as handle:
+                handle.truncate(target_size)
+        return target_size
+
+    if not jsonl_path.exists():
+        return 0
+    current_size = jsonl_path.stat().st_size
+    if current_size == 0:
+        return 0
+    with jsonl_path.open("r+b") as handle:
+        handle.seek(current_size - 1)
+        if handle.read(1) == b"\n":
+            return current_size
+
+        cursor = current_size
+        row_start = 0
+        while cursor > 0:
+            chunk_size = min(64 * 1024, cursor)
+            cursor -= chunk_size
+            handle.seek(cursor)
+            chunk = handle.read(chunk_size)
+            newline = chunk.rfind(b"\n")
+            if newline >= 0:
+                row_start = cursor + newline + 1
+                break
+        handle.seek(row_start)
+        tail = handle.read(current_size - row_start)
+        try:
+            json.loads(tail.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            handle.truncate(row_start)
+            return row_start
+        handle.seek(current_size)
+        handle.write(b"\n")
+        return current_size + 1
 
 
 def resolve_jsonl_path(path: str | Path, *, gzip_fallback: bool = False) -> Path:

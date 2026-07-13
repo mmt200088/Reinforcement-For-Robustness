@@ -1,0 +1,52 @@
+{
+  "profile": "rte",
+  "max_num_options": 6,
+  "graph_keys": [
+    "block2_rte"
+  ],
+  "per_type": {
+    "block2_rte": {
+      "active_rescale_fields": [
+        "gamma_rescale_sf",
+        "kt_mask1_rescale_sf",
+        "q_mask1_rescale_sf",
+        "qkt_matmul_rescale_sf"
+      ],
+      "enum_positions": [
+        0,
+        2,
+        3,
+        5,
+        6,
+        8,
+        18,
+        21
+      ],
+      "pinned_positions": [
+        7
+      ],
+      "enum_total_combos": 211891680,
+      "valid_configs": 169990800,
+      "kept_configs": 732,
+      "num_options": 2,
+      "fusion_counts": [
+        0,
+        1
+      ],
+      "wall_seconds": 1287.31,
+      "workers": 20,
+      "k_independence": {
+        "k_independent": true,
+        "violations": [],
+        "samples_checked": 2
+      },
+      "enum_path_requested": "fast",
+      "enum_path_effective": "fast",
+      "fast_fallback_reason": "",
+      "enum_path": "fast",
+      "fast_verified_probes": 514,
+      "fast_shards": 640,
+      "fast_wall_seconds": 1287.16
+    }
+  }
+}

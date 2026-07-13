@@ -75,8 +75,9 @@ Design notes
 * The recorder owns ZERO knowledge about the launcher / runner / policy
   internals. Callers pass in plain dataclass payloads. This keeps the recorder
   testable and the runner integration shallow.
-* All writes are best-effort with try/except: a recorder failure must never
-  abort training.
+* Legacy callers keep best-effort writes. The layerwise robust runner enables
+  ``strict_writes`` so mandatory JSON/JSONL failures abort instead of leaving
+  scientifically incomplete evidence behind.
 * JSONL files are append-only so a crash leaves a tail-able record. The
   ``.json`` / ``.npz`` / ``.md`` files are atomically rewritten (tmp + rename)
   on each periodic flush.
@@ -84,7 +85,7 @@ Design notes
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 import heapq
 import json
 import os
@@ -94,6 +95,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO
 
 import numpy as np
 
+from rl_data_points import _strict_jsonable
+from jsonl_utils import iter_jsonl, recover_jsonl_file
 from stats_utils import mean_or_default
 
 try:  # Package import path.
@@ -214,6 +217,26 @@ class EpisodeStats:
     empirical_offset_success_rate: float = 0.0
     empirical_offset_failure_rate: float = 0.0
     frontier_seed_episode: int = -1
+    raw_trials: Dict[str, Any] = field(default_factory=dict)
+    constraint_probabilities: Dict[str, float] = field(default_factory=dict)
+    fresh_trials: Dict[str, Any] = field(default_factory=dict)
+    pooled_trials: Dict[str, Any] = field(default_factory=dict)
+    fresh_metrics: Dict[str, float] = field(default_factory=dict)
+    pooled_metrics: Dict[str, float] = field(default_factory=dict)
+    fresh_constraint_probabilities: Dict[str, float] = field(default_factory=dict)
+    pooled_constraint_probabilities: Dict[str, float] = field(default_factory=dict)
+    fresh_trial_count: int = 0
+    pooled_trial_count: int = 0
+    reward_evidence: str = ""
+    ranking_evidence: str = ""
+    constraint_thresholds: Dict[str, Any] = field(default_factory=dict)
+    variable_cost: float = 0.0
+    layer_action_matrix: List[List[int]] = field(default_factory=list)
+    block4_entropy: Optional[float] = None
+    k_entropy: Optional[float] = None
+    promotion_trial_count: int = 0
+    promotion_status: str = ""
+    convergence_state: Dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
 
 
@@ -245,7 +268,37 @@ class PPOUpdateStats:
     entropy_recovery_delta: float = 0.0
     return_mean: float = 0.0
     return_std: float = 1.0
+    block4_entropy: Optional[float] = None
+    k_entropy: Optional[float] = None
+    stall_update_windows: int = 0
+    converged: bool = False
+    extension_required: bool = False
+    best_robust_feasible_cost: Optional[float] = None
     timestamp: float = field(default_factory=time.time)
+
+
+_RESTORED_EPISODE_NULL_SENTINELS = {
+    # Strict JSON represents non-finite runtime sentinels as null. Rehydrate
+    # them to conservative numeric values so an invalid episode remains
+    # reportable and cannot become a competitive candidate after resume.
+    "terminal_loss_mean": float("inf"),
+    "terminal_loss_std": float("inf"),
+    "terminal_metric1_mean": 0.0,
+    "terminal_metric2_mean": 0.0,
+    "terminal_metric1_std": float("inf"),
+    "terminal_metric2_std": float("inf"),
+}
+
+
+def _episode_stats_from_json_row(
+        row: Mapping[str, Any],
+        episode_fields: set[str],
+        ) -> EpisodeStats:
+    payload = {key: value for key, value in row.items() if key in episode_fields}
+    for name, sentinel in _RESTORED_EPISODE_NULL_SENTINELS.items():
+        if name in payload and payload[name] is None:
+            payload[name] = sentinel
+    return EpisodeStats(**payload)
 
 
 def _write_joined_lines_stream(fh: TextIO, lines: Iterable[str]) -> None:
@@ -271,6 +324,7 @@ class RLDiagnosticsRecorder:
             slots_view_builder=None,
             schema_version: str = "blb_v3_slots_human_v1",
             data_point_writer=None,
+            strict_writes: bool = False,
             ) -> None:
         """Long-term diagnostics recorder.
 
@@ -294,9 +348,12 @@ class RLDiagnosticsRecorder:
         self._slots_view_builder = slots_view_builder
         self.schema_version = str(schema_version)
         self._data_point_writer = data_point_writer
+        self._strict_writes = bool(strict_writes)
         self._jsonl_buffer_size = 1024 * 1024
         self._jsonl_flush_interval = 64
-        self._jsonl_encoder = json.JSONEncoder(ensure_ascii=False, default=str)
+        self._jsonl_encoder = json.JSONEncoder(
+            ensure_ascii=False, default=str, allow_nan=False,
+        )
         self._jsonl_files: Dict[str, TextIO] = {}
         self._jsonl_line_counts: Dict[str, int] = {}
 
@@ -345,6 +402,12 @@ class RLDiagnosticsRecorder:
         self._baseline_avg_k: Optional[float] = None
         self._baseline_action_vec: Optional[np.ndarray] = None
         self._baseline_slots: Optional[List[Dict[str, Any]]] = None
+
+    def _mandatory_write_failure(self, label: str, exc: Exception) -> None:
+        message = f"mandatory diagnostics write failed ({label}): {exc}"
+        if self._strict_writes:
+            raise RuntimeError(message) from exc
+        self.log(f"  [diag][warning] {message}")
 
     @staticmethod
     def _candidate_rank_key(payload: Mapping[str, Any]) -> tuple:
@@ -442,6 +505,23 @@ class RLDiagnosticsRecorder:
                 if "reward_design" in self._meta:
                     manifest_payload["reward_design"] = self._meta["reward_design"]
                 for key in (
+                        "decision_granularity", "baseline_groups",
+                        "baseline_trials_per_group", "constraint_bootstrap_samples",
+                        "constraint_probabilities", "constraint_limits",
+                        "gamma", "gae_lambda", "rollout_size", "ppo_lr",
+                ):
+                    if key in self._meta:
+                        manifest_payload[key] = self._meta[key]
+                if isinstance(baseline_preflight, Mapping):
+                    robust_reference = baseline_preflight.get("robust_reference")
+                    if isinstance(robust_reference, Mapping):
+                        manifest_payload["baseline_raw_groups"] = list(
+                            robust_reference.get("groups", ())
+                        )
+                        manifest_payload["stability_multiplier"] = robust_reference.get(
+                            "stability_multiplier"
+                        )
+                for key in (
                     "borderline_retest_enabled",
                     "borderline_retest_trials_multiplier",
                 ):
@@ -449,7 +529,7 @@ class RLDiagnosticsRecorder:
                         manifest_payload[key] = self._meta[key]
                 self._data_point_writer.write_manifest(manifest_payload)
             except Exception as exc:
-                self.log(f"  [diag][warning] structured data manifest write failed: {exc}")
+                self._mandatory_write_failure("manifest", exc)
 
     def set_baseline_avg_k(self, value: float) -> None:
         try:
@@ -484,8 +564,174 @@ class RLDiagnosticsRecorder:
     # Recording APIs
     # ------------------------------------------------------------------
 
+    def restore_existing(self) -> Dict[str, int]:
+        """Rebuild in-memory diagnostics from append-only primary JSONL files."""
+        if self._all_episode_returns or self._ppo_history:
+            raise RuntimeError("restore_existing must run before new diagnostics")
+        self._repair_and_reconcile_jsonl_pair(
+            primary_path=self.episodes_path,
+            mirror_name="episodes.jsonl",
+            identity_field="episode",
+            primary_fields={item.name for item in dataclass_fields(EpisodeStats)},
+        )
+        self._repair_and_reconcile_jsonl_pair(
+            primary_path=self.ppo_updates_path,
+            mirror_name="ppo_updates.jsonl",
+            identity_field="completed_episodes",
+            primary_fields={item.name for item in dataclass_fields(PPOUpdateStats)},
+        )
+        episode_count = 0
+        update_count = 0
+        episode_fields = {item.name for item in dataclass_fields(EpisodeStats)}
+        update_fields = {item.name for item in dataclass_fields(PPOUpdateStats)}
+        if os.path.isfile(self.episodes_path):
+            for row in iter_jsonl(self.episodes_path, errors="raise"):
+                full_action_vec = row.get("full_action_vec")
+                stats = _episode_stats_from_json_row(row, episode_fields)
+                self.record_episode(
+                    episode_stats=stats,
+                    full_action_vec=full_action_vec,
+                    is_new_best=False,
+                    best_reward_so_far=float(stats.total_reward),
+                    persist=False,
+                )
+                episode_count += 1
+        if os.path.isfile(self.ppo_updates_path):
+            for row in iter_jsonl(self.ppo_updates_path, errors="raise"):
+                stats = PPOUpdateStats(**{
+                    key: value for key, value in row.items() if key in update_fields
+                })
+                self.record_ppo_update(stats, persist=False)
+                update_count += 1
+        return {"episodes": episode_count, "ppo_updates": update_count}
+
+    @staticmethod
+    def _rows_match_primary(primary: Mapping[str, Any], mirror: Mapping[str, Any]) -> bool:
+        return all(key in mirror and mirror[key] == value for key, value in primary.items())
+
+    def _repair_and_reconcile_jsonl_pair(
+            self,
+            *,
+            primary_path: str,
+            mirror_name: str,
+            identity_field: str,
+            primary_fields: set[str],
+            ) -> None:
+        recover_jsonl_file(primary_path)
+        writer = self._data_point_writer
+        if writer is None or not hasattr(writer, "jsonl_path"):
+            return
+        mirror_path = writer.jsonl_path(mirror_name)
+        recover_jsonl_file(mirror_path)
+        primary_iter = (
+            iter_jsonl(primary_path, errors="raise")
+            if os.path.isfile(primary_path) else iter(())
+        )
+        mirror_iter = (
+            iter_jsonl(mirror_path, errors="raise")
+            if mirror_path.is_file() else iter(())
+        )
+        sentinel = object()
+        while True:
+            primary = next(primary_iter, sentinel)
+            mirror = next(mirror_iter, sentinel)
+            if primary is sentinel and mirror is sentinel:
+                break
+            if primary is not sentinel and mirror is not sentinel:
+                if primary.get(identity_field) != mirror.get(identity_field):
+                    raise RuntimeError(
+                        f"diagnostics mirror non-tail divergence for {mirror_name}: "
+                        f"{primary.get(identity_field)!r} != {mirror.get(identity_field)!r}"
+                    )
+                if not self._rows_match_primary(primary, mirror):
+                    raise RuntimeError(
+                        f"diagnostics mirror conflict for {mirror_name} "
+                        f"{identity_field}={primary.get(identity_field)!r}"
+                    )
+                continue
+            if primary is not sentinel:
+                payload = dict(primary)
+                if mirror_name == "episodes.jsonl":
+                    payload.setdefault("is_new_best", False)
+                    payload.setdefault(
+                        "best_reward_so_far", float(payload.get("total_reward", 0.0))
+                    )
+                    writer.write_episode(payload)
+                else:
+                    writer.write_ppo_update(payload)
+                for remaining in primary_iter:
+                    if mirror_name == "episodes.jsonl":
+                        payload = dict(remaining)
+                        payload.setdefault("is_new_best", False)
+                        payload.setdefault(
+                            "best_reward_so_far",
+                            float(payload.get("total_reward", 0.0)),
+                        )
+                        writer.write_episode(payload)
+                    else:
+                        writer.write_ppo_update(dict(remaining))
+                break
+
+            primary_payload = {
+                key: value for key, value in mirror.items()
+                if key in primary_fields or key == "full_action_vec"
+            }
+            self._write_primary_jsonl(primary_path, primary_payload)
+            for remaining in mirror_iter:
+                primary_payload = {
+                    key: value for key, value in remaining.items()
+                    if key in primary_fields or key == "full_action_vec"
+                }
+                self._write_primary_jsonl(primary_path, primary_payload)
+            break
+        self._flush_primary_jsonl()
+        if hasattr(writer, "flush"):
+            writer.flush()
+
+    def committed_jsonl_sizes(self) -> Dict[str, int]:
+        """Return four flushed byte boundaries for an atomic RL checkpoint."""
+        self.flush_mandatory()
+        primary = {
+            "episodes.jsonl": (
+                os.path.getsize(self.episodes_path)
+                if os.path.isfile(self.episodes_path) else 0
+            ),
+            "ppo_updates.jsonl": (
+                os.path.getsize(self.ppo_updates_path)
+                if os.path.isfile(self.ppo_updates_path) else 0
+            ),
+        }
+        structured = (
+            self._data_point_writer.committed_jsonl_sizes()
+            if self._data_point_writer is not None
+            and hasattr(self._data_point_writer, "committed_jsonl_sizes")
+            else {}
+        )
+        return {"primary": primary, "structured": structured}
+
+    def recover_to_checkpoint_sizes(self, committed_sizes: Optional[Mapping[str, Any]]) -> None:
+        """Restore primary and mirrored logs to one checkpoint transaction."""
+        if self._jsonl_files:
+            raise RuntimeError("cannot recover diagnostics after opening JSONL writers")
+        sizes = dict(committed_sizes or {})
+        primary = dict(sizes.get("primary") or {})
+        for name, path in (
+                ("episodes.jsonl", self.episodes_path),
+                ("ppo_updates.jsonl", self.ppo_updates_path),
+        ):
+            recover_jsonl_file(
+                path,
+                committed_size=(primary[name] if name in primary else None),
+            )
+        if self._data_point_writer is not None and hasattr(
+                self._data_point_writer, "recover_jsonl_files",
+        ):
+            self._data_point_writer.recover_jsonl_files(
+                dict(sizes.get("structured") or {})
+            )
+
     def _write_jsonl_row(self, fh: TextIO, payload: Mapping[str, Any]) -> None:
-        fh.writelines(self._jsonl_encoder.iterencode(payload))
+        fh.writelines(self._jsonl_encoder.iterencode(_strict_jsonable(payload)))
         fh.write("\n")
 
     def _write_primary_jsonl(self, path: str, payload: Mapping[str, Any]) -> None:
@@ -522,25 +768,32 @@ class RLDiagnosticsRecorder:
             full_action_vec: Optional[np.ndarray],
             is_new_best: bool,
             best_reward_so_far: float,
+            persist: bool = True,
             ) -> None:
         """Append episode JSONL row and update in-memory accumulators."""
         # 1) append JSONL row
-        try:
-            self._write_primary_jsonl(self.episodes_path, episode_stats.__dict__)
-        except Exception as exc:
-            self.log(f"  [diag][warning] episodes.jsonl write failed: {exc}")
-        if self._data_point_writer is not None:
+        if persist:
             try:
-                mirror_payload = dict(episode_stats.__dict__)
-                mirror_payload["is_new_best"] = bool(is_new_best)
-                mirror_payload["best_reward_so_far"] = float(best_reward_so_far)
+                primary_payload = dict(episode_stats.__dict__)
                 if full_action_vec is not None:
-                    mirror_payload["full_action_vec"] = (
+                    primary_payload["full_action_vec"] = (
                         np.asarray(full_action_vec, dtype=int).reshape(-1).tolist()
                     )
-                self._data_point_writer.write_episode(mirror_payload)
+                self._write_primary_jsonl(self.episodes_path, primary_payload)
             except Exception as exc:
-                self.log(f"  [diag][warning] structured episode write failed: {exc}")
+                self._mandatory_write_failure("episodes.jsonl", exc)
+            if self._data_point_writer is not None:
+                try:
+                    mirror_payload = dict(episode_stats.__dict__)
+                    mirror_payload["is_new_best"] = bool(is_new_best)
+                    mirror_payload["best_reward_so_far"] = float(best_reward_so_far)
+                    if full_action_vec is not None:
+                        mirror_payload["full_action_vec"] = (
+                            np.asarray(full_action_vec, dtype=int).reshape(-1).tolist()
+                        )
+                    self._data_point_writer.write_episode(mirror_payload)
+                except Exception as exc:
+                    self._mandatory_write_failure("structured episodes.jsonl", exc)
 
         # 2) accumulate stats
         self._all_episode_returns.append(float(episode_stats.total_reward))
@@ -682,7 +935,7 @@ class RLDiagnosticsRecorder:
         # format: every slot listed with its model location + the actual
         # scaling_factor / truncation_bits value. The flat ``action_vec`` is
         # kept as a fallback field so Paean's old reader keeps working.
-        if is_new_best and full_action_vec is not None:
+        if persist and is_new_best and full_action_vec is not None:
             try:
                 vec_int = np.asarray(full_action_vec, dtype=int)
                 slots_view: Optional[List[Dict[str, Any]]] = None
@@ -782,18 +1035,28 @@ class RLDiagnosticsRecorder:
                     })
         return diff
 
-    def record_ppo_update(self, stats: PPOUpdateStats) -> None:
+    def record_ppo_update(self, stats: PPOUpdateStats, *, persist: bool = True) -> None:
         """Append PPO update JSONL row."""
-        try:
-            self._write_primary_jsonl(self.ppo_updates_path, stats.__dict__)
-        except Exception as exc:
-            self.log(f"  [diag][warning] ppo_updates.jsonl write failed: {exc}")
-        if self._data_point_writer is not None:
+        if persist:
             try:
-                self._data_point_writer.write_ppo_update(dict(stats.__dict__))
+                self._write_primary_jsonl(self.ppo_updates_path, stats.__dict__)
             except Exception as exc:
-                self.log(f"  [diag][warning] structured ppo update write failed: {exc}")
+                self._mandatory_write_failure("ppo_updates.jsonl", exc)
+            if self._data_point_writer is not None:
+                try:
+                    self._data_point_writer.write_ppo_update(dict(stats.__dict__))
+                except Exception as exc:
+                    self._mandatory_write_failure("structured ppo_updates.jsonl", exc)
         self._ppo_history.append(stats)
+
+    def flush_mandatory(self) -> None:
+        """Durably flush primary and mirrored JSONL before checkpoint commit."""
+        try:
+            self._flush_primary_jsonl()
+            if self._data_point_writer is not None:
+                self._data_point_writer.flush()
+        except Exception as exc:
+            self._mandatory_write_failure("checkpoint JSONL flush", exc)
 
     def flush_periodic(self) -> None:
         """Flush action histogram + first-invalid counts + top candidates +
@@ -802,7 +1065,7 @@ class RLDiagnosticsRecorder:
         try:
             self._flush_primary_jsonl()
         except Exception as exc:
-            self.log(f"  [diag][warning] primary JSONL flush failed: {exc}")
+            self._mandatory_write_failure("primary JSONL flush", exc)
         try:
             np.savez(self.action_hist_path, counts=self._action_hist)
         except Exception as exc:
@@ -879,7 +1142,7 @@ class RLDiagnosticsRecorder:
         with open(self.health_log_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
 
-    def finalize(self) -> None:
+    def finalize(self, *, status: str = "completed") -> None:
         """Flush + leave behind the summary in its final form."""
         self.flush_periodic()
         if self._data_point_writer is not None:
@@ -890,7 +1153,7 @@ class RLDiagnosticsRecorder:
                     else None
                 )
                 self._data_point_writer.write_summary({
-                    "status": "completed",
+                    "status": str(status),
                     "episode_count": int(len(self._all_episode_returns)),
                     "ppo_update_count": int(len(self._ppo_history)),
                     "meta": dict(self._meta),
@@ -902,11 +1165,11 @@ class RLDiagnosticsRecorder:
                 })
                 self._data_point_writer.close()
             except Exception as exc:
-                self.log(f"  [diag][warning] structured summary write failed: {exc}")
+                self._mandatory_write_failure("structured summary", exc)
         try:
             self._close_primary_jsonl()
         except Exception as exc:
-            self.log(f"  [diag][warning] primary JSONL close failed: {exc}")
+            self._mandatory_write_failure("primary JSONL close", exc)
 
     # ------------------------------------------------------------------
     # Summary.md writer
@@ -1440,7 +1703,10 @@ class RLDiagnosticsRecorder:
 def _atomic_json_dump(path: str, obj: Any) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2, default=str)
+        json.dump(
+            _strict_jsonable(obj), f, ensure_ascii=False, indent=2,
+            default=str, allow_nan=False,
+        )
     os.replace(tmp, path)
 
 

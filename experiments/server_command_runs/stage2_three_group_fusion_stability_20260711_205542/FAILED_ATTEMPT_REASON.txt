@@ -1,0 +1,1 @@
+Initial offline-cache attempt failed before dataset/model evaluation because the local cache lacked the nyu-mll/glue metadata route. The exact source snapshot and action configs were unchanged; the successful retry used HF_ENDPOINT=https://hf-mirror.com. The failed pre-evaluation log is retained under failed_attempts/.

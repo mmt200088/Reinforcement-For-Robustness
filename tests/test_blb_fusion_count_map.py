@@ -23,6 +23,7 @@ for _p in (str(_REPO_ROOT), str(_BLB_DIR), str(_RO_ROOT)):
 
 import fusion_count_map as fcm
 import fusion_enum
+import layerwise_action as layerwise
 
 import noise_tables
 
@@ -197,6 +198,33 @@ class FusionMapLoaderTest(unittest.TestCase):
         self.assertEqual(m.num_options("block1_mrpc"), 2)
 
 
+class LayerwiseFusionMapSemanticsTest(unittest.TestCase):
+    """The layerwise codec consumes maps without giving Block3 a map option."""
+
+    def test_fixed_fusion_blocks_and_block3_k_restore(self):
+        fusion_map = fcm.FusionCountMap.load("mrpc")
+        spec = layerwise.layerwise_schedule(12, fusion_map)[0]
+        baseline = [14] * (12 * 73 + 1)
+        block3_sf = baseline[32:39]
+
+        result = layerwise.apply_layer_action(
+            baseline,
+            [0, 0, 0, 0, 0, 0],
+            spec,
+            fusion_map,
+        )
+
+        for block_idx, graph_key in ((2, "block2_mrpc"), (5, "block5_n4")):
+            option = next(
+                option for option in fusion_map.options(graph_key)
+                if int(option.option_id) == int(result.fusion_option_ids[block_idx])
+            )
+            self.assertEqual(option.fusion_count, 1)
+        self.assertNotIn(3, result.fusion_option_ids)
+        self.assertEqual(list(result.full_vector[32:39]), block3_sf)
+        self.assertEqual(int(result.full_vector[39]), 0)
+
+
 class GroupMinNoiseOptionsTest(unittest.TestCase):
     """Pure grouping/ordering core (torch-free).
 
@@ -329,12 +357,38 @@ class FusionScheduleTest(unittest.TestCase):
         self.assertEqual(md, 2)
         self.assertEqual(mnl, max(self.m.max_num_options(), _aspace.LEVELS_K))
 
-    def test_fusion_option_counts_match_map(self):
+    def test_block2_and_block5_are_fixed_to_fusion_one(self):
         for s in self.sched:
-            self.assertEqual(
-                s.fusion_num_options,
-                self.m.num_options(s.graph_key_suffix),
+            if s.block_idx not in (2, 5):
+                continue
+            self.assertEqual(s.fusion_num_options, 1)
+            map_option_id = _aspace.resolve_fusion_map_option_id(s, 0)
+            option = next(
+                option
+                for option in self.m.options(s.graph_key_suffix)
+                if int(option.option_id) == int(map_option_id)
             )
+            self.assertEqual(option.fusion_count, 1)
+            self.assertEqual(s.k_num_levels, _aspace.LEVELS_K)
+
+    def test_block4_keeps_full_fusion_domain(self):
+        s = next(s for s in self.sched if s.block_idx == 4)
+        expected = tuple(
+            int(option.option_id) for option in self.m.options(s.graph_key_suffix)
+        )
+        self.assertEqual(s.fusion_num_options, len(expected))
+        self.assertEqual(s.map_option_ids, expected)
+
+    def test_block1_keeps_existing_domain(self):
+        s = next(s for s in self.sched if s.block_idx == 1)
+        expected = tuple(
+            int(option.option_id) for option in self.m.options(s.graph_key_suffix)
+        )
+        self.assertEqual(s.fusion_num_options, len(expected))
+        self.assertEqual(s.map_option_ids, expected)
+
+    def test_k_domain_is_unchanged_for_every_step(self):
+        for s in self.sched:
             self.assertEqual(s.k_num_levels, _aspace.LEVELS_K)
 
     def test_block_offsets_contiguous_and_sized(self):
@@ -345,9 +399,45 @@ class FusionScheduleTest(unittest.TestCase):
 
     def test_expand_matches_map(self):
         s = next(s for s in self.sched if s.block_idx == 2)
-        got = _aspace.expand_fusion_step_action(s, self.m, 1, 3)
+        got = _aspace.expand_fusion_step_action(s, self.m, 0, 3)
         exp = self.m.expand(s.graph_key_suffix, 1, 3)
         self.assertEqual(list(got), list(exp))
+
+    def test_real_map_option_converts_back_to_policy_local_index(self):
+        s = next(s for s in self.sched if s.block_idx == 2)
+        self.assertEqual(_aspace.resolve_fusion_policy_option_index(s, 1), 0)
+
+    def test_unselectable_real_map_option_is_rejected(self):
+        s = next(s for s in self.sched if s.block_idx == 2)
+        with self.assertRaisesRegex(ValueError, "not selectable"):
+            _aspace.resolve_fusion_policy_option_index(s, 0)
+
+    def test_missing_fusion_one_option_is_rejected(self):
+        m = fcm.FusionCountMap.load("mrpc")
+        graph = m.graphs["block2_mrpc"]
+        graph.options = [option for option in graph.options if option.fusion_count != 1]
+        with self.assertRaisesRegex(ValueError, "exactly one fusion_count=1"):
+            _aspace.fusion_step_schedule(
+                12,
+                m,
+                profile="mrpc",
+                gelu_degree_per_layer=[4] * 12,
+                attn_degree_per_layer=[2] * 12,
+            )
+
+    def test_duplicate_fusion_one_option_is_rejected(self):
+        m = fcm.FusionCountMap.load("mrpc")
+        graph = m.graphs["block2_mrpc"]
+        fusion_one = next(option for option in graph.options if option.fusion_count == 1)
+        graph.options = list(graph.options) + [fusion_one]
+        with self.assertRaisesRegex(ValueError, "exactly one fusion_count=1"):
+            _aspace.fusion_step_schedule(
+                12,
+                m,
+                profile="mrpc",
+                gelu_degree_per_layer=[4] * 12,
+                attn_degree_per_layer=[2] * 12,
+            )
 
     def test_splice_writes_block_slots(self):
         s = next(s for s in self.sched if s.block_idx == 2)

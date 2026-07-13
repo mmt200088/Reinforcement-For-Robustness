@@ -828,9 +828,11 @@ def empty_full_action_vec(num_layers: int) -> np.ndarray:
 class FusionStepSpec:
     """One (layer, block) step in the fusion-count episode.
 
-    The per-step action is ``(fusion_option_id, k_index)``:
-      * slot 0 = fusion option, ``fusion_num_options`` levels (1 for a degenerate
-        block-type like block1/block4 that can only reach fusion 0);
+    The per-step action is ``(policy_fusion_index, k_index)``:
+      * slot 0 = policy-local fusion option, ``fusion_num_options`` levels;
+        ``map_option_ids`` resolves that local index to the real map option ID.
+        Block2/5 expose one local choice fixed to fusion_count=1, while Block4
+        keeps its full map domain;
       * slot 1 = K, ``k_num_levels`` (== LEVELS_K) levels.
     ``block_full_vec_offsets`` are the legacy-577-vec offsets of this block's
     slots (the fusion map's expanded block vector is spliced there).
@@ -840,6 +842,7 @@ class FusionStepSpec:
     block_idx: int
     graph_key_suffix: str          # fusion-map key: block1_mrpc / block2_mrpc / block4 / block5_n{deg}
     fusion_num_options: int
+    map_option_ids: Tuple[int, ...]
     k_num_levels: int
     k_slot_index: int              # within-block index of the K slot
     block_num_slots: int
@@ -880,12 +883,29 @@ def fusion_step_schedule(
                 f"step {s.step_idx} block {s.block_idx}: {len(block_offsets)} offsets != "
                 f"map block_num_slots {block_num_slots}"
             )
+        map_options = fusion_map.options(gk)
+        if int(s.block_idx) in (2, 5):
+            map_option_ids = tuple(
+                int(option.option_id)
+                for option in map_options
+                if int(option.fusion_count) == 1
+            )
+            if len(map_option_ids) != 1:
+                raise ValueError(
+                    f"{gk}: block{s.block_idx} requires exactly one fusion_count=1 "
+                    f"option, found {list(map_option_ids)}"
+                )
+        else:
+            map_option_ids = tuple(int(option.option_id) for option in map_options)
+            if not map_option_ids:
+                raise ValueError(f"{gk}: fusion map has no options")
         out.append(FusionStepSpec(
             step_idx=s.step_idx,
             layer_idx=s.layer_idx,
             block_idx=s.block_idx,
             graph_key_suffix=gk,
-            fusion_num_options=int(fusion_map.num_options(gk)),
+            fusion_num_options=len(map_option_ids),
+            map_option_ids=map_option_ids,
             k_num_levels=int(LEVELS_K),
             k_slot_index=int(fusion_map.k_slot_index(gk)),
             block_num_slots=block_num_slots,
@@ -907,15 +927,45 @@ def fusion_step_slot_levels(spec: FusionStepSpec) -> List[int]:
     return [int(spec.fusion_num_options), int(spec.k_num_levels)]
 
 
+def resolve_fusion_map_option_id(
+        spec: FusionStepSpec,
+        policy_option_index: int,
+        ) -> int:
+    """Resolve a policy-local fusion index to the real map option ID."""
+    idx = int(policy_option_index)
+    if idx < 0 or idx >= len(spec.map_option_ids):
+        raise ValueError(
+            f"step {spec.step_idx} policy fusion option {idx} out of range "
+            f"[0, {len(spec.map_option_ids)})"
+        )
+    return int(spec.map_option_ids[idx])
+
+
+def resolve_fusion_policy_option_index(
+        spec: FusionStepSpec,
+        map_option_id: int,
+        ) -> int:
+    """Resolve a real map option ID to the policy-local fusion index."""
+    option_id = int(map_option_id)
+    try:
+        return int(spec.map_option_ids.index(option_id))
+    except ValueError as exc:
+        raise ValueError(
+            f"step {spec.step_idx} map fusion option {option_id} is not selectable; "
+            f"selectable map options={list(spec.map_option_ids)}"
+        ) from exc
+
+
 def expand_fusion_step_action(
         spec: FusionStepSpec,
         fusion_map: Any,
         option_id: int,
         k_index: int,
         ) -> np.ndarray:
-    """Resolve ``(fusion_option_id, k_index)`` to this block's full SF slot vector
-    (length ``block_num_slots``), with the separately-decided K spliced in."""
-    return fusion_map.expand(spec.graph_key_suffix, int(option_id), int(k_index))
+    """Resolve ``(policy_fusion_index, k_index)`` to this block's full SF slot
+    vector, with the separately-decided K spliced in."""
+    map_option_id = resolve_fusion_map_option_id(spec, int(option_id))
+    return fusion_map.expand(spec.graph_key_suffix, map_option_id, int(k_index))
 
 
 def splice_fusion_step_into_full_vec(

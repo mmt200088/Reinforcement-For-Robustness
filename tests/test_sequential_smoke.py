@@ -42,8 +42,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+
+import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -575,6 +578,30 @@ class OutputHygieneRegressionTest(unittest.TestCase):
                 msg=f"{symbol!r} missing from sequential_runner.py — legacy v2 parity broken",
             )
 
+    def test_runner_dispatches_layerwise_and_preserves_explicit_block_rollback(self):
+        runner_src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        config_src = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+
+        for needle in (
+            "resolve_decision_path(",
+            "BLBStage2LayerwiseEnv(",
+            "train_layerwise(",
+            "decision_path == \"layerwise\"",
+            "BLBStage2SequentialEnv(",
+            "train_sequential(",
+            "horizon=12",
+            "max_step_dim=6",
+            "max_num_levels=6",
+            "metadata_width=0",
+            "signal_width=4",
+            "step_layer_indices=tuple(range(12))",
+            "step_block_indices=(3,) * 12",
+        ):
+            self.assertIn(needle, runner_src)
+        self.assertIn('decision_granularity: str = "layer"', config_src)
+        self.assertIn('reward_design: str = "robust_constrained"', config_src)
+        self.assertIn("apply_public_stage2_decision_config(ev, cfg)", config_src)
+
     def test_sequential_runner_has_noisy_baseline_preflight(self):
         """Regression: previously the sequential path skipped the noisy
         baseline preflight, leaving stab_threshold at ~0.001 (driven by
@@ -852,6 +879,389 @@ class EnvEvalCommitSplitTest(unittest.TestCase):
             "if any_invalid:",
         ):
             self.assertIn(needle, src, msg=f"missing: {needle!r}")
+
+
+class BlockRuntimeHelperTest(unittest.TestCase):
+    """Functional parity coverage for the shared one-block runtime."""
+
+    @classmethod
+    def setUpClass(cls):
+        import dataclasses
+        import types
+
+        pkg_name = "_blb_stage2_runtime_test_pkg"
+        for name in list(sys.modules):
+            if name == pkg_name or name.startswith(f"{pkg_name}."):
+                del sys.modules[name]
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(REPO_ROOT / "blb_stage2_rl")]
+        sys.modules[pkg_name] = pkg
+
+        @dataclasses.dataclass
+        class FakeSpec:
+            step_idx: int = 0
+            layer_idx: int = 0
+            block_idx: int = 2
+            graph_key_suffix: str = "block2_mrpc"
+            slot_dims: tuple = (2,)
+
+        cls.FakeSpec = FakeSpec
+        action_space = types.ModuleType(f"{pkg_name}.action_space")
+        action_space._BLOCK_SPECS = {
+            idx: types.SimpleNamespace(fields=(("field",), ("output_truncation_k",)))
+            for idx in range(1, 6)
+        }
+        action_space._block_default_N = lambda block, **kwargs: 1000 + block
+        action_space._degree_for_layer = (
+            lambda value, layer, count, **kwargs:
+            int(value[layer] if isinstance(value, (list, tuple)) else value)
+        )
+        action_space.K_LEVELS = (8, 9, 11, 13, 10, 12)
+        action_space.BlockStepSpec = FakeSpec
+        action_space.build_block_cfg_from_field_values = cls._build_cfg
+        action_space.fusion_step_schedule = lambda *args, **kwargs: []
+        action_space.horizon_for_num_layers = lambda layers: layers
+        action_space.make_all_max_action_vector = lambda layers: np.zeros(layers * 73 + 1, dtype=int)
+        action_space.resolve_fusion_map_option_id = lambda spec, index: index
+        action_space.splice_fusion_step_into_full_vec = lambda *args: None
+        action_space.splice_step_action_into_full_vec = lambda *args: None
+        action_space.step_schedule = lambda *args, **kwargs: []
+        action_space.step_schedule_max_dim = lambda layers: 2
+        action_space.action_vector_to_cfgs = cls._decode
+        sys.modules[action_space.__name__] = action_space
+
+        env_mod = types.ModuleType(f"{pkg_name}.env")
+        env_mod.BLBStage2Env = object
+        sys.modules[env_mod.__name__] = env_mod
+        fusion_cost = types.ModuleType(f"{pkg_name}.fusion_cost")
+        @dataclasses.dataclass
+        class BlockChoice:
+            block_idx: int
+            graph_key: str
+            fusion_count: int
+            max_fusion: int
+            k_value: int
+        fusion_cost.BlockChoice = BlockChoice
+        fusion_cost.compute_fusion_cost_saving = lambda *args, **kwargs: None
+        sys.modules[fusion_cost.__name__] = fusion_cost
+        reward = types.ModuleType(f"{pkg_name}.reward")
+        reward.FUSION_COST_BUDGET_FRACTION = 0.5
+        reward.FUSION_COST_W = 0.5
+        reward.FUSION_SATURATION_TAU = 0.0
+        reward.TRUNC_COST_W = 0.5
+        reward.stage1_dense_cost_reward = lambda *args, **kwargs: 0.0
+        sys.modules[reward.__name__] = reward
+        optimizer = types.ModuleType(f"{pkg_name}.optimizer_cost")
+        optimizer.apply_optimizer_outputs_to_cfgs = cls._apply_optimizer
+        sys.modules[optimizer.__name__] = optimizer
+
+        loader = importlib.machinery.SourceFileLoader(
+            f"{pkg_name}.sequential_env",
+            str(REPO_ROOT / "blb_stage2_rl/sequential_env.py"),
+        )
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        cls.mod = importlib.util.module_from_spec(spec)
+        sys.modules[loader.name] = cls.mod
+        loader.exec_module(cls.mod)
+
+    @staticmethod
+    def _build_cfg(block_idx, layer_idx, values, **kwargs):
+        return types.SimpleNamespace(
+            marker="boosted",
+            block_idx=block_idx,
+            layer_idx=layer_idx,
+            values=dict(values),
+            build_kwargs=dict(kwargs),
+        )
+
+    @staticmethod
+    def _decode(vector, max_sfs, **kwargs):
+        layer_idx, block_idx = kwargs["only"]
+        cfg = types.SimpleNamespace(
+            marker="decoded", block_idx=block_idx, layer_idx=layer_idx,
+            vector=np.asarray(vector, dtype=int).copy(),
+        )
+        return types.SimpleNamespace(
+            cfgs_dict=lambda: {f"block{block_idx}": {layer_idx: cfg}},
+        )
+
+    @staticmethod
+    def _apply_optimizer(**kwargs):
+        cfg = next(iter(next(iter(kwargs["cfgs_dict"].values())).values()))
+        cfg.marker = "optimizer_applied"
+        config_name = next(iter(kwargs["opt_outputs"]))
+        return {
+            "model_uses_replan_config": True,
+            "optimizer_cfg_overrides": {config_name: [{"cfg_attr": "marker"}]},
+        }
+
+    def _base(self, bridge):
+        return types.SimpleNamespace(
+            num_layers=12,
+            max_sfs=object(),
+            gelu_degree=[4] * 12,
+            attn_degree=[6] * 12,
+            env_cfg=types.SimpleNamespace(
+                profile="mrpc", rotation_name_map={(2, "mrpc"): {"x": "y"}},
+            ),
+            rescale_bridge=bridge,
+        )
+
+    def test_constructor_rejects_robust_reward_before_blockwise_rollout(self):
+        for reward_design in (
+                "robust_constrained", " ROBUST_CONSTRAINED ", "Robust_Constrained",
+        ):
+            base = self._base(types.SimpleNamespace())
+            base.reward_weights = types.SimpleNamespace(reward_design=reward_design)
+
+            with self.assertRaisesRegex(
+                    ValueError,
+                    "robust_constrained.*BLBStage2LayerwiseEnv.*train_layerwise",
+            ):
+                self.mod.BLBStage2SequentialEnv(base_env=base)
+
+    def test_constructor_preserves_explicit_rollback_reward_designs(self):
+        for reward_design in (
+                "stage1_aligned", "continuous", "tiered", "robust-constrained",
+        ):
+            base = self._base(types.SimpleNamespace())
+            base.reward_weights = types.SimpleNamespace(reward_design=reward_design)
+
+            env = self.mod.BLBStage2SequentialEnv(base_env=base)
+
+            self.assertIs(env.base, base)
+
+    def test_helper_decodes_evaluates_and_applies_optimizer_once(self):
+        output = types.SimpleNamespace(
+            valid=True, total_bits=321, fusion_count=2, invalid_chain=None,
+        )
+        bridge = types.SimpleNamespace(
+            invoker=types.SimpleNamespace(baselines={}),
+            evaluate=lambda **kwargs: output,
+        )
+        vector = np.arange(12 * 73 + 1)
+
+        result = self.mod.evaluate_block_from_full_vector(
+            base_env=self._base(bridge), full_vec=vector,
+            layer_idx=3, block_idx=2, graph_key="block2_mrpc",
+        )
+
+        self.assertTrue(result.valid)
+        self.assertEqual((result.total_bits, result.fusion_count), (321, 2))
+        self.assertEqual(result.config_name, "block2_mrpc_L3")
+        self.assertEqual(result.block_cfg.marker, "optimizer_applied")
+        self.assertTrue(result.replan_application["model_uses_replan_config"])
+        self.assertEqual(result.optimizer_cfg_overrides, [{"cfg_attr": "marker"}])
+        vector[0] = -99
+        self.assertNotEqual(result.block_cfg.vector[0], -99)
+
+    def test_legacy_evaluate_step_routes_ordinary_block2_through_helper(self):
+        output = types.SimpleNamespace(
+            valid=True, total_bits=321, fusion_count=2, invalid_chain=None,
+        )
+        env = self.mod.BLBStage2SequentialEnv.__new__(self.mod.BLBStage2SequentialEnv)
+        env._terminated_early = False
+        env._schedule = [self.FakeSpec()]
+        env._step_idx = 0
+        env._pending_full_vec = np.zeros(12 * 73 + 1, dtype=int)
+        env._fusion_map = None
+        env.num_layers = 12
+        env.base = self._base(types.SimpleNamespace(
+            invoker=types.SimpleNamespace(baselines={}),
+            evaluate=lambda **kwargs: output,
+        ))
+
+        result = env.evaluate_step([1])
+
+        self.assertEqual(result["block_cfg"].marker, "optimizer_applied")
+        self.assertEqual((result["valid"], result["total_bits"], result["fusion_count"]), (
+            True, 321, 2,
+        ))
+        self.assertTrue(result["replan_application"]["model_uses_replan_config"])
+
+    def test_helper_rebuilds_boosted_block5_with_actual_degrees(self):
+        output = types.SimpleNamespace(
+            valid=True, total_bits=99, fusion_count=1, invalid_chain=None,
+        )
+        seen = {}
+
+        def evaluate(**kwargs):
+            seen.update(kwargs)
+            return output
+
+        fields = {"field": 61, "output_truncation_k": 9}
+        result = self.mod.evaluate_block_from_full_vector(
+            base_env=self._base(types.SimpleNamespace(
+                invoker=types.SimpleNamespace(baselines={}), evaluate=evaluate,
+            )),
+            full_vec=np.zeros(12 * 73 + 1, dtype=int),
+            layer_idx=4, block_idx=5, graph_key="block5_n4",
+            boosted_field_values=fields,
+        )
+
+        self.assertEqual(seen["block_name"], "block5")
+        self.assertEqual(seen["cfg"].values, fields)
+        self.assertEqual(seen["cfg"].build_kwargs["gelu_degree"], 4)
+        self.assertEqual(seen["cfg"].build_kwargs["attn_degree"], 6)
+        fields["field"] = -1
+        self.assertEqual(result.boosted_field_values["field"], 61)
+
+    def test_legacy_evaluate_step_preserves_boosted_block5_fields(self):
+        output = types.SimpleNamespace(
+            valid=True, total_bits=99, fusion_count=1, invalid_chain=None,
+        )
+        option = types.SimpleNamespace(
+            option_id=1,
+            fusion_count=1,
+            boosted=True,
+            explicit_field_values={"field": 61, "output_truncation_k": 13},
+        )
+        fusion_map = types.SimpleNamespace(
+            options=lambda graph_key: [option],
+            expand=lambda graph_key, option_id, k_index: np.zeros(2, dtype=int),
+            k_slot_index=lambda graph_key: 1,
+        )
+        env = self.mod.BLBStage2SequentialEnv.__new__(self.mod.BLBStage2SequentialEnv)
+        env._terminated_early = False
+        env._schedule = [self.FakeSpec(block_idx=5, graph_key_suffix="block5_n4")]
+        env._step_idx = 0
+        env._pending_full_vec = np.zeros(12 * 73 + 1, dtype=int)
+        env._fusion_map = fusion_map
+        env.num_layers = 12
+        env.base = self._base(types.SimpleNamespace(
+            invoker=types.SimpleNamespace(baselines={}),
+            evaluate=lambda **kwargs: output,
+        ))
+
+        result = env.evaluate_step([1, 0])
+
+        self.assertEqual(result["boosted_field_values"], {
+            "field": 61, "output_truncation_k": 8,
+        })
+        self.assertEqual(result["block_cfg"].values, result["boosted_field_values"])
+        self.assertEqual(result["block_cfg"].marker, "optimizer_applied")
+
+    def test_helper_returns_structured_bridge_error_without_optimizer_apply(self):
+        def fail(**kwargs):
+            raise RuntimeError("bridge down")
+
+        result = self.mod.evaluate_block_from_full_vector(
+            base_env=self._base(types.SimpleNamespace(
+                invoker=types.SimpleNamespace(baselines={}), evaluate=fail,
+            )),
+            full_vec=np.zeros(12 * 73 + 1, dtype=int),
+            layer_idx=0, block_idx=2, graph_key="block2_mrpc",
+        )
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.bridge_error, "bridge down")
+        self.assertEqual(result.bridge_error_type, "RuntimeError")
+        self.assertEqual(result.invalid_chain, {"reason": "bridge_error: bridge down"})
+        self.assertIsNone(result.block_cfg)
+        self.assertEqual(result.replan_application, {})
+
+    def test_helper_propagates_bridge_contract_defects_without_optimizer_apply(self):
+        original_apply = self.mod.apply_optimizer_outputs_to_cfgs
+        apply_calls = []
+
+        def unexpected_apply(**kwargs):
+            apply_calls.append(kwargs)
+            raise AssertionError("optimizer apply must not run")
+
+        self.mod.apply_optimizer_outputs_to_cfgs = unexpected_apply
+        try:
+            for error_type in (TypeError, AttributeError, AssertionError):
+                with self.subTest(error_type=error_type.__name__):
+                    def fail(**kwargs):
+                        raise error_type("contract defect")
+
+                    with self.assertRaisesRegex(error_type, "contract defect"):
+                        self.mod.evaluate_block_from_full_vector(
+                            base_env=self._base(types.SimpleNamespace(
+                                invoker=types.SimpleNamespace(baselines={}),
+                                evaluate=fail,
+                            )),
+                            full_vec=np.zeros(12 * 73 + 1, dtype=int),
+                            layer_idx=0,
+                            block_idx=2,
+                            graph_key="block2_mrpc",
+                        )
+        finally:
+            self.mod.apply_optimizer_outputs_to_cfgs = original_apply
+
+        self.assertEqual(apply_calls, [])
+
+    def test_helper_preserves_optimizer_invalid_result(self):
+        output = types.SimpleNamespace(
+            valid=False,
+            total_bits=177,
+            fusion_count=0,
+            invalid_chain={"reason": "prime chain invalid"},
+        )
+        bridge = types.SimpleNamespace(
+            invoker=types.SimpleNamespace(baselines={}),
+            evaluate=lambda **kwargs: output,
+        )
+        result = self.mod.evaluate_block_from_full_vector(
+            base_env=self._base(bridge),
+            full_vec=np.zeros(12 * 73 + 1, dtype=int),
+            layer_idx=0,
+            block_idx=2,
+            graph_key="block2_mrpc",
+        )
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.total_bits, 177)
+        self.assertEqual(result.invalid_chain, {"reason": "prime chain invalid"})
+        self.assertEqual(result.block_cfg.marker, "decoded")
+        self.assertEqual(result.replan_application, {})
+        self.assertEqual(result.optimizer_cfg_overrides, [])
+
+    def test_commit_reuses_helper_bindings_without_applying_twice(self):
+        output = types.SimpleNamespace(
+            valid=True, total_bits=321, fusion_count=2, invalid_chain=None,
+        )
+        bridge = types.SimpleNamespace(
+            invoker=types.SimpleNamespace(baselines={}),
+            evaluate=lambda **kwargs: output,
+        )
+        apply_count = 0
+        original_apply = self.mod.apply_optimizer_outputs_to_cfgs
+
+        def counted_apply(**kwargs):
+            nonlocal apply_count
+            apply_count += 1
+            return original_apply(**kwargs)
+
+        self.mod.apply_optimizer_outputs_to_cfgs = counted_apply
+        try:
+            spec = self.FakeSpec()
+            env = self.mod.BLBStage2SequentialEnv.__new__(self.mod.BLBStage2SequentialEnv)
+            env.base = self._base(bridge)
+            env.num_layers = 12
+            env._schedule = [spec]
+            env._fusion_map = None
+            env._terminated_early = False
+            env._pending_full_vec = np.zeros(12 * 73 + 1, dtype=int)
+            env._record_step = lambda *args, **kwargs: None
+            env._fusion_choices = []
+            env._fusion_action_steps = []
+            env._boosted_overrides = {}
+            env._step_idx = 0
+            env.horizon = 2
+            env.cfg = self.mod.SequentialEnvConfig()
+            env._lookup_baseline_block_total_bits = lambda graph_key: None
+            env._build_obs = lambda: np.zeros(3, dtype=np.float32)
+            eval_info = env.evaluate_step([0])
+            _obs, reward, done, commit_info = env.commit_step(eval_info)
+        finally:
+            self.mod.apply_optimizer_outputs_to_cfgs = original_apply
+
+        self.assertEqual(apply_count, 1)
+        self.assertEqual(reward, 0.0)
+        self.assertFalse(done)
+        self.assertTrue(commit_info["replan_application"]["model_uses_replan_config"])
+        self.assertEqual(commit_info["optimizer_cfg_overrides"], [{"cfg_attr": "marker"}])
 
 
 class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
@@ -1457,7 +1867,7 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
         src = open("llama_7B_LayerImportance.sh", encoding="utf-8").read()
         # Main slug should be EXACTLY the three tolerances — no _rdv2 suffix.
         self.assertIn(
-            'CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${STAGE2_STABILITY_TOLERANCE}"',
+            'CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${_STAGE2_PERSISTED_STABILITY_VALUE}"',
             src,
         )
         # Only allow _rdv2 in comments (the rollback rationale line). No

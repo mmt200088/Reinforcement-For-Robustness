@@ -67,7 +67,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import numpy as np
 
@@ -454,6 +454,16 @@ class EpisodeMetrics:
     loss_max: float = 0.0
     metric1_min: float = 0.0
     metric2_min: float = 0.0
+    loss_trials: Tuple[float, ...] = field(default_factory=tuple)
+    metric1_trials: Tuple[float, ...] = field(default_factory=tuple)
+    metric2_trials: Tuple[float, ...] = field(default_factory=tuple)
+    trial_seeds: Tuple[int, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        self.loss_trials = tuple(float(value) for value in self.loss_trials)
+        self.metric1_trials = tuple(float(value) for value in self.metric1_trials)
+        self.metric2_trials = tuple(float(value) for value in self.metric2_trials)
+        self.trial_seeds = tuple(int(value) for value in self.trial_seeds)
 
 
 @dataclass
@@ -532,6 +542,100 @@ class RewardBreakdown:
     optimizer_diagnostic_terms: Any = field(default_factory=lambda: ["q_bits", "q_head_bits", "q_tail_bits"])
     mpc_truncation_cost_enabled: bool = True
     mpc_truncation_term: str = "avg_k"
+    loss_precision_probability: float = 0.0
+    metric1_precision_probability: float = 0.0
+    metric2_precision_probability: float = 0.0
+    loss_stability_probability: float = 0.0
+    metric1_stability_probability: float = 0.0
+    metric2_stability_probability: float = 0.0
+    q_precision: float = 0.0
+    q_stability: float = 0.0
+    precision_signal: float = 0.0
+    stability_signal: float = 0.0
+    variable_cost: float = 0.0
+    constraint_policy: str = ""
+
+
+def boundary_signal(p: float, eps: float = 1.0e-8) -> float:
+    """Return the clipped log-distance from the online probability gate."""
+    probability = float(p)
+    epsilon = float(eps)
+    if not math.isfinite(probability):
+        raise ValueError("p must be finite")
+    if not math.isfinite(epsilon) or epsilon <= 0.0:
+        raise ValueError("eps must be finite and positive")
+    probability = float(np.clip(probability, 0.0, 1.0))
+    return float(np.clip(
+        math.log((probability + epsilon) / (0.5 + epsilon)), -1.0, 1.0,
+    ))
+
+
+_ROBUST_PROBABILITY_FIELDS = (
+    "loss_precision_probability",
+    "metric1_precision_probability",
+    "metric2_precision_probability",
+    "loss_stability_probability",
+    "metric1_stability_probability",
+    "metric2_stability_probability",
+)
+
+
+def _finite_unit_interval(name: str, value: Any) -> float:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be finite and in [0, 1]") from exc
+    if not math.isfinite(normalized) or not 0.0 <= normalized <= 1.0:
+        raise ValueError(f"{name} must be finite and in [0, 1]")
+    return normalized
+
+
+def robust_constrained_reward(
+        assessment: Any,
+        invalid: bool,
+        variable_cost: float,
+        eps: float = 1.0e-8,
+        ) -> Tuple[float, int, float, float]:
+    """Return robust reward, priority, and both boundary signals."""
+    cost = _finite_unit_interval("variable_cost", variable_cost)
+
+    if assessment is None:
+        if not invalid:
+            raise ValueError("robust constrained reward requires a statistical assessment")
+        probabilities = {field_name: 0.0 for field_name in _ROBUST_PROBABILITY_FIELDS}
+    else:
+        probabilities = {
+            field_name: _finite_unit_interval(field_name, getattr(assessment, field_name))
+            for field_name in _ROBUST_PROBABILITY_FIELDS
+        }
+
+    q_precision = min(
+        probabilities[field_name] for field_name in _ROBUST_PROBABILITY_FIELDS[:3]
+    )
+    q_stability = min(
+        probabilities[field_name] for field_name in _ROBUST_PROBABILITY_FIELDS[3:]
+    )
+    precision_signal = boundary_signal(q_precision, eps)
+    stability_signal = boundary_signal(q_stability, eps)
+
+    if invalid:
+        reward = -5.0
+        priority = 1
+    elif q_precision < 0.5:
+        reward = -3.0 + 0.5 * precision_signal
+        priority = 1
+    elif q_stability < 0.5:
+        reward = -1.5 + 0.5 * stability_signal
+        priority = 2
+    else:
+        reward = 1.0 + cost + 0.0005 * (precision_signal + stability_signal)
+        priority = 3
+    return (
+        float(reward),
+        int(priority),
+        float(precision_signal),
+        float(stability_signal),
+    )
 
 
 @dataclass(frozen=True)
@@ -1086,6 +1190,7 @@ def compute_reward(
         external_cost_score: Optional[float] = None,
         external_cost_rank: Optional[float] = None,
         loss_threshold: Optional[float] = None,
+        constraint_assessment: Any = None,
         ) -> RewardBreakdown:
     """v3 reward with loss/m1/m2 precision gates and std stability gates.
 
@@ -1120,6 +1225,51 @@ def compute_reward(
     invalid = bool(any_invalid) if any_invalid is not None else bool(
         getattr(opt_signals, "any_invalid", False)
     )
+
+    if str(getattr(weights, "reward_design", "tiered")).strip().lower() == "robust_constrained":
+        if not invalid and external_cost_score is None:
+            raise ValueError(
+                "robust_constrained valid candidate requires external_cost_score"
+            )
+        raw_variable_cost = 0.0 if external_cost_score is None else external_cost_score
+        reward, priority, precision_signal, stability_signal = robust_constrained_reward(
+            constraint_assessment,
+            invalid=invalid,
+            variable_cost=raw_variable_cost,
+        )
+        variable_cost = float(raw_variable_cost)
+        probabilities = (
+            {field_name: 0.0 for field_name in _ROBUST_PROBABILITY_FIELDS}
+            if constraint_assessment is None
+            else {
+                field_name: float(getattr(constraint_assessment, field_name))
+                for field_name in _ROBUST_PROBABILITY_FIELDS
+            }
+        )
+        q_precision = min(
+            probabilities[field_name] for field_name in _ROBUST_PROBABILITY_FIELDS[:3]
+        )
+        q_stability = min(
+            probabilities[field_name] for field_name in _ROBUST_PROBABILITY_FIELDS[3:]
+        )
+        metric_ok = bool(priority >= 2) and not invalid
+        stab_ok = bool(priority == 3) and metric_ok
+        return RewardBreakdown(
+            reward=float(reward),
+            priority=int(priority),
+            invalid=invalid,
+            metric_ok=metric_ok,
+            stab_ok=stab_ok,
+            loss_ok=bool(probabilities["loss_precision_probability"] >= 0.5) and not invalid,
+            cost_score=float(variable_cost) if stab_ok else 0.0,
+            variable_cost=float(variable_cost),
+            constraint_policy="bootstrap_5x5_v1",
+            q_precision=float(q_precision),
+            q_stability=float(q_stability),
+            precision_signal=float(precision_signal),
+            stability_signal=float(stability_signal),
+            **probabilities,
+        )
 
     m1 = _safe_float(metrics.metric1_mean, 0.0)
     m2 = _safe_float(metrics.metric2_mean, 0.0)
