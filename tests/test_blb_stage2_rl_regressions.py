@@ -401,7 +401,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
     def test_action_candidate_applies_replan_cfg_before_model_forward(self):
         import Paean.blb_action_eval as mod
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
-        from rescale_optimizer_bridge import CfgOverrideEntry, RescaleOptimizerOutput
+        from rescale_optimizer_bridge import RescaleOptimizerOutput
 
         class FakeCfg:
             def __init__(self):
@@ -457,27 +457,33 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
         old_action_vector_to_cfgs = mod.action_vector_to_cfgs
         old_load_max_sfs = mod.load_max_sfs
-        old_apply_optimizer_output_to_cfg = mod.apply_optimizer_output_to_cfg
+        old_apply_optimizer_outputs_to_cfgs = mod.apply_optimizer_outputs_to_cfgs
         old_avg_truncation_k_in_action = mod.avg_truncation_k_in_action
         try:
             mod.action_vector_to_cfgs = lambda **_kwargs: fake_decoded
             mod.load_max_sfs = lambda _profile: {}
             mod.avg_truncation_k_in_action = lambda *_args, **_kwargs: 13.0
 
-            def fake_apply_optimizer_output_to_cfg(cfg, **_kwargs):
+            def fake_apply_optimizer_outputs_to_cfgs(*, cfgs_dict, opt_outputs, **_kwargs):
+                cfg = cfgs_dict["block2"][0]
                 self.assertEqual(cfg.marker, "action_decoded")
+                self.assertIs(opt_outputs, outputs)
                 cfg.marker = "replan_applied"
-                return [
-                    CfgOverrideEntry(
-                        cfg_attr="marker",
-                        graph_node="unit",
-                        source="unit_replan",
-                        old_value="action_decoded",
-                        new_value="replan_applied",
-                    )
-                ]
+                return {
+                    "applied_before_forward": True,
+                    "model_uses_replan_config": True,
+                    "expected_config_count": 1,
+                    "applied_config_count": 1,
+                    "invalid_config_count": 0,
+                    "missing_compact_config_count": 0,
+                    "missing_decoded_cfg_count": 0,
+                    "apply_error_count": 0,
+                    "override_total": 1,
+                    "per_config": {},
+                    "optimizer_cfg_overrides": {},
+                }
 
-            mod.apply_optimizer_output_to_cfg = fake_apply_optimizer_output_to_cfg
+            mod.apply_optimizer_outputs_to_cfgs = fake_apply_optimizer_outputs_to_cfgs
 
             runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
             runner.evaluator = FakeEvaluator()
@@ -528,7 +534,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         finally:
             mod.action_vector_to_cfgs = old_action_vector_to_cfgs
             mod.load_max_sfs = old_load_max_sfs
-            mod.apply_optimizer_output_to_cfg = old_apply_optimizer_output_to_cfg
+            mod.apply_optimizer_outputs_to_cfgs = old_apply_optimizer_outputs_to_cfgs
             mod.avg_truncation_k_in_action = old_avg_truncation_k_in_action
 
         self.assertEqual(marker_seen_by_forward["value"], "replan_applied")
@@ -591,7 +597,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertEqual(result["expected_active_layers"]["block3"], [])
         self.assertEqual(result["expected_active_layers"]["first_input"], [])
 
-    def test_action_candidate_still_runs_model_forward_when_optimizer_invalid(self):
+    def test_action_candidate_skips_model_forward_when_optimizer_invalid(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
         from blb_stage2_rl.action_space import make_all_max_action_vector
 
@@ -620,10 +626,10 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         runner._config_details = lambda *_args, **_kwargs: {}
         runner._is_feasible = lambda *_args, **_kwargs: True
 
-        runner._run_blb_eval = lambda *_args, **_kwargs: (
-            {"loss": 0.25, "p": 0.875, "s": 0.8, "time_ms": 12.0, "install_verification": {"ok": True}},
-            None,
-        )
+        def fail_if_forwarded(*_args, **_kwargs):
+            raise AssertionError("invalid optimizer output must skip model forward")
+
+        runner._run_blb_eval = fail_if_forwarded
 
         result = runner._evaluate_action_candidate(
             name="candidate",
@@ -635,10 +641,12 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         )
 
         self.assertTrue(result["any_invalid"])
-        self.assertFalse(result["skipped_forward"])
+        self.assertTrue(result["skipped_forward"])
+        self.assertEqual(result["forward_skipped_reason"], "optimizer_invalid_chain")
         self.assertFalse(result["feasible"])
-        self.assertEqual(result["install_verification"], {"ok": True})
-        self.assertEqual(result["p"], 0.875)
+        self.assertEqual(result["evaluation_n"], 0)
+        self.assertEqual(result["p"], 0.0)
+        self.assertTrue(result["install_verification"]["skipped"])
 
     def test_full_noise_config_excludes_deprecated_first_input(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
