@@ -106,9 +106,17 @@ logical_device_spec() {
 build_case_command() {
   local label="$1"
   local visible_devices="$2"
+  local workers_per_device="$3"
   local persistent_root="${ARTIFACT_DIR}/persistent_${label}"
   local reward_devices
   reward_devices="$(logical_device_spec "$visible_devices")"
+  CASE_ENV=(
+    env
+    "CUDA_VISIBLE_DEVICES=${visible_devices}"
+    "BLB_STAGE2_POLICY_DEVICE=${POLICY_DEVICE}"
+    "BLB_STAGE2_DYNAMIC_ASSIGNMENT=${DYNAMIC_ASSIGNMENT}"
+    timeout "$TIMEOUT_SECONDS"
+  )
   CASE_COMMAND=(
     bash llama_7B_LayerImportance.sh run rl
     --preset mrpc-blb-stage2-rl
@@ -144,6 +152,7 @@ build_case_command() {
     --blb-v3-promotion-constraint-probability 0.80
     --blb-v3-final-constraint-probability 0.95
     --blb-v3-reward-devices "$reward_devices"
+    --stage2-workers-per-device "$workers_per_device"
     --stage2-save-interval "$SAVE_INTERVAL"
     --stage2-eval-interval "$EVAL_INTERVAL"
     --random-seed "$RANDOM_SEED"
@@ -156,10 +165,13 @@ build_case_command() {
 print_case_command() {
   local label="$1"
   local visible_devices="$2"
+  local workers_per_device="$3"
   local arg
-  build_case_command "$label" "$visible_devices"
-  printf '[ab][effective] %s env CUDA_VISIBLE_DEVICES=%s timeout %s' \
-    "$label" "$visible_devices" "$TIMEOUT_SECONDS"
+  build_case_command "$label" "$visible_devices" "$workers_per_device"
+  printf '[ab][effective] %s' "$label"
+  for arg in "${CASE_ENV[@]}"; do
+    printf ' %q' "$arg"
+  done
   for arg in "${CASE_COMMAND[@]}"; do
     printf ' %q' "$arg"
   done
@@ -167,8 +179,8 @@ print_case_command() {
 }
 
 {
-  print_case_command one "$ONE_DEVS"
-  print_case_command many "$MANY_DEVS"
+  print_case_command one "$ONE_DEVS" "$ONE_WORKERS_PER_DEVICE"
+  print_case_command many "$MANY_DEVS" "$MANY_WORKERS_PER_DEVICE"
 } | tee "${ARTIFACT_DIR}/effective_commands.txt"
 
 if [ "$PRINT_EFFECTIVE_COMMANDS" = "1" ]; then
@@ -342,9 +354,8 @@ run_case() {
   local start_s end_s launch_rc wait_rc rc job_pid ep_path ppo_path
   start_s="$(date +%s)"
   set +e
-  build_case_command "$label" "$devices"
-  CUDA_VISIBLE_DEVICES="$devices" timeout "$TIMEOUT_SECONDS" \
-    "${CASE_COMMAND[@]}" 2>&1 | tee "$launch_log"
+  build_case_command "$label" "$devices" "$workers_per_device"
+  "${CASE_ENV[@]}" "${CASE_COMMAND[@]}" 2>&1 | tee "$launch_log"
   launch_rc=${PIPESTATUS[0]}
   rc=$launch_rc
   job_pid="$(cat "$latest_pid_file" 2>/dev/null || true)"
