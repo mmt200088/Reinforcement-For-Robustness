@@ -150,6 +150,11 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   passed all 38 related tests and the complete thread-capped, CUDA-hidden pytest
   suite (`1,602` passed, `6` environment skips). Evidence is under
   `experiments/server_command_runs/stage2_ab_gpu_coverage_1b8fa08_20260714/`.
+  A follow-up passive 60-second real-hardware check at source `1dd466f` passed
+  the strict gate with empty episode device attribution: sampled mean GPU
+  utilization was 33.13%-34.95%, every `cuda:0..4` maximum exceeded 42%, and
+  formal PID `10089` remained the sole compute process. Evidence is under
+  `experiments/server_command_runs/stage2_ab_gpu_coverage_passive_1dd466f_20260714/`.
   This hardens the pending benchmark but does not replace it. At capture time
   formal PID `10089` was still active at 16,832/60,000 episodes; its latest 100
   rows had 42 P1, 9 P2, and 49 P3 outcomes, zero invalid episodes, and zero

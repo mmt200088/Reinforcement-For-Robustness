@@ -104,6 +104,7 @@ Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Stage-2 A/B real telemetry coverage | `1dd466f` | `experiments/server_command_runs/stage2_ab_gpu_coverage_passive_1dd466f_20260714/` | Passively sample the active production process for 60 seconds and prove the strict physical-device gate recognizes all five RTX 5090s from real `nvidia-smi` activity even when episode device attribution is empty; PID `10089` remained the sole compute process. |
 | Stage-2 A/B physical-GPU coverage | `1b8fa08` | `experiments/server_command_runs/stage2_ab_gpu_coverage_1b8fa08_20260714/` | Count every device/trial in multi-device episode diagnostics and require `nvidia-smi` sampled activity on every requested physical GPU before a 1GPU/NGPU case can pass; 38 related tests and the full 1,602-test pytest gate passed without using the formal run's GPUs. |
 | Stage-2 A/B gate integrity | `a61300d` | `experiments/server_command_runs/stage2_ab_scheduling_overrides_a61300d_20260714/` | Make printed and executed scheduling environments identical, prove non-default one/many worker values stay case-local, pass all 18 related tests plus the 1,599-test full gate, and verify the live idle guard rejects the occupied five-GPU host before launching any competing process. |
 | Whole-project completion audit | `8308bbd` | `experiments/server_command_runs/project_completion_audit_8308bbd_20260714/` | Restore Stage-2 rollout hot paths after the production merge, close stale shared-parser and test-fixture integration gaps, verify all 30 flow files and structured-artifact classes, and pass the full 1,509-test `unittest` plus 1,599-test `pytest` server gates without consuming the five GPUs. |
@@ -1360,6 +1361,17 @@ thread-capped, CUDA-hidden pytest suite (`1,602` passed, `6` skipped) in
 This remains benchmark-readiness evidence only. Formal PID `10089` was still
 active at 16,832/60,000 episodes, so the isolated 600-episode hardware gate is
 still pending.
+
+Passive real-hardware follow-up 2026-07-14: source `1dd466f` sampled the active
+formal process once per second for 60 seconds without launching a competing
+workload. The strict activity gate exited `0` with empty episode device
+attribution, all five physical GPUs active, mean utilization between 33.13%
+and 34.95%, and maximum utilization between 42% and 59%. Process inventories
+before and after, plus `nvidia-smi` compute-app output, show PID `10089` as the
+only RL/A/B and GPU compute process. Evidence is under
+`experiments/server_command_runs/stage2_ab_gpu_coverage_passive_1dd466f_20260714/`.
+This validates the physical-coverage oracle on real telemetry but still does
+not supply the pending equality or wall-clock speed result.
 
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 
