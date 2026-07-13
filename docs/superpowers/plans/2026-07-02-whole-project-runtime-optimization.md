@@ -64,6 +64,8 @@ post-run artifacts without weakening the validation protocol.
 - `a61300d` makes Stage-2 A/B preflight and execution consume the same CUDA,
   policy, dynamic-assignment, timeout, and per-case worker settings instead of
   recording scheduling overrides that the real launch silently dropped.
+- `1b8fa08` makes sampled activity on every requested physical GPU a hard A/B
+  requirement and fixes multi-device episode/trial accounting in the verdict.
 - `9468f58`, `51cd4a0`, `58c6666`, `9273440`, and `b0a8697` centralized JSON
   artifact read/write helpers so report/final-eval code avoids duplicated
   parsing and formatting paths.
@@ -83,7 +85,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `a61300d`, the conservative
+not by raw commit count. As of source head `1b8fa08`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, shared hot paths, the Stage-1 1GPU vs 4GPU gate, and
 single-process Paean fixed-action batching have landed. The published
@@ -91,10 +93,10 @@ production source `24e919c` is merged. Source `3de5244` restored production
 Stage-2 probe/result allocation, static tensor/mask caches, causal-prefix
 execution, and batched PPO tensor materialization; `66a4895` restored shared
 list parsing. The final CPU/no-GPU server audit is now green at 1,509
-`unittest` tests and 1,599 `pytest` tests, with 6 explicit environment skips in
-each lane. The GPUs are still owned by the formal 60,000-episode Stage-2 run at
-source `24e919c`; its latest captured status was 15,720/60,000 episodes
-(26.2%), so
+`unittest` tests; the latest source passed 1,602 `pytest` tests with 6 explicit
+environment skips. The GPUs are still owned by the formal 60,000-episode
+Stage-2 run at source `24e919c`; its latest captured status was
+16,832/60,000 episodes (28.1%), so
 the clean 1GPU-versus-5GPU gate remains the only hard completion gate and must
 wait for the idle check.
 
@@ -102,6 +104,7 @@ Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Stage-2 A/B physical-GPU coverage | `1b8fa08` | `experiments/server_command_runs/stage2_ab_gpu_coverage_1b8fa08_20260714/` | Count every device/trial in multi-device episode diagnostics and require `nvidia-smi` sampled activity on every requested physical GPU before a 1GPU/NGPU case can pass; 38 related tests and the full 1,602-test pytest gate passed without using the formal run's GPUs. |
 | Stage-2 A/B gate integrity | `a61300d` | `experiments/server_command_runs/stage2_ab_scheduling_overrides_a61300d_20260714/` | Make printed and executed scheduling environments identical, prove non-default one/many worker values stay case-local, pass all 18 related tests plus the 1,599-test full gate, and verify the live idle guard rejects the occupied five-GPU host before launching any competing process. |
 | Whole-project completion audit | `8308bbd` | `experiments/server_command_runs/project_completion_audit_8308bbd_20260714/` | Restore Stage-2 rollout hot paths after the production merge, close stale shared-parser and test-fixture integration gaps, verify all 30 flow files and structured-artifact classes, and pass the full 1,509-test `unittest` plus 1,599-test `pytest` server gates without consuming the five GPUs. |
 | Stage-2 integration | `87a57a1` | `experiments/server_command_runs/stage2_shared_path_integration_20260714/` | Merge the published production source, restore canonical optimizer/inference/diagnostics paths, keep metric synchronization outside the shared-device lock, and pass 117 focused server tests without touching the active formal process. |
@@ -1343,6 +1346,20 @@ candidate sweeps. The host's generic `/hy-tmp/hf_cache` and
 run-local `hf_cache` and `local_glue` paths. Evidence is under
 `experiments/server_command_runs/stage2_ab_scheduling_overrides_a61300d_20260714/`.
 The formal run was 15,720/60,000 episodes (26.2%) at this snapshot.
+
+Physical-coverage progress 2026-07-14: RED source `04f2b2e` exposed that the
+verdict's device breakdown read only `terminal_probe_devices[0]` and that the
+A/B runner never enforced the `nvidia-smi` samples it already collected.
+Source `1b8fa08` accounts for every device and trial, emits a utilization
+report for each case, and requires sampled activity above the threshold on
+every requested physical GPU. Reused 1GPU evidence is revalidated rather than
+silently trusted. The server passed 38 related tests and the complete
+thread-capped, CUDA-hidden pytest suite (`1,602` passed, `6` skipped) in
+77.05 seconds. Evidence is under
+`experiments/server_command_runs/stage2_ab_gpu_coverage_1b8fa08_20260714/`.
+This remains benchmark-readiness evidence only. Formal PID `10089` was still
+active at 16,832/60,000 episodes, so the isolated 600-episode hardware gate is
+still pending.
 
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 

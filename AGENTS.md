@@ -139,6 +139,23 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `experiments/server_command_runs/stage2_ab_scheduling_overrides_a61300d_20260714/`.
   At capture time the formal run was healthy at 15,720/60,000 episodes (26.2%)
   with about 20.0 hours estimated remaining.
+- Stage-2 A/B physical-GPU coverage gate, added 2026-07-14: RED source
+  `04f2b2e` proved that `stage2_ngpu_ab_compare.py` counted only the first
+  device in a multi-device `terminal_probe_devices` row and that the A/B runner
+  collected `nvidia-smi` CSVs without making actual GPU activity a pass/fail
+  condition. Source `1b8fa08` counts every participating device and trial, runs
+  `gpu_utilization_report.py` after each case, and fails unless every requested
+  physical GPU has sampled activity above the declared threshold. Reused 1GPU
+  baselines must carry and revalidate their original GPU samples. Server gates
+  passed all 38 related tests and the complete thread-capped, CUDA-hidden pytest
+  suite (`1,602` passed, `6` environment skips). Evidence is under
+  `experiments/server_command_runs/stage2_ab_gpu_coverage_1b8fa08_20260714/`.
+  This hardens the pending benchmark but does not replace it. At capture time
+  formal PID `10089` was still active at 16,832/60,000 episodes; its latest 100
+  rows had 42 P1, 9 P2, and 49 P3 outcomes, zero invalid episodes, and zero
+  loss-cap sentinels. Treat the high P1 frequency as an algorithm-health
+  warning for the Stage-2 owner, and do not change or stop that run from the
+  efficiency workstream.
 - Stage-2 production integration status, updated 2026-07-14: merge commit
   `cd6fb55` integrated published source `24e919c` without touching its active
   formal run directory. Source `87a57a1` then restored the canonical optimizer
