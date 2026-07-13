@@ -28,6 +28,9 @@ gate has passed.
 - CPU/RAM: 256 logical CPUs and 629 GiB RAM.
 - The preflight passed 17 Stage-2 N-GPU comparator/runner tests, Bash syntax
   checks, and Python compilation without using CUDA.
+- After the evidence commits, server head `d9ee378` passed 29 project-audit,
+  GPU-report, and evidence-bundle tests, compiled all three completion tools,
+  verified every checksum, and produced a six-stage project audit.
 
 ## Files
 
@@ -37,3 +40,5 @@ gate has passed.
   active concurrent run; its report is the pre-fix output that falsely labels
   all five sampled-active GPUs idle.
 - `preflight/`: server environment and A/B harness readiness checks.
+- `post_sync/`: final-head focused regression, checksum, and six-stage audit
+  evidence before the evidence-only closeout commit.
