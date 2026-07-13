@@ -301,8 +301,17 @@ def summarize_rows(
     visible = parse_device_spec(visible_devices)
     if not visible:
         visible = sorted(set(gpu_utilization) | used_devices, key=_device_sort_key)
-    idle_visible = sorted(set(visible) - used_devices, key=_device_sort_key)
+    visible_set = set(visible)
+    sampled_active = {
+        device
+        for device, info in gpu_utilization.items()
+        if device in visible_set
+        and float(info.get("max_util_pct", 0.0) or 0.0) >= float(low_util_threshold_pct)
+    }
+    unattributed_visible = sorted(visible_set - used_devices, key=_device_sort_key)
+    idle_visible = sorted(visible_set - used_devices - sampled_active, key=_device_sort_key)
     sorted_used = sorted(used_devices, key=_device_sort_key)
+    sorted_sampled_active = sorted(sampled_active, key=_device_sort_key)
 
     if episode_count and not sorted_used:
         warnings.append("No terminal_probe_devices were recorded in episode diagnostics.")
@@ -327,6 +336,8 @@ def summarize_rows(
         "episodes": episode_count,
         "visible_devices": sorted(visible, key=_device_sort_key),
         "used_probe_devices": sorted_used,
+        "sampled_active_devices": sorted_sampled_active,
+        "unattributed_visible_devices": unattributed_visible,
         "idle_visible_devices": idle_visible,
         "probe_episode_counts_by_device": dict(sorted(probe_episode_counts.items(), key=lambda item: _device_sort_key(item[0]))),
         "probe_trial_counts_by_device": dict(sorted(trial_counts.items(), key=lambda item: _device_sort_key(item[0]))),
@@ -379,6 +390,11 @@ def iter_markdown_lines(summary: Mapping[str, Any]) -> Iterable[str]:
     yield f"Episodes: {summary.get('episodes', 0)}"
     yield f"Visible devices: {_join_or_none(summary.get('visible_devices') or ())}"
     yield f"Used probe devices: {_join_or_none(summary.get('used_probe_devices') or ())}"
+    yield f"Sampled active devices: {_join_or_none(summary.get('sampled_active_devices') or ())}"
+    yield (
+        "Unattributed visible devices: "
+        f"{_join_or_none(summary.get('unattributed_visible_devices') or ())}"
+    )
     yield f"Idle visible devices: {_join_or_none(summary.get('idle_visible_devices') or ())}"
     yield ""
     yield "## Probe Timing"
