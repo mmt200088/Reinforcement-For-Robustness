@@ -1,0 +1,14 @@
+test_ab_prints_layerwise_production_commands_without_touching_gpus (tests.test_stage2_ngpu_speed_targeted_first.Stage2NgpuSpeedTargetedFirstTests.test_ab_prints_layerwise_production_commands_without_touching_gpus) ... FAIL
+
+======================================================================
+FAIL: test_ab_prints_layerwise_production_commands_without_touching_gpus (tests.test_stage2_ngpu_speed_targeted_first.Stage2NgpuSpeedTargetedFirstTests.test_ab_prints_layerwise_production_commands_without_touching_gpus)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_stage2_ngpu_speed_targeted_first.py", line 122, in test_ab_prints_layerwise_production_commands_without_touching_gpus
+    self.assertIn("BLB_STAGE2_POLICY_DEVICE=cpu", one_command)
+AssertionError: 'BLB_STAGE2_POLICY_DEVICE=cpu' not found in '[ab][effective] one env CUDA_VISIBLE_DEVICES=3 timeout 14400 bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --persistent-root /tmp/tmpd0tw5gat/out/persistent_one --stage2-fixed-config-source all4 --blb-v3-fusion-count-action 1 --blb-v3-sequential-rl true --blb-v3-substage-mode false --blb-v3-decision-granularity layer --blb-v3-reward-design robust_constrained --blb-v3-sequential-invalid-penalty 1.0 --blb-v3-sequential-cost-shaping-coeff 0.0 --blb-v3-sequential-fusion-shaping-coeff 0.0 --stage2-search-episodes 600 --stage2-search-lr 5e-5 --ppo-update-interval 120 --stage2-rollout-size 120 --stage2-k-trials 5 --blb-v3-online-k-trials 5 --stage2-probe-size 256 --batch-size 64 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 1.2 --stage2-stability-multiplier 2.0 --stage2-calibrate-baseline-samples 8 --blb-v3-promotion-validation-trials 25 --blb-v3-final-selection-validation-trials 25 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 5 --blb-v3-constraint-bootstrap-samples 4096 --blb-v3-online-constraint-probability 0.50 --blb-v3-promotion-constraint-probability 0.80 --blb-v3-final-constraint-probability 0.95 --blb-v3-reward-devices 0 --stage2-save-interval 200 --stage2-eval-interval 100 --random-seed 42 --rl-algo ppo --skip-final-eval --fresh'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.111s
+
+FAILED (failures=1)

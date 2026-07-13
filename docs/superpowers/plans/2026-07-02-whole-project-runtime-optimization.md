@@ -61,6 +61,9 @@ post-run artifacts without weakening the validation protocol.
 - `3de5244` and `66a4895` restored production Stage-2 rollout caches,
   preallocated probe results, causal-prefix execution, batched PPO tensor
   materialization, and shared integer-list parsing after the production merge.
+- `a61300d` makes Stage-2 A/B preflight and execution consume the same CUDA,
+  policy, dynamic-assignment, timeout, and per-case worker settings instead of
+  recording scheduling overrides that the real launch silently dropped.
 - `9468f58`, `51cd4a0`, `58c6666`, `9273440`, and `b0a8697` centralized JSON
   artifact read/write helpers so report/final-eval code avoids duplicated
   parsing and formatting paths.
@@ -80,7 +83,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `8308bbd`, the conservative
+not by raw commit count. As of source head `a61300d`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, shared hot paths, the Stage-1 1GPU vs 4GPU gate, and
 single-process Paean fixed-action batching have landed. The published
@@ -90,7 +93,8 @@ execution, and batched PPO tensor materialization; `66a4895` restored shared
 list parsing. The final CPU/no-GPU server audit is now green at 1,509
 `unittest` tests and 1,599 `pytest` tests, with 6 explicit environment skips in
 each lane. The GPUs are still owned by the formal 60,000-episode Stage-2 run at
-source `24e919c`; its captured status was 14,640/60,000 episodes (24.4%), so
+source `24e919c`; its latest captured status was 15,720/60,000 episodes
+(26.2%), so
 the clean 1GPU-versus-5GPU gate remains the only hard completion gate and must
 wait for the idle check.
 
@@ -98,6 +102,7 @@ Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Stage-2 A/B gate integrity | `a61300d` | `experiments/server_command_runs/stage2_ab_scheduling_overrides_a61300d_20260714/` | Make printed and executed scheduling environments identical, prove non-default one/many worker values stay case-local, pass all 18 related tests plus the 1,599-test full gate, and verify the live idle guard rejects the occupied five-GPU host before launching any competing process. |
 | Whole-project completion audit | `8308bbd` | `experiments/server_command_runs/project_completion_audit_8308bbd_20260714/` | Restore Stage-2 rollout hot paths after the production merge, close stale shared-parser and test-fixture integration gaps, verify all 30 flow files and structured-artifact classes, and pass the full 1,509-test `unittest` plus 1,599-test `pytest` server gates without consuming the five GPUs. |
 | Stage-2 integration | `87a57a1` | `experiments/server_command_runs/stage2_shared_path_integration_20260714/` | Merge the published production source, restore canonical optimizer/inference/diagnostics paths, keep metric synchronization outside the shared-device lock, and pass 117 focused server tests without touching the active formal process. |
 | Plan and audit | `9ab82f0` | `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/` | Refresh the complete six-stage audit after the Rescale optimization series, verify 30/30 flow files and all artifact classes, align the session-construction test fixture with the current baseline contract, and prove the remaining 19-item Stage-2 failure set is exactly unchanged. |
@@ -1321,6 +1326,23 @@ tests with the same 6 explicit environment skips. Evidence is under
 This supersedes the earlier repository-wide red audit. It does not supersede
 the unchecked hardware gate above: the formal run was still active at
 14,640/60,000 episodes in the captured snapshot.
+
+A/B readiness progress 2026-07-14: RED source `9fe4d0c` exposed that the
+script printed worker/policy/dynamic settings without forwarding them to the
+actual launcher. Source `a61300d` uses one shared environment/command builder
+for preflight and execution, and its server evidence includes a non-default
+`one_wpd=2` / `many_wpd=3` / `policy=cpu` / `dynamic=0` preflight, 18 related
+passing tests, and the full 1,599-test pytest pass. The occupied-host idle gate
+exited `20` before launch and left only formal PID `10089`. Runtime tracing also
+confirms that these scheduler knobs belong to the old mutually exclusive
+episode-parallel path; the production layerwise gate derives its acceleration
+only from deterministic K-trial splitting across `reward_devices`. Therefore
+run the final gate once at fixed `1:worker:1`, and do not launch redundant
+candidate sweeps. The host's generic `/hy-tmp/hf_cache` and
+`/hy-tmp/glue_data` defaults are absent; explicitly reuse the formal run's
+run-local `hf_cache` and `local_glue` paths. Evidence is under
+`experiments/server_command_runs/stage2_ab_scheduling_overrides_a61300d_20260714/`.
+The formal run was 15,720/60,000 episodes (26.2%) at this snapshot.
 
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 

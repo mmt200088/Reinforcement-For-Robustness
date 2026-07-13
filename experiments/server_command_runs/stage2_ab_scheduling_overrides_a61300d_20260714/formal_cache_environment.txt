@@ -1,0 +1,6 @@
+GLUE_LOCAL_DATASET_DIR=/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue
+HF_DATASETS_CACHE=/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/hf_cache/datasets
+HF_ENDPOINT=https://hf-mirror.com
+HF_HOME=/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/hf_cache
+HOME=/root
+PWD=/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/src

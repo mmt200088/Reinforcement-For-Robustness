@@ -120,6 +120,25 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   This does not complete the gate: the published production source `24e919c`
   is now merged, but the formal process must release all five GPUs before the
   strict episode/PPO equality and measured-speedup run can close the goal.
+- Stage-2 A/B scheduling-command integrity, updated 2026-07-14: source
+  `a61300d` makes the A/B preflight and actual launch share one environment
+  array and explicitly forwards each case's worker count. RED source `9fe4d0c`
+  proved that non-default worker/policy/dynamic values were previously logged
+  but absent from the effective command. The server passed all 18 related
+  launcher/comparator tests and the full 1,599-test pytest gate. A live idle
+  check correctly exited `20` before launch while formal PID `10089` owned the
+  GPUs; no second `rl_tune.py` process appeared. Do not misinterpret these
+  legacy scheduling knobs as the production layerwise speed mechanism:
+  `stage2_workers_per_device`, `BLB_STAGE2_POLICY_DEVICE`, and
+  `BLB_STAGE2_DYNAMIC_ASSIGNMENT` are consumed by the mutually exclusive
+  `stage2_rl_devices` episode-parallel branch. The pending production gate uses
+  `reward_devices` deterministic K-trial splitting and must remain fixed at the
+  declared `1:worker:1` defaults. Reuse the formal run's existing read-only
+  cache and dataset paths explicitly because `/hy-tmp/hf_cache` and
+  `/hy-tmp/glue_data` do not exist on this host. Evidence is under
+  `experiments/server_command_runs/stage2_ab_scheduling_overrides_a61300d_20260714/`.
+  At capture time the formal run was healthy at 15,720/60,000 episodes (26.2%)
+  with about 20.0 hours estimated remaining.
 - Stage-2 production integration status, updated 2026-07-14: merge commit
   `cd6fb55` integrated published source `24e919c` without touching its active
   formal run directory. Source `87a57a1` then restored the canonical optimizer

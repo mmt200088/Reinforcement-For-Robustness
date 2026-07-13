@@ -1,0 +1,14 @@
+{
+  "best_reward": 1.4963352185188663,
+  "completed_episodes": 15720,
+  "completion_fraction": 0.262,
+  "elapsed_sec": 25537.047,
+  "estimated_remaining_hours": 19.981277232824425,
+  "last_invalid": false,
+  "last_priority": 3,
+  "pid": 10089,
+  "ppo_update_count": 131,
+  "source_commit": "24e919cea64f22b1b869b9bf22d57bbb776bac5e",
+  "total_episodes": 60000,
+  "updated_at": "2026-07-14T02:06:49.120105"
+}
