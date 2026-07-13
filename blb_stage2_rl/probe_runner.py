@@ -41,6 +41,7 @@ import torch.nn as nn
 from function_handler import ReversibleLayerHandler
 
 from .action_space import ActionDecodeResult
+from .inference_eval import run_installed_probe_trial
 # We use BLBNoiseRLBridge for noise install/clear; defer import to avoid the
 # heavy chain at module-load time when this file is imported by tests.
 try:
@@ -140,144 +141,6 @@ def _move_probe_batch_to_device(batch: Any, device: torch.device) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Metric compute (kept local to avoid env↔probe_runner circular import)
-# ---------------------------------------------------------------------------
-
-def _compute_metrics_on_batch_local(
-        logits: torch.Tensor,
-        labels: torch.Tensor,
-        *,
-        is_regression: bool,
-        ) -> Tuple[float, float, float]:
-    """Mirror of ``blb_stage2_rl.env._compute_metrics_on_batch``.
-
-    Local copy so this module is import-safe even when env.py is mid-load
-    (matters at runner boot time when env constructs the probe runner).
-    Returns (mean_loss, metric1, metric2) — all floats — using the same
-    cross-entropy / accuracy convention as the existing path.
-    """
-    if is_regression:
-        preds = logits.view(-1).float()
-        targets = labels.view(-1).float()
-        loss = float(torch.nn.functional.mse_loss(preds, targets).item())
-        # Pearson r as m1 (clamp to [-1, 1])
-        if preds.numel() > 1:
-            pm = preds - preds.mean()
-            tm = targets - targets.mean()
-            denom = float((pm.pow(2).sum() * tm.pow(2).sum()).sqrt().item()) + 1e-12
-            r = float((pm * tm).sum().item()) / denom
-        else:
-            r = 0.0
-        return (loss, float(np.clip(r, -1.0, 1.0)), 0.0)
-    # Classification: cross-entropy + accuracy.
-    loss_t = torch.nn.functional.cross_entropy(
-        logits, labels.long(), reduction="mean",
-    )
-    loss = float(loss_t.item())
-    preds = logits.argmax(dim=-1)
-    acc = float((preds == labels.long()).float().mean().item())
-    return (loss, acc, acc)
-
-
-def _logits_to_classes_local(preds: torch.Tensor) -> torch.Tensor:
-    if preds.dim() == 1:
-        return (preds > 0.5).long()
-    return preds.argmax(dim=-1)
-
-
-def _uses_weighted_f1_metric2_local(metric_profile: str) -> bool:
-    key = str(metric_profile or "").lower().replace("-", "_")
-    return key in {"mrpc", "qqp"} or key.startswith("mrpc_") or key.startswith("qqp_")
-
-
-def _weighted_f1_from_labels_local(
-        labels: Sequence[int],
-        preds: Sequence[int],
-        ) -> float:
-    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
-    preds_arr = np.asarray(preds, dtype=np.int64).reshape(-1)
-    if labels_arr.size == 0 or preds_arr.size == 0:
-        return 0.0
-    n = min(int(labels_arr.size), int(preds_arr.size))
-    labels_arr = labels_arr[:n]
-    preds_arr = preds_arr[:n]
-    total = float(n)
-    out = 0.0
-    for cls in np.union1d(labels_arr, preds_arr):
-        support = float(np.sum(labels_arr == cls))
-        if support <= 0.0:
-            continue
-        tp = float(np.sum((labels_arr == cls) & (preds_arr == cls)))
-        fp = float(np.sum((labels_arr != cls) & (preds_arr == cls)))
-        fn = float(np.sum((labels_arr == cls) & (preds_arr != cls)))
-        denom = (2.0 * tp) + fp + fn
-        f1 = (2.0 * tp / denom) if denom > 0.0 else 0.0
-        out += (support / total) * f1
-    return float(out)
-
-
-def _probe_batch_sample_count_local(labels: torch.Tensor) -> int:
-    try:
-        return max(1, int(labels.reshape(-1).numel()))
-    except Exception:
-        return 1
-
-
-def _weighted_probe_batch_means_local(
-        losses: Sequence[float],
-        metric1s: Sequence[float],
-        metric2s: Sequence[float],
-        sample_counts: Sequence[int],
-        ) -> Tuple[float, float, float]:
-    if not losses:
-        return (float("nan"), float("nan"), float("nan"))
-    counts = np.asarray([max(1, int(x)) for x in sample_counts], dtype=float)
-    if counts.size != len(losses) or not np.isfinite(counts).all() or float(counts.sum()) <= 0.0:
-        return (
-            float(np.mean(losses)),
-            float(np.mean(metric1s)),
-            float(np.mean(metric2s)),
-        )
-    weights = counts / float(counts.sum())
-    return (
-        float(np.dot(np.asarray(losses, dtype=float), weights)),
-        float(np.dot(np.asarray(metric1s, dtype=float), weights)),
-        float(np.dot(np.asarray(metric2s, dtype=float), weights)),
-    )
-
-
-def _finalize_probe_trial_metrics_local(
-        losses: Sequence[float],
-        metric1s: Sequence[float],
-        metric2s: Sequence[float],
-        sample_counts: Sequence[int],
-        *,
-        preds: Sequence[int],
-        labels: Sequence[int],
-        metric_profile: str,
-        is_regression: bool,
-        ) -> Tuple[float, float, float]:
-    loss, m1, m2 = _weighted_probe_batch_means_local(
-        losses, metric1s, metric2s, sample_counts,
-    )
-    if is_regression or not labels:
-        return loss, m1, m2
-    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
-    preds_arr = np.asarray(preds, dtype=np.int64).reshape(-1)
-    if labels_arr.size and preds_arr.size:
-        n = min(int(labels_arr.size), int(preds_arr.size))
-        labels_arr = labels_arr[:n]
-        preds_arr = preds_arr[:n]
-        m1 = float(np.mean(preds_arr == labels_arr))
-        m2 = (
-            _weighted_f1_from_labels_local(labels_arr, preds_arr)
-            if _uses_weighted_f1_metric2_local(metric_profile)
-            else m1
-        )
-    return float(loss), float(m1), float(m2)
-
-
-# ---------------------------------------------------------------------------
 # ProbeWorker — one per device
 # ---------------------------------------------------------------------------
 
@@ -324,50 +187,9 @@ class ProbeWorker:
             if torch.cuda.is_available():
                 torch.cuda.manual_seed(seed)
 
-            losses: List[float] = []
-            m1s: List[float] = []
-            m2s: List[float] = []
-            counts: List[int] = []
-            trial_preds: List[int] = []
-            trial_labels: List[int] = []
-            was_training = self.model.training
-            self.model.eval()
-            try:
-                with torch.inference_mode():
-                    for batch in self.probe_batches:
-                        kwargs = {
-                            "input_ids": batch.input_ids,
-                            "attention_mask": batch.attention_mask,
-                            "labels": batch.labels,
-                        }
-                        tti = getattr(batch, "token_type_ids", None)
-                        if tti is not None:
-                            kwargs["token_type_ids"] = tti
-                        out = self.model(**kwargs)
-                        logits = out.logits if hasattr(out, "logits") else out[1]
-                        loss, m1, m2 = _compute_metrics_on_batch_local(
-                            logits, batch.labels, is_regression=self.is_regression,
-                        )
-                        losses.append(loss); m1s.append(m1); m2s.append(m2)
-                        counts.append(_probe_batch_sample_count_local(batch.labels))
-                        if not self.is_regression:
-                            preds = _logits_to_classes_local(logits.detach())
-                            trial_preds.extend(
-                                int(x) for x in preds.detach().cpu().reshape(-1).tolist()
-                            )
-                            trial_labels.extend(
-                                int(x) for x in batch.labels.detach().cpu().reshape(-1).tolist()
-                            )
-            finally:
-                if was_training:
-                    self.model.train()
-
-            if not losses:
-                return (float("nan"), float("nan"), float("nan"))
-            return _finalize_probe_trial_metrics_local(
-                losses, m1s, m2s, counts,
-                preds=trial_preds,
-                labels=trial_labels,
+            return run_installed_probe_trial(
+                self.model,
+                self.probe_batches,
                 metric_profile=str(self.metric_profile),
                 is_regression=bool(self.is_regression),
             )
@@ -819,3 +641,25 @@ def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
         f"wall={diag.wall_seconds:.3f}s worker_seconds=[{ws}]  "
         f"speedup={diag.speedup_vs_sequential:.2f}x  trials=[{trial_map}]"
     )
+
+
+def diagnostics_payload(diag: ProbeRunnerDiagnostics) -> dict:
+    """Canonical JSON-ready payload for ProbeRunner diagnostics."""
+    payload = {
+        "k": int(diag.k),
+        "wall_seconds": float(diag.wall_seconds),
+        "per_worker_seconds": [float(x) for x in diag.per_worker_seconds],
+        "per_worker_trial_counts": [int(x) for x in diag.per_worker_trial_counts],
+        "per_worker_trial_indices": [
+            list(map(int, x)) for x in diag.per_worker_trial_indices
+        ],
+        "per_worker_trial_seeds": [
+            list(map(int, x)) for x in diag.per_worker_trial_seeds
+        ],
+        "devices": [str(x) for x in diag.devices],
+        "speedup_vs_sequential": float(diag.speedup_vs_sequential),
+        "line": format_diagnostics_line(diag),
+    }
+    if bool(getattr(diag, "multi_action", False)):
+        payload["multi_action"] = True
+    return payload
