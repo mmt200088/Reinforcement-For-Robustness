@@ -77,7 +77,7 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `13a9854`, the conservative
+not by raw commit count. As of source head `19c5a10`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
 artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
 gate, and single-process Paean fixed-action batching have landed.
@@ -85,8 +85,10 @@ The latest low-conflict single-GPU gates are green, but the repository-wide
 suite is not: concurrent Stage-2 integration commit `16b68e3` left 19 Stage-2
 contract failures, including eight guards for previously landed runtime work.
 Those failures require a coordinated Stage-2 handoff instead of an overlapping
-algorithm edit. Hardware-default promotion remains evidence-gated, and the
-multi-GPU gate that requires more than the current one-GPU server remains open.
+algorithm edit. The 2026-07-13 replacement server now exposes five RTX 5090s,
+so hardware inventory no longer blocks the N-GPU gate. Its GPUs are currently
+owned by the concurrent 60,000-episode Stage-2 run at source `24e919c`, however,
+so the clean 1GPU-versus-5GPU gate remains open until that run releases them.
 
 Server-verified optimization commits currently in the execution ledger:
 
@@ -221,6 +223,7 @@ Server-verified optimization commits currently in the execution ledger:
 | Stage-2 scheduling gate | `27be72e` | `experiments/server_command_runs/stage2_ab_ordered_jsonl_27be72e_20260703_225809/` | Skip sorting already ordered Stage-2 A/B JSONL logs while preserving sorted fallback for out-of-order artifacts. |
 | Stage-2 scheduling gate | `623cd5d` | `experiments/server_command_runs/stage2_ab_excluded_keys_623cd5d_20260704_101330/` | Materialize Stage-2 A/B canonical excluded keys once per comparison and reuse the set across all per-row canonicalization calls. |
 | Stage-2 scheduling gate | `f3103d9` | `experiments/server_command_runs/stage2_ngpu_report_stream_f3103d9_20260710_154047/` | Stream the Stage-2 1GPU-vs-NGPU verdict to stdout and the optional output file without materializing the complete report string in the CLI path. |
+| Stage-2 scheduling gate | `19c5a10` | `experiments/server_command_runs/gpu_activity_classification_19c5a10_20260713/` | Combine sampled `nvidia-smi` activity with episode probe attribution so a sampled-active GPU is not falsely reported idle when the concurrent layerwise runner omits terminal-probe device fields. |
 | Rescale/fusion maps | `2907e63` | `experiments/server_command_runs/rescale_scalar_restore_2907e63_20260710_204509/` | Snapshot and restore Rescale graph delta state with direct `int` / `None` assignment instead of per-node `deepcopy()` calls in every repeated replan. |
 | Rescale/fusion maps | `85c81a2` | `experiments/server_command_runs/rescale_compact_scan_85c81a2_20260710_205520/` | Propagate compact-output scale once across adjacent stage segments instead of rebuilding and replaying cut-point paths from the latest rescale. |
 | Rescale/fusion maps | `511b3f2` | `experiments/server_command_runs/fusion_compact_replan_511b3f2_20260711/` | Return only validity, fusion count, total bits, and compact config to the fast Cartesian-product enum loop instead of expanding the full compatibility JSON result for every combination. |
@@ -1226,6 +1229,17 @@ deduplication improved from `1.340131s` to `0.819613s` (`1.64x`, peak
 `15,592B` to `6,888B`), while RL-path deduplication improved from `19.053310s`
 to `18.179581s` (`1.05x`, peak `108,156B` to `50,443B`).
 
+Progress 2026-07-13: `scripts/gpu_utilization_report.py` now reports sampled
+active devices separately from episode-level probe attribution. With an
+`nvidia-smi` sample file, `idle_visible_devices` contains only GPUs that have
+neither probe attribution nor sampled utilization above the existing low-util
+threshold. Without samples, the historical probe-only behavior is preserved.
+The five-RTX-5090 passive profile exposed the prior false-idle report: every GPU
+averaged about 31% utilization while the episode rows omitted
+`terminal_probe_devices`. Source `19c5a10` passed 20 related tests and rendered
+the real 7,744-row report in `1.07s`; evidence is under
+`experiments/server_command_runs/gpu_activity_classification_19c5a10_20260713/`.
+
 - [x] **Step 2: Do not change core RL during concurrent edits**
 
 Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.
@@ -1235,9 +1249,14 @@ Until the Stage-2 RL agent handoff is clear, restrict work to tools and gates.
 Use `SERVER_COMMAND.md` to run 1GPU vs NGPU parity and speed checks. Promote a
 new default only when effect equality passes and wall-clock evidence improves.
 
-Replacement-server blocker 2026-07-10: the host exposes one RTX 4090, so it
-cannot produce the required 1GPU-vs-NGPU parity/speed evidence. Keep this step
-open until a server with at least two visible GPUs is available.
+Server status 2026-07-13: the new host exposes five RTX 5090s and PyTorch sees
+all five `sm_120` devices, so the former one-GPU hardware blocker is removed.
+Do not run the strict A/B yet: the concurrent Stage-2 agent's formal 60,000-
+episode source `24e919c` run currently owns all five GPUs. The passive profile
+measured roughly 31% mean utilization per GPU and `1,681.75` rows/hour, but it
+is not equality or isolated speed evidence. Run the existing targeted-first
+1GPU-versus-5GPU gate only after the formal process exits and the GPUs satisfy
+the harness idle check.
 
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 

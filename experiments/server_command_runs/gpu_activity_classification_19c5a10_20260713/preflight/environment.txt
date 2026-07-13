@@ -1,0 +1,12 @@
+python=Python 3.11.12
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+torch 2.9.1+cu128
+transformers 4.36.0
+datasets 2.15.0
+sklearn 1.3.2
+numpy 1.26.4
+stage1_record=yes
+hf_home=no
+glue_local=no
+4.0K	/root/.cache/huggingface

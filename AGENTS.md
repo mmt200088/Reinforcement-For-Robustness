@@ -68,11 +68,21 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   reapply those Stage-2 core optimizations until the concurrent agent hands
   off. Evidence is under
   `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/`.
-- Replacement-server hardware limit, updated 2026-07-11: the current server
-  exposes only one GPU. It can close single-GPU correctness/parity gates but
-  cannot close the required Stage-2 1GPU-versus-NGPU promotion gate. Keep GPU
-  defaults evidence-gated until a server with at least two visible GPUs is
-  available.
+- Runtime-optimization server status, updated 2026-07-13: the current server is
+  `root@i-1.gpushare.com:5782` with five RTX 5090 GPUs (32,607 MiB each), 256
+  logical CPUs, 629 GiB RAM, and a 50 GiB `/hy-tmp` volume. PyTorch
+  `2.9.1+cu128` sees all five `sm_120` devices. The clean optimization checkout
+  is `/hy-tmp/rfr_runtime_optimization` and must continue to receive source via
+  Git only. The former one-GPU hardware blocker is gone, but the concurrent
+  agent's formal 60,000-episode Stage-2 run at source `24e919c` currently owns
+  all five GPUs. Do not contaminate it or the final 1GPU-versus-5GPU gate; wait
+  until the harness idle check passes.
+- GPU activity-report rule, added 2026-07-13: do not infer that a visible GPU is
+  idle solely because layerwise episode rows omit `terminal_probe_devices`.
+  `scripts/gpu_utilization_report.py` must preserve probe attribution as a
+  separate field and use sampled `nvidia-smi` utilization when classifying
+  actual idle devices. Evidence at source `19c5a10` is under
+  `experiments/server_command_runs/gpu_activity_classification_19c5a10_20260713/`.
 - Stage-2 shared evaluation-chain rule, added 2026-07-02: do not reimplement
   the BLB action-to-model pipeline in ad hoc callers. Optimizer/replan cfg
   write-back must go through

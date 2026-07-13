@@ -1,0 +1,87 @@
+{
+  "episodes": 7232,
+  "gpu_utilization": {
+    "cuda:0": {
+      "active_sample_rate": 0.9666666666666667,
+      "max_memory_mib": 3245.0,
+      "max_util_pct": 51.0,
+      "mean_util_pct": 31.875,
+      "samples": 120
+    },
+    "cuda:1": {
+      "active_sample_rate": 0.9,
+      "max_memory_mib": 3065.0,
+      "max_util_pct": 87.0,
+      "mean_util_pct": 30.9,
+      "samples": 120
+    },
+    "cuda:2": {
+      "active_sample_rate": 0.8333333333333334,
+      "max_memory_mib": 3065.0,
+      "max_util_pct": 50.0,
+      "mean_util_pct": 31.091666666666665,
+      "samples": 120
+    },
+    "cuda:3": {
+      "active_sample_rate": 0.8916666666666667,
+      "max_memory_mib": 3065.0,
+      "max_util_pct": 78.0,
+      "mean_util_pct": 31.891666666666666,
+      "samples": 120
+    },
+    "cuda:4": {
+      "active_sample_rate": 0.8833333333333333,
+      "max_memory_mib": 3065.0,
+      "max_util_pct": 51.0,
+      "mean_util_pct": 31.65,
+      "samples": 120
+    }
+  },
+  "hot_path_wall_seconds": {},
+  "idle_visible_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2",
+    "cuda:3",
+    "cuda:4"
+  ],
+  "policy_rollout_wall_seconds": {
+    "count": 7232,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "probe_device_sets": [],
+  "probe_episode_counts_by_device": {},
+  "probe_trial_counts_by_device": {},
+  "probe_trial_splits": [],
+  "probe_wall_seconds_by_device": {},
+  "recommendations": [
+    "Enable terminal reward-probe diagnostics before judging GPU utilization.",
+    "Forward all intended devices with --stage2-rl-devices or --blb-v3-reward-devices."
+  ],
+  "replan_wall_seconds": {
+    "count": 7232,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "terminal_probe_wall_seconds": {
+    "count": 7232,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "used_probe_devices": [],
+  "visible_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2",
+    "cuda:3",
+    "cuda:4"
+  ],
+  "warnings": [
+    "No terminal_probe_devices were recorded in episode diagnostics.",
+    "visible GPUs were not used by terminal probes: cuda:0, cuda:1, cuda:2, cuda:3, cuda:4"
+  ]
+}
