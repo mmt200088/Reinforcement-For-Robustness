@@ -66,17 +66,25 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   dependencies, shared artifacts, and handoff contracts, then choose
   optimizations by end-to-end wall-clock impact and hardware utilization rather
   than by isolated local speedups.
-- Runtime-optimization completion audit, updated 2026-07-11: source commit
-  `9ab82f0` was verified on replacement server `100.64.229.185:8722` (one RTX
-  4090, 20 logical CPUs). The six-stage audit found all 30 expected flow files
-  and every required artifact-evidence class; focused project-audit and
-  structured-artifact gates passed 9/9 and 35/35. The full 1,229-test process
-  still has 19 Stage-2 contract failures after concurrent integration commit
-  `16b68e3`; the failure set is exactly equal to the earlier `991329a` audit,
-  with zero added or removed cases. Do not report the whole suite green or
-  reapply those Stage-2 core optimizations until the concurrent agent hands
-  off. Evidence is under
-  `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/`.
+- Runtime-optimization completion audit, updated 2026-07-14: source `8308bbd`
+  was verified in the clean five-RTX-5090 checkout. The six-stage audit found
+  all 30 expected flow files and every required artifact-evidence class. The
+  complete CPU/no-GPU server gates are now green: `unittest` passed 1,509 tests
+  with 6 condition skips, and `pytest` passed 1,599 tests with the same 6
+  explicit CUDA/Python-3.9 skips. Source `3de5244` restored production Stage-2
+  rollout efficiency after the `24e919c` merge: cached immutable probe
+  assignments, preallocated result slots, cached static schedule/fusion-mask
+  tensors, causal-prefix lengths that avoid current-step CUDA scalar sync, and
+  batched PPO tensor materialization. Source `66a4895` restored the shared list
+  parser in the runner; `8308bbd` only aligned integration fixtures and
+  floating-point test tolerance. Reward, constraints, trial counts, and
+  validation semantics were not changed. Evidence is under
+  `experiments/server_command_runs/project_completion_audit_8308bbd_20260714/`.
+  This closes the repository-wide software audit, not the whole optimization
+  goal: the strict production 1GPU-versus-5GPU parity/throughput gate remains
+  pending until the formal 60,000-episode process releases the GPUs. At the
+  captured audit snapshot that process was healthy at 14,640/60,000 episodes
+  (24.4%), terminal priority P3, and `last_invalid=false`.
 - Runtime-optimization server status, updated 2026-07-13: the current server is
   `root@i-1.gpushare.com:5782` with five RTX 5090 GPUs (32,607 MiB each), 256
   logical CPUs, 629 GiB RAM, and a 50 GiB `/hy-tmp` volume. PyTorch

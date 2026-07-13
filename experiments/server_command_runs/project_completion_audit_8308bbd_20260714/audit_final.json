@@ -1,0 +1,345 @@
+{
+  "artifact_summary": {
+    "counts": {
+      "episodes_jsonl": 14,
+      "html_reports": 147,
+      "npz_curves": 18,
+      "nvidia_smi_csv": 20,
+      "ppo_updates_jsonl": 20,
+      "status_json": 28
+    },
+    "examples": {
+      "episodes_jsonl": [
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/diagnostics/episodes.jsonl",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_dual_20260519_202236/stage2_noise/progress/diagnostics/episodes.jsonl",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_dual_20260519_211827/stage2_noise/progress/diagnostics/episodes.jsonl",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_single_20260519_211827/stage2_noise/progress/diagnostics/episodes.jsonl",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_single_20260519_202236/stage2_noise/progress/diagnostics/episodes.jsonl"
+      ],
+      "html_reports": [
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/stage2/bert base mrpc/progress/diagnostics/pareto_frontier.html",
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/final_eval_bug_report_2026-05-17.html",
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/final_eval_llm_ist_results_2026-05-17.html",
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/stage2_gtrxl_nonmonotonic_design_report_20260521.html",
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/stage2_rl_reward_formula_report_20260520.html"
+      ],
+      "npz_curves": [
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_dual_20260519_202236/stage2_noise/progress/blb_stage2_training_curve.npz",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_dual_20260519_202236/stage2_noise/progress/diagnostics/action_histogram.npz",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_dual_20260519_211827/stage2_noise/progress/blb_stage2_training_curve.npz",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_dual_20260519_211827/stage2_noise/progress/diagnostics/action_histogram.npz",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_single_20260519_211827/stage2_noise/progress/blb_stage2_training_curve.npz"
+      ],
+      "nvidia_smi_csv": [
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/gpu_activity_classification_19c5a10_20260713/passive_profile/nvidia_smi.csv",
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/after/nvidia_smi.csv",
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/before/nvidia_smi.csv",
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/paean_action_batch_381d4a8_20260710_211040/final_batch/nvidia_smi.csv",
+        "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/paean_plot_defer_f197361_20260710_220535/after_e2e/nvidia_smi.csv"
+      ],
+      "ppo_updates_jsonl": [
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/diagnostics/ppo_updates.jsonl",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_dual_20260519_202236/stage2_noise/progress/diagnostics/ppo_updates.jsonl",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_dual_20260519_211827/stage2_noise/progress/diagnostics/ppo_updates.jsonl",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_single_20260519_211827/stage2_noise/progress/diagnostics/ppo_updates.jsonl",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_single_20260519_202236/stage2_noise/progress/diagnostics/ppo_updates.jsonl"
+      ],
+      "status_json": [
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005/stage2_noise/progress/blb_stage2_status.json",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_dual_20260519_202236/stage2_noise/progress/blb_stage2_status.json",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_dual_20260519_211827/stage2_noise/progress/blb_stage2_status.json",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_fix_single_20260519_211827/stage2_noise/progress/blb_stage2_status.json",
+        "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.005_s2t0.005_s2st0.005__bench_single_20260519_202236/stage2_noise/progress/blb_stage2_status.json"
+      ]
+    },
+    "missing_evidence": [],
+    "roots": [
+      "/hy-tmp/rfr_runtime_optimization/Parting Chapter",
+      "/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs",
+      "/hy-tmp/rfr_runtime_optimization/reports"
+    ],
+    "roots_scanned": 3
+  },
+  "flow_stages": [
+    {
+      "files": [
+        {
+          "kind": "file",
+          "path": "llama_7B_LayerImportance.sh",
+          "present": true,
+          "size_bytes": 148456
+        },
+        {
+          "kind": "file",
+          "path": "presets/mrpc-blb-stage2-rl.conf",
+          "present": true,
+          "size_bytes": 5107
+        },
+        {
+          "kind": "file",
+          "path": "Paean/run_final_eval.sh",
+          "present": true,
+          "size_bytes": 195
+        },
+        {
+          "kind": "file",
+          "path": "SERVER_COMMAND.md",
+          "present": true,
+          "size_bytes": 83348
+        },
+        {
+          "kind": "file",
+          "path": "scripts/server_resource_snapshot.py",
+          "present": true,
+          "size_bytes": 12027
+        }
+      ],
+      "id": "launcher",
+      "missing_files": 0,
+      "name": "Launcher, presets, and server bridge",
+      "optimization_surfaces": [
+        "GPU flag forwarding",
+        "server source sync",
+        "run manifest",
+        "strict resource gates"
+      ],
+      "present_files": 5
+    },
+    {
+      "files": [
+        {
+          "kind": "file",
+          "path": "layer_importance_evaluator.py",
+          "present": true,
+          "size_bytes": 384143
+        },
+        {
+          "kind": "file",
+          "path": "stage1_rl/parallel_runner.py",
+          "present": true,
+          "size_bytes": 21725
+        },
+        {
+          "kind": "file",
+          "path": "stage1_rl/eval_cache.py",
+          "present": true,
+          "size_bytes": 2994
+        },
+        {
+          "kind": "file",
+          "path": "function_handler.py",
+          "present": true,
+          "size_bytes": 213611
+        },
+        {
+          "kind": "file",
+          "path": "scripts/stage1_parallel_report.py",
+          "present": true,
+          "size_bytes": 10568
+        }
+      ],
+      "id": "stage1",
+      "missing_files": 0,
+      "name": "Stage-1 plaintext RL and validation",
+      "optimization_surfaces": [
+        "validation_full forward reuse",
+        "multi-GPU rollout collection",
+        "deterministic eval cache",
+        "hot-path report decoupling"
+      ],
+      "present_files": 5
+    },
+    {
+      "files": [
+        {
+          "kind": "file",
+          "path": "blb_stage2_rl/parallel_runner.py",
+          "present": true,
+          "size_bytes": 57845
+        },
+        {
+          "kind": "file",
+          "path": "blb_stage2_rl/probe_runner.py",
+          "present": true,
+          "size_bytes": 25997
+        },
+        {
+          "kind": "file",
+          "path": "blb_stage2_rl/sequential_runner.py",
+          "present": true,
+          "size_bytes": 375601
+        },
+        {
+          "kind": "file",
+          "path": "scripts/stage2_ngpu_ab_compare.py",
+          "present": true,
+          "size_bytes": 22697
+        },
+        {
+          "kind": "file",
+          "path": "scripts/gpu_utilization_report.py",
+          "present": true,
+          "size_bytes": 19939
+        },
+        {
+          "kind": "file",
+          "path": "scripts/stage2_reward_probe_scaling_report.py",
+          "present": true,
+          "size_bytes": 8834
+        }
+      ],
+      "id": "stage2",
+      "missing_files": 0,
+      "name": "Stage-2 BLB RL and reward probes",
+      "optimization_surfaces": [
+        "episode-parallel GPU workers",
+        "reward-probe device balance",
+        "replan/probe timing",
+        "JSONL write overhead"
+      ],
+      "present_files": 6
+    },
+    {
+      "files": [
+        {
+          "kind": "file",
+          "path": "Rescale_optimizer/rescale_optimizer/replan_interface.py",
+          "present": true,
+          "size_bytes": 30999
+        },
+        {
+          "kind": "file",
+          "path": "Rescale_optimizer/rescale_optimizer/replan.py",
+          "present": true,
+          "size_bytes": 26072
+        },
+        {
+          "kind": "file",
+          "path": "scripts/blb_build_fusion_count_map.py",
+          "present": true,
+          "size_bytes": 27396
+        },
+        {
+          "kind": "file",
+          "path": "blb_stage2_rl/fusion_count_map.py",
+          "present": true,
+          "size_bytes": 7743
+        }
+      ],
+      "id": "rescale",
+      "missing_files": 0,
+      "name": "Rescale optimizer and fusion maps",
+      "optimization_surfaces": [
+        "ReplanSession reuse",
+        "graph/baseline cache",
+        "streaming fusion-map build",
+        "CPU worker scheduling"
+      ],
+      "present_files": 4
+    },
+    {
+      "files": [
+        {
+          "kind": "file",
+          "path": "Paean/run_final_eval.py",
+          "present": true,
+          "size_bytes": 15609
+        },
+        {
+          "kind": "file",
+          "path": "Paean/config.py",
+          "present": true,
+          "size_bytes": 18449
+        },
+        {
+          "kind": "file",
+          "path": "Paean/action_grid.py",
+          "present": true,
+          "size_bytes": 32250
+        },
+        {
+          "kind": "file",
+          "path": "Paean/blb_action_eval.py",
+          "present": true,
+          "size_bytes": 96113
+        },
+        {
+          "kind": "file",
+          "path": "final_evaluation_module.py",
+          "present": true,
+          "size_bytes": 97490
+        }
+      ],
+      "id": "paean",
+      "missing_files": 0,
+      "name": "Paean final evaluation",
+      "optimization_surfaces": [
+        "model/tokenizer reuse",
+        "action-grid batching",
+        "independent-config scheduling",
+        "report/render decoupling"
+      ],
+      "present_files": 5
+    },
+    {
+      "files": [
+        {
+          "kind": "file",
+          "path": "rl_data_points.py",
+          "present": true,
+          "size_bytes": 7160
+        },
+        {
+          "kind": "file",
+          "path": "scripts/verify_stage2_persistent_outputs.py",
+          "present": true,
+          "size_bytes": 7989
+        },
+        {
+          "kind": "file",
+          "path": "scripts/optimization_evidence_bundle.py",
+          "present": true,
+          "size_bytes": 11710
+        },
+        {
+          "kind": "file",
+          "path": "tools/paper_figures.py",
+          "present": true,
+          "size_bytes": 27651
+        },
+        {
+          "kind": "file",
+          "path": "experiments/index.md",
+          "present": true,
+          "size_bytes": 1289
+        }
+      ],
+      "id": "artifacts",
+      "missing_files": 0,
+      "name": "Structured data, reports, and sync",
+      "optimization_surfaces": [
+        "complete JSON/JSONL mirrors",
+        "compact hot-path writes",
+        "post-run report rendering",
+        "artifact/source commit linkage"
+      ],
+      "present_files": 5
+    }
+  ],
+  "next_steps": [
+    "Run this audit before and after performance work.",
+    "Use server_resource_snapshot.py before expensive server runs.",
+    "Use stage1_parallel_report.py for Stage-1 rollout/cache timing evidence.",
+    "Use gpu_utilization_report.py for run-level GPU evidence.",
+    "Use optimization_evidence_bundle.py to package server evidence before promotion.",
+    "Use stage2_ngpu_ab_compare.py before promoting Stage-2 GPU defaults.",
+    "Keep report rendering off the training hot path when possible."
+  ],
+  "root": "/hy-tmp/rfr_runtime_optimization",
+  "summary": {
+    "missing_files": 0,
+    "present_files": 30,
+    "total_expected_files": 30,
+    "total_flow_stages": 6
+  }
+}

@@ -58,6 +58,9 @@ post-run artifacts without weakening the validation protocol.
   batched scalar synchronization in Stage-1/Stage-2 PPO paths.
 - `980ca8d`, `50c9907`, and `70a2655` removed unnecessary full-shape tensor
   allocations in shared GELU/LN/softmax noisy forward paths.
+- `3de5244` and `66a4895` restored production Stage-2 rollout caches,
+  preallocated probe results, causal-prefix execution, batched PPO tensor
+  materialization, and shared integer-list parsing after the production merge.
 - `9468f58`, `51cd4a0`, `58c6666`, `9273440`, and `b0a8697` centralized JSON
   artifact read/write helpers so report/final-eval code avoids duplicated
   parsing and formatting paths.
@@ -77,23 +80,25 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `87a57a1`, the conservative
+not by raw commit count. As of source head `8308bbd`, the conservative
 completion estimate remains about 99% of the planned work: the plan/audit layer,
-artifact helpers, several low-conflict hot paths, the Stage-1 1GPU vs 4GPU
-gate, and single-process Paean fixed-action batching have landed.
-The published production source `24e919c` is now merged. Focused integration
-closed the stale Paean fixture and the three shared-path regressions introduced
-by `16b68e3`; source `87a57a1` passes 117 focused tests plus syntax, compile,
-and effective-command preflight gates on the five-RTX-5090 server. This does
-not make the old repository-wide audit green: rerunning that audit remains a
-final step after the hardware gate. The GPUs are currently owned by the formal
-60,000-episode Stage-2 run at source `24e919c`, so the clean
-1GPU-versus-5GPU gate remains open until that run releases them.
+artifact helpers, shared hot paths, the Stage-1 1GPU vs 4GPU gate, and
+single-process Paean fixed-action batching have landed. The published
+production source `24e919c` is merged. Source `3de5244` restored production
+Stage-2 probe/result allocation, static tensor/mask caches, causal-prefix
+execution, and batched PPO tensor materialization; `66a4895` restored shared
+list parsing. The final CPU/no-GPU server audit is now green at 1,509
+`unittest` tests and 1,599 `pytest` tests, with 6 explicit environment skips in
+each lane. The GPUs are still owned by the formal 60,000-episode Stage-2 run at
+source `24e919c`; its captured status was 14,640/60,000 episodes (24.4%), so
+the clean 1GPU-versus-5GPU gate remains the only hard completion gate and must
+wait for the idle check.
 
 Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Whole-project completion audit | `8308bbd` | `experiments/server_command_runs/project_completion_audit_8308bbd_20260714/` | Restore Stage-2 rollout hot paths after the production merge, close stale shared-parser and test-fixture integration gaps, verify all 30 flow files and structured-artifact classes, and pass the full 1,509-test `unittest` plus 1,599-test `pytest` server gates without consuming the five GPUs. |
 | Stage-2 integration | `87a57a1` | `experiments/server_command_runs/stage2_shared_path_integration_20260714/` | Merge the published production source, restore canonical optimizer/inference/diagnostics paths, keep metric synchronization outside the shared-device lock, and pass 117 focused server tests without touching the active formal process. |
 | Plan and audit | `9ab82f0` | `experiments/server_command_runs/project_completion_audit_9ab82f0_20260711/` | Refresh the complete six-stage audit after the Rescale optimization series, verify 30/30 flow files and all artifact classes, align the session-construction test fixture with the current baseline contract, and prove the remaining 19-item Stage-2 failure set is exactly unchanged. |
 | Plan and audit | `991329a` | `experiments/server_command_runs/project_completion_audit_991329a_20260711/` | Audit the complete sparse checkout on the replacement server, verify 30/30 whole-flow files and all structured-artifact classes, fix experiments-index and PyTorch test-process pollution, and retain the 19 remaining Stage-2 contract failures as explicit red evidence. |
@@ -1303,6 +1308,19 @@ skip. The server image still lacks pytest; this is recorded separately and did
 not hide any failure in the executed modules. At packaging time the formal
 process was at 12,360/60,000 episodes, so strict GPU equality/speed evidence
 remains pending.
+
+Completion-audit progress 2026-07-14: source `3de5244` restored the Stage-2
+rollout hot paths that had regressed across the production merge, and
+`66a4895` restored shared list parsing. The server's global Python environment
+still lacks pytest, but an isolated `/hy-tmp` dependency target provided the
+declared dev dependencies without modifying that environment. At source
+`8308bbd`, the six-stage audit found 30/30 files and all artifact classes;
+full `unittest` passed 1,509 tests with 6 skips, and full pytest passed 1,599
+tests with the same 6 explicit environment skips. Evidence is under
+`experiments/server_command_runs/project_completion_audit_8308bbd_20260714/`.
+This supersedes the earlier repository-wide red audit. It does not supersede
+the unchecked hardware gate above: the formal run was still active at
+14,640/60,000 episodes in the captured snapshot.
 
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 
