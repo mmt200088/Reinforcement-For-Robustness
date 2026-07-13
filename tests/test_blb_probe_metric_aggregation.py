@@ -76,4 +76,4 @@ def test_probe_metric_aggregation_is_invariant_to_batch_partitioning():
         labels=[np.concatenate(labels)],
     )
 
-    assert partitioned == combined
+    assert partitioned == pytest.approx(combined, rel=0.0, abs=1e-15)

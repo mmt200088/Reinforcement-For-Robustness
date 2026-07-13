@@ -421,9 +421,13 @@ def _runtime_modules():
         f"{int(value):016x}" for value in np.asarray(action).reshape(-1)
     )
     optimizer_cost = types.ModuleType(f"{package_name}.optimizer_cost")
+    optimizer_cost.apply_optimizer_outputs_to_cfgs = lambda **_kwargs: {
+        "optimizer_cfg_overrides": {},
+    }
     optimizer_cost.evaluate_action_for_cost = lambda *_args, **_kwargs: None
     probe_runner = types.ModuleType(f"{package_name}.probe_runner")
     probe_runner.ProbeRunner = type("ProbeRunner", (), {})
+    probe_runner.diagnostics_payload = lambda _diag: {}
     probe_runner.format_diagnostics_line = lambda _diag: ""
 
     torch_stub = types.ModuleType("torch")
