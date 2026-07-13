@@ -145,9 +145,9 @@ class GpuUtilizationReportTest(unittest.TestCase):
             visible_devices=["0", "1"],
         )
 
+        self.assertEqual(summary["idle_visible_devices"], ["cuda:1"])
         self.assertEqual(summary["sampled_active_devices"], ["cuda:0"])
         self.assertEqual(summary["unattributed_visible_devices"], ["cuda:0", "cuda:1"])
-        self.assertEqual(summary["idle_visible_devices"], ["cuda:1"])
         markdown = report.render_markdown(summary)
         self.assertIn("Sampled active devices: cuda:0", markdown)
         self.assertIn("Unattributed visible devices: cuda:0, cuda:1", markdown)
