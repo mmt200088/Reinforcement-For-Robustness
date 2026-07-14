@@ -22,9 +22,9 @@ Design:
   so existing single-GPU runs keep the original codepath bitwise.
 * **Determinism.** Trial seed = ``base_seed XOR (trial_idx * 2654435761)``,
   derived once per action from ``(episode/step counter)``. Independent of
-  wall clock so repro is feasible. Each worker seeds only its current CUDA
-  device; it must not call ``torch.cuda.manual_seed_all`` because that creates
-  cross-thread RNG interference on multi-GPU reward probes.
+  wall clock so repro is feasible. Each worker reseeds only the independent
+  BLB-noise generator for its current device and leaves global Torch/NumPy RNG
+  streams untouched, avoiding cross-thread interference.
 """
 from __future__ import annotations
 
@@ -35,11 +35,10 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable, List, Optional, Sequence, Tuple
 
-import numpy as np
 import torch
 import torch.nn as nn
 
-from function_handler import ReversibleLayerHandler
+from function_handler import ReversibleLayerHandler, reseed_noise_rng_for_device
 
 from .action_space import ActionDecodeResult
 from .inference_eval import run_installed_probe_trial
@@ -187,12 +186,7 @@ class ProbeWorker:
         """Run one trial on this worker. Returns (loss, m1, m2) averaged over probe_batches."""
         with torch.cuda.device(self.device):
             seed = _trial_seed(base_seed, trial_idx)
-            # CUDA generator state is per-device; pinning to self.device above
-            # ensures these seeds land on the right GPU.
-            torch.manual_seed(seed)
-            np.random.seed(seed % (2**32))
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed(seed)
+            reseed_noise_rng_for_device(self.device, seed)
 
             return run_installed_probe_trial(
                 self.model,
