@@ -348,6 +348,7 @@ class LayerwiseEpisodeRecord:
     assessment: Optional[Any]
     metrics: Mapping[str, float]
     pooled_metrics: Optional[Mapping[str, float]]
+    probe_diagnostics: Mapping[str, Any]
     promoted_trial_count: int
     promotion_status: str
     invalid_steps: int
@@ -1271,6 +1272,9 @@ def train_layerwise(
                 )
             },
             pooled_metrics=pooled_metrics,
+            probe_diagnostics=_to_plain_mapping(
+                runtime_info.get("probe_diagnostics")
+            ),
             promoted_trial_count=int(promotion.trial_count),
             promotion_status=str(promotion.status),
             invalid_steps=int(invalid_steps),
