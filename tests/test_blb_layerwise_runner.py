@@ -291,6 +291,33 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("planned_total_episodes", fields)
         self.assertIn("convergence_resume_state", fields)
 
+    def test_layerwise_episode_diagnostics_map_existing_probe_timing_fields(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        for required in (
+            "probe_diagnostics = _to_plain_mapping(record.probe_diagnostics)",
+            "terminal_probe_wall_seconds=float(probe_diagnostics.get(",
+            "terminal_probe_devices=[str(value) for value in (probe_diagnostics.get(",
+            "terminal_probe_trial_counts=[",
+            "terminal_probe_trial_indices=[",
+            "terminal_probe_speedup=float(probe_diagnostics.get(",
+            "terminal_cost_eval_wall_seconds=float(probe_diagnostics.get(",
+            "terminal_probe_install_wall_seconds=float(probe_diagnostics.get(",
+            "terminal_probe_clear_wall_seconds=float(probe_diagnostics.get(",
+            "terminal_probe_install_skipped=bool(probe_diagnostics.get(",
+            "terminal_probe_clear_skipped=bool(probe_diagnostics.get(",
+        ):
+            self.assertIn(required, branch_source)
+
     def test_layerwise_checkpoint_preserves_long_run_search_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
@@ -737,6 +764,19 @@ class _FakeLayerwiseEnv:
             "metrics": types.SimpleNamespace(
                 loss_mean=0.304, metric1_mean=0.896, metric2_mean=0.796,
             ),
+            "probe_diagnostics": {
+                "wall_seconds": 1.25,
+                "devices": ["cuda:0", "cuda:1"],
+                "per_worker_seconds": [1.10, 1.20],
+                "per_worker_trial_counts": [3, 2],
+                "per_worker_trial_indices": [[0, 2, 4], [1, 3]],
+                "speedup_vs_sequential": 1.75,
+                "cost_eval_wall_seconds": 0.11,
+                "probe_install_wall_seconds": 0.22,
+                "probe_clear_wall_seconds": 0.33,
+                "probe_install_skipped": True,
+                "probe_clear_skipped": False,
+            },
             "invalid": self._invalid,
         }
         if self._evidence_mode != "missing":
@@ -832,6 +872,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(observed_ppo[0][0:3], (12, 1.0, 1.0))
         self.assertEqual(summary["episode_records"][0].action_matrix[0][1], 0)
         self.assertEqual(summary["episode_records"][0].pending_full_vector, tuple(range(20)))
+        self.assertEqual(
+            summary["episode_records"][0].probe_diagnostics,
+            env.runtime_terminal_info["probe_diagnostics"],
+        )
         self.assertEqual(summary["episode_rewards"], [7.5])
         self.assertIn("best_action", summary)
         self.assertIsNone(summary["best_action"])
