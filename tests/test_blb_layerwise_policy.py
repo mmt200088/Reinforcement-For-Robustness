@@ -358,6 +358,162 @@ class LayerwisePolicyTest(unittest.TestCase):
         torch.testing.assert_close(changed_log_prob, replay_log_prob)
         torch.testing.assert_close(changed_entropy, masked_entropy)
 
+    def test_evaluate_action_exposes_factorized_log_probabilities(self):
+        policy = self._policy()
+        state = torch.zeros(3, policy.cfg.state_dim)
+        state[:, 4] = 1.0
+        actions = torch.tensor([
+            [0, 0, 1, 2, 3, 4],
+            [1, 5, 4, 3, 2, 1],
+            [0, 2, 2, 2, 2, 2],
+        ])
+        levels = torch.tensor([[2, 6, 6, 6, 6, 6]]).expand(3, -1)
+        masks = torch.ones((3, 6), dtype=torch.bool)
+        masks[0, 1] = False
+
+        joint_log_prob, entropy, value, entropy_per_slot, log_prob_per_slot = (
+            policy.evaluate_action(
+                state,
+                actions,
+                masks,
+                levels,
+                return_per_slot_entropy=True,
+                return_per_slot_log_prob=True,
+            )
+        )
+
+        self.assertEqual(log_prob_per_slot.shape, (3, 6))
+        torch.testing.assert_close(log_prob_per_slot.sum(dim=-1), joint_log_prob)
+        torch.testing.assert_close(entropy_per_slot.sum(dim=-1), entropy)
+        self.assertEqual(value.shape, (3,))
+        self.assertEqual(float(log_prob_per_slot[0, 1].detach()), 0.0)
+
+    def test_factorized_clipping_does_not_cross_clip_sibling_slots(self):
+        from blb_stage2_rl.sequential_policy import _factorized_clipped_policy_loss
+
+        old_log_prob = torch.zeros((1, 2))
+        new_log_prob = torch.log(torch.tensor([[1.50, 0.95]]))
+        advantages = torch.ones(1)
+        active = torch.ones((1, 2), dtype=torch.bool)
+
+        loss, ratio = _factorized_clipped_policy_loss(
+            new_log_prob,
+            old_log_prob,
+            advantages,
+            active,
+            clip_range=0.2,
+        )
+
+        torch.testing.assert_close(ratio, torch.tensor([[1.50, 0.95]]))
+        self.assertAlmostEqual(float(loss), -(1.20 + 0.95) / 2.0, places=6)
+
+        active[0, 1] = False
+        masked_loss, _ = _factorized_clipped_policy_loss(
+            new_log_prob,
+            old_log_prob,
+            advantages,
+            active,
+            clip_range=0.2,
+        )
+        self.assertAlmostEqual(float(masked_loss), -1.20, places=6)
+
+    def test_factorized_kl_uses_active_slot_mean_not_joint_sum(self):
+        from blb_stage2_rl.sequential_policy import _factorized_approx_kl
+
+        old_log_prob = torch.zeros((1, 2))
+        new_log_prob = torch.tensor([[-0.10, -0.30]])
+        active = torch.ones((1, 2), dtype=torch.bool)
+
+        mean_kl = _factorized_approx_kl(new_log_prob, old_log_prob, active)
+        self.assertAlmostEqual(float(mean_kl), 0.20, places=6)
+
+        active[0, 1] = False
+        masked_kl = _factorized_approx_kl(new_log_prob, old_log_prob, active)
+        self.assertAlmostEqual(float(masked_kl), 0.10, places=6)
+
+    def test_normalized_entropy_objective_equalizes_binary_and_six_way_slots(self):
+        from blb_stage2_rl.sequential_policy import _active_slot_entropy_objective
+
+        entropy = torch.log(torch.tensor([[2.0, 6.0]]))
+        levels = torch.tensor([[2, 6]])
+        active = torch.ones((1, 2), dtype=torch.bool)
+
+        normalized = _active_slot_entropy_objective(
+            entropy,
+            levels,
+            active,
+            normalize_by_levels=True,
+        )
+        raw = _active_slot_entropy_objective(
+            entropy,
+            levels,
+            active,
+            normalize_by_levels=False,
+        )
+
+        self.assertAlmostEqual(float(normalized), 1.0, places=6)
+        self.assertAlmostEqual(float(raw), float(entropy.mean()), places=6)
+
+    def test_factorized_actor_cost_removes_same_step_sibling_noise(self):
+        from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
+
+        buffer = SequentialRolloutBuffer()
+        transition_index = buffer.add(
+            state=np.zeros(1, dtype=np.float32),
+            action=np.zeros(2, dtype=np.int64),
+            slot_mask=np.ones(2, dtype=bool),
+            per_slot_num_levels=np.full(2, 2, dtype=np.int64),
+            log_prob=0.0,
+            value=0.0,
+            reward=0.3,
+            done=True,
+        )
+        buffer.set_actor_cost_at(transition_index, np.asarray([0.1, 0.2]))
+
+        factorized = buffer.factorized_actor_advantages(
+            torch.tensor([0.7]),
+            torch.device("cpu"),
+        )
+
+        torch.testing.assert_close(factorized, torch.tensor([[0.5, 0.6]]))
+
+    def test_explicit_shared_constraint_return_replaces_scalar_critic_noise(self):
+        from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
+
+        buffer = SequentialRolloutBuffer()
+        transition_index = buffer.add(
+            state=np.zeros(1, dtype=np.float32),
+            action=np.zeros(2, dtype=np.int64),
+            slot_mask=np.ones(2, dtype=bool),
+            per_slot_num_levels=np.full(2, 2, dtype=np.int64),
+            log_prob=0.0,
+            value=0.0,
+            reward=99.0,
+            done=True,
+        )
+        buffer.set_actor_cost_at(transition_index, np.asarray([0.1, 0.2]))
+        buffer.set_actor_shared_return_at(transition_index, -0.25)
+
+        factorized = buffer.factorized_actor_advantages(
+            torch.tensor([50.0]),
+            torch.device("cpu"),
+        )
+
+        torch.testing.assert_close(factorized, torch.tensor([[-0.15, -0.05]]))
+
+    def test_factorized_policy_loss_accepts_one_advantage_per_slot(self):
+        from blb_stage2_rl.sequential_policy import _factorized_clipped_policy_loss
+
+        loss, _ = _factorized_clipped_policy_loss(
+            torch.log(torch.tensor([[1.50, 0.95]])),
+            torch.zeros((1, 2)),
+            torch.tensor([[1.0, -1.0]]),
+            torch.ones((1, 2), dtype=torch.bool),
+            clip_range=0.2,
+        )
+
+        self.assertAlmostEqual(float(loss), -0.125, places=6)
+
     def test_stochastic_sampling_zeros_masked_slot_without_changing_active_semantics(self):
         policy = self._policy()
         fusion_probs = {0: 0.60, 1: 0.40}
@@ -439,6 +595,188 @@ class LayerwisePolicyTest(unittest.TestCase):
         np.testing.assert_allclose(advantages_np, np.full(12, 2.0, dtype=np.float32))
         torch.testing.assert_close(returns_t, torch.full((12,), 2.0))
         torch.testing.assert_close(advantages_t, torch.full((12,), 2.0))
+
+    def test_factorized_ppo_converges_fusion_and_k_on_contextual_cost_bandit(self):
+        from blb_stage2_rl.sequential_policy import (
+            SequentialPPOConfig,
+            SequentialRolloutBuffer,
+            sequential_ppo_update,
+        )
+        from blb_stage2_rl.layerwise_runner import _cosine_entropy_coefficient
+        import types
+
+        class ContextualCostPolicy(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                initial = torch.empty((12, 6, 6), dtype=torch.float32)
+                initial[:, 0, :] = -20.0
+                initial[:, 0, :2] = torch.log(torch.tensor([0.90, 0.10]))
+                k_probs = torch.tensor([0.50, 0.20, 0.12, 0.08, 0.06, 0.04])
+                initial[:, 1:, :] = torch.log(k_probs)
+                self.logits = torch.nn.Parameter(initial)
+                self.values = torch.nn.Parameter(torch.zeros(12))
+
+            def _distribution(self, state, slot_mask, per_slot_num_levels):
+                layer = state[:, 0].long()
+                logits = self.logits.index_select(0, layer)
+                level_index = torch.arange(6).view(1, 1, 6)
+                valid = level_index < per_slot_num_levels.unsqueeze(-1)
+                valid = valid & slot_mask.unsqueeze(-1)
+                safe_logits = logits.masked_fill(~valid, -20.0)
+                safe_logits = torch.where(
+                    slot_mask.unsqueeze(-1), safe_logits, torch.zeros_like(safe_logits),
+                )
+                return torch.distributions.Categorical(logits=safe_logits), layer
+
+            def sample_action(self, state, slot_mask, per_slot_num_levels):
+                dist, layer = self._distribution(state, slot_mask, per_slot_num_levels)
+                action = dist.sample()
+                action = torch.where(slot_mask, action, torch.zeros_like(action))
+                per_slot = dist.log_prob(action) * slot_mask.float()
+                return action, per_slot.sum(dim=-1), self.values.index_select(0, layer)
+
+            def evaluate_action(
+                    self,
+                    state,
+                    actions,
+                    slot_mask,
+                    per_slot_num_levels,
+                    action_level_mask=None,
+                    baseline_prior_scale=None,
+                    return_per_slot_entropy=False,
+                    return_per_slot_log_prob=False,
+                    ):
+                del action_level_mask, baseline_prior_scale
+                dist, layer = self._distribution(state, slot_mask, per_slot_num_levels)
+                per_slot = dist.log_prob(actions.long()) * slot_mask.float()
+                entropy_per_slot = dist.entropy() * slot_mask.float()
+                result = (
+                    per_slot.sum(dim=-1),
+                    entropy_per_slot.sum(dim=-1),
+                    self.values.index_select(0, layer),
+                )
+                if return_per_slot_entropy and return_per_slot_log_prob:
+                    return result + (entropy_per_slot, per_slot)
+                if return_per_slot_entropy:
+                    return result + (entropy_per_slot,)
+                if return_per_slot_log_prob:
+                    return result + (per_slot,)
+                return result
+
+        torch.manual_seed(20260714)
+        policy = ContextualCostPolicy()
+        policy.eval()
+        optimizer = torch.optim.Adam(policy.parameters(), lr=0.05)
+        config = SequentialPPOConfig(
+            lr=0.05,
+            clip_range=0.2,
+            n_epochs=4,
+            minibatch_size=256,
+            ent_coef=0.0,
+            value_coef=0.1,
+            gamma=1.0,
+            gae_lambda=1.0,
+            normalize_returns=False,
+            use_kl_early_stop=False,
+            adaptive_lr_kl=False,
+            factorized_actor_clip=True,
+            entropy_average_active_slots=True,
+            entropy_normalize_active_slots=True,
+        )
+        slot_levels = np.asarray([2, 6, 6, 6, 6, 6], dtype=np.int64)
+        update_count = 180
+        entropy_schedule = types.SimpleNamespace(
+            total_episodes=update_count * 120,
+            planned_total_episodes=update_count * 120,
+            ent_coef_cosine_start=0.05,
+            ent_coef_cosine_end=0.0,
+            ent_coef_cosine_plateau=0.25,
+            ent_coef_cosine_decay_end=0.85,
+            ent_coef_cosine_lower_bound=0.0,
+        )
+        last_metrics = None
+
+        for update_idx in range(update_count):
+            buffer = SequentialRolloutBuffer()
+            for sample_idx in range(120):
+                layer_idx = sample_idx % 12
+                slot_mask = np.ones(6, dtype=bool)
+                if layer_idx == 0:
+                    slot_mask[1] = False
+                state = np.asarray([layer_idx], dtype=np.float32)
+                with torch.no_grad():
+                    action, log_prob, value = policy.sample_action(
+                        torch.from_numpy(state).unsqueeze(0),
+                        torch.from_numpy(slot_mask).unsqueeze(0),
+                        torch.from_numpy(slot_levels).unsqueeze(0),
+                    )
+                action_np = action[0].numpy()
+                raw_cost_units = float(action_np[0]) + 0.5 * float(
+                    action_np[1:][slot_mask[1:]].sum()
+                )
+                transition_index = buffer.add(
+                    state=state,
+                    action=action_np,
+                    slot_mask=slot_mask,
+                    per_slot_num_levels=slot_levels,
+                    log_prob=log_prob[0],
+                    value=value[0],
+                    reward=raw_cost_units / 159.5,
+                    done=True,
+                )
+                per_slot_cost = np.concatenate((
+                    np.asarray([float(action_np[0])]),
+                    0.5 * action_np[1:].astype(np.float32),
+                )) / 159.5
+                per_slot_cost[~slot_mask] = 0.0
+                buffer.set_actor_cost_at(transition_index, per_slot_cost)
+                buffer.set_actor_shared_return_at(transition_index, 0.0)
+            entropy_coefficient = _cosine_entropy_coefficient(
+                entropy_schedule,
+                (update_idx + 1) * 120,
+            )
+            last_metrics = sequential_ppo_update(
+                policy,
+                optimizer,
+                buffer,
+                config,
+                torch.device("cpu"),
+                ent_coef_override=entropy_coefficient,
+            )
+
+        self.assertEqual(last_metrics["actor_clip_mode"], "factorized_per_slot")
+        self.assertEqual(
+            last_metrics["actor_credit_mode"],
+            "shared_constraint_plus_own_cost",
+        )
+        self.assertEqual(
+            last_metrics["entropy_objective_mode"],
+            "normalized_active_slot_mean",
+        )
+
+        with torch.no_grad():
+            fusion_dist = torch.distributions.Categorical(logits=policy.logits[:, 0, :2])
+            k_dist = torch.distributions.Categorical(logits=policy.logits[:, 1:, :])
+            fusion_entropy = float((fusion_dist.entropy() / np.log(2.0)).mean())
+            active_k_entropy = torch.cat((
+                k_dist.entropy()[0, 1:].reshape(-1),
+                k_dist.entropy()[1:].reshape(-1),
+            ))
+            k_entropy = float((active_k_entropy / np.log(6.0)).mean())
+            fusion_modes = torch.argmax(policy.logits[:, 0, :2], dim=-1)
+            k_modes = torch.argmax(policy.logits[:, 1:, :], dim=-1)
+            active_k_modes = torch.cat((
+                k_modes[0, 1:].reshape(-1),
+                k_modes[1:].reshape(-1),
+            ))
+            diagnostic = (
+                f"fusion_entropy={fusion_entropy:.6f}, k_entropy={k_entropy:.6f}, "
+                f"fusion_modes={fusion_modes.tolist()}, k_modes={k_modes.tolist()}"
+            )
+            self.assertTrue(torch.all(fusion_modes == 1), diagnostic)
+            self.assertTrue(torch.all(active_k_modes == 5), diagnostic)
+        self.assertLess(fusion_entropy, 0.1, diagnostic)
+        self.assertLess(k_entropy, 0.1, diagnostic)
 
 
 if __name__ == "__main__":

@@ -136,6 +136,7 @@ class VariableCost:
     total_units: float
     max_units: float
     layer_cost_rewards: Tuple[float, ...]
+    slot_cost_rewards: Tuple[Tuple[float, ...], ...]
 
 
 def _graph_keys(layer_idx: int, profile: str, gelu_degree: int) -> Tuple[Tuple[int, str], ...]:
@@ -337,6 +338,7 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
     fusion_values = []
     k_values = []
     layer_units = []
+    slot_units = []
     for layer_idx, action in enumerate(actions):
         expected_blocks = {2, 3, 4, 5} if layer_idx == 0 else {1, 2, 3, 4, 5}
         actual_blocks = set(action.k_by_block)
@@ -348,18 +350,20 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
         if fusion not in (0, 1):
             raise ValueError(f"layer {layer_idx} Block4 fusion must be 0 or 1, got {fusion}")
         fusion_values.append(fusion)
-        current_layer_k_values = []
         for block_idx, k_value in action.k_by_block.items():
             k = int(k_value)
             if k not in K_LEVELS:
                 raise ValueError(f"layer {layer_idx} block {block_idx} has unsupported K={k}")
             k_values.append(k)
-            current_layer_k_values.append(k)
-        layer_units.append(
-            BLOCK4_FUSION_COST_UNIT * float(fusion)
-            + TRUNCATION_COST_UNIT_PER_BIT
-            * sum(13.0 - float(k) for k in current_layer_k_values)
+        current_slot_units = [BLOCK4_FUSION_COST_UNIT * float(fusion)]
+        current_slot_units.extend(
+            TRUNCATION_COST_UNIT_PER_BIT
+            * (13.0 - float(action.k_by_block[block_idx]))
+            if block_idx in action.k_by_block else 0.0
+            for block_idx in _BLOCK_ORDER
         )
+        slot_units.append(current_slot_units)
+        layer_units.append(sum(current_slot_units))
     if len(k_values) != 59:
         raise RuntimeError(f"BERT-base layer actions yielded {len(k_values)} active K values, expected 59")
     fusion_units = BLOCK4_FUSION_COST_UNIT * float(sum(fusion_values))
@@ -379,6 +383,10 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
         max_units=float(MAX_VARIABLE_COST_UNITS),
         layer_cost_rewards=tuple(
             float(value / MAX_VARIABLE_COST_UNITS) for value in layer_units
+        ),
+        slot_cost_rewards=tuple(
+            tuple(float(value / MAX_VARIABLE_COST_UNITS) for value in row)
+            for row in slot_units
         ),
     )
 

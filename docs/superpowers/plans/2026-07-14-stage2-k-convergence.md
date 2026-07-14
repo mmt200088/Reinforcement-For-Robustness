@@ -31,8 +31,10 @@ the requested `K - 2 == Block4 fusion + 1` cost equivalence.
    cost, and the episode return is unchanged.
 2. Persist raw units and per-layer terms in terminal handoff metadata.
 3. Store zero during collection, then backfill terminal constraint reward plus
-   P3-only layer-local costs after priority is known.
-4. Run focused environment/runner tests.
+   P3-only layer-local critic costs after priority is known.
+4. Give the factorized actor the shared terminal constraint return plus only
+   its own slot cost, preventing sibling-cost credit noise.
+5. Run focused environment/runner tests.
 
 ## Task 3: Add Factorized MultiDiscrete PPO Clipping
 
@@ -45,8 +47,8 @@ the requested `K - 2 == Block4 fusion + 1` cost equivalence.
 1. Add failing tests for per-slot log probabilities, masked slots, sibling
    clipping independence, and legacy joint-PPO compatibility.
 2. Add backward-compatible per-slot statistics from `evaluate_action`.
-3. Add opt-in factorized actor clipping and active-slot mean entropy objective;
-   keep the scalar critic and legacy joint mode unchanged.
+3. Add opt-in factorized actor clipping and normalized active-slot mean entropy
+   objective; keep the scalar critic and legacy joint mode unchanged.
 4. Enable factorized mode only for the layerwise robust branch.
 5. Run focused policy tests.
 
@@ -57,8 +59,8 @@ the requested `K - 2 == Block4 fusion + 1` cost equivalence.
 - Modify: `tests/test_blb_layerwise_runner.py`
 
 1. Add failing tests for exact zero at the planned horizon and all extensions.
-2. Set layerwise cosine end and lower bound to zero while preserving the safe
-   initial prior and exploration plateau.
+2. Set layerwise cosine end and lower bound to zero, end decay at 85% of the
+   planned horizon, and preserve the safe initial prior/exploration plateau.
 3. Persist the effective schedule values in the run manifest and PPO updates.
 4. Run focused runner tests.
 

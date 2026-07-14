@@ -271,6 +271,25 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             _cosine_entropy_coefficient(uninterrupted, 30_000),
         )
 
+    def test_layerwise_entropy_schedule_reaches_zero_and_stays_zero(self):
+        from blb_stage2_rl.layerwise_runner import _cosine_entropy_coefficient
+
+        config = types.SimpleNamespace(
+            total_episodes=60_000,
+            planned_total_episodes=60_000,
+            ent_coef_cosine_start=0.05,
+            ent_coef_cosine_end=0.0,
+            ent_coef_cosine_plateau=0.25,
+            ent_coef_cosine_decay_end=0.85,
+            ent_coef_cosine_lower_bound=0.0,
+        )
+
+        self.assertEqual(_cosine_entropy_coefficient(config, 60_000), 0.0)
+        self.assertEqual(_cosine_entropy_coefficient(config, 72_000), 0.0)
+        self.assertGreater(_cosine_entropy_coefficient(config, 30_000), 0.0)
+        self.assertGreater(_cosine_entropy_coefficient(config, 48_000), 0.0)
+        self.assertEqual(_cosine_entropy_coefficient(config, 51_000), 0.0)
+
     def test_p3_cost_is_redistributed_without_changing_episode_return(self):
         from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
 
@@ -373,6 +392,52 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             '"planned_total_episodes", planned_total_episodes',
         ):
             self.assertIn(required, branch_source)
+
+    def test_layerwise_branch_enables_factorized_actor_clipping_only_in_its_ppo(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn("factorized_actor_clip=True", branch_source)
+        self.assertIn("entropy_average_active_slots=True", branch_source)
+        self.assertIn("entropy_normalize_active_slots=True", branch_source)
+        self.assertIn("ent_coef_cosine_end=0.0", branch_source)
+        self.assertIn("ent_coef_cosine_decay_end=0.85", branch_source)
+        self.assertIn("ent_coef_cosine_lower_bound=0.0", branch_source)
+        self.assertIn('"factorized_actor_clip": True', branch_source)
+        self.assertIn('"algorithm_revision": algorithm_revision', branch_source)
+        self.assertIn('"factorized_slot_credit_v2"', branch_source)
+        self.assertIn('"entropy_average_active_slots": True', branch_source)
+        self.assertIn('"end": 0.0', branch_source)
+        self.assertIn('"lower_bound": 0.0', branch_source)
+
+    def test_factorized_ppo_uses_active_slot_kl_scale(self):
+        source = Path("blb_stage2_rl/sequential_policy.py").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("def _factorized_approx_kl(", source)
+        self.assertIn(
+            "approx_kl_t = _factorized_approx_kl(",
+            source,
+        )
+
+    def test_factorized_ppo_uses_per_slot_cost_control_variate(self):
+        source = Path("blb_stage2_rl/sequential_policy.py").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("def set_actor_cost_at(", source)
+        self.assertIn("def set_actor_shared_return_at(", source)
+        self.assertIn("def factorized_actor_advantages(", source)
+        self.assertIn("factorized_actor_advantages = (", source)
 
     def test_layerwise_checkpoint_and_result_publish_reloadable_fusion_best(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
@@ -691,6 +756,14 @@ class _FakeBuffer:
     def add_reward_at(self, index, delta):
         self.transitions[int(index)]["reward"] += float(delta)
 
+    def set_actor_cost_at(self, index, per_slot_cost):
+        self.transitions[int(index)]["actor_cost_per_slot"] = np.asarray(
+            per_slot_cost, dtype=np.float32,
+        )
+
+    def set_actor_shared_return_at(self, index, shared_return):
+        self.transitions[int(index)]["actor_shared_return"] = float(shared_return)
+
     def clear(self):
         self.cleared = True
 
@@ -787,12 +860,21 @@ class _FakeLayerwiseEnv:
         }
         if self._evidence_mode != "missing":
             self.runtime_terminal_info["statistical_trials"] = statistical_trials
+        layer_cost = 0.4 / 12.0
+        slot_cost_rewards = []
+        for layer_idx in range(12):
+            active_count = 5 if layer_idx == 0 else 6
+            row = [layer_cost / active_count] * 6
+            if layer_idx == 0:
+                row[1] = 0.0
+            slot_cost_rewards.append(row)
         return np.zeros(4, dtype=np.float32), (-5.0 if self._invalid else 7.5), True, {
             "policy_actions": [row[:] for row in self.actions],
             "pending_full_vector": list(range(20)),
             "variable_cost": {
                 "normalized": 0.4,
                 "layer_cost_rewards": [0.4 / 12.0] * 12,
+                "slot_cost_rewards": slot_cost_rewards,
             },
             "layer_summaries": [
                 {"all_valid": True} for _ in range(12)
@@ -882,6 +964,12 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertAlmostEqual(
             sum(row["reward"] for row in buffer.transitions), 7.5,
         )
+        for row in buffer.transitions:
+            self.assertIn("actor_cost_per_slot", row)
+            self.assertEqual(row["actor_shared_return"], 7.5 - 0.4)
+            self.assertAlmostEqual(
+                float(row["actor_cost_per_slot"].sum()), expected_local,
+            )
         self.assertEqual([row["done"] for row in buffer.transitions], [False] * 11 + [True])
         self.assertEqual([float(row["log_prob"]) for row in buffer.transitions], [5.0] + [6.0] * 11)
         self.assertFalse(policy.masks[0][1])
@@ -1019,6 +1107,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
+        buffer = _FakeBuffer()
         with tempfile.TemporaryDirectory() as td:
             summary = train_layerwise(
                 env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
@@ -1027,7 +1116,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
                 identity_context={"action_space_version": "layerwise-v1"},
                 optimizer=object(),
-                rollout_buffer=_FakeBuffer(),
+                rollout_buffer=buffer,
                 ppo_update_fn=lambda *_args, **_kwargs: {},
                 assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
                 step_adapter_fn=lambda spec, _max_dim, _max_levels: (
@@ -1038,6 +1127,16 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
         self.assertEqual(summary["episode_rewards"], [-5.0])
         self.assertEqual(summary["episode_records"][0].promotion_status, "invalid_terminal")
+        self.assertEqual([row["reward"] for row in buffer.transitions[:-1]], [0.0] * 11)
+        self.assertEqual(buffer.transitions[-1]["reward"], -5.0)
+        self.assertTrue(all(
+            np.count_nonzero(row["actor_cost_per_slot"]) == 0
+            for row in buffer.transitions
+        ))
+        self.assertEqual(
+            [row["actor_shared_return"] for row in buffer.transitions],
+            [-5.0] * 12,
+        )
 
     def test_layerwise_loop_contains_no_retired_blockwise_scaffolds(self):
         from blb_stage2_rl.layerwise_runner import train_layerwise

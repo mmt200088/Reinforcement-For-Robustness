@@ -109,6 +109,7 @@ class SequentialTrainConfig:
     ent_coef_cosine_start: float = 0.05
     ent_coef_cosine_end: float = 0.001
     ent_coef_cosine_plateau: float = 0.25
+    ent_coef_cosine_decay_end: float = 1.0
     ent_coef_cosine_lower_bound: float = 0.012
     # ADR-015/Stage-1 alignment: "stage1_aligned" is the active default.
     # "continuous" and "tiered" remain for historical A/B only.
@@ -3657,16 +3658,34 @@ def _run_layerwise_training_branch(
     layerwise_manifest_path = os.path.join(
         blb_progress_dir, "layerwise_run_manifest.json",
     )
+    algorithm_revision = "factorized_slot_credit_v2"
+    layerwise_entropy_schedule = {
+        "kind": "cosine",
+        "start": float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
+        "end": 0.0,
+        "plateau": float(getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)),
+        "decay_end": 0.85,
+        "lower_bound": 0.0,
+    }
+    layerwise_ppo_mode = {
+        "factorized_actor_clip": True,
+        "actor_credit_mode": "shared_constraint_plus_own_cost",
+        "entropy_average_active_slots": True,
+        "entropy_normalize_active_slots": True,
+    }
     run_manifest = {
         "schema_version": "stage2_layerwise_robust_run_v1",
         "status": "running",
         "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
+        "algorithm_revision": algorithm_revision,
         "profile": str(train_cfg.profile),
         "decision_granularity": "layer",
         "reward_design": "robust_constrained",
         "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
         "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
         "planned_episodes": int(train_cfg.total_episodes),
+        "entropy_schedule": layerwise_entropy_schedule,
+        "ppo_mode": layerwise_ppo_mode,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     write_strict_json_file(layerwise_manifest_path, run_manifest)
@@ -3719,6 +3738,12 @@ def _run_layerwise_training_branch(
             raise RuntimeError(
                 f"layerwise checkpoint variant {checkpoint_variant!r} != {rl_variant!r}"
             )
+        checkpoint_revision = str(checkpoint.get("algorithm_revision", "") or "")
+        if checkpoint_revision != algorithm_revision:
+            raise RuntimeError(
+                f"layerwise checkpoint algorithm revision {checkpoint_revision!r} "
+                f"!= {algorithm_revision!r}; start a fresh run"
+            )
         policy.load_state_dict(checkpoint["policy"])
         if checkpoint.get("policy_ppo_aux") is not None:
             policy.load_ppo_aux_state_dict(checkpoint["policy_ppo_aux"])
@@ -3757,6 +3782,9 @@ def _run_layerwise_training_branch(
         max_grad_norm=float(train_cfg.ppo.max_grad_norm),
         gamma=1.0,
         gae_lambda=1.0,
+        factorized_actor_clip=True,
+        entropy_average_active_slots=True,
+        entropy_normalize_active_slots=True,
     )
     layerwise_train_cfg = SequentialTrainConfig(
         total_episodes=max(0, int(train_cfg.total_episodes) - int(start_episode)),
@@ -3769,14 +3797,11 @@ def _run_layerwise_training_branch(
         ppo=ppo,
         rl_algo="ppo",
         ent_coef_schedule="cosine",
-        ent_coef_cosine_start=float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
-        ent_coef_cosine_end=float(getattr(train_cfg, "ent_coef_cosine_end", 0.001)),
-        ent_coef_cosine_plateau=float(
-            getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)
-        ),
-        ent_coef_cosine_lower_bound=float(
-            getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012)
-        ),
+        ent_coef_cosine_start=float(layerwise_entropy_schedule["start"]),
+        ent_coef_cosine_end=0.0,
+        ent_coef_cosine_plateau=float(layerwise_entropy_schedule["plateau"]),
+        ent_coef_cosine_decay_end=0.85,
+        ent_coef_cosine_lower_bound=0.0,
         online_num_trials_per_step=int(train_cfg.num_trials_per_step),
         promotion_validation_trials=int(
             getattr(train_cfg, "promotion_validation_trials", 25)
@@ -3906,6 +3931,8 @@ def _run_layerwise_training_branch(
         "ppo_lr": float(train_cfg.ppo.lr),
         "gamma": 1.0,
         "gae_lambda": 1.0,
+        "entropy_schedule": layerwise_entropy_schedule,
+        "ppo_mode": layerwise_ppo_mode,
         "stage2_k_trials": int(train_cfg.num_trials_per_step),
         "baseline_groups": int(getattr(train_cfg, "baseline_groups", 5)),
         "baseline_trials_per_group": int(
@@ -3995,6 +4022,7 @@ def _run_layerwise_training_branch(
             "numpy_rng_state": np.random.get_state(),
             "python_rng_state": random.getstate(),
             "rl_variant": rl_variant,
+            "algorithm_revision": algorithm_revision,
         }
         tmp_path = save_path + ".tmp"
         torch.save(checkpoint, tmp_path)
@@ -4167,6 +4195,11 @@ def _run_layerwise_training_branch(
             converged=bool(metrics.get("converged", False)),
             extension_required=bool(metrics.get("extension_required", False)),
             best_robust_feasible_cost=metrics.get("best_robust_feasible_cost"),
+            actor_clip_mode=str(metrics.get("actor_clip_mode", "joint")),
+            actor_credit_mode=str(metrics.get("actor_credit_mode", "scalar_gae")),
+            entropy_objective_mode=str(
+                metrics.get("entropy_objective_mode", "joint_sum")
+            ),
         )
         if int(completed) not in existing_diagnostic_updates:
             diag_recorder.record_ppo_update(update_stats)
@@ -4202,6 +4235,9 @@ def _run_layerwise_training_branch(
                 "converged": bool(update_stats.converged),
                 "extension_required": bool(update_stats.extension_required),
                 "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
+                "actor_clip_mode": update_stats.actor_clip_mode,
+                "actor_credit_mode": update_stats.actor_credit_mode,
+                "entropy_objective_mode": update_stats.entropy_objective_mode,
             },
         )
         if strict_best.get("reward") is not None and strict_best.get("full_vector"):
@@ -4287,6 +4323,7 @@ def _run_layerwise_training_branch(
         "schema_version": "stage2_layerwise_robust_summary_v1",
         "status": "completed",
         "rl_variant": rl_variant,
+        "algorithm_revision": algorithm_revision,
         "completed_episodes": int(summary.get("completed_episodes", start_episode)),
         "best_action_matrix": summary.get("best_action_matrix"),
         "best_full_vector": summary.get("best_full_vector"),
@@ -4434,6 +4471,7 @@ def _run_layerwise_training_branch(
         "blb_v3_fusion_count_action": True,
         "blb_v3_total_episodes": int(train_cfg.total_episodes),
         "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
+        "algorithm_revision": algorithm_revision,
         "selection_diagnostics": {
             "selection_mode": "layerwise_robust_variable_cost_strict",
             "best_action_vec": best_full_vector,

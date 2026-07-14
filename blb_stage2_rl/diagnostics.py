@@ -274,6 +274,9 @@ class PPOUpdateStats:
     converged: bool = False
     extension_required: bool = False
     best_robust_feasible_cost: Optional[float] = None
+    actor_clip_mode: str = "joint"
+    actor_credit_mode: str = "scalar_gae"
+    entropy_objective_mode: str = "joint_sum"
     timestamp: float = field(default_factory=time.time)
 
 

@@ -208,7 +208,13 @@ class VariableCostTest(unittest.TestCase):
         self.assertEqual((high.fusion_units, high.truncation_units), (12.0, 147.5))
         self.assertEqual(high.total_units, high.max_units)
         self.assertEqual(len(high.layer_cost_rewards), 12)
+        self.assertEqual(len(high.slot_cost_rewards), 12)
+        self.assertTrue(all(len(row) == 6 for row in high.slot_cost_rewards))
         self.assertAlmostEqual(sum(high.layer_cost_rewards), high.normalized)
+        for layer_cost, slot_costs in zip(
+                high.layer_cost_rewards, high.slot_cost_rewards,
+        ):
+            self.assertAlmostEqual(sum(slot_costs), layer_cost)
         self.assertGreater(middle.normalized, low.normalized)
         self.assertLess(middle.normalized, high.normalized)
         self.assertAlmostEqual(middle.normalized, 12.0 / 159.5)
@@ -236,12 +242,16 @@ class VariableCostTest(unittest.TestCase):
         self.assertAlmostEqual(
             fused.layer_cost_rewards[7], lower_k.layer_cost_rewards[7],
         )
+        self.assertAlmostEqual(fused.slot_cost_rewards[7][0], fusion_delta)
+        self.assertAlmostEqual(lower_k.slot_cost_rewards[7][3], k_delta)
 
     def test_layer_cost_terms_cover_every_active_k_once(self):
         result = layerwise.compute_variable_cost(self._actions(1, 11))
         expected_layer0_units = 1.0 + 4 * 1.0
         expected_other_units = 1.0 + 5 * 1.0
         self.assertAlmostEqual(result.layer_cost_rewards[0], expected_layer0_units / 159.5)
+        self.assertEqual(result.slot_cost_rewards[0][1], 0.0)
+        self.assertAlmostEqual(result.slot_cost_rewards[0][0], 1.0 / 159.5)
         for value in result.layer_cost_rewards[1:]:
             self.assertAlmostEqual(value, expected_other_units / 159.5)
         self.assertEqual(result.fusion_units, 12.0)

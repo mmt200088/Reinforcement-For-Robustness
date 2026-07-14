@@ -859,13 +859,21 @@ def _cosine_entropy_coefficient(train_cfg: Any, completed_episodes: int) -> floa
     plateau = min(1.0, max(0.0, float(
         getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)
     )))
+    decay_end = min(1.0, max(plateau, float(
+        getattr(train_cfg, "ent_coef_cosine_decay_end", 1.0)
+    )))
     start = float(getattr(train_cfg, "ent_coef_cosine_start", 0.05))
     end = float(getattr(train_cfg, "ent_coef_cosine_end", 0.001))
     lower_bound = float(getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012))
     if progress <= plateau:
         value = start
+    elif progress >= decay_end:
+        value = end
     else:
-        phase = min(1.0, max(0.0, (progress - plateau) / max(1.0e-8, 1.0 - plateau)))
+        phase = min(1.0, max(
+            0.0,
+            (progress - plateau) / max(1.0e-8, decay_end - plateau),
+        ))
         value = end + 0.5 * (start - end) * (1.0 + math.cos(math.pi * phase))
     return max(lower_bound, value)
 
@@ -1121,6 +1129,27 @@ def train_layerwise(
                 (),
             )
         )
+        slot_cost_rewards = tuple(
+            tuple(float(value) for value in row)
+            for row in _field(
+                terminal_info.get("variable_cost", {}),
+                "slot_cost_rewards",
+                (),
+            )
+        )
+        if len(slot_cost_rewards) != 12 or any(
+                len(row) != 6 for row in slot_cost_rewards
+        ):
+            raise RuntimeError("layerwise terminal slot_cost_rewards must be a 12x6 matrix")
+        for layer_idx, (layer_cost, slot_costs) in enumerate(zip(
+                layer_cost_rewards, slot_cost_rewards,
+        )):
+            if not math.isclose(
+                    sum(slot_costs), layer_cost, rel_tol=0.0, abs_tol=1.0e-9,
+            ):
+                raise RuntimeError(
+                    f"layer {layer_idx} slot cost sum does not match layer cost"
+                )
         breakdown = runtime_info.get("reward_breakdown")
         priority = int(_field(breakdown, "priority", runtime_info.get("priority", 0)))
         invalid_terminal = bool(runtime_info.get("invalid", False))
@@ -1128,16 +1157,29 @@ def train_layerwise(
             raise RuntimeError(
                 f"invalid layerwise terminal reward must be -5, got {episode_reward}"
             )
+        reward_priority = 0 if invalid_terminal else priority
         redistributed_rewards = redistribute_layerwise_rewards(
             terminal_reward=episode_reward,
-            priority=priority,
+            priority=reward_priority,
             variable_cost=variable_cost,
             layer_cost_rewards=layer_cost_rewards,
         )
-        for transition_index, reward_delta in zip(
-                transition_indices, redistributed_rewards,
+        zero_slot_costs = ((0.0,) * 6,) * 12
+        actor_slot_costs = (
+            slot_cost_rewards if reward_priority == 3 else zero_slot_costs
+        )
+        actor_shared_return = (
+            episode_reward - variable_cost
+            if reward_priority == 3 else episode_reward
+        )
+        for transition_index, reward_delta, per_slot_cost in zip(
+                transition_indices, redistributed_rewards, actor_slot_costs,
         ):
             rollout_buffer.add_reward_at(transition_index, reward_delta)
+            rollout_buffer.set_actor_cost_at(transition_index, per_slot_cost)
+            rollout_buffer.set_actor_shared_return_at(
+                transition_index, actor_shared_return,
+            )
         raw_trials = (
             None
             if invalid_terminal

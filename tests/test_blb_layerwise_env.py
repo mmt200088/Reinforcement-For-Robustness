@@ -197,6 +197,15 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertGreaterEqual(info["external_cost_score"], 0.0)
         self.assertLessEqual(info["external_cost_score"], 1.0)
         self.assertEqual(len(info["variable_cost"]["layer_cost_rewards"]), 12)
+        self.assertEqual(len(info["variable_cost"]["slot_cost_rewards"]), 12)
+        self.assertTrue(all(
+            len(row) == 6 for row in info["variable_cost"]["slot_cost_rewards"]
+        ))
+        for layer_cost, slot_costs in zip(
+                info["variable_cost"]["layer_cost_rewards"],
+                info["variable_cost"]["slot_cost_rewards"],
+        ):
+            self.assertAlmostEqual(sum(slot_costs), layer_cost)
         self.assertAlmostEqual(
             sum(info["variable_cost"]["layer_cost_rewards"]),
             info["variable_cost"]["normalized"],

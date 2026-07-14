@@ -66,8 +66,17 @@ without another copy of `C`.
 
 With `gamma = lambda = 1`, the sum of rewards in a P3 episode remains exactly
 `P3 base + C`, so candidate ordering and reported episode reward do not change.
-The redistribution only lowers policy-gradient variance and mirrors Stage-1's
-dense per-layer cost credit.
+The scalar redistribution preserves critic and reporting semantics. The
+factorized actor uses a finer decomposition:
+
+```text
+P3:     actor_credit[layer, slot] = (R_terminal - C) + C[layer, slot]
+P1/P2:  actor_credit[layer, slot] = R_terminal
+```
+
+Every factor sees the same terminal precision/stability outcome, but only its
+own deterministic cost term. Sibling K/fusion samples cannot claim one
+another's cost saving.
 
 ## Factorized PPO
 
@@ -79,23 +88,27 @@ from one joint ratio to one ratio per active slot:
 ratio[layer, slot] = exp(new_logp[layer, slot] - old_logp[layer, slot])
 ```
 
-The shared constrained return advantage is broadcast to active slots and PPO
+The decomposed actor credit is normalized over the update window and PPO
 clipping is applied independently per slot before averaging over active slots.
 The critic remains scalar and continues to predict the total step return.
 This matches the Stage-1 credit shape more closely: each categorical decision
 has its own clipped actor update, while all decisions still learn from the same
 precision/stability outcome.
 
-Old per-slot log probabilities are captured during rollout. Masked Layer-0
-Block1 K contributes no ratio, entropy, or loss. Existing non-layerwise callers
-retain summed-log-prob PPO behavior.
+The rollout buffer keeps its backward-compatible summed log probability. At
+update entry, before any optimizer step, the frozen behavior policy reconstructs
+the per-slot values and verifies that their active-slot sum matches the stored
+joint value. Masked Layer-0 Block1 K contributes no ratio, entropy, KL, or loss.
+Existing non-layerwise callers retain summed-log-prob PPO behavior.
 
 ## Entropy And Convergence
 
 Layerwise PPO keeps the initial safe prior and the cosine exploration phase,
-but its entropy coefficient has no positive lower bound. It decays to zero by
-the planned episode horizon and remains zero for convergence extensions.
-Per-slot entropy recovery stays disabled.
+but its entropy coefficient has no positive lower bound. The objective uses
+`H/log(num_levels)`, so binary Block4 and six-way K receive the same normalized
+exploration pressure. The coefficient reaches zero at 85% of the planned
+horizon, leaving a 15% exploitation tail, and remains zero for convergence
+extensions. Per-slot entropy recovery stays disabled.
 
 Convergence remains evidence-based:
 
@@ -113,13 +126,14 @@ still diffuse, the run requests an extension with zero entropy bonus.
 The structured writer and checkpoint add:
 
 - fusion, K, and total raw/normalized cost units;
-- per-layer redistributed cost rewards;
+- per-layer critic rewards and per-slot actor cost rewards;
 - joint and factorized PPO diagnostics;
 - Block4 and K entropy coefficients;
 - the existing complete 12-layer fusion/K best-action table.
 
-Checkpoint resume must preserve behavior-policy per-slot log probabilities only
-inside the active rollout buffer; completed update windows remain unchanged.
+Checkpoint compatibility is unchanged because no active rollout window is
+checkpointed and the persisted buffer schema still stores the joint behavior
+log probability.
 
 ## Verification
 
@@ -129,12 +143,14 @@ Focused tests must prove:
 2. all 59 K slots participate and Layer-0 Block1 remains masked;
 3. local P3 cost rewards sum exactly to `C`, while P1/P2 receive zero;
 4. reward redistribution preserves total episode return;
-5. per-slot ratio/clipping ignores masked slots and cannot cross-clip sibling
+5. actor credit is shared constraint return plus own cost only;
+6. per-slot ratio/clipping ignores masked slots and cannot cross-clip sibling
    actions;
-6. the layerwise entropy schedule reaches and remains exactly zero;
-7. a synthetic all-feasible layerwise bandit drives both Block4 and K entropy
+7. normalized entropy gives binary and six-way slots equal maximum pressure;
+8. the layerwise entropy schedule reaches zero at 85% and remains zero;
+9. a synthetic all-feasible layerwise bandit drives both Block4 and K entropy
    below `0.1` and selects the known cost optimum;
-8. existing Stage-2 reward, action, persistence, and non-layerwise PPO tests
+10. existing Stage-2 reward, action, persistence, and non-layerwise PPO tests
    remain green.
 
 Server validation uses a short controlled smoke first. A new formal 60k run is

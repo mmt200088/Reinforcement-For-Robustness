@@ -753,6 +753,7 @@ class BLBStage2SequentialPolicy(nn.Module):
             logit_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
             return_per_slot_entropy: bool = False,
+            return_per_slot_log_prob: bool = False,
             truncate_to_current: bool = False,
             truncate_seq_len: Optional[int] = None,
             ) -> Tuple[torch.Tensor, ...]:
@@ -783,8 +784,12 @@ class BLBStage2SequentialPolicy(nn.Module):
         log_prob = log_prob_per_slot.sum(dim=-1)
         entropy_per_slot = dist.entropy() * slot_mask.float()
         entropy = entropy_per_slot.sum(dim=-1)
+        if return_per_slot_entropy and return_per_slot_log_prob:
+            return log_prob, entropy, value, entropy_per_slot, log_prob_per_slot
         if return_per_slot_entropy:
             return log_prob, entropy, value, entropy_per_slot
+        if return_per_slot_log_prob:
+            return log_prob, entropy, value, log_prob_per_slot
         return log_prob, entropy, value
 
     def set_slot_exploration_epsilon(self, eps_per_slot) -> None:
@@ -979,6 +984,8 @@ class SequentialTransition:
     # action_level_mask: np.ndarray when provided; shape [max_step_dim, max_num_levels].
     action_level_mask: Optional[np.ndarray] = None
     baseline_prior_scale: float = 0.0
+    actor_cost_per_slot: Optional[np.ndarray] = None
+    actor_shared_return: Optional[float] = None
 
 
 def _compute_gae_from_arrays(
@@ -1114,6 +1121,70 @@ class SequentialRolloutBuffer:
         if idx < 0 or idx >= len(self._buf):
             raise IndexError(f"transition index {idx} out of range")
         self._buf[idx].reward = float(self._buf[idx].reward) + float(delta)
+
+    def set_actor_cost_at(self, index: int, per_slot_cost: np.ndarray) -> None:
+        """Attach P3 cost credit for each active factor at one transition."""
+        idx = int(index)
+        if idx < 0 or idx >= len(self._buf):
+            raise IndexError(f"transition index {idx} out of range")
+        transition = self._buf[idx]
+        values = np.asarray(per_slot_cost, dtype=np.float32)
+        if values.shape != transition.action.shape:
+            raise ValueError(
+                f"per-slot actor cost shape {values.shape} != action shape "
+                f"{transition.action.shape}"
+            )
+        if not np.all(np.isfinite(values)) or np.any(values < 0.0):
+            raise ValueError("per-slot actor costs must be finite and nonnegative")
+        if np.any(values[~transition.slot_mask] != 0.0):
+            raise ValueError("inactive action slots cannot receive actor cost credit")
+        transition.actor_cost_per_slot = values.copy()
+
+    def set_actor_shared_return_at(self, index: int, shared_return: float) -> None:
+        """Attach the terminal constraint return shared by all action factors."""
+        idx = int(index)
+        if idx < 0 or idx >= len(self._buf):
+            raise IndexError(f"transition index {idx} out of range")
+        value = float(shared_return)
+        if not math.isfinite(value):
+            raise ValueError("actor shared return must be finite")
+        self._buf[idx].actor_shared_return = value
+
+    def factorized_actor_advantages(
+            self,
+            scalar_advantages: torch.Tensor,
+            device: torch.device,
+            ) -> Optional[torch.Tensor]:
+        """Build shared-constraint plus own-cost actor credit per factor."""
+        if not any(row.actor_cost_per_slot is not None for row in self._buf):
+            return None
+        if scalar_advantages.ndim != 1 or scalar_advantages.shape[0] != len(self._buf):
+            raise ValueError("scalar advantages must contain one value per transition")
+        width = int(self._buf[0].action.size)
+        costs = np.zeros((len(self._buf), width), dtype=np.float32)
+        for index, transition in enumerate(self._buf):
+            values = transition.actor_cost_per_slot
+            if values is None:
+                continue
+            if values.shape != (width,):
+                raise ValueError("all per-slot actor cost rows must share one width")
+            costs[index] = values
+        costs_t = torch.from_numpy(costs).to(device=device)
+        has_shared_return = [row.actor_shared_return is not None for row in self._buf]
+        if any(has_shared_return):
+            if not all(has_shared_return):
+                raise ValueError("actor shared returns must be set for the whole update window")
+            shared = torch.as_tensor(
+                [float(row.actor_shared_return) for row in self._buf],
+                dtype=scalar_advantages.dtype,
+                device=device,
+            )
+            return shared.unsqueeze(-1) + costs_t
+        return (
+            scalar_advantages.unsqueeze(-1)
+            - costs_t.sum(dim=-1, keepdim=True)
+            + costs_t
+        )
 
     def clear(self) -> None:
         self._buf.clear()
@@ -1303,6 +1374,80 @@ class SequentialPPOConfig:
     per_slot_entropy_recovery: bool = False
     per_slot_entropy_floor_frac: float = 0.22
     per_slot_entropy_recovery_multiplier: float = 6.0
+    factorized_actor_clip: bool = False
+    entropy_average_active_slots: bool = False
+    entropy_normalize_active_slots: bool = False
+
+
+def _factorized_clipped_policy_loss(
+        new_log_prob_per_slot: torch.Tensor,
+        old_log_prob_per_slot: torch.Tensor,
+        advantages: torch.Tensor,
+        active_slots: torch.Tensor,
+        *,
+        clip_range: float,
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
+    """PPO-clip each active MultiDiscrete factor independently."""
+    if new_log_prob_per_slot.shape != old_log_prob_per_slot.shape:
+        raise ValueError("new and old per-slot log probabilities must align")
+    if active_slots.shape != new_log_prob_per_slot.shape:
+        raise ValueError("active slot mask must align with per-slot log probabilities")
+    if advantages.ndim == 1:
+        if advantages.shape[0] != new_log_prob_per_slot.shape[0]:
+            raise ValueError("advantages must have one scalar per transition")
+        slot_advantages = advantages.unsqueeze(-1)
+    elif advantages.shape == new_log_prob_per_slot.shape:
+        slot_advantages = advantages
+    else:
+        raise ValueError(
+            "advantages must be one scalar per transition or one value per slot"
+        )
+    active = active_slots.to(dtype=new_log_prob_per_slot.dtype)
+    denominator = torch.clamp(active.sum(), min=1.0)
+    ratio = torch.exp(new_log_prob_per_slot - old_log_prob_per_slot)
+    unclipped = ratio * slot_advantages
+    clipped = torch.clamp(
+        ratio, 1.0 - float(clip_range), 1.0 + float(clip_range),
+    ) * slot_advantages
+    loss = -(torch.min(unclipped, clipped) * active).sum() / denominator
+    return loss, ratio
+
+
+def _factorized_approx_kl(
+        new_log_prob_per_slot: torch.Tensor,
+        old_log_prob_per_slot: torch.Tensor,
+        active_slots: torch.Tensor,
+        ) -> torch.Tensor:
+    """Estimate behavior KL on the same per-factor scale as PPO clipping."""
+    if new_log_prob_per_slot.shape != old_log_prob_per_slot.shape:
+        raise ValueError("new and old per-slot log probabilities must align")
+    if active_slots.shape != new_log_prob_per_slot.shape:
+        raise ValueError("active slot mask must align with per-slot log probabilities")
+    active = active_slots.to(dtype=new_log_prob_per_slot.dtype)
+    denominator = torch.clamp(active.sum(), min=1.0)
+    return ((old_log_prob_per_slot - new_log_prob_per_slot) * active).sum() / denominator
+
+
+def _active_slot_entropy_objective(
+        entropy_per_slot: torch.Tensor,
+        per_slot_num_levels: torch.Tensor,
+        active_slots: torch.Tensor,
+        *,
+        normalize_by_levels: bool,
+        ) -> torch.Tensor:
+    """Average entropy over active factors, optionally on a [0, 1] scale."""
+    if entropy_per_slot.shape != active_slots.shape:
+        raise ValueError("entropy and active slot mask must align")
+    if per_slot_num_levels.shape != entropy_per_slot.shape:
+        raise ValueError("level counts and entropy must align")
+    active = active_slots.to(dtype=entropy_per_slot.dtype)
+    values = entropy_per_slot
+    if normalize_by_levels:
+        max_entropy = torch.log(
+            per_slot_num_levels.to(dtype=entropy_per_slot.dtype).clamp_min(2.0)
+        )
+        values = values / max_entropy
+    return (values * active).sum() / torch.clamp(active.sum(), min=1.0)
 
 
 def _robust_normalize_advantages(
@@ -1376,7 +1521,13 @@ def sequential_ppo_update(
                 "approx_kl": 0.0, "kl_early_stop": False,
                 "lr": float(cfg.lr), "lr_scale": 1.0,
                 "entropy_recovery_delta": 0.0,
-                "return_mean": 0.0, "return_std": 1.0}
+                "return_mean": 0.0, "return_std": 1.0,
+                "actor_clip_mode": (
+                    "factorized_per_slot"
+                    if bool(getattr(cfg, "factorized_actor_clip", False)) else "joint"
+                ),
+                "actor_credit_mode": "scalar_gae",
+                "entropy_objective_mode": "joint_sum"}
     effective_ent_coef = (
         float(cfg.ent_coef) if ent_coef_override is None else float(ent_coef_override)
     )
@@ -1403,7 +1554,38 @@ def sequential_ppo_update(
     normalize_returns = bool(getattr(cfg, "normalize_returns", True)) and return_normalizer is not None
     if normalize_returns:
         return_normalizer.update(returns)
-    if bool(getattr(cfg, "robust_advantage_norm", True)):
+    factorized_actor_clip = bool(getattr(cfg, "factorized_actor_clip", False))
+    factorized_actor_advantages = (
+        buffer.factorized_actor_advantages(advantages, device)
+        if factorized_actor_clip else None
+    )
+    robust_advantage_norm = bool(getattr(cfg, "robust_advantage_norm", True))
+    if factorized_actor_advantages is not None:
+        centered_factorized = factorized_actor_advantages.clone()
+        for slot_idx in range(centered_factorized.shape[1]):
+            slot_active = slot_masks[:, slot_idx]
+            if bool(slot_active.any()):
+                slot_values = centered_factorized[slot_active, slot_idx]
+                centered_factorized[slot_active, slot_idx] = (
+                    slot_values - slot_values.mean()
+                )
+        active_advantages = centered_factorized[slot_masks]
+        if robust_advantage_norm:
+            active_advantages = _robust_normalize_advantages(
+                active_advantages,
+                outlier_clip=float(getattr(cfg, "adv_outlier_clip", 6.0)),
+            )
+        elif active_advantages.numel() > 1:
+            std = torch.std(active_advantages, unbiased=False)
+            std_ok = torch.isfinite(std) & (std > 1e-8)
+            normalized = (
+                active_advantages - torch.mean(active_advantages)
+            ) / (std + 1e-8)
+            active_advantages = torch.where(std_ok, normalized, active_advantages)
+        normalized_factorized = torch.zeros_like(factorized_actor_advantages)
+        normalized_factorized[slot_masks] = active_advantages
+        factorized_actor_advantages = normalized_factorized
+    elif robust_advantage_norm:
         advantages = _robust_normalize_advantages(
             advantages,
             outlier_clip=float(getattr(cfg, "adv_outlier_clip", 6.0)),
@@ -1413,6 +1595,32 @@ def sequential_ppo_update(
         std_ok = torch.isfinite(std) & (std > 1e-8)
         normalized_advantages = (advantages - torch.mean(advantages)) / (std + 1e-8)
         advantages = torch.where(std_ok, normalized_advantages, advantages)
+
+    old_log_probs_per_slot = None
+    if factorized_actor_clip:
+        with torch.no_grad():
+            old_eval_out = policy.evaluate_action(
+                states,
+                actions,
+                slot_masks,
+                levels,
+                action_level_mask=level_masks,
+                baseline_prior_scale=prior_scales,
+                return_per_slot_entropy=True,
+                return_per_slot_log_prob=True,
+            )
+        if len(old_eval_out) != 5:
+            raise RuntimeError(
+                "factorized PPO requires evaluate_action per-slot log probabilities"
+            )
+        old_log_probs_per_slot = old_eval_out[4].detach()
+        reconstructed_joint = old_log_probs_per_slot.sum(dim=-1)
+        if not bool(torch.allclose(
+                reconstructed_joint, old_log_probs, rtol=1.0e-5, atol=1.0e-6,
+        )):
+            raise RuntimeError(
+                "factorized behavior log probabilities do not match rollout joint log probabilities"
+            )
 
     n = states.shape[0]
     current_lr, lr_scale = _apply_adaptive_kl_lr(policy, optimizer, cfg)
@@ -1453,24 +1661,59 @@ def sequential_ppo_update(
                 None if level_masks is None else level_masks.index_select(0, mb)
             )
             mb_prior_scales = prior_scales.index_select(0, mb)
-            eval_out = policy.evaluate_action(
-                mb_states,
-                mb_actions,
-                mb_slot_masks,
-                mb_levels,
-                action_level_mask=mb_level_masks,
-                baseline_prior_scale=mb_prior_scales,
-                return_per_slot_entropy=True,
-            )
-            new_log_probs, entropy, value, entropy_per_slot = eval_out
+            if factorized_actor_clip:
+                eval_out = policy.evaluate_action(
+                    mb_states,
+                    mb_actions,
+                    mb_slot_masks,
+                    mb_levels,
+                    action_level_mask=mb_level_masks,
+                    baseline_prior_scale=mb_prior_scales,
+                    return_per_slot_entropy=True,
+                    return_per_slot_log_prob=True,
+                )
+                (
+                    new_log_probs,
+                    entropy,
+                    value,
+                    entropy_per_slot,
+                    new_log_probs_per_slot,
+                ) = eval_out
+            else:
+                eval_out = policy.evaluate_action(
+                    mb_states,
+                    mb_actions,
+                    mb_slot_masks,
+                    mb_levels,
+                    action_level_mask=mb_level_masks,
+                    baseline_prior_scale=mb_prior_scales,
+                    return_per_slot_entropy=True,
+                )
+                new_log_probs, entropy, value, entropy_per_slot = eval_out
+                new_log_probs_per_slot = None
             old_lp = old_log_probs.index_select(0, mb)
             old_value = old_values.index_select(0, mb)
             ret = returns.index_select(0, mb)
-            adv = advantages.index_select(0, mb)
-            ratio = torch.exp(new_log_probs - old_lp)
-            unclipped = ratio * adv
-            clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * adv
-            policy_loss = -torch.min(unclipped, clipped).mean()
+            adv = (
+                factorized_actor_advantages.index_select(0, mb)
+                if factorized_actor_advantages is not None
+                else advantages.index_select(0, mb)
+            )
+            if factorized_actor_clip:
+                old_lp_per_slot = old_log_probs_per_slot.index_select(0, mb)
+                policy_loss, ratio = _factorized_clipped_policy_loss(
+                    new_log_probs_per_slot,
+                    old_lp_per_slot,
+                    adv,
+                    mb_slot_masks,
+                    clip_range=cfg.clip_range,
+                )
+            else:
+                old_lp_per_slot = None
+                ratio = torch.exp(new_log_probs - old_lp)
+                unclipped = ratio * adv
+                clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * adv
+                policy_loss = -torch.min(unclipped, clipped).mean()
             if normalize_returns:
                 value_target = return_normalizer.normalize(ret)
                 value_pred = return_normalizer.normalize(value)
@@ -1498,6 +1741,20 @@ def sequential_ppo_update(
             )
             value_loss = torch.max(value_loss_raw, value_loss_clipped).mean()
             entropy_mean = entropy.mean()
+            if (
+                    factorized_actor_clip
+                    and bool(getattr(cfg, "entropy_average_active_slots", False))
+            ):
+                entropy_objective = _active_slot_entropy_objective(
+                    entropy_per_slot,
+                    mb_levels,
+                    mb_slot_masks,
+                    normalize_by_levels=bool(getattr(
+                        cfg, "entropy_normalize_active_slots", False,
+                    )),
+                )
+            else:
+                entropy_objective = entropy_mean
             entropy_recovery_delta = torch.zeros((), device=device)
             if bool(getattr(cfg, "per_slot_entropy_recovery", True)):
                 mb_slot_masks_float = mb_slot_masks.float()
@@ -1512,13 +1769,22 @@ def sequential_ppo_update(
                 )
                 denom = torch.clamp(mb_slot_masks_float.sum(), min=1.0)
                 entropy_recovery_delta = entropy_deficit.sum() / denom
-            loss = (
-                policy_loss
-                + cfg.value_coef * value_loss
-                - effective_ent_coef * entropy_mean
-                - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
-                * entropy_recovery_delta
-            )
+            if factorized_actor_clip:
+                loss = (
+                    policy_loss
+                    + cfg.value_coef * value_loss
+                    - effective_ent_coef * entropy_objective
+                    - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
+                    * entropy_recovery_delta
+                )
+            else:
+                loss = (
+                    policy_loss
+                    + cfg.value_coef * value_loss
+                    - effective_ent_coef * entropy_mean
+                    - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
+                    * entropy_recovery_delta
+                )
             finite_tensors = (
                 new_log_probs,
                 entropy,
@@ -1527,6 +1793,7 @@ def sequential_ppo_update(
                 policy_loss,
                 value_loss,
                 entropy_mean,
+                entropy_objective,
                 entropy_recovery_delta,
                 loss,
             )
@@ -1551,8 +1818,22 @@ def sequential_ppo_update(
                     break
             optimizer.step()
             with torch.no_grad():
-                clip_frac_t = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean()
-                approx_kl_t = (old_lp - new_log_probs).mean()
+                if factorized_actor_clip:
+                    active_clip_mask = mb_slot_masks.float()
+                    clip_frac_t = (
+                        (torch.abs(ratio - 1.0) > cfg.clip_range).float()
+                        * active_clip_mask
+                    ).sum() / torch.clamp(active_clip_mask.sum(), min=1.0)
+                else:
+                    clip_frac_t = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean()
+                if factorized_actor_clip:
+                    approx_kl_t = _factorized_approx_kl(
+                        new_log_probs_per_slot,
+                        old_lp_per_slot,
+                        mb_slot_masks,
+                    )
+                else:
+                    approx_kl_t = (old_lp - new_log_probs).mean()
             metrics_sum_t["policy_loss"] += policy_loss.detach()
             metrics_sum_t["value_loss"] += value_loss.detach()
             metrics_sum_t["entropy"] += entropy_mean.detach()
@@ -1593,6 +1874,25 @@ def sequential_ppo_update(
         "return_std": float(return_normalizer.std if return_normalizer is not None else 1.0),
         "nonfinite_minibatches": int(nonfinite_minibatches),
         "nonfinite_update_skipped": bool(nonfinite_minibatches > 0 and n_minibatches == 0),
+        "actor_clip_mode": (
+            "factorized_per_slot" if factorized_actor_clip else "joint"
+        ),
+        "actor_credit_mode": (
+            "shared_constraint_plus_own_cost"
+            if factorized_actor_advantages is not None else "scalar_gae"
+        ),
+        "entropy_objective_mode": (
+            "normalized_active_slot_mean"
+            if factorized_actor_clip
+            and bool(getattr(cfg, "entropy_average_active_slots", False))
+            and bool(getattr(cfg, "entropy_normalize_active_slots", False))
+            else (
+                "active_slot_mean"
+                if factorized_actor_clip
+                and bool(getattr(cfg, "entropy_average_active_slots", False))
+                else "joint_sum"
+            )
+        ),
     }
 
 

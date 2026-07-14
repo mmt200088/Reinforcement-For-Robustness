@@ -484,6 +484,10 @@ class BLBStage2LayerwiseEnv:
                 "layer_cost_rewards": [
                     float(value) for value in variable_cost.layer_cost_rewards
                 ],
+                "slot_cost_rewards": [
+                    [float(value) for value in row]
+                    for row in variable_cost.slot_cost_rewards
+                ],
             },
             "policy_actions": self.action_history,
             "decoded_actions": decoded_actions,
