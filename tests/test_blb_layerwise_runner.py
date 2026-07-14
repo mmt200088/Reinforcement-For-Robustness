@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ast
+import shutil
 import hashlib
 import inspect
 import math
+import os
 from pathlib import Path
 import tempfile
 import types
@@ -335,6 +337,207 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
 
 class LayerwiseDispatchRulesTests(unittest.TestCase):
+    def test_layerwise_candidate_identity_binds_k_level_order(self):
+        from blb_stage2_rl.candidate_store import candidate_key
+        from blb_stage2_rl import layerwise_runner
+
+        binder = getattr(
+            layerwise_runner, "bind_layerwise_candidate_identity", None,
+        )
+        self.assertIsNotNone(binder)
+        if binder is None:
+            return
+        base = {"action_space_version": "stage2_layerwise_12x6_v1"}
+        first_order = (8, 9, 11, 13, 10, 12)
+        second_order = (13, 8, 9, 10, 11, 12)
+        first = binder(base, first_order, "cost-v1")
+        second = binder(base, second_order, "cost-v1")
+
+        self.assertEqual(first["k_levels"], list(first_order))
+        self.assertEqual(second["k_levels"], list(second_order))
+        self.assertNotEqual(candidate_key([0], first), candidate_key([0], second))
+
+    def test_layerwise_checkpoint_metadata_rejects_foreign_run_context(self):
+        from blb_stage2_rl import layerwise_runner
+
+        validator = getattr(
+            layerwise_runner, "validate_layerwise_checkpoint_metadata", None,
+        )
+        self.assertIsNotNone(validator)
+        if validator is None:
+            return
+        checkpoint = {
+            "rl_variant": "layerwise",
+            "algorithm_revision": "v3",
+            "algorithm_contract_hash": "algorithm-a",
+            "run_context_hash": "run-a",
+        }
+        validator(
+            checkpoint,
+            rl_variant="layerwise",
+            algorithm_revision="v3",
+            algorithm_contract_hash="algorithm-a",
+            run_context_hash="run-a",
+        )
+        with self.assertRaisesRegex(RuntimeError, "run context"):
+            validator(
+                checkpoint,
+                rl_variant="layerwise",
+                algorithm_revision="v3",
+                algorithm_contract_hash="algorithm-a",
+                run_context_hash="run-b",
+            )
+
+    def test_checkpoint_file_fingerprint_allows_suffix_only_and_rejects_prefix_change(self):
+        from blb_stage2_rl import layerwise_runner
+
+        fingerprint = getattr(
+            layerwise_runner, "checkpoint_file_fingerprints", None,
+        )
+        validator = getattr(
+            layerwise_runner, "validate_checkpoint_file_fingerprints", None,
+        )
+        self.assertIsNotNone(fingerprint)
+        self.assertIsNotNone(validator)
+        if fingerprint is None or validator is None:
+            return
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "episodes.jsonl"
+            path.write_bytes(b"abc\ndef\n")
+            specs = {"episodes": (path, 4)}
+            expected = fingerprint(specs)
+            path.write_bytes(b"abc\ndef\nnew\n")
+            validator(expected, specs)
+            path.write_bytes(b"xbc\ndef\nnew\n")
+            with self.assertRaisesRegex(RuntimeError, "fingerprint"):
+                validator(expected, specs)
+
+    def test_fresh_layerwise_run_rejects_stale_marker_without_checkpoint(self):
+        from blb_stage2_rl import layerwise_runner
+
+        validator = getattr(
+            layerwise_runner, "validate_fresh_layerwise_run_state", None,
+        )
+        self.assertIsNotNone(validator)
+        if validator is None:
+            return
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            marker = root / "rl_data_points_run_id.txt"
+            candidate = root / "candidate_store.jsonl"
+            validator(marker, (candidate,))
+            marker.write_text("old-run\n", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "without a checkpoint"):
+                validator(marker, (candidate,))
+
+    def test_layerwise_run_lock_rejects_second_writer_and_records_context(self):
+        from blb_stage2_rl import layerwise_runner
+
+        lock_type = getattr(layerwise_runner, "LayerwiseRunLock", None)
+        self.assertIsNotNone(lock_type)
+        if lock_type is None:
+            return
+        with tempfile.TemporaryDirectory() as td:
+            with lock_type(td) as first:
+                first.bind_context("run-context-a")
+                payload = Path(first.path).read_text(
+                    encoding="utf-8",
+                )
+                self.assertIn('"run_context_hash": "run-context-a"', payload)
+                with self.assertRaisesRegex(RuntimeError, "already active"):
+                    with lock_type(td):
+                        pass
+            with lock_type(td):
+                pass
+
+    def test_stage2_run_lock_survives_deletion_of_fresh_run_directory(self):
+        from blb_stage2_rl import layerwise_runner
+
+        lock_type = getattr(layerwise_runner, "LayerwiseRunLock", None)
+        self.assertIsNotNone(lock_type)
+        if lock_type is None:
+            return
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = Path(td) / "mrpc" / "constraint"
+            progress_dir = run_dir / "stage2_noise" / "progress"
+            progress_dir.mkdir(parents=True)
+            with lock_type(progress_dir) as first:
+                self.assertFalse(str(first.path).startswith(str(run_dir) + os.sep))
+                shutil.rmtree(run_dir)
+                with self.assertRaisesRegex(RuntimeError, "already active"):
+                    with lock_type(progress_dir):
+                        pass
+
+    def test_checkpoint_fingerprint_tracker_hashes_only_new_suffixes(self):
+        from blb_stage2_rl import layerwise_runner
+
+        tracker_type = getattr(
+            layerwise_runner, "CheckpointFileFingerprintTracker", None,
+        )
+        self.assertIsNotNone(tracker_type)
+        if tracker_type is None:
+            return
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "episodes.jsonl"
+            path.write_bytes(b"abc\n")
+            tracker = tracker_type()
+            first = tracker.fingerprints({"episodes": (path, 4)})
+            self.assertEqual(tracker.bytes_hashed, 4)
+            path.write_bytes(b"abc\ndef\n")
+            second = tracker.fingerprints({"episodes": (path, 8)})
+            self.assertEqual(tracker.bytes_hashed, 8)
+            self.assertNotEqual(first, second)
+            self.assertEqual(
+                tracker.fingerprints({"episodes": (path, 8)}), second,
+            )
+            self.assertEqual(tracker.bytes_hashed, 8)
+
+    def test_layerwise_branch_locks_and_writes_episode_zero_checkpoint(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn("validate_fresh_layerwise_run_state(", branch_source)
+        self.assertIn("fingerprint_tracker.fingerprints(", branch_source)
+        self.assertLess(
+            branch_source.index("save_layerwise_checkpoint(\n            completed=0"),
+            branch_source.index("summary = train_layerwise("),
+        )
+        public = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "run_sequential_via_runner"
+        )
+        public_source = ast.get_source_segment(source, public)
+        self.assertIn("with LayerwiseRunLock(blb_progress_dir)", public_source)
+        self.assertIn("_run_sequential_via_runner_locked(", public_source)
+
+    def test_launcher_locks_stage2_directory_before_fresh_cleanup(self):
+        source = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
+        stage2 = source[source.index(
+            'PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/'
+            '${DATASET}/${CONSTRAINT_SLUG}"'
+        ):]
+        cleanup = stage2.index('rm -rf "$PERSISTENT_DIR"')
+        lock = stage2.index('flock -n "$BLB_STAGE2_RUN_LOCK_FD"')
+
+        self.assertLess(lock, cleanup)
+        self.assertIn("BLB_STAGE2_RUN_LOCK_PATH", stage2[:cleanup])
+        self.assertIn("export BLB_STAGE2_RUN_LOCK_FD", stage2[:cleanup])
+        self.assertIn("BLB_STAGE2_RUN_LOCK_FD=9", stage2[:cleanup])
+        self.assertIn(
+            'exec 9>>"$BLB_STAGE2_RUN_LOCK_PATH"',
+            stage2[:cleanup],
+        )
+        self.assertNotIn("exec {BLB_STAGE2_RUN_LOCK_FD}", stage2[:cleanup])
+
     def test_sequential_train_config_carries_layerwise_resume_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
@@ -369,7 +572,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             'checkpoint.get("convergence_state")',
             'convergence_state=metrics.get("convergence_state")',
             "planned_total_episodes=int(planned_total_episodes)",
-            "ppo_update_counter = start_episode //",
+            "ppo_update_counter = int(resumed_ppo_update_count)",
             '"boosted_overrides":',
             'best_reward = summary.get("best_reward")',
             '"torch_rng_state": torch.get_rng_state()',
@@ -382,14 +585,19 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             "existing_diagnostic_updates",
             "weights_only=False",
             'checkpoint.get("candidate_store_size")',
-            '"candidate_store_size": (',
+            '"candidate_store_size": int(candidate_store_size)',
             "candidate_store.path.stat().st_size",
             "candidate_store.recover_to_checkpoint_size",
+            'checkpoint.get("store_file_fingerprints")',
+            '"store_file_fingerprints": store_file_fingerprints',
             'checkpoint.get("diagnostics_jsonl_sizes")',
-            '"diagnostics_jsonl_sizes": diag_recorder.committed_jsonl_sizes()',
+            '"diagnostics_jsonl_sizes": diagnostics_jsonl_sizes',
+            "diag_recorder.committed_jsonl_sizes()",
             "diag_recorder.recover_to_checkpoint_sizes",
             "planned_total_episodes = int(checkpoint.get(",
             '"planned_total_episodes", planned_total_episodes',
+            'checkpoint.get("ppo_update_count")',
+            '"ppo_update_count": int(ppo_update_counter)',
         ):
             self.assertIn(required, branch_source)
 
@@ -413,10 +621,37 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("ent_coef_cosine_lower_bound=0.0", branch_source)
         self.assertIn('"factorized_actor_clip": True', branch_source)
         self.assertIn('"algorithm_revision": algorithm_revision', branch_source)
-        self.assertIn('"factorized_slot_credit_v2"', branch_source)
+        self.assertIn('"factorized_slot_credit_v4"', branch_source)
+        self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
+        self.assertIn('"run_context_hash": run_context_hash', branch_source)
+        self.assertIn("validate_layerwise_checkpoint_metadata(", branch_source)
+        self.assertIn('"cost_model_revision": LAYERWISE_COST_MODEL_REVISION', source)
+        self.assertIn('"ppo": asdict(ppo)', branch_source)
+        self.assertIn('"rollout_size": int(train_cfg.rollout_size)', branch_source)
+        self.assertIn(
+            '"persistence_protocol": "stable_parent_lock_incremental_fingerprint_v2"',
+            branch_source,
+        )
+        self.assertIn(
+            '"actor_advantage_normalization": "per_slot_center_shared_scale_v1"',
+            branch_source,
+        )
+        self.assertIn(
+            '"behavior_log_prob_source": "sampling_time_per_slot_v1"',
+            branch_source,
+        )
+        self.assertIn("bind_layerwise_candidate_identity(", source)
         self.assertIn('"entropy_average_active_slots": True', branch_source)
         self.assertIn('"end": 0.0', branch_source)
         self.assertIn('"lower_bound": 0.0', branch_source)
+        self.assertGreater(
+            branch_source.index("write_strict_json_file(layerwise_manifest_path"),
+            branch_source.index("fingerprint_tracker.validate_and_seed("),
+        )
+        self.assertGreater(
+            branch_source.index("candidate_store.recover_to_checkpoint_size"),
+            branch_source.index("fingerprint_tracker.validate_and_seed("),
+        )
 
     def test_factorized_ppo_uses_active_slot_kl_scale(self):
         source = Path("blb_stage2_rl/sequential_policy.py").read_text(
@@ -781,7 +1016,10 @@ class _FakePolicy:
         mask = np.asarray(slot_mask, dtype=bool).reshape(1, 6)
         self.masks.append(mask[0].copy())
         action = np.asarray([[1, 5, 4, 3, 2, 1]], dtype=np.int64)
-        return action, np.asarray([float(mask.sum())]), np.asarray([0.25])
+        result = action, np.asarray([float(mask.sum())]), np.asarray([0.25])
+        if _kwargs.get("return_per_slot_log_prob", False):
+            return result + (mask.astype(np.float32),)
+        return result
 
 
 class _FakeLayerwiseEnv:
@@ -1156,12 +1394,14 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_zero_remaining_resume_preserves_frontier_and_convergence_summary(self):
         from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import train_layerwise
         from blb_stage2_rl.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         action = list(range(20))
         matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        expected_cost = compute_variable_cost_from_action_matrix(matrix).normalized
         with tempfile.TemporaryDirectory() as td:
             store = CandidateStore(Path(td) / "candidates.jsonl")
             store.append_trial_group(
@@ -1194,8 +1434,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
             config.absolute_episode_start = 60_000
             config.planned_total_episodes = 60_000
             config.convergence_resume_state = {
-                "best_robust_feasible_cost": 0.6,
-                "current_robust_feasible_cost": 0.6,
+                "best_robust_feasible_cost": expected_cost,
+                "current_robust_feasible_cost": expected_cost,
                 "stall_update_windows": 101,
                 "block4_entropy": 0.05,
                 "k_entropy": 0.06,
@@ -1321,12 +1561,14 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
     def test_zero_remaining_resume_clears_convergence_after_frontier_retraction(self):
         from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import train_layerwise
         from blb_stage2_rl.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         action = list(range(20))
         matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        expected_cost = compute_variable_cost_from_action_matrix(matrix).normalized
         with tempfile.TemporaryDirectory() as td:
             store = CandidateStore(Path(td) / "candidates.jsonl")
             store.append_trial_group(
@@ -1383,7 +1625,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 ),
             )
 
-        self.assertEqual(summary["best_variable_cost"], 0.6)
+        self.assertEqual(summary["best_variable_cost"], expected_cost)
         self.assertEqual(summary["stall_update_windows"], 0)
         self.assertFalse(summary["converged"])
 
@@ -1642,7 +1884,7 @@ class LayerwisePromotionTests(unittest.TestCase):
 
         context = {"action_space_version": "layerwise-v1"}
         action = list(range(20))
-        matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        matrix = [[0, 3, 3, 3, 3, 3] for _layer in range(12)]
         with tempfile.TemporaryDirectory() as td:
             store = CandidateStore(Path(td) / "candidates.jsonl")
             store.append_trial_group(
@@ -1688,7 +1930,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         candidate = next(iter(restored.values()))
         self.assertEqual(candidate["action_matrix"], tuple(tuple(row) for row in matrix))
         self.assertEqual(candidate["full_vector"], tuple(action))
-        self.assertEqual(candidate["variable_cost"], 0.6)
+        self.assertEqual(candidate["variable_cost"], 0.0)
         self.assertEqual(candidate["reward"], 1.25)
         self.assertEqual(
             candidate["boosted_overrides"],

@@ -95,11 +95,13 @@ This matches the Stage-1 credit shape more closely: each categorical decision
 has its own clipped actor update, while all decisions still learn from the same
 precision/stability outcome.
 
-The rollout buffer keeps its backward-compatible summed log probability. At
-update entry, before any optimizer step, the frozen behavior policy reconstructs
-the per-slot values and verifies that their active-slot sum matches the stored
-joint value. Masked Layer-0 Block1 K contributes no ratio, entropy, KL, or loss.
-Existing non-layerwise callers retain summed-log-prob PPO behavior.
+The rollout buffer keeps its backward-compatible summed log probability and,
+for factorized PPO, stores each per-slot behavior log probability at sampling
+time. PPO reads these immutable sampling-time values instead of reconstructing
+them with the current policy after an earlier update. At update entry their
+active-slot sum is checked against the stored joint value. Masked Layer-0
+Block1 K contributes no ratio, entropy, KL, or loss. Existing non-layerwise
+callers retain summed-log-prob PPO behavior.
 
 ## Entropy And Convergence
 
@@ -131,9 +133,28 @@ The structured writer and checkpoint add:
 - Block4 and K entropy coefficients;
 - the existing complete 12-layer fusion/K best-action table.
 
-Checkpoint compatibility is unchanged because no active rollout window is
-checkpointed and the persisted buffer schema still stores the joint behavior
-log probability.
+Checkpoint compatibility is intentionally broken at
+`factorized_slot_credit_v4`. Each checkpoint and run manifest stores a stable
+algorithm-contract hash covering the K-level order, cost model, actor-credit
+mode, sampling-time behavior-log-prob protocol, entropy schedule, PPO mode,
+and optimizer hyperparameters. Resume
+validation happens before a new running manifest is written. A separate run
+context binds the checkpoint to the model/profile, fixed Stage-1 configuration,
+fusion maps, max-SF data, skeletons, baseline limits, trial counts, and
+probability gates. Candidate identity includes the exact `K_LEVELS` order and
+`fusion1_khalf_per_bit_v1`; restored candidate cost is decoded again from the
+persisted 12x6 action matrix instead of trusting an old scalar. The checkpoint
+also stores the exact PPO update count and fingerprints the committed prefixes
+of the candidate store and both the primary and mirrored episode/update JSONL
+files. These fingerprints are checked before loading policy state or truncating
+any append-only file. A nonblocking lock lives in the stable parent of the
+deletable run directory. The launcher acquires it before any `--fresh` cleanup
+and passes the held descriptor to Python, whose public Stage-2 entrypoint keeps
+the same lock across baseline probing, legacy/layerwise dispatch, and all
+persistent writes. A fresh run rejects stale append-only artifacts without a
+checkpoint, and an episode-zero checkpoint is committed before collection
+starts. Prefix SHA-256 state is carried forward so normal checkpoints hash only
+newly appended bytes.
 
 ## Verification
 
@@ -148,9 +169,19 @@ Focused tests must prove:
    actions;
 7. normalized entropy gives binary and six-way slots equal maximum pressure;
 8. the layerwise entropy schedule reaches zero at 85% and remains zero;
-9. a synthetic all-feasible layerwise bandit drives both Block4 and K entropy
-   below `0.1` and selects the known cost optimum;
-10. existing Stage-2 reward, action, persistence, and non-layerwise PPO tests
+9. a synthetic all-feasible layerwise bandit decodes the production
+   `K_LEVELS` order, drives both Block4 and K entropy below `0.1`, and selects
+   Block4 fusion `1` plus real `K=8`;
+10. stale candidate cost is recomputed from its action matrix, K order is part
+    of candidate identity, and foreign run contexts are rejected;
+11. committed store prefixes accept a crash suffix but reject missing or
+    modified committed data before rollback or manifest mutation;
+12. factorized PPO uses sampling-time per-slot behavior probabilities even
+    after policy parameters change, and rejects missing per-slot evidence;
+13. the stable parent lock rejects concurrent writers before fresh cleanup,
+    exact PPO update count and episode-zero state are recoverable, and
+    checkpoint hashing processes only appended bytes;
+14. existing Stage-2 reward, action, persistence, and non-layerwise PPO tests
    remain green.
 
 Server validation uses a short controlled smoke first. A new formal 60k run is

@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import copy
 from dataclasses import asdict, dataclass, is_dataclass
+import fcntl
 import hashlib
+import json
 import math
+import os
+import time
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 import numpy as np
 
 from .candidate_store import CandidateStore, CandidateTrialEvidence, sha256_json
+from .layerwise_action import compute_variable_cost_from_action_matrix
 from .statistical_constraints import (
     TrialSeries,
     assess_candidate,
@@ -29,6 +34,274 @@ _DECISION_GRANULARITIES = frozenset(("layer", "block"))
 _REWARD_DESIGNS = frozenset((
     "robust_constrained", "stage1_aligned", "continuous", "tiered",
 ))
+_LAUNCHER_LOCK_FD_ENV = "BLB_STAGE2_RUN_LOCK_FD"
+_LAUNCHER_LOCK_PATH_ENV = "BLB_STAGE2_RUN_LOCK_PATH"
+
+
+def stage2_run_lock_path(progress_dir: Any) -> str:
+    """Return a stable lock path outside the deletable run directory."""
+    path = os.path.realpath(os.fspath(progress_dir))
+    if os.path.basename(path) == "progress":
+        parent = os.path.dirname(path)
+        run_dir = (
+            os.path.dirname(parent)
+            if os.path.basename(parent) == "stage2_noise"
+            else parent
+        )
+    else:
+        run_dir = path
+    lock_parent = os.path.dirname(run_dir)
+    lock_name = f".{os.path.basename(run_dir)}.stage2_rl.lock"
+    return os.path.join(lock_parent, lock_name)
+
+
+class LayerwiseRunLock:
+    """Hold one writer lock for a Stage-2 persistent run directory."""
+
+    def __init__(self, run_dir: Any) -> None:
+        self.run_dir = os.fspath(run_dir)
+        self.path = stage2_run_lock_path(self.run_dir)
+        self._handle = None
+        self._inherited_launcher_lock = False
+        self._started_at = time.time()
+        self._run_context_hash: Optional[str] = None
+
+    def _write_metadata(self, *, active: bool) -> None:
+        if self._handle is None:
+            raise RuntimeError("layerwise run lock is not held")
+        payload = {
+            "schema_version": "stage2_run_lock_v2",
+            "pid": int(os.getpid()),
+            "active": bool(active),
+            "started_at_unix": float(self._started_at),
+            "run_context_hash": self._run_context_hash,
+        }
+        self._handle.seek(0)
+        self._handle.truncate()
+        self._handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        self._handle.flush()
+        os.fsync(self._handle.fileno())
+
+    def __enter__(self) -> "LayerwiseRunLock":
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        inherited_fd_raw = str(os.environ.get(_LAUNCHER_LOCK_FD_ENV, "")).strip()
+        inherited_path_raw = str(os.environ.get(_LAUNCHER_LOCK_PATH_ENV, "")).strip()
+        if inherited_fd_raw or inherited_path_raw:
+            if not inherited_fd_raw or not inherited_path_raw:
+                raise RuntimeError("incomplete inherited Stage-2 launcher lock metadata")
+            inherited_path = os.path.realpath(inherited_path_raw)
+            if inherited_path != os.path.realpath(self.path):
+                raise RuntimeError(
+                    f"inherited Stage-2 launcher lock path {inherited_path!r} "
+                    f"does not match expected {self.path!r}"
+                )
+            try:
+                inherited_fd = int(inherited_fd_raw)
+                fd_stat = os.fstat(inherited_fd)
+                path_stat = os.stat(self.path)
+            except (OSError, ValueError) as exc:
+                raise RuntimeError("inherited Stage-2 launcher lock is invalid") from exc
+            if (fd_stat.st_dev, fd_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
+                raise RuntimeError("inherited Stage-2 launcher lock inode mismatch")
+            handle = os.fdopen(os.dup(inherited_fd), "r+", encoding="utf-8")
+            self._inherited_launcher_lock = True
+        else:
+            handle = open(self.path, "a+", encoding="utf-8")
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                handle.seek(0)
+                owner = handle.read().strip()
+                handle.close()
+                raise RuntimeError(
+                    "Stage-2 persistent run is already active"
+                    + (f": {owner}" if owner else "")
+                ) from exc
+        self._handle = handle
+        self._write_metadata(active=True)
+        return self
+
+    def bind_context(self, run_context_hash: str) -> None:
+        value = str(run_context_hash or "").strip()
+        if not value:
+            raise ValueError("run_context_hash must be non-empty")
+        self._run_context_hash = value
+        self._write_metadata(active=True)
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        if self._handle is None:
+            return
+        try:
+            self._write_metadata(active=False)
+        finally:
+            if not self._inherited_launcher_lock:
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
+            self._handle.close()
+            self._handle = None
+
+
+def validate_fresh_layerwise_run_state(
+        run_id_marker: Any,
+        checkpoint_coupled_paths: Sequence[Any],
+        ) -> None:
+    """Refuse to mix orphaned run data with a new episode-zero policy."""
+    stale = []
+    marker = os.fspath(run_id_marker)
+    if os.path.exists(marker):
+        stale.append(marker)
+    for raw_path in checkpoint_coupled_paths:
+        path = os.fspath(raw_path)
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            stale.append(path)
+    if stale:
+        raise RuntimeError(
+            "layerwise persistent data exists without a checkpoint; "
+            "restore the checkpoint or start with a fresh run directory: "
+            + ", ".join(stale)
+        )
+
+
+class CheckpointFileFingerprintTracker:
+    """Incrementally hash checkpoint-owned file prefixes within one process."""
+
+    def __init__(self) -> None:
+        self._states: dict[str, dict[str, Any]] = {}
+        self._bytes_hashed = 0
+
+    @property
+    def bytes_hashed(self) -> int:
+        return int(self._bytes_hashed)
+
+    def fingerprints(
+            self,
+            file_specs: Mapping[str, tuple[Any, int]],
+            ) -> dict[str, str]:
+        names = {str(name) for name in file_specs}
+        if self._states and names != set(self._states):
+            raise RuntimeError("checkpoint fingerprint file set changed")
+        for raw_name, (raw_path, raw_size) in sorted(file_specs.items()):
+            name = str(raw_name)
+            path = os.path.realpath(os.fspath(raw_path))
+            size = int(raw_size)
+            if size < 0:
+                raise ValueError(f"committed size must be non-negative, got {size}")
+            state = self._states.get(name)
+            if state is None:
+                state = {"path": path, "size": 0, "digest": hashlib.sha256()}
+                self._states[name] = state
+            if state["path"] != path:
+                raise RuntimeError(f"checkpoint fingerprint path changed for {name}")
+            previous_size = int(state["size"])
+            if size < previous_size:
+                raise RuntimeError(
+                    f"checkpoint fingerprint size regressed for {name}: "
+                    f"{size} < {previous_size}"
+                )
+            remaining = size - previous_size
+            if remaining:
+                try:
+                    with open(path, "rb") as handle:
+                        handle.seek(previous_size)
+                        while remaining:
+                            chunk = handle.read(min(1024 * 1024, remaining))
+                            if not chunk:
+                                raise RuntimeError(
+                                    f"checkpoint file {path!r} is shorter than {size} bytes"
+                                )
+                            state["digest"].update(chunk)
+                            state["size"] = int(state["size"]) + len(chunk)
+                            self._bytes_hashed += len(chunk)
+                            remaining -= len(chunk)
+                except FileNotFoundError as exc:
+                    raise RuntimeError(f"checkpoint file {path!r} is missing") from exc
+        return {
+            name: str(state["digest"].hexdigest())
+            for name, state in sorted(self._states.items())
+        }
+
+    def validate_and_seed(
+            self,
+            expected: Mapping[str, Any],
+            file_specs: Mapping[str, tuple[Any, int]],
+            ) -> None:
+        if self._states:
+            raise RuntimeError("checkpoint fingerprint tracker is already seeded")
+        expected_plain = {
+            str(name): str(value) for name, value in dict(expected).items()
+        }
+        if self.fingerprints(file_specs) != expected_plain:
+            raise RuntimeError(
+                "layerwise checkpoint store fingerprint mismatch; start a fresh run"
+            )
+
+
+def bind_layerwise_candidate_identity(
+        identity_context: Mapping[str, Any],
+        k_levels: Sequence[int],
+        cost_model_revision: str,
+        ) -> dict[str, Any]:
+    """Bind persisted evidence to decoded K ordering and cost semantics."""
+    levels = tuple(int(value) for value in k_levels)
+    if not levels or len(set(levels)) != len(levels):
+        raise ValueError(f"k_levels must be non-empty and unique, got {levels}")
+    context = dict(identity_context)
+    context["k_levels"] = list(levels)
+    context["cost_model_revision"] = str(cost_model_revision)
+    return context
+
+
+def build_layerwise_run_context(
+        candidate_identity_context: Mapping[str, Any],
+        algorithm_contract_hash: str,
+        training_settings: Mapping[str, Any],
+        ) -> dict[str, Any]:
+    """Build the complete experiment context accepted by a live checkpoint."""
+    return {
+        "schema_version": "stage2_layerwise_run_context_v1",
+        "algorithm_contract_hash": str(algorithm_contract_hash),
+        "candidate_identity_context": dict(candidate_identity_context),
+        "training_settings": dict(training_settings),
+    }
+
+
+def validate_layerwise_checkpoint_metadata(
+        checkpoint: Mapping[str, Any],
+        *,
+        rl_variant: str,
+        algorithm_revision: str,
+        algorithm_contract_hash: str,
+        run_context_hash: str,
+        ) -> None:
+    """Reject checkpoints from a different algorithm or experiment context."""
+    checks = (
+        ("variant", "rl_variant", rl_variant),
+        ("algorithm revision", "algorithm_revision", algorithm_revision),
+        ("algorithm contract", "algorithm_contract_hash", algorithm_contract_hash),
+        ("run context", "run_context_hash", run_context_hash),
+    )
+    for label, field, expected in checks:
+        actual = str(checkpoint.get(field, "") or "")
+        if actual != str(expected):
+            raise RuntimeError(
+                f"layerwise checkpoint {label} {actual!r} != {str(expected)!r}; "
+                "start a fresh run"
+            )
+
+
+def checkpoint_file_fingerprints(
+        file_specs: Mapping[str, tuple[Any, int]],
+        ) -> dict[str, str]:
+    """Hash each checkpoint-owned file prefix at its committed byte boundary."""
+    return CheckpointFileFingerprintTracker().fingerprints(file_specs)
+
+
+def validate_checkpoint_file_fingerprints(
+        expected: Mapping[str, Any],
+        file_specs: Mapping[str, tuple[Any, int]],
+        ) -> None:
+    """Verify persisted stores before any checkpoint-driven truncation."""
+    CheckpointFileFingerprintTracker().validate_and_seed(expected, file_specs)
 
 
 def normalize_decision_granularity(value: Any) -> str:
@@ -586,9 +859,12 @@ def restore_promoted_candidates(
         )
         if len(action_matrix) != 12 or any(len(row) != 6 for row in action_matrix):
             raise ValueError("persisted layerwise action_matrix must be 12x6")
+        variable_cost = compute_variable_cost_from_action_matrix(
+            action_matrix,
+        ).normalized
         reward = metadata.get("episode_reward")
         restored[key] = {
-            "variable_cost": _finite(metadata["variable_cost"], name="variable_cost"),
+            "variable_cost": float(variable_cost),
             "assessment": assessment,
             "metrics": _metrics_from_trials(evidence.trials),
             "action_matrix": action_matrix,
@@ -1061,17 +1337,28 @@ def train_layerwise(
             spec = env.current_spec()
             slot_mask, levels = step_adapter_fn(spec, 6, 6)
             state_np = np.asarray(state, dtype=np.float32)
-            actions_raw, log_prob_raw, value_raw = policy.sample_action(
+            sample_out = policy.sample_action(
                 _policy_input(state_np[None, ...], device),
                 _policy_input(slot_mask[None, ...], device),
                 _policy_input(levels[None, ...], device),
                 deterministic=False,
                 baseline_prior_scale=0.0,
+                return_per_slot_log_prob=True,
             )
+            if len(sample_out) != 4:
+                raise RuntimeError(
+                    "layerwise factorized PPO requires sampling-time per-slot log probabilities"
+                )
+            actions_raw, log_prob_raw, value_raw, log_prob_per_slot_raw = sample_out
             action = _as_numpy(actions_raw).reshape(-1).astype(np.int64)
             action[~slot_mask] = 0
             log_prob = _first_detached_scalar(log_prob_raw)
             value = _first_detached_scalar(value_raw)
+            log_prob_per_slot = (
+                log_prob_per_slot_raw.detach().reshape(-1)
+                if hasattr(log_prob_per_slot_raw, "detach")
+                else np.asarray(log_prob_per_slot_raw, dtype=np.float32).reshape(-1)
+            )
             next_state, reward, done, info = env.step(action.tolist())
             expected_done = step_idx == 11
             if bool(done) != expected_done:
@@ -1085,6 +1372,7 @@ def train_layerwise(
                 per_slot_num_levels=levels,
                 action_level_mask=None,
                 log_prob=log_prob,
+                log_prob_per_slot=log_prob_per_slot,
                 value=value,
                 reward=0.0,
                 done=bool(done),

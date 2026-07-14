@@ -1271,7 +1271,10 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
         src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8"
         )
-        run_region = _method_region_from_source(src, "run_sequential_via_runner")
+        run_region = (
+            _method_region_from_source(src, "run_sequential_via_runner")
+            + _method_region_from_source(src, "_run_sequential_via_runner_locked")
+        )
         import_needle = (
             "from .probe_runner import enable_cuda_reward_probe_fast_math"
         )

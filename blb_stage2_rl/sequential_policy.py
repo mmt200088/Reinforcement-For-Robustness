@@ -687,15 +687,18 @@ class BLBStage2SequentialPolicy(nn.Module):
             action_level_mask: Optional[torch.Tensor] = None,
             logit_mask: Optional[torch.Tensor] = None,
             baseline_prior_scale: Optional[Any] = None,
+            return_per_slot_log_prob: bool = False,
             truncate_to_current: bool = False,
             truncate_seq_len: Optional[int] = None,
-            ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            ) -> Tuple[torch.Tensor, ...]:
         """Sample one per-step action.
 
         Returns:
             actions:  ``[B, max_step_dim]`` long (padding entries are 0)
             log_prob: ``[B]`` summed across active slots
             value:    ``[B]``
+            log_prob_per_slot: optional ``[B, max_step_dim]`` sampling-time
+                behavior log probabilities when requested
         """
         logits, value = self.forward(
             state,
@@ -741,6 +744,8 @@ class BLBStage2SequentialPolicy(nn.Module):
         # zero out log_prob for padding rows
         log_prob_per_slot = log_prob_per_slot * slot_mask.float()
         log_prob = log_prob_per_slot.sum(dim=-1)
+        if return_per_slot_log_prob:
+            return actions, log_prob, value, log_prob_per_slot
         return actions, log_prob, value
 
     def evaluate_action(
@@ -981,6 +986,7 @@ class SequentialTransition:
     value: Any
     reward: float
     done: bool
+    log_prob_per_slot: Optional[Any] = None
     # action_level_mask: np.ndarray when provided; shape [max_step_dim, max_num_levels].
     action_level_mask: Optional[np.ndarray] = None
     baseline_prior_scale: float = 0.0
@@ -1090,6 +1096,7 @@ class SequentialRolloutBuffer:
             value: Any,
             reward: float,
             done: bool,
+            log_prob_per_slot: Optional[Any] = None,
             baseline_prior_scale: float = 0.0,
             ) -> int:
         """Append one transition.
@@ -1098,9 +1105,30 @@ class SequentialRolloutBuffer:
         ``action_level_mask=action_level_mask_np``. ``None`` preserves the
         original unmasked per-level support.
         """
+        action_array = np.asarray(action, dtype=np.int64)
+        behavior_log_prob_per_slot = None
+        if log_prob_per_slot is not None:
+            if torch.is_tensor(log_prob_per_slot):
+                behavior_log_prob_per_slot = log_prob_per_slot.detach().reshape(-1)
+                if int(behavior_log_prob_per_slot.numel()) != int(action_array.size):
+                    raise ValueError(
+                        "per-slot behavior log probability shape must match action shape"
+                    )
+                behavior_log_prob_per_slot = behavior_log_prob_per_slot.reshape(
+                    action_array.shape
+                )
+            else:
+                behavior_log_prob_per_slot = np.asarray(
+                    log_prob_per_slot, dtype=np.float32,
+                )
+                if behavior_log_prob_per_slot.shape != action_array.shape:
+                    raise ValueError(
+                        "per-slot behavior log probability shape must match action shape"
+                    )
+                behavior_log_prob_per_slot = behavior_log_prob_per_slot.copy()
         self._buf.append(SequentialTransition(
             state=np.asarray(state, dtype=np.float32),
-            action=np.asarray(action, dtype=np.int64),
+            action=action_array,
             slot_mask=np.asarray(slot_mask, dtype=bool),
             per_slot_num_levels=np.asarray(per_slot_num_levels, dtype=np.int64),
             action_level_mask=(
@@ -1111,6 +1139,7 @@ class SequentialRolloutBuffer:
             value=value.detach().reshape(()) if torch.is_tensor(value) else float(value),
             reward=float(reward),
             done=bool(done),
+            log_prob_per_slot=behavior_log_prob_per_slot,
             baseline_prior_scale=float(baseline_prior_scale),
         ))
         return len(self._buf) - 1
@@ -1185,6 +1214,29 @@ class SequentialRolloutBuffer:
             - costs_t.sum(dim=-1, keepdim=True)
             + costs_t
         )
+
+    def factorized_behavior_log_probs(self, device: torch.device) -> torch.Tensor:
+        """Pack sampling-time behavior log probabilities for PPO factors."""
+        values = [row.log_prob_per_slot for row in self._buf]
+        if not values or any(value is None for value in values):
+            raise RuntimeError(
+                "factorized PPO requires sampling-time per-slot behavior log probabilities"
+            )
+        tensor_device = next(
+            (value.device for value in values if torch.is_tensor(value)),
+            device,
+        )
+        packed = torch.stack([
+            (
+                value.detach().to(
+                    device=tensor_device, dtype=torch.float32, non_blocking=True,
+                )
+                if torch.is_tensor(value)
+                else torch.as_tensor(value, dtype=torch.float32, device=tensor_device)
+            )
+            for value in values
+        ], dim=0)
+        return packed.to(device=device, dtype=torch.float32, non_blocking=True)
 
     def clear(self) -> None:
         self._buf.clear()
@@ -1598,22 +1650,7 @@ def sequential_ppo_update(
 
     old_log_probs_per_slot = None
     if factorized_actor_clip:
-        with torch.no_grad():
-            old_eval_out = policy.evaluate_action(
-                states,
-                actions,
-                slot_masks,
-                levels,
-                action_level_mask=level_masks,
-                baseline_prior_scale=prior_scales,
-                return_per_slot_entropy=True,
-                return_per_slot_log_prob=True,
-            )
-        if len(old_eval_out) != 5:
-            raise RuntimeError(
-                "factorized PPO requires evaluate_action per-slot log probabilities"
-            )
-        old_log_probs_per_slot = old_eval_out[4].detach()
+        old_log_probs_per_slot = buffer.factorized_behavior_log_probs(device)
         reconstructed_joint = old_log_probs_per_slot.sum(dim=-1)
         if not bool(torch.allclose(
                 reconstructed_joint, old_log_probs, rtol=1.0e-5, atol=1.0e-6,

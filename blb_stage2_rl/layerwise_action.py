@@ -69,6 +69,7 @@ TRUNCATION_COST_UNIT_PER_BIT = 0.5
 MAX_FUSION_COST_UNITS = 12.0
 MAX_TRUNCATION_COST_UNITS = 0.5 * 59.0 * (13.0 - 8.0)
 MAX_VARIABLE_COST_UNITS = MAX_FUSION_COST_UNITS + MAX_TRUNCATION_COST_UNITS
+LAYERWISE_COST_MODEL_REVISION = "fusion1_khalf_per_bit_v1"
 
 
 @dataclass(frozen=True)
@@ -389,6 +390,35 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
             for row in slot_units
         ),
     )
+
+
+def compute_variable_cost_from_action_matrix(
+        action_matrix: Sequence[Sequence[int]],
+        ) -> VariableCost:
+    """Decode the canonical 12x6 policy action and compute its variable cost."""
+    levels = _validate_k_levels()
+    rows = [tuple(int(value) for value in row) for row in action_matrix]
+    if len(rows) != 12 or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
+        raise ValueError("action_matrix must have shape 12x6")
+    decoded = []
+    for layer_idx, row in enumerate(rows):
+        fusion = int(row[0])
+        if fusion not in (0, 1):
+            raise ValueError(
+                f"action_matrix[{layer_idx}][0]={fusion} outside [0, 2)"
+            )
+        active_blocks = (2, 3, 4, 5) if layer_idx == 0 else _BLOCK_ORDER
+        k_by_block = {}
+        for block_idx in active_blocks:
+            k_index = int(row[block_idx])
+            if not 0 <= k_index < len(levels):
+                raise ValueError(
+                    f"action_matrix[{layer_idx}][{block_idx}]={k_index} "
+                    f"outside [0, {len(levels)})"
+                )
+            k_by_block[block_idx] = int(levels[k_index])
+        decoded.append(LayerwiseDecodedAction(fusion, k_by_block))
+    return compute_variable_cost(decoded)
 
 
 def one_coordinate_neighbors(action_matrix: Sequence[Sequence[int]]) -> Iterator[list[list[int]]]:

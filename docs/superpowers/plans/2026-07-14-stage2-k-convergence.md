@@ -71,7 +71,57 @@ the requested `K - 2 == Block4 fusion + 1` cost equivalence.
    sequential PPO tests.
 3. Run the broader torch-free Stage-2 test selection.
 4. Run a deterministic synthetic factorized-bandit convergence test and assert
-   both action-family entropies fall below `0.1` at the known optimum.
+   both action-family entropies fall below `0.1` at Block4 fusion `1` and the
+   decoded production optimum `K=8`.
 5. Package the exact commit to the server and run the project-integrated short
    smoke; inspect reward, per-family entropy, P1/P2/P3, invalids, and K action
    movement before approving another 60k launch.
+
+## Task 6: Version Resume And Candidate Cost Semantics
+
+**Files:**
+- Modify: `blb_stage2_rl/layerwise_action.py`
+- Modify: `blb_stage2_rl/layerwise_runner.py`
+- Modify: `blb_stage2_rl/sequential_runner.py`
+- Modify: `tests/test_blb_layerwise_policy.py`
+- Modify: `tests/test_blb_layerwise_runner.py`
+
+1. Bind candidate identity to the exact `K_LEVELS` ordering and fusion/K
+   cost-model revision.
+2. Recompute restored candidate cost from the canonical 12x6 action matrix.
+3. Store and validate an algorithm-contract hash before mutating the run
+   manifest; reject all pre-v3 checkpoints.
+4. Bind checkpoints to the full experiment context (model/profile, fixed
+   Stage-1 configuration, maps/skeletons, baseline limits, trial counts, and
+   probability gates).
+5. Fingerprint the committed prefixes of the candidate store plus primary and
+   mirrored episode/update JSONL files; validate them before loading policy
+   state or rolling any file back.
+6. Correct the synthetic convergence fixture to reward decoded K values rather
+   than category indices, and verify it converges to real `K=8` on server
+   Torch.
+
+## Task 7: Persist Behavior Policy And Crash-Safe Run State
+
+**Files:**
+- Modify: `blb_stage2_rl/sequential_policy.py`
+- Modify: `blb_stage2_rl/layerwise_runner.py`
+- Modify: `blb_stage2_rl/sequential_runner.py`
+- Modify: `tests/test_blb_layerwise_policy.py`
+- Modify: `tests/test_blb_layerwise_runner.py`
+
+1. Store factorized behavior log probabilities at action-sampling time and use
+   those immutable values for PPO ratios after earlier optimizer updates.
+2. Reject factorized updates that lack sampling-time per-slot evidence and
+   verify its sum against the stored joint behavior probability.
+3. Add a stable-parent single-writer lock acquired by the launcher before
+   `--fresh` cleanup and held by Python across baseline probing and either
+   Stage-2 branch; reject stale fresh-run artifacts and write an episode-zero
+   checkpoint before collection.
+4. Replace repeated full-prefix hashing with resumable incremental SHA-256
+   tracking while preserving committed-prefix validation on resume.
+5. Persist and restore the exact PPO update count instead of deriving it from
+   episode count.
+6. Bump the algorithm revision to `factorized_slot_credit_v4`, rerun the
+   server Torch suite, and complete at least three PPO updates in the five-GPU
+   integrated smoke.

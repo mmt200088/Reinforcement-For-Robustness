@@ -566,6 +566,150 @@ class LayerwisePolicyTest(unittest.TestCase):
             torch.full((batch_size,), fusion_entropy + 4.0 * k_entropy),
         )
 
+    def test_sampling_can_return_behavior_log_probability_per_slot(self):
+        policy = self._policy()
+        policy.eval()
+        states = torch.zeros(2, policy.cfg.state_dim)
+        slot_mask = torch.tensor([
+            [True, False, True, True, True, True],
+            [True, True, True, True, True, True],
+        ])
+        levels = torch.tensor([[2, 6, 6, 6, 6, 6]]).expand(2, -1)
+
+        actions, joint_log_prob, _, per_slot_log_prob = policy.sample_action(
+            states,
+            slot_mask,
+            levels,
+            generator=torch.Generator().manual_seed(20260715),
+            return_per_slot_log_prob=True,
+        )
+
+        self.assertEqual(tuple(per_slot_log_prob.shape), (2, 6))
+        self.assertTrue(torch.all(per_slot_log_prob[~slot_mask] == 0.0))
+        torch.testing.assert_close(per_slot_log_prob.sum(dim=-1), joint_log_prob)
+        replay = policy.evaluate_action(
+            states,
+            actions,
+            slot_mask,
+            levels,
+            return_per_slot_log_prob=True,
+        )
+        torch.testing.assert_close(per_slot_log_prob, replay[3])
+
+    def test_factorized_ppo_uses_stored_behavior_log_probability_after_policy_changes(self):
+        from blb_stage2_rl.sequential_policy import (
+            SequentialPPOConfig,
+            SequentialRolloutBuffer,
+            sequential_ppo_update,
+        )
+
+        class DriftedPolicy(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.tensor(0.0))
+                self._ppo_lr_scale = 1.0
+                self._ppo_last_avg_kl = 0.0
+
+            def evaluate_action(
+                    self,
+                    state,
+                    actions,
+                    slot_mask,
+                    per_slot_num_levels,
+                    action_level_mask=None,
+                    baseline_prior_scale=None,
+                    return_per_slot_entropy=False,
+                    return_per_slot_log_prob=False,
+                    ):
+                del actions, per_slot_num_levels, action_level_mask, baseline_prior_scale
+                batch = state.shape[0]
+                per_slot = (self.weight - 1.0).expand_as(slot_mask.float())
+                per_slot = per_slot * slot_mask.float()
+                entropy_per_slot = torch.full_like(per_slot, 0.5) * slot_mask.float()
+                result = (
+                    per_slot.sum(dim=-1),
+                    entropy_per_slot.sum(dim=-1),
+                    self.weight.expand(batch),
+                )
+                if return_per_slot_entropy and return_per_slot_log_prob:
+                    return result + (entropy_per_slot, per_slot)
+                if return_per_slot_entropy:
+                    return result + (entropy_per_slot,)
+                if return_per_slot_log_prob:
+                    return result + (per_slot,)
+                return result
+
+        buffer = SequentialRolloutBuffer()
+        behavior_per_slot = np.asarray([-0.2, -0.3], dtype=np.float32)
+        buffer.add(
+            state=np.zeros(1, dtype=np.float32),
+            action=np.zeros(2, dtype=np.int64),
+            slot_mask=np.ones(2, dtype=bool),
+            per_slot_num_levels=np.full(2, 2, dtype=np.int64),
+            log_prob=float(behavior_per_slot.sum()),
+            log_prob_per_slot=behavior_per_slot,
+            value=0.0,
+            reward=1.0,
+            done=True,
+        )
+        policy = DriftedPolicy()
+        optimizer = torch.optim.SGD(policy.parameters(), lr=0.0)
+
+        metrics = sequential_ppo_update(
+            policy,
+            optimizer,
+            buffer,
+            SequentialPPOConfig(
+                lr=0.0,
+                n_epochs=1,
+                minibatch_size=1,
+                ent_coef=0.0,
+                normalize_returns=False,
+                use_kl_early_stop=False,
+                factorized_actor_clip=True,
+            ),
+            torch.device("cpu"),
+        )
+
+        self.assertEqual(metrics["actor_clip_mode"], "factorized_per_slot")
+        self.assertAlmostEqual(metrics["approx_kl"], 0.75, places=6)
+
+    def test_factorized_ppo_rejects_missing_behavior_log_probability_per_slot(self):
+        from blb_stage2_rl.sequential_policy import (
+            SequentialPPOConfig,
+            SequentialRolloutBuffer,
+            sequential_ppo_update,
+        )
+
+        policy = self._policy()
+        buffer = SequentialRolloutBuffer()
+        buffer.add(
+            state=np.zeros(policy.cfg.state_dim, dtype=np.float32),
+            action=np.zeros(6, dtype=np.int64),
+            slot_mask=np.ones(6, dtype=bool),
+            per_slot_num_levels=np.full(6, 2, dtype=np.int64),
+            log_prob=0.0,
+            value=0.0,
+            reward=0.0,
+            done=True,
+        )
+
+        with self.assertRaisesRegex(
+                RuntimeError,
+                "sampling-time per-slot behavior log probabilities",
+        ):
+            sequential_ppo_update(
+                policy,
+                torch.optim.Adam(policy.parameters(), lr=1.0e-4),
+                buffer,
+                SequentialPPOConfig(
+                    n_epochs=1,
+                    minibatch_size=1,
+                    factorized_actor_clip=True,
+                ),
+                torch.device("cpu"),
+            )
+
     def test_terminal_reward_has_undiscounted_credit_at_every_layer(self):
         from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
 
@@ -597,6 +741,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         torch.testing.assert_close(advantages_t, torch.full((12,), 2.0))
 
     def test_factorized_ppo_converges_fusion_and_k_on_contextual_cost_bandit(self):
+        from blb_stage2_rl.layerwise_action import K_LEVELS
         from blb_stage2_rl.sequential_policy import (
             SequentialPPOConfig,
             SequentialRolloutBuffer,
@@ -628,12 +773,26 @@ class LayerwisePolicyTest(unittest.TestCase):
                 )
                 return torch.distributions.Categorical(logits=safe_logits), layer
 
-            def sample_action(self, state, slot_mask, per_slot_num_levels):
+            def sample_action(
+                    self,
+                    state,
+                    slot_mask,
+                    per_slot_num_levels,
+                    *,
+                    return_per_slot_log_prob=False,
+                    ):
                 dist, layer = self._distribution(state, slot_mask, per_slot_num_levels)
                 action = dist.sample()
                 action = torch.where(slot_mask, action, torch.zeros_like(action))
                 per_slot = dist.log_prob(action) * slot_mask.float()
-                return action, per_slot.sum(dim=-1), self.values.index_select(0, layer)
+                result = (
+                    action,
+                    per_slot.sum(dim=-1),
+                    self.values.index_select(0, layer),
+                )
+                if return_per_slot_log_prob:
+                    return result + (per_slot,)
+                return result
 
             def evaluate_action(
                     self,
@@ -705,14 +864,19 @@ class LayerwisePolicyTest(unittest.TestCase):
                     slot_mask[1] = False
                 state = np.asarray([layer_idx], dtype=np.float32)
                 with torch.no_grad():
-                    action, log_prob, value = policy.sample_action(
+                    action, log_prob, value, log_prob_per_slot = policy.sample_action(
                         torch.from_numpy(state).unsqueeze(0),
                         torch.from_numpy(slot_mask).unsqueeze(0),
                         torch.from_numpy(slot_levels).unsqueeze(0),
+                        return_per_slot_log_prob=True,
                     )
                 action_np = action[0].numpy()
-                raw_cost_units = float(action_np[0]) + 0.5 * float(
-                    action_np[1:][slot_mask[1:]].sum()
+                k_cost_units = np.asarray(
+                    [0.5 * (13.0 - float(K_LEVELS[int(index)])) for index in action_np[1:]],
+                    dtype=np.float32,
+                )
+                raw_cost_units = float(action_np[0]) + float(
+                    k_cost_units[slot_mask[1:]].sum()
                 )
                 transition_index = buffer.add(
                     state=state,
@@ -720,13 +884,14 @@ class LayerwisePolicyTest(unittest.TestCase):
                     slot_mask=slot_mask,
                     per_slot_num_levels=slot_levels,
                     log_prob=log_prob[0],
+                    log_prob_per_slot=log_prob_per_slot[0],
                     value=value[0],
                     reward=raw_cost_units / 159.5,
                     done=True,
                 )
                 per_slot_cost = np.concatenate((
                     np.asarray([float(action_np[0])]),
-                    0.5 * action_np[1:].astype(np.float32),
+                    k_cost_units,
                 )) / 159.5
                 per_slot_cost[~slot_mask] = 0.0
                 buffer.set_actor_cost_at(transition_index, per_slot_cost)
@@ -774,7 +939,8 @@ class LayerwisePolicyTest(unittest.TestCase):
                 f"fusion_modes={fusion_modes.tolist()}, k_modes={k_modes.tolist()}"
             )
             self.assertTrue(torch.all(fusion_modes == 1), diagnostic)
-            self.assertTrue(torch.all(active_k_modes == 5), diagnostic)
+            selected_k_values = torch.as_tensor(K_LEVELS)[active_k_modes]
+            self.assertTrue(torch.all(selected_k_values == 8), diagnostic)
         self.assertLess(fusion_entropy, 0.1, diagnostic)
         self.assertLess(k_entropy, 0.1, diagnostic)
 

@@ -1449,6 +1449,17 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     fi
   else
     PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"
+    _BLB_STAGE2_LOCK_DIR="$(dirname "$PERSISTENT_DIR")"
+    mkdir -p "$_BLB_STAGE2_LOCK_DIR"
+    BLB_STAGE2_RUN_LOCK_PATH="${_BLB_STAGE2_LOCK_DIR}/.$(basename "$PERSISTENT_DIR").stage2_rl.lock"
+    command -v flock >/dev/null 2>&1 || err "Stage-2 RL requires the flock command for persistent-run locking."
+    BLB_STAGE2_RUN_LOCK_FD=9
+    exec 9>>"$BLB_STAGE2_RUN_LOCK_PATH"
+    if ! flock -n "$BLB_STAGE2_RUN_LOCK_FD"; then
+      _BLB_STAGE2_LOCK_OWNER="$(cat "$BLB_STAGE2_RUN_LOCK_PATH" 2>/dev/null || true)"
+      err "Stage-2 RL persistent directory is already active: $PERSISTENT_DIR ${_BLB_STAGE2_LOCK_OWNER}"
+    fi
+    export BLB_STAGE2_RUN_LOCK_FD BLB_STAGE2_RUN_LOCK_PATH
     _COMPLETED_MARKER="${PERSISTENT_DIR}/COMPLETED"
     if [ "$FRESH_START" = "true" ]; then
       if [ -d "$PERSISTENT_DIR" ]; then

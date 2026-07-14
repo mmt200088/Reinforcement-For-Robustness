@@ -21,7 +21,7 @@ import math
 import os
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
@@ -3560,6 +3560,8 @@ def _build_layerwise_candidate_identity_context(
         ) -> Dict[str, Any]:
     """Bind layerwise raw evidence to the complete effective run context."""
     from .candidate_store import build_candidate_identity_context, sha256_json
+    from .layerwise_action import K_LEVELS, LAYERWISE_COST_MODEL_REVISION
+    from .layerwise_runner import bind_layerwise_candidate_identity
 
     stage1_degrees = {
         "gelu": [int(value) for value in fixed_gelu.reshape(-1)],
@@ -3589,7 +3591,7 @@ def _build_layerwise_candidate_identity_context(
         },
     }
     rescale_root = os.path.realpath(str(train_cfg.inproc_rescale_optimizer_root))
-    return build_candidate_identity_context(
+    context = build_candidate_identity_context(
         action_space_version="stage2_layerwise_12x6_v1",
         registry_hash=sha256_json(fusion_map),
         max_sfs_hash=sha256_json(max_sfs),
@@ -3610,6 +3612,11 @@ def _build_layerwise_candidate_identity_context(
         threshold_policy_hash=sha256_json(threshold_policy),
         mask_schedule_hash=sha256_json(schedule),
     )
+    return bind_layerwise_candidate_identity(
+        context,
+        K_LEVELS,
+        LAYERWISE_COST_MODEL_REVISION,
+    )
 
 
 def _run_layerwise_training_branch(
@@ -3627,6 +3634,7 @@ def _run_layerwise_training_branch(
         baseline_preflight_metrics: Mapping[str, Any],
         status: Any,
         resume_checkpoint_path: Any,
+        run_lock: Any,
         log: Callable[[str], None],
         ) -> Dict[str, Any]:
     """Run Task-7 layerwise PPO without entering legacy block scaffolds."""
@@ -3639,17 +3647,27 @@ def _run_layerwise_training_branch(
         )
     bullet = "*"
 
-    from .candidate_store import CandidateStore
+    from .candidate_store import CandidateStore, sha256_json
     from .layerwise_env import BLBStage2LayerwiseEnv
     from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
-    from .layerwise_action import K_LEVELS as LAYERWISE_K_LEVELS
+    from .layerwise_action import (
+        BLOCK4_FUSION_COST_UNIT,
+        K_LEVELS as LAYERWISE_K_LEVELS,
+        LAYERWISE_COST_MODEL_REVISION,
+        MAX_VARIABLE_COST_UNITS,
+        TRUNCATION_COST_UNIT_PER_BIT,
+    )
     from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_runner import (
         _PROBABILITY_FIELDS,
         _to_plain_mapping,
+        build_layerwise_run_context,
+        CheckpointFileFingerprintTracker,
         initialize_layerwise_policy,
         strict_rank_key,
         train_layerwise,
+        validate_fresh_layerwise_run_state,
+        validate_layerwise_checkpoint_metadata,
     )
     from .persistence import write_training_curves
     from .runner import _build_legacy_compatible_best_noise_config
@@ -3658,7 +3676,8 @@ def _run_layerwise_training_branch(
     layerwise_manifest_path = os.path.join(
         blb_progress_dir, "layerwise_run_manifest.json",
     )
-    algorithm_revision = "factorized_slot_credit_v2"
+    algorithm_revision = "factorized_slot_credit_v4"
+    rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
     layerwise_entropy_schedule = {
         "kind": "cosine",
         "start": float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
@@ -3669,27 +3688,12 @@ def _run_layerwise_training_branch(
     }
     layerwise_ppo_mode = {
         "factorized_actor_clip": True,
+        "behavior_log_prob_source": "sampling_time_per_slot_v1",
         "actor_credit_mode": "shared_constraint_plus_own_cost",
+        "actor_advantage_normalization": "per_slot_center_shared_scale_v1",
         "entropy_average_active_slots": True,
         "entropy_normalize_active_slots": True,
     }
-    run_manifest = {
-        "schema_version": "stage2_layerwise_robust_run_v1",
-        "status": "running",
-        "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
-        "algorithm_revision": algorithm_revision,
-        "profile": str(train_cfg.profile),
-        "decision_granularity": "layer",
-        "reward_design": "robust_constrained",
-        "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
-        "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
-        "planned_episodes": int(train_cfg.total_episodes),
-        "entropy_schedule": layerwise_entropy_schedule,
-        "ppo_mode": layerwise_ppo_mode,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
-    write_strict_json_file(layerwise_manifest_path, run_manifest)
-
     layerwise_env = BLBStage2LayerwiseEnv(
         base_env=base_env,
         fusion_map=fusion_map,
@@ -3706,72 +3710,6 @@ def _run_layerwise_training_branch(
         step_layer_indices=tuple(range(12)),
         step_block_indices=(3,) * 12,
     )
-    torch.manual_seed(int(train_cfg.seed))
-    np.random.seed(int(train_cfg.seed) % (2**32))
-    random.seed(int(train_cfg.seed))
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
-    initialize_layerwise_policy(policy)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
-    rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
-    save_path = os.path.join(blb_progress_dir, "blb_stage2_rl_checkpoint_live.pt")
-    candidate_store_path = os.path.join(blb_progress_dir, "candidate_store.jsonl")
-    effective_resume_path = resume_checkpoint_path
-    if not effective_resume_path and os.path.isfile(save_path):
-        effective_resume_path = save_path
-        log(f"  {bullet} 检测到 layerwise live checkpoint，自动 resume: {save_path}")
-    start_episode = 0
-    resumed_best: Dict[str, Any] = {}
-    resumed_convergence_state: Dict[str, Any] = {}
-    resumed_candidate_store_size: Optional[int] = None
-    resumed_diagnostics_jsonl_sizes: Optional[Mapping[str, Any]] = None
-    planned_total_episodes = int(train_cfg.total_episodes)
-    if effective_resume_path and os.path.isfile(effective_resume_path):
-        try:
-            checkpoint = torch.load(
-                effective_resume_path, map_location=device, weights_only=False,
-            )
-        except TypeError:
-            checkpoint = torch.load(effective_resume_path, map_location=device)
-        checkpoint_variant = str(checkpoint.get("rl_variant", "") or "")
-        if checkpoint_variant != rl_variant:
-            raise RuntimeError(
-                f"layerwise checkpoint variant {checkpoint_variant!r} != {rl_variant!r}"
-            )
-        checkpoint_revision = str(checkpoint.get("algorithm_revision", "") or "")
-        if checkpoint_revision != algorithm_revision:
-            raise RuntimeError(
-                f"layerwise checkpoint algorithm revision {checkpoint_revision!r} "
-                f"!= {algorithm_revision!r}; start a fresh run"
-            )
-        policy.load_state_dict(checkpoint["policy"])
-        if checkpoint.get("policy_ppo_aux") is not None:
-            policy.load_ppo_aux_state_dict(checkpoint["policy_ppo_aux"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        if checkpoint.get("torch_rng_state") is not None:
-            torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
-        if torch.cuda.is_available() and checkpoint.get("cuda_rng_state_all") is not None:
-            torch.cuda.set_rng_state_all([
-                state.cpu() for state in checkpoint["cuda_rng_state_all"]
-            ])
-        if checkpoint.get("numpy_rng_state") is not None:
-            np.random.set_state(checkpoint["numpy_rng_state"])
-        if checkpoint.get("python_rng_state") is not None:
-            random.setstate(checkpoint["python_rng_state"])
-        start_episode = int(checkpoint.get("episode", 0))
-        resumed_best = dict(checkpoint.get("strict_best") or {})
-        resumed_convergence_state = dict(checkpoint.get("convergence_state") or {})
-        resumed_candidate_store_size = checkpoint.get("candidate_store_size")
-        resumed_diagnostics_jsonl_sizes = checkpoint.get("diagnostics_jsonl_sizes")
-        planned_total_episodes = int(checkpoint.get(
-            "planned_total_episodes", planned_total_episodes,
-        ))
-        log(f"  {bullet} layerwise resume @ episode {start_episode}")
-    if start_episode > int(train_cfg.total_episodes):
-        raise RuntimeError(
-            f"layerwise checkpoint episode {start_episode} exceeds requested "
-            f"total {int(train_cfg.total_episodes)}"
-        )
     ppo = SequentialPPOConfig(
         lr=float(train_cfg.ppo.lr),
         clip_range=float(train_cfg.ppo.clip_range),
@@ -3786,6 +3724,154 @@ def _run_layerwise_training_branch(
         entropy_average_active_slots=True,
         entropy_normalize_active_slots=True,
     )
+    algorithm_contract = {
+        "schema_version": "stage2_layerwise_algorithm_contract_v1",
+        "algorithm_revision": algorithm_revision,
+        "rl_variant": rl_variant,
+        "action_space_version": "stage2_layerwise_12x6_v1",
+        "decode_version": "layerwise_action_v1",
+        "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
+        "k_levels": [int(value) for value in LAYERWISE_K_LEVELS],
+        "cost_units": {
+            "block4_fusion": float(BLOCK4_FUSION_COST_UNIT),
+            "truncation_per_bit": float(TRUNCATION_COST_UNIT_PER_BIT),
+            "maximum": float(MAX_VARIABLE_COST_UNITS),
+        },
+        "policy": {
+            "state_dim": int(policy_cfg.state_dim),
+            "horizon": int(policy_cfg.horizon),
+            "max_step_dim": int(policy_cfg.max_step_dim),
+            "max_num_levels": int(policy_cfg.max_num_levels),
+        },
+        "ppo": asdict(ppo),
+        "rollout_size": int(train_cfg.rollout_size),
+        "ppo_mode": layerwise_ppo_mode,
+        "entropy_schedule": layerwise_entropy_schedule,
+        "persistence_protocol": "stable_parent_lock_incremental_fingerprint_v2",
+    }
+    algorithm_contract_hash = sha256_json(algorithm_contract)
+    identity_context = _build_layerwise_candidate_identity_context(
+        train_cfg=train_cfg,
+        evaluator=evaluator,
+        fusion_map=fusion_map,
+        max_sfs=max_sfs,
+        fixed_gelu=fixed_gelu,
+        fixed_softmax=fixed_softmax,
+        robust_reference=robust_reference,
+        schedule=layerwise_env.schedule,
+        static_skeletons_baseline=static_skeletons_baseline,
+    )
+    run_context = build_layerwise_run_context(
+        identity_context,
+        algorithm_contract_hash,
+        {
+            "online_trials_per_episode": int(train_cfg.num_trials_per_step),
+            "promotion_validation_trials": int(
+                getattr(train_cfg, "promotion_validation_trials", 25)
+            ),
+            "final_selection_validation_trials": int(
+                getattr(train_cfg, "final_selection_validation_trials", 25)
+            ),
+            "baseline_groups": int(getattr(train_cfg, "baseline_groups", 5)),
+            "baseline_trials_per_group": int(
+                getattr(train_cfg, "baseline_trials_per_group", 5)
+            ),
+            "constraint_bootstrap_samples": int(
+                getattr(train_cfg, "constraint_bootstrap_samples", 4096)
+            ),
+            "online_constraint_probability": float(
+                getattr(train_cfg, "online_constraint_probability", 0.50)
+            ),
+            "promotion_constraint_probability": float(
+                getattr(train_cfg, "promotion_constraint_probability", 0.80)
+            ),
+            "final_constraint_probability": float(
+                getattr(train_cfg, "final_constraint_probability", 0.95)
+            ),
+        },
+    )
+    run_context_hash = sha256_json(run_context)
+    run_lock.bind_context(run_context_hash)
+    run_manifest = {
+        "schema_version": "stage2_layerwise_robust_run_v1",
+        "status": "running",
+        "rl_variant": rl_variant,
+        "algorithm_revision": algorithm_revision,
+        "algorithm_contract": algorithm_contract,
+        "algorithm_contract_hash": algorithm_contract_hash,
+        "run_context": run_context,
+        "run_context_hash": run_context_hash,
+        "profile": str(train_cfg.profile),
+        "decision_granularity": "layer",
+        "reward_design": "robust_constrained",
+        "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
+        "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
+        "planned_episodes": int(train_cfg.total_episodes),
+        "entropy_schedule": layerwise_entropy_schedule,
+        "ppo_mode": layerwise_ppo_mode,
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    torch.manual_seed(int(train_cfg.seed))
+    np.random.seed(int(train_cfg.seed) % (2**32))
+    random.seed(int(train_cfg.seed))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
+    initialize_layerwise_policy(policy)
+    optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
+    save_path = os.path.join(blb_progress_dir, "blb_stage2_rl_checkpoint_live.pt")
+    candidate_store_path = os.path.join(blb_progress_dir, "candidate_store.jsonl")
+    effective_resume_path = resume_checkpoint_path
+    if not effective_resume_path and os.path.isfile(save_path):
+        effective_resume_path = save_path
+        log(f"  {bullet} 检测到 layerwise live checkpoint，自动 resume: {save_path}")
+    start_episode = 0
+    resumed_best: Dict[str, Any] = {}
+    resumed_convergence_state: Dict[str, Any] = {}
+    resumed_candidate_store_size: Optional[int] = None
+    resumed_diagnostics_jsonl_sizes: Optional[Mapping[str, Any]] = None
+    resumed_store_file_fingerprints: Optional[Mapping[str, Any]] = None
+    resumed_structured_run_id: Optional[str] = None
+    resumed_ppo_update_count = 0
+    resume_checkpoint: Optional[Mapping[str, Any]] = None
+    planned_total_episodes = int(train_cfg.total_episodes)
+    if effective_resume_path and os.path.isfile(effective_resume_path):
+        try:
+            checkpoint = torch.load(
+                effective_resume_path, map_location=device, weights_only=False,
+            )
+        except TypeError:
+            checkpoint = torch.load(effective_resume_path, map_location=device)
+        validate_layerwise_checkpoint_metadata(
+            checkpoint,
+            rl_variant=rl_variant,
+            algorithm_revision=algorithm_revision,
+            algorithm_contract_hash=algorithm_contract_hash,
+            run_context_hash=run_context_hash,
+        )
+        resume_checkpoint = checkpoint
+        start_episode = int(checkpoint.get("episode", 0))
+        resumed_best = dict(checkpoint.get("strict_best") or {})
+        resumed_convergence_state = dict(checkpoint.get("convergence_state") or {})
+        resumed_candidate_store_size = checkpoint.get("candidate_store_size")
+        resumed_diagnostics_jsonl_sizes = checkpoint.get("diagnostics_jsonl_sizes")
+        resumed_store_file_fingerprints = checkpoint.get("store_file_fingerprints")
+        resumed_structured_run_id = str(
+            checkpoint.get("structured_run_id", "") or ""
+        )
+        if checkpoint.get("ppo_update_count") is None:
+            raise RuntimeError("layerwise checkpoint PPO update count is missing")
+        resumed_ppo_update_count = int(checkpoint.get("ppo_update_count"))
+        if resumed_ppo_update_count < 0:
+            raise RuntimeError("layerwise checkpoint PPO update count is invalid")
+        planned_total_episodes = int(checkpoint.get(
+            "planned_total_episodes", planned_total_episodes,
+        ))
+        log(f"  {bullet} layerwise resume @ episode {start_episode}")
+    if start_episode > int(train_cfg.total_episodes):
+        raise RuntimeError(
+            f"layerwise checkpoint episode {start_episode} exceeds requested "
+            f"total {int(train_cfg.total_episodes)}"
+        )
     layerwise_train_cfg = SequentialTrainConfig(
         total_episodes=max(0, int(train_cfg.total_episodes) - int(start_episode)),
         update_every_n_episodes=max(1, int(train_cfg.rollout_size)),
@@ -3814,22 +3900,7 @@ def _run_layerwise_training_branch(
         ),
         reward_design="robust_constrained",
     )
-    identity_context = _build_layerwise_candidate_identity_context(
-        train_cfg=train_cfg,
-        evaluator=evaluator,
-        fusion_map=fusion_map,
-        max_sfs=max_sfs,
-        fixed_gelu=fixed_gelu,
-        fixed_softmax=fixed_softmax,
-        robust_reference=robust_reference,
-        schedule=layerwise_env.schedule,
-        static_skeletons_baseline=static_skeletons_baseline,
-    )
     candidate_store = CandidateStore(candidate_store_path)
-    if resumed_candidate_store_size is not None:
-        candidate_store.recover_to_checkpoint_size(
-            int(resumed_candidate_store_size),
-        )
     from jsonl_utils import iter_jsonl
 
     diagnostics_dir = os.path.join(blb_progress_dir, "diagnostics")
@@ -3840,9 +3911,24 @@ def _run_layerwise_training_branch(
 
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     run_id_marker = os.path.join(blb_progress_dir, "rl_data_points_run_id.txt")
+    if resume_checkpoint is None:
+        validate_fresh_layerwise_run_state(
+            run_id_marker,
+            (
+                candidate_store.path,
+                existing_episode_path,
+                existing_update_path,
+                layerwise_manifest_path,
+            ),
+        )
     if os.path.isfile(run_id_marker):
         with open(run_id_marker, encoding="utf-8") as handle:
             structured_run_id = handle.read().strip()
+    elif resume_checkpoint is not None:
+        raise RuntimeError(
+            "layerwise checkpoint structured run-id marker is missing; "
+            "restore the complete run directory or start a fresh run"
+        )
     else:
         run_source = (
             str(getattr(evaluator, "run_output_dir", "") or "").strip()
@@ -3889,9 +3975,77 @@ def _run_layerwise_training_branch(
         data_point_writer=stage2_data_writer,
         strict_writes=True,
     )
+
+    def checkpoint_file_specs(
+            candidate_size: Any,
+            diagnostics_sizes: Any,
+            ) -> Dict[str, Tuple[Any, int]]:
+        if candidate_size is None:
+            raise RuntimeError("layerwise checkpoint candidate_store_size is missing")
+        sizes = dict(diagnostics_sizes or {})
+        primary = dict(sizes.get("primary") or {})
+        structured = dict(sizes.get("structured") or {})
+        specs: Dict[str, Tuple[Any, int]] = {
+            "candidate_store.jsonl": (candidate_store.path, int(candidate_size)),
+            "primary/episodes.jsonl": (
+                diag_recorder.episodes_path,
+                int(primary.get("episodes.jsonl", 0)),
+            ),
+            "primary/ppo_updates.jsonl": (
+                diag_recorder.ppo_updates_path,
+                int(primary.get("ppo_updates.jsonl", 0)),
+            ),
+            "structured/episodes.jsonl": (
+                stage2_data_writer.jsonl_path("episodes.jsonl"),
+                int(structured.get("episodes.jsonl", 0)),
+            ),
+            "structured/ppo_updates.jsonl": (
+                stage2_data_writer.jsonl_path("ppo_updates.jsonl"),
+                int(structured.get("ppo_updates.jsonl", 0)),
+            ),
+        }
+        return specs
+
+    fingerprint_tracker = CheckpointFileFingerprintTracker()
+    if resume_checkpoint is not None:
+        if resumed_structured_run_id != structured_run_id:
+            raise RuntimeError(
+                "layerwise checkpoint structured run-id mismatch; "
+                "restore the complete run directory or start a fresh run"
+            )
+        resume_file_specs = checkpoint_file_specs(
+            resumed_candidate_store_size,
+            resumed_diagnostics_jsonl_sizes,
+        )
+        fingerprint_tracker.validate_and_seed(
+            dict(resumed_store_file_fingerprints or {}),
+            resume_file_specs,
+        )
+        policy.load_state_dict(resume_checkpoint["policy"])
+        if resume_checkpoint.get("policy_ppo_aux") is not None:
+            policy.load_ppo_aux_state_dict(resume_checkpoint["policy_ppo_aux"])
+        optimizer.load_state_dict(resume_checkpoint["optimizer"])
+        candidate_store.recover_to_checkpoint_size(
+            int(resumed_candidate_store_size),
+        )
     diag_recorder.recover_to_checkpoint_sizes(
         resumed_diagnostics_jsonl_sizes,
     )
+    if resume_checkpoint is not None:
+        if resume_checkpoint.get("torch_rng_state") is not None:
+            torch.set_rng_state(resume_checkpoint["torch_rng_state"].cpu())
+        if (
+                torch.cuda.is_available()
+                and resume_checkpoint.get("cuda_rng_state_all") is not None
+        ):
+            torch.cuda.set_rng_state_all([
+                state.cpu() for state in resume_checkpoint["cuda_rng_state_all"]
+            ])
+        if resume_checkpoint.get("numpy_rng_state") is not None:
+            np.random.set_state(resume_checkpoint["numpy_rng_state"])
+        if resume_checkpoint.get("python_rng_state") is not None:
+            random.setstate(resume_checkpoint["python_rng_state"])
+    write_strict_json_file(layerwise_manifest_path, run_manifest)
     diag_recorder.set_baseline_action_vec(layerwise_env.pending_full_vector)
     diag_recorder.restore_existing()
     if os.path.isfile(existing_episode_path):
@@ -3926,6 +4080,10 @@ def _run_layerwise_training_branch(
         "rl_variant": rl_variant,
         "decision_granularity": "layer",
         "reward_design": "robust_constrained",
+        "algorithm_revision": algorithm_revision,
+        "algorithm_contract_hash": algorithm_contract_hash,
+        "run_context_hash": run_context_hash,
+        "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
         "total_episodes_planned": int(train_cfg.total_episodes),
         "rollout_size": int(train_cfg.rollout_size),
         "ppo_lr": float(train_cfg.ppo.lr),
@@ -3954,7 +4112,7 @@ def _run_layerwise_training_branch(
     strict_best: Dict[str, Any] = dict(resumed_best)
     if resumed_best.get("rank_key"):
         best_rank = tuple(float(value) for value in resumed_best["rank_key"])
-    ppo_update_counter = start_episode // max(1, int(train_cfg.rollout_size))
+    ppo_update_counter = int(resumed_ppo_update_count)
     started_at = time.time()
 
     def build_reloadable_best_group(best_payload: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
@@ -3997,6 +4155,14 @@ def _run_layerwise_training_branch(
         best_payload = dict(strict_best or {})
         checkpoint_best_action = best_payload.get("full_vector")
         checkpoint_best_group = build_reloadable_best_group(best_payload)
+        candidate_store_size = (
+            candidate_store.path.stat().st_size
+            if candidate_store.path.exists() else 0
+        )
+        diagnostics_jsonl_sizes = diag_recorder.committed_jsonl_sizes()
+        store_file_fingerprints = fingerprint_tracker.fingerprints(
+            checkpoint_file_specs(candidate_store_size, diagnostics_jsonl_sizes)
+        )
         checkpoint = {
             "policy": policy.state_dict(),
             "policy_ppo_aux": policy.ppo_aux_state_dict(),
@@ -4010,11 +4176,11 @@ def _run_layerwise_training_branch(
             "profile": str(train_cfg.profile),
             "convergence_state": dict(convergence_state or {}),
             "planned_total_episodes": int(planned_total_episodes),
-            "candidate_store_size": (
-                candidate_store.path.stat().st_size
-                if candidate_store.path.exists() else 0
-            ),
-            "diagnostics_jsonl_sizes": diag_recorder.committed_jsonl_sizes(),
+            "candidate_store_size": int(candidate_store_size),
+            "diagnostics_jsonl_sizes": diagnostics_jsonl_sizes,
+            "store_file_fingerprints": store_file_fingerprints,
+            "structured_run_id": structured_run_id,
+            "ppo_update_count": int(ppo_update_counter),
             "torch_rng_state": torch.get_rng_state(),
             "cuda_rng_state_all": (
                 torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
@@ -4023,10 +4189,21 @@ def _run_layerwise_training_branch(
             "python_rng_state": random.getstate(),
             "rl_variant": rl_variant,
             "algorithm_revision": algorithm_revision,
+            "algorithm_contract": algorithm_contract,
+            "algorithm_contract_hash": algorithm_contract_hash,
+            "run_context": run_context,
+            "run_context_hash": run_context_hash,
         }
         tmp_path = save_path + ".tmp"
         torch.save(checkpoint, tmp_path)
         os.replace(tmp_path, save_path)
+
+    if resume_checkpoint is None:
+        save_layerwise_checkpoint(
+            completed=0,
+            strict_best=strict_best,
+            convergence_state={},
+        )
 
     def on_layerwise_episode(record: Any) -> None:
         nonlocal best_rank
@@ -4324,6 +4501,8 @@ def _run_layerwise_training_branch(
         "status": "completed",
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
+        "algorithm_contract_hash": algorithm_contract_hash,
+        "run_context_hash": run_context_hash,
         "completed_episodes": int(summary.get("completed_episodes", start_episode)),
         "best_action_matrix": summary.get("best_action_matrix"),
         "best_full_vector": summary.get("best_full_vector"),
@@ -4472,6 +4651,8 @@ def _run_layerwise_training_branch(
         "blb_v3_total_episodes": int(train_cfg.total_episodes),
         "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
         "algorithm_revision": algorithm_revision,
+        "algorithm_contract_hash": algorithm_contract_hash,
+        "run_context_hash": run_context_hash,
         "selection_diagnostics": {
             "selection_mode": "layerwise_robust_variable_cost_strict",
             "best_action_vec": best_full_vector,
@@ -4499,6 +4680,34 @@ def _run_layerwise_training_branch(
 
 def run_sequential_via_runner(
         *,
+        runner,
+        train_cfg,
+        fixed_gelu,
+        fixed_softmax,
+        fixed_label,
+        fixed_source,
+        resume_checkpoint_path=None,
+        ) -> Dict[str, Any]:
+    """Lock the complete Stage-2 run before any probe or persistent write."""
+    from .layerwise_runner import LayerwiseRunLock
+    from .runner import resolve_blb_persistence_dir
+
+    blb_progress_dir = resolve_blb_persistence_dir(runner.evaluator)
+    with LayerwiseRunLock(blb_progress_dir) as run_lock:
+        return _run_sequential_via_runner_locked(
+            runner=runner,
+            train_cfg=train_cfg,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            fixed_label=fixed_label,
+            fixed_source=fixed_source,
+            resume_checkpoint_path=resume_checkpoint_path,
+            run_lock=run_lock,
+        )
+
+
+def _run_sequential_via_runner_locked(
+        *,
         runner,                           # BLBStage2RLRunner (avoid circular import)
         train_cfg,                        # BLBStage2TrainConfig
         fixed_gelu,
@@ -4506,6 +4715,7 @@ def run_sequential_via_runner(
         fixed_label,
         fixed_source,
         resume_checkpoint_path=None,
+        run_lock: Any,
         ) -> Dict[str, Any]:
     """Drive the sequential RL pipeline using BLBStage2RLRunner's setup helpers.
 
@@ -5157,6 +5367,7 @@ def run_sequential_via_runner(
             baseline_preflight_metrics=baseline_preflight_metrics,
             status=status,
             resume_checkpoint_path=resume_checkpoint_path,
+            run_lock=run_lock,
             log=log,
         )
     seq_env = BLBStage2SequentialEnv(base_env=base_env, env_cfg=seq_env_cfg, fusion_map=fusion_map)
