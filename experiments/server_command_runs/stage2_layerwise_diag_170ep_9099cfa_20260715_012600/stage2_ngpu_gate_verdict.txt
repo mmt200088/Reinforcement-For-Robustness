@@ -1,0 +1,93 @@
+==== Stage-2 N-GPU A/B Verdict ====
+1GPU episodes: 170
+NGPU episodes: 170
+quality/effect equality: FAIL
+strict diagnostic equality: DIFF
+PPO update equality: PASS
+PPO update counts: 1GPU=2 NGPU=2
+wall source: wall file
+1GPU wall_s: 582.000
+NGPU wall_s: 331.000
+1GPU episodes/hour: 1051.546
+NGPU episodes/hour: 1848.943
+speedup: 1.758x
+NGPU distinct probe devices: 5
+speedup/device_count: 0.352
+NGPU device episode balance min/max: 170/170
+NGPU probe critical-path lower bound_s: 223.534
+NGPU probe-bound ceiling episodes/hour: 2737.838
+NGPU wall/probe_bound ratio: 1.481
+NGPU probe ceiling utilization: 0.675
+NGPU component critical-path lower bound_s: 223.534
+NGPU component-bound ceiling episodes/hour: 2737.838
+NGPU wall/component_bound ratio: 1.481
+NGPU component ceiling utilization: 0.675
+NGPU policy diagnostic critical-path sum_s: 0.000
+1GPU terminal probe mean_s/episode: 2.631
+NGPU terminal probe mean_s/episode: 1.315
+NGPU/1GPU terminal probe mean ratio: 0.500
+1GPU policy rollout mean_s/episode: 0.000
+NGPU policy rollout mean_s/episode: 0.000
+NGPU/1GPU policy rollout mean ratio: n/a
+NGPU worker-local probe noise scopes detected: False
+NGPU worker-local CUDA probe streams detected: False
+NGPU cpu policy mode detected: False
+
+1GPU device breakdown:
+  cuda:0: {'episodes': 170.0, 'trials': 850.0, 'probe_s': 447.2897661055904, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 447.2897661055904}
+NGPU device breakdown:
+  cuda:0: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 223.53403626498766, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 223.53403626498766}
+  cuda:1: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 223.53403626498766, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 223.53403626498766}
+  cuda:2: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 223.53403626498766, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 223.53403626498766}
+  cuda:3: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 223.53403626498766, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 223.53403626498766}
+  cuda:4: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 223.53403626498766, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 223.53403626498766}
+
+1GPU rollout timing log: n/a
+NGPU rollout timing log: n/a
+
+first 20 equality diffs:
+  - episode[0].terminal_probe_clear_skipped: False != True
+  - episode[1].terminal_probe_clear_skipped: False != True
+  - episode[2].terminal_probe_clear_skipped: False != True
+  - episode[3].terminal_probe_clear_skipped: False != True
+  - episode[4].terminal_probe_clear_skipped: False != True
+  - episode[5].terminal_probe_clear_skipped: False != True
+  - episode[6].terminal_probe_clear_skipped: False != True
+  - episode[7].terminal_probe_clear_skipped: False != True
+  - episode[8].terminal_probe_clear_skipped: False != True
+  - episode[9].terminal_probe_clear_skipped: False != True
+  - episode[10].terminal_probe_clear_skipped: False != True
+  - episode[11].terminal_probe_clear_skipped: False != True
+  - episode[12].terminal_probe_clear_skipped: False != True
+  - episode[13].terminal_probe_clear_skipped: False != True
+  - episode[14].terminal_probe_clear_skipped: False != True
+  - episode[15].terminal_probe_clear_skipped: False != True
+  - episode[16].terminal_probe_clear_skipped: False != True
+  - episode[17].terminal_probe_clear_skipped: False != True
+  - episode[18].terminal_probe_clear_skipped: False != True
+  - episode[19].terminal_probe_clear_skipped: False != True
+
+first 20 diagnostic-only diffs:
+  - episode[0].terminal_probe_clear_skipped: False != True
+  - episode[1].terminal_probe_clear_skipped: False != True
+  - episode[2].terminal_probe_clear_skipped: False != True
+  - episode[3].terminal_probe_clear_skipped: False != True
+  - episode[4].terminal_probe_clear_skipped: False != True
+  - episode[5].terminal_probe_clear_skipped: False != True
+  - episode[6].terminal_probe_clear_skipped: False != True
+  - episode[7].terminal_probe_clear_skipped: False != True
+  - episode[8].terminal_probe_clear_skipped: False != True
+  - episode[9].terminal_probe_clear_skipped: False != True
+  - episode[10].terminal_probe_clear_skipped: False != True
+  - episode[11].terminal_probe_clear_skipped: False != True
+  - episode[12].terminal_probe_clear_skipped: False != True
+  - episode[13].terminal_probe_clear_skipped: False != True
+  - episode[14].terminal_probe_clear_skipped: False != True
+  - episode[15].terminal_probe_clear_skipped: False != True
+  - episode[16].terminal_probe_clear_skipped: False != True
+  - episode[17].terminal_probe_clear_skipped: False != True
+  - episode[18].terminal_probe_clear_skipped: False != True
+  - episode[19].terminal_probe_clear_skipped: False != True
+
+[FATAL] equality requirement failed
+[OK] speedup >= 0.000x

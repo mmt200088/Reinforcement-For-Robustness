@@ -1,0 +1,108 @@
+{
+  "many": {
+    "per_step_optimizer_wall_seconds": {
+      "count": 170,
+      "max": 0.0,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "sum": 0.0
+    },
+    "policy_rollout_wall_seconds": {
+      "count": 170,
+      "max": 0.0,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "sum": 0.0
+    },
+    "terminal_cost_eval_wall_seconds": {
+      "count": 170,
+      "max": 0.28747480013407767,
+      "mean": 0.014783718021970023,
+      "median": 0.008886568481102586,
+      "min": 0.00836442899890244,
+      "sum": 2.513232063734904
+    },
+    "terminal_probe_clear_wall_seconds": {
+      "count": 170,
+      "max": 0.0,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "sum": 0.0
+    },
+    "terminal_probe_install_wall_seconds": {
+      "count": 170,
+      "max": 0.030048476066440344,
+      "mean": 0.02426027898704085,
+      "median": 0.02405931707471609,
+      "min": 0.01893480704165995,
+      "sum": 4.124247427796945
+    },
+    "terminal_probe_wall_seconds": {
+      "count": 170,
+      "max": 1.4821397908963263,
+      "mean": 1.314906095676398,
+      "median": 1.3177838299889117,
+      "min": 1.1399085009470582,
+      "sum": 223.53403626498766
+    }
+  },
+  "one": {
+    "per_step_optimizer_wall_seconds": {
+      "count": 170,
+      "max": 0.0,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "sum": 0.0
+    },
+    "policy_rollout_wall_seconds": {
+      "count": 170,
+      "max": 0.0,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "sum": 0.0
+    },
+    "terminal_cost_eval_wall_seconds": {
+      "count": 170,
+      "max": 0.25339754298329353,
+      "mean": 0.010085570236996693,
+      "median": 0.008568583405576646,
+      "min": 0.008276866981759667,
+      "sum": 1.7145469402894378
+    },
+    "terminal_probe_clear_wall_seconds": {
+      "count": 170,
+      "max": 0.0009658399503678083,
+      "mean": 0.0007245091228362391,
+      "median": 0.0007054200395941734,
+      "min": 0.0006800999399274588,
+      "sum": 0.12316655088216066
+    },
+    "terminal_probe_install_wall_seconds": {
+      "count": 170,
+      "max": 0.30707220383919775,
+      "mean": 0.004937784332672463,
+      "median": 0.003068839432671666,
+      "min": 0.0029926090501248837,
+      "sum": 0.8394233365543187
+    },
+    "terminal_probe_wall_seconds": {
+      "count": 170,
+      "max": 2.6339686261489987,
+      "mean": 2.6311162712093554,
+      "median": 2.631434536073357,
+      "min": 2.6256923810578883,
+      "sum": 447.2897661055904
+    }
+  },
+  "source_sha": "9099cfa38453b264a50e5d99fb7aaa67cc38acd8",
+  "speedup": 1.758308157099698,
+  "wall_seconds": {
+    "many": 331.0,
+    "one": 582.0
+  }
+}

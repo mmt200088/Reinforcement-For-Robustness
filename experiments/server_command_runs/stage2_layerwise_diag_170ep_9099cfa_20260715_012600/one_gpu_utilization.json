@@ -1,0 +1,103 @@
+{
+  "episodes": 170,
+  "gpu_utilization": {
+    "cuda:0": {
+      "active_sample_rate": 0.9477611940298507,
+      "max_memory_mib": 3091.0,
+      "max_util_pct": 99.0,
+      "mean_util_pct": 88.70149253731343,
+      "samples": 268
+    },
+    "cuda:1": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 0.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 268
+    },
+    "cuda:2": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 0.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 268
+    },
+    "cuda:3": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 0.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 268
+    },
+    "cuda:4": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 0.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 268
+    }
+  },
+  "hot_path_wall_seconds": {},
+  "idle_visible_devices": [],
+  "policy_rollout_wall_seconds": {
+    "count": 170,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "probe_device_sets": [
+    [
+      "cuda:0"
+    ]
+  ],
+  "probe_episode_counts_by_device": {
+    "cuda:0": 170
+  },
+  "probe_trial_counts_by_device": {
+    "cuda:0": 850
+  },
+  "probe_trial_splits": [
+    [
+      5
+    ]
+  ],
+  "probe_wall_seconds_by_device": {
+    "cuda:0": {
+      "count": 170,
+      "max": 2.6339686261489987,
+      "mean": 2.6311162712093554,
+      "min": 2.6256923810578883
+    }
+  },
+  "recommendations": [
+    "Check whether reward probes are balanced across visible GPUs."
+  ],
+  "replan_wall_seconds": {
+    "count": 170,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "sampled_active_devices": [
+    "cuda:0"
+  ],
+  "terminal_probe_wall_seconds": {
+    "count": 170,
+    "max": 2.6339686261489987,
+    "mean": 2.6311162712093554,
+    "min": 2.6256923810578883
+  },
+  "unattributed_visible_devices": [],
+  "used_probe_devices": [
+    "cuda:0"
+  ],
+  "visible_devices": [
+    "cuda:0"
+  ],
+  "warnings": [
+    "cuda:1 max utilization 0.0% below 10.0%.",
+    "cuda:2 max utilization 0.0% below 10.0%.",
+    "cuda:3 max utilization 0.0% below 10.0%.",
+    "cuda:4 max utilization 0.0% below 10.0%."
+  ]
+}

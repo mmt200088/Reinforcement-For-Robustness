@@ -128,6 +128,24 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `experiments/server_command_runs/stage2_ngpu_seed_equality_170ep_14187ee_20260715_001107/`,
   with both structured raw mirrors under
   `rl_training_data_points/stage2/bert-base/mrpc/`.
+- Stage-2 layerwise timing diagnosis, added 2026-07-15: source `9099cfa`
+  exposed the environment's existing probe/install/clear/cost timings through
+  the layerwise episode records and passed all 40 layerwise-runner tests on the
+  server. A real 170-episode A/B then preserved exact episode research outputs
+  and both PPO updates after excluding execution diagnostics. Wall time was
+  `582s` on one RTX 5090 and `331s` on five (`1.758x`). The primary bottleneck
+  is now measured: five sequential trials take `2.6311s` per episode on one
+  GPU, while one trial on each of five GPUs still takes `1.3149s` because the
+  replicas are driven concurrently by Python threads. Multi-GPU install is
+  only `0.0243s` per episode (`4.12s` total), so do not optimize handler install
+  next. Target same-process threaded forward-dispatch contention, with
+  persistent per-GPU processes as the leading hypothesis, and retain exact
+  episode/PPO equality. The original comparator incorrectly treated the new
+  `terminal_probe_install_skipped` / `terminal_probe_clear_skipped` execution
+  diagnostics as research-output fields; classify them as diagnostics before
+  the next gate. Evidence is under
+  `experiments/server_command_runs/stage2_layerwise_diag_170ep_9099cfa_20260715_012600/`,
+  with both structured mirrors under `rl_training_data_points/`.
 - GPU activity-report rule, added 2026-07-13: do not infer that a visible GPU is
   idle solely because layerwise episode rows omit `terminal_probe_devices`.
   `scripts/gpu_utilization_report.py` must preserve probe attribution as a
