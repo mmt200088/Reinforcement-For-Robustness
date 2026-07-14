@@ -1283,7 +1283,7 @@ scope, shared-device locking, and CUDA stream ordering while keeping metric
 kernels and the single batched host synchronization outside the device lock.
 Source `87a57a1` passed 117 focused tests on the server.
 
-- [ ] **Step 3: Server A/B before defaults**
+- [x] **Step 3: Server A/B before defaults**
 
 Use `SERVER_COMMAND.md` to run 1GPU vs NGPU parity and speed checks. Promote a
 new default only when effect equality passes and wall-clock evidence improves.
@@ -1407,6 +1407,21 @@ only RL/A/B and GPU compute process. Evidence is under
 `experiments/server_command_runs/stage2_ab_gpu_coverage_passive_1dd466f_20260714/`.
 This validates the physical-coverage oracle on real telemetry but still does
 not supply the pending equality or wall-clock speed result.
+
+Final acceptance 2026-07-15: clean source `99b0995` completed a fresh,
+same-source 600-episode 1GPU-versus-5GPU A/B after the prior process released
+the hardware. Both sides completed 600 episodes and five PPO updates with
+exact quality/effect, strict-diagnostic, and PPO-update equality. Wall time
+fell from `1951s` to `521s` (`3.745x`), above the required `3.4x`; every GPU
+handled exactly 600 trials, with `69.02%`-`73.60%` sampled mean utilization.
+The final server gate also passed the complete CUDA-hidden pytest suite
+(`1611 passed, 8 skipped`) and the six-stage project audit (30/30 files, no
+missing evidence class). Compact evidence is under
+`experiments/server_command_runs/stage2_probe_process_final_600ep_99b0995_20260715/`,
+and both structured mirrors are under
+`rl_training_data_points/stage2/bert-base/mrpc/`. This result supersedes the
+historical red/pending notes above and closes this step without changing
+research semantics.
 
 ## Task 5: Rescale Optimizer and Fusion Map Runtime
 
