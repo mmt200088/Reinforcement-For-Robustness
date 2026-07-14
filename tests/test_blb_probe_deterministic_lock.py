@@ -35,7 +35,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
                     logits=_sample_independent_gaussian(reference, 1.0),
                 )
 
-        device = torch.device("cpu")
+        device = torch.device("cuda:0")
         batch = SimpleNamespace(
             input_ids=torch.zeros(8, 3, device=device, dtype=torch.long),
             attention_mask=torch.ones(8, 3, device=device, dtype=torch.long),
@@ -198,6 +198,10 @@ class DeterministicProbeLockTests(unittest.TestCase):
         )
         self.assertEqual(derive_mock.call_count, 3)
 
+    @unittest.skipIf(
+        torch is None or not torch.cuda.is_available(),
+        "CUDA is required for ProbeWorker deterministic-noise tests",
+    )
     def test_probe_worker_replays_independent_noise_for_same_trial_seed(self):
         worker = self._make_probe_worker()
 
@@ -206,6 +210,10 @@ class DeterministicProbeLockTests(unittest.TestCase):
 
         self.assertEqual(second, first)
 
+    @unittest.skipIf(
+        torch is None or not torch.cuda.is_available(),
+        "CUDA is required for ProbeWorker deterministic-noise tests",
+    )
     def test_probe_worker_does_not_mutate_global_rng_streams(self):
         worker = self._make_probe_worker()
         torch_state = torch.get_rng_state()
