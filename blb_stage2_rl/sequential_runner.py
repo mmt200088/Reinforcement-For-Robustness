@@ -4515,7 +4515,10 @@ def run_sequential_via_runner(
     )
     from .action_space import action_dims_for_config, describe_action_vector
     from .action_io import action_vec_to_slots_list
+    from .probe_runner import enable_cuda_reward_probe_fast_math
 
+    # Keep baseline and reward-probe kernels in the same mode for every GPU count.
+    enable_cuda_reward_probe_fast_math()
     ev = runner.evaluator
     robust_mode = (
         str(getattr(train_cfg, "reward_design", "")).strip().lower()
