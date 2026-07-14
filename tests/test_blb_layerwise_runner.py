@@ -302,21 +302,41 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             and node.name == "_run_layerwise_training_branch"
         )
         branch_source = ast.get_source_segment(source, branch)
-
-        for required in (
+        self.assertIn(
             "probe_diagnostics = _to_plain_mapping(record.probe_diagnostics)",
-            "terminal_probe_wall_seconds=float(probe_diagnostics.get(",
-            "terminal_probe_devices=[str(value) for value in (probe_diagnostics.get(",
-            "terminal_probe_trial_counts=[",
-            "terminal_probe_trial_indices=[",
-            "terminal_probe_speedup=float(probe_diagnostics.get(",
-            "terminal_cost_eval_wall_seconds=float(probe_diagnostics.get(",
-            "terminal_probe_install_wall_seconds=float(probe_diagnostics.get(",
-            "terminal_probe_clear_wall_seconds=float(probe_diagnostics.get(",
-            "terminal_probe_install_skipped=bool(probe_diagnostics.get(",
-            "terminal_probe_clear_skipped=bool(probe_diagnostics.get(",
-        ):
-            self.assertIn(required, branch_source)
+            branch_source,
+        )
+        callback = next(
+            node for node in branch.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "on_layerwise_episode"
+        )
+        episode_stats_call = next(
+            node for node in ast.walk(callback)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "EpisodeStats"
+        )
+        keyword_sources = {
+            keyword.arg: ast.unparse(keyword.value)
+            for keyword in episode_stats_call.keywords
+        }
+        expected_probe_keys = {
+            "terminal_probe_wall_seconds": "wall_seconds",
+            "terminal_probe_devices": "devices",
+            "terminal_probe_trial_counts": "per_worker_trial_counts",
+            "terminal_probe_trial_indices": "per_worker_trial_indices",
+            "terminal_probe_speedup": "speedup_vs_sequential",
+            "terminal_cost_eval_wall_seconds": "cost_eval_wall_seconds",
+            "terminal_probe_install_wall_seconds": "probe_install_wall_seconds",
+            "terminal_probe_clear_wall_seconds": "probe_clear_wall_seconds",
+            "terminal_probe_install_skipped": "probe_install_skipped",
+            "terminal_probe_clear_skipped": "probe_clear_skipped",
+        }
+        for field_name, probe_key in expected_probe_keys.items():
+            expression = keyword_sources[field_name]
+            self.assertIn("probe_diagnostics", expression)
+            self.assertIn(probe_key, expression)
 
     def test_layerwise_checkpoint_preserves_long_run_search_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
