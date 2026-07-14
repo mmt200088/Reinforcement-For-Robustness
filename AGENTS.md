@@ -140,10 +140,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   only `0.0243s` per episode (`4.12s` total), so do not optimize handler install
   next. Target same-process threaded forward-dispatch contention, with
   persistent per-GPU processes as the leading hypothesis, and retain exact
-  episode/PPO equality. The original comparator incorrectly treated the new
-  `terminal_probe_install_skipped` / `terminal_probe_clear_skipped` execution
-  diagnostics as research-output fields; classify them as diagnostics before
-  the next gate. Evidence is under
+  episode/PPO equality. Source `b413558` now classifies the new
+  `terminal_probe_install_skipped` / `terminal_probe_clear_skipped` fields as
+  execution diagnostics: the server passed all 13 comparator tests and replayed
+  this run with exact quality/effect, strict-diagnostic, and PPO equality PASS.
+  Comparator-fix evidence is under
+  `experiments/server_command_runs/stage2_probe_lifecycle_comparator_b413558_20260715/`.
+  The timing-run evidence is under
   `experiments/server_command_runs/stage2_layerwise_diag_170ep_9099cfa_20260715_012600/`,
   with both structured mirrors under `rl_training_data_points/`.
 - GPU activity-report rule, added 2026-07-13: do not infer that a visible GPU is
