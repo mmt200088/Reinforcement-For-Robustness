@@ -1,0 +1,93 @@
+{
+  "episodes": 170,
+  "gpu_utilization": {
+    "cuda:0": {
+      "active_sample_rate": 0.896774193548387,
+      "max_memory_mib": 3245.0,
+      "max_util_pct": 65.0,
+      "mean_util_pct": 30.329032258064515,
+      "samples": 155
+    },
+    "cuda:1": {
+      "active_sample_rate": 0.8064516129032258,
+      "max_memory_mib": 3065.0,
+      "max_util_pct": 62.0,
+      "mean_util_pct": 29.741935483870968,
+      "samples": 155
+    },
+    "cuda:2": {
+      "active_sample_rate": 0.7935483870967742,
+      "max_memory_mib": 3065.0,
+      "max_util_pct": 58.0,
+      "mean_util_pct": 30.258064516129032,
+      "samples": 155
+    },
+    "cuda:3": {
+      "active_sample_rate": 0.8193548387096774,
+      "max_memory_mib": 3065.0,
+      "max_util_pct": 61.0,
+      "mean_util_pct": 29.625806451612902,
+      "samples": 155
+    },
+    "cuda:4": {
+      "active_sample_rate": 0.8064516129032258,
+      "max_memory_mib": 3065.0,
+      "max_util_pct": 68.0,
+      "mean_util_pct": 28.38064516129032,
+      "samples": 155
+    }
+  },
+  "hot_path_wall_seconds": {},
+  "idle_visible_devices": [],
+  "policy_rollout_wall_seconds": {
+    "count": 170,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "probe_device_sets": [],
+  "probe_episode_counts_by_device": {},
+  "probe_trial_counts_by_device": {},
+  "probe_trial_splits": [],
+  "probe_wall_seconds_by_device": {},
+  "recommendations": [
+    "Enable terminal reward-probe diagnostics before judging GPU utilization."
+  ],
+  "replan_wall_seconds": {
+    "count": 170,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "sampled_active_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2",
+    "cuda:3",
+    "cuda:4"
+  ],
+  "terminal_probe_wall_seconds": {
+    "count": 170,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "unattributed_visible_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2",
+    "cuda:3",
+    "cuda:4"
+  ],
+  "used_probe_devices": [],
+  "visible_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2",
+    "cuda:3",
+    "cuda:4"
+  ],
+  "warnings": [
+    "No terminal_probe_devices were recorded in episode diagnostics."
+  ]
+}

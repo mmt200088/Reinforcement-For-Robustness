@@ -47,7 +47,7 @@ post-run artifacts without weakening the validation protocol.
 | P1 | Structured artifacts | Keep required `rl_training_data_points/`, `episodes.jsonl`, PPO diagnostics, and manifests complete while streaming verification/report generation. | `tests/test_rl_data_points.py`, `tests/test_stage2_persistent_output_verifier.py`, and generated evidence bundle checks. |
 | P2 | Rescale/fusion maps | Reuse session-loaded graph/baseline data, stream large map builds and summaries, and avoid parsing sidecars as maps. | `tests/test_rescale_optimizer_bridge_cache.py`, `tests/test_blb_fusion_count_map.py`, fusion-map report tests, and server build logs for large maps. |
 | P2 | Stage-1 rollout | Add or consume timing fields for per-worker rollout, cache hit rate, forward wall, and report write wall before changing worker defaults. | Stage-1 local semantics tests plus server 1GPU/4GPU speed and deterministic-result evidence. |
-| P2 | Stage-2 GPU scheduling | Fix the independent BLB-noise seed boundary exposed by the first strict A/B, measure the 5GPU host/setup hotspot, and rerun the same 600-episode 1GPU-versus-5GPU contract. | `stage2_ngpu_ab_compare.py`, exact episode/PPO equality, direct timing, GPU utilization reports, sampled activity on all five GPUs, and `>=3.4x` wall-clock speedup. |
+| P2 | Stage-2 GPU scheduling | Unify TF32/high matmul mode before both single- and multi-device baselines, propagate existing layerwise install/probe/clear timings, optimize the proven host/setup hotspot, and rerun the same 600-episode 1GPU-versus-5GPU contract. | `stage2_ngpu_ab_compare.py`, exact episode/PPO equality, direct timing, GPU utilization reports, sampled activity on all five GPUs, and `>=3.4x` wall-clock speedup. |
 
 ### Recent Cross-Flow Runtime Commits
 
@@ -92,14 +92,19 @@ about 95%. The plan/audit layer, artifact helpers, shared hot paths, Stage-1
 audit have landed. However, the isolated 600-episode Stage-2 gate converted the
 last unknown into two substantive blockers: multi-GPU BLB trials do not yet
 consume the recorded deterministic seeds, and the measured 5GPU speedup is
-only `1.922x` despite all five cards being active. Completion now requires a
-TDD seed-boundary fix, direct hot-path timing and optimization, then a fresh
-strict gate with exact episode/PPO equality and at least `3.4x` speedup.
+only `1.922x` despite all five cards being active. Source `14187ee` has since
+fixed and server-verified the dedicated BLB-noise seed boundary. A 170-episode
+follow-up still measured only `1.940x` and exposed a second equality boundary:
+the multi-device builder enables TF32/high matmul precision while the
+single-device path does not. Completion now requires one common fast-matmul
+mode, direct hot-path timing and optimization, then a fresh strict gate with
+exact episode/PPO equality and at least `3.4x` speedup.
 
 Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Stage-2 seeded 1GPU-versus-5GPU smoke (red) | `14187ee` | `experiments/server_command_runs/stage2_ngpu_seed_equality_170ep_14187ee_20260715_001107/` | Seed each worker's dedicated per-device BLB-noise generator without mutating global RNG state; 13 CUDA deterministic-lock tests, 37 focused tests, and exact `cuda:0`/`cuda:1` replay passed. The 170-episode full path remained red at `1.940x` and exposed unequal TF32/high-matmul modes before baseline evaluation; all five GPUs were active but averaged only 28.38%-30.33% utilization. |
 | Stage-2 strict 1GPU-versus-5GPU gate (red) | `ba8bb14` | `experiments/server_command_runs/stage2_ngpu_speed_ab_ba8bb14_20260714_223042/` | Run the isolated production 600-episode contract. All five GPUs were physically active, but the gate correctly failed: `1.922x` speedup, about 31% mean utilization per GPU in the 5GPU case, and episode/PPO divergence caused by the multi-GPU worker not reseeding the independent BLB-noise generator. This is diagnosis evidence, not completion evidence. |
 | Stage-2 A/B real telemetry coverage | `1dd466f` | `experiments/server_command_runs/stage2_ab_gpu_coverage_passive_1dd466f_20260714/` | Passively sample the active production process for 60 seconds and prove the strict physical-device gate recognizes all five RTX 5090s from real `nvidia-smi` activity even when episode device attribution is empty; PID `10089` remained the sole compute process. |
 | Stage-2 A/B physical-GPU coverage | `1b8fa08` | `experiments/server_command_runs/stage2_ab_gpu_coverage_1b8fa08_20260714/` | Count every device/trial in multi-device episode diagnostics and require `nvidia-smi` sampled activity on every requested physical GPU before a 1GPU/NGPU case can pass; 38 related tests and the full 1,602-test pytest gate passed without using the formal run's GPUs. |
@@ -1297,6 +1302,23 @@ real-GPU equality, add or consume direct install/probe timing, optimize the
 measured setup/host hotspot, and rerun this exact 600-episode contract. Red
 evidence is under
 `experiments/server_command_runs/stage2_ngpu_speed_ab_ba8bb14_20260714_223042/`.
+
+Seed-boundary progress 2026-07-15: source `14187ee` now reseeds the dedicated
+per-device BLB-noise generator in `ProbeWorker.run_trial()` without touching
+global PyTorch or NumPy RNG state. The server passed all 13 CUDA
+deterministic-lock tests, 37 focused probe/seed tests, and an exact same-seed
+replay across `cuda:0` and `cuda:1`. A 170-episode production smoke then took
+`642s` on one GPU and `331s` on five GPUs (`1.940x`). All five cards were
+sampled active, but their mean utilization remained only 28.38%-30.33%.
+Actions, trial seeds, accuracy, and F1 matched at episode 0; only loss differed
+by roughly `3e-5` to `8e-5` per trial. The remaining correctness boundary is
+that `build_probe_runner()` enables process-global TF32/high matmul precision
+only for the multi-device case, after the single-device path has already kept
+the default mode. Keep this step unchecked. TDD the common fast-matmul setup
+before any Stage-2 baseline/probe, rerun short exact equality, propagate the
+environment's existing component timings through layerwise records, then
+optimize the measured setup path. Evidence is under
+`experiments/server_command_runs/stage2_ngpu_seed_equality_170ep_14187ee_20260715_001107/`.
 
 Historical readiness status 2026-07-13: the new host exposes five RTX 5090s
 and PyTorch sees all five `sm_120` devices, so the former one-GPU hardware

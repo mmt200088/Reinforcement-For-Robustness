@@ -1,0 +1,73 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ DeterministicProbeLockTests.test_probe_worker_does_not_mutate_global_rng_streams _
+
+self = <tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests testMethod=test_probe_worker_does_not_mutate_global_rng_streams>
+
+    @unittest.skipIf(
+        torch is None or not torch.cuda.is_available(),
+        "CUDA is required for ProbeWorker deterministic-noise tests",
+    )
+    def test_probe_worker_does_not_mutate_global_rng_streams(self):
+        worker = self._make_probe_worker()
+        torch_state = torch.get_rng_state()
+        numpy_state = np.random.get_state()
+        try:
+            torch.manual_seed(2468)
+            expected_torch = torch.rand(8)
+            np.random.seed(1357)
+            expected_numpy = np.random.random(8)
+    
+            torch.manual_seed(2468)
+            np.random.seed(1357)
+            worker.run_trial(trial_idx=2, base_seed=67890)
+            actual_torch = torch.rand(8)
+            actual_numpy = np.random.random(8)
+        finally:
+            torch.set_rng_state(torch_state)
+            np.random.set_state(numpy_state)
+    
+>       self.assertTrue(torch.equal(actual_torch, expected_torch))
+E       AssertionError: False is not true
+
+tests/test_blb_probe_deterministic_lock.py:236: AssertionError
+_ DeterministicProbeLockTests.test_probe_worker_replays_independent_noise_for_same_trial_seed _
+
+self = <tests.test_blb_probe_deterministic_lock.DeterministicProbeLockTests testMethod=test_probe_worker_replays_independent_noise_for_same_trial_seed>
+
+    @unittest.skipIf(
+        torch is None or not torch.cuda.is_available(),
+        "CUDA is required for ProbeWorker deterministic-noise tests",
+    )
+    def test_probe_worker_replays_independent_noise_for_same_trial_seed(self):
+        worker = self._make_probe_worker()
+    
+        first = worker.run_trial(trial_idx=3, base_seed=12345)
+        second = worker.run_trial(trial_idx=3, base_seed=12345)
+    
+>       self.assertEqual(second, first)
+E       AssertionError: Tuples differ: (0.5359030961990356, 0.625, 0.6190476190476191) != (0.7248141765594482, 0.5, 0.4666666666666667)
+E       
+E       First differing element 0:
+E       0.5359030961990356
+E       0.7248141765594482
+E       
+E       - (0.5359030961990356, 0.625, 0.6190476190476191)
+E       + (0.7248141765594482, 0.5, 0.4666666666666667)
+
+tests/test_blb_probe_deterministic_lock.py:211: AssertionError
+=============================== warnings summary ===============================
+tests/test_blb_probe_deterministic_lock.py::DeterministicProbeLockTests::test_probe_worker_does_not_mutate_global_rng_streams
+  /usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+tests/test_blb_probe_deterministic_lock.py::DeterministicProbeLockTests::test_probe_worker_does_not_mutate_global_rng_streams
+tests/test_blb_probe_deterministic_lock.py::DeterministicProbeLockTests::test_probe_worker_does_not_mutate_global_rng_streams
+  /usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_blb_probe_deterministic_lock.py::DeterministicProbeLockTests::test_probe_worker_does_not_mutate_global_rng_streams
+FAILED tests/test_blb_probe_deterministic_lock.py::DeterministicProbeLockTests::test_probe_worker_replays_independent_noise_for_same_trial_seed
+2 failed, 11 deselected, 3 warnings in 3.52s

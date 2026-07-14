@@ -1,0 +1,111 @@
+==== Stage-2 N-GPU A/B Verdict ====
+1GPU episodes: 170
+NGPU episodes: 170
+quality/effect equality: FAIL
+strict diagnostic equality: DIFF
+PPO update equality: FAIL
+PPO update counts: 1GPU=2 NGPU=2
+wall source: wall file
+1GPU wall_s: 642.000
+NGPU wall_s: 331.000
+1GPU episodes/hour: 953.271
+NGPU episodes/hour: 1848.943
+speedup: 1.940x
+NGPU distinct probe devices: 0
+speedup/device_count: n/a
+NGPU device episode balance min/max: n/a
+NGPU probe critical-path lower bound_s: 0.000
+NGPU probe-bound ceiling episodes/hour: n/a
+NGPU wall/probe_bound ratio: n/a
+NGPU probe ceiling utilization: n/a
+NGPU component critical-path lower bound_s: 0.000
+NGPU component-bound ceiling episodes/hour: n/a
+NGPU wall/component_bound ratio: n/a
+NGPU component ceiling utilization: n/a
+NGPU policy diagnostic critical-path sum_s: 0.000
+1GPU terminal probe mean_s/episode: 0.000
+NGPU terminal probe mean_s/episode: 0.000
+NGPU/1GPU terminal probe mean ratio: n/a
+1GPU policy rollout mean_s/episode: 0.000
+NGPU policy rollout mean_s/episode: 0.000
+NGPU/1GPU policy rollout mean ratio: n/a
+NGPU worker-local probe noise scopes detected: False
+NGPU worker-local CUDA probe streams detected: False
+NGPU cpu policy mode detected: False
+
+1GPU device breakdown:
+  unknown: {'episodes': 170.0, 'trials': 0.0, 'probe_s': 0.0, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 0.0}
+NGPU device breakdown:
+  unknown: {'episodes': 170.0, 'trials': 0.0, 'probe_s': 0.0, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 0.0}
+
+1GPU rollout timing log: n/a
+NGPU rollout timing log: n/a
+
+first 20 equality diffs:
+  - episode[0].constraint_probabilities.loss_precision_probability: 0.905517578125 != 0.909423828125
+  - episode[0].constraint_probabilities.loss_stability_probability: 0.4345703125 != 0.453125
+  - episode[0].constraint_thresholds.loss: 0.3614447070923447 != 0.36144611591443415
+  - episode[0].constraint_thresholds.loss_std: 0.005079873811149928 != 0.005123336858511916
+  - episode[0].fresh_constraint_probabilities.loss_precision_probability: 0.905517578125 != 0.909423828125
+  - episode[0].fresh_constraint_probabilities.loss_stability_probability: 0.4345703125 != 0.453125
+  - episode[0].fresh_metrics.loss_mean: 0.3583748362958431 != 0.3583417281508446
+  - episode[0].fresh_metrics.loss_std: 0.005707826291488013 != 0.005686471421674609
+  - episode[0].fresh_trials.loss[0]: 0.36149097234010696 != 0.3614187203347683
+  - episode[0].fresh_trials.loss[1]: 0.3610377907752991 != 0.36097025871276855
+  - episode[0].fresh_trials.loss[2]: 0.3511708155274391 != 0.3510989174246788
+  - episode[0].fresh_trials.loss[3]: 0.36459195241332054 != 0.36455678567290306
+  - episode[0].fresh_trials.loss[4]: 0.3535826504230499 != 0.35366395860910416
+  - episode[0].pooled_constraint_probabilities.loss_precision_probability: 0.905517578125 != 0.909423828125
+  - episode[0].pooled_constraint_probabilities.loss_stability_probability: 0.4345703125 != 0.453125
+  - episode[0].pooled_metrics.loss_mean: 0.3583748362958431 != 0.3583417281508446
+  - episode[0].pooled_metrics.loss_std: 0.005707826291488013 != 0.005686471421674609
+  - episode[0].pooled_trials.loss[0]: 0.36149097234010696 != 0.3614187203347683
+  - episode[0].pooled_trials.loss[1]: 0.3610377907752991 != 0.36097025871276855
+  - episode[0].pooled_trials.loss[2]: 0.3511708155274391 != 0.3510989174246788
+
+first 20 diagnostic-only diffs:
+  - episode[0].constraint_probabilities.loss_precision_probability: 0.905517578125 != 0.909423828125
+  - episode[0].constraint_probabilities.loss_stability_probability: 0.4345703125 != 0.453125
+  - episode[0].constraint_thresholds.loss: 0.3614447070923447 != 0.36144611591443415
+  - episode[0].constraint_thresholds.loss_std: 0.005079873811149928 != 0.005123336858511916
+  - episode[0].fresh_constraint_probabilities.loss_precision_probability: 0.905517578125 != 0.909423828125
+  - episode[0].fresh_constraint_probabilities.loss_stability_probability: 0.4345703125 != 0.453125
+  - episode[0].fresh_metrics.loss_mean: 0.3583748362958431 != 0.3583417281508446
+  - episode[0].fresh_metrics.loss_std: 0.005707826291488013 != 0.005686471421674609
+  - episode[0].fresh_trials.loss[0]: 0.36149097234010696 != 0.3614187203347683
+  - episode[0].fresh_trials.loss[1]: 0.3610377907752991 != 0.36097025871276855
+  - episode[0].fresh_trials.loss[2]: 0.3511708155274391 != 0.3510989174246788
+  - episode[0].fresh_trials.loss[3]: 0.36459195241332054 != 0.36455678567290306
+  - episode[0].fresh_trials.loss[4]: 0.3535826504230499 != 0.35366395860910416
+  - episode[0].pooled_constraint_probabilities.loss_precision_probability: 0.905517578125 != 0.909423828125
+  - episode[0].pooled_constraint_probabilities.loss_stability_probability: 0.4345703125 != 0.453125
+  - episode[0].pooled_metrics.loss_mean: 0.3583748362958431 != 0.3583417281508446
+  - episode[0].pooled_metrics.loss_std: 0.005707826291488013 != 0.005686471421674609
+  - episode[0].pooled_trials.loss[0]: 0.36149097234010696 != 0.3614187203347683
+  - episode[0].pooled_trials.loss[1]: 0.3610377907752991 != 0.36097025871276855
+  - episode[0].pooled_trials.loss[2]: 0.3511708155274391 != 0.3510989174246788
+
+first 20 PPO update equality diffs:
+  - ppo_update[1].approx_kl: 0.001999813364818692 != 0.0014250706881284714
+  - ppo_update[1].best_reward_so_far: 1.45042022596018 != 1.450436825889293
+  - ppo_update[1].best_robust_feasible_cost: 0.2402542372881356 != 0.2436440677966102
+  - ppo_update[1].block4_entropy: 0.9529055306018199 != 0.9561192691198213
+  - ppo_update[1].clip_fraction: 0.0011888587614521384 != 0.0006793478387407959
+  - ppo_update[1].entropy: 7.66086483001709 != 7.66357421875
+  - ppo_update[1].k_entropy: 0.7933989495208537 != 0.7941537130022102
+  - ppo_update[1].policy_loss: -0.00856045726686716 != -0.008643743582069874
+  - ppo_update[1].return_mean: -1.7706365215846591 != -1.7305292844215052
+  - ppo_update[1].return_std: 2.0447378495692163 != 2.0609521997334994
+  - ppo_update[1].value_loss: 0.642686665058136 != 0.6319180727005005
+  - ppo_update[1].window_max_return: 1.45042022596018 != 1.450436825889293
+  - ppo_update[1].window_mean_return: -1.7706366669911477 != -1.7305293952349527
+  - ppo_update[2].approx_kl: 0.0005301458877511322 != -0.0005283310310915112
+  - ppo_update[2].best_reward_so_far: 1.45042022596018 != 1.450436825889293
+  - ppo_update[2].best_robust_feasible_cost: 0.2402542372881356 != 0.2436440677966102
+  - ppo_update[2].block4_entropy: 0.9469173821367254 != 0.9555163629051767
+  - ppo_update[2].entropy: 7.643949031829834 != 7.659921169281006
+  - ppo_update[2].k_entropy: 0.7937086549356452 != 0.7954343418786541
+  - ppo_update[2].policy_loss: 0.0011461199028417468 != -0.00011520832777023315
+
+[FATAL] equality requirement failed
+[OK] speedup >= 0.000x

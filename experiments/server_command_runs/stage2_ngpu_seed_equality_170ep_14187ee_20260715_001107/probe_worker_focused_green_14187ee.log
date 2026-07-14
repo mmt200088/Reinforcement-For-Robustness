@@ -1,0 +1,13 @@
+.....................................                                    [100%]
+=============================== warnings summary ===============================
+../../usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441
+  /usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+../../usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309
+../../usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309
+  /usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+    _torch_pytree._register_pytree_node(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+37 passed, 22 deselected, 3 warnings in 4.01s

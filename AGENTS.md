@@ -110,6 +110,24 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   rerunning the strict 600-episode gate. Evidence is under
   `experiments/server_command_runs/stage2_ngpu_speed_ab_ba8bb14_20260714_223042/`,
   with both raw mirrors under `rl_training_data_points/stage2/bert-base/mrpc/`.
+- Stage-2 seeded 1GPU-versus-5GPU smoke, added 2026-07-15: source `14187ee`
+  fixed `ProbeWorker.run_trial()` so each `(base_seed, trial_idx)` reseeds the
+  dedicated per-device BLB-noise generator without mutating global PyTorch or
+  NumPy RNG state. The server passed 13 deterministic-lock tests, a 37-test
+  focused probe/seed suite, and a direct `cuda:0`/`cuda:1` replay with exact
+  loss/accuracy/F1 equality. The 170-episode full-path smoke then took `642s`
+  on 1 GPU and `331s` on 5 GPUs (`1.940x`); all five cards were active, but
+  their mean utilization was only 28.38%-30.33%. Full episode/PPO equality
+  still failed because only `build_probe_runner()` enables TF32/high matmul
+  precision: actions, trial seeds, accuracy, and F1 were identical at episode
+  0, while per-trial loss differed by about `3e-5` to `8e-5`. Enable the same
+  fast-matmul mode before any sequential Stage-2 baseline/probe on both the
+  single- and multi-device paths, prove exact short-run equality, then expose
+  the environment's existing install/probe/clear timing through layerwise
+  records before optimizing the host/setup hotspot. Evidence is under
+  `experiments/server_command_runs/stage2_ngpu_seed_equality_170ep_14187ee_20260715_001107/`,
+  with both structured raw mirrors under
+  `rl_training_data_points/stage2/bert-base/mrpc/`.
 - GPU activity-report rule, added 2026-07-13: do not infer that a visible GPU is
   idle solely because layerwise episode rows omit `terminal_probe_devices`.
   `scripts/gpu_utilization_report.py` must preserve probe attribution as a
