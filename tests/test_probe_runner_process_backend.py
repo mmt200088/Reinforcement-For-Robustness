@@ -8,14 +8,21 @@ from unittest import mock
 try:
     import torch
 
-    from blb_stage2_rl.probe_runner import ProbeRunner, resolve_probe_backend
+    from blb_stage2_rl import probe_runner as _probe_runner
 
     _IMPORT_ERROR = None
 except Exception as exc:  # pragma: no cover - dependency-light local checkout
     torch = None  # type: ignore
-    ProbeRunner = None  # type: ignore
-    resolve_probe_backend = None  # type: ignore
+    _probe_runner = None  # type: ignore
     _IMPORT_ERROR = exc
+
+ProbeRunner = (
+    _probe_runner.ProbeRunner if _probe_runner is not None else None
+)
+resolve_probe_backend = (
+    getattr(_probe_runner, "resolve_probe_backend", None)
+    if _probe_runner is not None else None
+)
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"probe runner unavailable: {_IMPORT_ERROR!r}")
