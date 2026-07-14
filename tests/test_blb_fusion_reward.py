@@ -53,7 +53,7 @@ def _layerwise_actions(*, block4_fusion=0, k=13):
 
 
 class LayerwiseVariableCostContractTest(unittest.TestCase):
-    def test_higher_block4_fusion_increases_only_fusion_half(self):
+    def test_higher_block4_fusion_increases_only_fusion_units(self):
         baseline = layerwise_action.compute_variable_cost(
             _layerwise_actions(block4_fusion=0, k=13)
         )
@@ -64,7 +64,27 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
         self.assertEqual(baseline.normalized, 0.0)
         self.assertEqual(fused.fusion_saving, 1.0)
         self.assertEqual(fused.truncation_saving, baseline.truncation_saving)
-        self.assertEqual(fused.normalized, 0.5)
+        self.assertEqual(fused.fusion_units, 12.0)
+        self.assertEqual(fused.truncation_units, 0.0)
+        self.assertAlmostEqual(fused.normalized, 12.0 / 159.5)
+
+    def test_two_k_bits_have_same_reward_as_one_fusion_toggle(self):
+        baseline_actions = _layerwise_actions(block4_fusion=0, k=13)
+        fusion_actions = _layerwise_actions(block4_fusion=0, k=13)
+        fusion_actions[3] = layerwise_action.LayerwiseDecodedAction(
+            1, dict(fusion_actions[3].k_by_block),
+        )
+        k_actions = _layerwise_actions(block4_fusion=0, k=13)
+        changed = dict(k_actions[3].k_by_block)
+        changed[4] = 11
+        k_actions[3] = layerwise_action.LayerwiseDecodedAction(0, changed)
+
+        baseline = layerwise_action.compute_variable_cost(baseline_actions).normalized
+        fusion_delta = layerwise_action.compute_variable_cost(fusion_actions).normalized - baseline
+        k_delta = layerwise_action.compute_variable_cost(k_actions).normalized - baseline
+
+        self.assertAlmostEqual(fusion_delta, k_delta)
+        self.assertAlmostEqual(fusion_delta, 1.0 / 159.5)
 
     def test_lowering_each_actual_k_slot_increases_cost(self):
         baseline_actions = _layerwise_actions(block4_fusion=0, k=13)

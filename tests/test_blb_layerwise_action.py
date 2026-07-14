@@ -204,8 +204,49 @@ class VariableCostTest(unittest.TestCase):
         middle = layerwise.compute_variable_cost(self._actions(1, 13))
         self.assertEqual((low.fusion_saving, low.truncation_saving, low.normalized), (0.0, 0.0, 0.0))
         self.assertEqual((high.fusion_saving, high.truncation_saving, high.normalized), (1.0, 1.0, 1.0))
+        self.assertEqual((low.fusion_units, low.truncation_units, low.total_units), (0.0, 0.0, 0.0))
+        self.assertEqual((high.fusion_units, high.truncation_units), (12.0, 147.5))
+        self.assertEqual(high.total_units, high.max_units)
+        self.assertEqual(len(high.layer_cost_rewards), 12)
+        self.assertAlmostEqual(sum(high.layer_cost_rewards), high.normalized)
         self.assertGreater(middle.normalized, low.normalized)
         self.assertLess(middle.normalized, high.normalized)
+        self.assertAlmostEqual(middle.normalized, 12.0 / 159.5)
+
+    def test_k_drop_two_equals_one_block4_fusion_toggle(self):
+        baseline_actions = self._actions(0, 13)
+        baseline = layerwise.compute_variable_cost(baseline_actions)
+
+        fused_actions = self._actions(0, 13)
+        fused_actions[7] = layerwise.LayerwiseDecodedAction(
+            1, dict(fused_actions[7].k_by_block),
+        )
+        fused = layerwise.compute_variable_cost(fused_actions)
+
+        lower_k_actions = self._actions(0, 13)
+        changed_k = dict(lower_k_actions[7].k_by_block)
+        changed_k[3] = 11
+        lower_k_actions[7] = layerwise.LayerwiseDecodedAction(0, changed_k)
+        lower_k = layerwise.compute_variable_cost(lower_k_actions)
+
+        fusion_delta = fused.normalized - baseline.normalized
+        k_delta = lower_k.normalized - baseline.normalized
+        self.assertAlmostEqual(fusion_delta, 1.0 / 159.5)
+        self.assertAlmostEqual(k_delta, fusion_delta)
+        self.assertAlmostEqual(
+            fused.layer_cost_rewards[7], lower_k.layer_cost_rewards[7],
+        )
+
+    def test_layer_cost_terms_cover_every_active_k_once(self):
+        result = layerwise.compute_variable_cost(self._actions(1, 11))
+        expected_layer0_units = 1.0 + 4 * 1.0
+        expected_other_units = 1.0 + 5 * 1.0
+        self.assertAlmostEqual(result.layer_cost_rewards[0], expected_layer0_units / 159.5)
+        for value in result.layer_cost_rewards[1:]:
+            self.assertAlmostEqual(value, expected_other_units / 159.5)
+        self.assertEqual(result.fusion_units, 12.0)
+        self.assertEqual(result.truncation_units, 59.0)
+        self.assertEqual(result.total_units, 71.0)
 
     def test_cost_uses_decoded_k_values_not_category_order(self):
         actions = self._actions(0, 8)
@@ -253,7 +294,10 @@ class KLevelsContractTest(unittest.TestCase):
                 layerwise.LayerwiseDecodedAction(0, {1: 8, 2: 8, 3: 8, 4: 8, 5: 8})
                 for _ in range(11)
             )
-            self.assertEqual(layerwise.compute_variable_cost(actions).normalized, 0.5)
+            self.assertAlmostEqual(
+                layerwise.compute_variable_cost(actions).normalized,
+                147.5 / 159.5,
+            )
 
 
 class LayerwiseOwnershipTest(unittest.TestCase):

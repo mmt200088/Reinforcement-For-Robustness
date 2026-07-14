@@ -64,6 +64,12 @@ _BLOCK_STARTS = {1: 0, 2: 9, 3: 32, 4: 40, 5: 57}
 _LAYER_WIDTH = sum(_BLOCK_SLOT_COUNTS.values())
 _BLOCK_ORDER = (1, 2, 3, 4, 5)
 
+BLOCK4_FUSION_COST_UNIT = 1.0
+TRUNCATION_COST_UNIT_PER_BIT = 0.5
+MAX_FUSION_COST_UNITS = 12.0
+MAX_TRUNCATION_COST_UNITS = 0.5 * 59.0 * (13.0 - 8.0)
+MAX_VARIABLE_COST_UNITS = MAX_FUSION_COST_UNITS + MAX_TRUNCATION_COST_UNITS
+
 
 @dataclass(frozen=True)
 class LayerwiseStepSpec:
@@ -125,6 +131,11 @@ class VariableCost:
     fusion_saving: float
     truncation_saving: float
     normalized: float
+    fusion_units: float
+    truncation_units: float
+    total_units: float
+    max_units: float
+    layer_cost_rewards: Tuple[float, ...]
 
 
 def _graph_keys(layer_idx: int, profile: str, gelu_degree: int) -> Tuple[Tuple[int, str], ...]:
@@ -325,6 +336,7 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
         raise ValueError(f"variable cost requires 12 layer actions, got {len(actions)}")
     fusion_values = []
     k_values = []
+    layer_units = []
     for layer_idx, action in enumerate(actions):
         expected_blocks = {2, 3, 4, 5} if layer_idx == 0 else {1, 2, 3, 4, 5}
         actual_blocks = set(action.k_by_block)
@@ -336,19 +348,38 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
         if fusion not in (0, 1):
             raise ValueError(f"layer {layer_idx} Block4 fusion must be 0 or 1, got {fusion}")
         fusion_values.append(fusion)
+        current_layer_k_values = []
         for block_idx, k_value in action.k_by_block.items():
             k = int(k_value)
             if k not in K_LEVELS:
                 raise ValueError(f"layer {layer_idx} block {block_idx} has unsupported K={k}")
             k_values.append(k)
+            current_layer_k_values.append(k)
+        layer_units.append(
+            BLOCK4_FUSION_COST_UNIT * float(fusion)
+            + TRUNCATION_COST_UNIT_PER_BIT
+            * sum(13.0 - float(k) for k in current_layer_k_values)
+        )
     if len(k_values) != 59:
         raise RuntimeError(f"BERT-base layer actions yielded {len(k_values)} active K values, expected 59")
-    fusion_saving = float(sum(fusion_values) / 12)
-    truncation_saving = float(sum((13 - k) / 5 for k in k_values) / 59)
+    fusion_units = BLOCK4_FUSION_COST_UNIT * float(sum(fusion_values))
+    truncation_units = TRUNCATION_COST_UNIT_PER_BIT * float(
+        sum(13 - k for k in k_values)
+    )
+    total_units = fusion_units + truncation_units
+    fusion_saving = fusion_units / MAX_FUSION_COST_UNITS
+    truncation_saving = truncation_units / MAX_TRUNCATION_COST_UNITS
     return VariableCost(
-        fusion_saving=fusion_saving,
-        truncation_saving=truncation_saving,
-        normalized=0.5 * fusion_saving + 0.5 * truncation_saving,
+        fusion_saving=float(fusion_saving),
+        truncation_saving=float(truncation_saving),
+        normalized=float(total_units / MAX_VARIABLE_COST_UNITS),
+        fusion_units=float(fusion_units),
+        truncation_units=float(truncation_units),
+        total_units=float(total_units),
+        max_units=float(MAX_VARIABLE_COST_UNITS),
+        layer_cost_rewards=tuple(
+            float(value / MAX_VARIABLE_COST_UNITS) for value in layer_units
+        ),
     )
 
 
