@@ -1,0 +1,43 @@
+==== Stage-2 N-GPU A/B Verdict ====
+1GPU episodes: 170
+NGPU episodes: 170
+quality/effect equality: PASS
+strict diagnostic equality: PASS
+PPO update equality: PASS
+PPO update counts: 1GPU=2 NGPU=2
+wall source: wall file
+1GPU wall_s: 571.000
+NGPU wall_s: 331.000
+1GPU episodes/hour: 1071.804
+NGPU episodes/hour: 1848.943
+speedup: 1.725x
+NGPU distinct probe devices: 0
+speedup/device_count: n/a
+NGPU device episode balance min/max: n/a
+NGPU probe critical-path lower bound_s: 0.000
+NGPU probe-bound ceiling episodes/hour: n/a
+NGPU wall/probe_bound ratio: n/a
+NGPU probe ceiling utilization: n/a
+NGPU component critical-path lower bound_s: 0.000
+NGPU component-bound ceiling episodes/hour: n/a
+NGPU wall/component_bound ratio: n/a
+NGPU component ceiling utilization: n/a
+NGPU policy diagnostic critical-path sum_s: 0.000
+1GPU terminal probe mean_s/episode: 0.000
+NGPU terminal probe mean_s/episode: 0.000
+NGPU/1GPU terminal probe mean ratio: n/a
+1GPU policy rollout mean_s/episode: 0.000
+NGPU policy rollout mean_s/episode: 0.000
+NGPU/1GPU policy rollout mean ratio: n/a
+NGPU worker-local probe noise scopes detected: False
+NGPU worker-local CUDA probe streams detected: False
+NGPU cpu policy mode detected: False
+
+1GPU device breakdown:
+  unknown: {'episodes': 170.0, 'trials': 0.0, 'probe_s': 0.0, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 0.0}
+NGPU device breakdown:
+  unknown: {'episodes': 170.0, 'trials': 0.0, 'probe_s': 0.0, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 0.0}
+
+1GPU rollout timing log: n/a
+NGPU rollout timing log: n/a
+[OK] speedup >= 0.000x

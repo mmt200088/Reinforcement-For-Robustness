@@ -1,0 +1,14 @@
+test_sequential_stage2_enables_fast_math_before_model_setup (tests.test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_sequential_stage2_enables_fast_math_before_model_setup) ... FAIL
+
+======================================================================
+FAIL: test_sequential_stage2_enables_fast_math_before_model_setup (tests.test_sequential_smoke.MultiGpuProbeThroughputRegressionTest.test_sequential_stage2_enables_fast_math_before_model_setup)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/rfr_runtime_optimization/tests/test_sequential_smoke.py", line 1279, in test_sequential_stage2_enables_fast_math_before_model_setup
+    self.assertTrue(
+AssertionError: False is not true : sequential Stage-2 does not import the shared fast-matmul setup
+
+----------------------------------------------------------------------
+Ran 1 test in 0.005s
+
+FAILED (failures=1)
