@@ -170,6 +170,25 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `experiments/server_command_runs/stage2_probe_process_backend_096f184_20260715/`,
   with all successful and failed-run structured mirrors under
   `rl_training_data_points/stage2/bert-base/mrpc/`.
+- Stage-2 persistent reward-probe final gate, added 2026-07-15: a fresh
+  same-source 600-episode 1GPU-versus-5GPU A/B at clean source `99b0995`
+  completed the acceptance condition left open by the 170-episode smoke. Both
+  cases completed 600 episodes and five PPO updates; quality/effect rows,
+  strict diagnostics, and PPO updates compared exactly. Wall time fell from
+  `1951s` to `521s`, throughput rose from `1107.125` to `4145.873`
+  episodes/hour, and end-to-end speedup was `3.745x`, above the required
+  `3.4x`. Every GPU handled exactly 600 trials; sampled mean utilization was
+  `69.02%`-`73.60%`, active-sample rate was `82.93%`-`93.50%`, and every card
+  reached 99%. The server then passed the complete CPU/no-GPU pytest gate with
+  `1611 passed, 8 skipped`, while the project audit found all 30/30 expected
+  flow files and no missing evidence class. All child processes and GPU
+  allocations were released at exit. This completes the final performance
+  gate for the repository-wide runtime-optimization plan without changing
+  reward, constraints, actions, trial counts, PPO, or validation semantics.
+  Compact evidence is under
+  `experiments/server_command_runs/stage2_probe_process_final_600ep_99b0995_20260715/`,
+  with both complete mirrors under
+  `rl_training_data_points/stage2/bert-base/mrpc/`.
 - GPU activity-report rule, added 2026-07-13: do not infer that a visible GPU is
   idle solely because layerwise episode rows omit `terminal_probe_devices`.
   `scripts/gpu_utilization_report.py` must preserve probe attribution as a
