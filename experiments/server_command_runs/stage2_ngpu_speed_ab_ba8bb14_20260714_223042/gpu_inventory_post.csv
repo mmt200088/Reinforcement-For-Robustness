@@ -1,0 +1,6 @@
+index, name, utilization.gpu [%], memory.used [MiB], memory.total [MiB], pstate
+0, NVIDIA GeForce RTX 5090, 0 %, 0 MiB, 32607 MiB, P8
+1, NVIDIA GeForce RTX 5090, 0 %, 0 MiB, 32607 MiB, P8
+2, NVIDIA GeForce RTX 5090, 0 %, 0 MiB, 32607 MiB, P8
+3, NVIDIA GeForce RTX 5090, 0 %, 0 MiB, 32607 MiB, P8
+4, NVIDIA GeForce RTX 5090, 0 %, 0 MiB, 32607 MiB, P8

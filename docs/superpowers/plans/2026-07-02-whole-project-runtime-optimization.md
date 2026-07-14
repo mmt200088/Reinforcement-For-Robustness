@@ -47,7 +47,7 @@ post-run artifacts without weakening the validation protocol.
 | P1 | Structured artifacts | Keep required `rl_training_data_points/`, `episodes.jsonl`, PPO diagnostics, and manifests complete while streaming verification/report generation. | `tests/test_rl_data_points.py`, `tests/test_stage2_persistent_output_verifier.py`, and generated evidence bundle checks. |
 | P2 | Rescale/fusion maps | Reuse session-loaded graph/baseline data, stream large map builds and summaries, and avoid parsing sidecars as maps. | `tests/test_rescale_optimizer_bridge_cache.py`, `tests/test_blb_fusion_count_map.py`, fusion-map report tests, and server build logs for large maps. |
 | P2 | Stage-1 rollout | Add or consume timing fields for per-worker rollout, cache hit rate, forward wall, and report write wall before changing worker defaults. | Stage-1 local semantics tests plus server 1GPU/4GPU speed and deterministic-result evidence. |
-| P2 | Stage-2 GPU scheduling | Keep the merged production algorithm fixed; run the prepared strict 1GPU-versus-5GPU gate after the formal 60k process releases the GPUs. | `stage2_ngpu_ab_compare.py`, GPU utilization reports, rollout signatures, and PPO-visible equality gates. |
+| P2 | Stage-2 GPU scheduling | Fix the independent BLB-noise seed boundary exposed by the first strict A/B, measure the 5GPU host/setup hotspot, and rerun the same 600-episode 1GPU-versus-5GPU contract. | `stage2_ngpu_ab_compare.py`, exact episode/PPO equality, direct timing, GPU utilization reports, sampled activity on all five GPUs, and `>=3.4x` wall-clock speedup. |
 
 ### Recent Cross-Flow Runtime Commits
 
@@ -85,25 +85,22 @@ post-run artifacts without weakening the validation protocol.
 ### Execution Ledger and Remaining Main Chain
 
 Progress is measured by high-impact flow coverage and verification strength,
-not by raw commit count. As of source head `1b8fa08`, the conservative
-completion estimate remains about 99% of the planned work: the plan/audit layer,
-artifact helpers, shared hot paths, the Stage-1 1GPU vs 4GPU gate, and
-single-process Paean fixed-action batching have landed. The published
-production source `24e919c` is merged. Source `3de5244` restored production
-Stage-2 probe/result allocation, static tensor/mask caches, causal-prefix
-execution, and batched PPO tensor materialization; `66a4895` restored shared
-list parsing. The final CPU/no-GPU server audit is now green at 1,509
-`unittest` tests; the latest source passed 1,602 `pytest` tests with 6 explicit
-environment skips. The GPUs are still owned by the formal 60,000-episode
-Stage-2 run at source `24e919c`; its latest captured status was
-16,832/60,000 episodes (28.1%), so
-the clean 1GPU-versus-5GPU gate remains the only hard completion gate and must
-wait for the idle check.
+not by raw commit count. After the first strict hardware gate at source
+`ba8bb14`, the conservative completion estimate is revised from about 99% to
+about 95%. The plan/audit layer, artifact helpers, shared hot paths, Stage-1
+1GPU-versus-4GPU gate, Paean fixed-action batching, and full CPU/no-GPU server
+audit have landed. However, the isolated 600-episode Stage-2 gate converted the
+last unknown into two substantive blockers: multi-GPU BLB trials do not yet
+consume the recorded deterministic seeds, and the measured 5GPU speedup is
+only `1.922x` despite all five cards being active. Completion now requires a
+TDD seed-boundary fix, direct hot-path timing and optimization, then a fresh
+strict gate with exact episode/PPO equality and at least `3.4x` speedup.
 
 Server-verified optimization commits currently in the execution ledger:
 
 | Flow | Source commit | Evidence directory | Optimization |
 | --- | --- | --- | --- |
+| Stage-2 strict 1GPU-versus-5GPU gate (red) | `ba8bb14` | `experiments/server_command_runs/stage2_ngpu_speed_ab_ba8bb14_20260714_223042/` | Run the isolated production 600-episode contract. All five GPUs were physically active, but the gate correctly failed: `1.922x` speedup, about 31% mean utilization per GPU in the 5GPU case, and episode/PPO divergence caused by the multi-GPU worker not reseeding the independent BLB-noise generator. This is diagnosis evidence, not completion evidence. |
 | Stage-2 A/B real telemetry coverage | `1dd466f` | `experiments/server_command_runs/stage2_ab_gpu_coverage_passive_1dd466f_20260714/` | Passively sample the active production process for 60 seconds and prove the strict physical-device gate recognizes all five RTX 5090s from real `nvidia-smi` activity even when episode device attribution is empty; PID `10089` remained the sole compute process. |
 | Stage-2 A/B physical-GPU coverage | `1b8fa08` | `experiments/server_command_runs/stage2_ab_gpu_coverage_1b8fa08_20260714/` | Count every device/trial in multi-device episode diagnostics and require `nvidia-smi` sampled activity on every requested physical GPU before a 1GPU/NGPU case can pass; 38 related tests and the full 1,602-test pytest gate passed without using the formal run's GPUs. |
 | Stage-2 A/B gate integrity | `a61300d` | `experiments/server_command_runs/stage2_ab_scheduling_overrides_a61300d_20260714/` | Make printed and executed scheduling environments identical, prove non-default one/many worker values stay case-local, pass all 18 related tests plus the 1,599-test full gate, and verify the live idle guard rejects the occupied five-GPU host before launching any competing process. |
@@ -1286,8 +1283,24 @@ Source `87a57a1` passed 117 focused tests on the server.
 Use `SERVER_COMMAND.md` to run 1GPU vs NGPU parity and speed checks. Promote a
 new default only when effect equality passes and wall-clock evidence improves.
 
-Server status 2026-07-13: the new host exposes five RTX 5090s and PyTorch sees
-all five `sm_120` devices, so the former one-GPU hardware blocker is removed.
+Strict-gate result 2026-07-14: the former GPU-owning process was no longer
+active, the idle guard passed, and source `ba8bb14` completed both isolated
+600-episode cases. The 1GPU case took `2251s`; the 5GPU case took `1171s`, for
+only `1.922x` speedup. Exact episode quality/effect equality and PPO-update
+equality failed, while sampled physical activity passed on all five GPUs. The
+single card averaged 92.73% utilization, whereas the five-card case averaged
+only 30.71%-32.48% per card. Equal intended trial-seed records but unequal
+baseline samples trace the deterministic defect to `ProbeWorker.run_trial()`
+not reseeding `function_handler`'s independent per-device BLB-noise generator.
+Keep this step unchecked. Next, fix that seed boundary with TDD, prove short
+real-GPU equality, add or consume direct install/probe timing, optimize the
+measured setup/host hotspot, and rerun this exact 600-episode contract. Red
+evidence is under
+`experiments/server_command_runs/stage2_ngpu_speed_ab_ba8bb14_20260714_223042/`.
+
+Historical readiness status 2026-07-13: the new host exposes five RTX 5090s
+and PyTorch sees all five `sm_120` devices, so the former one-GPU hardware
+blocker is removed.
 Do not run the strict A/B yet: the concurrent Stage-2 agent's formal 60,000-
 episode source `24e919c` run currently owns all five GPUs. The passive profile
 measured roughly 31% mean utilization per GPU and `1,681.75` rows/hour, but it

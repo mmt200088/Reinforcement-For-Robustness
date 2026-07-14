@@ -81,19 +81,35 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   validation semantics were not changed. Evidence is under
   `experiments/server_command_runs/project_completion_audit_8308bbd_20260714/`.
   This closes the repository-wide software audit, not the whole optimization
-  goal: the strict production 1GPU-versus-5GPU parity/throughput gate remains
-  pending until the formal 60,000-episode process releases the GPUs. At the
-  captured audit snapshot that process was healthy at 14,640/60,000 episodes
-  (24.4%), terminal priority P3, and `last_invalid=false`.
-- Runtime-optimization server status, updated 2026-07-13: the current server is
+  goal. The first strict production 1GPU-versus-5GPU gate subsequently ran at
+  source `ba8bb14` and exposed both a deterministic-result defect and a
+  throughput shortfall; see the red-result entry below.
+- Runtime-optimization server status, updated 2026-07-14: the current server is
   `root@i-1.gpushare.com:5782` with five RTX 5090 GPUs (32,607 MiB each), 256
   logical CPUs, 629 GiB RAM, and a 50 GiB `/hy-tmp` volume. PyTorch
   `2.9.1+cu128` sees all five `sm_120` devices. The clean optimization checkout
   is `/hy-tmp/rfr_runtime_optimization` and must continue to receive source via
-  Git only. The former one-GPU hardware blocker is gone, but the concurrent
-  agent's formal 60,000-episode Stage-2 run at source `24e919c` currently owns
-  all five GPUs. Do not contaminate it or the final 1GPU-versus-5GPU gate; wait
-  until the harness idle check passes.
+  Git only. The former formal process and its post-run GPU jobs are no longer
+  active; do not infer from process exit that its scientific completion
+  protocol succeeded. At the latest check all five GPUs were idle at `0 MiB`,
+  and the first isolated gate had already completed.
+- Stage-2 strict 1GPU-versus-5GPU red result, added 2026-07-14: the first
+  isolated 600-episode production A/B ran at source `ba8bb14` after the idle
+  guard verified that all five RTX 5090s were free. The 1GPU case completed in
+  `2251s` (`959.574` episodes/hour); the 5GPU case completed in `1171s`
+  (`1844.577` episodes/hour), only `1.922x`, below the required `3.4x`.
+  Episode quality/effect equality and PPO-update equality both failed from the
+  first episode/update. Physical coverage passed: every requested GPU was
+  sampled active, but each 5GPU mean utilization was only about 31% versus
+  92.73% on the single GPU. The equal intended trial-seed records but unequal
+  baseline samples trace the correctness defect to `ProbeWorker.run_trial()`:
+  it seeds global PyTorch/NumPy RNGs but does not reseed the independent
+  per-device generator actually consumed by `function_handler` BLB noise. Fix
+  that boundary with TDD before measuring the performance bottleneck. Then use
+  direct install/probe timing to optimize the proven host/setup hotspot before
+  rerunning the strict 600-episode gate. Evidence is under
+  `experiments/server_command_runs/stage2_ngpu_speed_ab_ba8bb14_20260714_223042/`,
+  with both raw mirrors under `rl_training_data_points/stage2/bert-base/mrpc/`.
 - GPU activity-report rule, added 2026-07-13: do not infer that a visible GPU is
   idle solely because layerwise episode rows omit `terminal_probe_devices`.
   `scripts/gpu_utilization_report.py` must preserve probe attribution as a
@@ -117,9 +133,8 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   fusion overrides. `PRINT_EFFECTIVE_COMMANDS=1` records the exact shared
   command arrays without querying GPUs. Command-contract evidence is under
   `experiments/server_command_runs/stage2_layerwise_ab_contract_28ab0c0_20260713/`.
-  This does not complete the gate: the published production source `24e919c`
-  is now merged, but the formal process must release all five GPUs before the
-  strict episode/PPO equality and measured-speedup run can close the goal.
+  This established command readiness only. The first strict run is now the red
+  `ba8bb14` evidence above; it must not be treated as parity or speed proof.
 - Stage-2 A/B scheduling-command integrity, updated 2026-07-14: source
   `a61300d` makes the A/B preflight and actual launch share one environment
   array and explicitly forwards each case's worker count. RED source `9fe4d0c`

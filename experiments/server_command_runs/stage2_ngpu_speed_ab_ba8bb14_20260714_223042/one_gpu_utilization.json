@@ -1,0 +1,86 @@
+{
+  "episodes": 600,
+  "gpu_utilization": {
+    "cuda:0": {
+      "active_sample_rate": 0.9816779170684667,
+      "max_memory_mib": 3085.0,
+      "max_util_pct": 99.0,
+      "mean_util_pct": 92.72806171648988,
+      "samples": 1037
+    },
+    "cuda:1": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 0.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 1037
+    },
+    "cuda:2": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 0.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 1037
+    },
+    "cuda:3": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 0.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 1037
+    },
+    "cuda:4": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 0.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 1037
+    }
+  },
+  "hot_path_wall_seconds": {},
+  "idle_visible_devices": [],
+  "policy_rollout_wall_seconds": {
+    "count": 600,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "probe_device_sets": [],
+  "probe_episode_counts_by_device": {},
+  "probe_trial_counts_by_device": {},
+  "probe_trial_splits": [],
+  "probe_wall_seconds_by_device": {},
+  "recommendations": [
+    "Check whether reward probes are balanced across visible GPUs.",
+    "Enable terminal reward-probe diagnostics before judging GPU utilization."
+  ],
+  "replan_wall_seconds": {
+    "count": 600,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "sampled_active_devices": [
+    "cuda:0"
+  ],
+  "terminal_probe_wall_seconds": {
+    "count": 600,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "unattributed_visible_devices": [
+    "cuda:0"
+  ],
+  "used_probe_devices": [],
+  "visible_devices": [
+    "cuda:0"
+  ],
+  "warnings": [
+    "No terminal_probe_devices were recorded in episode diagnostics.",
+    "cuda:1 max utilization 0.0% below 10.0%.",
+    "cuda:2 max utilization 0.0% below 10.0%.",
+    "cuda:3 max utilization 0.0% below 10.0%.",
+    "cuda:4 max utilization 0.0% below 10.0%."
+  ]
+}
