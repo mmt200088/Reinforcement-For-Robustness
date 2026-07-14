@@ -1267,6 +1267,32 @@ class BlockRuntimeHelperTest(unittest.TestCase):
 class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
     """Source-text locks for the four-GPU reward-probe throughput path."""
 
+    def test_sequential_stage2_enables_fast_math_before_model_setup(self):
+        src = (REPO_ROOT / "blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        run_region = _method_region_from_source(src, "run_sequential_via_runner")
+        import_needle = (
+            "from .probe_runner import enable_cuda_reward_probe_fast_math"
+        )
+        call_needle = "enable_cuda_reward_probe_fast_math()"
+        self.assertTrue(
+            import_needle in run_region,
+            "sequential Stage-2 does not import the shared fast-matmul setup",
+        )
+        self.assertTrue(
+            call_needle in run_region,
+            "sequential Stage-2 does not enable the shared fast-matmul setup",
+        )
+        self.assertLess(
+            run_region.index(call_needle),
+            run_region.index("ev.apply_configuration(fixed_gelu, fixed_softmax)"),
+        )
+        self.assertLess(
+            run_region.index(call_needle),
+            run_region.index("reward_devices = list("),
+        )
+
     def test_probe_runner_parallelizes_setup_and_clear(self):
         src = open("blb_stage2_rl/probe_runner.py", encoding="utf-8").read()
         for needle in (
