@@ -149,6 +149,27 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   The timing-run evidence is under
   `experiments/server_command_runs/stage2_layerwise_diag_170ep_9099cfa_20260715_012600/`,
   with both structured mirrors under `rl_training_data_points/`.
+- Stage-2 persistent reward-probe process result, added 2026-07-15: five
+  independent one-GPU processes at source `bff6403` measured `0.524324s` mean
+  per trial, essentially identical to the sequential one-GPU `0.526223s` and
+  only `0.3988x` the old five-thread `1.314906s` critical path. Source
+  `096f184` therefore makes persistent CUDA-safe `spawn` children the default
+  for replica GPUs while GPU0 remains in the learner process; set
+  `BLB_STAGE2_PROBE_BACKEND=thread` only for explicit rollback. The server
+  passed 40 CPU-focused tests (two CUDA skips) and all 42 tests with two GPUs.
+  A real 170-episode five-GPU run then preserved exact research outputs,
+  strict diagnostics, and both PPO updates against the prior verified one-GPU
+  reference, while reducing wall time from `582s` to `171s` (`3.404x`) and
+  probe time from `2.6311s` to `0.5290s` per episode. All five RTX 5090s were
+  sampled active with mean utilization `59.60%`-`64.93%`, and all child
+  processes/GPU allocations were released at exit. This is strong smoke
+  evidence, not final acceptance: the one-GPU side came from source `9099cfa`.
+  Run a fresh same-source 600-episode 1GPU-versus-5GPU gate and require exact
+  episode/PPO equality plus at least `3.4x` before declaring the optimization
+  complete. Evidence is under
+  `experiments/server_command_runs/stage2_probe_process_backend_096f184_20260715/`,
+  with all successful and failed-run structured mirrors under
+  `rl_training_data_points/stage2/bert-base/mrpc/`.
 - GPU activity-report rule, added 2026-07-13: do not infer that a visible GPU is
   idle solely because layerwise episode rows omit `terminal_probe_devices`.
   `scripts/gpu_utilization_report.py` must preserve probe attribution as a

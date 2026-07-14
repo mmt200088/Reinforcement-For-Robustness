@@ -1,0 +1,47 @@
+==== Stage-2 N-GPU A/B Verdict ====
+1GPU episodes: 170
+NGPU episodes: 170
+quality/effect equality: PASS
+strict diagnostic equality: PASS
+PPO update equality: PASS
+PPO update counts: 1GPU=2 NGPU=2
+wall source: wall file
+1GPU wall_s: 582.000
+NGPU wall_s: 171.000
+1GPU episodes/hour: 1051.546
+NGPU episodes/hour: 3578.947
+speedup: 3.404x
+NGPU distinct probe devices: 5
+speedup/device_count: 0.681
+NGPU device episode balance min/max: 170/170
+NGPU probe critical-path lower bound_s: 89.937
+NGPU probe-bound ceiling episodes/hour: 6804.765
+NGPU wall/probe_bound ratio: 1.901
+NGPU probe ceiling utilization: 0.526
+NGPU component critical-path lower bound_s: 89.937
+NGPU component-bound ceiling episodes/hour: 6804.765
+NGPU wall/component_bound ratio: 1.901
+NGPU component ceiling utilization: 0.526
+NGPU policy diagnostic critical-path sum_s: 0.000
+1GPU terminal probe mean_s/episode: 2.631
+NGPU terminal probe mean_s/episode: 0.529
+NGPU/1GPU terminal probe mean ratio: 0.201
+1GPU policy rollout mean_s/episode: 0.000
+NGPU policy rollout mean_s/episode: 0.000
+NGPU/1GPU policy rollout mean ratio: n/a
+NGPU worker-local probe noise scopes detected: False
+NGPU worker-local CUDA probe streams detected: False
+NGPU cpu policy mode detected: False
+
+1GPU device breakdown:
+  cuda:0: {'episodes': 170.0, 'trials': 850.0, 'probe_s': 447.2897661055904, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 447.2897661055904}
+NGPU device breakdown:
+  cuda:0: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 89.93697463162243, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 89.93697463162243}
+  cuda:1: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 89.93697463162243, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 89.93697463162243}
+  cuda:2: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 89.93697463162243, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 89.93697463162243}
+  cuda:3: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 89.93697463162243, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 89.93697463162243}
+  cuda:4: {'episodes': 170.0, 'trials': 170.0, 'probe_s': 89.93697463162243, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 89.93697463162243}
+
+1GPU rollout timing log: n/a
+NGPU rollout timing log: n/a
+[OK] speedup >= 2.000x
