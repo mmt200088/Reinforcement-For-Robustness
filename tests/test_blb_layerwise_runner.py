@@ -271,6 +271,49 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             _cosine_entropy_coefficient(uninterrupted, 30_000),
         )
 
+    def test_p3_cost_is_redistributed_without_changing_episode_return(self):
+        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
+
+        layer_costs = tuple((index + 1) / 780.0 for index in range(12))
+        variable_cost = sum(layer_costs)
+        rewards = redistribute_layerwise_rewards(
+            terminal_reward=1.75 + variable_cost,
+            priority=3,
+            variable_cost=variable_cost,
+            layer_cost_rewards=layer_costs,
+        )
+
+        self.assertEqual(len(rewards), 12)
+        self.assertEqual(rewards[:-1], layer_costs[:-1])
+        self.assertAlmostEqual(rewards[-1], layer_costs[-1] + 1.75)
+        self.assertAlmostEqual(sum(rewards), 1.75 + variable_cost)
+
+    def test_p1_and_p2_never_receive_cost_credit(self):
+        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
+
+        layer_costs = (0.01,) * 12
+        for priority, terminal_reward in ((1, -3.2), (2, -1.7)):
+            with self.subTest(priority=priority):
+                rewards = redistribute_layerwise_rewards(
+                    terminal_reward=terminal_reward,
+                    priority=priority,
+                    variable_cost=sum(layer_costs),
+                    layer_cost_rewards=layer_costs,
+                )
+                self.assertEqual(rewards[:-1], (0.0,) * 11)
+                self.assertEqual(rewards[-1], terminal_reward)
+
+    def test_reward_redistribution_rejects_inconsistent_cost_terms(self):
+        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
+
+        with self.assertRaisesRegex(ValueError, "sum"):
+            redistribute_layerwise_rewards(
+                terminal_reward=1.5,
+                priority=3,
+                variable_cost=0.5,
+                layer_cost_rewards=(0.01,) * 12,
+            )
+
 
 class LayerwiseDispatchRulesTests(unittest.TestCase):
     def test_sequential_train_config_carries_layerwise_resume_state(self):
@@ -645,6 +688,9 @@ class _FakeBuffer:
         self.transitions.append(dict(transition))
         return len(self.transitions) - 1
 
+    def add_reward_at(self, index, delta):
+        self.transitions[int(index)]["reward"] += float(delta)
+
     def clear(self):
         self.cleared = True
 
@@ -744,7 +790,10 @@ class _FakeLayerwiseEnv:
         return np.zeros(4, dtype=np.float32), (-5.0 if self._invalid else 7.5), True, {
             "policy_actions": [row[:] for row in self.actions],
             "pending_full_vector": list(range(20)),
-            "variable_cost": {"normalized": 0.4},
+            "variable_cost": {
+                "normalized": 0.4,
+                "layer_cost_rewards": [0.4 / 12.0] * 12,
+            },
             "layer_summaries": [
                 {"all_valid": True} for _ in range(12)
             ],
@@ -823,8 +872,16 @@ class LayerwiseRolloutTests(unittest.TestCase):
             )
 
         self.assertEqual(len(buffer.transitions), 12)
-        self.assertEqual([row["reward"] for row in buffer.transitions[:-1]], [0.0] * 11)
-        self.assertEqual(buffer.transitions[-1]["reward"], 7.5)
+        expected_local = 0.4 / 12.0
+        for row in buffer.transitions[:-1]:
+            self.assertAlmostEqual(row["reward"], expected_local)
+        self.assertAlmostEqual(
+            buffer.transitions[-1]["reward"],
+            7.5 - 0.4 + expected_local,
+        )
+        self.assertAlmostEqual(
+            sum(row["reward"] for row in buffer.transitions), 7.5,
+        )
         self.assertEqual([row["done"] for row in buffer.transitions], [False] * 11 + [True])
         self.assertEqual([float(row["log_prob"]) for row in buffer.transitions], [5.0] + [6.0] * 11)
         self.assertFalse(policy.masks[0][1])

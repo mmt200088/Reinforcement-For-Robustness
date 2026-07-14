@@ -208,6 +208,45 @@ def normalized_entropy_snapshot(
     }
 
 
+def redistribute_layerwise_rewards(
+        *,
+        terminal_reward: float,
+        priority: int,
+        variable_cost: float,
+        layer_cost_rewards: Sequence[float],
+        ) -> tuple[float, ...]:
+    """Move P3 cost credit to its twelve source layer transitions.
+
+    The returned rewards always sum to ``terminal_reward``. Precision/stability
+    failures retain terminal-only credit, so cost cannot leak into P1 or P2.
+    """
+    reward = _finite(terminal_reward, name="terminal_reward")
+    cost = _finite(variable_cost, name="variable_cost")
+    layer_costs = tuple(
+        _finite(value, name=f"layer_cost_rewards[{index}]")
+        for index, value in enumerate(layer_cost_rewards)
+    )
+    if len(layer_costs) != 12:
+        raise ValueError(
+            f"layer_cost_rewards must contain 12 values, got {len(layer_costs)}"
+        )
+    if cost < 0.0 or cost > 1.0:
+        raise ValueError(f"variable_cost must be in [0, 1], got {cost}")
+    if not math.isclose(sum(layer_costs), cost, rel_tol=0.0, abs_tol=1.0e-9):
+        raise ValueError(
+            "layer_cost_rewards sum must equal variable_cost: "
+            f"{sum(layer_costs)} != {cost}"
+        )
+    if int(priority) != 3:
+        return (0.0,) * 11 + (reward,)
+
+    redistributed = list(layer_costs)
+    redistributed[-1] += reward - cost
+    if not math.isclose(sum(redistributed), reward, rel_tol=0.0, abs_tol=1.0e-9):
+        raise RuntimeError("layerwise reward redistribution changed episode return")
+    return tuple(float(value) for value in redistributed)
+
+
 @dataclass(frozen=True)
 class LayerwiseConvergenceState:
     completed_episodes: int
@@ -1007,6 +1046,7 @@ def train_layerwise(
                 trial_count=expected_online_trials,
             )
         step_infos: list[Mapping[str, Any]] = []
+        transition_indices: list[int] = []
         terminal_info: Optional[Mapping[str, Any]] = None
         episode_reward = 0.0
         for step_idx in range(12):
@@ -1030,8 +1070,7 @@ def train_layerwise(
                 raise RuntimeError(
                     f"layerwise episode termination mismatch at step {step_idx}: done={done}"
                 )
-            stored_reward = float(reward) if expected_done else 0.0
-            rollout_buffer.add(
+            transition_index = rollout_buffer.add(
                 state=state_np,
                 action=action,
                 slot_mask=slot_mask,
@@ -1039,10 +1078,11 @@ def train_layerwise(
                 action_level_mask=None,
                 log_prob=log_prob,
                 value=value,
-                reward=stored_reward,
+                reward=0.0,
                 done=bool(done),
                 baseline_prior_scale=0.0,
             )
+            transition_indices.append(int(transition_index))
             entropy_samples.append({
                 "state": state_np.copy(),
                 "action": action.copy(),
@@ -1074,6 +1114,13 @@ def train_layerwise(
             _field(terminal_info.get("variable_cost", {}), "normalized"),
             name="variable_cost",
         )
+        layer_cost_rewards = tuple(
+            float(value) for value in _field(
+                terminal_info.get("variable_cost", {}),
+                "layer_cost_rewards",
+                (),
+            )
+        )
         breakdown = runtime_info.get("reward_breakdown")
         priority = int(_field(breakdown, "priority", runtime_info.get("priority", 0)))
         invalid_terminal = bool(runtime_info.get("invalid", False))
@@ -1081,6 +1128,16 @@ def train_layerwise(
             raise RuntimeError(
                 f"invalid layerwise terminal reward must be -5, got {episode_reward}"
             )
+        redistributed_rewards = redistribute_layerwise_rewards(
+            terminal_reward=episode_reward,
+            priority=priority,
+            variable_cost=variable_cost,
+            layer_cost_rewards=layer_cost_rewards,
+        )
+        for transition_index, reward_delta in zip(
+                transition_indices, redistributed_rewards,
+        ):
+            rollout_buffer.add_reward_at(transition_index, reward_delta)
         raw_trials = (
             None
             if invalid_terminal

@@ -196,6 +196,17 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(info["external_cost_rank"], info["variable_cost"]["normalized"])
         self.assertGreaterEqual(info["external_cost_score"], 0.0)
         self.assertLessEqual(info["external_cost_score"], 1.0)
+        self.assertEqual(len(info["variable_cost"]["layer_cost_rewards"]), 12)
+        self.assertAlmostEqual(
+            sum(info["variable_cost"]["layer_cost_rewards"]),
+            info["variable_cost"]["normalized"],
+        )
+        self.assertAlmostEqual(
+            info["variable_cost"]["fusion_units"]
+            + info["variable_cost"]["truncation_units"],
+            info["variable_cost"]["total_units"],
+        )
+        self.assertEqual(info["variable_cost"]["max_units"], 159.5)
         expected_boosted_rows = [
             {
                 "block_idx": int(block_idx),

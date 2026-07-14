@@ -477,6 +477,13 @@ class BLBStage2LayerwiseEnv:
                 "fusion_saving": float(variable_cost.fusion_saving),
                 "truncation_saving": float(variable_cost.truncation_saving),
                 "normalized": float(variable_cost.normalized),
+                "fusion_units": float(variable_cost.fusion_units),
+                "truncation_units": float(variable_cost.truncation_units),
+                "total_units": float(variable_cost.total_units),
+                "max_units": float(variable_cost.max_units),
+                "layer_cost_rewards": [
+                    float(value) for value in variable_cost.layer_cost_rewards
+                ],
             },
             "policy_actions": self.action_history,
             "decoded_actions": decoded_actions,
