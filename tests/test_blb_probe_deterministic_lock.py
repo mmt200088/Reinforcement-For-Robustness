@@ -3,6 +3,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+import numpy as np
+
 try:
     import torch
 except ModuleNotFoundError:  # pragma: no cover - local macOS env may be torch-free.
@@ -11,6 +13,49 @@ except ModuleNotFoundError:  # pragma: no cover - local macOS env may be torch-f
 
 @unittest.skipIf(torch is None, "torch is required for deterministic probe tests")
 class DeterministicProbeLockTests(unittest.TestCase):
+    @staticmethod
+    def _make_probe_worker():
+        from blb_stage2_rl.probe_runner import ProbeWorker
+        from function_handler import _sample_independent_gaussian
+
+        class FakeNoisyModel(torch.nn.Module):
+            def forward(
+                    self,
+                    input_ids,
+                    attention_mask=None,
+                    labels=None,
+                    token_type_ids=None,
+                    ):
+                reference = torch.zeros(
+                    int(input_ids.shape[0]), 2,
+                    device=input_ids.device,
+                    dtype=torch.float32,
+                )
+                return SimpleNamespace(
+                    logits=_sample_independent_gaussian(reference, 1.0),
+                )
+
+        device = torch.device("cpu")
+        batch = SimpleNamespace(
+            input_ids=torch.zeros(8, 3, device=device, dtype=torch.long),
+            attention_mask=torch.ones(8, 3, device=device, dtype=torch.long),
+            labels=torch.tensor(
+                [0, 1, 0, 1, 0, 1, 0, 1],
+                device=device,
+                dtype=torch.long,
+            ),
+            token_type_ids=None,
+        )
+        return ProbeWorker(
+            device=device,
+            model=FakeNoisyModel(),
+            handler=None,
+            bridge=None,
+            probe_batches=[batch],
+            is_regression=False,
+            metric_profile="mrpc",
+        )
+
     def test_probe_batch_metrics_are_sample_weighted_with_tail_batch(self):
         from blb_stage2_rl.eval_metrics import weighted_probe_batch_means
 
@@ -152,6 +197,36 @@ class DeterministicProbeLockTests(unittest.TestCase):
             [list(expected)],
         )
         self.assertEqual(derive_mock.call_count, 3)
+
+    def test_probe_worker_replays_independent_noise_for_same_trial_seed(self):
+        worker = self._make_probe_worker()
+
+        first = worker.run_trial(trial_idx=3, base_seed=12345)
+        second = worker.run_trial(trial_idx=3, base_seed=12345)
+
+        self.assertEqual(second, first)
+
+    def test_probe_worker_does_not_mutate_global_rng_streams(self):
+        worker = self._make_probe_worker()
+        torch_state = torch.get_rng_state()
+        numpy_state = np.random.get_state()
+        try:
+            torch.manual_seed(2468)
+            expected_torch = torch.rand(8)
+            np.random.seed(1357)
+            expected_numpy = np.random.random(8)
+
+            torch.manual_seed(2468)
+            np.random.seed(1357)
+            worker.run_trial(trial_idx=2, base_seed=67890)
+            actual_torch = torch.rand(8)
+            actual_numpy = np.random.random(8)
+        finally:
+            torch.set_rng_state(torch_state)
+            np.random.set_state(numpy_state)
+
+        self.assertTrue(torch.equal(actual_torch, expected_torch))
+        np.testing.assert_array_equal(actual_numpy, expected_numpy)
 
     def test_noise_rng_scope_isolates_and_restores_thread_local_generator(self):
         from function_handler import (
