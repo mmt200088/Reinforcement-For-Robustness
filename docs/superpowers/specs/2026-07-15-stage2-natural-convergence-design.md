@@ -54,7 +54,8 @@ only when all conditions hold:
 
 The 100-window criterion is convergence patience, not a training budget. A
 frontier improvement, retraction, or loss of the current feasible frontier
-resets the patience exactly as in the existing tracker.
+resets the patience exactly as in the existing tracker. PPO attempts skipped or
+interrupted by non-finite minibatches do not advance this patience.
 
 Positive episode counts remain supported only as bounded smoke/test budgets.
 Exhausting such a budget is not convergence and must not be reported as a

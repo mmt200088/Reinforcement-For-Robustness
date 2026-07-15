@@ -447,7 +447,8 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   diagnostics and stop signals only. Stop after a complete PPO update only
   when both normalized entropies are below `0.1`, a promotion-qualified robust
   feasible candidate exists, and its cost frontier has not improved for 100
-  PPO updates. Positive episode limits are smoke/debug budgets and do not imply
+  complete finite PPO updates; skipped/non-finite updates do not advance this
+  patience. Positive episode limits are smoke/debug budgets and do not imply
   convergence. Do not restore entropy schedules, floors, recovery, or forced
   concentration to make the policy stop.
 - Stage-2 fusion-count map build status, updated 2026-06-03: commit `ea27408`

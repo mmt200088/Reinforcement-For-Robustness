@@ -266,6 +266,9 @@ class PPOUpdateStats:
     lr: float = 0.0
     lr_scale: float = 1.0
     entropy_recovery_delta: float = 0.0
+    nonfinite_minibatches: int = 0
+    nonfinite_update_skipped: bool = False
+    convergence_update_counted: bool = True
     return_mean: float = 0.0
     return_std: float = 1.0
     block4_entropy: Optional[float] = None

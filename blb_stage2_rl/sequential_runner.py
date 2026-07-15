@@ -3693,6 +3693,7 @@ def _run_layerwise_training_branch(
         "k_entropy_below": 0.1,
         "requires_robust_feasible_candidate": True,
         "frontier_stall_update_windows": 100,
+        "counts_only_finite_ppo_updates": True,
     }
     if requested_total_episodes > 0:
         layerwise_termination = {
@@ -4380,6 +4381,13 @@ def _run_layerwise_training_branch(
             entropy_recovery_delta=float(
                 metrics.get("entropy_recovery_delta", 0.0)
             ),
+            nonfinite_minibatches=int(metrics.get("nonfinite_minibatches", 0) or 0),
+            nonfinite_update_skipped=bool(
+                metrics.get("nonfinite_update_skipped", False)
+            ),
+            convergence_update_counted=bool(
+                metrics.get("convergence_update_counted", True)
+            ),
             return_mean=float(metrics.get("return_mean", 0.0)),
             return_std=float(metrics.get("return_std", 1.0)),
             block4_entropy=metrics.get("block4_entropy"),
@@ -4416,6 +4424,9 @@ def _run_layerwise_training_branch(
                 "lr": update_stats.lr,
                 "lr_scale": update_stats.lr_scale,
                 "entropy_recovery_delta": update_stats.entropy_recovery_delta,
+                "nonfinite_minibatches": update_stats.nonfinite_minibatches,
+                "nonfinite_update_skipped": update_stats.nonfinite_update_skipped,
+                "convergence_update_counted": update_stats.convergence_update_counted,
                 "return_mean": update_stats.return_mean,
                 "return_std": update_stats.return_std,
                 "window_mean_return": float(update_stats.window_mean_return),
@@ -4457,6 +4468,7 @@ def _run_layerwise_training_branch(
             diag_recorder.flush_periodic()
     status.set_phase("PPO training (12-step layerwise robust)")
     training_completed = False
+    completion_status = "failed"
     summary: Dict[str, Any]
     try:
         summary = train_layerwise(
@@ -4476,17 +4488,16 @@ def _run_layerwise_training_branch(
             strict_best=summary.get("strict_best"),
             convergence_state=summary.get("convergence_state"),
         )
+        completion_status = (
+            "converged" if summary.get("converged", False) else "budget_exhausted"
+        )
         training_completed = True
     finally:
         try:
             if not training_completed:
                 status.set_phase("failed")
             run_manifest.update({
-                "status": (
-                    "converged"
-                    if training_completed and summary.get("converged", False)
-                    else "budget_exhausted" if training_completed else "failed"
-                ),
+                "status": completion_status,
                 "completed_episodes": int(start_episode + len(episode_records)),
                 "ppo_update_count": int(ppo_update_counter),
                 "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -4494,9 +4505,7 @@ def _run_layerwise_training_branch(
             write_strict_json_file(layerwise_manifest_path, run_manifest)
         finally:
             try:
-                diag_recorder.finalize(
-                    status=("completed" if training_completed else "failed")
-                )
+                diag_recorder.finalize(status=completion_status)
             finally:
                 try:
                     base_env.clear_installed_blb()
@@ -4514,13 +4523,11 @@ def _run_layerwise_training_branch(
                         except Exception:
                             pass
                     evaluator.apply_configuration(fixed_gelu, fixed_softmax)
-    status.set_phase("completed")
+    status.set_phase(completion_status)
 
     compact_summary = {
         "schema_version": "stage2_layerwise_robust_summary_v2",
-        "status": (
-            "converged" if summary.get("converged", False) else "budget_exhausted"
-        ),
+        "status": completion_status,
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,
@@ -4669,7 +4676,7 @@ def _run_layerwise_training_branch(
         "proxy_limit_s": limits["metric2"],
         "search_limits": limits,
         "all_max_blb_baseline_metrics": dict(baseline_preflight_metrics),
-        "status": "completed",
+        "status": completion_status,
         "blb_v3_best_action_vec": best_full_vector,
         "blb_v3_best_action_group": best_action_group,
         "blb_v3_layerwise_best_action_group": best_action_group,

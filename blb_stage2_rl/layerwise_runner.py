@@ -366,6 +366,9 @@ def validate_stage2_episode_limit_mode(
         fusion_count_action: bool,
         decision_granularity: str,
         reward_design: str,
+        sequential_rl: bool,
+        substage_mode: bool,
+        stage2_rl_variant: str,
         ) -> int:
     """Reserve zero-budget semantics for natural-convergence layerwise PPO."""
     limit = int(episode_limit)
@@ -374,8 +377,12 @@ def validate_stage2_episode_limit_mode(
     if limit == 0:
         granularity = normalize_decision_granularity(decision_granularity)
         normalized_reward = normalize_reward_design(reward_design)
+        variant = str(stage2_rl_variant or "").strip().lower().replace("-", "_")
         if not (
-                bool(fusion_count_action)
+                variant in ("blb_v3", "blb", "v3", "blb_stage2_rl")
+                and bool(sequential_rl)
+                and not bool(substage_mode)
+                and bool(fusion_count_action)
                 and granularity == "layer"
                 and normalized_reward == "robust_constrained"
         ):
@@ -613,6 +620,7 @@ class LayerwiseConvergenceTracker:
             block4_entropy: Optional[float],
             k_entropy: Optional[float],
             robust_feasible_cost: Optional[float],
+            count_patience: bool = True,
             ) -> LayerwiseConvergenceState:
         episodes = int(completed_episodes)
         if robust_feasible_cost is None:
@@ -631,7 +639,7 @@ class LayerwiseConvergenceTracker:
             elif self._best_cost is None or cost > self._best_cost + 1.0e-12:
                 self._best_cost = cost
                 self._stall_windows = 0
-            else:
+            elif count_patience:
                 self._stall_windows += 1
             self._current_frontier_cost = cost
 
@@ -640,7 +648,8 @@ class LayerwiseConvergenceTracker:
         )
         k_value = None if k_entropy is None else _finite(k_entropy, name="k_entropy")
         converged = bool(
-            b4 is not None and b4 < 0.1
+            count_patience
+            and b4 is not None and b4 < 0.1
             and k_value is not None and k_value < 0.1
             and robust_feasible_cost is not None
             and self._best_cost is not None
@@ -655,6 +664,21 @@ class LayerwiseConvergenceTracker:
             converged=converged,
             extension_required=False,
         )
+
+
+def is_unbounded_layerwise_training(
+        remaining_episodes: int,
+        planned_total_episodes: Optional[int],
+        ) -> bool:
+    """Disambiguate an unbounded run from an exhausted bounded resume."""
+    remaining = int(remaining_episodes)
+    planned = (
+        remaining
+        if planned_total_episodes is None else int(planned_total_episodes)
+    )
+    if remaining < 0 or planned < 0:
+        raise ValueError("layerwise episode counts must be nonnegative")
+    return planned == 0
 
 
 def resolve_layerwise_episode_budget(
@@ -1251,7 +1275,12 @@ def train_layerwise(
     ppo_cfg.gamma = 1.0
     ppo_cfg.gae_lambda = 1.0
     update_window = max(1, int(getattr(train_cfg, "update_every_n_episodes", 120)))
-    total_episodes = max(0, int(getattr(train_cfg, "total_episodes", 0)))
+    total_episodes = int(getattr(train_cfg, "total_episodes", 0))
+    planned_total_episodes = getattr(train_cfg, "planned_total_episodes", None)
+    unbounded_training = is_unbounded_layerwise_training(
+        total_episodes,
+        planned_total_episodes,
+    )
     absolute_start = int(getattr(train_cfg, "absolute_episode_start", 0))
     base_seed = getattr(train_cfg, "seed", None)
     expected_online_trials = int(
@@ -1328,7 +1357,7 @@ def train_layerwise(
 
     local_episode = 0
     while not convergence_state.converged and (
-            total_episodes == 0 or local_episode < total_episodes
+            unbounded_training or local_episode < total_episodes
     ):
         absolute_episode = absolute_start + local_episode
         state = env.reset(
@@ -1600,7 +1629,7 @@ def train_layerwise(
             "block4_slot_count": 0, "k_slot_count": 0,
         }
         update_due = completed % update_window == 0 or (
-            total_episodes > 0 and completed == total_episodes
+            not unbounded_training and completed == total_episodes
         )
         ppo_metrics: Optional[dict[str, Any]] = None
         if update_due:
@@ -1612,6 +1641,10 @@ def train_layerwise(
                 device,
                 ent_coef_override=0.0,
             ))
+            convergence_update_counted = bool(
+                int(ppo_metrics.get("nonfinite_minibatches", 0) or 0) == 0
+                and not bool(ppo_metrics.get("nonfinite_update_skipped", False))
+            )
             entropy_snapshot = _current_policy_entropy(policy, entropy_samples, device)
             best_cost = (
                 max(row["variable_cost"] for row in accepted_candidates.values())
@@ -1622,6 +1655,7 @@ def train_layerwise(
                 block4_entropy=entropy_snapshot["block4"],
                 k_entropy=entropy_snapshot["k"],
                 robust_feasible_cost=best_cost,
+                count_patience=convergence_update_counted,
             )
             persisted_convergence_state = {
                 **convergence_tracker.state_dict(),
@@ -1638,6 +1672,7 @@ def train_layerwise(
                 "converged": convergence_state.converged,
                 "extension_required": convergence_state.extension_required,
                 "best_robust_feasible_cost": convergence_state.best_robust_feasible_cost,
+                "convergence_update_counted": convergence_update_counted,
                 "convergence_state": persisted_convergence_state,
                 "strict_best": _strict_best_snapshot(accepted_candidates),
             })

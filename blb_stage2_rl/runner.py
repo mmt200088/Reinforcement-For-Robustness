@@ -3105,6 +3105,9 @@ class BLBStage2RLRunner:
             fusion_count_action=bool(cfg.fusion_count_action),
             decision_granularity=cfg.decision_granularity,
             reward_design=cfg.reward_design,
+            sequential_rl=bool(cfg.sequential_rl),
+            substage_mode=bool(cfg.substage_mode),
+            stage2_rl_variant="blb_v3",
         )
         return cfg
 

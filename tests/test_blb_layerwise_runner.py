@@ -249,11 +249,17 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertFalse(state.converged)
 
     def test_layerwise_episode_budget_zero_remains_unbounded_across_resume(self):
-        from blb_stage2_rl.layerwise_runner import resolve_layerwise_episode_budget
+        from blb_stage2_rl.layerwise_runner import (
+            is_unbounded_layerwise_training,
+            resolve_layerwise_episode_budget,
+        )
 
         self.assertEqual(resolve_layerwise_episode_budget(0, 0), 0)
         self.assertEqual(resolve_layerwise_episode_budget(0, 72_000), 0)
         self.assertEqual(resolve_layerwise_episode_budget(60_000, 12_000), 48_000)
+        self.assertTrue(is_unbounded_layerwise_training(0, 0))
+        self.assertFalse(is_unbounded_layerwise_training(0, 60_000))
+        self.assertFalse(is_unbounded_layerwise_training(48_000, 60_000))
         with self.assertRaisesRegex(ValueError, "nonnegative"):
             resolve_layerwise_episode_budget(-1, 0)
         with self.assertRaisesRegex(ValueError, "exceeds"):
@@ -616,7 +622,11 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('"block4_entropy_below": 0.1', branch_source)
         self.assertIn('"k_entropy_below": 0.1', branch_source)
         self.assertIn('"frontier_stall_update_windows": 100', branch_source)
+        self.assertIn('"counts_only_finite_ppo_updates": True', branch_source)
         self.assertIn("resolve_layerwise_episode_budget(", branch_source)
+        self.assertIn("completion_status", branch_source)
+        self.assertIn("diag_recorder.finalize(status=completion_status)", branch_source)
+        self.assertIn('"status": completion_status', branch_source)
         self.assertIn(
             '"blb_v3_total_episodes": int(summary.get("completed_episodes"',
             branch_source,
@@ -748,7 +758,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("run_manifest.update({", branch_source)
         self.assertIn('"converged"', branch_source)
         self.assertIn('"budget_exhausted"', branch_source)
-        self.assertIn('else "failed"', branch_source)
+        self.assertIn('completion_status = "failed"', branch_source)
+        self.assertIn('"status": completion_status', branch_source)
         self.assertIn('"completed_episodes": int(', branch_source)
         self.assertIn('"ppo_update_count": int(ppo_update_counter)', branch_source)
         self.assertGreaterEqual(
@@ -784,6 +795,12 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 f'"{status_field}": update_stats.{status_field}',
                 branch_source,
             )
+        for field in (
+            "nonfinite_minibatches",
+            "nonfinite_update_skipped",
+            "convergence_update_counted",
+        ):
+            self.assertIn(field, branch_source)
 
     def test_layerwise_online_trial_count_uses_authoritative_stage2_k_trials(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
@@ -943,6 +960,9 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 fusion_count_action=True,
                 decision_granularity="layer",
                 reward_design="robust_constrained",
+                sequential_rl=True,
+                substage_mode=False,
+                stage2_rl_variant="blb_v3",
             ),
             0,
         )
@@ -952,6 +972,9 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 fusion_count_action=True,
                 decision_granularity="block",
                 reward_design="stage1_aligned",
+                sequential_rl=True,
+                substage_mode=False,
+                stage2_rl_variant="blb_v3",
             ),
             600,
         )
@@ -961,16 +984,46 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 fusion_count_action=True,
                 decision_granularity="block",
                 reward_design="stage1_aligned",
+                sequential_rl=True,
+                substage_mode=False,
+                stage2_rl_variant="blb_v3",
             )
+        for unsupported in (
+            {"sequential_rl": False},
+            {"substage_mode": True},
+            {"stage2_rl_variant": "legacy_v2"},
+        ):
+            values = {
+                "fusion_count_action": True,
+                "decision_granularity": "layer",
+                "reward_design": "robust_constrained",
+                "sequential_rl": True,
+                "substage_mode": False,
+                "stage2_rl_variant": "blb_v3",
+                **unsupported,
+            }
+            with self.subTest(unsupported=unsupported), self.assertRaisesRegex(
+                    ValueError, "only.*layerwise robust",
+            ):
+                validate_stage2_episode_limit_mode(0, **values)
         with self.assertRaisesRegex(ValueError, "nonnegative"):
             validate_stage2_episode_limit_mode(
                 -1,
                 fusion_count_action=True,
                 decision_granularity="layer",
                 reward_design="robust_constrained",
+                sequential_rl=True,
+                substage_mode=False,
+                stage2_rl_variant="blb_v3",
             )
         runner_source = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
         self.assertIn("validate_stage2_episode_limit_mode(", runner_source)
+        evaluator_source = Path("layer_importance_evaluator.py").read_text(
+            encoding="utf-8",
+        )
+        self.assertIn("validate_stage2_episode_limit_mode(", evaluator_source)
+        self.assertIn('noise_stage_result.get("status", "completed")', evaluator_source)
+        self.assertIn('"blb_v3_total_episodes"', evaluator_source)
 
     def test_initial_probabilities_use_decoded_k_values_and_disable_epsilon(self):
         from blb_stage2_rl.layerwise_action import K_LEVELS
@@ -1322,6 +1375,95 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["completed_episodes"], 2)
         self.assertEqual(len(summary["episode_records"]), 2)
         self.assertFalse(summary["converged"])
+
+    def test_exhausted_bounded_resume_does_not_become_unbounded(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        config = self._train_cfg(total_episodes=0, update_every=1)
+        config.absolute_episode_start = 2
+        config.planned_total_episodes = 2
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["completed_episodes"], 2)
+        self.assertEqual(summary["episode_records"], [])
+        self.assertFalse(summary["converged"])
+
+    def test_nonfinite_skipped_update_does_not_advance_convergence_patience(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        action_matrix = [[1, 0, 1, 2, 3, 4] for _ in range(12)]
+        frontier = {
+            "variable_cost": 0.4,
+            "assessment": _assessment(0.9),
+            "metrics": {"loss_mean": 0.3, "metric1_mean": 0.9, "metric2_mean": 0.8},
+            "action_matrix": action_matrix,
+            "full_vector": list(range(20)),
+            "boosted_overrides": {},
+            "reward": 1.4,
+            "promotion_trials": None,
+        }
+        config = self._train_cfg(total_episodes=1, update_every=1)
+        config.convergence_resume_state = {
+            "best_robust_feasible_cost": 0.4,
+            "current_robust_feasible_cost": 0.4,
+            "stall_update_windows": 99,
+            "block4_entropy": 0.2,
+            "k_entropy": 0.2,
+            "converged": False,
+        }
+
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            return_value={"frontier": frontier},
+        ), mock.patch(
+            "blb_stage2_rl.layerwise_runner._current_policy_entropy",
+            return_value={
+                "block4": 0.05,
+                "k": 0.05,
+                "block4_slot_count": 12,
+                "k_slot_count": 59,
+            },
+        ):
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {
+                    "entropy": 0.0,
+                    "nonfinite_minibatches": 1,
+                    "nonfinite_update_skipped": True,
+                },
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["stall_update_windows"], 99)
+        self.assertFalse(summary["converged"])
+        self.assertFalse(summary["ppo_metrics"][0]["convergence_update_counted"])
 
     def test_adjacent_same_action_episodes_pool_ten_distinct_real_probe_seeds(self):
         from blb_stage2_rl.candidate_store import CandidateStore

@@ -237,7 +237,8 @@ def update_persistent_metadata_stage(
     """更新持久化目录中 metadata.json 的阶段完成状态。
 
     stage_key: 'stage1_search', 'stage2_search', 'final_eval'
-    status:    'completed', 'skipped', 'in_progress', 'not_started'
+    status:    'converged', 'budget_exhausted', 'completed', 'skipped',
+               'in_progress', 'not_started'
     extra_fields: dict of additional fields to merge (optional)
     """
     import json as _json
@@ -3174,6 +3175,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         from blb_stage2_rl.layerwise_runner import (
             normalize_decision_granularity,
             normalize_reward_design,
+            validate_stage2_episode_limit_mode,
         )
         self.blb_v3_decision_granularity = normalize_decision_granularity(
             blb_v3_decision_granularity
@@ -3181,6 +3183,16 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.blb_v3_reward_design = normalize_reward_design(
             blb_v3_reward_design
         )
+        if not self.skip_noise_rl and self.search_algorithm != "ga":
+            validate_stage2_episode_limit_mode(
+                self.stage2_rl_episodes,
+                fusion_count_action=self.blb_v3_fusion_count_action,
+                decision_granularity=self.blb_v3_decision_granularity,
+                reward_design=self.blb_v3_reward_design,
+                sequential_rl=self.blb_v3_sequential_rl,
+                substage_mode=self.blb_v3_substage_mode,
+                stage2_rl_variant=self.stage2_rl_variant,
+            )
         self.blb_v3_fusion_neighbor_curriculum = self._coerce_bool_flag(
             blb_v3_fusion_neighbor_curriculum, 'blb_v3_fusion_neighbor_curriculum',
         )
@@ -7877,10 +7889,24 @@ class LayerImportanceEvaluator(TrainerCallback):
                     resume_checkpoint_path=self._get_stage2_resume_checkpoint_path(),
                 )
                 if self.run_output_dir:
+                    stage2_status = str(
+                        noise_stage_result.get("status", "completed")
+                    )
+                    completed_stage2_episodes = int(
+                        noise_stage_result.get(
+                            "blb_v3_total_episodes",
+                            self.stage2_rl_episodes,
+                        )
+                    )
                     update_persistent_metadata_stage(
-                        self.run_output_dir, "stage2_search", "completed",
+                        self.run_output_dir, "stage2_search", stage2_status,
                         extra_fields={
-                            "episodes": int(self.stage2_rl_episodes),
+                            "episodes": completed_stage2_episodes,
+                            "configured_episode_limit": (
+                                None
+                                if self.stage2_rl_episodes == 0
+                                else int(self.stage2_rl_episodes)
+                            ),
                         },
                     )
 
