@@ -156,6 +156,21 @@ def parse_stage1_episode_limit(raw_value: Any, flag_name: str) -> int:
         ) from None
 
 
+def parse_stage2_episode_limit(raw_value: Any, flag_name: str) -> int:
+    """Parse Stage-2 episode limit; zero means natural-convergence mode."""
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Invalid nonnegative integer for {flag_name}: {raw_value!r}."
+        ) from None
+    if value < 0:
+        raise ValueError(
+            f"Invalid nonnegative integer for {flag_name}: {raw_value!r}."
+        )
+    return value
+
+
 def parse_optional_positive_float(raw_value: Any, flag_name: str) -> float | None:
     if raw_value in (None, ""):
         return None

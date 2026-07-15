@@ -2273,7 +2273,7 @@ class LayerImportanceEvaluator(TrainerCallback):
     def __init__(self, model, train_data, test_data, data_collator, rl_lr=None, degree=None,
                  batch_size=16,
                  stage1_rl_episodes=PPO_MAX_EPISODES,
-                 stage2_rl_episodes=40000,
+                 stage2_rl_episodes=0,
                  stage1_rl_episodes_specified=False,
                  stage2_rl_episodes_specified=False,
                  stage1_entropy_stop_threshold=None,
@@ -2458,9 +2458,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage1_rl_episodes, 'stage1_rl_episodes'
             )
             self.stage1_rl_episode_limit = int(self.stage1_rl_episodes)
-        self.stage2_rl_episodes = self._coerce_positive_int(
+        self.stage2_rl_episodes = self._coerce_nonnegative_int(
             stage2_rl_episodes, 'stage2_rl_episodes'
         )
+        self.stage2_rl_unbounded_until_convergence = self.stage2_rl_episodes == 0
         self.stage1_rl_episodes_specified = self._coerce_bool_flag(
             stage1_rl_episodes_specified, 'stage1_rl_episodes_specified'
         )
@@ -2895,7 +2896,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         if self.skip_noise_rl and (
             self.stage2_rl_episodes_specified
-            or self.stage2_rl_episodes != 40000
+            or self.stage2_rl_episodes != 0
         ):
             raise ValueError(
                 "stage2_rl_episodes was explicitly set, but skip_noise_rl=True. "
@@ -2913,6 +2914,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         if (
             (not self.skip_noise_rl)
             and self.search_algorithm != "ga"
+            and self.stage2_rl_episodes != 0
             and self.stage2_rl_episodes < PPO_UPDATE_INTERVAL
         ):
             raise ValueError(
@@ -3253,6 +3255,21 @@ class LayerImportanceEvaluator(TrainerCallback):
         if value <= 0:
             raise ValueError(
                 f"Invalid positive integer for {flag_name}: {raw_value!r}."
+            )
+        return value
+
+    @staticmethod
+    def _coerce_nonnegative_int(raw_value, flag_name):
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Invalid nonnegative integer for {flag_name}: {raw_value!r}."
+            ) from None
+
+        if value < 0:
+            raise ValueError(
+                f"Invalid nonnegative integer for {flag_name}: {raw_value!r}."
             )
         return value
 

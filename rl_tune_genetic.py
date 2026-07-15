@@ -181,7 +181,7 @@ def normalize_ga_skip_budget_flags(
         stage1_rl_episodes = 51000
         stage1_budget_specified = False
     if skip_noise_rl:
-        stage2_rl_episodes = 40000
+        stage2_rl_episodes = 0
         stage2_budget_specified = False
 
     return {

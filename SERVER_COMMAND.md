@@ -504,9 +504,16 @@ echo "证据目录：$OUT （off/on episodes + ab_verdict.txt）。请 git add/c
 echo "结论看 ab_verdict.txt：质量须 MATCHED；speedup 给出端到端 rollout 墙钟加速。"
 ```
 
-## ⏸ on-deck — ADR-016 reward 60k（KV-cache 验证完，把下面这个 ```bash 块移回上面成为第一个 ```bash 块）  (ADR-015 连续有界 reward（移植 Stage-1）+ 严格稳定性刹车 + Stage-1 cosine 探索 + 严格可行性选择 → 门禁 → 60k)
+## 历史归档 — ADR-016 固定 60k（禁止作为正式启动命令）
+
+> 该块保留旧实验审计证据，不得移回 active。2026-07-15 起，正式 Stage-2
+> layerwise robust PPO 必须通过 `mrpc-blb-stage2-rl` preset 使用
+> `--stage2-search-episodes 0`，由双熵、可靠可行候选和前沿停滞条件自然结束。
+> 正数 episode 预算仅用于 smoke/debug。
 
 ```bash
+echo "[RETIRED] 固定 60k 模板仅供历史审计；请使用自然收敛 preset。" >&2
+exit 2
 set -uo pipefail
 export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}.:Rescale_optimizer"
 export HF_HOME=/hy-tmp/hf_cache HF_ENDPOINT=https://hf-mirror.com HF_HUB_DISABLE_XET=1 GLUE_LOCAL_DATASET_DIR=/hy-tmp/glue_data

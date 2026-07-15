@@ -105,6 +105,11 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         rlpath = (repo / "scripts" / "run_fusion_count_action_eval_rlpath.py").read_text(encoding="utf-8")
         self.assertRegex(rlpath, r"from json_utils import .*\bto_jsonable\b")
         self.assertNotIn("def _jsonable", rlpath)
+        self.assertIn("stage2_rl_episodes=0", rlpath)
+
+        genetic = (repo / "rl_tune_genetic.py").read_text(encoding="utf-8")
+        skip_branch = genetic.split("if skip_noise_rl:", 1)[1].split("return {", 1)[0]
+        self.assertIn("stage2_rl_episodes = 0", skip_branch)
 
     def test_json_default_scripts_use_shared_adapter(self):
         repo = pathlib.Path(__file__).resolve().parents[1]

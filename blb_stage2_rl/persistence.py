@@ -179,6 +179,10 @@ def _render_live_summary_markdown(state: Mapping[str, Any]) -> str:
     completed = int(state.get("completed_episodes", 0) or 0)
     total = int(state.get("total_episodes", 0) or 0)
     pct = (100.0 * completed / total) if total > 0 else 0.0
+    episode_progress = (
+        f"{completed} / {total} ({pct:.2f}%)"
+        if total > 0 else f"{completed} / unbounded"
+    )
     recent = [float(x) for x in (state.get("recent_returns") or [])]
     recent_mean = sum(recent) / len(recent) if recent else None
     best = state.get("best") if isinstance(state.get("best"), Mapping) else {}
@@ -193,7 +197,7 @@ def _render_live_summary_markdown(state: Mapping[str, Any]) -> str:
         f"- Phase: {state.get('phase') or 'n/a'}",
         f"- Updated at: {state.get('updated_at') or state.get('last_update') or 'n/a'}",
         f"- Elapsed seconds: {_fmt_live_number(state.get('elapsed_sec'))}",
-        f"- Episode: {completed} / {total} ({pct:.2f}%)",
+        f"- Episode: {episode_progress}",
         f"- PPO updates: {int(state.get('ppo_update_count', 0) or 0)}",
         "",
         "## Reward",

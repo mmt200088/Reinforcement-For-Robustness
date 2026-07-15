@@ -360,6 +360,32 @@ def resolve_decision_path(
     return "layerwise" if granularity == "layer" else "block"
 
 
+def validate_stage2_episode_limit_mode(
+        episode_limit: int,
+        *,
+        fusion_count_action: bool,
+        decision_granularity: str,
+        reward_design: str,
+        ) -> int:
+    """Reserve zero-budget semantics for natural-convergence layerwise PPO."""
+    limit = int(episode_limit)
+    if limit < 0:
+        raise ValueError("Stage-2 episode limit must be nonnegative")
+    if limit == 0:
+        granularity = normalize_decision_granularity(decision_granularity)
+        normalized_reward = normalize_reward_design(reward_design)
+        if not (
+                bool(fusion_count_action)
+                and granularity == "layer"
+                and normalized_reward == "robust_constrained"
+        ):
+            raise ValueError(
+                "Stage-2 episode limit 0 is supported only by layerwise robust "
+                "constrained PPO"
+            )
+    return limit
+
+
 def initialize_layerwise_policy(policy: Any) -> None:
     """Install the accepted decoded-value priors on all six slot heads."""
     from .layerwise_action import K_LEVELS
@@ -614,8 +640,7 @@ class LayerwiseConvergenceTracker:
         )
         k_value = None if k_entropy is None else _finite(k_entropy, name="k_entropy")
         converged = bool(
-            episodes >= 30_000
-            and b4 is not None and b4 < 0.1
+            b4 is not None and b4 < 0.1
             and k_value is not None and k_value < 0.1
             and robust_feasible_cost is not None
             and self._best_cost is not None
@@ -628,8 +653,26 @@ class LayerwiseConvergenceTracker:
             stall_update_windows=int(self._stall_windows),
             best_robust_feasible_cost=self._best_cost,
             converged=converged,
-            extension_required=bool(episodes >= 60_000 and not converged),
+            extension_required=False,
         )
+
+
+def resolve_layerwise_episode_budget(
+        requested_total_episodes: int,
+        completed_episodes: int,
+        ) -> int:
+    """Return the remaining bounded budget, preserving zero as unbounded."""
+    requested = int(requested_total_episodes)
+    completed = int(completed_episodes)
+    if requested < 0 or completed < 0:
+        raise ValueError("layerwise episode counts must be nonnegative")
+    if requested == 0:
+        return 0
+    if completed > requested:
+        raise ValueError(
+            f"layerwise checkpoint episode {completed} exceeds requested total {requested}"
+        )
+    return requested - completed
 
 
 @dataclass(frozen=True)
@@ -1125,35 +1168,6 @@ def _policy_input(value: np.ndarray, device: Any) -> Any:
     return torch.as_tensor(value, device=device)
 
 
-def _cosine_entropy_coefficient(train_cfg: Any, completed_episodes: int) -> float:
-    total = max(1, int(getattr(
-        train_cfg,
-        "planned_total_episodes",
-        getattr(train_cfg, "total_episodes", 1),
-    )))
-    progress = float(completed_episodes) / float(total)
-    plateau = min(1.0, max(0.0, float(
-        getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)
-    )))
-    decay_end = min(1.0, max(plateau, float(
-        getattr(train_cfg, "ent_coef_cosine_decay_end", 1.0)
-    )))
-    start = float(getattr(train_cfg, "ent_coef_cosine_start", 0.05))
-    end = float(getattr(train_cfg, "ent_coef_cosine_end", 0.001))
-    lower_bound = float(getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012))
-    if progress <= plateau:
-        value = start
-    elif progress >= decay_end:
-        value = end
-    else:
-        phase = min(1.0, max(
-            0.0,
-            (progress - plateau) / max(1.0e-8, decay_end - plateau),
-        ))
-        value = end + 0.5 * (start - end) * (1.0 + math.cos(math.pi * phase))
-    return max(lower_bound, value)
-
-
 def _current_policy_entropy(
         policy: Any,
         samples: Sequence[Mapping[str, np.ndarray]],
@@ -1288,7 +1302,6 @@ def train_layerwise(
     restored_k_entropy = convergence_resume_state.get("k_entropy")
     restored_converged = bool(
         restored_frontier_cost is not None
-        and absolute_start >= 30_000
         and restored_block4_entropy is not None
         and float(restored_block4_entropy) < 0.1
         and restored_k_entropy is not None
@@ -1309,14 +1322,14 @@ def train_layerwise(
         stall_update_windows=int(restored_tracker_state["stall_update_windows"]),
         best_robust_feasible_cost=restored_tracker_state["best_robust_feasible_cost"],
         converged=restored_converged,
-        extension_required=bool(
-            convergence_resume_state.get("extension_required", False)
-            or (absolute_start >= 60_000 and not restored_converged)
-        ),
+        extension_required=False,
     )
     entropy_samples: list[dict[str, np.ndarray]] = []
 
-    for local_episode in range(total_episodes):
+    local_episode = 0
+    while not convergence_state.converged and (
+            total_episodes == 0 or local_episode < total_episodes
+    ):
         absolute_episode = absolute_start + local_episode
         state = env.reset(
             seed=(None if base_seed is None else int(base_seed) + absolute_episode)
@@ -1578,26 +1591,26 @@ def train_layerwise(
             else:
                 accepted_candidates.pop(candidate_key_value, None)
 
-        completed = local_episode + 1
+        local_episode += 1
+        completed = local_episode
         # The environment's direct terminal return is the PPO source of truth.
         rewards.append(episode_reward)
         entropy_snapshot = {
             "block4": None, "k": None,
             "block4_slot_count": 0, "k_slot_count": 0,
         }
-        update_due = completed % update_window == 0 or completed == total_episodes
+        update_due = completed % update_window == 0 or (
+            total_episodes > 0 and completed == total_episodes
+        )
         ppo_metrics: Optional[dict[str, Any]] = None
         if update_due:
-            ent_coef = _cosine_entropy_coefficient(
-                train_cfg, absolute_start + completed,
-            )
             ppo_metrics = dict(ppo_update_fn(
                 policy,
                 optimizer,
                 rollout_buffer,
                 ppo_cfg,
                 device,
-                ent_coef_override=ent_coef,
+                ent_coef_override=0.0,
             ))
             entropy_snapshot = _current_policy_entropy(policy, entropy_samples, device)
             best_cost = (
@@ -1728,8 +1741,6 @@ def train_layerwise(
         "stall_update_windows": convergence_state.stall_update_windows,
         "converged": convergence_state.converged,
         "extension_required": convergence_state.extension_required,
-        "recommended_extension_episodes": (
-            12_000 if convergence_state.extension_required else 0
-        ),
-        "completed_episodes": absolute_start + total_episodes,
+        "recommended_extension_episodes": 0,
+        "completed_episodes": absolute_start + local_episode,
     }

@@ -281,7 +281,7 @@ def _build_evaluator(args, *, stage1_gelu: Sequence[int], stage1_softmax: Sequen
         data_collator=collator,
         batch_size=int(args.batch_size),
         stage1_rl_episodes=51000,
-        stage2_rl_episodes=40000,
+        stage2_rl_episodes=0,
         stage1_rl_episodes_specified=False,
         stage2_rl_episodes_specified=False,
         run_output_dir=str(resolve_repo_path(args.run_output_dir)),

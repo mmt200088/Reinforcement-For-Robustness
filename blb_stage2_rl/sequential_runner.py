@@ -3664,6 +3664,7 @@ def _run_layerwise_training_branch(
         build_layerwise_run_context,
         CheckpointFileFingerprintTracker,
         initialize_layerwise_policy,
+        resolve_layerwise_episode_budget,
         strict_rank_key,
         train_layerwise,
         validate_fresh_layerwise_run_state,
@@ -3676,16 +3677,29 @@ def _run_layerwise_training_branch(
     layerwise_manifest_path = os.path.join(
         blb_progress_dir, "layerwise_run_manifest.json",
     )
-    algorithm_revision = "factorized_slot_credit_v4"
+    requested_total_episodes = int(train_cfg.total_episodes)
+    resolve_layerwise_episode_budget(requested_total_episodes, 0)
+    algorithm_revision = "factorized_slot_credit_natural_convergence_v5"
     rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
-    layerwise_entropy_schedule = {
-        "kind": "cosine",
-        "start": float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
-        "end": 0.0,
-        "plateau": float(getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)),
-        "decay_end": 0.85,
-        "lower_bound": 0.0,
+    layerwise_entropy_regularization = {
+        "kind": "disabled",
+        "coefficient": 0.0,
+        "optimization_role": "monitor_only",
     }
+    layerwise_termination = {
+        "mode": "natural_convergence",
+        "episode_limit": None,
+        "block4_entropy_below": 0.1,
+        "k_entropy_below": 0.1,
+        "requires_robust_feasible_candidate": True,
+        "frontier_stall_update_windows": 100,
+    }
+    if requested_total_episodes > 0:
+        layerwise_termination = {
+            **layerwise_termination,
+            "mode": "bounded_smoke",
+            "episode_limit": requested_total_episodes,
+        }
     layerwise_ppo_mode = {
         "factorized_actor_clip": True,
         "behavior_log_prob_source": "sampling_time_per_slot_v1",
@@ -3715,17 +3729,18 @@ def _run_layerwise_training_branch(
         clip_range=float(train_cfg.ppo.clip_range),
         n_epochs=int(train_cfg.ppo.n_epochs),
         minibatch_size=int(train_cfg.ppo.minibatch_size),
-        ent_coef=float(train_cfg.ppo.ent_coef),
+        ent_coef=0.0,
         value_coef=float(train_cfg.ppo.value_coef),
         max_grad_norm=float(train_cfg.ppo.max_grad_norm),
         gamma=1.0,
         gae_lambda=1.0,
+        per_slot_entropy_recovery=False,
         factorized_actor_clip=True,
         entropy_average_active_slots=True,
         entropy_normalize_active_slots=True,
     )
     algorithm_contract = {
-        "schema_version": "stage2_layerwise_algorithm_contract_v1",
+        "schema_version": "stage2_layerwise_algorithm_contract_v2",
         "algorithm_revision": algorithm_revision,
         "rl_variant": rl_variant,
         "action_space_version": "stage2_layerwise_12x6_v1",
@@ -3746,7 +3761,8 @@ def _run_layerwise_training_branch(
         "ppo": asdict(ppo),
         "rollout_size": int(train_cfg.rollout_size),
         "ppo_mode": layerwise_ppo_mode,
-        "entropy_schedule": layerwise_entropy_schedule,
+        "entropy_regularization": layerwise_entropy_regularization,
+        "termination": layerwise_termination,
         "persistence_protocol": "stable_parent_lock_incremental_fingerprint_v2",
     }
     algorithm_contract_hash = sha256_json(algorithm_contract)
@@ -3793,7 +3809,7 @@ def _run_layerwise_training_branch(
     run_context_hash = sha256_json(run_context)
     run_lock.bind_context(run_context_hash)
     run_manifest = {
-        "schema_version": "stage2_layerwise_robust_run_v1",
+        "schema_version": "stage2_layerwise_robust_run_v2",
         "status": "running",
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
@@ -3806,8 +3822,9 @@ def _run_layerwise_training_branch(
         "reward_design": "robust_constrained",
         "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
         "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
-        "planned_episodes": int(train_cfg.total_episodes),
-        "entropy_schedule": layerwise_entropy_schedule,
+        "planned_episodes": layerwise_termination["episode_limit"],
+        "entropy_regularization": layerwise_entropy_regularization,
+        "termination": layerwise_termination,
         "ppo_mode": layerwise_ppo_mode,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
@@ -3833,7 +3850,7 @@ def _run_layerwise_training_branch(
     resumed_structured_run_id: Optional[str] = None
     resumed_ppo_update_count = 0
     resume_checkpoint: Optional[Mapping[str, Any]] = None
-    planned_total_episodes = int(train_cfg.total_episodes)
+    planned_total_episodes = requested_total_episodes
     if effective_resume_path and os.path.isfile(effective_resume_path):
         try:
             checkpoint = torch.load(
@@ -3863,17 +3880,21 @@ def _run_layerwise_training_branch(
         resumed_ppo_update_count = int(checkpoint.get("ppo_update_count"))
         if resumed_ppo_update_count < 0:
             raise RuntimeError("layerwise checkpoint PPO update count is invalid")
-        planned_total_episodes = int(checkpoint.get(
+        checkpoint_planned_total = int(checkpoint.get(
             "planned_total_episodes", planned_total_episodes,
         ))
+        if checkpoint_planned_total != planned_total_episodes:
+            raise RuntimeError(
+                "layerwise checkpoint episode-limit contract mismatch: "
+                f"checkpoint={checkpoint_planned_total}, requested={planned_total_episodes}"
+            )
         log(f"  {bullet} layerwise resume @ episode {start_episode}")
-    if start_episode > int(train_cfg.total_episodes):
-        raise RuntimeError(
-            f"layerwise checkpoint episode {start_episode} exceeds requested "
-            f"total {int(train_cfg.total_episodes)}"
-        )
+    remaining_episode_budget = resolve_layerwise_episode_budget(
+        requested_total_episodes,
+        start_episode,
+    )
     layerwise_train_cfg = SequentialTrainConfig(
-        total_episodes=max(0, int(train_cfg.total_episodes) - int(start_episode)),
+        total_episodes=remaining_episode_budget,
         update_every_n_episodes=max(1, int(train_cfg.rollout_size)),
         log_every_n_episodes=max(1, int(train_cfg.rollout_size)),
         seed=int(train_cfg.seed),
@@ -3882,12 +3903,6 @@ def _run_layerwise_training_branch(
         convergence_resume_state=resumed_convergence_state,
         ppo=ppo,
         rl_algo="ppo",
-        ent_coef_schedule="cosine",
-        ent_coef_cosine_start=float(layerwise_entropy_schedule["start"]),
-        ent_coef_cosine_end=0.0,
-        ent_coef_cosine_plateau=float(layerwise_entropy_schedule["plateau"]),
-        ent_coef_cosine_decay_end=0.85,
-        ent_coef_cosine_lower_bound=0.0,
         online_num_trials_per_step=int(train_cfg.num_trials_per_step),
         promotion_validation_trials=int(
             getattr(train_cfg, "promotion_validation_trials", 25)
@@ -4084,12 +4099,13 @@ def _run_layerwise_training_branch(
         "algorithm_contract_hash": algorithm_contract_hash,
         "run_context_hash": run_context_hash,
         "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
-        "total_episodes_planned": int(train_cfg.total_episodes),
+        "total_episodes_planned": layerwise_termination["episode_limit"],
         "rollout_size": int(train_cfg.rollout_size),
         "ppo_lr": float(train_cfg.ppo.lr),
         "gamma": 1.0,
         "gae_lambda": 1.0,
-        "entropy_schedule": layerwise_entropy_schedule,
+        "entropy_regularization": layerwise_entropy_regularization,
+        "termination": layerwise_termination,
         "ppo_mode": layerwise_ppo_mode,
         "stage2_k_trials": int(train_cfg.num_trials_per_step),
         "baseline_groups": int(getattr(train_cfg, "baseline_groups", 5)),
@@ -4466,7 +4482,11 @@ def _run_layerwise_training_branch(
             if not training_completed:
                 status.set_phase("failed")
             run_manifest.update({
-                "status": ("completed" if training_completed else "failed"),
+                "status": (
+                    "converged"
+                    if training_completed and summary.get("converged", False)
+                    else "budget_exhausted" if training_completed else "failed"
+                ),
                 "completed_episodes": int(start_episode + len(episode_records)),
                 "ppo_update_count": int(ppo_update_counter),
                 "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -4497,8 +4517,10 @@ def _run_layerwise_training_branch(
     status.set_phase("completed")
 
     compact_summary = {
-        "schema_version": "stage2_layerwise_robust_summary_v1",
-        "status": "completed",
+        "schema_version": "stage2_layerwise_robust_summary_v2",
+        "status": (
+            "converged" if summary.get("converged", False) else "budget_exhausted"
+        ),
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,
@@ -4536,6 +4558,12 @@ def _run_layerwise_training_branch(
         "extension_required": bool(summary.get("extension_required", False)),
         "recommended_extension_episodes": int(
             summary.get("recommended_extension_episodes", 0) or 0
+        ),
+        "entropy_regularization": layerwise_entropy_regularization,
+        "termination": layerwise_termination,
+        "termination_reason": (
+            "natural_convergence"
+            if summary.get("converged", False) else "episode_limit_reached"
         ),
         "constraint_probability_thresholds": probability_thresholds,
         "constraint_limits": constraint_limits,
@@ -4648,7 +4676,7 @@ def _run_layerwise_training_branch(
         "blb_v3_best_reward": float(best_reward),
         "blb_v3_profile": str(train_cfg.profile),
         "blb_v3_fusion_count_action": True,
-        "blb_v3_total_episodes": int(train_cfg.total_episodes),
+        "blb_v3_total_episodes": int(summary.get("completed_episodes", 0)),
         "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,

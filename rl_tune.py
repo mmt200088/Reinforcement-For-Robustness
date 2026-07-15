@@ -36,6 +36,7 @@ from cli_parse_utils import (
     parse_optional_positive_float,
     parse_positive_int,
     parse_stage1_episode_limit,
+    parse_stage2_episode_limit,
 )
 
 
@@ -501,7 +502,7 @@ def train(
         stage2_rl_lr: float = None,
         degree: int = 4,  # degree of polynomial for approximation
         stage1_rl_episodes: int = 51000,
-        stage2_rl_episodes: int = 40000,
+        stage2_rl_episodes: int = 0,
         stage1_rl_episodes_specified: bool = False,
         stage2_rl_episodes_specified: bool = False,
         stage1_entropy_stop_threshold: float = None,
@@ -786,7 +787,7 @@ def train(
     stage1_rl_episodes = parse_stage1_episode_limit(
         stage1_rl_episodes, "stage1_rl_episodes"
     )
-    stage2_rl_episodes = parse_positive_int(
+    stage2_rl_episodes = parse_stage2_episode_limit(
         stage2_rl_episodes, "stage2_rl_episodes"
     )
     ppo_update_interval = parse_positive_int(

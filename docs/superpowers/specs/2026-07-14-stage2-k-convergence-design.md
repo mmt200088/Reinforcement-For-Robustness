@@ -105,6 +105,11 @@ callers retain summed-log-prob PPO behavior.
 
 ## Entropy And Convergence
 
+> Superseded on 2026-07-15 by
+> `2026-07-15-stage2-natural-convergence-design.md`. The active algorithm now
+> uses zero entropy regularization and no fixed episode horizon; this section
+> remains only as history for the v4 checkpoint contract.
+
 Layerwise PPO keeps the initial safe prior and the cosine exploration phase,
 but its entropy coefficient has no positive lower bound. The objective uses
 `H/log(num_levels)`, so binary Block4 and six-way K receive the same normalized

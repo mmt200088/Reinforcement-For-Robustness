@@ -472,6 +472,24 @@ class DetectionReportTest(unittest.TestCase):
 
 
 class StatusBoardLiveSummaryTest(unittest.TestCase):
+    def test_status_board_labels_zero_episode_limit_as_unbounded(self):
+        with tempfile.TemporaryDirectory() as d:
+            board = persistence.BLBStatusBoard(
+                d,
+                total_episodes=0,
+                profile="mrpc",
+            )
+            board.update_after_episode(120, 1.0, breakdown={"priority": 3})
+            board.flush()
+            with open(
+                    os.path.join(d, "blb_stage2_live_summary.md"),
+                    encoding="utf-8",
+            ) as handle:
+                text = handle.read()
+
+        self.assertIn("Episode: 120 / unbounded", text)
+        self.assertNotIn("Episode: 120 / 0", text)
+
     def test_status_board_flushes_human_readable_live_summary(self):
         with tempfile.TemporaryDirectory() as d:
             board = persistence.BLBStatusBoard(

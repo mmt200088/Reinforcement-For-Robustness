@@ -110,7 +110,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(snapshot["block4_slot_count"], 2)
         self.assertEqual(snapshot["k_slot_count"], 7)
 
-    def test_convergence_requires_feasible_stall_entropies_and_minimum_episodes(self):
+    def test_convergence_depends_on_policy_and_frontier_not_episode_count(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
 
         tracker = LayerwiseConvergenceTracker()
@@ -125,7 +125,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertFalse(state.converged)
 
         state = tracker.observe_update(
-            completed_episodes=29_999,
+            completed_episodes=120,
             block4_entropy=0.05,
             k_entropy=0.05,
             robust_feasible_cost=0.4,
@@ -135,7 +135,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
         for _ in range(99):
             state = tracker.observe_update(
-                completed_episodes=40_000,
+                completed_episodes=240 + 120 * _,
                 block4_entropy=0.05,
                 k_entropy=0.05,
                 robust_feasible_cost=0.4,
@@ -144,7 +144,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertFalse(state.converged)
 
         state = tracker.observe_update(
-            completed_episodes=40_120,
+            completed_episodes=12_120,
             block4_entropy=0.05,
             k_entropy=0.05,
             robust_feasible_cost=0.4,
@@ -248,49 +248,16 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(state.best_robust_feasible_cost, 0.6)
         self.assertFalse(state.converged)
 
-    def test_entropy_schedule_uses_absolute_progress_across_resume(self):
-        from blb_stage2_rl.layerwise_runner import _cosine_entropy_coefficient
+    def test_layerwise_episode_budget_zero_remains_unbounded_across_resume(self):
+        from blb_stage2_rl.layerwise_runner import resolve_layerwise_episode_budget
 
-        uninterrupted = types.SimpleNamespace(
-            total_episodes=60_000,
-            planned_total_episodes=60_000,
-            ent_coef_cosine_start=0.05,
-            ent_coef_cosine_end=0.001,
-            ent_coef_cosine_plateau=0.25,
-            ent_coef_cosine_lower_bound=0.0,
-        )
-        resumed = types.SimpleNamespace(
-            total_episodes=30_000,
-            planned_total_episodes=60_000,
-            ent_coef_cosine_start=0.05,
-            ent_coef_cosine_end=0.001,
-            ent_coef_cosine_plateau=0.25,
-            ent_coef_cosine_lower_bound=0.0,
-        )
-
-        self.assertEqual(
-            _cosine_entropy_coefficient(resumed, 30_000),
-            _cosine_entropy_coefficient(uninterrupted, 30_000),
-        )
-
-    def test_layerwise_entropy_schedule_reaches_zero_and_stays_zero(self):
-        from blb_stage2_rl.layerwise_runner import _cosine_entropy_coefficient
-
-        config = types.SimpleNamespace(
-            total_episodes=60_000,
-            planned_total_episodes=60_000,
-            ent_coef_cosine_start=0.05,
-            ent_coef_cosine_end=0.0,
-            ent_coef_cosine_plateau=0.25,
-            ent_coef_cosine_decay_end=0.85,
-            ent_coef_cosine_lower_bound=0.0,
-        )
-
-        self.assertEqual(_cosine_entropy_coefficient(config, 60_000), 0.0)
-        self.assertEqual(_cosine_entropy_coefficient(config, 72_000), 0.0)
-        self.assertGreater(_cosine_entropy_coefficient(config, 30_000), 0.0)
-        self.assertGreater(_cosine_entropy_coefficient(config, 48_000), 0.0)
-        self.assertEqual(_cosine_entropy_coefficient(config, 51_000), 0.0)
+        self.assertEqual(resolve_layerwise_episode_budget(0, 0), 0)
+        self.assertEqual(resolve_layerwise_episode_budget(0, 72_000), 0)
+        self.assertEqual(resolve_layerwise_episode_budget(60_000, 12_000), 48_000)
+        with self.assertRaisesRegex(ValueError, "nonnegative"):
+            resolve_layerwise_episode_budget(-1, 0)
+        with self.assertRaisesRegex(ValueError, "exceeds"):
+            resolve_layerwise_episode_budget(60_000, 60_001)
 
     def test_p3_cost_is_redistributed_without_changing_episode_return(self):
         from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
@@ -594,14 +561,14 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             '"diagnostics_jsonl_sizes": diagnostics_jsonl_sizes',
             "diag_recorder.committed_jsonl_sizes()",
             "diag_recorder.recover_to_checkpoint_sizes",
-            "planned_total_episodes = int(checkpoint.get(",
+            "checkpoint_planned_total = int(checkpoint.get(",
             '"planned_total_episodes", planned_total_episodes',
             'checkpoint.get("ppo_update_count")',
             '"ppo_update_count": int(ppo_update_counter)',
         ):
             self.assertIn(required, branch_source)
 
-    def test_layerwise_branch_enables_factorized_actor_clipping_only_in_its_ppo(self):
+    def test_layerwise_branch_uses_reward_only_natural_convergence_contract(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
         )
@@ -616,12 +583,12 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("factorized_actor_clip=True", branch_source)
         self.assertIn("entropy_average_active_slots=True", branch_source)
         self.assertIn("entropy_normalize_active_slots=True", branch_source)
-        self.assertIn("ent_coef_cosine_end=0.0", branch_source)
-        self.assertIn("ent_coef_cosine_decay_end=0.85", branch_source)
-        self.assertIn("ent_coef_cosine_lower_bound=0.0", branch_source)
+        self.assertIn("per_slot_entropy_recovery=False", branch_source)
+        self.assertIn("ent_coef=0.0", branch_source)
+        self.assertNotIn("ent_coef_cosine_", branch_source)
         self.assertIn('"factorized_actor_clip": True', branch_source)
         self.assertIn('"algorithm_revision": algorithm_revision', branch_source)
-        self.assertIn('"factorized_slot_credit_v4"', branch_source)
+        self.assertIn('"factorized_slot_credit_natural_convergence_v5"', branch_source)
         self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
         self.assertIn('"run_context_hash": run_context_hash', branch_source)
         self.assertIn("validate_layerwise_checkpoint_metadata(", branch_source)
@@ -642,8 +609,18 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
         self.assertIn("bind_layerwise_candidate_identity(", source)
         self.assertIn('"entropy_average_active_slots": True', branch_source)
-        self.assertIn('"end": 0.0', branch_source)
-        self.assertIn('"lower_bound": 0.0', branch_source)
+        self.assertIn('"kind": "disabled"', branch_source)
+        self.assertIn('"coefficient": 0.0', branch_source)
+        self.assertIn('"optimization_role": "monitor_only"', branch_source)
+        self.assertIn('"mode": "natural_convergence"', branch_source)
+        self.assertIn('"block4_entropy_below": 0.1', branch_source)
+        self.assertIn('"k_entropy_below": 0.1', branch_source)
+        self.assertIn('"frontier_stall_update_windows": 100', branch_source)
+        self.assertIn("resolve_layerwise_episode_budget(", branch_source)
+        self.assertIn(
+            '"blb_v3_total_episodes": int(summary.get("completed_episodes"',
+            branch_source,
+        )
         self.assertGreater(
             branch_source.index("write_strict_json_file(layerwise_manifest_path"),
             branch_source.index("fingerprint_tracker.validate_and_seed("),
@@ -749,7 +726,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
         branch_source = ast.get_source_segment(source, branch)
 
-        self.assertIn('"stage2_layerwise_robust_run_v1"', branch_source)
+        self.assertIn('"stage2_layerwise_robust_run_v2"', branch_source)
         self.assertIn('"layerwise_run_manifest.json"', branch_source)
         self.assertIn("write_strict_json_file(", branch_source)
         self.assertNotIn("write_json_file(\n        os.path.join(blb_progress_dir, \"layerwise_summary.json\")", branch_source)
@@ -769,10 +746,9 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("status.update_after_ppo_update(", branch_source)
         self.assertIn("status.set_best(", branch_source)
         self.assertIn("run_manifest.update({", branch_source)
-        self.assertIn(
-            '"status": ("completed" if training_completed else "failed")',
-            branch_source,
-        )
+        self.assertIn('"converged"', branch_source)
+        self.assertIn('"budget_exhausted"', branch_source)
+        self.assertIn('else "failed"', branch_source)
         self.assertIn('"completed_episodes": int(', branch_source)
         self.assertIn('"ppo_update_count": int(ppo_update_counter)', branch_source)
         self.assertGreaterEqual(
@@ -957,6 +933,44 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 decision_granularity="token",
                 reward_design="stage1_aligned",
             )
+
+    def test_zero_episode_limit_is_reserved_for_layerwise_robust_training(self):
+        from blb_stage2_rl.layerwise_runner import validate_stage2_episode_limit_mode
+
+        self.assertEqual(
+            validate_stage2_episode_limit_mode(
+                0,
+                fusion_count_action=True,
+                decision_granularity="layer",
+                reward_design="robust_constrained",
+            ),
+            0,
+        )
+        self.assertEqual(
+            validate_stage2_episode_limit_mode(
+                600,
+                fusion_count_action=True,
+                decision_granularity="block",
+                reward_design="stage1_aligned",
+            ),
+            600,
+        )
+        with self.assertRaisesRegex(ValueError, "only.*layerwise robust"):
+            validate_stage2_episode_limit_mode(
+                0,
+                fusion_count_action=True,
+                decision_granularity="block",
+                reward_design="stage1_aligned",
+            )
+        with self.assertRaisesRegex(ValueError, "nonnegative"):
+            validate_stage2_episode_limit_mode(
+                -1,
+                fusion_count_action=True,
+                decision_granularity="layer",
+                reward_design="robust_constrained",
+            )
+        runner_source = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+        self.assertIn("validate_stage2_episode_limit_mode(", runner_source)
 
     def test_initial_probabilities_use_decoded_k_values_and_disable_epsilon(self):
         from blb_stage2_rl.layerwise_action import K_LEVELS
@@ -1213,11 +1227,101 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertFalse(policy.masks[0][1])
         self.assertEqual(env.actions[0][1], 0)
         self.assertEqual(observed_ppo[0][0:3], (12, 1.0, 1.0))
+        self.assertEqual(observed_ppo[0][3]["ent_coef_override"], 0.0)
         self.assertEqual(summary["episode_records"][0].action_matrix[0][1], 0)
         self.assertEqual(summary["episode_records"][0].pending_full_vector, tuple(range(20)))
         self.assertEqual(summary["episode_rewards"], [7.5])
         self.assertIn("best_action", summary)
         self.assertIsNone(summary["best_action"])
+
+    def test_unbounded_training_stops_only_after_natural_convergence(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        action_matrix = [[1, 0, 1, 2, 3, 4] for _ in range(12)]
+        frontier = {
+            "variable_cost": 0.4,
+            "assessment": _assessment(0.9),
+            "metrics": {"loss_mean": 0.3, "metric1_mean": 0.9, "metric2_mean": 0.8},
+            "action_matrix": action_matrix,
+            "full_vector": list(range(20)),
+            "boosted_overrides": {},
+            "reward": 1.4,
+            "promotion_trials": None,
+        }
+        config = self._train_cfg(total_episodes=0, update_every=1)
+        config.convergence_resume_state = {
+            "best_robust_feasible_cost": 0.4,
+            "current_robust_feasible_cost": 0.4,
+            "stall_update_windows": 99,
+            "block4_entropy": 0.2,
+            "k_entropy": 0.2,
+            "converged": False,
+        }
+        update_ent_coef = []
+
+        def fake_update(*_args, **kwargs):
+            update_ent_coef.append(kwargs["ent_coef_override"])
+            return {"entropy": 0.0}
+
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            return_value={"frontier": frontier},
+        ), mock.patch(
+            "blb_stage2_rl.layerwise_runner._current_policy_entropy",
+            return_value={
+                "block4": 0.05,
+                "k": 0.05,
+                "block4_slot_count": 12,
+                "k_slot_count": 59,
+            },
+        ):
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=fake_update,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["completed_episodes"], 1)
+        self.assertEqual(len(summary["episode_records"]), 1)
+        self.assertEqual(update_ent_coef, [0.0])
+        self.assertTrue(summary["converged"])
+        self.assertEqual(summary["stall_update_windows"], 100)
+
+    def test_positive_episode_budget_remains_a_bounded_smoke_run(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=2, update_every=1),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["completed_episodes"], 2)
+        self.assertEqual(len(summary["episode_records"]), 2)
+        self.assertFalse(summary["converged"])
 
     def test_adjacent_same_action_episodes_pool_ten_distinct_real_probe_seeds(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -1559,7 +1663,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
             {(4, 3): {"v_mask_rescale_sf": 47}},
         )
 
-    def test_zero_remaining_resume_clears_convergence_after_frontier_retraction(self):
+    def test_bounded_resume_clears_convergence_after_frontier_retraction(self):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import train_layerwise
@@ -1597,7 +1701,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 "fidelity": "F4",
                 "valid": True,
             })
-            config = self._train_cfg(total_episodes=0)
+            config = self._train_cfg(total_episodes=1)
             config.absolute_episode_start = 60_000
             config.planned_total_episodes = 60_000
             config.convergence_resume_state = {
@@ -1625,7 +1729,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 ),
             )
 
-        self.assertEqual(summary["best_variable_cost"], expected_cost)
+        self.assertEqual(summary["completed_episodes"], 60_001)
+        self.assertEqual(summary["best_variable_cost"], 0.4)
         self.assertEqual(summary["stall_update_windows"], 0)
         self.assertFalse(summary["converged"])
 

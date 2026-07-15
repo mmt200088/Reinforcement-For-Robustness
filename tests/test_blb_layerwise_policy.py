@@ -747,8 +747,6 @@ class LayerwisePolicyTest(unittest.TestCase):
             SequentialRolloutBuffer,
             sequential_ppo_update,
         )
-        from blb_stage2_rl.layerwise_runner import _cosine_entropy_coefficient
-        import types
 
         class ContextualCostPolicy(torch.nn.Module):
             def __init__(self):
@@ -844,15 +842,6 @@ class LayerwisePolicyTest(unittest.TestCase):
         )
         slot_levels = np.asarray([2, 6, 6, 6, 6, 6], dtype=np.int64)
         update_count = 180
-        entropy_schedule = types.SimpleNamespace(
-            total_episodes=update_count * 120,
-            planned_total_episodes=update_count * 120,
-            ent_coef_cosine_start=0.05,
-            ent_coef_cosine_end=0.0,
-            ent_coef_cosine_plateau=0.25,
-            ent_coef_cosine_decay_end=0.85,
-            ent_coef_cosine_lower_bound=0.0,
-        )
         last_metrics = None
 
         for update_idx in range(update_count):
@@ -896,17 +885,13 @@ class LayerwisePolicyTest(unittest.TestCase):
                 per_slot_cost[~slot_mask] = 0.0
                 buffer.set_actor_cost_at(transition_index, per_slot_cost)
                 buffer.set_actor_shared_return_at(transition_index, 0.0)
-            entropy_coefficient = _cosine_entropy_coefficient(
-                entropy_schedule,
-                (update_idx + 1) * 120,
-            )
             last_metrics = sequential_ppo_update(
                 policy,
                 optimizer,
                 buffer,
                 config,
                 torch.device("cpu"),
-                ent_coef_override=entropy_coefficient,
+                ent_coef_override=0.0,
             )
 
         self.assertEqual(last_metrics["actor_clip_mode"], "factorized_per_slot")

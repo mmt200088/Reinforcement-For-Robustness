@@ -579,7 +579,7 @@ def _format_blb_train_iter_log(
 @dataclass
 class BLBStage2TrainConfig:
     """``BLBStage2RLRunner`` 的可配置训练参数。"""
-    total_episodes: int = 2000              # 默认 2000 episodes
+    total_episodes: int = 0                 # 0 = train until natural convergence
     rollout_size: int = 120                 # 每多少 episode 触发一次 PPO update
     seed: int = 42
     eval_interval: int = 100                # 多少 episode 跑一次 deterministic eval
@@ -3046,7 +3046,12 @@ class BLBStage2RLRunner:
             except Exception:
                 pass
 
-        cfg.rollout_size = max(1, min(int(cfg.rollout_size), int(cfg.total_episodes)))
+        if int(cfg.total_episodes) == 0:
+            cfg.rollout_size = max(1, int(cfg.rollout_size))
+        else:
+            cfg.rollout_size = max(
+                1, min(int(cfg.rollout_size), int(cfg.total_episodes))
+            )
         if cfg.warmstart_anchor_episodes is None:
             cfg.warmstart_anchor_episodes = 0
         else:
@@ -3094,6 +3099,13 @@ class BLBStage2RLRunner:
         cfg.validate_decision_granularity()
         cfg.validate_reward_design()
         cfg.validate_robust_constraint_config()
+        from .layerwise_runner import validate_stage2_episode_limit_mode
+        validate_stage2_episode_limit_mode(
+            int(cfg.total_episodes),
+            fusion_count_action=bool(cfg.fusion_count_action),
+            decision_granularity=cfg.decision_granularity,
+            reward_design=cfg.reward_design,
+        )
         return cfg
 
     def _build_probe_batches(

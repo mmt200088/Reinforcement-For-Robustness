@@ -64,7 +64,7 @@ cat <<'EOF'
   --stage1-entropy-stop-threshold FLOAT
                                        Stage-1 中 N=0 表示不设 episode 上限，直到
                                        PPO update 后 entropy <= threshold 停止
-  --stage2-search-episodes N
+  --stage2-search-episodes N       Stage-2 回合上限；0 表示训练到自然收敛
   --stage1-entropy-stop-threshold FLOAT  Stage-1 PPO update 后熵低于该值时正常停止（如 0.1）；
                                           --stage1-search-episodes <=0 时表示一直训练到该阈值
   --ppo-update-interval N              每多少 episode 触发一次 PPO 更新（默认 120）；
@@ -437,7 +437,7 @@ MODEL_TYPE="bert-base"; S_MODEL_TYPE="false"
 BATCH_SIZE="16"; S_BATCH_SIZE="false"
 STAGE1_RL_DEFAULT_BATCH_SIZE="128"
 STAGE1_EPISODES="51000"; S_STAGE1_EPISODES="false"
-STAGE2_EPISODES="40000"; S_STAGE2_EPISODES="false"
+STAGE2_EPISODES="0"; S_STAGE2_EPISODES="false"
 STAGE1_ENTROPY_STOP_THRESHOLD=""; S_STAGE1_ENTROPY_STOP_THRESHOLD="false"
 STAGE1_GENERATIONS=""; S_STAGE1_GENERATIONS="false"
 STAGE2_GENERATIONS=""; S_STAGE2_GENERATIONS="false"
@@ -1276,7 +1276,7 @@ else
     else
       err "--stage1-search-episodes 必须是整数；--stage1-search-episodes <= 0 requires --stage1-entropy-stop-threshold"
     fi
-    is_pos_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是正整数"
+    is_nonneg_int "$STAGE2_EPISODES" || err "--stage2-search-episodes 必须是非负整数（0=训练到自然收敛）"
     is_pos_num "$STAGE1_LR" || err "--stage1-search-lr 必须是正数"
     is_pos_num "$STAGE2_LR" || err "--stage2-search-lr 必须是正数"
     if [ "$STAGE2_RL_VARIANT" = "legacy_v2" ]; then
@@ -1286,7 +1286,7 @@ else
       echo "警告：ALLOW_SHORT_RL_BENCHMARK 已启用，仅用于短程速度基准；正式 RL 仍应使用 >=170 episode。"
     else
       [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$_stage1_unbounded_entropy_stop" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
-      [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的 Stage-2 回合数至少需要 170。"
+      [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -eq 0 ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的有界 Stage-2 回合数至少需要 170；0 表示训练到自然收敛。"
     fi
   else
     [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] || err "ga / greedy 模式不再使用 episode 作为搜索预算，请改用 --stage1-search-generations / --stage2-search-generations。"

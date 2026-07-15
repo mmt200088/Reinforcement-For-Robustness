@@ -15,6 +15,7 @@ from cli_parse_utils import (
     parse_optional_positive_int,
     parse_positive_int,
     parse_stage1_episode_limit,
+    parse_stage2_episode_limit,
     split_int_tokens,
 )
 
@@ -77,6 +78,10 @@ class CliParseUtilsTest(unittest.TestCase):
             parse_positive_int("0", "n")
 
         self.assertEqual(parse_stage1_episode_limit("-1", "episodes"), -1)
+        self.assertEqual(parse_stage2_episode_limit("0", "episodes"), 0)
+        self.assertEqual(parse_stage2_episode_limit("120", "episodes"), 120)
+        with self.assertRaisesRegex(ValueError, "nonnegative integer"):
+            parse_stage2_episode_limit("-1", "episodes")
         self.assertIsNone(parse_optional_positive_float(None, "lr"))
         self.assertEqual(parse_optional_positive_float("0.5", "lr"), 0.5)
         with self.assertRaisesRegex(ValueError, "Invalid positive float for lr"):

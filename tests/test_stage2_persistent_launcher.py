@@ -540,7 +540,6 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 encoding="utf-8",
             )
             fake_python.chmod(0o755)
-
             persistent_root = tmp / "persistent"
             expected_output_dir = (
                 persistent_root
@@ -721,6 +720,9 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 encoding="utf-8",
             )
             fake_python.chmod(0o755)
+            fake_flock = fakebin / "flock"
+            fake_flock.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            fake_flock.chmod(0o755)
 
             persistent_root = tmp / "persistent"
             expected_output_dir = (
@@ -745,7 +747,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 "--persistent-root",
                 str(persistent_root),
                 "--stage2-search-episodes",
-                "170",
+                "0",
                 "--stage2-fixed-config-source",
                 "json",
                 "--stage2-fixed-config",
@@ -783,6 +785,12 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--stage2_limit_tolerance") + 1], "0.001")
         self.assertEqual(argv[argv.index("--stage2_stability_tolerance") + 1], "1.2")
         self.assertEqual(argv[argv.index("--stage2_stability_multiplier") + 1], "2.0")
+        self.assertEqual(argv[argv.index("--stage2_rl_episodes") + 1], "0")
+
+        preset = (REPO_ROOT / "presets" / "mrpc-blb-stage2-rl.conf").read_text(
+            encoding="utf-8",
+        )
+        self.assertIn("--stage2-search-episodes 0", preset)
 
     def test_server_command_short_rl_runs_use_tagged_persistent_dirs(self):
         source = (REPO_ROOT / "SERVER_COMMAND.md").read_text(encoding="utf-8")

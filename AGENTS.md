@@ -440,6 +440,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   and cost/frontier progress. Only after that report and final eval are
   captured should the next 60,000-episode run start from the latest local source
   commit, currently the unbounded P3 cost-rank selection change.
+- Stage-2 natural-convergence rule, added 2026-07-15: formal layerwise
+  robust-constrained PPO runs use `--stage2-search-episodes 0`, meaning no
+  fixed episode budget. The active PPO objective has entropy regularization
+  disabled (`ent_coef=0.0`) for the entire run; Block4 and K entropy are
+  diagnostics and stop signals only. Stop after a complete PPO update only
+  when both normalized entropies are below `0.1`, a promotion-qualified robust
+  feasible candidate exists, and its cost frontier has not improved for 100
+  PPO updates. Positive episode limits are smoke/debug budgets and do not imply
+  convergence. Do not restore entropy schedules, floors, recovery, or forced
+  concentration to make the policy stop.
 - Stage-2 fusion-count map build status, updated 2026-06-03: commit `ea27408`
   fixed the builder-side enum domain so rescale slots enumerate only SF choices
   (`index 1..levels-1`) and never `index 0`/`None`, preserving the CKKS rule
