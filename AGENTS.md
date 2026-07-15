@@ -128,6 +128,67 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   `experiments/server_command_runs/stage2_ngpu_seed_equality_170ep_14187ee_20260715_001107/`,
   with both structured raw mirrors under
   `rl_training_data_points/stage2/bert-base/mrpc/`.
+- Stage-2 layerwise timing diagnosis, added 2026-07-15: source `9099cfa`
+  exposed the environment's existing probe/install/clear/cost timings through
+  the layerwise episode records and passed all 40 layerwise-runner tests on the
+  server. A real 170-episode A/B then preserved exact episode research outputs
+  and both PPO updates after excluding execution diagnostics. Wall time was
+  `582s` on one RTX 5090 and `331s` on five (`1.758x`). The primary bottleneck
+  is now measured: five sequential trials take `2.6311s` per episode on one
+  GPU, while one trial on each of five GPUs still takes `1.3149s` because the
+  replicas are driven concurrently by Python threads. Multi-GPU install is
+  only `0.0243s` per episode (`4.12s` total), so do not optimize handler install
+  next. Target same-process threaded forward-dispatch contention, with
+  persistent per-GPU processes as the leading hypothesis, and retain exact
+  episode/PPO equality. Source `b413558` now classifies the new
+  `terminal_probe_install_skipped` / `terminal_probe_clear_skipped` fields as
+  execution diagnostics: the server passed all 13 comparator tests and replayed
+  this run with exact quality/effect, strict-diagnostic, and PPO equality PASS.
+  Comparator-fix evidence is under
+  `experiments/server_command_runs/stage2_probe_lifecycle_comparator_b413558_20260715/`.
+  The timing-run evidence is under
+  `experiments/server_command_runs/stage2_layerwise_diag_170ep_9099cfa_20260715_012600/`,
+  with both structured mirrors under `rl_training_data_points/`.
+- Stage-2 persistent reward-probe process result, added 2026-07-15: five
+  independent one-GPU processes at source `bff6403` measured `0.524324s` mean
+  per trial, essentially identical to the sequential one-GPU `0.526223s` and
+  only `0.3988x` the old five-thread `1.314906s` critical path. Source
+  `096f184` therefore makes persistent CUDA-safe `spawn` children the default
+  for replica GPUs while GPU0 remains in the learner process; set
+  `BLB_STAGE2_PROBE_BACKEND=thread` only for explicit rollback. The server
+  passed 40 CPU-focused tests (two CUDA skips) and all 42 tests with two GPUs.
+  A real 170-episode five-GPU run then preserved exact research outputs,
+  strict diagnostics, and both PPO updates against the prior verified one-GPU
+  reference, while reducing wall time from `582s` to `171s` (`3.404x`) and
+  probe time from `2.6311s` to `0.5290s` per episode. All five RTX 5090s were
+  sampled active with mean utilization `59.60%`-`64.93%`, and all child
+  processes/GPU allocations were released at exit. This is strong smoke
+  evidence, not final acceptance: the one-GPU side came from source `9099cfa`.
+  Run a fresh same-source 600-episode 1GPU-versus-5GPU gate and require exact
+  episode/PPO equality plus at least `3.4x` before declaring the optimization
+  complete. Evidence is under
+  `experiments/server_command_runs/stage2_probe_process_backend_096f184_20260715/`,
+  with all successful and failed-run structured mirrors under
+  `rl_training_data_points/stage2/bert-base/mrpc/`.
+- Stage-2 persistent reward-probe final gate, added 2026-07-15: a fresh
+  same-source 600-episode 1GPU-versus-5GPU A/B at clean source `99b0995`
+  completed the acceptance condition left open by the 170-episode smoke. Both
+  cases completed 600 episodes and five PPO updates; quality/effect rows,
+  strict diagnostics, and PPO updates compared exactly. Wall time fell from
+  `1951s` to `521s`, throughput rose from `1107.125` to `4145.873`
+  episodes/hour, and end-to-end speedup was `3.745x`, above the required
+  `3.4x`. Every GPU handled exactly 600 trials; sampled mean utilization was
+  `69.02%`-`73.60%`, active-sample rate was `82.93%`-`93.50%`, and every card
+  reached 99%. The server then passed the complete CPU/no-GPU pytest gate with
+  `1611 passed, 8 skipped`, while the project audit found all 30/30 expected
+  flow files and no missing evidence class. All child processes and GPU
+  allocations were released at exit. This completes the final performance
+  gate for the repository-wide runtime-optimization plan without changing
+  reward, constraints, actions, trial counts, PPO, or validation semantics.
+  Compact evidence is under
+  `experiments/server_command_runs/stage2_probe_process_final_600ep_99b0995_20260715/`,
+  with both complete mirrors under
+  `rl_training_data_points/stage2/bert-base/mrpc/`.
 - GPU activity-report rule, added 2026-07-13: do not infer that a visible GPU is
   idle solely because layerwise episode rows omit `terminal_probe_devices`.
   `scripts/gpu_utilization_report.py` must preserve probe attribution as a

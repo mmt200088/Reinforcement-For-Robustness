@@ -1,0 +1,6 @@
+timestamp,index,name,memory_used_mib,utilization_gpu_pct
+2026/07/15 01:25:16.605, 0, NVIDIA GeForce RTX 5090, 0, 0
+2026/07/15 01:25:16.613, 1, NVIDIA GeForce RTX 5090, 0, 0
+2026/07/15 01:25:16.621, 2, NVIDIA GeForce RTX 5090, 0, 0
+2026/07/15 01:25:16.629, 3, NVIDIA GeForce RTX 5090, 0, 0
+2026/07/15 01:25:16.636, 4, NVIDIA GeForce RTX 5090, 0, 0

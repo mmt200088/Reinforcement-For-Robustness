@@ -116,6 +116,14 @@ class Stage2NgpuCompareTests(unittest.TestCase):
     def test_effect_equality_ignores_timing_device_and_bookkeeping(self):
         one = [_row(0, timestamp=1.0, device="cuda:0", pareto_kind="dominated")]
         many = [_row(0, timestamp=2.0, device="cuda:4", pareto_kind="")]
+        one[0].update({
+            "terminal_probe_install_skipped": False,
+            "terminal_probe_clear_skipped": False,
+        })
+        many[0].update({
+            "terminal_probe_install_skipped": False,
+            "terminal_probe_clear_skipped": True,
+        })
 
         ok, diffs = ngpu_mod.compare_rows(one, many, atol=0.0, limit=10)
         self.assertTrue(ok, diffs)

@@ -1,0 +1,41 @@
+{
+  "completed_episodes": 600,
+  "decision_granularity": "layer",
+  "finished_at": "2026-07-15T03:24:44",
+  "fixed_gelu": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+  ],
+  "fixed_softmax": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "planned_episodes": 600,
+  "ppo_update_count": 5,
+  "profile": "mrpc",
+  "reward_design": "robust_constrained",
+  "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
+  "schema_version": "stage2_layerwise_robust_run_v1",
+  "started_at": "2026-07-15T02:52:46",
+  "status": "completed"
+}

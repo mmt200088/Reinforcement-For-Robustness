@@ -29,6 +29,8 @@ TIMING_OR_DEVICE_KEYS = {
     "terminal_cost_eval_wall_seconds",
     "terminal_probe_install_wall_seconds",
     "terminal_probe_clear_wall_seconds",
+    "terminal_probe_install_skipped",
+    "terminal_probe_clear_skipped",
     "per_step_optimizer_wall_seconds",
     "policy_rollout_wall_seconds",
     "rejection_optimizer_wall_seconds",

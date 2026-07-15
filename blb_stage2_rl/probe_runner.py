@@ -14,9 +14,10 @@ Design:
   Worker 0 reuses the env's existing primary model (no extra allocation).
   Workers 1+ deepcopy the primary model onto their device. Each worker
   installs the same BLB cfg via its own bridge before running trials.
-* **Threaded fan-out.** Workers run their trial subsets in Python threads;
-  PyTorch CUDA forwards release the GIL so the cards run concurrently.
-  Aggregation happens on the main thread after join.
+* **Process fan-out.** The primary GPU runs in the learner process. Replica
+  GPUs live in persistent ``spawn`` children, avoiding Python/GIL contention
+  between the model wrappers while retaining one model per GPU. Set
+  ``BLB_STAGE2_PROBE_BACKEND=thread`` for the legacy in-process fallback.
 * **Single-device fallback.** A 1-worker ``ProbeRunner`` is a thin no-op
   wrapper. ``BLBStage2Env`` only constructs one when there are 2+ devices,
   so existing single-GPU runs keep the original codepath bitwise.
@@ -29,8 +30,12 @@ Design:
 from __future__ import annotations
 
 import copy
+import multiprocessing as mp
+import os
 import threading
 import time
+import traceback
+import weakref
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable, List, Optional, Sequence, Tuple
@@ -48,6 +53,30 @@ try:
     from blb_rl_bridge import BLBNoiseRLBridge
 except Exception:  # pragma: no cover — torch-free import path
     BLBNoiseRLBridge = None  # type: ignore
+
+
+_PROCESS_STARTUP_TIMEOUT_SECONDS = 300.0
+_PROCESS_COMMAND_TIMEOUT_SECONDS = 3600.0
+
+
+def resolve_probe_backend(spec: Optional[str] = None) -> str:
+    """Resolve the multi-GPU probe execution backend.
+
+    Persistent processes are the default because same-process BERT forwards
+    contend in Python even when their CUDA kernels target separate devices.
+    The thread backend remains available as an operational rollback.
+    """
+    raw = (
+        os.environ.get("BLB_STAGE2_PROBE_BACKEND", "process")
+        if spec is None else spec
+    )
+    value = str(raw or "process").strip().lower()
+    if value not in {"process", "thread"}:
+        raise ValueError(
+            "BLB_STAGE2_PROBE_BACKEND must be 'process' or 'thread', "
+            f"got {raw!r}"
+        )
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +225,224 @@ class ProbeWorker:
             )
 
 
+def _probe_process_main(
+        connection: Any,
+        device_id: int,
+        model_template: nn.Module,
+        probe_batches_cpu: Sequence[Any],
+        layers_attribute: str,
+        is_regression: bool,
+        metric_profile: str,
+        ) -> None:
+    """Own one replica GPU and serve synchronous probe commands."""
+    worker: Optional[ProbeWorker] = None
+    try:
+        if BLBNoiseRLBridge is None:
+            raise RuntimeError("BLBNoiseRLBridge is unavailable in probe child")
+        enable_cuda_reward_probe_fast_math()
+        device = torch.device(f"cuda:{int(device_id)}")
+        with torch.cuda.device(device):
+            model = model_template.to(device)
+            model.eval()
+            handler = ReversibleLayerHandler(model)
+            bridge = BLBNoiseRLBridge(
+                handler, layers_attribute=str(layers_attribute),
+            )
+            probe_batches = [
+                _move_probe_batch_to_device(batch, device)
+                for batch in probe_batches_cpu
+            ]
+            torch.cuda.synchronize(device)
+        worker = ProbeWorker(
+            device=device,
+            model=model,
+            handler=handler,
+            bridge=bridge,
+            probe_batches=probe_batches,
+            is_regression=bool(is_regression),
+            metric_profile=str(metric_profile),
+            role="replica_process",
+        )
+        connection.send({
+            "status": "ready",
+            "operation": "startup",
+            "device": str(device),
+        })
+    except BaseException as exc:  # noqa: BLE001
+        try:
+            connection.send({
+                "status": "error",
+                "operation": "startup",
+                "error": repr(exc),
+                "traceback": traceback.format_exc(),
+            })
+        finally:
+            connection.close()
+        return
+
+    while True:
+        try:
+            message = connection.recv()
+        except EOFError:
+            break
+        operation = str(message.get("operation", ""))
+        payload = dict(message.get("payload") or {})
+        started = time.perf_counter()
+        should_close = operation == "close"
+        try:
+            if operation == "install":
+                worker.install(payload["decoded"])
+                result: dict = {}
+            elif operation == "clear":
+                worker.clear()
+                result = {}
+            elif operation == "run_trials":
+                base_seed = int(payload["base_seed"])
+                result = {
+                    "results": [
+                        (
+                            int(trial_idx),
+                            worker.run_trial(int(trial_idx), base_seed),
+                        )
+                        for trial_idx in payload["trial_indices"]
+                    ]
+                }
+            elif operation == "run_action_trial":
+                trial_idx = int(payload["trial_idx"])
+                base_seed = int(payload["base_seed"])
+                worker.install(payload["decoded"])
+                result = {
+                    "trial_idx": trial_idx,
+                    "result": worker.run_trial(trial_idx, base_seed),
+                }
+            elif operation == "close":
+                try:
+                    worker.clear()
+                except Exception:
+                    pass
+                result = {}
+            else:
+                raise ValueError(f"unknown probe child operation {operation!r}")
+            result["wall_seconds"] = float(time.perf_counter() - started)
+            connection.send({
+                "status": "ok",
+                "operation": operation,
+                "payload": result,
+            })
+        except BaseException as exc:  # noqa: BLE001
+            connection.send({
+                "status": "error",
+                "operation": operation,
+                "error": repr(exc),
+                "traceback": traceback.format_exc(),
+            })
+        if should_close:
+            break
+    connection.close()
+
+
+class _ProcessProbeWorker:
+    """Parent-side handle for one persistent replica process."""
+
+    def __init__(self, *, device: torch.device, connection: Any, process: Any):
+        self.device = device
+        self.connection = connection
+        self.process = process
+        self.role = "replica_process"
+        self._pending_operation: Optional[str] = None
+        self._closed = False
+
+    def _receive_message(self, timeout: float) -> dict:
+        deadline = time.monotonic() + max(0.1, float(timeout))
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"probe child {self.device} timed out after {timeout:.1f}s"
+                )
+            if self.connection.poll(min(0.1, remaining)):
+                return dict(self.connection.recv())
+            if not self.process.is_alive():
+                raise RuntimeError(
+                    f"probe child {self.device} exited with code "
+                    f"{self.process.exitcode}"
+                )
+
+    def wait_until_ready(self) -> None:
+        message = self._receive_message(_PROCESS_STARTUP_TIMEOUT_SECONDS)
+        if message.get("status") != "ready":
+            details = message.get("traceback") or message.get("error") or message
+            raise RuntimeError(
+                f"probe child {self.device} startup failed: {details}"
+            )
+
+    def submit(self, operation: str, payload: dict) -> None:
+        if self._closed:
+            raise RuntimeError(f"probe child {self.device} is closed")
+        if self._pending_operation is not None:
+            raise RuntimeError(
+                f"probe child {self.device} already has pending operation "
+                f"{self._pending_operation!r}"
+            )
+        if not self.process.is_alive():
+            raise RuntimeError(
+                f"probe child {self.device} is not alive "
+                f"(exitcode={self.process.exitcode})"
+            )
+        self.connection.send({
+            "operation": str(operation),
+            "payload": dict(payload),
+        })
+        self._pending_operation = str(operation)
+
+    def receive(self, operation: str, timeout: Optional[float] = None) -> dict:
+        expected = str(operation)
+        if self._pending_operation != expected:
+            raise RuntimeError(
+                f"probe child {self.device} expected pending {expected!r}, "
+                f"got {self._pending_operation!r}"
+            )
+        try:
+            message = self._receive_message(
+                _PROCESS_COMMAND_TIMEOUT_SECONDS if timeout is None else timeout
+            )
+        finally:
+            self._pending_operation = None
+        if message.get("operation") != expected:
+            raise RuntimeError(
+                f"probe child {self.device} returned operation "
+                f"{message.get('operation')!r}, expected {expected!r}"
+            )
+        if message.get("status") != "ok":
+            details = message.get("traceback") or message.get("error") or message
+            raise RuntimeError(
+                f"probe child {self.device} {expected} failed: {details}"
+            )
+        return dict(message.get("payload") or {})
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            if self._pending_operation is None and self.process.is_alive():
+                self.connection.send({"operation": "close", "payload": {}})
+                self._pending_operation = "close"
+                try:
+                    self.receive("close", timeout=5.0)
+                except Exception:
+                    pass
+            self.process.join(timeout=5.0)
+            if self.process.is_alive():
+                self.process.terminate()
+                self.process.join(timeout=5.0)
+        finally:
+            try:
+                self.connection.close()
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # ProbeRunner — distributes k trials across workers
 # ---------------------------------------------------------------------------
@@ -223,11 +470,38 @@ class ProbeRunnerDiagnostics:
 class ProbeRunner:
     """Fan trials across N workers, aggregate results in trial order."""
 
-    def __init__(self, workers: List[ProbeWorker]):
+    def __init__(
+            self,
+            workers: List[ProbeWorker],
+            *,
+            process_workers: Optional[Sequence[Any]] = None,
+            ):
         if not workers:
             raise ValueError("ProbeRunner requires at least one worker")
-        self.workers = workers
+        self._process_workers = list(process_workers or [])
+        if self._process_workers and len(workers) != 1:
+            raise ValueError(
+                "process probe backend requires exactly one local primary worker"
+            )
+        self.workers = list(workers) + self._process_workers
         self.last_diagnostics: Optional[ProbeRunnerDiagnostics] = None
+        self._closed = False
+        self._process_finalizer = (
+            weakref.finalize(
+                self,
+                ProbeRunner._close_worker_handles,
+                tuple(self._process_workers),
+            )
+            if self._process_workers else None
+        )
+
+    @staticmethod
+    def _close_worker_handles(workers: Sequence[Any]) -> None:
+        for worker in workers:
+            try:
+                worker.close()
+            except Exception:
+                pass
 
     @property
     def num_workers(self) -> int:
@@ -236,6 +510,30 @@ class ProbeRunner:
     @property
     def devices(self) -> List[torch.device]:
         return [w.device for w in self.workers]
+
+    @property
+    def backend(self) -> str:
+        return "process" if self._process_workers else "thread"
+
+    def _raise_process_error(
+            self,
+            worker_index: int,
+            operation: str,
+            exc: BaseException,
+            ) -> None:
+        raise RuntimeError(
+            f"probe-runner worker {worker_index} "
+            f"(device {self.workers[worker_index].device}) "
+            f"{operation} failed: {exc}"
+        ) from exc
+
+    def close(self) -> None:
+        """Stop persistent replica processes. Safe to call repeatedly."""
+        if self._closed:
+            return
+        self._closed = True
+        if self._process_finalizer is not None and self._process_finalizer.alive:
+            self._process_finalizer()
 
     def _for_each_worker(self, fn) -> None:
         """Run a worker-local operation on every worker.
@@ -276,10 +574,51 @@ class ProbeRunner:
 
     def install_action(self, decoded: ActionDecodeResult) -> None:
         """Apply the same cfg on every worker's model."""
+        if self._process_workers:
+            submitted: List[Tuple[int, Any]] = []
+            errors: List[Tuple[int, BaseException]] = []
+            for worker_index, worker in enumerate(self._process_workers, start=1):
+                try:
+                    worker.submit("install", {"decoded": decoded})
+                    submitted.append((worker_index, worker))
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append((worker_index, exc))
+            try:
+                self.workers[0].install(decoded)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((0, exc))
+            for worker_index, worker in submitted:
+                try:
+                    worker.receive("install")
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append((worker_index, exc))
+            if errors:
+                worker_index, exc = errors[0]
+                self._raise_process_error(worker_index, "install", exc)
+            return
         self._for_each_worker(lambda w: w.install(decoded))
 
     def clear(self) -> None:
         """Reverse install on every worker. Always safe (clear is idempotent)."""
+        if self._process_workers:
+            submitted = []
+            for worker in self._process_workers:
+                try:
+                    worker.submit("clear", {})
+                    submitted.append(worker)
+                except Exception:
+                    pass
+            try:
+                self.workers[0].clear()
+            except Exception:
+                pass
+            for worker in submitted:
+                try:
+                    worker.receive("clear")
+                except Exception:
+                    pass
+            return
+
         def clear_one(w: ProbeWorker) -> None:
             try:
                 w.clear()
@@ -288,6 +627,81 @@ class ProbeRunner:
                 # still want to attempt the other workers.
                 pass
         self._for_each_worker(clear_one)
+
+    def _run_trials_processes(
+            self,
+            k: int,
+            base_seed: int,
+            ) -> List[Tuple[float, float, float]]:
+        assignments = _split_round_robin_cached(k, self.num_workers)
+        seed_assignments = [
+            [_trial_seed(base_seed, trial_idx) for trial_idx in trials]
+            for trials in assignments
+        ]
+        results_per_trial: List[Optional[Tuple[float, float, float]]] = [None] * k
+        per_worker_seconds: List[float] = [0.0] * self.num_workers
+        errors: List[Tuple[int, BaseException]] = []
+        submitted: List[Tuple[int, Any]] = []
+
+        wall_started = time.perf_counter()
+        for worker_index, worker in enumerate(self._process_workers, start=1):
+            trials = assignments[worker_index]
+            if not trials:
+                continue
+            try:
+                worker.submit("run_trials", {
+                    "trial_indices": list(trials),
+                    "base_seed": int(base_seed),
+                })
+                submitted.append((worker_index, worker))
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((worker_index, exc))
+
+        local_started = time.perf_counter()
+        try:
+            for trial_idx in assignments[0]:
+                results_per_trial[trial_idx] = self.workers[0].run_trial(
+                    trial_idx, base_seed,
+                )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append((0, exc))
+        finally:
+            per_worker_seconds[0] = time.perf_counter() - local_started
+
+        for worker_index, worker in submitted:
+            try:
+                payload = worker.receive("run_trials")
+                per_worker_seconds[worker_index] = float(
+                    payload.get("wall_seconds", 0.0) or 0.0
+                )
+                for trial_idx, result in payload.get("results", []):
+                    results_per_trial[int(trial_idx)] = tuple(result)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((worker_index, exc))
+        wall_elapsed = time.perf_counter() - wall_started
+
+        self.last_diagnostics = ProbeRunnerDiagnostics(
+            k=k,
+            wall_seconds=float(wall_elapsed),
+            per_worker_seconds=[float(value) for value in per_worker_seconds],
+            per_worker_trial_counts=[len(trials) for trials in assignments],
+            per_worker_trial_indices=[list(trials) for trials in assignments],
+            per_worker_trial_seeds=[list(seeds) for seeds in seed_assignments],
+            devices=[str(device) for device in self.devices],
+        )
+        if errors:
+            worker_index, exc = errors[0]
+            self._raise_process_error(worker_index, "run_trials", exc)
+
+        ordered: List[Tuple[float, float, float]] = []
+        for trial_idx, result in enumerate(results_per_trial):
+            if result is None:
+                raise RuntimeError(
+                    f"probe-runner missing trial {trial_idx} "
+                    f"(assignments={assignments})"
+                )
+            ordered.append(result)
+        return ordered
 
     def run_trials(self, k: int, base_seed: int) -> List[Tuple[float, float, float]]:
         """Run trials [0..k-1] in parallel across workers; return in trial order."""
@@ -300,6 +714,9 @@ class ProbeRunner:
                 devices=[str(d) for d in self.devices],
             )
             return []
+
+        if self._process_workers:
+            return self._run_trials_processes(k, base_seed)
 
         assignments = _split_round_robin_cached(k, len(self.workers))
         seed_assignments = [
@@ -369,6 +786,79 @@ class ProbeRunner:
             ordered.append(result)
         return ordered
 
+    def _run_action_trials_once_processes(
+            self,
+            actions: Sequence[ActionDecodeResult],
+            base_seed: int,
+            ) -> List[Tuple[float, float, float]]:
+        k = len(actions)
+        results_per_trial: List[Optional[Tuple[float, float, float]]] = [None] * k
+        per_worker_seconds: List[float] = [0.0] * self.num_workers
+        assignments: List[List[int]] = [[] for _ in self.workers]
+        seed_assignments: List[List[int]] = [[] for _ in self.workers]
+        for trial_idx in range(k):
+            assignments[trial_idx].append(trial_idx)
+            seed_assignments[trial_idx].append(_trial_seed(base_seed, trial_idx))
+
+        errors: List[Tuple[int, BaseException]] = []
+        submitted: List[Tuple[int, Any]] = []
+        wall_started = time.perf_counter()
+        for worker_index in range(1, k):
+            worker = self._process_workers[worker_index - 1]
+            try:
+                worker.submit("run_action_trial", {
+                    "trial_idx": int(worker_index),
+                    "base_seed": int(base_seed),
+                    "decoded": actions[worker_index],
+                })
+                submitted.append((worker_index, worker))
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((worker_index, exc))
+
+        local_started = time.perf_counter()
+        try:
+            self.workers[0].install(actions[0])
+            results_per_trial[0] = self.workers[0].run_trial(0, base_seed)
+        except BaseException as exc:  # noqa: BLE001
+            errors.append((0, exc))
+        finally:
+            per_worker_seconds[0] = time.perf_counter() - local_started
+
+        for worker_index, worker in submitted:
+            try:
+                payload = worker.receive("run_action_trial")
+                per_worker_seconds[worker_index] = float(
+                    payload.get("wall_seconds", 0.0) or 0.0
+                )
+                trial_idx = int(payload["trial_idx"])
+                results_per_trial[trial_idx] = tuple(payload["result"])
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((worker_index, exc))
+        wall_elapsed = time.perf_counter() - wall_started
+
+        self.last_diagnostics = ProbeRunnerDiagnostics(
+            k=k,
+            wall_seconds=float(wall_elapsed),
+            per_worker_seconds=[float(value) for value in per_worker_seconds],
+            per_worker_trial_counts=[len(trials) for trials in assignments],
+            per_worker_trial_indices=[list(trials) for trials in assignments],
+            per_worker_trial_seeds=[list(seeds) for seeds in seed_assignments],
+            devices=[str(device) for device in self.devices],
+            multi_action=True,
+        )
+        if errors:
+            worker_index, exc = errors[0]
+            self._raise_process_error(worker_index, "run_action_trial", exc)
+
+        ordered: List[Tuple[float, float, float]] = []
+        for trial_idx, result in enumerate(results_per_trial):
+            if result is None:
+                raise RuntimeError(
+                    f"probe-runner missing multi-action trial {trial_idx}"
+                )
+            ordered.append(result)
+        return ordered
+
     def run_action_trials_once(
             self,
             decoded_by_trial: Sequence[ActionDecodeResult],
@@ -397,6 +887,9 @@ class ProbeRunner:
                 f"run_action_trials_once received {k} actions for "
                 f"{len(self.workers)} workers"
             )
+
+        if self._process_workers:
+            return self._run_action_trials_once_processes(actions, base_seed)
 
         results_per_trial: List[Optional[Tuple[float, float, float]]] = [None] * k
         per_worker_seconds: List[float] = [0.0] * len(self.workers)
@@ -536,8 +1029,9 @@ def build_probe_runner(
     Worker 0 reuses the env's existing model + handler + bridge + probe_batches
     (zero extra GPU allocation, and avoids the "two bridges, one handler" trap
     — only the env's bridge tracks what's installed on the primary model).
-    Workers 1+ deepcopy the primary model onto their device and construct
-    their own handler / bridge / probe_batches copies.
+    Workers 1+ own a deepcopy of the primary model plus their own handler,
+    bridge, and probe batches. By default those replicas live in persistent
+    spawn children; the explicit thread fallback keeps them in this process.
 
     Caller guarantees:
       * ``primary_model`` is the model the env already holds (so worker 0
@@ -577,6 +1071,68 @@ def build_probe_runner(
         role="primary",
     ))
     log(f"[probe-runner] worker 0: {primary_device} (primary, reusing env.bridge)")
+
+    backend = resolve_probe_backend()
+    log(f"[probe-runner] backend={backend}")
+
+    if backend == "process" and len(device_ids) >= 2:
+        process_workers: List[_ProcessProbeWorker] = []
+        context = mp.get_context("spawn")
+        try:
+            # Children must not inherit an initialized CUDA context. Build one
+            # CPU template and let torch multiprocessing share its storages
+            # while each spawn child moves its own copy to its assigned GPU.
+            model_template = copy.deepcopy(primary_model).to(torch.device("cpu"))
+            model_template.eval()
+            probe_batches_cpu = [
+                _move_probe_batch_to_device(batch, torch.device("cpu"))
+                for batch in primary_probe_batches
+            ]
+            for device_id in device_ids[1:]:
+                device = torch.device(f"cuda:{int(device_id)}")
+                parent_connection, child_connection = context.Pipe(duplex=True)
+                process = context.Process(
+                    target=_probe_process_main,
+                    args=(
+                        child_connection,
+                        int(device_id),
+                        model_template,
+                        probe_batches_cpu,
+                        str(layers_attribute),
+                        bool(is_regression),
+                        str(metric_profile),
+                    ),
+                    name=f"blb-probe-{device}",
+                    daemon=True,
+                )
+                process.start()
+                child_connection.close()
+                process_workers.append(_ProcessProbeWorker(
+                    device=device,
+                    connection=parent_connection,
+                    process=process,
+                ))
+
+            for worker_index, worker in enumerate(process_workers, start=1):
+                worker.wait_until_ready()
+                log(
+                    f"[probe-runner] worker {worker_index}: {worker.device} "
+                    f"(persistent process pid={worker.process.pid})"
+                )
+        except Exception as exc:
+            for worker in process_workers:
+                worker.close()
+            raise RuntimeError(
+                f"failed to start persistent probe processes: {exc!r}"
+            ) from exc
+        finally:
+            # Release the temporary GPU allocation created by deepcopy before
+            # it was moved to CPU. This does not affect the primary model.
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+        return ProbeRunner(workers, process_workers=process_workers)
 
     # ---- workers 1+: deepcopy the primary model onto each extra device ----
     for d in device_ids[1:]:

@@ -1,0 +1,2 @@
+{"label":"one","reused":true,"episodes":"/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/stage2_layerwise_diag_170ep_9099cfa_20260715_012600/one_episodes.jsonl","wall":"/hy-tmp/rfr_runtime_optimization/experiments/server_command_runs/stage2_layerwise_diag_170ep_9099cfa_20260715_012600/one_wall_seconds.txt"}
+{"label":"many","devices":"0,1,2,3,4","workers_per_device":1,"launch_rc":0,"rc":0,"wall_seconds":171}

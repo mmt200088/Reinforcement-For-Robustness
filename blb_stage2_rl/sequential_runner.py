@@ -4229,6 +4229,7 @@ def _run_layerwise_training_branch(
         fresh_assessment = _to_plain_mapping(record.fresh_assessment)
         fresh_metrics = dict(record.metrics or {})
         pooled_metrics = dict(record.pooled_metrics or {})
+        probe_diagnostics = _to_plain_mapping(record.probe_diagnostics)
 
         def trials_payload(trials: Any) -> Dict[str, Any]:
             if trials is None:
@@ -4305,6 +4306,39 @@ def _run_layerwise_training_branch(
                 terminal_fusion_gain=float(b4_count) / 12.0,
                 terminal_cost_score=float(record.variable_cost),
                 terminal_cost_rank_score=float(record.variable_cost),
+                terminal_probe_wall_seconds=float(
+                    probe_diagnostics.get("wall_seconds", 0.0) or 0.0
+                ),
+                terminal_probe_devices=[str(value) for value in (probe_diagnostics.get("devices") or [])],
+                terminal_probe_trial_counts=[
+                    int(value) for value in (
+                        probe_diagnostics.get("per_worker_trial_counts") or []
+                    )
+                ],
+                terminal_probe_trial_indices=[
+                    [int(index) for index in (indices or [])]
+                    for indices in (
+                        probe_diagnostics.get("per_worker_trial_indices") or []
+                    )
+                ],
+                terminal_probe_speedup=float(
+                    probe_diagnostics.get("speedup_vs_sequential", 1.0) or 1.0
+                ),
+                terminal_cost_eval_wall_seconds=float(
+                    probe_diagnostics.get("cost_eval_wall_seconds", 0.0) or 0.0
+                ),
+                terminal_probe_install_wall_seconds=float(
+                    probe_diagnostics.get("probe_install_wall_seconds", 0.0) or 0.0
+                ),
+                terminal_probe_clear_wall_seconds=float(
+                    probe_diagnostics.get("probe_clear_wall_seconds", 0.0) or 0.0
+                ),
+                terminal_probe_install_skipped=bool(probe_diagnostics.get(
+                    "probe_install_skipped", False
+                )),
+                terminal_probe_clear_skipped=bool(probe_diagnostics.get(
+                    "probe_clear_skipped", False
+                )),
                 raw_trials=fresh_trials,
                 constraint_probabilities=pooled_probabilities,
                 fresh_trials=fresh_trials,

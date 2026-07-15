@@ -529,6 +529,53 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("planned_total_episodes", fields)
         self.assertIn("convergence_resume_state", fields)
 
+    def test_layerwise_episode_diagnostics_map_existing_probe_timing_fields(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+        self.assertIn(
+            "probe_diagnostics = _to_plain_mapping(record.probe_diagnostics)",
+            branch_source,
+        )
+        callback = next(
+            node for node in branch.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "on_layerwise_episode"
+        )
+        episode_stats_call = next(
+            node for node in ast.walk(callback)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "EpisodeStats"
+        )
+        keyword_sources = {
+            keyword.arg: ast.unparse(keyword.value)
+            for keyword in episode_stats_call.keywords
+        }
+        expected_probe_keys = {
+            "terminal_probe_wall_seconds": "wall_seconds",
+            "terminal_probe_devices": "devices",
+            "terminal_probe_trial_counts": "per_worker_trial_counts",
+            "terminal_probe_trial_indices": "per_worker_trial_indices",
+            "terminal_probe_speedup": "speedup_vs_sequential",
+            "terminal_cost_eval_wall_seconds": "cost_eval_wall_seconds",
+            "terminal_probe_install_wall_seconds": "probe_install_wall_seconds",
+            "terminal_probe_clear_wall_seconds": "probe_clear_wall_seconds",
+            "terminal_probe_install_skipped": "probe_install_skipped",
+            "terminal_probe_clear_skipped": "probe_clear_skipped",
+        }
+        for field_name, probe_key in expected_probe_keys.items():
+            expression = keyword_sources[field_name]
+            self.assertIn("probe_diagnostics", expression)
+            self.assertIn(probe_key, expression)
+
     def test_layerwise_checkpoint_preserves_long_run_search_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
@@ -1161,6 +1208,19 @@ class _FakeLayerwiseEnv:
             "metrics": types.SimpleNamespace(
                 loss_mean=0.304, metric1_mean=0.896, metric2_mean=0.796,
             ),
+            "probe_diagnostics": {
+                "wall_seconds": 1.25,
+                "devices": ["cuda:0", "cuda:1"],
+                "per_worker_seconds": [1.10, 1.20],
+                "per_worker_trial_counts": [3, 2],
+                "per_worker_trial_indices": [[0, 2, 4], [1, 3]],
+                "speedup_vs_sequential": 1.75,
+                "cost_eval_wall_seconds": 0.11,
+                "probe_install_wall_seconds": 0.22,
+                "probe_clear_wall_seconds": 0.33,
+                "probe_install_skipped": True,
+                "probe_clear_skipped": False,
+            },
             "invalid": self._invalid,
         }
         if self._evidence_mode != "missing":
@@ -1283,6 +1343,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(observed_ppo[0][3]["ent_coef_override"], 0.0)
         self.assertEqual(summary["episode_records"][0].action_matrix[0][1], 0)
         self.assertEqual(summary["episode_records"][0].pending_full_vector, tuple(range(20)))
+        self.assertEqual(
+            summary["episode_records"][0].probe_diagnostics,
+            env.runtime_terminal_info["probe_diagnostics"],
+        )
         self.assertEqual(summary["episode_rewards"], [7.5])
         self.assertIn("best_action", summary)
         self.assertIsNone(summary["best_action"])
