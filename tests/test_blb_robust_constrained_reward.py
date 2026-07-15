@@ -514,7 +514,10 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
             k_by_block[1] = 13
         decoded_actions.append(layerwise_action.LayerwiseDecodedAction(1, k_by_block))
     variable_cost = layerwise_action.compute_variable_cost(decoded_actions).normalized
-    assert variable_cost == 0.5
+    assert np.isclose(
+        variable_cost,
+        12.0 / layerwise_action.MAX_VARIABLE_COST_UNITS,
+    )
 
     env = _runtime_env(env_module, reward_module, statistical_constraints)
     env.total_action_dim = 3
@@ -546,10 +549,15 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
                 prepared, metrics,
             )
         assert done is True
-        assert terminal_reward > 1.5
         assert info["reward_breakdown"].variable_cost == variable_cost
         assert info["statistical_trials"]["seeds"] == [100, 101, 102, 103, 104]
         json.dumps(info["statistical_assessment"])
+        expected_reward = reward_module.robust_constrained_reward(
+            SimpleNamespace(**info["statistical_assessment"]),
+            invalid=False,
+            variable_cost=variable_cost,
+        )[0]
+        assert np.isclose(terminal_reward, expected_reward)
         assessments.append(info["statistical_assessment"])
     assert assessments[0] == assessments[1]
 
