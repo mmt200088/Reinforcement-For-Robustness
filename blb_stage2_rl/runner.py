@@ -647,6 +647,17 @@ class BLBStage2TrainConfig:
             raise ValueError(
                 "constraint probabilities must satisfy online <= promotion <= final"
             )
+        self.convergence_min_episodes = int(self.convergence_min_episodes)
+        self.convergence_patience_updates = int(self.convergence_patience_updates)
+        self.convergence_max_episodes = int(self.convergence_max_episodes)
+        if self.convergence_min_episodes < 0:
+            raise ValueError("convergence_min_episodes must be nonnegative")
+        if self.convergence_patience_updates <= 0:
+            raise ValueError("convergence_patience_updates must be positive")
+        if self.convergence_max_episodes < self.convergence_min_episodes:
+            raise ValueError(
+                "convergence_max_episodes must cover convergence_min_episodes"
+            )
     # 环境
     # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
     # making one outlier trial blow up the std and trip priority-2 (stability)
@@ -754,6 +765,9 @@ class BLBStage2TrainConfig:
     promotion_constraint_probability: float = 0.80
     final_constraint_probability: float = 0.95
     stage2_stability_multiplier: float = 2.0
+    convergence_min_episodes: int = 100_000
+    convergence_patience_updates: int = 220
+    convergence_max_episodes: int = 150_000
     # ---- 4-sub-stage mode (opt-in 2026-05-27) -----------------------------
     # When ``substage_mode`` is True, ``BLBStage2RLRunner.run`` dispatches to
     # ``substage_runner.run_substage_via_runner`` instead of the legacy
@@ -3115,11 +3129,18 @@ class BLBStage2RLRunner:
             self,
             ev,
             train_cfg: BLBStage2TrainConfig,
+            *,
+            probe_size_override: Optional[int] = None,
             ) -> List[ProbeBatch]:
         """构造 RL 评估子集：使用 evaluator 已有的 stability probe。"""
         device = ev.device
         split_name = ev.get_reward_reference_split_name()
-        probe_size = int(getattr(ev, "stage2_probe_size", 256))
+        probe_size = int(
+            getattr(ev, "stage2_probe_size", 256)
+            if probe_size_override is None else probe_size_override
+        )
+        if probe_size <= 0:
+            raise ValueError("Stage-2 probe size must be positive")
 
         try:
             probe_subset, probe_subset_mm = ev._get_stability_probe(
@@ -3143,13 +3164,44 @@ class BLBStage2RLRunner:
             collate_fn=ev.data_collator,
             pin_memory=torch.cuda.is_available(),
         )
-        max_count = _effective_probe_batch_count(ev, train_cfg)
+        max_count = (
+            _effective_probe_batch_count(ev, train_cfg)
+            if probe_size_override is None
+            else int(math.ceil(float(probe_size) / max(1, int(ev.batch_size))))
+        )
         out: List[ProbeBatch] = []
         for batch in loader:
             out.append(ProbeBatch.from_batch(batch, torch.device(device)))
             if len(out) >= max_count:
                 break
         return out
+
+    def _build_validation_full_batches(self, ev) -> List[ProbeBatch]:
+        """Materialize every example from the authoritative validation split."""
+        dataset_splits = getattr(ev, "dataset_splits", None)
+        if not isinstance(dataset_splits, Mapping):
+            raise RuntimeError("Stage-2 F4 evaluation requires evaluator.dataset_splits")
+        validation_full = dataset_splits.get("validation_full")
+        if validation_full is None:
+            raise RuntimeError("Stage-2 F4 evaluation requires validation_full")
+        try:
+            example_count = len(validation_full)
+        except TypeError as exc:
+            raise RuntimeError("validation_full must be a sized dataset") from exc
+        if example_count <= 0:
+            raise RuntimeError("validation_full must contain at least one example")
+
+        from torch.utils.data import DataLoader
+
+        loader = DataLoader(
+            validation_full,
+            batch_size=int(ev.batch_size),
+            shuffle=False,
+            collate_fn=ev.data_collator,
+            pin_memory=torch.cuda.is_available(),
+        )
+        device = torch.device(ev.device)
+        return [ProbeBatch.from_batch(batch, device) for batch in loader]
 
     def _build_rescale_bridge(
             self,

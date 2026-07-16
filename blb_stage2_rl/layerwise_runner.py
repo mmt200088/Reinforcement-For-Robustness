@@ -14,7 +14,12 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 
 import numpy as np
 
-from .candidate_store import CandidateStore, CandidateTrialEvidence, sha256_json
+from .candidate_store import (
+    CandidateStore,
+    CandidateTrialEvidence,
+    candidate_key,
+    sha256_json,
+)
 from .layerwise_action import compute_variable_cost_from_action_matrix
 from .statistical_constraints import (
     TrialSeries,
@@ -36,6 +41,22 @@ _REWARD_DESIGNS = frozenset((
 ))
 _LAUNCHER_LOCK_FD_ENV = "BLB_STAGE2_RUN_LOCK_FD"
 _LAUNCHER_LOCK_PATH_ENV = "BLB_STAGE2_RUN_LOCK_PATH"
+DEFAULT_CONVERGENCE_MIN_EPISODES = 100_000
+DEFAULT_CONVERGENCE_PATIENCE_UPDATES = 220
+DEFAULT_CONVERGENCE_MAX_EPISODES = 150_000
+
+
+def evidence_identity_context(
+        identity_context: Mapping[str, Any],
+        fidelity: str,
+        ) -> dict[str, Any]:
+    """Return an immutable-base candidate identity for one evidence tier."""
+    value = str(fidelity or "").strip().upper()
+    if value not in ("F1", "F4"):
+        raise ValueError(f"layerwise evidence fidelity must be F1 or F4, got {fidelity!r}")
+    context = dict(identity_context)
+    context["fidelity"] = value
+    return context
 
 
 def stage2_run_lock_path(progress_dir: Any) -> str:
@@ -586,12 +607,36 @@ class LayerwiseConvergenceState:
     best_robust_feasible_cost: Optional[float]
     selected_action_identity: Optional[str]
     selected_action_stable_update_windows: int
+    budget_cap_reached: bool
+    termination_reason: str
 
 
 class LayerwiseConvergenceTracker:
     """Track robust frontier and exact selected-action stability."""
 
-    def __init__(self) -> None:
+    def __init__(
+            self,
+            *,
+            minimum_episodes: int = DEFAULT_CONVERGENCE_MIN_EPISODES,
+            patience_updates: int = DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
+            maximum_episodes: Optional[int] = DEFAULT_CONVERGENCE_MAX_EPISODES,
+            ) -> None:
+        self.minimum_episodes = int(minimum_episodes)
+        self.patience_updates = int(patience_updates)
+        self.maximum_episodes = (
+            None if maximum_episodes is None else int(maximum_episodes)
+        )
+        if self.minimum_episodes < 0:
+            raise ValueError("minimum_episodes must be nonnegative")
+        if self.patience_updates <= 0:
+            raise ValueError("patience_updates must be positive")
+        if self.maximum_episodes is not None and self.maximum_episodes <= 0:
+            raise ValueError("maximum_episodes must be positive")
+        if (
+                self.maximum_episodes is not None
+                and self.maximum_episodes < self.minimum_episodes
+        ):
+            raise ValueError("maximum_episodes must cover minimum_episodes")
         self._best_cost: Optional[float] = None
         self._current_frontier_cost: Optional[float] = None
         self._stall_windows = 0
@@ -600,6 +645,9 @@ class LayerwiseConvergenceTracker:
 
     def state_dict(self) -> dict[str, Any]:
         return {
+            "minimum_episodes": int(self.minimum_episodes),
+            "patience_updates": int(self.patience_updates),
+            "maximum_episodes": self.maximum_episodes,
             "best_robust_feasible_cost": self._best_cost,
             "current_robust_feasible_cost": self._current_frontier_cost,
             "stall_update_windows": int(self._stall_windows),
@@ -612,6 +660,21 @@ class LayerwiseConvergenceTracker:
     def load_state_dict(self, state: Optional[Mapping[str, Any]]) -> None:
         if not isinstance(state, Mapping):
             return
+        expected_contract = {
+            "minimum_episodes": int(self.minimum_episodes),
+            "patience_updates": int(self.patience_updates),
+            "maximum_episodes": self.maximum_episodes,
+        }
+        for field_name, expected in expected_contract.items():
+            if field_name not in state:
+                continue
+            observed = state.get(field_name)
+            observed = None if observed is None else int(observed)
+            if observed != expected:
+                raise ValueError(
+                    "layerwise convergence contract mismatch: "
+                    f"{field_name} checkpoint={observed!r}, requested={expected!r}"
+                )
         best_cost = state.get("best_robust_feasible_cost")
         self._best_cost = (
             None if best_cost is None else _finite(best_cost, name="best_robust_feasible_cost")
@@ -727,11 +790,22 @@ class LayerwiseConvergenceTracker:
         k_value = _diagnostic_entropy(k_entropy)
         converged = bool(
             count_patience
+            and episodes >= self.minimum_episodes
             and robust_feasible_cost is not None
             and self._best_cost is not None
-            and self._stall_windows >= 100
+            and self._stall_windows >= self.patience_updates
             and self._selected_action_identity is not None
-            and self._selected_action_stable_windows >= 100
+            and self._selected_action_stable_windows >= self.patience_updates
+        )
+        budget_cap_reached = bool(
+            not converged
+            and self.maximum_episodes is not None
+            and episodes >= self.maximum_episodes
+        )
+        termination_reason = (
+            "converged" if converged
+            else "budget_cap_reached" if budget_cap_reached
+            else "running"
         )
         return LayerwiseConvergenceState(
             completed_episodes=episodes,
@@ -745,6 +819,8 @@ class LayerwiseConvergenceTracker:
             ),
             converged=converged,
             extension_required=False,
+            budget_cap_reached=budget_cap_reached,
+            termination_reason=termination_reason,
         )
 
 
@@ -812,6 +888,9 @@ class LayerwiseEpisodeRecord:
     probe_diagnostics: Mapping[str, Any]
     promoted_trial_count: int
     promotion_status: str
+    promotion_candidate_key: Optional[str]
+    promotion_assessment: Optional[Mapping[str, Any]]
+    promotion_metrics: Optional[Mapping[str, float]]
     invalid_steps: int
     step_count: int
     block4_entropy: Optional[float]
@@ -821,6 +900,8 @@ class LayerwiseEpisodeRecord:
     selected_action_stable_update_windows: int
     converged: bool
     extension_required: bool
+    budget_cap_reached: bool
+    termination_reason: str
     best_robust_feasible_cost: Optional[float]
 
 
@@ -902,7 +983,7 @@ def _append_promotion_status(
         "action_indices": list(action_indices),
         "effective_action_indices": list(action_indices),
         "identity_context": dict(identity_context),
-        "fidelity": "F4" if status == "promoted" else "F1",
+        "fidelity": "F4",
         "valid": status == "promoted",
         "promotion_status": str(status),
         "promotion_metadata": dict(metadata or {}),
@@ -951,10 +1032,11 @@ def restore_promoted_candidates(
         assessment_trial_limit: int = 25,
         ) -> dict[str, dict[str, Any]]:
     """Rebuild the current promoted frontier from append-only raw evidence."""
+    full_identity_context = evidence_identity_context(identity_context, "F4")
     latest_status: dict[
         str, tuple[str, tuple[int, ...], dict[str, Any]]
     ] = {}
-    wanted_context_hash = sha256_json(dict(identity_context))
+    wanted_context_hash = sha256_json(full_identity_context)
     for record in candidate_store.iter_active_records():
         if record.get("record_type") != "candidate_promotion_status_v1":
             continue
@@ -974,7 +1056,7 @@ def restore_promoted_candidates(
         if status != "promoted" or not action_indices:
             continue
         evidence = candidate_store.trial_evidence_for_action(
-            action_indices, identity_context,
+            action_indices, full_identity_context,
             max_trials=int(assessment_trial_limit),
         )
         if evidence is None or not evidence.promoted:
@@ -1071,6 +1153,7 @@ def _promotion_probe_seed(
 def promote_candidate_if_eligible(
         *,
         env: Any,
+        promotion_base_env: Optional[Any] = None,
         candidate_store: CandidateStore,
         action_indices: Sequence[int],
         identity_context: Mapping[str, Any],
@@ -1083,23 +1166,49 @@ def promote_candidate_if_eligible(
         bootstrap_seed: int,
         episode_reward: Optional[float] = None,
         assess_candidate_fn: Callable[..., Any] = assess_candidate,
+        prefilter_probability: Optional[float] = None,
         promotion_probability: float = 0.80,
         target_trial_count: int = 25,
         ) -> PromotionResult:
     """Promote one robust frontier improvement using fresh real probes."""
+    full_identity_context = evidence_identity_context(identity_context, "F4")
+    full_base_env = promotion_base_env or env.base
     evidence = candidate_store.trial_evidence_for_action(
-        action_indices, identity_context,
+        action_indices, full_identity_context,
         max_trials=int(target_trial_count),
     )
     trial_count = candidate_store.trial_count_for_action(
-        action_indices, identity_context,
+        action_indices, full_identity_context,
     )
     pooled_metrics = _metrics_from_trials(evidence.trials) if evidence is not None else None
+    if evidence is not None and evidence.promoted:
+        authoritative_assessment = assess_candidate_fn(
+            evidence.trials,
+            full_base_env.statistical_reference,
+            gate_probability=float(promotion_probability),
+            bootstrap_seed=int(bootstrap_seed),
+        )
+        return PromotionResult(
+            "already_promoted",
+            trial_count,
+            0,
+            evidence,
+            authoritative_assessment,
+            pooled_metrics,
+        )
     if int(priority) != 3:
         return PromotionResult(
             "priority_not_p3", trial_count, 0, evidence, assessment, pooled_metrics,
         )
-    if not _assessment_passes(assessment, promotion_probability):
+    prefilter_gate = (
+        float(promotion_probability)
+        if prefilter_probability is None else float(prefilter_probability)
+    )
+    if not 0.0 < prefilter_gate <= float(promotion_probability):
+        raise ValueError(
+            "prefilter_probability must be in (0, promotion_probability]"
+        )
+    if not _assessment_passes(assessment, prefilter_gate):
         return PromotionResult(
             "promotion_probability_below_gate", trial_count, 0,
             evidence, assessment, pooled_metrics,
@@ -1110,21 +1219,16 @@ def promote_candidate_if_eligible(
             "not_frontier_improvement", trial_count, 0,
             evidence, assessment, pooled_metrics,
         )
-    if evidence is None:
-        raise ValueError("promotion requires existing raw candidate evidence")
-    if evidence.promoted:
-        return PromotionResult(
-            "already_promoted", trial_count, 0, evidence, assessment, pooled_metrics,
-        )
     target = int(target_trial_count)
     if target <= 0:
         raise ValueError("target_trial_count must be positive")
     pending_reassessment = bool(
-        evidence.promotion_attempted
+        evidence is not None
+        and evidence.promotion_attempted
         and not evidence.promotion_status
         and trial_count >= target
     )
-    if evidence.promotion_attempted and not pending_reassessment:
+    if evidence is not None and evidence.promotion_attempted and not pending_reassessment:
         return PromotionResult(
             "promotion_already_attempted", trial_count, 0,
             evidence, assessment, pooled_metrics,
@@ -1145,30 +1249,45 @@ def promote_candidate_if_eligible(
     predicted_trial_seeds: tuple[int, ...] = ()
     if fresh_count:
         promotion_probe_seed, predicted_trial_seeds = _promotion_probe_seed(
-            evidence.candidate_key,
+            (
+                evidence.candidate_key
+                if evidence is not None
+                else candidate_key(action_indices, full_identity_context)
+            ),
             bootstrap_seed,
             trial_count,
-            evidence.trials.seeds,
+            (() if evidence is None else evidence.trials.seeds),
             fresh_count,
         )
     try:
         if fresh_count:
-            previous_probe_seed = getattr(env.base, "probe_noise_seed", None)
-            env.base.probe_noise_seed = promotion_probe_seed
+            online_clear = getattr(env.base, "clear_installed_blb", None)
+            if full_base_env is not env.base and callable(online_clear):
+                online_clear()
+                env.base._installed_action_hash = None
+            previous_probe_seed = getattr(full_base_env, "probe_noise_seed", None)
+            full_base_env.probe_noise_seed = promotion_probe_seed
             try:
-                prepared = env.base.prepare_action_for_terminal_probe(
+                prepared = full_base_env.prepare_action_for_terminal_probe(
                     list(action_indices),
                     external_cost_score=cost,
                     external_cost_rank=cost,
                     boosted_overrides=copy.deepcopy(dict(boosted_overrides)),
                 )
-                evaluated = env.base.evaluate_prepared_terminal_batch(
+                evaluated = full_base_env.evaluate_prepared_terminal_batch(
                     [prepared],
                     num_trials_per_action=fresh_count,
                     validation_required=True,
                 )
             finally:
-                env.base.probe_noise_seed = previous_probe_seed
+                full_base_env.probe_noise_seed = previous_probe_seed
+                if full_base_env is not env.base:
+                    full_clear = getattr(full_base_env, "clear_installed_blb", None)
+                    if callable(full_clear):
+                        full_clear()
+                    if callable(online_clear):
+                        online_clear()
+                    env.base._installed_action_hash = None
             if len(evaluated) != 1:
                 raise RuntimeError(
                     f"promotion expected one terminal result, received {len(evaluated)}"
@@ -1190,7 +1309,7 @@ def promote_candidate_if_eligible(
                 action_indices,
                 fresh_trials,
                 {
-                    "identity_context": dict(identity_context),
+                    "identity_context": full_identity_context,
                     "fidelity": "F4",
                     "variable_cost": float(cost),
                     "action_matrix": [list(map(int, row)) for row in action_matrix],
@@ -1203,11 +1322,11 @@ def promote_candidate_if_eligible(
                 },
             )
         evidence = candidate_store.trial_evidence_for_action(
-            action_indices, identity_context,
+            action_indices, full_identity_context,
             max_trials=target,
         )
         trial_count = candidate_store.trial_count_for_action(
-            action_indices, identity_context,
+            action_indices, full_identity_context,
         )
         if evidence is None or trial_count < target:
             raise RuntimeError(
@@ -1216,7 +1335,7 @@ def promote_candidate_if_eligible(
             )
         pooled_assessment = assess_candidate_fn(
             evidence.trials,
-            env.base.statistical_reference,
+            full_base_env.statistical_reference,
             gate_probability=float(promotion_probability),
             bootstrap_seed=int(bootstrap_seed),
         )
@@ -1232,16 +1351,16 @@ def promote_candidate_if_eligible(
     _append_promotion_status(
         candidate_store,
         action_indices,
-        identity_context,
+        full_identity_context,
         status=promotion_status,
         metadata=status_metadata,
     )
     evidence = candidate_store.trial_evidence_for_action(
-        action_indices, identity_context,
+        action_indices, full_identity_context,
         max_trials=target,
     )
     total_trial_count = candidate_store.trial_count_for_action(
-        action_indices, identity_context,
+        action_indices, full_identity_context,
     )
     return PromotionResult(
         status=promotion_status,
@@ -1316,6 +1435,7 @@ def train_layerwise(
         train_cfg: Any,
         candidate_store: CandidateStore,
         identity_context: Optional[Mapping[str, Any]] = None,
+        promotion_base_env: Optional[Any] = None,
         on_episode_end: Optional[Callable[[LayerwiseEpisodeRecord], None]] = None,
         on_ppo_update_end: Optional[
             Callable[[Mapping[str, Any], int, LayerwiseEpisodeRecord], None]
@@ -1330,6 +1450,8 @@ def train_layerwise(
     """Collect 12-step layerwise episodes and update the shared PPO policy."""
     if identity_context is None:
         raise ValueError("layerwise training requires a CandidateStore identity_context")
+    probe_identity_context = evidence_identity_context(identity_context, "F1")
+    authoritative_base_env = promotion_base_env or env.base
     if int(getattr(env, "horizon", 0)) != 12 or int(getattr(env, "max_step_dim", 0)) != 6:
         raise ValueError("layerwise training requires horizon=12 and max_step_dim=6")
     if device is None:
@@ -1366,6 +1488,21 @@ def train_layerwise(
         total_episodes,
         planned_total_episodes,
     )
+    convergence_min_episodes = int(getattr(
+        train_cfg,
+        "convergence_min_episodes",
+        DEFAULT_CONVERGENCE_MIN_EPISODES,
+    ))
+    convergence_patience_updates = int(getattr(
+        train_cfg,
+        "convergence_patience_updates",
+        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
+    ))
+    convergence_max_episodes = int(getattr(
+        train_cfg,
+        "convergence_max_episodes",
+        DEFAULT_CONVERGENCE_MAX_EPISODES,
+    ))
     absolute_start = int(getattr(train_cfg, "absolute_episode_start", 0))
     base_seed = getattr(train_cfg, "seed", None)
     expected_online_trials = int(
@@ -1394,7 +1531,7 @@ def train_layerwise(
     accepted_candidates = restore_promoted_candidates(
         candidate_store=candidate_store,
         identity_context=identity_context,
-        statistical_reference=env.base.statistical_reference,
+        statistical_reference=authoritative_base_env.statistical_reference,
         assess_candidate_fn=assess_candidate_fn,
         promotion_probability=promotion_probability,
         assessment_trial_limit=promotion_trials,
@@ -1404,7 +1541,11 @@ def train_layerwise(
         dict(convergence_resume_state)
         if isinstance(convergence_resume_state, Mapping) else {}
     )
-    convergence_tracker = LayerwiseConvergenceTracker()
+    convergence_tracker = LayerwiseConvergenceTracker(
+        minimum_episodes=convergence_min_episodes,
+        patience_updates=convergence_patience_updates,
+        maximum_episodes=(convergence_max_episodes if unbounded_training else None),
+    )
     convergence_tracker.load_state_dict(convergence_resume_state)
     restored_strict_best = _strict_best_snapshot(accepted_candidates)
     restored_frontier_cost = (
@@ -1427,11 +1568,18 @@ def train_layerwise(
         and restored_selected_identity is not None
         and restored_tracker_state["selected_action_identity"]
         == restored_selected_identity
-        and int(restored_tracker_state["stall_update_windows"]) >= 100
+        and absolute_start >= convergence_min_episodes
+        and int(restored_tracker_state["stall_update_windows"])
+        >= convergence_patience_updates
         and int(
             restored_tracker_state["selected_action_stable_update_windows"]
-        ) >= 100
+        ) >= convergence_patience_updates
         and convergence_resume_state.get("converged", False)
+    )
+    restored_budget_cap_reached = bool(
+        unbounded_training
+        and not restored_converged
+        and absolute_start >= convergence_max_episodes
     )
     convergence_state = LayerwiseConvergenceState(
         completed_episodes=absolute_start,
@@ -1445,11 +1593,19 @@ def train_layerwise(
         ),
         converged=restored_converged,
         extension_required=False,
+        budget_cap_reached=restored_budget_cap_reached,
+        termination_reason=(
+            "converged" if restored_converged
+            else "budget_cap_reached" if restored_budget_cap_reached
+            else "running"
+        ),
     )
     entropy_samples: list[dict[str, np.ndarray]] = []
 
     local_episode = 0
-    while not convergence_state.converged and (
+    while not (
+            convergence_state.converged or convergence_state.budget_cap_reached
+    ) and (
             unbounded_training or local_episode < total_episodes
     ):
         absolute_episode = absolute_start + local_episode
@@ -1628,7 +1784,7 @@ def train_layerwise(
                 full_vector,
                 raw_trials,
                 {
-                    "identity_context": dict(identity_context),
+                    "identity_context": probe_identity_context,
                     "fidelity": "F1",
                     "episode_index": int(absolute_episode),
                     "variable_cost": float(variable_cost),
@@ -1646,7 +1802,7 @@ def train_layerwise(
                 },
             )
             evidence = candidate_store.trial_evidence_for_action(
-                full_vector, identity_context,
+                full_vector, probe_identity_context,
                 max_trials=promotion_trials,
             )
             if evidence is None:
@@ -1665,6 +1821,7 @@ def train_layerwise(
             )
             promotion = promote_candidate_if_eligible(
                 env=env,
+                promotion_base_env=authoritative_base_env,
                 candidate_store=candidate_store,
                 action_indices=full_vector,
                 identity_context=identity_context,
@@ -1677,26 +1834,25 @@ def train_layerwise(
                 bootstrap_seed=bootstrap_seed,
                 episode_reward=episode_reward,
                 assess_candidate_fn=assess_candidate_fn,
+                prefilter_probability=online_probability,
                 promotion_probability=promotion_probability,
                 target_trial_count=promotion_trials,
             )
-            if promotion.assessment is not None:
-                pooled_assessment = promotion.assessment
-            if promotion.metrics is not None:
-                pooled_metrics = promotion.metrics
-            candidate_key_value = evidence.candidate_key
             promotion_evidence = promotion.evidence or evidence
-            pooled_trials = promotion_evidence.trials
+            candidate_key_value = promotion_evidence.candidate_key
             if (
-                    promotion_evidence.promoted
+                    promotion.evidence is not None
+                    and promotion.evidence.promoted
                     and promotion_evidence.trial_count >= promotion_trials
-                    and _assessment_passes(pooled_assessment, promotion_probability)
+                    and _assessment_passes(
+                        promotion.assessment, promotion_probability,
+                    )
             ):
                 existing_candidate = accepted_candidates.get(candidate_key_value)
                 accepted_candidates[candidate_key_value] = {
                     "variable_cost": float(variable_cost),
-                    "assessment": pooled_assessment,
-                    "metrics": dict(pooled_metrics or {}),
+                    "assessment": promotion.assessment,
+                    "metrics": dict(promotion.metrics or {}),
                     "action_matrix": action_matrix,
                     "full_vector": full_vector,
                     "boosted_overrides": copy.deepcopy(
@@ -1708,10 +1864,8 @@ def train_layerwise(
                         and existing_candidate.get("reward") is not None
                         else float(episode_reward)
                     ),
-                    "promotion_trials": promotion_evidence.trials,
+                    "promotion_trials": promotion.evidence.trials,
                 }
-            else:
-                accepted_candidates.pop(candidate_key_value, None)
 
         local_episode += 1
         completed = local_episode
@@ -1723,6 +1877,9 @@ def train_layerwise(
         }
         update_due = completed % update_window == 0 or (
             not unbounded_training and completed == total_episodes
+        ) or (
+            unbounded_training
+            and absolute_start + completed >= convergence_max_episodes
         )
         ppo_metrics: Optional[dict[str, Any]] = None
         if update_due:
@@ -1762,6 +1919,8 @@ def train_layerwise(
                 "k_entropy": convergence_state.k_entropy,
                 "converged": convergence_state.converged,
                 "extension_required": convergence_state.extension_required,
+                "budget_cap_reached": convergence_state.budget_cap_reached,
+                "termination_reason": convergence_state.termination_reason,
             }
             ppo_metrics.update({
                 "completed_episodes": absolute_start + completed,
@@ -1774,6 +1933,8 @@ def train_layerwise(
                 ),
                 "converged": convergence_state.converged,
                 "extension_required": convergence_state.extension_required,
+                "budget_cap_reached": convergence_state.budget_cap_reached,
+                "termination_reason": convergence_state.termination_reason,
                 "best_robust_feasible_cost": convergence_state.best_robust_feasible_cost,
                 "convergence_update_counted": convergence_update_counted,
                 "convergence_state": persisted_convergence_state,
@@ -1797,7 +1958,10 @@ def train_layerwise(
             fresh_trial_count=(0 if raw_trials is None else len(raw_trials.loss)),
             pooled_trial_count=(0 if pooled_trials is None else len(pooled_trials.loss)),
             reward_evidence="fresh_trials",
-            ranking_evidence="pooled_prefix_trials",
+            ranking_evidence=(
+                "F4_validation_full"
+                if promotion.evidence is not None else "F1_prefilter_only"
+            ),
             fresh_assessment=fresh_assessment or None,
             assessment=pooled_assessment,
             metrics={
@@ -1814,6 +1978,18 @@ def train_layerwise(
             ),
             promoted_trial_count=int(promotion.trial_count),
             promotion_status=str(promotion.status),
+            promotion_candidate_key=(
+                None if promotion.evidence is None
+                else str(promotion.evidence.candidate_key)
+            ),
+            promotion_assessment=(
+                None if promotion.assessment is None
+                else _to_plain_mapping(promotion.assessment)
+            ),
+            promotion_metrics=(
+                None if promotion.metrics is None
+                else dict(promotion.metrics)
+            ),
             invalid_steps=int(invalid_steps),
             step_count=12,
             block4_entropy=entropy_snapshot["block4"],
@@ -1825,6 +2001,8 @@ def train_layerwise(
             ),
             converged=bool(convergence_state.converged),
             extension_required=bool(convergence_state.extension_required),
+            budget_cap_reached=bool(convergence_state.budget_cap_reached),
+            termination_reason=str(convergence_state.termination_reason),
             best_robust_feasible_cost=convergence_state.best_robust_feasible_cost,
         )
         records.append(record)
@@ -1843,6 +2021,8 @@ def train_layerwise(
         "k_entropy": convergence_state.k_entropy,
         "converged": convergence_state.converged,
         "extension_required": convergence_state.extension_required,
+        "budget_cap_reached": convergence_state.budget_cap_reached,
+        "termination_reason": convergence_state.termination_reason,
     }
     return {
         "strict_best": strict_best,
@@ -1890,6 +2070,8 @@ def train_layerwise(
         ),
         "converged": convergence_state.converged,
         "extension_required": convergence_state.extension_required,
+        "budget_cap_reached": convergence_state.budget_cap_reached,
+        "termination_reason": convergence_state.termination_reason,
         "recommended_extension_episodes": 0,
         "completed_episodes": absolute_start + local_episode,
     }

@@ -278,6 +278,8 @@ class PPOUpdateStats:
     selected_action_stable_update_windows: int = 0
     converged: bool = False
     extension_required: bool = False
+    budget_cap_reached: bool = False
+    termination_reason: str = "running"
     best_robust_feasible_cost: Optional[float] = None
     actor_clip_mode: str = "joint"
     actor_credit_mode: str = "scalar_gae"

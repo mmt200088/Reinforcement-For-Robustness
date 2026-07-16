@@ -15,6 +15,7 @@ Two entrypoints:
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import math
@@ -117,6 +118,9 @@ class SequentialTrainConfig:
     absolute_episode_start: int = 0
     planned_total_episodes: Optional[int] = None
     convergence_resume_state: Optional[Mapping[str, Any]] = None
+    convergence_min_episodes: int = 100_000
+    convergence_patience_updates: int = 220
+    convergence_max_episodes: int = 150_000
     warmstart_neighbor_sampling: bool = False
     warmstart_neighbor_ramp_episodes: int = 0
     warmstart_neighbor_max_mutations: int = 12
@@ -3368,6 +3372,56 @@ def _run_legacy_preflight_if_needed(
         run_legacy_preflight()
 
 
+def _build_authoritative_validation_env(
+        *,
+        runner: Any,
+        ev: Any,
+        base_env: Any,
+        train_cfg: Any,
+        reward_devices: Sequence[int],
+        log: Callable[[str], None],
+        ) -> Tuple[Any, int]:
+    """Clone the probe shell while preserving the canonical primary bridge."""
+    validation_full_batches = runner._build_validation_full_batches(ev)
+    validation_full = ev.dataset_splits.get("validation_full")
+    example_count = len(validation_full)
+
+    promotion_env = copy.copy(base_env)
+    promotion_env.env_cfg = copy.copy(base_env.env_cfg)
+    promotion_env.env_cfg.probe_batch_count = len(validation_full_batches)
+    promotion_env.env_cfg.persistent_probe_install = False
+    promotion_env.probe_batches = list(validation_full_batches)
+    promotion_env.probe_runner = None
+    promotion_env.baseline = copy.deepcopy(base_env.baseline)
+    promotion_env.reward_weights = copy.deepcopy(base_env.reward_weights)
+    promotion_env.statistical_reference = None
+    promotion_env.probe_noise_seed = None
+    promotion_env._installed_action_hash = None
+    promotion_env._last_probe_diagnostics = {}
+
+    devices = [int(value) for value in reward_devices]
+    if len(devices) >= 2:
+        from .probe_runner import build_probe_runner
+
+        promotion_env.probe_runner = build_probe_runner(
+            primary_model=ev.model,
+            primary_handler=ev.reversible_handler,
+            primary_bridge=base_env.bridge,
+            primary_probe_batches=promotion_env.probe_batches,
+            layers_attribute="model." + ev.layers_attribute,
+            is_regression=bool(getattr(ev, "is_regression", False)),
+            device_ids=devices,
+            metric_profile=str(train_cfg.profile),
+            log_fn=lambda message: log(f"  [multi-gpu][F4] {message}"),
+        )
+    log(
+        "  * F4 authoritative validation: "
+        f"split=validation_full examples={example_count} "
+        f"batches={len(validation_full_batches)} devices={devices or ['primary']}"
+    )
+    return promotion_env, int(example_count)
+
+
 def _install_robust_baseline_reference(
         base_env: Any,
         baseline: Any,
@@ -3555,6 +3609,9 @@ def _build_layerwise_candidate_identity_context(
         fixed_gelu: np.ndarray,
         fixed_softmax: np.ndarray,
         robust_reference: Any,
+        authoritative_robust_reference: Any,
+        probe_example_count: int,
+        authoritative_example_count: int,
         schedule: Sequence[Any],
         static_skeletons_baseline: Any,
         ) -> Dict[str, Any]:
@@ -3567,6 +3624,22 @@ def _build_layerwise_candidate_identity_context(
         "gelu": [int(value) for value in fixed_gelu.reshape(-1)],
         "softmax": [int(value) for value in fixed_softmax.reshape(-1)],
     }
+    def reference_payload(reference: Any) -> Dict[str, Any]:
+        return {
+            "precision_tolerance": float(reference.precision_tolerance),
+            "stability_multiplier": float(reference.stability_multiplier),
+            "bootstrap_seed": int(reference.bootstrap_seed),
+            "bootstrap_samples": int(reference.bootstrap_samples),
+            "limits": {
+                "loss": float(reference.loss_limit),
+                "metric1": float(reference.metric1_limit),
+                "metric2": float(reference.metric2_limit),
+                "loss_std": float(reference.loss_std_limit),
+                "metric1_std": float(reference.metric1_std_limit),
+                "metric2_std": float(reference.metric2_std_limit),
+            },
+        }
+
     threshold_policy = {
         "precision_tolerance": float(robust_reference.precision_tolerance),
         "stability_multiplier": float(robust_reference.stability_multiplier),
@@ -3588,6 +3661,18 @@ def _build_layerwise_candidate_identity_context(
             "loss_std": float(robust_reference.loss_std_limit),
             "metric1_std": float(robust_reference.metric1_std_limit),
             "metric2_std": float(robust_reference.metric2_std_limit),
+        },
+        "evidence_tiers": {
+            "F1": {
+                "split": "validation_full_stratified_probe",
+                "example_count": int(probe_example_count),
+                "reference": reference_payload(robust_reference),
+            },
+            "F4": {
+                "split": "validation_full",
+                "example_count": int(authoritative_example_count),
+                "reference": reference_payload(authoritative_robust_reference),
+            },
         },
     }
     rescale_root = os.path.realpath(str(train_cfg.inproc_rescale_optimizer_root))
@@ -3627,6 +3712,10 @@ def _run_layerwise_training_branch(
         fusion_map: Any,
         max_sfs: Any,
         robust_reference: Any,
+        promotion_base_env: Any,
+        authoritative_robust_reference: Any,
+        authoritative_robust_summary: Optional[Mapping[str, Any]],
+        authoritative_validation_example_count: int,
         static_skeletons_baseline: Any,
         fixed_gelu: np.ndarray,
         fixed_softmax: np.ndarray,
@@ -3640,6 +3729,10 @@ def _run_layerwise_training_branch(
     """Run Task-7 layerwise PPO without entering legacy block scaffolds."""
     if robust_reference is None:
         raise RuntimeError("layerwise robust PPO requires a calibrated statistical reference")
+    if promotion_base_env is None or authoritative_robust_reference is None:
+        raise RuntimeError(
+            "layerwise robust PPO requires an authoritative validation_full evaluator"
+        )
     if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
         raise RuntimeError(
             "layerwise PPO does not use the legacy block episode-parallel runner; "
@@ -3647,7 +3740,7 @@ def _run_layerwise_training_branch(
         )
     bullet = "*"
 
-    from .candidate_store import CandidateStore, candidate_key, sha256_json
+    from .candidate_store import CandidateStore, sha256_json
     from .layerwise_env import BLBStage2LayerwiseEnv
     from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
     from .layerwise_action import (
@@ -3659,6 +3752,9 @@ def _run_layerwise_training_branch(
     )
     from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_runner import (
+        DEFAULT_CONVERGENCE_MAX_EPISODES,
+        DEFAULT_CONVERGENCE_MIN_EPISODES,
+        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
         _PROBABILITY_FIELDS,
         _to_plain_mapping,
         build_layerwise_run_context,
@@ -3679,7 +3775,28 @@ def _run_layerwise_training_branch(
     )
     requested_total_episodes = int(train_cfg.total_episodes)
     resolve_layerwise_episode_budget(requested_total_episodes, 0)
-    algorithm_revision = "factorized_slot_credit_equivalence_convergence_v6"
+    convergence_min_episodes = int(getattr(
+        train_cfg,
+        "convergence_min_episodes",
+        DEFAULT_CONVERGENCE_MIN_EPISODES,
+    ))
+    convergence_patience_updates = int(getattr(
+        train_cfg,
+        "convergence_patience_updates",
+        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
+    ))
+    convergence_max_episodes = int(getattr(
+        train_cfg,
+        "convergence_max_episodes",
+        DEFAULT_CONVERGENCE_MAX_EPISODES,
+    ))
+    if convergence_min_episodes < 0:
+        raise ValueError("layerwise convergence minimum must be nonnegative")
+    if convergence_patience_updates <= 0:
+        raise ValueError("layerwise convergence patience must be positive")
+    if convergence_max_episodes < convergence_min_episodes:
+        raise ValueError("layerwise convergence maximum must cover minimum")
+    algorithm_revision = "factorized_slot_credit_multifidelity_convergence_v7"
     rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
     layerwise_entropy_regularization = {
         "kind": "disabled",
@@ -3689,9 +3806,12 @@ def _run_layerwise_training_branch(
     layerwise_termination = {
         "mode": "natural_convergence",
         "episode_limit": None,
+        "minimum_episodes": convergence_min_episodes,
+        "patience_updates": convergence_patience_updates,
+        "maximum_episodes": convergence_max_episodes,
         "requires_robust_feasible_candidate": True,
-        "frontier_stall_update_windows": 100,
-        "selected_action_stable_update_windows": 100,
+        "frontier_stall_update_windows": convergence_patience_updates,
+        "selected_action_stable_update_windows": convergence_patience_updates,
         "selection_tie_break": "candidate_key",
         "entropy_role": "diagnostic_only",
         "counts_only_finite_ppo_updates": True,
@@ -3715,6 +3835,16 @@ def _run_layerwise_training_branch(
         fusion_map=fusion_map,
         profile=str(train_cfg.profile),
     )
+    online_probe_example_count = sum(
+        int(batch.labels.numel()) for batch in base_env.probe_batches
+    )
+    if online_probe_example_count <= 0:
+        raise RuntimeError("layerwise F1 probe must contain at least one example")
+    if online_probe_example_count != 256:
+        raise RuntimeError(
+            "layerwise F1 probe must contain exactly 256 stratified examples; "
+            f"received {online_probe_example_count}"
+        )
     policy_cfg = SequentialPolicyConfig(
         state_dim=int(layerwise_env.state_dim),
         max_step_dim=6,
@@ -3742,7 +3872,7 @@ def _run_layerwise_training_branch(
         entropy_normalize_active_slots=True,
     )
     algorithm_contract = {
-        "schema_version": "stage2_layerwise_algorithm_contract_v2",
+        "schema_version": "stage2_layerwise_algorithm_contract_v3",
         "algorithm_revision": algorithm_revision,
         "rl_variant": rl_variant,
         "action_space_version": "stage2_layerwise_12x6_v1",
@@ -3765,6 +3895,32 @@ def _run_layerwise_training_branch(
         "ppo_mode": layerwise_ppo_mode,
         "entropy_regularization": layerwise_entropy_regularization,
         "termination": layerwise_termination,
+        "evidence_tiers": {
+            "F1": {
+                "split": "validation_full_stratified_probe",
+                "example_count": int(online_probe_example_count),
+                "trials_per_episode": int(train_cfg.num_trials_per_step),
+                "baseline_trial_count": int(
+                    getattr(train_cfg, "baseline_groups", 5)
+                    * getattr(train_cfg, "baseline_trials_per_group", 5)
+                ),
+                "roles": ["ppo_reward", "advantage", "promotion_prefilter"],
+                "authoritative": False,
+            },
+            "F4": {
+                "split": "validation_full",
+                "example_count": int(authoritative_validation_example_count),
+                "promotion_trial_count": int(
+                    getattr(train_cfg, "promotion_validation_trials", 25)
+                ),
+                "baseline_trial_count": int(
+                    getattr(train_cfg, "baseline_groups", 5)
+                    * getattr(train_cfg, "baseline_trials_per_group", 5)
+                ),
+                "roles": ["strict_frontier", "convergence", "final_selection"],
+                "authoritative": True,
+            },
+        },
         "persistence_protocol": "stable_parent_lock_incremental_fingerprint_v2",
     }
     algorithm_contract_hash = sha256_json(algorithm_contract)
@@ -3776,6 +3932,9 @@ def _run_layerwise_training_branch(
         fixed_gelu=fixed_gelu,
         fixed_softmax=fixed_softmax,
         robust_reference=robust_reference,
+        authoritative_robust_reference=authoritative_robust_reference,
+        probe_example_count=int(online_probe_example_count),
+        authoritative_example_count=int(authoritative_validation_example_count),
         schedule=layerwise_env.schedule,
         static_skeletons_baseline=static_skeletons_baseline,
     )
@@ -3806,12 +3965,28 @@ def _run_layerwise_training_branch(
             "final_constraint_probability": float(
                 getattr(train_cfg, "final_constraint_probability", 0.95)
             ),
+            "evidence_tiers": {
+                "F1": {
+                    "split": "validation_full_stratified_probe",
+                    "example_count": int(online_probe_example_count),
+                    "fidelity": "F1",
+                    "baseline_reference": dict(
+                        baseline_preflight_metrics.get("robust_reference") or {}
+                    ),
+                },
+                "F4": {
+                    "split": "validation_full",
+                    "example_count": int(authoritative_validation_example_count),
+                    "fidelity": "F4",
+                    "baseline_reference": dict(authoritative_robust_summary or {}),
+                },
+            },
         },
     )
     run_context_hash = sha256_json(run_context)
     run_lock.bind_context(run_context_hash)
     run_manifest = {
-        "schema_version": "stage2_layerwise_robust_run_v2",
+        "schema_version": "stage2_layerwise_robust_run_v3",
         "status": "running",
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
@@ -3827,6 +4002,11 @@ def _run_layerwise_training_branch(
         "planned_episodes": layerwise_termination["episode_limit"],
         "entropy_regularization": layerwise_entropy_regularization,
         "termination": layerwise_termination,
+        "evidence_tiers": algorithm_contract["evidence_tiers"],
+        "baseline_references": {
+            "F1": dict(baseline_preflight_metrics.get("robust_reference") or {}),
+            "F4": dict(authoritative_robust_summary or {}),
+        },
         "ppo_mode": layerwise_ppo_mode,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
@@ -3903,6 +4083,9 @@ def _run_layerwise_training_branch(
         absolute_episode_start=int(start_episode),
         planned_total_episodes=int(planned_total_episodes),
         convergence_resume_state=resumed_convergence_state,
+        convergence_min_episodes=convergence_min_episodes,
+        convergence_patience_updates=convergence_patience_updates,
+        convergence_max_episodes=convergence_max_episodes,
         ppo=ppo,
         rl_algo="ppo",
         online_num_trials_per_step=int(train_cfg.num_trials_per_step),
@@ -4304,6 +4487,12 @@ def _run_layerwise_training_branch(
             name: float(pooled_assessment[name])
             for name in _PROBABILITY_FIELDS if name in pooled_assessment
         }
+        promotion_assessment = _to_plain_mapping(record.promotion_assessment)
+        promotion_metrics = _to_plain_mapping(record.promotion_metrics)
+        promotion_probabilities = {
+            name: float(promotion_assessment[name])
+            for name in _PROBABILITY_FIELDS if name in promotion_assessment
+        }
         b4_count = sum(int(row[0]) for row in record.action_matrix)
         k_values = []
         for layer_idx, row in enumerate(record.action_matrix):
@@ -4315,14 +4504,15 @@ def _run_layerwise_training_branch(
         is_new_best = False
         if (
                 record.promotion_status in ("promoted", "already_promoted")
-                and len(pooled_probabilities) == len(_PROBABILITY_FIELDS)
+                and record.promotion_candidate_key
+                and len(promotion_probabilities) == len(_PROBABILITY_FIELDS)
         ):
             selection_key = strict_selection_key(
-                candidate_key(record.pending_full_vector, identity_context),
+                record.promotion_candidate_key,
                 {
                 "variable_cost": record.variable_cost,
-                "assessment": pooled_assessment,
-                "metrics": pooled_metrics,
+                "assessment": promotion_assessment,
+                "metrics": promotion_metrics,
                 },
             )
             if best_selection_key is None or selection_key < best_selection_key:
@@ -4336,6 +4526,8 @@ def _run_layerwise_training_branch(
             ),
             "converged": bool(record.converged),
             "extension_required": bool(record.extension_required),
+            "budget_cap_reached": bool(record.budget_cap_reached),
+            "termination_reason": str(record.termination_reason),
             "best_robust_feasible_cost": record.best_robust_feasible_cost,
         }
         episode_stats = EpisodeStats(
@@ -4495,6 +4687,8 @@ def _run_layerwise_training_branch(
             ),
             converged=bool(metrics.get("converged", False)),
             extension_required=bool(metrics.get("extension_required", False)),
+            budget_cap_reached=bool(metrics.get("budget_cap_reached", False)),
+            termination_reason=str(metrics.get("termination_reason", "running")),
             best_robust_feasible_cost=metrics.get("best_robust_feasible_cost"),
             actor_clip_mode=str(metrics.get("actor_clip_mode", "joint")),
             actor_credit_mode=str(metrics.get("actor_credit_mode", "scalar_gae")),
@@ -4542,6 +4736,8 @@ def _run_layerwise_training_branch(
                 ),
                 "converged": bool(update_stats.converged),
                 "extension_required": bool(update_stats.extension_required),
+                "budget_cap_reached": bool(update_stats.budget_cap_reached),
+                "termination_reason": update_stats.termination_reason,
                 "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
                 "actor_clip_mode": update_stats.actor_clip_mode,
                 "actor_credit_mode": update_stats.actor_credit_mode,
@@ -4577,6 +4773,7 @@ def _run_layerwise_training_branch(
     try:
         summary = train_layerwise(
             env=layerwise_env,
+            promotion_base_env=promotion_base_env,
             policy=policy,
             train_cfg=layerwise_train_cfg,
             candidate_store=candidate_store,
@@ -4596,9 +4793,16 @@ def _run_layerwise_training_branch(
             strict_best=summary.get("strict_best"),
             convergence_state=summary.get("convergence_state"),
         )
-        completion_status = (
-            "converged" if summary.get("converged", False) else "budget_exhausted"
-        )
+        if summary.get("converged", False):
+            completion_status = "converged"
+        elif summary.get("budget_cap_reached", False):
+            completion_status = "budget_cap_reached"
+        elif requested_total_episodes > 0:
+            completion_status = "bounded_budget_exhausted"
+        else:
+            raise RuntimeError(
+                "unbounded layerwise training stopped without convergence or budget cap"
+            )
         training_completed = True
     finally:
         try:
@@ -4618,23 +4822,37 @@ def _run_layerwise_training_branch(
                 try:
                     base_env.clear_installed_blb()
                 finally:
-                    for restore_name in (
-                            "restore_layer_block5_noise", "restore_layer_block4_noise",
-                            "restore_layer_block3_noise", "restore_layer_block2_noise",
-                            "restore_layer_block1_noise", "restore_blb_first_input_noise",
-                    ):
-                        method = getattr(evaluator.reversible_handler, restore_name, None)
-                        if method is None:
-                            continue
-                        try:
-                            method(layer_indices=list(range(evaluator.total_layers)))
-                        except Exception:
-                            pass
-                    evaluator.apply_configuration(fixed_gelu, fixed_softmax)
+                    try:
+                        for restore_name in (
+                                "restore_layer_block5_noise", "restore_layer_block4_noise",
+                                "restore_layer_block3_noise", "restore_layer_block2_noise",
+                                "restore_layer_block1_noise", "restore_blb_first_input_noise",
+                        ):
+                            method = getattr(
+                                evaluator.reversible_handler, restore_name, None,
+                            )
+                            if method is None:
+                                continue
+                            try:
+                                method(layer_indices=list(range(evaluator.total_layers)))
+                            except Exception:
+                                pass
+                        evaluator.apply_configuration(fixed_gelu, fixed_softmax)
+                    finally:
+                        promotion_runner = getattr(
+                            promotion_base_env, "probe_runner", None,
+                        )
+                        if (
+                                promotion_runner is not None
+                                and promotion_runner is not getattr(
+                                    base_env, "probe_runner", None,
+                                )
+                        ):
+                            promotion_runner.close()
     status.set_phase(completion_status)
 
     compact_summary = {
-        "schema_version": "stage2_layerwise_robust_summary_v2",
+        "schema_version": "stage2_layerwise_robust_summary_v3",
         "status": completion_status,
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
@@ -4675,15 +4893,16 @@ def _run_layerwise_training_branch(
         ),
         "converged": bool(summary.get("converged", False)),
         "extension_required": bool(summary.get("extension_required", False)),
+        "budget_cap_reached": bool(summary.get("budget_cap_reached", False)),
         "recommended_extension_episodes": int(
             summary.get("recommended_extension_episodes", 0) or 0
         ),
         "entropy_regularization": layerwise_entropy_regularization,
         "termination": layerwise_termination,
-        "termination_reason": (
-            "natural_convergence"
-            if summary.get("converged", False) else "episode_limit_reached"
+        "termination_reason": str(
+            summary.get("termination_reason") or completion_status
         ),
+        "evidence_tiers": algorithm_contract["evidence_tiers"],
         "constraint_probability_thresholds": probability_thresholds,
         "constraint_limits": constraint_limits,
         "baseline_reference": dict(baseline_preflight_metrics),
@@ -4824,6 +5043,10 @@ def _run_layerwise_training_branch(
             ),
             "converged": bool(summary.get("converged", False)),
             "extension_required": bool(summary.get("extension_required", False)),
+            "budget_cap_reached": bool(summary.get("budget_cap_reached", False)),
+            "termination_reason": str(
+                summary.get("termination_reason") or completion_status
+            ),
         },
         "layerwise_summary": summary,
     }
@@ -5028,7 +5251,11 @@ def _run_sequential_via_runner_locked(
         pass
 
     # ---------- 2) probe + bridge + baseline ----------
-    probe_batches = runner._build_probe_batches(ev, train_cfg)
+    probe_batches = runner._build_probe_batches(
+        ev,
+        train_cfg,
+        probe_size_override=(256 if decision_path == "layerwise" else None),
+    )
     train_cfg.probe_batch_count = max(1, int(len(probe_batches) or train_cfg.probe_batch_count))
     log(f"  {bullet} 评估子集：batch 数 = {len(probe_batches)}")
 
@@ -5328,6 +5555,10 @@ def _run_sequential_via_runner_locked(
     }
 
     robust_reference = None
+    promotion_base_env = None
+    authoritative_robust_reference = None
+    authoritative_robust_summary = None
+    authoritative_validation_example_count = 0
     if robust_mode:
         precision_tolerance, stability_multiplier, bootstrap_samples = (
             _resolve_robust_baseline_config(train_cfg, ev)
@@ -5381,6 +5612,46 @@ def _run_sequential_via_runner_locked(
             "stability_tolerance": float(robust_reference.stability_multiplier),
             "stability_floor": float(weights.stab_floor),
         })
+        if decision_path == "layerwise":
+            (
+                promotion_base_env,
+                authoritative_validation_example_count,
+            ) = _build_authoritative_validation_env(
+                runner=runner,
+                ev=ev,
+                base_env=base_env,
+                train_cfg=train_cfg,
+                reward_devices=reward_devices,
+                log=log,
+            )
+            (
+                authoritative_robust_reference,
+                authoritative_robust_summary,
+            ) = _collect_robust_baseline_reference(
+                base_env=promotion_base_env,
+                baseline_action_vec=baseline_action_vec,
+                base_seed=int(train_cfg.seed),
+                precision_tolerance=precision_tolerance,
+                stability_multiplier=stability_multiplier,
+                bootstrap_samples=bootstrap_samples,
+                baseline_groups=configured_baseline_groups,
+                trials_per_group=int(
+                    getattr(train_cfg, "baseline_trials_per_group", 5)
+                ),
+                max_groups=max(10, 2 * configured_baseline_groups),
+            )
+            _install_robust_baseline_reference(
+                promotion_base_env,
+                promotion_base_env.baseline,
+                promotion_base_env.reward_weights,
+                authoritative_robust_reference,
+            )
+            baseline_preflight_metrics["authoritative_validation_full"] = {
+                **dict(authoritative_robust_summary),
+                "split": "validation_full",
+                "example_count": int(authoritative_validation_example_count),
+                "fidelity": "F4",
+            }
 
     log(
         f"  {bullet} 基线噪声预热（noisy baseline preflight）："
@@ -5511,6 +5782,12 @@ def _run_sequential_via_runner_locked(
             fusion_map=fusion_map,
             max_sfs=max_sfs,
             robust_reference=robust_reference,
+            promotion_base_env=promotion_base_env,
+            authoritative_robust_reference=authoritative_robust_reference,
+            authoritative_robust_summary=authoritative_robust_summary,
+            authoritative_validation_example_count=(
+                authoritative_validation_example_count
+            ),
             static_skeletons_baseline=ss_baseline_obj,
             fixed_gelu=fixed_gelu,
             fixed_softmax=fixed_softmax,
