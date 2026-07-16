@@ -4,6 +4,7 @@ import ast
 import shutil
 import hashlib
 import inspect
+import json
 import math
 import os
 from pathlib import Path
@@ -126,48 +127,236 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
         state = tracker.observe_update(
             completed_episodes=120,
-            block4_entropy=0.05,
-            k_entropy=0.05,
+            block4_entropy=0.9,
+            k_entropy=0.9,
             robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
         )
         self.assertFalse(state.converged)
         self.assertEqual(state.stall_update_windows, 0)
 
-        for _ in range(99):
+        for update_idx in range(99):
             state = tracker.observe_update(
-                completed_episodes=240 + 120 * _,
-                block4_entropy=0.05,
-                k_entropy=0.05,
+                completed_episodes=240 + 120 * update_idx,
+                block4_entropy=0.9,
+                k_entropy=0.9,
                 robust_feasible_cost=0.4,
+                robust_feasible_action_identity="candidate-a",
             )
         self.assertEqual(state.stall_update_windows, 99)
         self.assertFalse(state.converged)
 
         state = tracker.observe_update(
             completed_episodes=12_120,
-            block4_entropy=0.05,
-            k_entropy=0.05,
+            block4_entropy=0.9,
+            k_entropy=0.9,
             robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
         )
         self.assertEqual(state.stall_update_windows, 100)
         self.assertTrue(state.converged)
 
         state = tracker.observe_update(
-            completed_episodes=40_240,
-            block4_entropy=0.1,
-            k_entropy=0.05,
+            completed_episodes=40_360,
+            block4_entropy=0.9,
+            k_entropy=0.9,
+            robust_feasible_cost=0.5,
+            robust_feasible_action_identity="candidate-b",
+        )
+        self.assertEqual(state.stall_update_windows, 0)
+        self.assertEqual(state.selected_action_stable_update_windows, 0)
+        self.assertFalse(state.converged)
+
+    def test_convergence_uses_stable_selected_action_not_entropy(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker()
+        state = tracker.observe_update(
+            completed_episodes=120,
+            block4_entropy=0.99,
+            k_entropy=0.99,
             robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
         )
         self.assertFalse(state.converged)
 
-        state = tracker.observe_update(
-            completed_episodes=40_360,
-            block4_entropy=0.05,
-            k_entropy=0.05,
-            robust_feasible_cost=0.5,
+        for update_idx in range(100):
+            state = tracker.observe_update(
+                completed_episodes=240 + update_idx * 120,
+                block4_entropy=None,
+                k_entropy=None,
+                robust_feasible_cost=0.4,
+                robust_feasible_action_identity="candidate-a",
+            )
+
+        self.assertEqual(state.stall_update_windows, 100)
+        self.assertEqual(state.selected_action_stable_update_windows, 100)
+        self.assertEqual(state.selected_action_identity, "candidate-a")
+        self.assertTrue(state.converged)
+
+    def test_same_cost_selected_action_change_resets_action_stability(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker()
+        tracker.observe_update(
+            completed_episodes=120,
+            block4_entropy=0.9,
+            k_entropy=0.9,
+            robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
         )
-        self.assertEqual(state.stall_update_windows, 0)
+        for update_idx in range(99):
+            tracker.observe_update(
+                completed_episodes=240 + update_idx * 120,
+                block4_entropy=0.9,
+                k_entropy=0.9,
+                robust_feasible_cost=0.4,
+                robust_feasible_action_identity="candidate-a",
+            )
+
+        state = tracker.observe_update(
+            completed_episodes=12_120,
+            block4_entropy=0.9,
+            k_entropy=0.9,
+            robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-b",
+        )
+
+        self.assertEqual(state.stall_update_windows, 100)
+        self.assertEqual(state.selected_action_stable_update_windows, 0)
+        self.assertEqual(state.selected_action_identity, "candidate-b")
         self.assertFalse(state.converged)
+
+    def test_strict_best_snapshot_uses_candidate_key_as_final_tie_break(self):
+        from blb_stage2_rl.layerwise_runner import _strict_best_snapshot
+
+        common = {
+            "variable_cost": 0.4,
+            "assessment": _assessment(0.9),
+            "metrics": {
+                "loss_mean": 0.3,
+                "metric1_mean": 0.9,
+                "metric2_mean": 0.8,
+            },
+            "action_matrix": [[0, 0, 0, 0, 0, 0] for _ in range(12)],
+            "full_vector": list(range(20)),
+            "boosted_overrides": {},
+            "reward": 1.4,
+            "promotion_trials": None,
+        }
+        later_key = dict(common)
+        earlier_key = dict(common)
+        earlier_key["full_vector"] = list(range(20, 40))
+
+        snapshot = _strict_best_snapshot({
+            "candidate-z": later_key,
+            "candidate-a": earlier_key,
+        })
+
+        self.assertEqual(snapshot["candidate_key"], "candidate-a")
+        self.assertEqual(snapshot["full_vector"], list(range(20, 40)))
+
+    def test_strict_selection_key_matches_candidate_key_tie_break(self):
+        from blb_stage2_rl.layerwise_runner import strict_selection_key
+
+        candidate = self._candidate(cost=0.5, probabilities=[0.9] * 6)
+        lower_cost = self._candidate(cost=0.4, probabilities=[0.99] * 6)
+
+        self.assertLess(
+            strict_selection_key("candidate-a", candidate),
+            strict_selection_key("candidate-z", candidate),
+        )
+        self.assertLess(
+            strict_selection_key("candidate-z", candidate),
+            strict_selection_key("candidate-a", lower_cost),
+        )
+
+    def test_orphaned_selected_action_counter_resets_on_restore(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker()
+        tracker.load_state_dict({
+            "best_robust_feasible_cost": 0.4,
+            "current_robust_feasible_cost": 0.4,
+            "stall_update_windows": 37,
+            "selected_action_stable_update_windows": 22,
+        })
+
+        state = tracker.state_dict()
+        self.assertIsNone(state["selected_action_identity"])
+        self.assertEqual(state["selected_action_stable_update_windows"], 0)
+
+    def test_same_cost_resume_reconciliation_resets_stale_action_identity(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker()
+        tracker.load_state_dict({
+            "best_robust_feasible_cost": 0.4,
+            "current_robust_feasible_cost": 0.4,
+            "stall_update_windows": 101,
+            "selected_action_identity": "candidate-old",
+            "selected_action_stable_update_windows": 101,
+        })
+        tracker.reconcile_frontier(0.4, "candidate-current")
+
+        state = tracker.state_dict()
+        self.assertEqual(state["stall_update_windows"], 101)
+        self.assertEqual(state["selected_action_identity"], "candidate-current")
+        self.assertEqual(state["selected_action_stable_update_windows"], 0)
+
+    def test_nonfinite_entropy_is_unavailable_diagnostic_not_fatal(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker()
+        state = tracker.observe_update(
+            completed_episodes=120,
+            block4_entropy=float("nan"),
+            k_entropy=float("inf"),
+            robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
+        )
+
+        self.assertIsNone(state.block4_entropy)
+        self.assertIsNone(state.k_entropy)
+        self.assertEqual(state.selected_action_identity, "candidate-a")
+
+    def test_diagnostics_best_snapshot_can_be_reconciled_without_episode_append(self):
+        from blb_stage2_rl.diagnostics import EpisodeStats, RLDiagnosticsRecorder
+
+        with tempfile.TemporaryDirectory() as td:
+            recorder = RLDiagnosticsRecorder(
+                output_dir=td,
+                num_layers=12,
+                num_action_slots=4,
+            )
+            stats = EpisodeStats(
+                episode=120,
+                total_reward=1.5,
+                terminal_reward=1.5,
+                per_step_sum=0.0,
+                valid_steps=12,
+                invalid_steps=0,
+                steps_taken=12,
+                total_bits=0,
+                fusion_count=24,
+                first_invalid_step=None,
+                first_invalid_block=None,
+                first_invalid_layer=None,
+                early_terminated=False,
+                terminal_cost_rank_score=0.4,
+            )
+            recorder.write_best_action_snapshot(
+                episode_stats=stats,
+                full_action_vec=np.asarray([1, 2, 3, 4]),
+                best_reward_so_far=1.5,
+            )
+
+            payload = json.loads(Path(recorder.best_json_path).read_text())
+            self.assertEqual(payload["action_vec"], [1, 2, 3, 4])
+            self.assertFalse(Path(recorder.episodes_path).exists())
+
+            recorder.clear_best_action_snapshot()
+            self.assertFalse(Path(recorder.best_json_path).exists())
 
     def test_convergence_cannot_trigger_while_current_frontier_is_empty(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
@@ -178,6 +367,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             block4_entropy=0.05,
             k_entropy=0.05,
             robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
         )
         for update_idx in range(150):
             state = tracker.observe_update(
@@ -200,6 +390,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             block4_entropy=0.05,
             k_entropy=0.05,
             robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
         )
         for update_idx in range(7):
             tracker.observe_update(
@@ -207,6 +398,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 block4_entropy=0.05,
                 k_entropy=0.05,
                 robust_feasible_cost=0.4,
+                robust_feasible_action_identity="candidate-a",
             )
 
         restored = LayerwiseConvergenceTracker()
@@ -216,10 +408,13 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             block4_entropy=0.05,
             k_entropy=0.05,
             robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
         )
 
         self.assertEqual(state.stall_update_windows, 8)
         self.assertEqual(state.best_robust_feasible_cost, 0.4)
+        self.assertEqual(state.selected_action_identity, "candidate-a")
+        self.assertEqual(state.selected_action_stable_update_windows, 8)
 
     def test_convergence_rebases_when_feasible_frontier_retracts(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
@@ -359,6 +554,17 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 algorithm_revision="v3",
                 algorithm_contract_hash="algorithm-a",
                 run_context_hash="run-b",
+            )
+        with self.assertRaisesRegex(RuntimeError, "algorithm revision"):
+            validator(
+                {
+                    **checkpoint,
+                    "algorithm_revision": "factorized_slot_credit_natural_convergence_v5",
+                },
+                rl_variant="layerwise",
+                algorithm_revision="factorized_slot_credit_equivalence_convergence_v6",
+                algorithm_contract_hash="algorithm-a",
+                run_context_hash="run-a",
             )
 
     def test_checkpoint_file_fingerprint_allows_suffix_only_and_rejects_prefix_change(self):
@@ -641,7 +847,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotIn("ent_coef_cosine_", branch_source)
         self.assertIn('"factorized_actor_clip": True', branch_source)
         self.assertIn('"algorithm_revision": algorithm_revision', branch_source)
-        self.assertIn('"factorized_slot_credit_natural_convergence_v5"', branch_source)
+        self.assertIn('"factorized_slot_credit_equivalence_convergence_v6"', branch_source)
         self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
         self.assertIn('"run_context_hash": run_context_hash', branch_source)
         self.assertIn("validate_layerwise_checkpoint_metadata(", branch_source)
@@ -666,9 +872,15 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('"coefficient": 0.0', branch_source)
         self.assertIn('"optimization_role": "monitor_only"', branch_source)
         self.assertIn('"mode": "natural_convergence"', branch_source)
-        self.assertIn('"block4_entropy_below": 0.1', branch_source)
-        self.assertIn('"k_entropy_below": 0.1', branch_source)
+        self.assertNotIn('"block4_entropy_below": 0.1', branch_source)
+        self.assertNotIn('"k_entropy_below": 0.1', branch_source)
         self.assertIn('"frontier_stall_update_windows": 100', branch_source)
+        self.assertIn('"selected_action_stable_update_windows": 100', branch_source)
+        self.assertIn('"selection_tie_break": "candidate_key"', branch_source)
+        self.assertIn("strict_selection_key(", branch_source)
+        self.assertIn("candidate_key(record.pending_full_vector, identity_context)", branch_source)
+        self.assertIn("diag_recorder.write_best_action_snapshot(", branch_source)
+        self.assertIn("diag_recorder.clear_best_action_snapshot()", branch_source)
         self.assertIn('"counts_only_finite_ppo_updates": True', branch_source)
         self.assertIn("resolve_layerwise_episode_budget(", branch_source)
         self.assertIn("completion_status", branch_source)
@@ -846,6 +1058,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             "nonfinite_minibatches",
             "nonfinite_update_skipped",
             "convergence_update_counted",
+            "selected_action_identity",
+            "selected_action_stable_update_windows",
         ):
             self.assertIn(field, branch_source)
 
@@ -1371,8 +1585,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
             "best_robust_feasible_cost": 0.4,
             "current_robust_feasible_cost": 0.4,
             "stall_update_windows": 99,
-            "block4_entropy": 0.2,
-            "k_entropy": 0.2,
+            "selected_action_identity": "frontier",
+            "selected_action_stable_update_windows": 99,
+            "block4_entropy": 0.99,
+            "k_entropy": 0.99,
             "converged": False,
         }
         update_ent_coef = []
@@ -1387,8 +1603,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
         ), mock.patch(
             "blb_stage2_rl.layerwise_runner._current_policy_entropy",
             return_value={
-                "block4": 0.05,
-                "k": 0.05,
+                "block4": 0.99,
+                "k": 0.99,
                 "block4_slot_count": 12,
                 "k_slot_count": 59,
             },
@@ -1414,6 +1630,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(update_ent_coef, [0.0])
         self.assertTrue(summary["converged"])
         self.assertEqual(summary["stall_update_windows"], 100)
+        self.assertEqual(summary["selected_action_identity"], "frontier")
+        self.assertEqual(summary["selected_action_stable_update_windows"], 100)
 
     def test_positive_episode_budget_remains_a_bounded_smoke_run(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -1468,6 +1686,38 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["episode_records"], [])
         self.assertFalse(summary["converged"])
 
+    def test_nonfinite_restored_entropy_is_unavailable_not_fatal(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        config = self._train_cfg(total_episodes=0, update_every=1)
+        config.absolute_episode_start = 2
+        config.planned_total_episodes = 2
+        config.convergence_resume_state = {
+            "block4_entropy": float("nan"),
+            "k_entropy": float("inf"),
+            "converged": False,
+        }
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertIsNone(summary["block4_entropy"])
+        self.assertIsNone(summary["k_entropy"])
+
     def test_nonfinite_skipped_update_does_not_advance_convergence_patience(self):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
@@ -1488,6 +1738,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
             "best_robust_feasible_cost": 0.4,
             "current_robust_feasible_cost": 0.4,
             "stall_update_windows": 99,
+            "selected_action_identity": "frontier",
+            "selected_action_stable_update_windows": 99,
             "block4_entropy": 0.2,
             "k_entropy": 0.2,
             "converged": False,
@@ -1526,6 +1778,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
             )
 
         self.assertEqual(summary["stall_update_windows"], 99)
+        self.assertEqual(summary["selected_action_identity"], "frontier")
+        self.assertEqual(summary["selected_action_stable_update_windows"], 99)
         self.assertFalse(summary["converged"])
         self.assertFalse(summary["ppo_metrics"][0]["convergence_update_counted"])
 
@@ -1703,13 +1957,14 @@ class LayerwiseRolloutTests(unittest.TestCase):
             self.assertNotIn(retired, source)
 
     def test_zero_remaining_resume_preserves_frontier_and_convergence_summary(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
         from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import train_layerwise
         from blb_stage2_rl.statistical_constraints import TrialSeries
 
         context = {"action_space_version": "layerwise-v1"}
         action = list(range(20))
+        expected_identity = candidate_key(action, context)
         matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
         expected_cost = compute_variable_cost_from_action_matrix(matrix).normalized
         with tempfile.TemporaryDirectory() as td:
@@ -1747,8 +2002,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 "best_robust_feasible_cost": expected_cost,
                 "current_robust_feasible_cost": expected_cost,
                 "stall_update_windows": 101,
-                "block4_entropy": 0.05,
-                "k_entropy": 0.06,
+                "selected_action_identity": expected_identity,
+                "selected_action_stable_update_windows": 101,
+                "block4_entropy": 0.95,
+                "k_entropy": 0.96,
                 "converged": True,
                 "extension_required": False,
             }
@@ -1775,9 +2032,11 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(
             len(summary["best_promotion_evidence"]["trials"]["seeds"]), 25,
         )
-        self.assertEqual(summary["block4_entropy"], 0.05)
-        self.assertEqual(summary["k_entropy"], 0.06)
+        self.assertEqual(summary["block4_entropy"], 0.95)
+        self.assertEqual(summary["k_entropy"], 0.96)
         self.assertEqual(summary["stall_update_windows"], 101)
+        self.assertEqual(summary["selected_action_identity"], expected_identity)
+        self.assertEqual(summary["selected_action_stable_update_windows"], 101)
         self.assertTrue(summary["converged"])
         self.assertEqual(summary["strict_best"]["full_vector"], action)
         self.assertTrue(summary["convergence_state"]["converged"])

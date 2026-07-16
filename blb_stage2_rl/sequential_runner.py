@@ -3647,7 +3647,7 @@ def _run_layerwise_training_branch(
         )
     bullet = "*"
 
-    from .candidate_store import CandidateStore, sha256_json
+    from .candidate_store import CandidateStore, candidate_key, sha256_json
     from .layerwise_env import BLBStage2LayerwiseEnv
     from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
     from .layerwise_action import (
@@ -3665,7 +3665,7 @@ def _run_layerwise_training_branch(
         CheckpointFileFingerprintTracker,
         initialize_layerwise_policy,
         resolve_layerwise_episode_budget,
-        strict_rank_key,
+        strict_selection_key,
         train_layerwise,
         validate_fresh_layerwise_run_state,
         validate_layerwise_checkpoint_metadata,
@@ -3679,7 +3679,7 @@ def _run_layerwise_training_branch(
     )
     requested_total_episodes = int(train_cfg.total_episodes)
     resolve_layerwise_episode_budget(requested_total_episodes, 0)
-    algorithm_revision = "factorized_slot_credit_natural_convergence_v5"
+    algorithm_revision = "factorized_slot_credit_equivalence_convergence_v6"
     rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
     layerwise_entropy_regularization = {
         "kind": "disabled",
@@ -3689,10 +3689,11 @@ def _run_layerwise_training_branch(
     layerwise_termination = {
         "mode": "natural_convergence",
         "episode_limit": None,
-        "block4_entropy_below": 0.1,
-        "k_entropy_below": 0.1,
         "requires_robust_feasible_candidate": True,
         "frontier_stall_update_windows": 100,
+        "selected_action_stable_update_windows": 100,
+        "selection_tie_break": "candidate_key",
+        "entropy_role": "diagnostic_only",
         "counts_only_finite_ppo_updates": True,
     }
     if requested_total_episodes > 0:
@@ -4125,10 +4126,13 @@ def _run_layerwise_training_branch(
     log(f"  {bullet} [data-points] layerwise Stage-2 → {stage2_data_writer.run_dir}")
 
     episode_records: List[Any] = []
-    best_rank: Optional[Tuple[float, ...]] = None
+    best_selection_key: Optional[Tuple[Tuple[float, ...], str]] = None
     strict_best: Dict[str, Any] = dict(resumed_best)
-    if resumed_best.get("rank_key"):
-        best_rank = tuple(float(value) for value in resumed_best["rank_key"])
+    if resumed_best.get("rank_key") and resumed_best.get("candidate_key"):
+        best_selection_key = (
+            tuple(float(value) for value in resumed_best["rank_key"]),
+            str(resumed_best["candidate_key"]),
+        )
     ppo_update_counter = int(resumed_ppo_update_count)
     started_at = time.time()
 
@@ -4162,6 +4166,55 @@ def _run_layerwise_training_branch(
             )
         ]
         return group
+
+    def write_strict_best_diagnostics(
+            best_payload: Mapping[str, Any],
+            *,
+            episode: int,
+            ) -> None:
+        full_vector = best_payload.get("full_vector")
+        if full_vector is None or len(full_vector) == 0:
+            diag_recorder.clear_best_action_snapshot()
+            return
+        action_matrix = [list(row) for row in (best_payload.get("action_matrix") or [])]
+        b4_count = sum(int(row[0]) for row in action_matrix if row)
+        reward = float(best_payload.get("reward") or 0.0)
+        variable_cost = float(best_payload.get("variable_cost") or 0.0)
+        metrics = dict(best_payload.get("metrics") or {})
+        diag_recorder.write_best_action_snapshot(
+            episode_stats=EpisodeStats(
+                episode=int(episode),
+                total_reward=reward,
+                terminal_reward=reward,
+                per_step_sum=0.0,
+                valid_steps=12,
+                invalid_steps=0,
+                steps_taken=12,
+                total_bits=0,
+                fusion_count=24 + b4_count,
+                first_invalid_step=None,
+                first_invalid_block=None,
+                first_invalid_layer=None,
+                early_terminated=False,
+                fusion_count_b2=12,
+                fusion_count_b4=b4_count,
+                fusion_count_b5=12,
+                terminal_priority=3,
+                terminal_loss_mean=float(metrics.get("loss_mean", 0.0)),
+                terminal_loss_std=float(metrics.get("loss_std", 0.0)),
+                terminal_metric1_mean=float(metrics.get("metric1_mean", 0.0)),
+                terminal_metric1_std=float(metrics.get("metric1_std", 0.0)),
+                terminal_metric2_mean=float(metrics.get("metric2_mean", 0.0)),
+                terminal_metric2_std=float(metrics.get("metric2_std", 0.0)),
+                terminal_cost_score=variable_cost,
+                terminal_cost_rank_score=variable_cost,
+                variable_cost=variable_cost,
+                layer_action_matrix=action_matrix,
+                promotion_status="strict_best_reconciled",
+            ),
+            full_action_vec=np.asarray(full_vector, dtype=np.int64),
+            best_reward_so_far=reward,
+        )
 
     def save_layerwise_checkpoint(
             *,
@@ -4223,7 +4276,7 @@ def _run_layerwise_training_branch(
         )
 
     def on_layerwise_episode(record: Any) -> None:
-        nonlocal best_rank
+        nonlocal best_selection_key
         episode_records.append(record)
         pooled_assessment = _to_plain_mapping(record.assessment)
         fresh_assessment = _to_plain_mapping(record.fresh_assessment)
@@ -4264,16 +4317,23 @@ def _run_layerwise_training_branch(
                 record.promotion_status in ("promoted", "already_promoted")
                 and len(pooled_probabilities) == len(_PROBABILITY_FIELDS)
         ):
-            rank = strict_rank_key({
+            selection_key = strict_selection_key(
+                candidate_key(record.pending_full_vector, identity_context),
+                {
                 "variable_cost": record.variable_cost,
                 "assessment": pooled_assessment,
                 "metrics": pooled_metrics,
-            })
-            if best_rank is None or rank < best_rank:
-                best_rank = rank
+                },
+            )
+            if best_selection_key is None or selection_key < best_selection_key:
+                best_selection_key = selection_key
                 is_new_best = True
         convergence_state = {
             "stall_update_windows": int(record.stall_update_windows),
+            "selected_action_identity": record.selected_action_identity,
+            "selected_action_stable_update_windows": int(
+                record.selected_action_stable_update_windows
+            ),
             "converged": bool(record.converged),
             "extension_required": bool(record.extension_required),
             "best_robust_feasible_cost": record.best_robust_feasible_cost,
@@ -4384,13 +4444,15 @@ def _run_layerwise_training_branch(
         )
 
     def on_layerwise_update(metrics: Mapping[str, Any], completed: int, record: Any) -> None:
-        nonlocal ppo_update_counter, strict_best, best_rank
+        nonlocal ppo_update_counter, strict_best, best_selection_key
         ppo_update_counter += 1
         strict_best = dict(metrics.get("strict_best") or {})
-        best_rank = (
-            tuple(float(value) for value in strict_best["rank_key"])
-            if strict_best.get("rank_key") else None
+        best_selection_key = (
+            strict_selection_key(strict_best["candidate_key"], strict_best)
+            if strict_best.get("rank_key") and strict_best.get("candidate_key")
+            else None
         )
+        write_strict_best_diagnostics(strict_best, episode=int(record.episode_index))
         recent = episode_records[-max(1, int(train_cfg.rollout_size)):]
         recent_rewards = [float(item.reward) for item in recent] or [0.0]
         update_stats = PPOUpdateStats(
@@ -4427,6 +4489,10 @@ def _run_layerwise_training_branch(
             block4_entropy=metrics.get("block4_entropy"),
             k_entropy=metrics.get("k_entropy"),
             stall_update_windows=int(metrics.get("stall_update_windows", 0)),
+            selected_action_identity=metrics.get("selected_action_identity"),
+            selected_action_stable_update_windows=int(
+                metrics.get("selected_action_stable_update_windows", 0)
+            ),
             converged=bool(metrics.get("converged", False)),
             extension_required=bool(metrics.get("extension_required", False)),
             best_robust_feasible_cost=metrics.get("best_robust_feasible_cost"),
@@ -4470,6 +4536,10 @@ def _run_layerwise_training_branch(
                 "block4_entropy": update_stats.block4_entropy,
                 "k_entropy": update_stats.k_entropy,
                 "stall_update_windows": int(update_stats.stall_update_windows),
+                "selected_action_identity": update_stats.selected_action_identity,
+                "selected_action_stable_update_windows": int(
+                    update_stats.selected_action_stable_update_windows
+                ),
                 "converged": bool(update_stats.converged),
                 "extension_required": bool(update_stats.extension_required),
                 "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
@@ -4517,6 +4587,10 @@ def _run_layerwise_training_branch(
             on_ppo_update_end=on_layerwise_update,
         )
         strict_best = dict(summary.get("strict_best") or {})
+        write_strict_best_diagnostics(
+            strict_best,
+            episode=int(summary.get("completed_episodes", start_episode)),
+        )
         save_layerwise_checkpoint(
             completed=int(summary.get("completed_episodes", start_episode)),
             strict_best=summary.get("strict_best"),
@@ -4595,6 +4669,10 @@ def _run_layerwise_training_branch(
         "block4_entropy": summary.get("block4_entropy"),
         "k_entropy": summary.get("k_entropy"),
         "stall_update_windows": summary.get("stall_update_windows"),
+        "selected_action_identity": summary.get("selected_action_identity"),
+        "selected_action_stable_update_windows": summary.get(
+            "selected_action_stable_update_windows"
+        ),
         "converged": bool(summary.get("converged", False)),
         "extension_required": bool(summary.get("extension_required", False)),
         "recommended_extension_episodes": int(
@@ -4740,6 +4818,10 @@ def _run_layerwise_training_branch(
             "ppo_metric_count": int(len(existing_diagnostic_updates)),
             "block4_entropy": summary.get("block4_entropy"),
             "k_entropy": summary.get("k_entropy"),
+            "selected_action_identity": summary.get("selected_action_identity"),
+            "selected_action_stable_update_windows": summary.get(
+                "selected_action_stable_update_windows"
+            ),
             "converged": bool(summary.get("converged", False)),
             "extension_required": bool(summary.get("extension_required", False)),
         },

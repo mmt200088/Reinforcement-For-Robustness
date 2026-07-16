@@ -424,6 +424,13 @@ def _finite(value: Any, *, name: str) -> float:
     return result
 
 
+def _diagnostic_entropy(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    result = float(value)
+    return result if math.isfinite(result) else None
+
+
 def _assessment_probabilities(assessment: Any) -> tuple[float, ...]:
     if assessment is None:
         raise ValueError("strict ranking requires an assessment")
@@ -450,13 +457,27 @@ def strict_rank_key(candidate: Any) -> tuple[float, ...]:
     )
 
 
+def strict_selection_key(
+        candidate_key_value: Any,
+        candidate: Any,
+        ) -> tuple[tuple[float, ...], str]:
+    """Rank a candidate with its deterministic identity as the final tie-break."""
+    identity = str(candidate_key_value).strip()
+    if not identity:
+        raise ValueError("candidate_key cannot be empty")
+    return strict_rank_key(candidate), identity
+
+
 def _strict_best_snapshot(
         accepted_candidates: Mapping[str, Mapping[str, Any]],
         ) -> Optional[dict[str, Any]]:
     """Return a detached snapshot of the current feasible frontier winner."""
     if not accepted_candidates:
         return None
-    best = min(accepted_candidates.values(), key=strict_rank_key)
+    candidate_key_value, best = min(
+        accepted_candidates.items(),
+        key=lambda item: strict_selection_key(item[0], item[1]),
+    )
     promotion_trials = best.get("promotion_trials")
     promotion_evidence = None
     if isinstance(promotion_trials, TrialSeries):
@@ -471,6 +492,7 @@ def _strict_best_snapshot(
             },
         }
     return {
+        "candidate_key": str(candidate_key_value),
         "rank_key": list(strict_rank_key(best)),
         "action_matrix": [list(row) for row in best["action_matrix"]],
         "full_vector": list(best["full_vector"]),
@@ -562,21 +584,29 @@ class LayerwiseConvergenceState:
     converged: bool
     extension_required: bool
     best_robust_feasible_cost: Optional[float]
+    selected_action_identity: Optional[str]
+    selected_action_stable_update_windows: int
 
 
 class LayerwiseConvergenceTracker:
-    """Track entropy and frontier-stall gates across PPO update windows."""
+    """Track robust frontier and exact selected-action stability."""
 
     def __init__(self) -> None:
         self._best_cost: Optional[float] = None
         self._current_frontier_cost: Optional[float] = None
         self._stall_windows = 0
+        self._selected_action_identity: Optional[str] = None
+        self._selected_action_stable_windows = 0
 
     def state_dict(self) -> dict[str, Any]:
         return {
             "best_robust_feasible_cost": self._best_cost,
             "current_robust_feasible_cost": self._current_frontier_cost,
             "stall_update_windows": int(self._stall_windows),
+            "selected_action_identity": self._selected_action_identity,
+            "selected_action_stable_update_windows": int(
+                self._selected_action_stable_windows
+            ),
         }
 
     def load_state_dict(self, state: Optional[Mapping[str, Any]]) -> None:
@@ -596,11 +626,32 @@ class LayerwiseConvergenceTracker:
             raise ValueError("stall_update_windows must be nonnegative")
         self._stall_windows = stall_windows
 
-    def reconcile_frontier(self, robust_feasible_cost: Optional[float]) -> None:
+        selected_identity = state.get("selected_action_identity")
+        if selected_identity is not None:
+            selected_identity = str(selected_identity).strip()
+            if not selected_identity:
+                raise ValueError("selected_action_identity cannot be empty")
+        selected_windows = int(state.get("selected_action_stable_update_windows", 0))
+        if selected_windows < 0:
+            raise ValueError("selected_action_stable_update_windows must be nonnegative")
+        if selected_identity is None:
+            selected_windows = 0
+        self._selected_action_identity = selected_identity
+        self._selected_action_stable_windows = selected_windows
+
+    def reconcile_frontier(
+            self,
+            robust_feasible_cost: Optional[float],
+            robust_feasible_action_identity: Optional[str] = None,
+            ) -> None:
         """Align restored convergence state with the revalidated frontier."""
         if robust_feasible_cost is None:
+            if robust_feasible_action_identity is not None:
+                raise ValueError("selected action identity requires a feasible frontier")
             self._current_frontier_cost = None
             self._stall_windows = 0
+            self._selected_action_identity = None
+            self._selected_action_stable_windows = 0
             return
         cost = _finite(robust_feasible_cost, name="robust_feasible_cost")
         if (
@@ -613,6 +664,17 @@ class LayerwiseConvergenceTracker:
             self._stall_windows = 0
         self._current_frontier_cost = cost
 
+        selected_identity = (
+            None
+            if robust_feasible_action_identity is None
+            else str(robust_feasible_action_identity).strip()
+        )
+        if selected_identity == "":
+            raise ValueError("robust_feasible_action_identity cannot be empty")
+        if selected_identity != self._selected_action_identity:
+            self._selected_action_identity = selected_identity
+            self._selected_action_stable_windows = 0
+
     def observe_update(
             self,
             *,
@@ -620,12 +682,17 @@ class LayerwiseConvergenceTracker:
             block4_entropy: Optional[float],
             k_entropy: Optional[float],
             robust_feasible_cost: Optional[float],
+            robust_feasible_action_identity: Optional[str] = None,
             count_patience: bool = True,
             ) -> LayerwiseConvergenceState:
         episodes = int(completed_episodes)
         if robust_feasible_cost is None:
+            if robust_feasible_action_identity is not None:
+                raise ValueError("selected action identity requires a feasible frontier")
             self._current_frontier_cost = None
             self._stall_windows = 0
+            self._selected_action_identity = None
+            self._selected_action_stable_windows = 0
         else:
             cost = _finite(robust_feasible_cost, name="robust_feasible_cost")
             frontier_restarted = self._current_frontier_cost is None
@@ -643,17 +710,28 @@ class LayerwiseConvergenceTracker:
                 self._stall_windows += 1
             self._current_frontier_cost = cost
 
-        b4 = None if block4_entropy is None else _finite(
-            block4_entropy, name="block4_entropy",
-        )
-        k_value = None if k_entropy is None else _finite(k_entropy, name="k_entropy")
+            selected_identity = (
+                None
+                if robust_feasible_action_identity is None
+                else str(robust_feasible_action_identity).strip()
+            )
+            if selected_identity == "":
+                raise ValueError("robust_feasible_action_identity cannot be empty")
+            if selected_identity != self._selected_action_identity:
+                self._selected_action_identity = selected_identity
+                self._selected_action_stable_windows = 0
+            elif selected_identity is not None and count_patience:
+                self._selected_action_stable_windows += 1
+
+        b4 = _diagnostic_entropy(block4_entropy)
+        k_value = _diagnostic_entropy(k_entropy)
         converged = bool(
             count_patience
-            and b4 is not None and b4 < 0.1
-            and k_value is not None and k_value < 0.1
             and robust_feasible_cost is not None
             and self._best_cost is not None
             and self._stall_windows >= 100
+            and self._selected_action_identity is not None
+            and self._selected_action_stable_windows >= 100
         )
         return LayerwiseConvergenceState(
             completed_episodes=episodes,
@@ -661,6 +739,10 @@ class LayerwiseConvergenceTracker:
             k_entropy=k_value,
             stall_update_windows=int(self._stall_windows),
             best_robust_feasible_cost=self._best_cost,
+            selected_action_identity=self._selected_action_identity,
+            selected_action_stable_update_windows=int(
+                self._selected_action_stable_windows
+            ),
             converged=converged,
             extension_required=False,
         )
@@ -735,6 +817,8 @@ class LayerwiseEpisodeRecord:
     block4_entropy: Optional[float]
     k_entropy: Optional[float]
     stall_update_windows: int
+    selected_action_identity: Optional[str]
+    selected_action_stable_update_windows: int
     converged: bool
     extension_required: bool
     best_robust_feasible_cost: Optional[float]
@@ -1322,35 +1406,43 @@ def train_layerwise(
     )
     convergence_tracker = LayerwiseConvergenceTracker()
     convergence_tracker.load_state_dict(convergence_resume_state)
+    restored_strict_best = _strict_best_snapshot(accepted_candidates)
     restored_frontier_cost = (
-        max(row["variable_cost"] for row in accepted_candidates.values())
-        if accepted_candidates else None
+        None if restored_strict_best is None
+        else float(restored_strict_best["variable_cost"])
     )
-    convergence_tracker.reconcile_frontier(restored_frontier_cost)
+    restored_selected_identity = (
+        None if restored_strict_best is None
+        else str(restored_strict_best["candidate_key"])
+    )
+    convergence_tracker.reconcile_frontier(
+        restored_frontier_cost,
+        restored_selected_identity,
+    )
     restored_tracker_state = convergence_tracker.state_dict()
     restored_block4_entropy = convergence_resume_state.get("block4_entropy")
     restored_k_entropy = convergence_resume_state.get("k_entropy")
     restored_converged = bool(
         restored_frontier_cost is not None
-        and restored_block4_entropy is not None
-        and float(restored_block4_entropy) < 0.1
-        and restored_k_entropy is not None
-        and float(restored_k_entropy) < 0.1
+        and restored_selected_identity is not None
+        and restored_tracker_state["selected_action_identity"]
+        == restored_selected_identity
         and int(restored_tracker_state["stall_update_windows"]) >= 100
+        and int(
+            restored_tracker_state["selected_action_stable_update_windows"]
+        ) >= 100
         and convergence_resume_state.get("converged", False)
     )
     convergence_state = LayerwiseConvergenceState(
         completed_episodes=absolute_start,
-        block4_entropy=(
-            None if restored_block4_entropy is None
-            else _finite(restored_block4_entropy, name="block4_entropy")
-        ),
-        k_entropy=(
-            None if restored_k_entropy is None
-            else _finite(restored_k_entropy, name="k_entropy")
-        ),
+        block4_entropy=_diagnostic_entropy(restored_block4_entropy),
+        k_entropy=_diagnostic_entropy(restored_k_entropy),
         stall_update_windows=int(restored_tracker_state["stall_update_windows"]),
         best_robust_feasible_cost=restored_tracker_state["best_robust_feasible_cost"],
+        selected_action_identity=restored_tracker_state["selected_action_identity"],
+        selected_action_stable_update_windows=int(
+            restored_tracker_state["selected_action_stable_update_windows"]
+        ),
         converged=restored_converged,
         extension_required=False,
     )
@@ -1647,15 +1739,21 @@ def train_layerwise(
                 and not bool(ppo_metrics.get("nonfinite_update_skipped", False))
             )
             entropy_snapshot = _current_policy_entropy(policy, entropy_samples, device)
+            strict_best_snapshot = _strict_best_snapshot(accepted_candidates)
             best_cost = (
-                max(row["variable_cost"] for row in accepted_candidates.values())
-                if accepted_candidates else None
+                None if strict_best_snapshot is None
+                else float(strict_best_snapshot["variable_cost"])
+            )
+            best_action_identity = (
+                None if strict_best_snapshot is None
+                else str(strict_best_snapshot["candidate_key"])
             )
             convergence_state = convergence_tracker.observe_update(
                 completed_episodes=absolute_start + completed,
                 block4_entropy=entropy_snapshot["block4"],
                 k_entropy=entropy_snapshot["k"],
                 robust_feasible_cost=best_cost,
+                robust_feasible_action_identity=best_action_identity,
                 count_patience=convergence_update_counted,
             )
             persisted_convergence_state = {
@@ -1670,12 +1768,16 @@ def train_layerwise(
                 "block4_entropy": entropy_snapshot["block4"],
                 "k_entropy": entropy_snapshot["k"],
                 "stall_update_windows": convergence_state.stall_update_windows,
+                "selected_action_identity": convergence_state.selected_action_identity,
+                "selected_action_stable_update_windows": (
+                    convergence_state.selected_action_stable_update_windows
+                ),
                 "converged": convergence_state.converged,
                 "extension_required": convergence_state.extension_required,
                 "best_robust_feasible_cost": convergence_state.best_robust_feasible_cost,
                 "convergence_update_counted": convergence_update_counted,
                 "convergence_state": persisted_convergence_state,
-                "strict_best": _strict_best_snapshot(accepted_candidates),
+                "strict_best": strict_best_snapshot,
             })
             ppo_diagnostics.append(ppo_metrics)
 
@@ -1717,6 +1819,10 @@ def train_layerwise(
             block4_entropy=entropy_snapshot["block4"],
             k_entropy=entropy_snapshot["k"],
             stall_update_windows=int(convergence_state.stall_update_windows),
+            selected_action_identity=convergence_state.selected_action_identity,
+            selected_action_stable_update_windows=int(
+                convergence_state.selected_action_stable_update_windows
+            ),
             converged=bool(convergence_state.converged),
             extension_required=bool(convergence_state.extension_required),
             best_robust_feasible_cost=convergence_state.best_robust_feasible_cost,
@@ -1778,6 +1884,10 @@ def train_layerwise(
         "block4_entropy": convergence_state.block4_entropy,
         "k_entropy": convergence_state.k_entropy,
         "stall_update_windows": convergence_state.stall_update_windows,
+        "selected_action_identity": convergence_state.selected_action_identity,
+        "selected_action_stable_update_windows": (
+            convergence_state.selected_action_stable_update_windows
+        ),
         "converged": convergence_state.converged,
         "extension_required": convergence_state.extension_required,
         "recommended_extension_episodes": 0,

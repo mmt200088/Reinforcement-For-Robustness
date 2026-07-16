@@ -274,6 +274,8 @@ class PPOUpdateStats:
     block4_entropy: Optional[float] = None
     k_entropy: Optional[float] = None
     stall_update_windows: int = 0
+    selected_action_identity: Optional[str] = None
+    selected_action_stable_update_windows: int = 0
     converged: bool = False
     extension_required: bool = False
     best_robust_feasible_cost: Optional[float] = None
@@ -767,6 +769,68 @@ class RLDiagnosticsRecorder:
         self._jsonl_files.clear()
         self._jsonl_line_counts.clear()
 
+    def write_best_action_snapshot(
+            self,
+            *,
+            episode_stats: EpisodeStats,
+            full_action_vec: np.ndarray,
+            best_reward_so_far: float,
+            ) -> None:
+        """Atomically rewrite the selected best action without appending an episode."""
+        try:
+            vec_int = np.asarray(full_action_vec, dtype=int)
+            slots_view: Optional[List[Dict[str, Any]]] = None
+            if self._slots_view_builder is not None:
+                try:
+                    slots_view = list(self._slots_view_builder(vec_int))
+                except Exception as exc:
+                    self.log(f"  [diag][warning] slots_view_builder failed: {exc}")
+                    slots_view = None
+            diff_vs_baseline = self._diff_against_baseline(slots_view)
+            payload = {
+                "schema_version": self.schema_version,
+                "num_layers": int(self.num_layers),
+                "source": "blb_v3_sequential_runtime_best",
+                "episode": int(episode_stats.episode),
+                "total_reward": float(episode_stats.total_reward),
+                "terminal_reward": float(episode_stats.terminal_reward),
+                "valid_steps": int(episode_stats.valid_steps),
+                "invalid_steps": int(episode_stats.invalid_steps),
+                "terminal_cost_rank_score": float(episode_stats.terminal_cost_rank_score),
+                "terminal_cost_rank_fusion": float(episode_stats.terminal_cost_rank_fusion),
+                "terminal_cost_rank_truncation": float(
+                    episode_stats.terminal_cost_rank_truncation
+                ),
+                "terminal_cost_rank_bits": float(episode_stats.terminal_cost_rank_bits),
+                "best_reward_so_far": float(best_reward_so_far),
+                "wall_time_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "meta": dict(self._meta),
+                "slots": slots_view,
+                "diff_vs_baseline": diff_vs_baseline,
+                "action_vec": vec_int.tolist(),
+                "decode_rules": {
+                    "scaling_factor_kinds": "F W M S R",
+                    "truncation_kind": "K",
+                    "note": (
+                        "SF slots: select 'scaling_factor' (snapped to noise table). "
+                        "K slots: select 'truncation_bits' in K_LEVELS. "
+                        "Rescale (R) slots: scaling_factor=null disables that rescale point."
+                    ),
+                },
+            }
+            _atomic_json_dump(self.best_json_path, payload)
+        except Exception as exc:
+            self.log(f"  [diag][warning] best_action_vec.json write failed: {exc}")
+
+    def clear_best_action_snapshot(self) -> None:
+        """Remove a stale selected-action snapshot when no robust winner remains."""
+        try:
+            os.unlink(self.best_json_path)
+        except FileNotFoundError:
+            return
+        except Exception as exc:
+            self.log(f"  [diag][warning] best_action_vec.json clear failed: {exc}")
+
     def record_episode(
             self,
             *,
@@ -937,57 +1001,14 @@ class RLDiagnosticsRecorder:
             elif entry[0] > self._top_candidates[0][0]:
                 heapq.heapreplace(self._top_candidates, entry)
 
-        # 6) on new best, persist best_action_vec.json in a *human-readable*
-        # format: every slot listed with its model location + the actual
-        # scaling_factor / truncation_bits value. The flat ``action_vec`` is
-        # kept as a fallback field so Paean's old reader keeps working.
+        # 6) Persist the per-episode winner immediately. PPO-update reconciliation
+        # may later rewrite this file when the strict promoted winner retracts.
         if persist and is_new_best and full_action_vec is not None:
-            try:
-                vec_int = np.asarray(full_action_vec, dtype=int)
-                slots_view: Optional[List[Dict[str, Any]]] = None
-                if self._slots_view_builder is not None:
-                    try:
-                        slots_view = list(self._slots_view_builder(vec_int))
-                    except Exception as exc:
-                        self.log(f"  [diag][warning] slots_view_builder failed: {exc}")
-                        slots_view = None
-                diff_vs_baseline = self._diff_against_baseline(slots_view)
-                payload = {
-                    "schema_version": self.schema_version,
-                    "num_layers": int(self.num_layers),
-                    "source": "blb_v3_sequential_runtime_best",
-                    "episode": int(episode_stats.episode),
-                    "total_reward": float(episode_stats.total_reward),
-                    "terminal_reward": float(episode_stats.terminal_reward),
-                    "valid_steps": int(episode_stats.valid_steps),
-                    "invalid_steps": int(episode_stats.invalid_steps),
-                    "terminal_cost_rank_score": float(episode_stats.terminal_cost_rank_score),
-                    "terminal_cost_rank_fusion": float(episode_stats.terminal_cost_rank_fusion),
-                    "terminal_cost_rank_truncation": float(
-                        episode_stats.terminal_cost_rank_truncation
-                    ),
-                    "terminal_cost_rank_bits": float(episode_stats.terminal_cost_rank_bits),
-                    "best_reward_so_far": float(best_reward_so_far),
-                    "wall_time_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "meta": dict(self._meta),
-                    # Human view (primary)
-                    "slots": slots_view,
-                    "diff_vs_baseline": diff_vs_baseline,
-                    # Machine view (Paean fallback, kept for back-compat)
-                    "action_vec": vec_int.tolist(),
-                    "decode_rules": {
-                        "scaling_factor_kinds": "F W M S R",
-                        "truncation_kind": "K",
-                        "note": (
-                            "SF slots: select 'scaling_factor' (snapped to noise table). "
-                            "K slots: select 'truncation_bits' ∈ K_LEVELS. "
-                            "Rescale (R) slots: scaling_factor=null disables that rescale point."
-                        ),
-                    },
-                }
-                _atomic_json_dump(self.best_json_path, payload)
-            except Exception as exc:
-                self.log(f"  [diag][warning] best_action_vec.json write failed: {exc}")
+            self.write_best_action_snapshot(
+                episode_stats=episode_stats,
+                full_action_vec=full_action_vec,
+                best_reward_so_far=best_reward_so_far,
+            )
 
     def _diff_against_baseline(
             self,
