@@ -1286,6 +1286,14 @@ class RLDataPointWriterTest(unittest.TestCase):
                 [row["episode"] for row in recorder._sorted_pareto_candidates()],
                 [episode_count - 1],
             )
+            self.assertEqual(
+                recorder._pareto_seen_hashes,
+                {
+                    str(row["terminal_pareto_action_hash"])
+                    for row in recorder._pareto_candidates
+                    if row.get("terminal_pareto_action_hash")
+                },
+            )
             self.assertEqual(recorder._last_episode_stats.episode, episode_count - 1)
 
         with tempfile.TemporaryDirectory() as td:
@@ -1336,6 +1344,108 @@ class RLDataPointWriterTest(unittest.TestCase):
             assert_exact_state(resumed)
             self.assertEqual(len(episode_path.read_text().splitlines()), episode_count)
             self.assertEqual(len(ppo_path.read_text().splitlines()), ppo_update_count)
+
+    def test_stage2_diagnostics_restore_existing_accepts_identity_boundaries(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_identity_boundaries_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        def episode_row(index):
+            return module.EpisodeStats(
+                episode=index,
+                total_reward=float(index),
+                terminal_reward=float(index),
+                per_step_sum=0.0,
+                valid_steps=12,
+                invalid_steps=0,
+                steps_taken=12,
+                total_bits=0,
+                fusion_count=24,
+                first_invalid_step=None,
+                first_invalid_block=None,
+                first_invalid_layer=None,
+                early_terminated=False,
+            ).__dict__
+
+        def ppo_row(update_id, row_number):
+            return module.PPOUpdateStats(
+                update=update_id,
+                completed_episodes=row_number * 200,
+                policy_loss=0.1,
+                value_loss=0.2,
+                entropy=0.3,
+                clip_fraction=0.4,
+                n_samples=2_400,
+                window_mean_return=1.0,
+                window_max_return=1.0,
+                window_min_return=1.0,
+                window_mean_invalid=0.0,
+                best_reward_so_far=1.0,
+                elapsed_sec=1.0,
+            ).__dict__
+
+        cases = (
+            ("empty streams", [], [], 0, 0, -1, 0),
+            ("single nonzero episode", [17], [], 1, 0, 17, 0),
+            ("PPO update zero", [], [0], 0, 1, -1, 0),
+            ("contiguous nonzero starts", [17, 18, 19], [4, 5], 3, 2, 19, 5),
+        )
+        for (
+                label, episode_ids, update_ids, expected_episodes,
+                expected_updates, episode_high_water, ppo_high_water,
+                ) in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as td:
+                output = Path(td) / "progress"
+                diagnostics_dir = output / "diagnostics"
+                diagnostics_dir.mkdir(parents=True)
+                episode_path = diagnostics_dir / "episodes.jsonl"
+                ppo_path = diagnostics_dir / "ppo_updates.jsonl"
+                episode_path.write_text(
+                    "".join(
+                        json.dumps(episode_row(index)) + "\n"
+                        for index in episode_ids
+                    ),
+                    encoding="utf-8",
+                )
+                ppo_path.write_text(
+                    "".join(
+                        json.dumps(ppo_row(update_id, row_number)) + "\n"
+                        for row_number, update_id in enumerate(update_ids, start=1)
+                    ),
+                    encoding="utf-8",
+                )
+                before = {
+                    episode_path: episode_path.read_bytes(),
+                    ppo_path: ppo_path.read_bytes(),
+                }
+                recorder = module.RLDiagnosticsRecorder(
+                    output_dir=str(output),
+                    num_layers=12,
+                    num_action_slots=3,
+                    history_window=2,
+                    ppo_history_window=2,
+                )
+
+                restored = recorder.restore_existing()
+
+                self.assertEqual(restored, {
+                    "episodes": expected_episodes,
+                    "ppo_updates": expected_updates,
+                    "episode_high_water": episode_high_water,
+                    "ppo_update_high_water": ppo_high_water,
+                })
+                self.assertEqual(recorder.episode_count, expected_episodes)
+                self.assertEqual(recorder.ppo_update_count, expected_updates)
+                self.assertEqual(recorder.episode_high_water, episode_high_water)
+                self.assertEqual(recorder.ppo_update_high_water, ppo_high_water)
+                self.assertEqual(
+                    {path: path.read_bytes() for path in before},
+                    before,
+                )
 
     def test_stage2_diagnostics_restore_existing_rejects_noncontiguous_identities(self):
         spec = importlib.util.spec_from_file_location(
