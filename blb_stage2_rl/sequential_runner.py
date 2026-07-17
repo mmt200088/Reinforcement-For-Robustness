@@ -3437,6 +3437,41 @@ def _build_authoritative_validation_env(
     return promotion_env, int(example_count)
 
 
+def _legacy_probe_batch_run_context_hash(run_context: Mapping[str, Any]) -> str:
+    """Hash the pre-batch-metadata run context without mutating the current one."""
+    normalized = copy.deepcopy(dict(run_context))
+    training_settings = normalized.get("training_settings")
+    if isinstance(training_settings, Mapping):
+        evidence_tiers = training_settings.get("evidence_tiers")
+        if isinstance(evidence_tiers, Mapping):
+            for fidelity in ("F1", "F4"):
+                evidence_tier = evidence_tiers.get(fidelity)
+                if isinstance(evidence_tier, Mapping):
+                    evidence_tier.pop("probe_batch_size", None)
+                    evidence_tier.pop("probe_batch_count", None)
+    from .candidate_store import sha256_json
+    return sha256_json(normalized)
+
+
+def _probe_batches_match_legacy_fallback(train_cfg: Any, evaluator: Any) -> bool:
+    """Return whether F1 and F4 retain the pre-Task-3 DataLoader grouping."""
+    from .runner import resolve_probe_batch_size
+
+    fallback = resolve_probe_batch_size(
+        None,
+        evaluator_batch_size=getattr(evaluator, "batch_size", None),
+    )
+    f1_size = resolve_probe_batch_size(
+        getattr(train_cfg, "probe_batch_size", None),
+        evaluator_batch_size=getattr(evaluator, "batch_size", None),
+    )
+    f4_size = resolve_probe_batch_size(
+        getattr(train_cfg, "validation_probe_batch_size", None),
+        evaluator_batch_size=getattr(evaluator, "batch_size", None),
+    )
+    return f1_size == fallback and f4_size == fallback
+
+
 def _install_robust_baseline_reference(
         base_env: Any,
         baseline: Any,
@@ -3949,8 +3984,6 @@ def _run_layerwise_training_branch(
             "F1": {
                 "split": "validation_full_stratified_probe",
                 "example_count": int(online_probe_example_count),
-                "probe_batch_size": int(f1_probe_batch_size),
-                "probe_batch_count": int(f1_probe_batch_count),
                 "trials_per_episode": int(train_cfg.num_trials_per_step),
                 "baseline_trial_count": int(
                     getattr(train_cfg, "baseline_groups", 5)
@@ -3962,8 +3995,6 @@ def _run_layerwise_training_branch(
             "F4": {
                 "split": "validation_full",
                 "example_count": int(authoritative_validation_example_count),
-                "probe_batch_size": int(f4_probe_batch_size),
-                "probe_batch_count": int(f4_probe_batch_count),
                 "promotion_trial_count": int(
                     getattr(train_cfg, "promotion_validation_trials", 25)
                 ),
@@ -4044,6 +4075,9 @@ def _run_layerwise_training_branch(
         },
     )
     run_context_hash = sha256_json(run_context)
+    compatible_run_context_hashes = ()
+    if _probe_batches_match_legacy_fallback(train_cfg, evaluator):
+        compatible_run_context_hashes = (_legacy_probe_batch_run_context_hash(run_context),)
     run_lock.bind_context(run_context_hash)
     run_manifest = {
         "schema_version": "stage2_layerwise_robust_run_v4",
@@ -4117,6 +4151,7 @@ def _run_layerwise_training_branch(
             algorithm_revision=algorithm_revision,
             algorithm_contract_hash=algorithm_contract_hash,
             run_context_hash=run_context_hash,
+            compatible_run_context_hashes=compatible_run_context_hashes,
         )
         resume_checkpoint = checkpoint
         start_episode = int(checkpoint.get("episode", 0))

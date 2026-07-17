@@ -344,13 +344,13 @@ def validate_layerwise_checkpoint_metadata(
         algorithm_revision: str,
         algorithm_contract_hash: str,
         run_context_hash: str,
+        compatible_run_context_hashes: Sequence[str] = (),
         ) -> None:
     """Reject checkpoints from a different algorithm or experiment context."""
     checks = (
         ("variant", "rl_variant", rl_variant),
         ("algorithm revision", "algorithm_revision", algorithm_revision),
         ("algorithm contract", "algorithm_contract_hash", algorithm_contract_hash),
-        ("run context", "run_context_hash", run_context_hash),
     )
     for label, field, expected in checks:
         actual = str(checkpoint.get(field, "") or "")
@@ -359,6 +359,22 @@ def validate_layerwise_checkpoint_metadata(
                 f"layerwise checkpoint {label} {actual!r} != {str(expected)!r}; "
                 "start a fresh run"
             )
+    actual_run_context_hash = str(checkpoint.get("run_context_hash", "") or "")
+    allowed_run_context_hashes = set()
+    current_run_context_hash = str(run_context_hash).strip()
+    if current_run_context_hash:
+        allowed_run_context_hashes.add(current_run_context_hash)
+    allowed_run_context_hashes.update(
+        str(value).strip()
+        for value in compatible_run_context_hashes
+        if str(value).strip()
+    )
+    if actual_run_context_hash not in allowed_run_context_hashes:
+        raise RuntimeError(
+            "layerwise checkpoint run context "
+            f"{actual_run_context_hash!r} is not compatible with the active run; "
+            "start a fresh run"
+        )
 
 
 def checkpoint_file_fingerprints(
