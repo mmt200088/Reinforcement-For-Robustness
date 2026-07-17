@@ -7,6 +7,170 @@ from unittest import mock
 
 
 class BLBCandidateStoreIdentityTests(unittest.TestCase):
+    @staticmethod
+    def _representative_compact_fixture():
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [
+            (layer_idx * 3 + slot_idx) % 6
+            for layer_idx in range(12)
+            for slot_idx in range(6)
+        ]
+        action_matrix = [action[start:start + 6] for start in range(0, 72, 6)]
+        base_context = {
+            "action_space_version": "stage2_layerwise_12x6_v1",
+            "registry_hash": "registry-" + "a" * 64,
+            "max_sfs_hash": "max-sfs-" + "b" * 64,
+            "stage1_config_content_hash": "stage1-" + "c" * 64,
+            "stage1_gelu_degrees": [4, 2, 1, 4, 2, 1, 4, 2, 1, 4, 2, 1],
+            "stage1_softmax_degrees": [6] * 12,
+            "profile": "mrpc",
+            "dataset": "mrpc",
+            "model": "bert-base",
+            "rescale_optimizer_mode": "in_process_real",
+            "rescale_optimizer_root": "Rescale_optimizer",
+            "rescale_optimizer_canonical_hash": "rescale-" + "d" * 64,
+            "decode_version": "layerwise-decode-v1",
+            "metric_policy_version": "mrpc-acc-f1-std-v1",
+            "threshold_policy_hash": "threshold-" + "e" * 64,
+        }
+        contexts = {
+            fidelity: {**base_context, "fidelity": fidelity}
+            for fidelity in ("F1", "F4")
+        }
+        boosted_overrides = [
+            {
+                "block_idx": block_idx,
+                "layer_idx": layer_idx,
+                "field_values": {
+                    "q_mask_rescale_sf": 47 + layer_idx,
+                    "v_mask_rescale_sf": 53 + block_idx + layer_idx,
+                },
+            }
+            for layer_idx in range(12)
+            for block_idx in (2, 4)
+        ]
+        f1_trials = TrialSeries(
+            loss=[0.301, 0.302, 0.303, 0.304, 0.305],
+            metric1=[0.901, 0.902, 0.903, 0.904, 0.905],
+            metric2=[0.801, 0.802, 0.803, 0.804, 0.805],
+            seeds=[101, 102, 103, 104, 105],
+        )
+        f4_trials = TrialSeries(
+            loss=[0.290 + idx * 0.001 for idx in range(8)],
+            metric1=[0.910 - idx * 0.001 for idx in range(8)],
+            metric2=[0.810 - idx * 0.001 for idx in range(8)],
+            seeds=list(range(201, 209)),
+        )
+        metadata = {
+            "F1": {
+                "identity_context": contexts["F1"],
+                "fidelity": "F1",
+                "episode_index": 120,
+                "action_matrix": action_matrix,
+                "variable_cost": 0.625,
+                "boosted_overrides_hash": "overrides-" + "f" * 64,
+                "boosted_overrides": boosted_overrides,
+                "boosted_overrides_provenance": "layerwise_env",
+                "assessment_bootstrap_seed": 77,
+                "episode_reward": 1.25,
+                "promotion_marker": "online_group",
+            },
+            "F4": {
+                "identity_context": contexts["F4"],
+                "fidelity": "F4",
+                "action_matrix": action_matrix,
+                "variable_cost": 0.625,
+                "boosted_overrides_hash": "overrides-" + "f" * 64,
+                "boosted_overrides": boosted_overrides,
+                "boosted_overrides_provenance": "layerwise_env",
+                "assessment_bootstrap_seed": 77,
+                "episode_reward": 1.25,
+                "promotion_marker": "fresh_top_up",
+                "promotion_status": "pending_reassessment",
+            },
+        }
+        status_metadata = {
+            "action_matrix": action_matrix,
+            "variable_cost": 0.625,
+            "boosted_overrides": boosted_overrides,
+            "episode_reward": 1.25,
+            "assessment_bootstrap_seed": 77,
+        }
+        return {
+            "action": action,
+            "contexts": contexts,
+            "trials": {"F1": f1_trials, "F4": f4_trials},
+            "metadata": metadata,
+            "status_metadata": status_metadata,
+            "boosted_overrides": boosted_overrides,
+        }
+
+    def _populate_equivalent_store(self, store, fixture, *, compact):
+        for fidelity in ("F1", "F4"):
+            kwargs = {"compact": True} if compact else {}
+            store.append_trial_group(
+                fixture["action"],
+                fixture["trials"][fidelity],
+                fixture["metadata"][fidelity],
+                **kwargs,
+            )
+        if compact:
+            store.append_promotion_status(
+                fixture["action"],
+                fixture["contexts"]["F4"],
+                status="promoted",
+                metadata=fixture["status_metadata"],
+            )
+        else:
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": fixture["action"],
+                "effective_action_indices": fixture["action"],
+                "identity_context": fixture["contexts"]["F4"],
+                "fidelity": "F4",
+                "valid": True,
+                "promotion_status": "promoted",
+                "promotion_metadata": fixture["status_metadata"],
+            })
+
+    @staticmethod
+    def _logical_evidence_snapshot(evidence, fidelity):
+        metadata_fields = (
+            "identity_context",
+            "fidelity",
+            "episode_index",
+            "action_matrix",
+            "variable_cost",
+            "boosted_overrides_hash",
+            "boosted_overrides_provenance",
+            "assessment_bootstrap_seed",
+            "episode_reward",
+            "promotion_marker",
+            "promotion_status",
+        )
+        if fidelity == "F4":
+            metadata_fields += ("boosted_overrides",)
+        return {
+            "candidate_key": evidence.candidate_key,
+            "action_indices": evidence.action_indices,
+            "loss": evidence.trials.loss,
+            "metric1": evidence.trials.metric1,
+            "metric2": evidence.trials.metric2,
+            "seeds": evidence.trials.seeds,
+            "groups": tuple(
+                {
+                    name: group[name]
+                    for name in metadata_fields
+                    if name in group
+                }
+                for group in evidence.groups
+            ),
+            "promotion_attempted": evidence.promotion_attempted,
+            "promotion_status": evidence.promotion_status,
+            "trial_count": evidence.trial_count,
+        }
+
     def test_flat_action_normalization_avoids_per_item_nested_checks(self):
         from blb_stage2_rl import candidate_store as store_mod
 
@@ -864,3 +1028,439 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             )
 
         self.assertEqual(store.trial_count_for_action(action, context), 4)
+
+    def test_compact_and_legacy_candidate_store_have_identical_logical_evidence(self):
+        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
+
+        fixture = self._representative_compact_fixture()
+        with tempfile.TemporaryDirectory() as td:
+            legacy = CandidateStore(Path(td) / "legacy.jsonl")
+            compact = CandidateStore(Path(td) / "compact.jsonl")
+            self._populate_equivalent_store(legacy, fixture, compact=False)
+            self._populate_equivalent_store(compact, fixture, compact=True)
+
+            for fidelity in ("F1", "F4"):
+                context = fixture["contexts"][fidelity]
+                legacy_evidence = legacy.trial_evidence_for_action(
+                    fixture["action"], context,
+                )
+                compact_evidence = compact.trial_evidence_for_action(
+                    fixture["action"], context,
+                )
+                self.assertEqual(
+                    self._logical_evidence_snapshot(compact_evidence, fidelity),
+                    self._logical_evidence_snapshot(legacy_evidence, fidelity),
+                )
+                self.assertEqual(
+                    compact_evidence.candidate_key,
+                    candidate_key(fixture["action"], context),
+                )
+                compact_best = compact.best_for_action(
+                    fixture["action"], identity_context=context,
+                )
+                legacy_best = legacy.best_for_action(
+                    fixture["action"], identity_context=context,
+                )
+                for field in (
+                    "candidate_key", "action_indices", "raw_action_indices",
+                    "effective_action_indices", "identity_context",
+                    "identity_context_hash", "fidelity", "valid",
+                ):
+                    self.assertEqual(compact_best[field], legacy_best[field])
+                self.assertEqual(
+                    compact.should_evaluate(
+                        fixture["action"], fidelity, identity_context=context,
+                    ),
+                    legacy.should_evaluate(
+                        fixture["action"], fidelity, identity_context=context,
+                    ),
+                )
+                if fidelity == "F1":
+                    self.assertTrue(compact.should_evaluate(
+                        fixture["action"], "F4", identity_context=context,
+                    ))
+
+            f4_evidence = compact.trial_evidence_for_action(
+                fixture["action"], fixture["contexts"]["F4"],
+            )
+            strict_inputs = f4_evidence.groups[-1]
+            self.assertEqual(strict_inputs["action_matrix"], fixture["metadata"]["F4"]["action_matrix"])
+            self.assertEqual(strict_inputs["boosted_overrides"], fixture["boosted_overrides"])
+            self.assertEqual(strict_inputs["assessment_bootstrap_seed"], 77)
+            self.assertTrue(f4_evidence.promotion_attempted)
+            self.assertTrue(f4_evidence.promoted)
+
+    def test_compact_candidate_store_physical_rows_intern_context_and_omit_derivable_f1_data(self):
+        from blb_stage2_rl.candidate_store import CandidateStore, sha256_json
+
+        fixture = self._representative_compact_fixture()
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "compact.jsonl"
+            store = CandidateStore(path)
+            self._populate_equivalent_store(store, fixture, compact=True)
+            store.append_promotion_status(
+                fixture["action"],
+                fixture["contexts"]["F4"],
+                status="final_revalidation_passed",
+                metadata={
+                    **fixture["status_metadata"],
+                    "final_revalidation_trial_count": 31,
+                },
+            )
+            physical_rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+
+        context_rows = [
+            row for row in physical_rows
+            if row.get("record_type") == "candidate_identity_context_v1"
+        ]
+        self.assertEqual(len(context_rows), 2)
+        self.assertEqual(
+            {row["identity_context_hash"] for row in context_rows},
+            {sha256_json(context) for context in fixture["contexts"].values()},
+        )
+        for row in context_rows:
+            self.assertEqual(
+                row["identity_context_hash"], sha256_json(row["identity_context"]),
+            )
+
+        trial_rows = [
+            row for row in physical_rows
+            if row.get("record_type") == "candidate_trial_group_v2"
+        ]
+        self.assertEqual(len(trial_rows), 2)
+        for row in trial_rows:
+            self.assertEqual(
+                {
+                    name for name in (
+                        "action_indices", "raw_action_indices",
+                        "effective_action_indices",
+                    )
+                    if name in row
+                },
+                {"action_indices"},
+            )
+            for field in (
+                "candidate_key", "action_hash", "raw_action_hash",
+                "effective_action_hash", "identity_context_hash", "trial_group",
+            ):
+                self.assertIn(field, row)
+            self.assertNotIn("identity_context", row)
+            self.assertNotIn(
+                "identity_context", row["trial_group_metadata"],
+            )
+
+        f1_row = next(row for row in trial_rows if row["fidelity"] == "F1")
+        f4_row = next(row for row in trial_rows if row["fidelity"] == "F4")
+        self.assertNotIn("boosted_overrides", f1_row["trial_group_metadata"])
+        self.assertEqual(
+            f1_row["trial_group_metadata"]["boosted_overrides_hash"],
+            fixture["metadata"]["F1"]["boosted_overrides_hash"],
+        )
+        self.assertEqual(
+            f1_row["trial_group_metadata"]["boosted_overrides_provenance"],
+            "layerwise_env",
+        )
+        self.assertEqual(
+            f4_row["trial_group_metadata"]["boosted_overrides"],
+            fixture["boosted_overrides"],
+        )
+
+        status_rows = [
+            row for row in physical_rows
+            if row.get("record_type") == "candidate_promotion_status_v2"
+        ]
+        self.assertEqual(len(status_rows), 2)
+        for row in status_rows:
+            self.assertIn("action_indices", row)
+            self.assertIn("identity_context_hash", row)
+            self.assertNotIn("raw_action_indices", row)
+            self.assertNotIn("effective_action_indices", row)
+            self.assertNotIn("identity_context", row)
+            self.assertEqual(
+                row["promotion_metadata"]["boosted_overrides"],
+                fixture["boosted_overrides"],
+            )
+
+    def test_compact_f1_candidate_store_row_is_less_than_half_legacy_bytes(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+
+        fixture = self._representative_compact_fixture()
+        with tempfile.TemporaryDirectory() as td:
+            legacy_path = Path(td) / "legacy.jsonl"
+            compact_path = Path(td) / "compact.jsonl"
+            CandidateStore(legacy_path).append_trial_group(
+                fixture["action"], fixture["trials"]["F1"], fixture["metadata"]["F1"],
+            )
+            CandidateStore(compact_path).append_trial_group(
+                fixture["action"], fixture["trials"]["F1"], fixture["metadata"]["F1"],
+                compact=True,
+            )
+            legacy_line = next(
+                line for line in legacy_path.read_bytes().splitlines(keepends=True)
+                if json.loads(line)["record_type"] == "candidate_trial_group_v1"
+            )
+            compact_line = next(
+                line for line in compact_path.read_bytes().splitlines(keepends=True)
+                if json.loads(line)["record_type"] == "candidate_trial_group_v2"
+            )
+
+        self.assertLess(len(compact_line), len(legacy_line) / 2)
+
+    def test_compact_candidate_store_hydrates_copies_and_fails_closed_on_bad_context(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+
+        fixture = self._representative_compact_fixture()
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "compact.jsonl"
+            store = CandidateStore(path)
+            store.append_trial_group(
+                fixture["action"], fixture["trials"]["F1"], fixture["metadata"]["F1"],
+                compact=True,
+            )
+            physical_rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            first = store.read_all()[0]
+            self.assertEqual(
+                [row["record_type"] for row in store.iter_active_records()],
+                ["candidate_trial_group_v2"],
+            )
+            self.assertEqual(first["identity_context"], fixture["contexts"]["F1"])
+            self.assertEqual(first["raw_action_indices"], fixture["action"])
+            self.assertEqual(first["effective_action_indices"], fixture["action"])
+            self.assertEqual(
+                first["trial_group_metadata"]["identity_context"],
+                fixture["contexts"]["F1"],
+            )
+
+            first["action_indices"][0] = 999
+            first["identity_context"]["profile"] = "mutated"
+            first["trial_group_metadata"]["action_matrix"][0][0] = 999
+            second = store.read_all()[0]
+            self.assertEqual(second["action_indices"], fixture["action"])
+            self.assertEqual(second["identity_context"]["profile"], "mrpc")
+            self.assertEqual(
+                second["trial_group_metadata"]["action_matrix"][0][0],
+                fixture["metadata"]["F1"]["action_matrix"][0][0],
+            )
+
+            cases = {}
+            cases["missing"] = [
+                row for row in physical_rows
+                if row.get("record_type") != "candidate_identity_context_v1"
+            ]
+            mismatched = [dict(row) for row in physical_rows]
+            context_row = next(
+                row for row in mismatched
+                if row.get("record_type") == "candidate_identity_context_v1"
+            )
+            context_row["identity_context"] = {
+                **context_row["identity_context"], "profile": "tampered",
+            }
+            cases["hash_content_mismatch"] = mismatched
+            for label, rows in cases.items():
+                bad_path = Path(td) / f"bad-{label}.jsonl"
+                bad_path.write_text(
+                    "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                    encoding="utf-8",
+                )
+                with self.subTest(label=label):
+                    with self.assertRaises(ValueError):
+                        CandidateStore(bad_path).read_all()
+
+    def test_mixed_store_random_offsets_pool_in_order_and_share_v1_duplicate_rules(self):
+        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        fixture = self._representative_compact_fixture()
+        action = fixture["action"]
+        context = fixture["contexts"]["F1"]
+        second_trials = TrialSeries(
+            loss=[0.401, 0.402], metric1=[0.701, 0.702], metric2=[0.601, 0.602],
+            seeds=[301, 302],
+        )
+        second_metadata = {
+            **fixture["metadata"]["F1"],
+            "episode_index": 121,
+        }
+        with tempfile.TemporaryDirectory() as td:
+            mixed = CandidateStore(Path(td) / "mixed.jsonl")
+            legacy = CandidateStore(Path(td) / "legacy.jsonl")
+            for store in (mixed, legacy):
+                store.append_trial_group(
+                    action, fixture["trials"]["F1"], fixture["metadata"]["F1"],
+                )
+            mixed.append_trial_group(action, second_trials, second_metadata, compact=True)
+            legacy.append_trial_group(action, second_trials, second_metadata)
+
+            mixed = CandidateStore(mixed.path)
+            mixed_evidence = mixed.trial_evidence_for_action(action, context)
+            legacy_evidence = legacy.trial_evidence_for_action(action, context)
+            key = candidate_key(action, context)
+            offset_records = list(mixed._trial_records_for_candidate_key(key))
+
+            duplicate = TrialSeries(
+                loss=[0.5, 0.6], metric1=[0.5, 0.4], metric2=[0.4, 0.3],
+                seeds=[302, 303],
+            )
+            with self.assertRaises(ValueError) as mixed_error:
+                mixed.append_trial_group(action, duplicate, second_metadata, compact=True)
+            with self.assertRaises(ValueError) as legacy_error:
+                legacy.append_trial_group(action, duplicate, second_metadata)
+
+            f4_context = fixture["contexts"]["F4"]
+            for store in (mixed, legacy):
+                store.append_trial_group(
+                    action, fixture["trials"]["F4"], fixture["metadata"]["F4"],
+                )
+                store.append({
+                    "record_type": "candidate_promotion_status_v1",
+                    "action_indices": action,
+                    "identity_context": f4_context,
+                    "promotion_status": "promoted",
+                    "fidelity": "F4",
+                    "valid": True,
+                })
+            mixed.append_promotion_status(
+                action, f4_context, status="failed_probability_gate", metadata={},
+            )
+            legacy.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "identity_context": f4_context,
+                "promotion_status": "failed_probability_gate",
+                "fidelity": "F4",
+                "valid": False,
+            })
+
+            mixed_f4 = mixed.trial_evidence_for_action(action, f4_context)
+            legacy_f4 = legacy.trial_evidence_for_action(action, f4_context)
+            active_types = {row["record_type"] for row in mixed.read_all()}
+
+        self.assertEqual(
+            self._logical_evidence_snapshot(mixed_evidence, "F1"),
+            self._logical_evidence_snapshot(legacy_evidence, "F1"),
+        )
+        self.assertEqual(
+            mixed_evidence.trials.seeds,
+            fixture["trials"]["F1"].seeds + second_trials.seeds,
+        )
+        self.assertEqual(
+            [row["record_type"] for row in offset_records],
+            ["candidate_trial_group_v1", "candidate_trial_group_v2"],
+        )
+        self.assertTrue(all(row["identity_context"] == context for row in offset_records))
+        self.assertEqual(str(mixed_error.exception), str(legacy_error.exception))
+        self.assertEqual(mixed_f4.promotion_attempted, legacy_f4.promotion_attempted)
+        self.assertEqual(mixed_f4.promotion_status, legacy_f4.promotion_status)
+        self.assertEqual(
+            active_types,
+            {
+                "candidate_trial_group_v1", "candidate_trial_group_v2",
+                "candidate_promotion_status_v1", "candidate_promotion_status_v2",
+            },
+        )
+
+    def test_mixed_store_recovery_preserves_compact_replay_fingerprints_and_offsets(self):
+        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key, sha256_json
+        from blb_stage2_rl.layerwise_runner import checkpoint_file_fingerprints
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        fixture = self._representative_compact_fixture()
+        action = fixture["action"]
+        context = fixture["contexts"]["F1"]
+        compact_trials = TrialSeries(
+            loss=[0.41], metric1=[0.71], metric2=[0.61], seeds=[301],
+        )
+        compact_metadata = {
+            **fixture["metadata"]["F1"], "episode_index": 121,
+        }
+        orphan_context = {**context, "profile": "orphan-context"}
+        orphan_metadata = {
+            **compact_metadata,
+            "identity_context": orphan_context,
+            "episode_index": 999,
+        }
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "mixed.jsonl"
+            store = CandidateStore(path)
+            store.append_trial_group(
+                action, fixture["trials"]["F1"], fixture["metadata"]["F1"],
+            )
+            store.append_trial_group(
+                action, compact_trials, compact_metadata, compact=True,
+            )
+            store.append_promotion_status(
+                action, fixture["contexts"]["F4"], status="promoted",
+                metadata=fixture["status_metadata"],
+            )
+            committed_size = path.stat().st_size
+            expected_fingerprint = checkpoint_file_fingerprints({
+                "candidate_store": (path, committed_size),
+            })
+            logical_before = store.read_all()
+            evidence_before = store.trial_evidence_for_action(action, context)
+            base_key = candidate_key(action, context)
+            offsets_before = tuple(store._trial_offsets_by_candidate_key[base_key])
+
+            store.append_trial_group(
+                action,
+                TrialSeries(loss=[0.9], metric1=[0.1], metric2=[0.1], seeds=[999]),
+                orphan_metadata,
+                compact=True,
+            )
+            store.recover_to_checkpoint_size(committed_size)
+            resumed = CandidateStore(path)
+            self.assertIsNone(
+                resumed.trial_evidence_for_action(action, orphan_context),
+            )
+            logical_after = resumed.read_all()
+            evidence_after = resumed.trial_evidence_for_action(action, context)
+            offsets_after = tuple(resumed._trial_offsets_by_candidate_key[base_key])
+            replay_size = path.stat().st_size
+            replay = resumed.append_trial_group(
+                action, compact_trials, compact_metadata, compact=True,
+            )
+            size_after_replay = path.stat().st_size
+
+            resumed.append_trial_group(
+                action,
+                TrialSeries(loss=[0.8], metric1=[0.2], metric2=[0.2], seeds=[1000]),
+                orphan_metadata,
+                compact=True,
+            )
+            replacement_checkpoint = path.stat().st_size
+            CandidateStore(path).recover_to_checkpoint_size(replacement_checkpoint)
+            CandidateStore(path).recover_to_checkpoint_size(replacement_checkpoint)
+            final_store = CandidateStore(path)
+            final_base = final_store.trial_evidence_for_action(action, context)
+            replacement = final_store.trial_evidence_for_action(action, orphan_context)
+            final_records = final_store.read_all()
+            final_fingerprint = checkpoint_file_fingerprints({
+                "candidate_store": (path, committed_size),
+            })
+            physical_rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            orphan_hash = sha256_json(orphan_context)
+            physical_orphan_contexts = [
+                row for row in physical_rows
+                if row.get("record_type") == "candidate_identity_context_v1"
+                and row.get("identity_context_hash") == orphan_hash
+            ]
+
+        self.assertEqual(logical_after, logical_before)
+        self.assertEqual(
+            self._logical_evidence_snapshot(evidence_after, "F1"),
+            self._logical_evidence_snapshot(evidence_before, "F1"),
+        )
+        self.assertEqual(offsets_after, offsets_before)
+        self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(size_after_replay, replay_size)
+        self.assertEqual(final_fingerprint, expected_fingerprint)
+        self.assertEqual(
+            self._logical_evidence_snapshot(final_base, "F1"),
+            self._logical_evidence_snapshot(evidence_before, "F1"),
+        )
+        self.assertEqual(replacement.trials.seeds, (1000,))
+        self.assertEqual(len(physical_orphan_contexts), 2)
+        self.assertNotIn(
+            "candidate_identity_context_v1",
+            {row["record_type"] for row in final_records},
+        )
