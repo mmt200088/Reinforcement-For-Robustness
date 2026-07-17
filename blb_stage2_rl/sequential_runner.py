@@ -3613,6 +3613,8 @@ def _build_layerwise_candidate_identity_context(
         authoritative_example_count: int,
         schedule: Sequence[Any],
         static_skeletons_baseline: Any,
+        algorithm_contract: Mapping[str, Any],
+        algorithm_contract_hash: str,
         ) -> Dict[str, Any]:
     """Bind layerwise raw evidence to the complete effective run context."""
     from .candidate_store import build_candidate_identity_context, sha256_json
@@ -3700,6 +3702,24 @@ def _build_layerwise_candidate_identity_context(
         context,
         K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
+        {
+            "algorithm_contract_hash": str(algorithm_contract_hash),
+            "resource_secondary_epsilon": algorithm_contract[
+                "resource_secondary_epsilon"
+            ],
+            "compute_axis_denominator": algorithm_contract[
+                "compute_axis_denominator"
+            ],
+            "communication_axis_denominator": algorithm_contract[
+                "communication_axis_denominator"
+            ],
+            "resource_credit_mode": algorithm_contract[
+                "resource_credit_mode"
+            ],
+            "strict_resource_order": algorithm_contract[
+                "strict_resource_order"
+            ],
+        },
     )
 
 
@@ -3940,6 +3960,8 @@ def _run_layerwise_training_branch(
         authoritative_example_count=int(authoritative_validation_example_count),
         schedule=layerwise_env.schedule,
         static_skeletons_baseline=static_skeletons_baseline,
+        algorithm_contract=algorithm_contract,
+        algorithm_contract_hash=algorithm_contract_hash,
     )
     run_context = build_layerwise_run_context(
         identity_context,

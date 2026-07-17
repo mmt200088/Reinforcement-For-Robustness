@@ -839,12 +839,62 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         base = {"action_space_version": "stage2_layerwise_12x6_v1"}
         first_order = (8, 9, 11, 13, 10, 12)
         second_order = (13, 8, 9, 10, 11, 12)
-        first = binder(base, first_order, "cost-v1")
-        second = binder(base, second_order, "cost-v1")
+        resource_contract = {
+            "algorithm_contract_hash": "algorithm-v9",
+            "resource_secondary_epsilon": 1.0e-4,
+            "compute_axis_denominator": 12,
+            "communication_axis_denominator": 295,
+            "resource_credit_mode": "two_family_shapley_per_slot_v1",
+            "strict_resource_order": ["robust_floor", "secondary_progress"],
+        }
+        first = binder(base, first_order, "cost-v1", resource_contract)
+        second = binder(base, second_order, "cost-v1", resource_contract)
 
         self.assertEqual(first["k_levels"], list(first_order))
         self.assertEqual(second["k_levels"], list(second_order))
         self.assertNotEqual(candidate_key([0], first), candidate_key([0], second))
+
+    def test_layerwise_candidate_identity_binds_every_resource_contract_field(self):
+        from blb_stage2_rl.candidate_store import candidate_key
+        from blb_stage2_rl.layerwise_runner import bind_layerwise_candidate_identity
+
+        contract = {
+            "algorithm_contract_hash": "algorithm-v9",
+            "resource_secondary_epsilon": 1.0e-4,
+            "compute_axis_denominator": 12,
+            "communication_axis_denominator": 295,
+            "resource_credit_mode": "two_family_shapley_per_slot_v1",
+            "strict_resource_order": ["robust_floor", "secondary_progress"],
+        }
+        base = bind_layerwise_candidate_identity(
+            {"action_space_version": "stage2_layerwise_12x6_v1"},
+            (8, 9, 11, 13, 10, 12),
+            "dual_resource_maxmin_shapley_v1",
+            contract,
+        )
+        base_key = candidate_key([0], base)
+        mutations = {
+            "algorithm_contract_hash": "algorithm-v10",
+            "resource_secondary_epsilon": 2.0e-4,
+            "compute_axis_denominator": 24,
+            "communication_axis_denominator": 294,
+            "resource_credit_mode": "other_credit_mode",
+            "strict_resource_order": ["secondary_progress", "robust_floor"],
+        }
+
+        for field_name, replacement in mutations.items():
+            changed_contract = {**contract, field_name: replacement}
+            changed = bind_layerwise_candidate_identity(
+                {"action_space_version": "stage2_layerwise_12x6_v1"},
+                (8, 9, 11, 13, 10, 12),
+                "dual_resource_maxmin_shapley_v1",
+                changed_contract,
+            )
+            self.assertNotEqual(
+                candidate_key([0], changed),
+                base_key,
+                msg=field_name,
+            )
 
     def test_layerwise_checkpoint_metadata_rejects_foreign_run_context(self):
         from blb_stage2_rl import layerwise_runner

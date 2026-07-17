@@ -711,6 +711,8 @@ class RegeneratorEndToEndTest(unittest.TestCase):
         self.assertIn("Compute saving", html)
         self.assertIn("Communication saving", html)
         self.assertIn("Robust floor", html)
+        self.assertIn("Compute Shapley credit", html)
+        self.assertIn("Communication Shapley credit", html)
         self.assertIn("Strict Resource Pareto Frontier", html)
         self.assertIn("candidate-a", html)
         self.assertIn("Baseline Trial Distributions", html)

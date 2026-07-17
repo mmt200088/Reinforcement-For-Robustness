@@ -292,6 +292,8 @@ def _write_layerwise_html_report(
         ("robust_floor", "Robust floor"),
         ("secondary_progress", "Secondary progress"),
         ("ppo_resource_score", "PPO resource score"),
+        ("compute_shapley_credit", "Compute Shapley credit"),
+        ("communication_shapley_credit", "Communication Shapley credit"),
     )
     resource_rows = [
         {

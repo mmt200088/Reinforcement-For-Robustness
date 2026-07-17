@@ -264,14 +264,62 @@ def bind_layerwise_candidate_identity(
         identity_context: Mapping[str, Any],
         k_levels: Sequence[int],
         cost_model_revision: str,
+        resource_contract: Mapping[str, Any],
         ) -> dict[str, Any]:
-    """Bind persisted evidence to decoded K ordering and cost semantics."""
+    """Bind persisted evidence to decoded actions and resource semantics."""
     levels = tuple(int(value) for value in k_levels)
     if not levels or len(set(levels)) != len(levels):
         raise ValueError(f"k_levels must be non-empty and unique, got {levels}")
+    contract = dict(resource_contract)
+    required = (
+        "algorithm_contract_hash",
+        "resource_secondary_epsilon",
+        "compute_axis_denominator",
+        "communication_axis_denominator",
+        "resource_credit_mode",
+        "strict_resource_order",
+    )
+    missing = [field_name for field_name in required if field_name not in contract]
+    if missing:
+        raise ValueError(
+            f"resource_contract is missing required fields: {missing}"
+        )
+    algorithm_hash = str(contract["algorithm_contract_hash"] or "").strip()
+    credit_mode = str(contract["resource_credit_mode"] or "").strip()
+    order_raw = contract["strict_resource_order"]
+    if not algorithm_hash or not credit_mode:
+        raise ValueError(
+            "resource contract hash and credit mode must be non-empty"
+        )
+    if not isinstance(order_raw, Sequence) or isinstance(order_raw, (str, bytes)):
+        raise ValueError("strict_resource_order must be a non-empty sequence")
+    strict_order = [str(value).strip() for value in order_raw]
+    if not strict_order or any(not value for value in strict_order):
+        raise ValueError("strict_resource_order must contain non-empty fields")
+    epsilon = float(contract["resource_secondary_epsilon"])
+    compute_denominator = float(contract["compute_axis_denominator"])
+    communication_denominator = float(
+        contract["communication_axis_denominator"]
+    )
+    if not math.isfinite(epsilon) or epsilon < 0.0:
+        raise ValueError("resource_secondary_epsilon must be finite and nonnegative")
+    for field_name, value in (
+            ("compute_axis_denominator", compute_denominator),
+            ("communication_axis_denominator", communication_denominator),
+    ):
+        if not math.isfinite(value) or value <= 0.0:
+            raise ValueError(f"{field_name} must be finite and positive")
     context = dict(identity_context)
     context["k_levels"] = list(levels)
     context["cost_model_revision"] = str(cost_model_revision)
+    context["resource_objective_contract"] = {
+        "algorithm_contract_hash": algorithm_hash,
+        "resource_secondary_epsilon": epsilon,
+        "compute_axis_denominator": compute_denominator,
+        "communication_axis_denominator": communication_denominator,
+        "resource_credit_mode": credit_mode,
+        "strict_resource_order": strict_order,
+    }
     return context
 
 
