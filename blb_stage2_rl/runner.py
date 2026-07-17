@@ -28,6 +28,7 @@ import re
 import time
 from collections import Counter
 from dataclasses import asdict, dataclass, field
+from numbers import Integral
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -140,6 +141,17 @@ def resolve_blb_persistence_dir(evaluator) -> str:
     return out
 
 
+def resolve_probe_batch_size(value: Any, *, evaluator_batch_size: Any) -> int:
+    """Resolve an optional probe batch size without accepting coercions."""
+    candidate = evaluator_batch_size if value is None else value
+    if isinstance(candidate, bool) or not isinstance(candidate, Integral):
+        raise ValueError("probe batch size must be a positive integer")
+    result = int(candidate)
+    if result <= 0:
+        raise ValueError("probe batch size must be a positive integer")
+    return result
+
+
 def _effective_probe_batch_count(ev, train_cfg) -> int:
     """Return enough mini-batches to cover stage2_probe_size unless overridden."""
     explicit = getattr(ev, "blb_v3_probe_batch_count", None)
@@ -151,7 +163,10 @@ def _effective_probe_batch_count(ev, train_cfg) -> int:
         except Exception:
             pass
     probe_size = max(1, int(getattr(ev, "stage2_probe_size", 256)))
-    batch_size = max(1, int(getattr(ev, "batch_size", 1)))
+    batch_size = resolve_probe_batch_size(
+        getattr(train_cfg, "probe_batch_size", None),
+        evaluator_batch_size=getattr(ev, "batch_size", None),
+    )
     return max(1, int(math.ceil(float(probe_size) / float(batch_size))))
 
 
@@ -603,6 +618,17 @@ class BLBStage2TrainConfig:
         self.validate_decision_granularity()
         self.validate_reward_design()
         self.validate_robust_constraint_config()
+        self.validate_probe_batch_sizes()
+
+    def validate_probe_batch_sizes(self) -> None:
+        for field_name in ("probe_batch_size", "validation_probe_batch_size"):
+            value = getattr(self, field_name)
+            if value is not None:
+                setattr(
+                    self,
+                    field_name,
+                    resolve_probe_batch_size(value, evaluator_batch_size=1),
+                )
 
     def validate_decision_granularity(self) -> str:
         from .layerwise_runner import normalize_decision_granularity
@@ -658,6 +684,8 @@ class BLBStage2TrainConfig:
     # wall-time. See diagnostics_summary.md (s1t0.005 run) for the symptom.
     num_trials_per_step: int = 5
     probe_batch_count: int = 4
+    probe_batch_size: Optional[int] = None
+    validation_probe_batch_size: Optional[int] = None
     # 自动校准
     calibrate_baseline_samples: int = 8
     # Real Rescale_optimizer parameters. BLB Stage-2 RL intentionally has no
@@ -2771,6 +2799,20 @@ class BLBStage2RLRunner:
             cfg.num_trials_per_step = int(getattr(ev, "stage2_k_trials", cfg.num_trials_per_step))
         except Exception:
             pass
+        for cfg_field, attr_name in (
+                ("probe_batch_size", "blb_v3_probe_batch_size"),
+                ("validation_probe_batch_size", "blb_v3_validation_probe_batch_size"),
+        ):
+            value = getattr(ev, attr_name, None)
+            if value is not None:
+                setattr(
+                    cfg,
+                    cfg_field,
+                    resolve_probe_batch_size(
+                        value,
+                        evaluator_batch_size=getattr(ev, "batch_size", None),
+                    ),
+                )
         # 4b) reward_devices: --blb-v3-reward-devices "0,1" arrives as a string
         # on the evaluator. Parse here so train_cfg holds a List[int]; empty /
         # 1-device → ProbeRunner stays disabled.
@@ -3103,6 +3145,7 @@ class BLBStage2RLRunner:
         cfg.validate_decision_granularity()
         cfg.validate_reward_design()
         cfg.validate_robust_constraint_config()
+        cfg.validate_probe_batch_sizes()
         from .layerwise_runner import validate_stage2_episode_limit_mode
         validate_stage2_episode_limit_mode(
             int(cfg.total_episodes),
@@ -3146,10 +3189,14 @@ class BLBStage2RLRunner:
             probe_subset = ds
 
         # 构造 dataloader
+        batch_size = resolve_probe_batch_size(
+            train_cfg.probe_batch_size,
+            evaluator_batch_size=getattr(ev, "batch_size", None),
+        )
         from torch.utils.data import DataLoader
         loader = DataLoader(
             probe_subset,
-            batch_size=int(ev.batch_size),
+            batch_size=batch_size,
             shuffle=False,
             collate_fn=ev.data_collator,
             pin_memory=torch.cuda.is_available(),
@@ -3157,7 +3204,7 @@ class BLBStage2RLRunner:
         max_count = (
             _effective_probe_batch_count(ev, train_cfg)
             if probe_size_override is None
-            else int(math.ceil(float(probe_size) / max(1, int(ev.batch_size))))
+            else int(math.ceil(float(probe_size) / float(batch_size)))
         )
         out: List[ProbeBatch] = []
         for batch in loader:
@@ -3166,7 +3213,11 @@ class BLBStage2RLRunner:
                 break
         return out
 
-    def _build_validation_full_batches(self, ev) -> List[ProbeBatch]:
+    def _build_validation_full_batches(
+            self,
+            ev,
+            train_cfg: Optional[BLBStage2TrainConfig] = None,
+            ) -> List[ProbeBatch]:
         """Materialize every example from the authoritative validation split."""
         dataset_splits = getattr(ev, "dataset_splits", None)
         if not isinstance(dataset_splits, Mapping):
@@ -3183,9 +3234,13 @@ class BLBStage2RLRunner:
 
         from torch.utils.data import DataLoader
 
+        batch_size = resolve_probe_batch_size(
+            None if train_cfg is None else train_cfg.validation_probe_batch_size,
+            evaluator_batch_size=getattr(ev, "batch_size", None),
+        )
         loader = DataLoader(
             validation_full,
-            batch_size=int(ev.batch_size),
+            batch_size=batch_size,
             shuffle=False,
             collate_fn=ev.data_collator,
             pin_memory=torch.cuda.is_available(),

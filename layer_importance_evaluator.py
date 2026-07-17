@@ -2364,6 +2364,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_fast_reward_mode_enabled=False,
                   blb_v3_online_k_trials=5,
                   blb_v3_terminal_eval_batch_size=4,
+                  blb_v3_probe_batch_size: Optional[int] = None,
+                  blb_v3_validation_probe_batch_size: Optional[int] = None,
                   blb_v3_promotion_validation_trials=25,
                   blb_v3_final_selection_top_n=20,
                   blb_v3_final_selection_validation_trials=25,
@@ -3120,6 +3122,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.blb_v3_terminal_eval_batch_size = max(1, int(blb_v3_terminal_eval_batch_size))
         except Exception:
             self.blb_v3_terminal_eval_batch_size = 4
+        self.blb_v3_probe_batch_size = blb_v3_probe_batch_size
+        self.blb_v3_validation_probe_batch_size = blb_v3_validation_probe_batch_size
         try:
             self.blb_v3_promotion_validation_trials = max(1, int(blb_v3_promotion_validation_trials))
         except Exception:

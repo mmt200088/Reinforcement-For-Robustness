@@ -283,7 +283,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         source = source_path.read_text(encoding="utf-8")
 
         self.assertIn("def _build_authoritative_validation_env(", source)
-        self.assertIn("validation_full_batches = runner._build_validation_full_batches(ev)", source)
+        self.assertIn("validation_full_batches = runner._build_validation_full_batches(ev, train_cfg)", source)
         self.assertIn("promotion_base_env=promotion_base_env", source)
         self.assertIn("authoritative_robust_reference", source)
 
@@ -384,7 +384,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             is_regression=False,
         )
         runner = types.SimpleNamespace(
-            _build_validation_full_batches=lambda _ev: validation_batches,
+            _build_validation_full_batches=lambda _ev, _cfg: validation_batches,
         )
 
         with mock.patch(

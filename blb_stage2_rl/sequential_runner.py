@@ -3381,7 +3381,7 @@ def _build_authoritative_validation_env(
         log: Callable[[str], None],
         ) -> Tuple[Any, int]:
     """Clone the probe shell while preserving the canonical primary bridge."""
-    validation_full_batches = runner._build_validation_full_batches(ev)
+    validation_full_batches = runner._build_validation_full_batches(ev, train_cfg)
     validation_full = ev.dataset_splits.get("validation_full")
     example_count = len(validation_full)
 
@@ -3869,6 +3869,17 @@ def _run_layerwise_training_branch(
     online_probe_example_count = sum(
         int(batch.labels.numel()) for batch in base_env.probe_batches
     )
+    from .runner import resolve_probe_batch_size
+    f1_probe_batch_size = resolve_probe_batch_size(
+        getattr(train_cfg, "probe_batch_size", None),
+        evaluator_batch_size=getattr(evaluator, "batch_size", None),
+    )
+    f4_probe_batch_size = resolve_probe_batch_size(
+        getattr(train_cfg, "validation_probe_batch_size", None),
+        evaluator_batch_size=getattr(evaluator, "batch_size", None),
+    )
+    f1_probe_batch_count = len(base_env.probe_batches)
+    f4_probe_batch_count = len(promotion_base_env.probe_batches)
     if online_probe_example_count <= 0:
         raise RuntimeError("layerwise F1 probe must contain at least one example")
     if online_probe_example_count != 256:
@@ -3938,6 +3949,8 @@ def _run_layerwise_training_branch(
             "F1": {
                 "split": "validation_full_stratified_probe",
                 "example_count": int(online_probe_example_count),
+                "probe_batch_size": int(f1_probe_batch_size),
+                "probe_batch_count": int(f1_probe_batch_count),
                 "trials_per_episode": int(train_cfg.num_trials_per_step),
                 "baseline_trial_count": int(
                     getattr(train_cfg, "baseline_groups", 5)
@@ -3949,6 +3962,8 @@ def _run_layerwise_training_branch(
             "F4": {
                 "split": "validation_full",
                 "example_count": int(authoritative_validation_example_count),
+                "probe_batch_size": int(f4_probe_batch_size),
+                "probe_batch_count": int(f4_probe_batch_count),
                 "promotion_trial_count": int(
                     getattr(train_cfg, "promotion_validation_trials", 25)
                 ),
@@ -4010,6 +4025,8 @@ def _run_layerwise_training_branch(
                 "F1": {
                     "split": "validation_full_stratified_probe",
                     "example_count": int(online_probe_example_count),
+                    "probe_batch_size": int(f1_probe_batch_size),
+                    "probe_batch_count": int(f1_probe_batch_count),
                     "fidelity": "F1",
                     "baseline_reference": dict(
                         baseline_preflight_metrics.get("robust_reference") or {}
@@ -4018,6 +4035,8 @@ def _run_layerwise_training_branch(
                 "F4": {
                     "split": "validation_full",
                     "example_count": int(authoritative_validation_example_count),
+                    "probe_batch_size": int(f4_probe_batch_size),
+                    "probe_batch_count": int(f4_probe_batch_count),
                     "fidelity": "F4",
                     "baseline_reference": dict(authoritative_robust_summary or {}),
                 },
@@ -4044,6 +4063,16 @@ def _run_layerwise_training_branch(
         "entropy_regularization": layerwise_entropy_regularization,
         "termination": layerwise_termination,
         "evidence_tiers": algorithm_contract["evidence_tiers"],
+        "probe_batch_evidence_tiers": {
+            "F1": {
+                "probe_batch_size": int(f1_probe_batch_size),
+                "probe_batch_count": int(f1_probe_batch_count),
+            },
+            "F4": {
+                "probe_batch_size": int(f4_probe_batch_size),
+                "probe_batch_count": int(f4_probe_batch_count),
+            },
+        },
         "baseline_references": {
             "F1": dict(baseline_preflight_metrics.get("robust_reference") or {}),
             "F4": dict(authoritative_robust_summary or {}),
@@ -4327,6 +4356,16 @@ def _run_layerwise_training_branch(
         "metric2_std": float(robust_reference.metric2_std_limit),
     }
     diag_recorder.set_meta({
+        "probe_batch_evidence_tiers": {
+            "F1": {
+                "probe_batch_size": int(f1_probe_batch_size),
+                "probe_batch_count": int(f1_probe_batch_count),
+            },
+            "F4": {
+                "probe_batch_size": int(f4_probe_batch_size),
+                "probe_batch_count": int(f4_probe_batch_count),
+            },
+        },
         "profile": str(train_cfg.profile),
         "fixed_label": "gelu_all4_softmax_all6",
         "fixed_source": "stage2_all4",
