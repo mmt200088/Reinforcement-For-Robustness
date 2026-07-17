@@ -32,6 +32,7 @@ from __future__ import annotations
 import copy
 import multiprocessing as mp
 import os
+import signal
 import threading
 import time
 import traceback
@@ -519,10 +520,26 @@ class _ProcessProbeWorker:
         self.process.join(timeout=5.0)
         if self.process.is_alive():
             kill = getattr(self.process, "kill", None)
-            if kill is None:
-                self.process.terminate()
-            else:
+            if callable(kill):
                 kill()
+            else:
+                pid = getattr(self.process, "pid", None)
+                if (
+                        isinstance(pid, bool)
+                        or not isinstance(pid, int)
+                        or pid <= 0
+                ):
+                    raise RuntimeError(
+                        f"probe child {self.device} has no callable kill() "
+                        f"and no valid pid for SIGKILL: {pid!r}"
+                    )
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError as exc:
+                    raise RuntimeError(
+                        f"failed to SIGKILL probe child {self.device} "
+                        f"(pid={pid}): {exc}"
+                    ) from exc
             self.process.join(timeout=5.0)
         if self.process.is_alive():
             raise RuntimeError(
@@ -540,9 +557,11 @@ class _ProcessProbeWorker:
                 self._terminate_stubborn_process()
             else:
                 if self._pending_operation is None and self.process.is_alive():
-                    self.connection.send({"operation": "close", "payload": {}})
-                    self._pending_operation = "close"
                     try:
+                        self.connection.send({
+                            "operation": "close", "payload": {},
+                        })
+                        self._pending_operation = "close"
                         self.receive("close", timeout=5.0)
                     except Exception:
                         pass
@@ -1417,8 +1436,10 @@ def build_probe_runner(
                     f"[probe-runner] worker {worker_index}: {worker.device} "
                     f"(persistent process pid={worker.process.pid})"
                 )
-        except Exception as exc:
+        except BaseException as exc:  # noqa: BLE001
             ProbeRunner._close_worker_handles(tuple(process_workers))
+            if not isinstance(exc, Exception):
+                raise
             raise RuntimeError(
                 f"failed to start persistent probe processes: {exc!r}"
             ) from exc
