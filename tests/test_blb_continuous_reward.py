@@ -19,6 +19,7 @@ Loaded via spec_from_file_location (reward.py / fusion_cost.py are numpy-only).
 import importlib.util
 import os
 import sys
+import types
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -183,6 +184,90 @@ class DeterminismTest(unittest.TestCase):
         a = _reward(0.865, std=0.003, fusion=5, cost=1.7).reward
         b = _reward(0.865, std=0.003, fusion=5, cost=1.7).reward
         self.assertEqual(a, b)
+
+
+class RobustConstrainedResourceIsolationTest(unittest.TestCase):
+    @staticmethod
+    def _assessment(*, precision, stability):
+        return types.SimpleNamespace(
+            loss_precision_probability=precision,
+            metric1_precision_probability=precision,
+            metric2_precision_probability=precision,
+            loss_stability_probability=stability,
+            metric1_stability_probability=stability,
+            metric2_stability_probability=stability,
+        )
+
+    def test_invalid_p1_and_p2_ignore_resource_score(self):
+        cases = (
+            (None, True),
+            (self._assessment(precision=0.49, stability=0.99), False),
+            (self._assessment(precision=0.99, stability=0.49), False),
+        )
+        for assessment, invalid in cases:
+            with self.subTest(assessment=assessment, invalid=invalid):
+                low = R.robust_constrained_reward(assessment, invalid, 0.0)
+                high = R.robust_constrained_reward(assessment, invalid, 1.0)
+                self.assertEqual(low, high)
+
+    def test_p3_adds_packed_resource_score_exactly_once(self):
+        assessment = self._assessment(precision=0.9, stability=0.8)
+        low = R.robust_constrained_reward(assessment, False, 0.0)
+        high = R.robust_constrained_reward(assessment, False, 0.75)
+        self.assertEqual(low[1], 3)
+        self.assertEqual(high[1], 3)
+        self.assertAlmostEqual(high[0] - low[0], 0.75)
+
+    def test_reward_breakdown_preserves_dual_resource_diagnostics(self):
+        objective = {
+            "compute_saving": 0.25,
+            "communication_saving": 0.5,
+            "robust_floor": 0.25,
+            "secondary_progress": 0.375,
+            "ppo_resource_score": 0.250012498750125,
+            "compute_shapley_credit": 0.1250062493750625,
+            "communication_shapley_credit": 0.1250062493750625,
+            "layer_resource_rewards": [0.250012498750125],
+            "slot_resource_rewards": [[0.1250062493750625, 0.1250062493750625]],
+        }
+        breakdown = R.compute_reward(
+            R.EpisodeMetrics(
+                loss_mean=0.37,
+                loss_std=0.002,
+                metric1_mean=BASELINE_M,
+                metric2_mean=BASELINE_M,
+                metric1_std=0.002,
+                metric2_std=0.002,
+            ),
+            types.SimpleNamespace(any_invalid=False),
+            action_avg_k=12.0,
+            baseline=_baseline(),
+            weights=_weights(reward_design="robust_constrained"),
+            acc_threshold=THR,
+            acc_threshold_m2=THR,
+            external_cost_score=objective["ppo_resource_score"],
+            external_cost_rank=objective["ppo_resource_score"],
+            external_resource_objective=objective,
+            constraint_assessment=self._assessment(precision=0.9, stability=0.8),
+        )
+        for field_name in (
+            "compute_saving",
+            "communication_saving",
+            "robust_floor",
+            "secondary_progress",
+            "ppo_resource_score",
+            "compute_shapley_credit",
+            "communication_shapley_credit",
+        ):
+            self.assertEqual(getattr(breakdown, field_name), objective[field_name])
+        self.assertEqual(
+            breakdown.layer_resource_rewards,
+            objective["layer_resource_rewards"],
+        )
+        self.assertEqual(
+            breakdown.slot_resource_rewards,
+            objective["slot_resource_rewards"],
+        )
 
 
 class LossMeanGateTest(unittest.TestCase):

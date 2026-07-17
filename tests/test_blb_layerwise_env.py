@@ -190,32 +190,58 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(obs.shape, (self.env.state_dim,))
         self.assertEqual(len(self.base.step_calls), 1)
         terminal_vector, kwargs = self.base.step_calls[0]
-        self.assertEqual(kwargs["external_cost_score"], info["variable_cost"]["normalized"])
-        self.assertEqual(kwargs["external_cost_rank"], info["variable_cost"]["normalized"])
-        self.assertEqual(info["external_cost_score"], info["variable_cost"]["normalized"])
-        self.assertEqual(info["external_cost_rank"], info["variable_cost"]["normalized"])
+        objective = info["resource_objective"]
+        self.assertEqual(kwargs["external_cost_score"], objective["ppo_resource_score"])
+        self.assertEqual(kwargs["external_cost_rank"], objective["ppo_resource_score"])
+        self.assertEqual(kwargs["external_resource_objective"], objective)
+        self.assertEqual(info["external_cost_score"], objective["ppo_resource_score"])
+        self.assertEqual(info["external_cost_rank"], objective["ppo_resource_score"])
         self.assertGreaterEqual(info["external_cost_score"], 0.0)
         self.assertLessEqual(info["external_cost_score"], 1.0)
-        self.assertEqual(len(info["variable_cost"]["layer_cost_rewards"]), 12)
-        self.assertEqual(len(info["variable_cost"]["slot_cost_rewards"]), 12)
+        self.assertEqual(
+            set(objective),
+            {
+                "compute_saving",
+                "communication_saving",
+                "robust_floor",
+                "secondary_progress",
+                "ppo_resource_score",
+                "compute_shapley_credit",
+                "communication_shapley_credit",
+                "fusion_count",
+                "removed_k_bits",
+                "layer_resource_rewards",
+                "slot_resource_rewards",
+            },
+        )
+        self.assertEqual(info["variable_cost"], objective)
+        self.assertEqual(len(objective["layer_resource_rewards"]), 12)
+        self.assertEqual(len(objective["slot_resource_rewards"]), 12)
         self.assertTrue(all(
-            len(row) == 6 for row in info["variable_cost"]["slot_cost_rewards"]
+            len(row) == 6 for row in objective["slot_resource_rewards"]
         ))
         for layer_cost, slot_costs in zip(
-                info["variable_cost"]["layer_cost_rewards"],
-                info["variable_cost"]["slot_cost_rewards"],
+                objective["layer_resource_rewards"],
+                objective["slot_resource_rewards"],
         ):
             self.assertAlmostEqual(sum(slot_costs), layer_cost)
         self.assertAlmostEqual(
-            sum(info["variable_cost"]["layer_cost_rewards"]),
-            info["variable_cost"]["normalized"],
+            sum(objective["layer_resource_rewards"]),
+            objective["ppo_resource_score"],
         )
         self.assertAlmostEqual(
-            info["variable_cost"]["fusion_units"]
-            + info["variable_cost"]["truncation_units"],
-            info["variable_cost"]["total_units"],
+            objective["compute_shapley_credit"]
+            + objective["communication_shapley_credit"],
+            objective["ppo_resource_score"],
         )
-        self.assertEqual(info["variable_cost"]["max_units"], 159.5)
+        self.assertAlmostEqual(
+            objective["robust_floor"],
+            min(objective["compute_saving"], objective["communication_saving"]),
+        )
+        self.assertAlmostEqual(
+            objective["secondary_progress"],
+            0.5 * (objective["compute_saving"] + objective["communication_saving"]),
+        )
         expected_boosted_rows = [
             {
                 "block_idx": int(block_idx),

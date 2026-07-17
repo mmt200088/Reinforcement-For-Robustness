@@ -332,11 +332,11 @@ class BLBStage2LayerwiseEnv:
             return self._build_obs(), 0.0, False, info
 
         variable_cost = compute_variable_cost(self._decoded_actions)
-        # Robust layerwise reward contract consumed by Task 6:
-        # P3 = 1 + C + 0.0005 * barriers, with C in [0, 1].  Keep this raw
-        # normalized C; do not multiply it by the legacy p3_cost_budget.
-        external_cost_score = float(variable_cost.normalized)
-        external_cost_rank = float(variable_cost.normalized)
+        resource_objective = self._resource_objective_payload(variable_cost)
+        # The base reward API still transports one bounded scalar.  It is the
+        # packed max-min surrogate only; exact candidate selection uses F/C/B/S.
+        external_cost_score = float(variable_cost.ppo_resource_score)
+        external_cost_rank = float(variable_cost.ppo_resource_score)
         if not 0.0 <= external_cost_score <= 1.0:
             raise RuntimeError(
                 f"layerwise normalized variable cost outside [0, 1]: {external_cost_score}"
@@ -345,13 +345,14 @@ class BLBStage2LayerwiseEnv:
             self._pending_full_vec.copy(),
             external_cost_score=external_cost_score,
             external_cost_rank=external_cost_rank,
+            external_resource_objective=copy.deepcopy(resource_objective),
             boosted_overrides=(copy.deepcopy(self._boosted_overrides) or None),
         )
         del terminal_state
         self._runtime_terminal_info = terminal_info
         self._done = True
         info.update(self._terminal_handoff(
-            variable_cost,
+            resource_objective,
             terminal_reward,
             terminal_info,
             external_cost_score=external_cost_score,
@@ -428,9 +429,32 @@ class BLBStage2LayerwiseEnv:
             "optimizer_cfg_overrides": copy.deepcopy(runtime.optimizer_cfg_overrides),
         }
 
+    @staticmethod
+    def _resource_objective_payload(variable_cost: Any) -> Dict[str, Any]:
+        return {
+            "compute_saving": float(variable_cost.compute_saving),
+            "communication_saving": float(variable_cost.communication_saving),
+            "robust_floor": float(variable_cost.robust_floor),
+            "secondary_progress": float(variable_cost.secondary_progress),
+            "ppo_resource_score": float(variable_cost.ppo_resource_score),
+            "compute_shapley_credit": float(variable_cost.compute_shapley_credit),
+            "communication_shapley_credit": float(
+                variable_cost.communication_shapley_credit
+            ),
+            "fusion_count": int(variable_cost.fusion_count),
+            "removed_k_bits": int(variable_cost.removed_k_bits),
+            "layer_resource_rewards": [
+                float(value) for value in variable_cost.layer_resource_rewards
+            ],
+            "slot_resource_rewards": [
+                [float(value) for value in row]
+                for row in variable_cost.slot_resource_rewards
+            ],
+        }
+
     def _terminal_handoff(
             self,
-            variable_cost: Any,
+            resource_objective: Mapping[str, Any],
             terminal_reward: float,
             terminal_info: Any,
             *,
@@ -473,22 +497,10 @@ class BLBStage2LayerwiseEnv:
             "terminal_reward": float(terminal_reward),
             "external_cost_score": float(external_cost_score),
             "external_cost_rank": float(external_cost_rank),
-            "variable_cost": {
-                "fusion_saving": float(variable_cost.fusion_saving),
-                "truncation_saving": float(variable_cost.truncation_saving),
-                "normalized": float(variable_cost.normalized),
-                "fusion_units": float(variable_cost.fusion_units),
-                "truncation_units": float(variable_cost.truncation_units),
-                "total_units": float(variable_cost.total_units),
-                "max_units": float(variable_cost.max_units),
-                "layer_cost_rewards": [
-                    float(value) for value in variable_cost.layer_cost_rewards
-                ],
-                "slot_cost_rewards": [
-                    [float(value) for value in row]
-                    for row in variable_cost.slot_cost_rewards
-                ],
-            },
+            "resource_objective": copy.deepcopy(dict(resource_objective)),
+            # Transitional payload key for readers that already consume this
+            # location.  Its contents use only the new dual-resource schema.
+            "variable_cost": copy.deepcopy(dict(resource_objective)),
             "policy_actions": self.action_history,
             "decoded_actions": decoded_actions,
             "layer_summaries": self.layer_summaries,

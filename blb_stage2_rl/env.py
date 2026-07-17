@@ -544,6 +544,7 @@ class BLBStage2Env:
             *,
             external_cost_score: Optional[float] = None,
             external_cost_rank: Optional[float] = None,
+            external_resource_objective: Optional[Mapping[str, Any]] = None,
             boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
             ) -> Dict[str, Any]:
         """Prepare optimizer-adjusted cfgs for a terminal reward probe.
@@ -635,6 +636,10 @@ class BLBStage2Env:
             prepared["external_cost_score"] = float(external_cost_score)
         if external_cost_rank is not None:
             prepared["external_cost_rank"] = float(external_cost_rank)
+        if external_resource_objective is not None:
+            prepared["external_resource_objective"] = copy.deepcopy(
+                dict(external_resource_objective)
+            )
         return prepared
 
     def _compute_terminal_reward(
@@ -647,6 +652,7 @@ class BLBStage2Env:
             any_invalid: bool,
             external_cost_score: Optional[float],
             external_cost_rank: Optional[float],
+            external_resource_objective: Optional[Mapping[str, Any]],
             info: Dict[str, Any],
             ) -> RewardBreakdown:
         assessment = None
@@ -704,6 +710,7 @@ class BLBStage2Env:
             action_hash=action_vec_hash,
             external_cost_score=external_cost_score,
             external_cost_rank=external_cost_rank,
+            external_resource_objective=external_resource_objective,
             loss_threshold=self.loss_threshold,
             constraint_assessment=assessment,
         )
@@ -746,6 +753,7 @@ class BLBStage2Env:
             any_invalid=any_invalid,
             external_cost_score=prepared.get("external_cost_score"),
             external_cost_rank=prepared.get("external_cost_rank"),
+            external_resource_objective=prepared.get("external_resource_objective"),
             info=info,
         )
         info["reward_breakdown"] = breakdown
@@ -910,6 +918,7 @@ class BLBStage2Env:
             *,
             external_cost_score: Optional[float] = None,
             external_cost_rank: Optional[float] = None,
+            external_resource_objective: Optional[Mapping[str, Any]] = None,
             boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
             ) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         """单步 episode：装噪声 → forward → 计算 reward → 还原噪声。
@@ -1052,6 +1061,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 external_cost_score=external_cost_score,
                 external_cost_rank=external_cost_rank,
+                external_resource_objective=external_resource_objective,
                 info=info,
             )
             info["reward_breakdown"] = breakdown
@@ -1109,6 +1119,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 external_cost_score=external_cost_score,
                 external_cost_rank=external_cost_rank,
+                external_resource_objective=external_resource_objective,
                 info=info,
             )
             info["reward_breakdown"] = breakdown
@@ -1151,6 +1162,7 @@ class BLBStage2Env:
                 any_invalid=True,
                 external_cost_score=external_cost_score,
                 external_cost_rank=external_cost_rank,
+                external_resource_objective=external_resource_objective,
                 info=info,
             )
             info["reward_breakdown"] = breakdown
@@ -1189,6 +1201,7 @@ class BLBStage2Env:
             any_invalid=any_invalid,
             external_cost_score=external_cost_score,
             external_cost_rank=external_cost_rank,
+            external_resource_objective=external_resource_objective,
             info=info,
         )
 

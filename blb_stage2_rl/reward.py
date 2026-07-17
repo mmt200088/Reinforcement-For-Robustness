@@ -67,7 +67,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 import numpy as np
 
@@ -553,6 +553,15 @@ class RewardBreakdown:
     precision_signal: float = 0.0
     stability_signal: float = 0.0
     variable_cost: float = 0.0
+    compute_saving: float = 0.0
+    communication_saving: float = 0.0
+    robust_floor: float = 0.0
+    secondary_progress: float = 0.0
+    ppo_resource_score: float = 0.0
+    compute_shapley_credit: float = 0.0
+    communication_shapley_credit: float = 0.0
+    layer_resource_rewards: Any = field(default_factory=list)
+    slot_resource_rewards: Any = field(default_factory=list)
     constraint_policy: str = ""
 
 
@@ -588,6 +597,56 @@ def _finite_unit_interval(name: str, value: Any) -> float:
     if not math.isfinite(normalized) or not 0.0 <= normalized <= 1.0:
         raise ValueError(f"{name} must be finite and in [0, 1]")
     return normalized
+
+
+def _resource_objective_diagnostics(
+        objective: Optional[Mapping[str, Any]],
+        ppo_resource_score: float,
+        ) -> Mapping[str, Any]:
+    """Validate and own the optional layerwise dual-resource diagnostics."""
+    score = _finite_unit_interval("ppo_resource_score", ppo_resource_score)
+    if objective is None:
+        return {
+            "compute_saving": 0.0,
+            "communication_saving": 0.0,
+            "robust_floor": 0.0,
+            "secondary_progress": 0.0,
+            "ppo_resource_score": score,
+            "compute_shapley_credit": 0.0,
+            "communication_shapley_credit": 0.0,
+            "layer_resource_rewards": [],
+            "slot_resource_rewards": [],
+        }
+
+    scalar_fields = (
+        "compute_saving",
+        "communication_saving",
+        "robust_floor",
+        "secondary_progress",
+        "ppo_resource_score",
+        "compute_shapley_credit",
+        "communication_shapley_credit",
+    )
+    diagnostics = {
+        field_name: _finite_unit_interval(field_name, objective[field_name])
+        for field_name in scalar_fields
+    }
+    if not math.isclose(
+            diagnostics["ppo_resource_score"], score,
+            rel_tol=0.0, abs_tol=1.0e-12,
+    ):
+        raise ValueError(
+            "external_resource_objective ppo_resource_score does not match "
+            "external_cost_score"
+        )
+    diagnostics["layer_resource_rewards"] = [
+        float(value) for value in objective.get("layer_resource_rewards", ())
+    ]
+    diagnostics["slot_resource_rewards"] = [
+        [float(value) for value in row]
+        for row in objective.get("slot_resource_rewards", ())
+    ]
+    return diagnostics
 
 
 def robust_constrained_reward(
@@ -1189,6 +1248,7 @@ def compute_reward(
         action_hash: Optional[str] = None,
         external_cost_score: Optional[float] = None,
         external_cost_rank: Optional[float] = None,
+        external_resource_objective: Optional[Mapping[str, Any]] = None,
         loss_threshold: Optional[float] = None,
         constraint_assessment: Any = None,
         ) -> RewardBreakdown:
@@ -1216,6 +1276,8 @@ def compute_reward(
                            标量），非 None 时直接替掉聚合 fusion/K/bits cost_score；
                            仅在 P3（metric_ok 且 stab_ok）生效，total_bits 不参与。
         external_cost_rank: 对应的无界排序值（候选/前沿排序用，永不进 PPO 标量）。
+        external_resource_objective: layerwise 双资源目标的显式诊断字段；其
+                           ``ppo_resource_score`` 必须与 external_cost_score 一致。
 
     Returns:
         ``RewardBreakdown``
@@ -1238,6 +1300,9 @@ def compute_reward(
             variable_cost=raw_variable_cost,
         )
         variable_cost = float(raw_variable_cost)
+        resource_diagnostics = _resource_objective_diagnostics(
+            external_resource_objective, variable_cost,
+        )
         probabilities = (
             {field_name: 0.0 for field_name in _ROBUST_PROBABILITY_FIELDS}
             if constraint_assessment is None
@@ -1268,6 +1333,7 @@ def compute_reward(
             q_stability=float(q_stability),
             precision_signal=float(precision_signal),
             stability_signal=float(stability_signal),
+            **resource_diagnostics,
             **probabilities,
         )
 
