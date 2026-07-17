@@ -707,7 +707,10 @@ class CandidateStore:
         row_offset = self.path.stat().st_size if self.path.exists() else 0
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(_CANDIDATE_JSONL_ENCODER.encode(payload) + "\n")
-        self._extend_active_tail(row_offset, self.path.stat().st_size)
+        if self.path.exists():
+            self._extend_active_tail(row_offset, self.path.stat().st_size)
+        else:
+            self._invalidate_recovery_layout()
 
         record_type = str(payload.get("record_type", ""))
         if (
@@ -830,8 +833,6 @@ class CandidateStore:
                 and self._trial_seeds_by_candidate_key is not None
                 and self._promotion_state_by_candidate_key is not None
                 and self._identity_context_by_hash is not None
-                and self._recovery_layout_size
-                == (self.path.stat().st_size if self.path.exists() else 0)
         ):
             return
         self._load_recovery_layout()
