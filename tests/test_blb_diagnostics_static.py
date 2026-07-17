@@ -21,6 +21,16 @@ class BLBDiagnosticsStaticTest(unittest.TestCase):
             text,
         )
 
+    def test_layerwise_high_water_restore_replaces_unbounded_identity_sets(self):
+        text = source_text("blb_stage2_rl/sequential_runner.py")
+        self.assertIn("history_window=600", text)
+        self.assertIn("ppo_history_window=10", text)
+        self.assertIn("retain_history=False", text)
+        self.assertIn("episode_high_water", text)
+        self.assertIn("ppo_update_high_water", text)
+        self.assertNotIn("existing_diagnostic_episodes", text)
+        self.assertNotIn("existing_diagnostic_updates", text)
+
 
 if __name__ == "__main__":
     unittest.main()

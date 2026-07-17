@@ -2445,6 +2445,73 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertIn("best_action", summary)
         self.assertIsNone(summary["best_action"])
 
+    def test_train_bounded_history_can_be_disabled_without_changing_callbacks(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        completed = []
+        ppo_updates = []
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=37, update_every=8),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+                on_episode_end=lambda record: completed.append(
+                    (record.episode_index, record.reward)
+                ),
+                on_ppo_update_end=lambda metrics, count, _record: ppo_updates.append(
+                    (count, metrics["completed_episodes"])
+                ),
+                retain_history=False,
+            )
+
+        self.assertEqual(summary["completed_episodes"], 37)
+        self.assertEqual(summary["episode_records"], [])
+        self.assertEqual(summary["episode_rewards"], [])
+        self.assertEqual(summary["ppo_metrics"], [])
+        self.assertEqual(completed, [(index, -5.0) for index in range(37)])
+        self.assertEqual(
+            ppo_updates,
+            [(8, 8), (16, 16), (24, 24), (32, 32), (37, 37)],
+        )
+
+    def test_train_bounded_history_defaults_to_complete_direct_call_lists(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=3, update_every=2),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["completed_episodes"], 3)
+        self.assertEqual(len(summary["episode_records"]), 3)
+        self.assertEqual(summary["episode_rewards"], [-5.0, -5.0, -5.0])
+        self.assertEqual(len(summary["ppo_metrics"]), 2)
+
     def test_unbounded_training_stops_only_after_natural_convergence(self):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
