@@ -497,6 +497,141 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertIn("promotion_base_env=promotion_base_env", source)
         self.assertIn("authoritative_robust_reference", source)
 
+    def test_layerwise_stage2_builds_one_shared_probe_owner(self):
+        source_path = (
+            Path(__file__).resolve().parents[1]
+            / "blb_stage2_rl"
+            / "sequential_runner.py"
+        )
+        source = source_path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        build_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and (
+                (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "build_probe_runner"
+                )
+                or (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "build_probe_runner"
+                )
+            )
+        ]
+        view_keys = {
+            node.args[0].value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "view"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        }
+        attribute_names = {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+        }
+
+        self.assertEqual(len(build_calls), 1)
+        self.assertIn("_shared_probe_runner_owner", attribute_names)
+        self.assertTrue({"F1", "F4"}.issubset(view_keys))
+
+    def test_authoritative_validation_reuses_shared_five_device_probe_pool(self):
+        from blb_stage2_rl.sequential_runner import (
+            _build_authoritative_validation_env,
+        )
+
+        class _ProbeView:
+            def __init__(self, owner, batch_set_key):
+                self.owner = owner
+                self.batch_set_key = str(batch_set_key)
+
+            @property
+            def pool_id(self):
+                return self.owner.pool_id
+
+        class _SharedProbeOwner:
+            def __init__(self):
+                self.pool_id = "five-device-pool"
+                self.devices = [f"cuda:{device_id}" for device_id in range(5)]
+                self._process_workers = [object() for _ in range(4)]
+                self.registrations = []
+
+            @property
+            def num_workers(self):
+                return 1 + len(self._process_workers)
+
+            def register_batch_set(self, key, batches):
+                self.registrations.append((str(key), tuple(batches)))
+
+            def view(self, batch_set_key):
+                return _ProbeView(self, batch_set_key)
+
+        validation_batches = ["full-batch-0", "full-batch-1"]
+        validation_examples = list(range(5))
+        owner = _SharedProbeOwner()
+        base_env = types.SimpleNamespace(
+            env_cfg=types.SimpleNamespace(
+                probe_batch_count=1,
+                persistent_probe_install=True,
+            ),
+            probe_batches=["online-batch"],
+            probe_runner=owner.view("F1"),
+            _shared_probe_runner_owner=owner,
+            baseline={"scope": "F1"},
+            reward_weights={"scope": "F1"},
+            bridge=object(),
+        )
+        evaluator = types.SimpleNamespace(
+            dataset_splits={"validation_full": validation_examples},
+            model=object(),
+            reversible_handler=object(),
+            layers_attribute="encoder.layer",
+            is_regression=False,
+        )
+        runner = types.SimpleNamespace(
+            _build_validation_full_batches=lambda _ev: validation_batches,
+        )
+
+        with mock.patch(
+            "blb_stage2_rl.probe_runner.build_probe_runner",
+            side_effect=AssertionError("F4 must not allocate a second pool"),
+        ) as duplicate_builder:
+            promotion_env, example_count = _build_authoritative_validation_env(
+                runner=runner,
+                ev=evaluator,
+                base_env=base_env,
+                train_cfg=types.SimpleNamespace(profile="mrpc"),
+                reward_devices=[0, 1, 2, 3, 4],
+                log=lambda _message: None,
+            )
+
+        duplicate_builder.assert_not_called()
+        self.assertEqual(example_count, len(validation_examples))
+        self.assertEqual(owner.num_workers, 5)
+        self.assertEqual(len(owner._process_workers), 4)
+        self.assertEqual(
+            owner.devices,
+            [f"cuda:{device_id}" for device_id in range(5)],
+        )
+        self.assertEqual(
+            owner.registrations,
+            [("F4", tuple(validation_batches))],
+        )
+        self.assertEqual(base_env.probe_runner.batch_set_key, "F1")
+        self.assertEqual(promotion_env.probe_runner.batch_set_key, "F4")
+        self.assertEqual(
+            base_env.probe_runner.pool_id,
+            promotion_env.probe_runner.pool_id,
+        )
+        self.assertEqual(promotion_env.probe_batches, validation_batches)
+        self.assertIsNone(promotion_env._installed_action_hash)
+        self.assertFalse(promotion_env.env_cfg.persistent_probe_install)
+
     def test_layerwise_online_probe_is_fixed_to_256_examples(self):
         runner_path = (
             Path(__file__).resolve().parents[1]
@@ -3787,6 +3922,11 @@ class _PromotionBase:
         self.evaluate_calls = []
         self.fresh_probability = fresh_probability
         self.probe_noise_seed = None
+        self.clear_calls = 0
+        self._installed_action_hash = "installed-action"
+
+    def clear_installed_blb(self):
+        self.clear_calls += 1
 
     def prepare_action_for_terminal_probe(self, full_vec, **kwargs):
         self.prepare_calls.append((list(full_vec), dict(kwargs)))
@@ -4446,6 +4586,9 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(online_base.evaluate_calls, [])
         self.assertEqual(full_base.evaluate_calls[0][1]["num_trials_per_action"], 25)
         self.assertTrue(full_base.evaluate_calls[0][1]["validation_required"])
+        self.assertEqual(online_base.clear_calls, 2)
+        self.assertEqual(full_base.clear_calls, 1)
+        self.assertIsNone(online_base._installed_action_hash)
 
     def test_promotion_assesses_existing_evidence_above_target_without_new_probe(self):
         from blb_stage2_rl.layerwise_runner import (
