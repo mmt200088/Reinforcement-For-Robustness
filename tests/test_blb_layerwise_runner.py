@@ -713,34 +713,34 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exceeds"):
             resolve_layerwise_episode_budget(60_000, 60_001)
 
-    def test_p3_cost_is_redistributed_without_changing_episode_return(self):
+    def test_p3_resource_score_is_redistributed_without_changing_episode_return(self):
         from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
 
-        layer_costs = tuple((index + 1) / 780.0 for index in range(12))
-        variable_cost = sum(layer_costs)
+        layer_resources = tuple((index + 1) / 780.0 for index in range(12))
+        resource_score = sum(layer_resources)
         rewards = redistribute_layerwise_rewards(
-            terminal_reward=1.75 + variable_cost,
+            terminal_reward=1.75 + resource_score,
             priority=3,
-            variable_cost=variable_cost,
-            layer_cost_rewards=layer_costs,
+            ppo_resource_score=resource_score,
+            layer_resource_rewards=layer_resources,
         )
 
         self.assertEqual(len(rewards), 12)
-        self.assertEqual(rewards[:-1], layer_costs[:-1])
-        self.assertAlmostEqual(rewards[-1], layer_costs[-1] + 1.75)
-        self.assertAlmostEqual(sum(rewards), 1.75 + variable_cost)
+        self.assertEqual(rewards[:-1], layer_resources[:-1])
+        self.assertAlmostEqual(rewards[-1], layer_resources[-1] + 1.75)
+        self.assertAlmostEqual(sum(rewards), 1.75 + resource_score)
 
     def test_p1_and_p2_never_receive_cost_credit(self):
         from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
 
-        layer_costs = (0.01,) * 12
+        layer_resources = (0.01,) * 12
         for priority, terminal_reward in ((1, -3.2), (2, -1.7)):
             with self.subTest(priority=priority):
                 rewards = redistribute_layerwise_rewards(
                     terminal_reward=terminal_reward,
                     priority=priority,
-                    variable_cost=sum(layer_costs),
-                    layer_cost_rewards=layer_costs,
+                    ppo_resource_score=sum(layer_resources),
+                    layer_resource_rewards=layer_resources,
                 )
                 self.assertEqual(rewards[:-1], (0.0,) * 11)
                 self.assertEqual(rewards[-1], terminal_reward)
@@ -752,8 +752,8 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             redistribute_layerwise_rewards(
                 terminal_reward=1.5,
                 priority=3,
-                variable_cost=0.5,
-                layer_cost_rewards=(0.01,) * 12,
+                ppo_resource_score=0.5,
+                layer_resource_rewards=(0.01,) * 12,
             )
 
 
@@ -1645,12 +1645,14 @@ class _FakeLayerwiseEnv:
         self._probabilities = float(probabilities)
         self._evidence_mode = str(evidence_mode)
         self._invalid = bool(invalid)
+        self.last_resource_objective = None
 
     def reset(self, *, seed=None):
         self.seed = seed
         self._step = 0
         self.actions = []
         self.runtime_terminal_info = None
+        self.last_resource_objective = None
         return np.zeros(4, dtype=np.float32)
 
     def current_spec(self):
@@ -1717,22 +1719,53 @@ class _FakeLayerwiseEnv:
         }
         if self._evidence_mode != "missing":
             self.runtime_terminal_info["statistical_trials"] = statistical_trials
-        layer_cost = 0.4 / 12.0
-        slot_cost_rewards = []
+        from blb_stage2_rl.layerwise_action import (
+            RESOURCE_SECONDARY_EPSILON,
+            dual_resource_score,
+            resource_shapley_credits,
+        )
+
+        communication_saving = 0.8
+        compute_saving = (
+            0.4 * (1.0 + RESOURCE_SECONDARY_EPSILON)
+            - 0.5 * RESOURCE_SECONDARY_EPSILON * communication_saving
+        ) / (1.0 + 0.5 * RESOURCE_SECONDARY_EPSILON)
+        robust_floor, secondary_progress, _packed = dual_resource_score(
+            compute_saving, communication_saving,
+        )
+        compute_credit, communication_credit = resource_shapley_credits(
+            compute_saving, communication_saving,
+        )
+        ppo_resource_score = 0.4
+        communication_credit += ppo_resource_score - (
+            compute_credit + communication_credit
+        )
+        slot_resource_rewards = []
         for layer_idx in range(12):
-            active_count = 5 if layer_idx == 0 else 6
-            row = [layer_cost / active_count] * 6
+            row = [compute_credit / 12.0] + [communication_credit / 59.0] * 5
             if layer_idx == 0:
                 row[1] = 0.0
-            slot_cost_rewards.append(row)
+            slot_resource_rewards.append(row)
+        layer_resource_rewards = [sum(row) for row in slot_resource_rewards]
+        resource_objective = {
+            "compute_saving": compute_saving,
+            "communication_saving": communication_saving,
+            "robust_floor": robust_floor,
+            "secondary_progress": secondary_progress,
+            "ppo_resource_score": ppo_resource_score,
+            "compute_shapley_credit": compute_credit,
+            "communication_shapley_credit": communication_credit,
+            "fusion_count": 0,
+            "removed_k_bits": 0,
+            "layer_resource_rewards": layer_resource_rewards,
+            "slot_resource_rewards": slot_resource_rewards,
+        }
+        self.last_resource_objective = resource_objective
         return np.zeros(4, dtype=np.float32), (-5.0 if self._invalid else 7.5), True, {
             "policy_actions": [row[:] for row in self.actions],
             "pending_full_vector": list(range(20)),
-            "variable_cost": {
-                "normalized": 0.4,
-                "layer_cost_rewards": [0.4 / 12.0] * 12,
-                "slot_cost_rewards": slot_cost_rewards,
-            },
+            "resource_objective": resource_objective,
+            "variable_cost": dict(resource_objective),
             "layer_summaries": [
                 {"all_valid": True} for _ in range(12)
             ],
@@ -1817,22 +1850,39 @@ class LayerwiseRolloutTests(unittest.TestCase):
             )
 
         self.assertEqual(len(buffer.transitions), 12)
-        expected_local = 0.4 / 12.0
-        for row in buffer.transitions[:-1]:
+        resource = env.last_resource_objective
+        self.assertIsNotNone(resource)
+        for row, expected_local in zip(
+                buffer.transitions[:-1], resource["layer_resource_rewards"][:-1],
+        ):
             self.assertAlmostEqual(row["reward"], expected_local)
         self.assertAlmostEqual(
             buffer.transitions[-1]["reward"],
-            7.5 - 0.4 + expected_local,
+            7.5
+            - resource["ppo_resource_score"]
+            + resource["layer_resource_rewards"][-1],
         )
         self.assertAlmostEqual(
             sum(row["reward"] for row in buffer.transitions), 7.5,
         )
         for row in buffer.transitions:
             self.assertIn("actor_cost_per_slot", row)
-            self.assertEqual(row["actor_shared_return"], 7.5 - 0.4)
-            self.assertAlmostEqual(
-                float(row["actor_cost_per_slot"].sum()), expected_local,
+            self.assertEqual(
+                row["actor_shared_return"],
+                7.5 - resource["ppo_resource_score"],
             )
+        for row, expected_slots in zip(
+                buffer.transitions, resource["slot_resource_rewards"],
+        ):
+            np.testing.assert_allclose(row["actor_cost_per_slot"], expected_slots)
+        self.assertAlmostEqual(
+            sum(float(row["actor_cost_per_slot"][0]) for row in buffer.transitions),
+            resource["compute_shapley_credit"],
+        )
+        self.assertAlmostEqual(
+            sum(float(row["actor_cost_per_slot"][1:].sum()) for row in buffer.transitions),
+            resource["communication_shapley_credit"],
+        )
         self.assertEqual([row["done"] for row in buffer.transitions], [False] * 11 + [True])
         self.assertEqual([float(row["log_prob"]) for row in buffer.transitions], [5.0] + [6.0] * 11)
         self.assertFalse(policy.masks[0][1])

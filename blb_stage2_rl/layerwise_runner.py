@@ -617,36 +617,41 @@ def redistribute_layerwise_rewards(
         *,
         terminal_reward: float,
         priority: int,
-        variable_cost: float,
-        layer_cost_rewards: Sequence[float],
+        ppo_resource_score: float,
+        layer_resource_rewards: Sequence[float],
         ) -> tuple[float, ...]:
-    """Move P3 cost credit to its twelve source layer transitions.
+    """Move P3 resource credit to its twelve source layer transitions.
 
     The returned rewards always sum to ``terminal_reward``. Precision/stability
-    failures retain terminal-only credit, so cost cannot leak into P1 or P2.
+    failures retain terminal-only credit, so resources cannot leak into P1/P2.
     """
     reward = _finite(terminal_reward, name="terminal_reward")
-    cost = _finite(variable_cost, name="variable_cost")
-    layer_costs = tuple(
-        _finite(value, name=f"layer_cost_rewards[{index}]")
-        for index, value in enumerate(layer_cost_rewards)
+    resource_score = _finite(ppo_resource_score, name="ppo_resource_score")
+    layer_resources = tuple(
+        _finite(value, name=f"layer_resource_rewards[{index}]")
+        for index, value in enumerate(layer_resource_rewards)
     )
-    if len(layer_costs) != 12:
+    if len(layer_resources) != 12:
         raise ValueError(
-            f"layer_cost_rewards must contain 12 values, got {len(layer_costs)}"
+            "layer_resource_rewards must contain 12 values, got "
+            f"{len(layer_resources)}"
         )
-    if cost < 0.0 or cost > 1.0:
-        raise ValueError(f"variable_cost must be in [0, 1], got {cost}")
-    if not math.isclose(sum(layer_costs), cost, rel_tol=0.0, abs_tol=1.0e-9):
+    if resource_score < 0.0 or resource_score > 1.0:
         raise ValueError(
-            "layer_cost_rewards sum must equal variable_cost: "
-            f"{sum(layer_costs)} != {cost}"
+            f"ppo_resource_score must be in [0, 1], got {resource_score}"
+        )
+    if not math.isclose(
+            sum(layer_resources), resource_score, rel_tol=0.0, abs_tol=1.0e-9,
+    ):
+        raise ValueError(
+            "layer_resource_rewards sum must equal ppo_resource_score: "
+            f"{sum(layer_resources)} != {resource_score}"
         )
     if int(priority) != 3:
         return (0.0,) * 11 + (reward,)
 
-    redistributed = list(layer_costs)
-    redistributed[-1] += reward - cost
+    redistributed = list(layer_resources)
+    redistributed[-1] += reward - resource_score
     if not math.isclose(sum(redistributed), reward, rel_tol=0.0, abs_tol=1.0e-9):
         raise RuntimeError("layerwise reward redistribution changed episode return")
     return tuple(float(value) for value in redistributed)
@@ -1824,38 +1829,78 @@ def train_layerwise(
         )
         if not full_vector:
             raise RuntimeError("layerwise terminal pending_full_vector is required")
-        variable_cost = _finite(
-            _field(terminal_info.get("variable_cost", {}), "normalized"),
-            name="variable_cost",
+        resource_objective = terminal_info.get("resource_objective", {})
+        ppo_resource_score = _finite(
+            _field(resource_objective, "ppo_resource_score"),
+            name="ppo_resource_score",
         )
-        layer_cost_rewards = tuple(
+        compute_shapley_credit = _finite(
+            _field(resource_objective, "compute_shapley_credit"),
+            name="compute_shapley_credit",
+        )
+        communication_shapley_credit = _finite(
+            _field(resource_objective, "communication_shapley_credit"),
+            name="communication_shapley_credit",
+        )
+        layer_resource_rewards = tuple(
             float(value) for value in _field(
-                terminal_info.get("variable_cost", {}),
-                "layer_cost_rewards",
+                resource_objective,
+                "layer_resource_rewards",
                 (),
             )
         )
-        slot_cost_rewards = tuple(
+        slot_resource_rewards = tuple(
             tuple(float(value) for value in row)
             for row in _field(
-                terminal_info.get("variable_cost", {}),
-                "slot_cost_rewards",
+                resource_objective,
+                "slot_resource_rewards",
                 (),
             )
         )
-        if len(slot_cost_rewards) != 12 or any(
-                len(row) != 6 for row in slot_cost_rewards
+        if len(layer_resource_rewards) != 12:
+            raise RuntimeError(
+                "layerwise terminal layer_resource_rewards must contain 12 values"
+            )
+        if len(slot_resource_rewards) != 12 or any(
+                len(row) != 6 for row in slot_resource_rewards
         ):
-            raise RuntimeError("layerwise terminal slot_cost_rewards must be a 12x6 matrix")
-        for layer_idx, (layer_cost, slot_costs) in enumerate(zip(
-                layer_cost_rewards, slot_cost_rewards,
+            raise RuntimeError(
+                "layerwise terminal slot_resource_rewards must be a 12x6 matrix"
+            )
+        for layer_idx, (layer_resource, slot_resources) in enumerate(zip(
+                layer_resource_rewards, slot_resource_rewards,
         )):
             if not math.isclose(
-                    sum(slot_costs), layer_cost, rel_tol=0.0, abs_tol=1.0e-9,
+                    sum(slot_resources), layer_resource,
+                    rel_tol=0.0, abs_tol=1.0e-9,
             ):
                 raise RuntimeError(
-                    f"layer {layer_idx} slot cost sum does not match layer cost"
+                    f"layer {layer_idx} slot resource sum does not match layer resource"
                 )
+        if not math.isclose(
+                compute_shapley_credit + communication_shapley_credit,
+                ppo_resource_score,
+                rel_tol=0.0,
+                abs_tol=1.0e-9,
+        ):
+            raise RuntimeError("resource-family credits do not sum to PPO resource score")
+        if not math.isclose(
+                sum(row[0] for row in slot_resource_rewards),
+                compute_shapley_credit,
+                rel_tol=0.0,
+                abs_tol=1.0e-9,
+        ):
+            raise RuntimeError("fusion slots do not sum to compute Shapley credit")
+        if not math.isclose(
+                sum(sum(row[1:]) for row in slot_resource_rewards),
+                communication_shapley_credit,
+                rel_tol=0.0,
+                abs_tol=1.0e-9,
+        ):
+            raise RuntimeError("K slots do not sum to communication Shapley credit")
+        # Transitional scalar alias for candidate persistence.  Exact ranking
+        # is replaced by the F/C/B/S tuple in the next contract step.
+        variable_cost = ppo_resource_score
         breakdown = runtime_info.get("reward_breakdown")
         priority = int(_field(breakdown, "priority", runtime_info.get("priority", 0)))
         invalid_terminal = bool(runtime_info.get("invalid", False))
@@ -1867,22 +1912,22 @@ def train_layerwise(
         redistributed_rewards = redistribute_layerwise_rewards(
             terminal_reward=episode_reward,
             priority=reward_priority,
-            variable_cost=variable_cost,
-            layer_cost_rewards=layer_cost_rewards,
+            ppo_resource_score=ppo_resource_score,
+            layer_resource_rewards=layer_resource_rewards,
         )
-        zero_slot_costs = ((0.0,) * 6,) * 12
-        actor_slot_costs = (
-            slot_cost_rewards if reward_priority == 3 else zero_slot_costs
+        zero_slot_resources = ((0.0,) * 6,) * 12
+        actor_slot_resources = (
+            slot_resource_rewards if reward_priority == 3 else zero_slot_resources
         )
         actor_shared_return = (
-            episode_reward - variable_cost
+            episode_reward - ppo_resource_score
             if reward_priority == 3 else episode_reward
         )
-        for transition_index, reward_delta, per_slot_cost in zip(
-                transition_indices, redistributed_rewards, actor_slot_costs,
+        for transition_index, reward_delta, per_slot_resource in zip(
+                transition_indices, redistributed_rewards, actor_slot_resources,
         ):
             rollout_buffer.add_reward_at(transition_index, reward_delta)
-            rollout_buffer.set_actor_cost_at(transition_index, per_slot_cost)
+            rollout_buffer.set_actor_cost_at(transition_index, per_slot_resource)
             rollout_buffer.set_actor_shared_return_at(
                 transition_index, actor_shared_return,
             )
