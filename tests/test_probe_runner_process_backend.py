@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 import unittest
+from dataclasses import dataclass
+from typing import Any
 from unittest import mock
 
 try:
@@ -22,6 +26,22 @@ ProbeRunner = (
 resolve_probe_backend = (
     getattr(_probe_runner, "resolve_probe_backend", None)
     if _probe_runner is not None else None
+)
+
+
+@dataclass
+class _IntegrationProbeBatch:
+    input_ids: Any
+    attention_mask: Any
+    labels: Any
+    token_type_ids: Any = None
+
+
+_GPU_INTEGRATION_READY = (
+    os.environ.get("BLB_STAGE2_RUN_GPU_INTEGRATION") == "1"
+    and _IMPORT_ERROR is None
+    and torch is not None
+    and torch.cuda.device_count() >= 5
 )
 
 
@@ -210,6 +230,92 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         self.assertTrue(remote.closed)
         self.assertEqual(events, [("remote-close", None)])
 
+    def test_pending_child_close_terminates_before_first_join(self):
+        events = []
+
+        class _FakeProcess:
+            def __init__(self):
+                self.alive = True
+
+            def is_alive(self):
+                return self.alive
+
+            def join(self, timeout=None):
+                events.append(("join", timeout))
+
+            def terminate(self):
+                events.append(("terminate", None))
+                self.alive = False
+
+        class _FakeConnection:
+            def __init__(self):
+                self.closed = False
+
+            def send(self, message):
+                events.append(("send", message.get("operation")))
+
+            def close(self):
+                self.closed = True
+                events.append(("connection-close", None))
+
+        process = _FakeProcess()
+        connection = _FakeConnection()
+        worker = _probe_runner._ProcessProbeWorker(
+            device=torch.device("cuda:1"),
+            connection=connection,
+            process=process,
+        )
+        worker._pending_operation = "register_batch_set"
+
+        worker.close()
+
+        event_names = [event[0] for event in events]
+        self.assertLess(
+            event_names.index("terminate"), event_names.index("join")
+        )
+        self.assertFalse(process.is_alive())
+        self.assertTrue(connection.closed)
+
+    def test_owner_closes_all_remote_workers_concurrently(self):
+        barrier = threading.Barrier(4)
+        state_lock = threading.Lock()
+        arrivals = []
+        completions = []
+
+        class _BarrierRemote:
+            def __init__(self, device_id):
+                self.device = torch.device(f"cuda:{device_id}")
+                self.close_calls = 0
+
+            def close(self):
+                with state_lock:
+                    self.close_calls += 1
+                    arrivals.append(str(self.device))
+                barrier.wait(timeout=5.0)
+                with state_lock:
+                    completions.append(str(self.device))
+
+        remotes = [_BarrierRemote(device_id) for device_id in range(1, 5)]
+        owner = ProbeRunner(
+            [self._LocalWorker([])], process_workers=remotes,
+        )
+
+        owner.close()
+
+        expected_devices = [f"cuda:{device_id}" for device_id in range(1, 5)]
+        self.assertEqual(sorted(arrivals), expected_devices)
+        self.assertEqual(sorted(completions), expected_devices)
+        self.assertEqual([remote.close_calls for remote in remotes], [1] * 4)
+
+    def test_view_rejects_an_unregistered_batch_set(self):
+        owner, _remote = self._runner([])
+
+        try:
+            with self.assertRaises((KeyError, ValueError)):
+                owner.view("F4")
+        finally:
+            owner.close()
+
     def test_views_route_f1_and_f4_through_one_five_device_pool(self):
         events = []
         owner, remotes = self._runner_with_process_count(
@@ -280,6 +386,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         owner, remotes = self._runner_with_process_count(
             events, process_count=4,
         )
+        owner.register_batch_set("F4", ["validation-full"])
 
         owner.view("F1").close()
         owner.view("F4").close()
@@ -381,6 +488,87 @@ class ProbeBackendSelectionTest(unittest.TestCase):
     def test_invalid_backend_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "BLB_STAGE2_PROBE_BACKEND"):
             resolve_probe_backend("asyncio")
+
+
+@unittest.skipUnless(
+    _GPU_INTEGRATION_READY,
+    "requires BLB_STAGE2_RUN_GPU_INTEGRATION=1 and at least five CUDA devices",
+)
+class ProbeRunnerFiveGpuIntegrationTest(unittest.TestCase):
+    @staticmethod
+    def _probe_batch(device, offset):
+        return _IntegrationProbeBatch(
+            input_ids=torch.tensor(
+                [[offset, offset + 1, offset + 2, offset + 3]],
+                dtype=torch.long,
+                device=device,
+            ),
+            attention_mask=torch.ones(
+                (1, 4), dtype=torch.long, device=device,
+            ),
+            labels=torch.tensor([1], dtype=torch.long, device=device),
+            token_type_ids=torch.zeros(
+                (1, 4), dtype=torch.long, device=device,
+            ),
+        )
+
+    def test_real_five_gpu_registration_failure_cleans_pending_children(self):
+        primary_device = torch.device("cuda:0")
+        primary_model = torch.nn.Linear(4, 2).to(primary_device).eval()
+        primary_handler = _probe_runner.ReversibleLayerHandler(primary_model)
+        primary_bridge = _probe_runner.BLBNoiseRLBridge(
+            primary_handler, layers_attribute="unused.layers",
+        )
+        f1_batch = self._probe_batch(primary_device, offset=1)
+
+        with mock.patch.dict(
+                os.environ, {"BLB_STAGE2_PROBE_BACKEND": "process"},
+                ):
+            owner = _probe_runner.build_probe_runner(
+                primary_model=primary_model,
+                primary_handler=primary_handler,
+                primary_bridge=primary_bridge,
+                primary_probe_batches=[f1_batch],
+                layers_attribute="unused.layers",
+                is_regression=False,
+                device_ids=[0, 1, 2, 3, 4],
+                metric_profile="integration",
+            )
+
+        try:
+            self.assertEqual(owner.backend, "process")
+            self.assertEqual(owner.num_workers, 5)
+            remotes = list(owner._process_workers)
+            self.assertEqual(len(remotes), 4)
+            child_pids = [remote.process.pid for remote in remotes]
+            self.assertTrue(all(pid is not None for pid in child_pids))
+            self.assertEqual(len(set(child_pids)), 4)
+            self.assertTrue(all(remote.process.is_alive() for remote in remotes))
+
+            f4_batch = self._probe_batch(primary_device, offset=11)
+            owner.register_batch_set("F4", [f4_batch])
+            self.assertEqual(f4_batch.input_ids.device, primary_device)
+
+            failed_remote = remotes[1]
+            self.assertEqual(str(failed_remote.device), "cuda:2")
+            failed_remote.process.terminate()
+            failed_remote.process.join(timeout=10.0)
+            self.assertFalse(failed_remote.process.is_alive())
+
+            f5_batch = self._probe_batch(primary_device, offset=21)
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, "register_batch_set"):
+                owner.register_batch_set("F5", [f5_batch])
+            cleanup_seconds = time.monotonic() - started
+
+            self.assertLess(cleanup_seconds, 4.0)
+            self.assertFalse(
+                any(remote.process.is_alive() for remote in remotes)
+            )
+            with self.assertRaisesRegex(RuntimeError, "poison"):
+                owner.view("F1")
+        finally:
+            owner.close()
 
 
 if __name__ == "__main__":
