@@ -961,6 +961,60 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
 
 class LayerwiseDispatchRulesTests(unittest.TestCase):
+    @staticmethod
+    def _counting_probe_owner():
+        owner = types.SimpleNamespace(
+            closed=False,
+            close_calls=0,
+            remote_close_count=0,
+        )
+
+        def close():
+            owner.close_calls += 1
+            if not owner.closed:
+                owner.closed = True
+                owner.remote_close_count += 1
+
+        owner.close = close
+        return owner
+
+    def _run_with_mocked_locked_stage2(self, locked_impl):
+        from blb_stage2_rl import layerwise_runner
+        from blb_stage2_rl import runner as runner_module
+        from blb_stage2_rl import sequential_runner
+
+        class _NoopRunLock:
+            def __init__(self, _path):
+                self.path = _path
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return False
+
+        with mock.patch.object(
+            layerwise_runner, "LayerwiseRunLock", _NoopRunLock,
+        ):
+            with mock.patch.object(
+                runner_module,
+                "resolve_blb_persistence_dir",
+                return_value="/tmp/shared-probe-lifecycle-test",
+            ):
+                with mock.patch.object(
+                    sequential_runner,
+                    "_run_sequential_via_runner_locked",
+                    side_effect=locked_impl,
+                ):
+                    return sequential_runner.run_sequential_via_runner(
+                        runner=types.SimpleNamespace(evaluator=object()),
+                        train_cfg=object(),
+                        fixed_gelu=None,
+                        fixed_softmax=None,
+                        fixed_label="test",
+                        fixed_source="test",
+                    )
+
     def test_layerwise_candidate_identity_binds_k_level_order(self):
         from blb_stage2_rl.candidate_store import candidate_key
         from blb_stage2_rl import layerwise_runner
@@ -1174,6 +1228,56 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "already active"):
                     with lock_type(progress_dir):
                         pass
+
+    def test_outer_owner_holder_closes_after_pre_branch_failure(self):
+        owner = self._counting_probe_owner()
+
+        def fail_after_owner_creation(**kwargs):
+            holder = kwargs.get("probe_runner_owner_holder")
+            self.assertIsNotNone(holder)
+            holder.bind(owner)
+            raise RuntimeError("F4 registration failure")
+
+        with self.assertRaisesRegex(RuntimeError, "F4 registration failure"):
+            self._run_with_mocked_locked_stage2(fail_after_owner_creation)
+
+        self.assertEqual(owner.close_calls, 1)
+        self.assertEqual(owner.remote_close_count, 1)
+
+    def test_outer_owner_holder_closes_after_non_layerwise_return(self):
+        owner = self._counting_probe_owner()
+
+        def return_after_owner_creation(**kwargs):
+            holder = kwargs.get("probe_runner_owner_holder")
+            self.assertIsNotNone(holder)
+            holder.bind(owner)
+            return {"status": "non-layerwise-complete"}
+
+        result = self._run_with_mocked_locked_stage2(
+            return_after_owner_creation,
+        )
+
+        self.assertEqual(result, {"status": "non-layerwise-complete"})
+        self.assertEqual(owner.close_calls, 1)
+        self.assertEqual(owner.remote_close_count, 1)
+
+    def test_outer_owner_holder_is_idempotent_after_layerwise_cleanup(self):
+        owner = self._counting_probe_owner()
+
+        def return_after_inner_cleanup(**kwargs):
+            holder = kwargs.get("probe_runner_owner_holder")
+            self.assertIsNotNone(holder)
+            holder.bind(owner)
+            owner.close()
+            return {"status": "layerwise-complete"}
+
+        result = self._run_with_mocked_locked_stage2(
+            return_after_inner_cleanup,
+        )
+
+        self.assertEqual(result, {"status": "layerwise-complete"})
+        self.assertGreaterEqual(owner.close_calls, 1)
+        self.assertEqual(owner.remote_close_count, 1)
 
     def test_checkpoint_fingerprint_tracker_hashes_only_new_suffixes(self):
         from blb_stage2_rl import layerwise_runner
