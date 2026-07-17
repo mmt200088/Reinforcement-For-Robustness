@@ -1174,6 +1174,263 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertEqual(len(episode_rows), 3)
         self.assertEqual(len(update_rows), 2)
 
+    def test_stage2_diagnostics_bounded_history_preserves_exact_cumulative_state(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_bounded_history_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        episode_count = 5_000
+        history_window = 600
+        ppo_update_count = 25
+        ppo_history_window = 10
+        top_k = 5
+        expected_first_invalid = Counter()
+        expected_histogram = np.zeros((3, 6), dtype=np.int64)
+
+        def episode(index):
+            invalid = index % 13 == 0
+            layer = index % 12 if invalid else None
+            block = 2 + index % 4 if invalid else None
+            if invalid:
+                expected_first_invalid[f"L{layer:02d}-B{block}"] += 1
+            action = np.asarray([
+                index % 6,
+                (index // 6) % 6,
+                (index // 36) % 6,
+            ], dtype=np.int64)
+            for slot, value in enumerate(action):
+                expected_histogram[slot, value] += 1
+            stats = module.EpisodeStats(
+                episode=index,
+                total_reward=float(index),
+                terminal_reward=float(index) / 2.0,
+                per_step_sum=float(index) / 2.0,
+                valid_steps=11 if invalid else 12,
+                invalid_steps=1 if invalid else 0,
+                steps_taken=12,
+                total_bits=index,
+                fusion_count=index % 31,
+                first_invalid_step=layer,
+                first_invalid_block=block,
+                first_invalid_layer=layer,
+                early_terminated=invalid,
+                fusion_count_b2=index % 3,
+                fusion_count_b4=index % 5,
+                fusion_count_b5=index % 7,
+                terminal_priority=1 if invalid else 3,
+                terminal_worst_signed_margin=(index - 2_500) / 1_000.0,
+                terminal_bits_gain=float(index),
+                terminal_k_gain=float(index),
+                terminal_fusion_gain=float(index),
+                terminal_pareto_action_hash=f"episode-{index}",
+            )
+            return stats, action
+
+        def update(index):
+            return module.PPOUpdateStats(
+                update=index,
+                completed_episodes=index * 200,
+                policy_loss=float(index) / 100.0,
+                value_loss=float(index) / 50.0,
+                entropy=float(index) / 100.0,
+                clip_fraction=float(index) / 1_000.0,
+                n_samples=2_400,
+                window_mean_return=float(index),
+                window_max_return=float(index + 1),
+                window_min_return=float(index - 1),
+                window_mean_invalid=float(index % 2),
+                best_reward_so_far=float(index * 200 - 1),
+                elapsed_sec=float(index),
+            )
+
+        retained_indices = range(episode_count - history_window, episode_count)
+        expected_episode_windows = {
+            "_all_episode_returns": [float(index) for index in retained_indices],
+            "_all_invalid_counts": [
+                1 if index % 13 == 0 else 0 for index in retained_indices
+            ],
+            "_all_terminal": [float(index) / 2.0 for index in retained_indices],
+            "_all_priority": [
+                1 if index % 13 == 0 else 3 for index in retained_indices
+            ],
+            "_all_fusion": [index % 31 for index in retained_indices],
+            "_all_fusion_b2": [index % 3 for index in retained_indices],
+            "_all_fusion_b4": [index % 5 for index in retained_indices],
+            "_all_fusion_b5": [index % 7 for index in retained_indices],
+            "_all_margin": [
+                (index - 2_500) / 1_000.0 for index in retained_indices
+            ],
+        }
+        expected_top_episodes = [
+            index for index in range(episode_count - 1, -1, -1)
+            if index % 13 != 0
+        ][:top_k]
+
+        def assert_exact_state(recorder):
+            self.assertEqual(recorder.episode_count, episode_count)
+            self.assertEqual(recorder.ppo_update_count, ppo_update_count)
+            self.assertEqual(recorder.episode_high_water, episode_count - 1)
+            self.assertEqual(recorder.ppo_update_high_water, ppo_update_count)
+            self.assertEqual(recorder.best_episode_return, float(episode_count - 1))
+            self.assertEqual(recorder.worst_episode_return, 0.0)
+            self.assertEqual(recorder.first_ppo_entropy, 0.01)
+            self.assertEqual(recorder.last_ppo_entropy, 0.25)
+            for name, expected in expected_episode_windows.items():
+                self.assertEqual(getattr(recorder, name), expected, name)
+            self.assertEqual(
+                [row.update for row in recorder._ppo_history],
+                list(range(
+                    ppo_update_count - ppo_history_window + 1,
+                    ppo_update_count + 1,
+                )),
+            )
+            self.assertEqual(recorder._first_invalid_counts, expected_first_invalid)
+            np.testing.assert_array_equal(recorder._action_hist, expected_histogram)
+            self.assertEqual(
+                [
+                    entry[2]["episode"]
+                    for entry in sorted(
+                        recorder._top_candidates,
+                        key=lambda entry: entry[0],
+                        reverse=True,
+                    )
+                ],
+                expected_top_episodes,
+            )
+            self.assertEqual(
+                [row["episode"] for row in recorder._sorted_pareto_candidates()],
+                [episode_count - 1],
+            )
+            self.assertEqual(recorder._last_episode_stats.episode, episode_count - 1)
+
+        with tempfile.TemporaryDirectory() as td:
+            output = str(Path(td) / "progress")
+            recorder = module.RLDiagnosticsRecorder(
+                output_dir=output,
+                num_layers=12,
+                num_action_slots=3,
+                top_k=top_k,
+                history_window=history_window,
+                ppo_history_window=ppo_history_window,
+            )
+            for index in range(episode_count):
+                stats, action = episode(index)
+                recorder.record_episode(
+                    episode_stats=stats,
+                    full_action_vec=action,
+                    is_new_best=False,
+                    best_reward_so_far=float(index),
+                )
+            for index in range(1, ppo_update_count + 1):
+                recorder.record_ppo_update(update(index))
+            recorder.flush_mandatory()
+            recorder._close_primary_jsonl()
+
+            episode_path = Path(output) / "diagnostics" / "episodes.jsonl"
+            ppo_path = Path(output) / "diagnostics" / "ppo_updates.jsonl"
+            self.assertEqual(len(episode_path.read_text().splitlines()), episode_count)
+            self.assertEqual(len(ppo_path.read_text().splitlines()), ppo_update_count)
+            assert_exact_state(recorder)
+
+            resumed = module.RLDiagnosticsRecorder(
+                output_dir=output,
+                num_layers=12,
+                num_action_slots=3,
+                top_k=top_k,
+                history_window=history_window,
+                ppo_history_window=ppo_history_window,
+            )
+            restored = resumed.restore_existing()
+
+            self.assertEqual(restored, {
+                "episodes": episode_count,
+                "ppo_updates": ppo_update_count,
+                "episode_high_water": episode_count - 1,
+                "ppo_update_high_water": ppo_update_count,
+            })
+            assert_exact_state(resumed)
+            self.assertEqual(len(episode_path.read_text().splitlines()), episode_count)
+            self.assertEqual(len(ppo_path.read_text().splitlines()), ppo_update_count)
+
+    def test_stage2_diagnostics_restore_existing_rejects_noncontiguous_identities(self):
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_identity_validation_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        def episode_row(index):
+            return module.EpisodeStats(
+                episode=index,
+                total_reward=float(index),
+                terminal_reward=float(index),
+                per_step_sum=0.0,
+                valid_steps=12,
+                invalid_steps=0,
+                steps_taken=12,
+                total_bits=0,
+                fusion_count=24,
+                first_invalid_step=None,
+                first_invalid_block=None,
+                first_invalid_layer=None,
+                early_terminated=False,
+            ).__dict__
+
+        def ppo_row(update_id, row_number):
+            return module.PPOUpdateStats(
+                update=update_id,
+                completed_episodes=row_number * 200,
+                policy_loss=0.1,
+                value_loss=0.2,
+                entropy=0.3,
+                clip_fraction=0.4,
+                n_samples=2_400,
+                window_mean_return=1.0,
+                window_max_return=1.0,
+                window_min_return=1.0,
+                window_mean_invalid=0.0,
+                best_reward_so_far=1.0,
+                elapsed_sec=1.0,
+            ).__dict__
+
+        cases = (
+            ("duplicate episode", "episodes.jsonl", [0, 1, 1]),
+            ("decreasing episode", "episodes.jsonl", [0, 1, 0]),
+            ("gapped episode", "episodes.jsonl", [0, 2]),
+            ("duplicate PPO update", "ppo_updates.jsonl", [1, 2, 2]),
+            ("decreasing PPO update", "ppo_updates.jsonl", [1, 2, 1]),
+            ("gapped PPO update", "ppo_updates.jsonl", [1, 3]),
+        )
+        for label, filename, identities in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as td:
+                diagnostics_dir = Path(td) / "progress" / "diagnostics"
+                diagnostics_dir.mkdir(parents=True)
+                if filename == "episodes.jsonl":
+                    rows = [episode_row(identity) for identity in identities]
+                else:
+                    rows = [
+                        ppo_row(identity, row_number)
+                        for row_number, identity in enumerate(identities, start=1)
+                    ]
+                (diagnostics_dir / filename).write_text(
+                    "".join(json.dumps(row) + "\n" for row in rows),
+                    encoding="utf-8",
+                )
+                recorder = module.RLDiagnosticsRecorder(
+                    output_dir=str(Path(td) / "progress"),
+                    num_layers=12,
+                    num_action_slots=3,
+                )
+
+                with self.assertRaises(RuntimeError):
+                    recorder.restore_existing()
+
     def test_stage2_diagnostics_restore_accepts_invalid_nonfinite_metrics(self):
         spec = importlib.util.spec_from_file_location(
             "blb_stage2_diagnostics_invalid_resume_for_test",

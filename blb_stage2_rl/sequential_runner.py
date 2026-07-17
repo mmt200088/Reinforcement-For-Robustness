@@ -16,6 +16,7 @@ Two entrypoints:
 from __future__ import annotations
 
 import copy
+from collections import deque
 import json
 import logging
 import math
@@ -4287,8 +4288,6 @@ def _run_layerwise_training_branch(
     from jsonl_utils import iter_jsonl
 
     diagnostics_dir = os.path.join(blb_progress_dir, "diagnostics")
-    existing_diagnostic_episodes: Set[int] = set()
-    existing_diagnostic_updates: Set[int] = set()
     existing_episode_path = os.path.join(diagnostics_dir, "episodes.jsonl")
     existing_update_path = os.path.join(diagnostics_dir, "ppo_updates.jsonl")
 
@@ -4357,6 +4356,8 @@ def _run_layerwise_training_branch(
         schema_version="stage2_layerwise_action_v1",
         data_point_writer=stage2_data_writer,
         strict_writes=True,
+        history_window=600,
+        ppo_history_window=10,
     )
 
     def checkpoint_file_specs(
@@ -4430,19 +4431,31 @@ def _run_layerwise_training_branch(
             random.setstate(resume_checkpoint["python_rng_state"])
     write_strict_json_file(layerwise_manifest_path, run_manifest)
     diag_recorder.set_baseline_action_vec(layerwise_env.pending_full_vector)
-    diag_recorder.restore_existing()
-    if os.path.isfile(existing_episode_path):
-        existing_diagnostic_episodes = {
-            int(row["episode"])
-            for row in iter_jsonl(existing_episode_path, errors="raise")
-            if row.get("episode") is not None
-        }
-    if os.path.isfile(existing_update_path):
-        existing_diagnostic_updates = {
-            int(row["completed_episodes"])
-            for row in iter_jsonl(existing_update_path, errors="raise")
-            if row.get("completed_episodes") is not None
-        }
+    restored_diagnostics = diag_recorder.restore_existing()
+    expected_episode_high_water = int(start_episode) - 1
+    if (
+            int(restored_diagnostics["episodes"]) != int(start_episode)
+            or int(restored_diagnostics["episode_high_water"])
+            != expected_episode_high_water
+    ):
+        raise RuntimeError(
+            "layerwise checkpoint episode diagnostics mismatch: "
+            f"checkpoint_count={start_episode}, "
+            f"restored_count={restored_diagnostics['episodes']}, "
+            f"restored_high_water={restored_diagnostics['episode_high_water']}"
+        )
+    if (
+            int(restored_diagnostics["ppo_updates"])
+            != int(resumed_ppo_update_count)
+            or int(restored_diagnostics["ppo_update_high_water"])
+            != int(resumed_ppo_update_count)
+    ):
+        raise RuntimeError(
+            "layerwise checkpoint PPO diagnostics mismatch: "
+            f"checkpoint_count={resumed_ppo_update_count}, "
+            f"restored_count={restored_diagnostics['ppo_updates']}, "
+            f"restored_high_water={restored_diagnostics['ppo_update_high_water']}"
+        )
     probability_thresholds = {
         "online": float(getattr(train_cfg, "online_constraint_probability", 0.50)),
         "promotion": float(getattr(train_cfg, "promotion_constraint_probability", 0.80)),
@@ -4503,7 +4516,15 @@ def _run_layerwise_training_branch(
     })
     log(f"  {bullet} [data-points] layerwise Stage-2 → {stage2_data_writer.run_dir}")
 
-    episode_records: List[Any] = []
+    recent_episode_records = deque(maxlen=max(1, int(train_cfg.rollout_size)))
+    completed_episode_count = int(start_episode)
+    best_reward_so_far = -math.inf
+    try:
+        resumed_reward = float(resumed_best.get("reward", -math.inf))
+    except (TypeError, ValueError):
+        resumed_reward = -math.inf
+    if math.isfinite(resumed_reward):
+        best_reward_so_far = resumed_reward
     best_selection_key: Optional[StrictSelectionKey] = None
     strict_best: Dict[str, Any] = dict(resumed_best)
     strict_pareto_frontier: List[Dict[str, Any]] = copy.deepcopy(
@@ -4679,8 +4700,22 @@ def _run_layerwise_training_branch(
         )
 
     def on_layerwise_episode(record: Any) -> None:
-        nonlocal best_selection_key
-        episode_records.append(record)
+        nonlocal best_selection_key, completed_episode_count, best_reward_so_far
+        episode_identity = int(record.episode_index)
+        if episode_identity != completed_episode_count:
+            raise RuntimeError(
+                "layerwise episode callback identity mismatch: "
+                f"expected={completed_episode_count}, received={episode_identity}"
+            )
+        if episode_identity != diag_recorder.episode_high_water + 1:
+            raise RuntimeError(
+                "layerwise episode diagnostics identity mismatch: "
+                f"high_water={diag_recorder.episode_high_water}, "
+                f"received={episode_identity}"
+            )
+        completed_episode_count += 1
+        best_reward_so_far = max(best_reward_so_far, float(record.reward))
+        recent_episode_records.append(record)
         pooled_assessment = _to_plain_mapping(record.assessment)
         fresh_assessment = _to_plain_mapping(record.fresh_assessment)
         fresh_metrics = dict(record.metrics or {})
@@ -4883,14 +4918,12 @@ def _run_layerwise_training_branch(
                 promotion_status=str(record.promotion_status),
                 convergence_state=convergence_state,
             )
-        if int(record.episode_index) not in existing_diagnostic_episodes:
-            diag_recorder.record_episode(
-                episode_stats=episode_stats,
-                full_action_vec=np.asarray(record.pending_full_vector, dtype=np.int64),
-                is_new_best=is_new_best,
-                best_reward_so_far=float(record.reward),
-            )
-            existing_diagnostic_episodes.add(int(record.episode_index))
+        diag_recorder.record_episode(
+            episode_stats=episode_stats,
+            full_action_vec=np.asarray(record.pending_full_vector, dtype=np.int64),
+            is_new_best=is_new_best,
+            best_reward_so_far=float(best_reward_so_far),
+        )
         status.update_after_episode(
             int(record.episode_index) + 1,
             float(record.reward),
@@ -4911,14 +4944,25 @@ def _run_layerwise_training_branch(
     def on_layerwise_update(metrics: Mapping[str, Any], completed: int, record: Any) -> None:
         nonlocal ppo_update_counter, strict_best, strict_pareto_frontier
         nonlocal best_selection_key
+        if int(completed) != completed_episode_count:
+            raise RuntimeError(
+                "layerwise PPO callback episode count mismatch: "
+                f"expected={completed_episode_count}, received={completed}"
+            )
         ppo_update_counter += 1
+        if ppo_update_counter != diag_recorder.ppo_update_high_water + 1:
+            raise RuntimeError(
+                "layerwise PPO diagnostics identity mismatch: "
+                f"high_water={diag_recorder.ppo_update_high_water}, "
+                f"received={ppo_update_counter}"
+            )
         strict_best = dict(metrics.get("strict_best") or {})
         strict_pareto_frontier = [
             dict(row) for row in metrics.get("strict_pareto_frontier", [])
         ]
         best_selection_key = strict_selection_key_from_snapshot(strict_best)
         write_strict_best_diagnostics(strict_best, episode=int(record.episode_index))
-        recent = episode_records[-max(1, int(train_cfg.rollout_size)):]
+        recent = list(recent_episode_records)
         recent_rewards = [float(item.reward) for item in recent] or [0.0]
         update_stats = PPOUpdateStats(
             update=ppo_update_counter,
@@ -4932,7 +4976,7 @@ def _run_layerwise_training_branch(
             window_max_return=float(np.max(recent_rewards)),
             window_min_return=float(np.min(recent_rewards)),
             window_mean_invalid=float(np.mean([item.invalid_steps for item in recent])),
-            best_reward_so_far=float(max(item.reward for item in episode_records)),
+            best_reward_so_far=float(best_reward_so_far),
             elapsed_sec=float(time.time() - started_at),
             ent_coef=float(metrics.get("ent_coef", 0.0)),
             approx_kl=float(metrics.get("approx_kl", 0.0)),
@@ -5019,9 +5063,7 @@ def _run_layerwise_training_branch(
             preclip_grad_norm_mean=metrics.get("preclip_grad_norm_mean"),
             preclip_grad_norm_max=metrics.get("preclip_grad_norm_max"),
         )
-        if int(completed) not in existing_diagnostic_updates:
-            diag_recorder.record_ppo_update(update_stats)
-            existing_diagnostic_updates.add(int(completed))
+        diag_recorder.record_ppo_update(update_stats)
         save_layerwise_checkpoint(
             completed=int(completed),
             strict_best=strict_best,
@@ -5139,17 +5181,36 @@ def _run_layerwise_training_branch(
             optimizer=optimizer,
             on_episode_end=on_layerwise_episode,
             on_ppo_update_end=on_layerwise_update,
+            retain_history=False,
         )
+        summary_completed_episodes = int(summary.get(
+            "completed_episodes", completed_episode_count,
+        ))
+        if summary_completed_episodes != completed_episode_count:
+            raise RuntimeError(
+                "layerwise training summary episode count mismatch: "
+                f"callbacks={completed_episode_count}, "
+                f"summary={summary_completed_episodes}"
+            )
+        if (
+                diag_recorder.episode_count != completed_episode_count
+                or diag_recorder.ppo_update_count != ppo_update_counter
+        ):
+            raise RuntimeError(
+                "layerwise diagnostics cumulative count mismatch: "
+                f"episodes={diag_recorder.episode_count}/{completed_episode_count}, "
+                f"updates={diag_recorder.ppo_update_count}/{ppo_update_counter}"
+            )
         strict_best = dict(summary.get("strict_best") or {})
         strict_pareto_frontier = [
             dict(row) for row in summary.get("strict_pareto_frontier", [])
         ]
         write_strict_best_diagnostics(
             strict_best,
-            episode=int(summary.get("completed_episodes", start_episode)),
+            episode=int(completed_episode_count),
         )
         save_layerwise_checkpoint(
-            completed=int(summary.get("completed_episodes", start_episode)),
+            completed=int(completed_episode_count),
             strict_best=summary.get("strict_best"),
             convergence_state=summary.get("convergence_state"),
         )
@@ -5168,7 +5229,7 @@ def _run_layerwise_training_branch(
                 status.set_phase("failed")
             run_manifest.update({
                 "status": completion_status,
-                "completed_episodes": int(start_episode + len(episode_records)),
+                "completed_episodes": int(completed_episode_count),
                 "ppo_update_count": int(ppo_update_counter),
                 "best_resource_objective": (
                     None
@@ -5317,7 +5378,7 @@ def _run_layerwise_training_branch(
         "constraint_probability_thresholds": probability_thresholds,
         "constraint_limits": constraint_limits,
         "baseline_reference": dict(baseline_preflight_metrics),
-        "ppo_update_count": int(len(existing_diagnostic_updates)),
+        "ppo_update_count": int(ppo_update_counter),
         "candidate_store": candidate_store.path,
         "checkpoint": save_path,
         "structured_data_dir": stage2_data_writer.run_dir,
@@ -5384,7 +5445,6 @@ def _run_layerwise_training_branch(
         **cost_reference_noise_config
     )
     legacy_best = _build_legacy_compatible_best_noise_config(evaluator)
-    rewards = list(summary.get("episode_rewards") or [])
     best_reward = summary.get("best_reward")
     if best_reward is None:
         best_reward = -float("inf")
@@ -5451,8 +5511,10 @@ def _run_layerwise_training_branch(
             "horizon": 12,
             "max_step_dim": 6,
             "state_dim": int(layerwise_env.state_dim),
-            "episode_count": int(summary.get("completed_episodes", len(rewards))),
-            "ppo_metric_count": int(len(existing_diagnostic_updates)),
+            "episode_count": int(summary.get(
+                "completed_episodes", completed_episode_count,
+            )),
+            "ppo_metric_count": int(ppo_update_counter),
             "block4_entropy": summary.get("block4_entropy"),
             "k_entropy": summary.get("k_entropy"),
             "selected_action_identity": summary.get("selected_action_identity"),
