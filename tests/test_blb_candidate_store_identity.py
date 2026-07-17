@@ -12,11 +12,16 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         from blb_stage2_rl.statistical_constraints import TrialSeries
 
         action = [
-            (layer_idx * 3 + slot_idx) % 6
-            for layer_idx in range(12)
-            for slot_idx in range(6)
+            (action_idx * 5 + 1) % 6
+            for action_idx in range(73 * 12 + 1)
         ]
-        action_matrix = [action[start:start + 6] for start in range(0, 72, 6)]
+        action_matrix = [
+            [
+                (layer_idx * 3 + slot_idx) % 6
+                for slot_idx in range(6)
+            ]
+            for layer_idx in range(12)
+        ]
         base_context = {
             "action_space_version": "stage2_layerwise_12x6_v1",
             "registry_hash": "registry-" + "a" * 64,
