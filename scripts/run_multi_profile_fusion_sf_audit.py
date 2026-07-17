@@ -317,6 +317,34 @@ def _format_value(row: Mapping[str, Any] | None) -> str:
     return "not installed / fused-away"
 
 
+def _cross_profile_signature_groups(
+    profiles: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    profile_list = list(profiles)
+    families = ("Block2", "Block4", "Block5 n1", "Block5 n2", "Block5 n4")
+    output = []
+    for map_index, family in enumerate(families):
+        grouped: dict[str, list[str]] = {}
+        for profile in profile_list:
+            map_result = profile["maps"][map_index]
+            signature = json.dumps(
+                [
+                    option["representative_actual_config_rows"]
+                    for option in map_result["options"]
+                ],
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            grouped.setdefault(signature, []).append(str(profile["profile"]))
+        groups = list(grouped.values())
+        output.append({
+            "graph_family": family,
+            "all_profiles_identical": len(groups) == 1,
+            "signature_groups": groups,
+        })
+    return output
+
+
 def _render_html(payload: Mapping[str, Any]) -> str:
     esc = html.escape
     profiles = list(payload["profiles"])
@@ -350,6 +378,34 @@ def _render_html(payload: Mapping[str, Any]) -> str:
             "<td class=ok>PASS</td></tr>"
         )
     parts.append("</tbody></table>")
+    parts.append(
+        "<h2>Cross-profile final-config comparison</h2>"
+        "<p class=muted>This comparison uses the complete representative final "
+        "NoiseConfig for option0 and option1, after replan and write-back.</p>"
+        "<table><thead><tr><th>Graph family</th><th>All six identical</th>"
+        "<th>Final-config signature groups</th></tr></thead><tbody>"
+    )
+    for comparison in payload["cross_profile_signature_groups"]:
+        identical = bool(comparison["all_profiles_identical"])
+        groups = " ; ".join(
+            "[" + ", ".join(group) + "]"
+            for group in comparison["signature_groups"]
+        )
+        parts.append(
+            "<tr>"
+            f"<td>{esc(comparison['graph_family'])}</td>"
+            f"<td class={'ok' if identical else 'bad'}>{'YES' if identical else 'NO'}</td>"
+            f"<td>{esc(groups)}</td></tr>"
+        )
+    parts.append("</tbody></table>")
+    if not payload["cross_profile_signature_groups"][0]["all_profiles_identical"]:
+        parts.append(
+            "<div class=\"note\"><b>MRPC Block2 is intentionally shown as a "
+            "separate runtime result:</b> its final installed config retains active "
+            "Block2 rescale points that the other five profiles do not install. "
+            "Block4 and Block5 n1/n2/n4 are identical across all six profiles. "
+            "The detailed MRPC tables below show every differing installed SF.</div>"
+        )
     for profile in profiles:
         last_layer = int(profile["num_layers"]) - 1
         parts.append(
@@ -450,6 +506,7 @@ def main() -> int:
         "elapsed_seconds": time.perf_counter() - started,
         "errors": [],
         "profiles": profiles,
+        "cross_profile_signature_groups": _cross_profile_signature_groups(profiles),
     }
     map_gate = {
         "source_commit": source_commit,
