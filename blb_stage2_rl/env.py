@@ -652,8 +652,8 @@ class BLBStage2Env:
             any_invalid: bool,
             external_cost_score: Optional[float],
             external_cost_rank: Optional[float],
-            external_resource_objective: Optional[Mapping[str, Any]],
             info: Dict[str, Any],
+            external_resource_objective: Optional[Mapping[str, Any]] = None,
             ) -> RewardBreakdown:
         assessment = None
         if (

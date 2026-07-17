@@ -740,8 +740,11 @@ class LayerwisePolicyTest(unittest.TestCase):
         torch.testing.assert_close(returns_t, torch.full((12,), 2.0))
         torch.testing.assert_close(advantages_t, torch.full((12,), 2.0))
 
-    def test_factorized_ppo_converges_fusion_and_k_on_contextual_cost_bandit(self):
-        from blb_stage2_rl.layerwise_action import K_LEVELS
+    def test_factorized_ppo_converges_both_resource_families_on_contextual_bandit(self):
+        from blb_stage2_rl.layerwise_action import (
+            K_LEVELS,
+            compute_variable_cost_from_action_matrix,
+        )
         from blb_stage2_rl.sequential_policy import (
             SequentialPPOConfig,
             SequentialRolloutBuffer,
@@ -860,13 +863,8 @@ class LayerwisePolicyTest(unittest.TestCase):
                         return_per_slot_log_prob=True,
                     )
                 action_np = action[0].numpy()
-                k_cost_units = np.asarray(
-                    [0.5 * (13.0 - float(K_LEVELS[int(index)])) for index in action_np[1:]],
-                    dtype=np.float32,
-                )
-                raw_cost_units = float(action_np[0]) + float(
-                    k_cost_units[slot_mask[1:]].sum()
-                )
+                action_matrix = np.tile(action_np, (12, 1))
+                resource = compute_variable_cost_from_action_matrix(action_matrix)
                 transition_index = buffer.add(
                     state=state,
                     action=action_np,
@@ -875,15 +873,14 @@ class LayerwisePolicyTest(unittest.TestCase):
                     log_prob=log_prob[0],
                     log_prob_per_slot=log_prob_per_slot[0],
                     value=value[0],
-                    reward=raw_cost_units / 159.5,
+                    reward=resource.ppo_resource_score,
                     done=True,
                 )
-                per_slot_cost = np.concatenate((
-                    np.asarray([float(action_np[0])]),
-                    k_cost_units,
-                )) / 159.5
-                per_slot_cost[~slot_mask] = 0.0
-                buffer.set_actor_cost_at(transition_index, per_slot_cost)
+                slot_credit = np.asarray(
+                    resource.slot_resource_rewards[layer_idx], dtype=np.float32,
+                )
+                slot_credit[~slot_mask] = 0.0
+                buffer.set_actor_cost_at(transition_index, slot_credit)
                 buffer.set_actor_shared_return_at(transition_index, 0.0)
             last_metrics = sequential_ppo_update(
                 policy,
@@ -897,7 +894,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertEqual(last_metrics["actor_clip_mode"], "factorized_per_slot")
         self.assertEqual(
             last_metrics["actor_credit_mode"],
-            "shared_constraint_plus_own_cost",
+            "shared_constraint_plus_own_resource_shapley",
         )
         self.assertEqual(
             last_metrics["entropy_objective_mode"],

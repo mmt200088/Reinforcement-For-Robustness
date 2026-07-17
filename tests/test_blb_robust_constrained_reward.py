@@ -513,11 +513,30 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
         if layer_idx:
             k_by_block[1] = 13
         decoded_actions.append(layerwise_action.LayerwiseDecodedAction(1, k_by_block))
-    variable_cost = layerwise_action.compute_variable_cost(decoded_actions).normalized
+    resource = layerwise_action.compute_variable_cost(decoded_actions)
+    variable_cost = resource.ppo_resource_score
+    assert resource.compute_saving == 1.0
+    assert resource.communication_saving == 0.0
+    assert resource.robust_floor == 0.0
+    assert resource.secondary_progress == 0.5
     assert np.isclose(
         variable_cost,
-        12.0 / layerwise_action.MAX_VARIABLE_COST_UNITS,
+        layerwise_action.dual_resource_score(1.0, 0.0)[2],
     )
+    external_resource_objective = {
+        field_name: getattr(resource, field_name)
+        for field_name in (
+            "compute_saving",
+            "communication_saving",
+            "robust_floor",
+            "secondary_progress",
+            "ppo_resource_score",
+            "compute_shapley_credit",
+            "communication_shapley_credit",
+            "layer_resource_rewards",
+            "slot_resource_rewards",
+        )
+    }
 
     env = _runtime_env(env_module, reward_module, statistical_constraints)
     env.total_action_dim = 3
@@ -539,6 +558,7 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
             np.asarray([3, 1, 4]),
             external_cost_score=variable_cost,
             external_cost_rank=variable_cost,
+            external_resource_objective=external_resource_objective,
         )
     metrics = _runtime_metrics(reward_module)
     assessments = []
@@ -550,6 +570,10 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
             )
         assert done is True
         assert info["reward_breakdown"].variable_cost == variable_cost
+        assert info["reward_breakdown"].compute_saving == 1.0
+        assert info["reward_breakdown"].communication_saving == 0.0
+        assert info["reward_breakdown"].robust_floor == 0.0
+        assert info["reward_breakdown"].secondary_progress == 0.5
         assert info["statistical_trials"]["seeds"] == [100, 101, 102, 103, 104]
         json.dumps(info["statistical_assessment"])
         expected_reward = reward_module.robust_constrained_reward(

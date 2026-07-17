@@ -66,9 +66,14 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
         self.assertEqual(fused.truncation_saving, baseline.truncation_saving)
         self.assertEqual(fused.fusion_units, 12.0)
         self.assertEqual(fused.truncation_units, 0.0)
-        self.assertAlmostEqual(fused.normalized, 12.0 / 159.5)
+        self.assertEqual(fused.robust_floor, 0.0)
+        self.assertEqual(fused.secondary_progress, 0.5)
+        self.assertAlmostEqual(
+            fused.normalized,
+            layerwise_action.dual_resource_score(1.0, 0.0)[2],
+        )
 
-    def test_two_k_bits_have_same_reward_as_one_fusion_toggle(self):
+    def test_fusion_and_k_update_independent_axes_without_exchange_rate(self):
         baseline_actions = _layerwise_actions(block4_fusion=0, k=13)
         fusion_actions = _layerwise_actions(block4_fusion=0, k=13)
         fusion_actions[3] = layerwise_action.LayerwiseDecodedAction(
@@ -79,12 +84,39 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
         changed[4] = 11
         k_actions[3] = layerwise_action.LayerwiseDecodedAction(0, changed)
 
-        baseline = layerwise_action.compute_variable_cost(baseline_actions).normalized
-        fusion_delta = layerwise_action.compute_variable_cost(fusion_actions).normalized - baseline
-        k_delta = layerwise_action.compute_variable_cost(k_actions).normalized - baseline
+        baseline = layerwise_action.compute_variable_cost(baseline_actions)
+        fusion = layerwise_action.compute_variable_cost(fusion_actions)
+        communication = layerwise_action.compute_variable_cost(k_actions)
 
-        self.assertAlmostEqual(fusion_delta, k_delta)
-        self.assertAlmostEqual(fusion_delta, 1.0 / 159.5)
+        self.assertEqual(baseline.ppo_resource_score, 0.0)
+        self.assertAlmostEqual(fusion.compute_saving, 1.0 / 12.0)
+        self.assertEqual(fusion.communication_saving, 0.0)
+        self.assertEqual(communication.compute_saving, 0.0)
+        self.assertAlmostEqual(communication.communication_saving, 2.0 / 295.0)
+        self.assertEqual(fusion.robust_floor, 0.0)
+        self.assertEqual(communication.robust_floor, 0.0)
+        self.assertNotAlmostEqual(
+            fusion.ppo_resource_score,
+            communication.ppo_resource_score,
+        )
+
+    def test_robust_floor_rewards_progress_on_both_resource_axes(self):
+        compute_only = layerwise_action.compute_variable_cost(
+            _layerwise_actions(block4_fusion=1, k=13)
+        )
+        communication_only = layerwise_action.compute_variable_cost(
+            _layerwise_actions(block4_fusion=0, k=8)
+        )
+        balanced = layerwise_action.compute_variable_cost(
+            _layerwise_actions(block4_fusion=1, k=8)
+        )
+
+        self.assertEqual(compute_only.robust_floor, 0.0)
+        self.assertEqual(communication_only.robust_floor, 0.0)
+        self.assertEqual(balanced.compute_saving, 1.0)
+        self.assertEqual(balanced.communication_saving, 1.0)
+        self.assertEqual(balanced.robust_floor, 1.0)
+        self.assertEqual(balanced.ppo_resource_score, 1.0)
 
     def test_lowering_each_actual_k_slot_increases_cost(self):
         baseline_actions = _layerwise_actions(block4_fusion=0, k=13)

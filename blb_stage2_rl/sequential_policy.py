@@ -1915,7 +1915,7 @@ def sequential_ppo_update(
             "factorized_per_slot" if factorized_actor_clip else "joint"
         ),
         "actor_credit_mode": (
-            "shared_constraint_plus_own_cost"
+            "shared_constraint_plus_own_resource_shapley"
             if factorized_actor_advantages is not None else "scalar_gae"
         ),
         "entropy_objective_mode": (
