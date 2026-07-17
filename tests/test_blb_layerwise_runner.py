@@ -256,6 +256,83 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertIsNone(base["fidelity"])
         self.assertNotEqual(candidate_key(action, probe), candidate_key(action, full))
 
+    def test_layerwise_compact_candidate_store_wiring_preserves_f1_and_f4_payload_rules(self):
+        source_path = (
+            Path(__file__).resolve().parents[1]
+            / "blb_stage2_rl"
+            / "layerwise_runner.py"
+        )
+        source = source_path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        def function_source(name):
+            node = next(
+                candidate
+                for candidate in ast.walk(tree)
+                if isinstance(candidate, ast.FunctionDef)
+                and candidate.name == name
+            )
+            return ast.get_source_segment(source, node)
+
+        train_source = function_source("train_layerwise")
+        promotion_source = function_source("promote_candidate_if_eligible")
+        f1_call = next(
+            ast.get_source_segment(train_source, node)
+            for node in ast.walk(ast.parse(train_source))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "append_trial_group"
+            and '"fidelity": "F1"' in ast.get_source_segment(train_source, node)
+        )
+        f4_call = next(
+            ast.get_source_segment(promotion_source, node)
+            for node in ast.walk(ast.parse(promotion_source))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "append_trial_group"
+            and '"fidelity": "F4"' in ast.get_source_segment(promotion_source, node)
+        )
+
+        self.assertIn("compact=True", f1_call)
+        self.assertIn("boosted_overrides_hash", f1_call)
+        self.assertIn("boosted_overrides_provenance", f1_call)
+        self.assertNotIn('"boosted_overrides":', f1_call)
+        self.assertIn("compact=True", f4_call)
+        self.assertIn('"boosted_overrides":', f4_call)
+        self.assertIn(
+            '"boosted_overrides": _serialize_boosted_overrides(',
+            function_source("_record_final_revalidation_outcome"),
+        )
+
+    def test_compact_promotion_status_helper_delegates_to_candidate_store_api(self):
+        from blb_stage2_rl.layerwise_runner import _append_promotion_status
+
+        append = mock.Mock()
+        append_promotion_status = mock.Mock()
+        store = types.SimpleNamespace(
+            append=append,
+            append_promotion_status=append_promotion_status,
+        )
+        action = [1, 2, 3]
+        context = {"action_space_version": "layerwise-v1", "fidelity": "F4"}
+        metadata = {"boosted_overrides": [{"block_idx": 4, "layer_idx": 3}]}
+
+        _append_promotion_status(
+            store,
+            action,
+            context,
+            status="promoted",
+            metadata=metadata,
+        )
+
+        append.assert_not_called()
+        append_promotion_status.assert_called_once_with(
+            action,
+            context,
+            status="promoted",
+            metadata=metadata,
+        )
+
     def test_full_validation_loader_is_uncapped_and_does_not_use_probe_subset(self):
         source_path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "runner.py"
         tree = ast.parse(source_path.read_text(encoding="utf-8"))
@@ -3848,6 +3925,124 @@ class LayerwisePromotionTests(unittest.TestCase):
             {"identity_context": context, "fidelity": "F4"},
         )
         return store
+
+    def test_compact_candidate_store_restores_strict_promotion_inputs(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import (
+            _append_promotion_status,
+            evidence_identity_context,
+            restore_promoted_candidates,
+            strict_selection_key,
+        )
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        full_context = evidence_identity_context(context, "F4")
+        matrix = [[0, 3, 3, 3, 3, 3] for _layer in range(12)]
+        action = [value for row in matrix for value in row]
+        overrides = [{
+            "block_idx": 4,
+            "layer_idx": 3,
+            "field_values": {"v_mask_rescale_sf": 47},
+        }]
+        metadata = {
+            "identity_context": full_context,
+            "fidelity": "F4",
+            "action_matrix": matrix,
+            "variable_cost": 0.6,
+            "episode_reward": 1.25,
+            "assessment_bootstrap_seed": 77,
+            "boosted_overrides_hash": "overrides-hash",
+            "boosted_overrides": overrides,
+            "boosted_overrides_provenance": "layerwise_env",
+        }
+        with tempfile.TemporaryDirectory() as td:
+            paths = {
+                "legacy": Path(td) / "legacy.jsonl",
+                "compact": Path(td) / "compact.jsonl",
+            }
+            trials = TrialSeries(
+                loss=[0.3] * 25,
+                metric1=[0.9] * 25,
+                metric2=[0.8] * 25,
+                seeds=list(range(1, 26)),
+            )
+            status_metadata = {
+                "action_matrix": matrix,
+                "variable_cost": 0.6,
+                "episode_reward": 1.25,
+                "assessment_bootstrap_seed": 77,
+                "boosted_overrides": overrides,
+            }
+            legacy_store = CandidateStore(paths["legacy"])
+            legacy_store.append_trial_group(action, trials, metadata)
+            legacy_store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "identity_context": full_context,
+                "fidelity": "F4",
+                "valid": True,
+                "promotion_status": "promoted",
+                "promotion_metadata": status_metadata,
+            })
+            compact_store = CandidateStore(paths["compact"])
+            compact_store.append_trial_group(
+                action, trials, metadata, compact=True,
+            )
+            _append_promotion_status(
+                compact_store,
+                action,
+                full_context,
+                status="promoted",
+                metadata=status_metadata,
+            )
+
+            restored_by_format = {
+                name: restore_promoted_candidates(
+                    candidate_store=CandidateStore(path),
+                    identity_context=context,
+                    statistical_reference=_strict_reference(),
+                    assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+                    promotion_probability=0.8,
+                )
+                for name, path in paths.items()
+            }
+            physical_rows = [
+                json.loads(line)
+                for line in paths["compact"].read_bytes().splitlines()
+            ]
+
+        self.assertEqual(len(restored_by_format["compact"]), 1)
+        compact_key, candidate = next(iter(restored_by_format["compact"].items()))
+        legacy_key, legacy_candidate = next(iter(restored_by_format["legacy"].items()))
+        self.assertEqual(compact_key, legacy_key)
+        self.assertEqual(
+            strict_selection_key(compact_key, candidate),
+            strict_selection_key(legacy_key, legacy_candidate),
+        )
+        for field in (
+            "full_vector", "action_matrix", "boosted_overrides", "reward",
+            "metrics", "assessment", "promotion_trials",
+            "final_revalidation_status",
+        ):
+            self.assertEqual(candidate[field], legacy_candidate[field])
+        self.assertEqual(candidate["full_vector"], tuple(action))
+        self.assertEqual(candidate["action_matrix"], tuple(tuple(row) for row in matrix))
+        self.assertEqual(
+            candidate["boosted_overrides"],
+            {(4, 3): {"v_mask_rescale_sf": 47}},
+        )
+        self.assertEqual(candidate["promotion_trials"].seeds, tuple(range(1, 26)))
+        trial_row = next(
+            row for row in physical_rows
+            if row.get("record_type") == "candidate_trial_group_v2"
+        )
+        status_row = next(
+            row for row in physical_rows
+            if row.get("record_type") == "candidate_promotion_status_v2"
+        )
+        self.assertEqual(trial_row["trial_group_metadata"]["boosted_overrides"], overrides)
+        self.assertEqual(status_row["promotion_metadata"]["boosted_overrides"], overrides)
 
     def test_promotion_tops_up_five_to_25_through_real_chain_once(self):
         from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
