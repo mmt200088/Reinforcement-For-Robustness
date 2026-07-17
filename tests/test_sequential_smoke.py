@@ -34,6 +34,7 @@ Run::
 """
 from __future__ import annotations
 
+import ast
 import importlib.machinery
 import importlib.util
 import json
@@ -3420,6 +3421,116 @@ class EntCoefScheduleRegressionTest(unittest.TestCase):
         self.assertIn("ent_coef: float = 0.0", src)
         # And the markdown table must include the column
         self.assertIn("ent_coef", src)
+
+
+class Stage2ProbeBatchSizeContractTest(unittest.TestCase):
+    """Pin the independent F1/F4 batch-size plumbing before implementation."""
+
+    @staticmethod
+    def _function_argument_names(source: str, function_name: str) -> set[str]:
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name == function_name:
+                    return {
+                        argument.arg
+                        for argument in (
+                            list(node.args.posonlyargs)
+                            + list(node.args.args)
+                            + list(node.args.kwonlyargs)
+                        )
+                    }
+        raise AssertionError(f"missing function {function_name!r}")
+
+    def test_launcher_exposes_and_forwards_independent_probe_batch_sizes(self):
+        launcher = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
+        expected = {
+            "probe": (
+                "--blb-v3-probe-batch-size",
+                "BLB_V3_PROBE_BATCH_SIZE",
+                "S_BLB_V3_PROBE_BATCH_SIZE",
+                "--blb_v3_probe_batch_size",
+                "blb_v3_probe_batch_size",
+            ),
+            "validation": (
+                "--blb-v3-validation-probe-batch-size",
+                "BLB_V3_VALIDATION_PROBE_BATCH_SIZE",
+                "S_BLB_V3_VALIDATION_PROBE_BATCH_SIZE",
+                "--blb_v3_validation_probe_batch_size",
+                "blb_v3_validation_probe_batch_size",
+            ),
+        }
+        for name, (kebab, variable, explicit, underscore, evaluator_arg) in expected.items():
+            with self.subTest(name=name):
+                self.assertIn(kebab, launcher, msg=f"{name} help/parser contract")
+                self.assertIn(f'{variable}=""; {explicit}="false"', launcher)
+                self.assertIn(
+                    f'{kebab}) needv "$@"; {variable}="$2"; {explicit}="true"; shift 2 ;;',
+                    launcher,
+                )
+                self.assertIn(
+                    f'[ "${explicit}" = "false" ] || is_pos_int "${variable}" || err',
+                    launcher,
+                )
+                self.assertIn(
+                    f'[ "${explicit}" = "true" ] && CMD+=({underscore} "${variable}")',
+                    launcher,
+                )
+                self.assertIn(evaluator_arg, launcher)
+
+    def test_rl_tune_and_evaluator_keep_f1_f4_sizes_separate(self):
+        rl_tune = Path("rl_tune.py").read_text(encoding="utf-8")
+        evaluator = Path("layer_importance_evaluator.py").read_text(encoding="utf-8")
+        expected = (
+            "blb_v3_probe_batch_size",
+            "blb_v3_validation_probe_batch_size",
+        )
+
+        rl_tune_args = self._function_argument_names(rl_tune, "train")
+        evaluator_init_args = self._function_argument_names(evaluator, "__init__")
+        for argument in expected:
+            with self.subTest(argument=argument):
+                self.assertIn(argument, rl_tune_args)
+                self.assertGreaterEqual(rl_tune.count(f"{argument}={argument}"), 1)
+                self.assertIn(argument, evaluator_init_args)
+                self.assertIn(f"self.{argument}", evaluator)
+
+    def test_runner_maps_independent_evaluator_fields_to_train_config(self):
+        runner = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+        region = _method_region_from_source(runner, "_build_train_config_from_evaluator")
+        for config_field, evaluator_field in (
+            ("probe_batch_size", "blb_v3_probe_batch_size"),
+            ("validation_probe_batch_size", "blb_v3_validation_probe_batch_size"),
+        ):
+            with self.subTest(config_field=config_field):
+                self.assertIn(config_field, region)
+                self.assertIn(evaluator_field, region)
+
+    def test_layerwise_artifacts_record_effective_f1_f4_sizes_and_batch_counts(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
+        run_context = source[
+            source.index("run_context = build_layerwise_run_context("):
+            source.index("run_context_hash = sha256_json(run_context)")
+        ]
+        run_manifest = source[
+            source.index("run_manifest = {"):
+            source.index("torch.manual_seed", source.index("run_manifest = {"))
+        ]
+        diagnostics_meta = source[
+            source.index("diag_recorder.set_meta({"):
+            source.index("})", source.index("diag_recorder.set_meta({"))
+        ]
+
+        for name, region in (
+            ("run_context", run_context),
+            ("run_manifest", run_manifest),
+            ("diagnostics meta", diagnostics_meta),
+        ):
+            with self.subTest(destination=name):
+                self.assertIn('"F1"', region)
+                self.assertIn('"F4"', region)
+                self.assertGreaterEqual(region.count('"probe_batch_size"'), 2)
+                self.assertGreaterEqual(region.count('"probe_batch_count"'), 2)
 
 
 if __name__ == "__main__":

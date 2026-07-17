@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import io
 import json
+import math
 import os
 import shutil
 import unittest
@@ -1914,6 +1915,182 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
 
 
 class BLBProbeSizingRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _examples(count):
+        return [
+            {
+                "input_ids": torch.tensor([index, index + 1], dtype=torch.long),
+                "attention_mask": torch.ones(2, dtype=torch.long),
+                "labels": torch.tensor(index, dtype=torch.long),
+            }
+            for index in range(count)
+        ]
+
+    @classmethod
+    def _evaluator(cls, *, probe_count=256, validation_count=408, batch_size=64):
+        probe_examples = cls._examples(probe_count)
+        validation_examples = cls._examples(validation_count)
+        evaluator = SimpleNamespace(
+            batch_size=batch_size,
+            stage2_probe_size=probe_count,
+            device="cpu",
+            data_collator=torch.utils.data.default_collate,
+            dataset_splits={"validation_full": validation_examples},
+        )
+        evaluator.get_reward_reference_split_name = lambda: "validation_full"
+        evaluator._get_stability_probe = (
+            lambda _split, size, probe_seed: (probe_examples[:size], None)
+        )
+        return evaluator
+
+    @staticmethod
+    def _flatten_labels(batches):
+        return [
+            int(label)
+            for batch in batches
+            for label in batch.labels.reshape(-1).tolist()
+        ]
+
+    def test_resolve_probe_batch_size_uses_fallback_or_explicit_value(self):
+        from blb_stage2_rl.runner import resolve_probe_batch_size
+
+        self.assertEqual(
+            resolve_probe_batch_size(None, evaluator_batch_size=64),
+            64,
+        )
+        self.assertEqual(
+            resolve_probe_batch_size(128, evaluator_batch_size=64),
+            128,
+        )
+
+    def test_resolve_probe_batch_size_rejects_invalid_explicit_values(self):
+        from blb_stage2_rl.runner import resolve_probe_batch_size
+
+        for value in (0, -1, 128.0, "128", True):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    resolve_probe_batch_size(value, evaluator_batch_size=64)
+
+    def test_probe_batch_size_config_defaults_and_validation(self):
+        from blb_stage2_rl.runner import BLBStage2TrainConfig
+
+        defaults = BLBStage2TrainConfig()
+        self.assertIsNone(defaults.probe_batch_size)
+        self.assertIsNone(defaults.validation_probe_batch_size)
+
+        configured = BLBStage2TrainConfig(
+            probe_batch_size=128,
+            validation_probe_batch_size=256,
+        )
+        self.assertEqual(configured.probe_batch_size, 128)
+        self.assertEqual(configured.validation_probe_batch_size, 256)
+
+        for field_name in ("probe_batch_size", "validation_probe_batch_size"):
+            for value in (0, -1, 64.0, "64", True):
+                with self.subTest(field=field_name, value=value):
+                    with self.assertRaises(ValueError):
+                        BLBStage2TrainConfig(**{field_name: value})
+
+    def test_runner_config_reads_independent_probe_batch_size_fields(self):
+        from blb_stage2_rl.runner import BLBStage2RLRunner
+
+        evaluator = SimpleNamespace(
+            stage2_rl_episodes=240,
+            stage2_ppo_lr_initial=1e-4,
+            dataset_key="mrpc",
+            stage2_k_trials=5,
+            batch_size=64,
+            blb_v3_probe_batch_size=128,
+            blb_v3_validation_probe_batch_size=256,
+        )
+        runner = BLBStage2RLRunner(evaluator)
+
+        configured = runner._build_train_config_from_evaluator(evaluator)
+        self.assertEqual(configured.probe_batch_size, 128)
+        self.assertEqual(configured.validation_probe_batch_size, 256)
+
+        evaluator.blb_v3_probe_batch_size = None
+        evaluator.blb_v3_validation_probe_batch_size = None
+        fallback = runner._build_train_config_from_evaluator(evaluator)
+        self.assertIsNone(fallback.probe_batch_size)
+        self.assertIsNone(fallback.validation_probe_batch_size)
+
+    def test_probe_batch_size_groups_f1_without_changing_samples_or_order(self):
+        from blb_stage2_rl.runner import BLBStage2RLRunner, BLBStage2TrainConfig
+
+        evaluator = self._evaluator()
+        runner = BLBStage2RLRunner(evaluator)
+        config = BLBStage2TrainConfig(probe_batch_size=128)
+
+        batches = runner._build_probe_batches(
+            evaluator,
+            config,
+            probe_size_override=256,
+        )
+
+        self.assertEqual(len(batches), math.ceil(256 / 128))
+        self.assertEqual([batch.labels.numel() for batch in batches], [128, 128])
+        self.assertEqual(self._flatten_labels(batches), list(range(256)))
+
+    def test_probe_batch_size_none_preserves_default_batch_boundaries(self):
+        from blb_stage2_rl.runner import BLBStage2RLRunner, BLBStage2TrainConfig
+
+        evaluator = self._evaluator(batch_size=64)
+        runner = BLBStage2RLRunner(evaluator)
+
+        batches = runner._build_probe_batches(
+            evaluator,
+            BLBStage2TrainConfig(probe_batch_size=None),
+            probe_size_override=256,
+        )
+
+        self.assertEqual(len(batches), 4)
+        self.assertEqual([batch.labels.numel() for batch in batches], [64] * 4)
+        self.assertEqual(
+            [(int(batch.labels[0]), int(batch.labels[-1])) for batch in batches],
+            [(0, 63), (64, 127), (128, 191), (192, 255)],
+        )
+
+    def test_validation_probe_batch_size_is_independent_from_f1(self):
+        from blb_stage2_rl.runner import BLBStage2RLRunner, BLBStage2TrainConfig
+
+        evaluator = self._evaluator()
+        runner = BLBStage2RLRunner(evaluator)
+        config = BLBStage2TrainConfig(
+            probe_batch_size=128,
+            validation_probe_batch_size=256,
+        )
+
+        f1_batches = runner._build_probe_batches(
+            evaluator,
+            config,
+            probe_size_override=256,
+        )
+        f4_batches = runner._build_validation_full_batches(evaluator, config)
+
+        self.assertEqual(len(f1_batches), math.ceil(256 / 128))
+        self.assertEqual(len(f4_batches), math.ceil(408 / 256))
+        self.assertEqual([batch.labels.numel() for batch in f4_batches], [256, 152])
+        self.assertEqual(self._flatten_labels(f4_batches), list(range(408)))
+
+    def test_validation_probe_batch_size_none_uses_evaluator_batch_size(self):
+        from blb_stage2_rl.runner import BLBStage2RLRunner, BLBStage2TrainConfig
+
+        evaluator = self._evaluator(batch_size=64)
+        runner = BLBStage2RLRunner(evaluator)
+
+        batches = runner._build_validation_full_batches(
+            evaluator,
+            BLBStage2TrainConfig(validation_probe_batch_size=None),
+        )
+
+        self.assertEqual(len(batches), math.ceil(408 / 64))
+        self.assertEqual(
+            [batch.labels.numel() for batch in batches],
+            [64, 64, 64, 64, 64, 64, 24],
+        )
+        self.assertEqual(self._flatten_labels(batches), list(range(408)))
+
     def test_probe_batch_count_covers_requested_probe_size(self):
         from blb_stage2_rl.runner import _effective_probe_batch_count
 
