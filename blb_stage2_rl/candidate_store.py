@@ -5,6 +5,7 @@ fidelity ordering, and the hard-priority rank key used by the playbook.
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -31,6 +32,17 @@ FIDELITY_ORDER = {
 }
 _CANDIDATE_JSONL_ENCODER = json.JSONEncoder(ensure_ascii=True, sort_keys=True)
 _RECOVERY_RECORD_TYPE = "candidate_store_recovery_v1"
+_IDENTITY_CONTEXT_RECORD_TYPE = "candidate_identity_context_v1"
+_TRIAL_GROUP_RECORD_TYPES = frozenset({
+    "candidate_trial_group_v1", "candidate_trial_group_v2",
+})
+_PROMOTION_STATUS_RECORD_TYPES = frozenset({
+    "candidate_promotion_status_v1", "candidate_promotion_status_v2",
+})
+_COMPACT_RECORD_TYPES = frozenset({
+    "candidate_trial_group_v2", "candidate_promotion_status_v2",
+})
+_INDEXED_RECORD_TYPES = _TRIAL_GROUP_RECORD_TYPES | _PROMOTION_STATUS_RECORD_TYPES
 # Note: F2 / F3 were intermediate tiers in the original spec; deprecated and
 # removed 2026-05-16. The active ladder is F0 (optimizer-only, no model
 # forward) → F1 (small probe + few MC trials during training) → F4 (full
@@ -395,16 +407,19 @@ class CandidateStore:
         self._promotion_state_by_candidate_key: Optional[
             Dict[str, Tuple[bool, str]]
         ] = None
+        self._identity_context_by_hash: Optional[Dict[str, Dict[str, Any]]] = None
 
     def _reset_trial_indices(self) -> None:
         self._trial_offsets_by_candidate_key = None
         self._trial_seeds_by_candidate_key = None
         self._promotion_state_by_candidate_key = None
+        self._identity_context_by_hash = None
 
     def _invalidate_recovery_layout(self) -> None:
         self._recovery_layout_size = None
         self._recovery_markers = ()
         self._active_spans = ()
+        self._reset_trial_indices()
 
     @staticmethod
     def _resolve_active_spans(
@@ -459,11 +474,58 @@ class CandidateStore:
             return None
         return payload
 
+    @staticmethod
+    def _register_identity_context_record(
+            record: Mapping[str, Any],
+            context_index: Dict[str, Dict[str, Any]],
+            ) -> None:
+        context_hash = str(record.get("identity_context_hash", ""))
+        context = record.get("identity_context")
+        if not context_hash or not isinstance(context, Mapping):
+            raise ValueError("candidate identity context record is incomplete")
+        normalized_context = copy.deepcopy(dict(context))
+        if sha256_json(normalized_context) != context_hash:
+            raise ValueError("candidate identity context hash/content mismatch")
+        existing = context_index.get(context_hash)
+        if existing is not None and existing != normalized_context:
+            raise ValueError("candidate identity context hash collision")
+        context_index[context_hash] = normalized_context
+
+    @staticmethod
+    def _hydrate_compact_record(
+            record: Mapping[str, Any],
+            context_index: Mapping[str, Mapping[str, Any]],
+            ) -> Dict[str, Any]:
+        payload = copy.deepcopy(dict(record))
+        if str(payload.get("record_type", "")) not in _COMPACT_RECORD_TYPES:
+            return payload
+        context_hash = str(payload.get("identity_context_hash", ""))
+        context = context_index.get(context_hash)
+        if not context_hash or context is None:
+            raise ValueError(
+                "candidate compact record references a missing identity context"
+            )
+        if sha256_json(context) != context_hash:
+            raise ValueError("candidate identity context hash/content mismatch")
+        action = normalize_action_indices(payload.get("action_indices", ()))
+        payload["action_indices"] = action
+        payload["raw_action_indices"] = list(action)
+        payload["effective_action_indices"] = list(action)
+        payload["identity_context"] = copy.deepcopy(dict(context))
+        if payload.get("record_type") == "candidate_trial_group_v2":
+            metadata = payload.get("trial_group_metadata")
+            metadata = copy.deepcopy(dict(metadata)) if isinstance(metadata, Mapping) else {}
+            metadata["identity_context"] = copy.deepcopy(dict(context))
+            payload["trial_group_metadata"] = metadata
+        return payload
+
     def _load_recovery_layout(self) -> None:
         self._repair_unterminated_tail()
         file_size = self.path.stat().st_size if self.path.exists() else 0
         if self._recovery_layout_size == file_size:
             return
+        if self._recovery_layout_size is not None:
+            self._reset_trial_indices()
 
         markers: List[Tuple[int, int, int, int]] = []
         if file_size:
@@ -618,9 +680,58 @@ class CandidateStore:
             payloads = (payload for _offset, payload in self._iter_active_records())
         else:
             payloads = iter_jsonl(self.path, errors="raise")
+        context_index: Dict[str, Dict[str, Any]] = {}
         for payload in payloads:
+            record_type = str(payload.get("record_type", ""))
+            if record_type == _IDENTITY_CONTEXT_RECORD_TYPE:
+                self._register_identity_context_record(payload, context_index)
+                continue
+            if record_type in _COMPACT_RECORD_TYPES:
+                payload = self._hydrate_compact_record(payload, context_index)
             payload.setdefault("legacy_record", is_legacy_record(payload))
             yield payload
+
+    def _append_physical_record(
+            self,
+            record: Mapping[str, Any],
+            ) -> Dict[str, Any]:
+        """Append one already-normalized physical row."""
+        payload = dict(record)
+        payload.setdefault(
+            "created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
+        self._load_recovery_layout()
+        payload.setdefault("logical_generation", self._logical_generation)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._repair_unterminated_tail()
+        row_offset = self.path.stat().st_size if self.path.exists() else 0
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(_CANDIDATE_JSONL_ENCODER.encode(payload) + "\n")
+        self._extend_active_tail(row_offset, self.path.stat().st_size)
+
+        record_type = str(payload.get("record_type", ""))
+        if (
+                record_type == _IDENTITY_CONTEXT_RECORD_TYPE
+                and self._identity_context_by_hash is not None
+        ):
+            self._register_identity_context_record(
+                payload, self._identity_context_by_hash,
+            )
+        elif (
+                record_type in _INDEXED_RECORD_TYPES
+                and self._trial_offsets_by_candidate_key is not None
+                and payload.get("candidate_key")
+        ):
+            indexed_payload = payload
+            if record_type in _COMPACT_RECORD_TYPES:
+                if self._identity_context_by_hash is None:
+                    self._reset_trial_indices()
+                    return payload
+                indexed_payload = self._hydrate_compact_record(
+                    payload, self._identity_context_by_hash,
+                )
+            self._index_trial_record(indexed_payload, offset=row_offset)
+        return payload
 
     def append(self, record: Mapping[str, Any]) -> Dict[str, Any]:
         payload = dict(record)
@@ -651,28 +762,8 @@ class CandidateStore:
             )
             payload.setdefault("identity_context_hash", sha256_json(dict(identity_context)))
         payload.setdefault("legacy_record", is_legacy_record(payload))
-        payload.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
         payload.setdefault("rank_key", list(candidate_rank_key(payload)))
-        self._load_recovery_layout()
-        payload.setdefault("logical_generation", self._logical_generation)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._repair_unterminated_tail()
-        row_offset = self.path.stat().st_size if self.path.exists() else 0
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(_CANDIDATE_JSONL_ENCODER.encode(payload) + "\n")
-        if self.path.exists():
-            self._extend_active_tail(row_offset, self.path.stat().st_size)
-        else:
-            self._invalidate_recovery_layout()
-        if (
-                self._trial_offsets_by_candidate_key is not None
-                and payload.get("record_type") in (
-                    "candidate_trial_group_v1", "candidate_promotion_status_v1",
-                )
-                and payload.get("candidate_key")
-        ):
-            self._index_trial_record(payload, offset=row_offset)
-        return payload
+        return self._append_physical_record(payload)
 
     @staticmethod
     def _trial_group_from_record(
@@ -707,12 +798,12 @@ class CandidateStore:
         attempted, status = self._promotion_state_by_candidate_key.get(
             key, (False, ""),
         )
-        if record_type == "candidate_promotion_status_v1":
+        if record_type in _PROMOTION_STATUS_RECORD_TYPES:
             self._promotion_state_by_candidate_key[key] = (
                 True, str(record.get("promotion_status", status)),
             )
             return
-        if record_type != "candidate_trial_group_v1":
+        if record_type not in _TRIAL_GROUP_RECORD_TYPES:
             return
         trials = self._trial_group_from_record(record)
         if trials is None:
@@ -738,20 +829,43 @@ class CandidateStore:
                 self._trial_offsets_by_candidate_key is not None
                 and self._trial_seeds_by_candidate_key is not None
                 and self._promotion_state_by_candidate_key is not None
+                and self._identity_context_by_hash is not None
+                and self._recovery_layout_size
+                == (self.path.stat().st_size if self.path.exists() else 0)
+        ):
+            return
+        self._load_recovery_layout()
+        if (
+                self._trial_offsets_by_candidate_key is not None
+                and self._trial_seeds_by_candidate_key is not None
+                and self._promotion_state_by_candidate_key is not None
+                and self._identity_context_by_hash is not None
         ):
             return
         self._trial_offsets_by_candidate_key = {}
         self._trial_seeds_by_candidate_key = {}
         self._promotion_state_by_candidate_key = {}
-        for offset, record in self._iter_active_records():
-            if record.get("record_type") not in (
-                    "candidate_trial_group_v1", "candidate_promotion_status_v1",
-            ):
-                continue
-            key = record.get("candidate_key")
-            if not key:
-                continue
-            self._index_trial_record(record, offset=offset)
+        self._identity_context_by_hash = {}
+        try:
+            for offset, record in self._iter_active_records():
+                record_type = str(record.get("record_type", ""))
+                if record_type == _IDENTITY_CONTEXT_RECORD_TYPE:
+                    self._register_identity_context_record(
+                        record, self._identity_context_by_hash,
+                    )
+                    continue
+                if record_type not in _INDEXED_RECORD_TYPES:
+                    continue
+                if record_type in _COMPACT_RECORD_TYPES:
+                    record = self._hydrate_compact_record(
+                        record, self._identity_context_by_hash,
+                    )
+                if not record.get("candidate_key"):
+                    continue
+                self._index_trial_record(record, offset=offset)
+        except Exception:
+            self._reset_trial_indices()
+            raise
 
     def _trial_records_for_candidate_key(
             self,
@@ -770,13 +884,81 @@ class CandidateStore:
                     handle.readline(), path=self.path, offset=offset,
                 )
                 if record is not None:
+                    if str(record.get("record_type", "")) in _COMPACT_RECORD_TYPES:
+                        record = self._hydrate_compact_record(
+                            record, self._identity_context_by_hash,
+                        )
                     yield record
+
+    @staticmethod
+    def _trial_group_metadata_payload(
+            metadata: Mapping[str, Any],
+            *,
+            compact: bool,
+            fidelity: str,
+            ) -> Dict[str, Any]:
+        payload = to_jsonable(dict(metadata), stringify_unknown=True)
+        if not isinstance(payload, dict):
+            raise TypeError("trial group metadata must encode as an object")
+        if compact:
+            payload.pop("identity_context", None)
+            if str(fidelity).upper() == "F1":
+                payload.pop("boosted_overrides", None)
+        return payload
+
+    def _intern_identity_context(
+            self,
+            identity_context: Mapping[str, Any],
+            ) -> str:
+        self._ensure_trial_indices()
+        context = to_jsonable(dict(identity_context), stringify_unknown=True)
+        if not isinstance(context, dict):
+            raise TypeError("identity_context must encode as an object")
+        context_hash = sha256_json(context)
+        existing = self._identity_context_by_hash.get(context_hash)
+        if existing is not None:
+            if existing != context:
+                raise ValueError("candidate identity context hash collision")
+            return context_hash
+        self._append_physical_record({
+            "record_type": _IDENTITY_CONTEXT_RECORD_TYPE,
+            "identity_context_hash": context_hash,
+            "identity_context": context,
+        })
+        return context_hash
+
+    @staticmethod
+    def _compact_candidate_identity_fields(
+            action_indices: Sequence[int],
+            identity_context: Mapping[str, Any],
+            identity_context_hash: str,
+            ) -> Dict[str, Any]:
+        action = [int(value) for value in action_indices]
+        canonical_hash = action_hash(action)
+        return {
+            "action_indices": action,
+            "raw_action_hash": canonical_hash,
+            "action_hash": canonical_hash,
+            "action_vector_hash": canonical_hash,
+            "effective_action_hash": canonical_hash,
+            "candidate_key_basis": "effective_action_hash + identity_context",
+            "candidate_key": candidate_key(
+                action,
+                identity_context,
+                effective_action_indices=action,
+                effective_action_hash_value=canonical_hash,
+            ),
+            "identity_context_hash": str(identity_context_hash),
+            "legacy_record": False,
+        }
 
     def append_trial_group(
             self,
             action_indices: Any,
             trials: TrialSeries,
             metadata: Mapping[str, Any],
+            *,
+            compact: bool = False,
             ) -> Dict[str, Any]:
         """Append one aligned raw robust-evidence group for a candidate."""
         if not isinstance(trials, TrialSeries):
@@ -793,12 +975,15 @@ class CandidateStore:
 
         normalized_action = normalize_action_indices(action_indices)
         wanted_key = candidate_key(normalized_action, identity_context)
+        fidelity = str(metadata.get("fidelity", "F1"))
         self._ensure_trial_indices()
         existing_seeds = self._trial_seeds_by_candidate_key.get(wanted_key, set())
         overlap = sorted(
             int(seed) for seed in trials.seeds if int(seed) in existing_seeds
         )
-        metadata_payload = to_jsonable(dict(metadata), stringify_unknown=True)
+        metadata_payload = self._trial_group_metadata_payload(
+            metadata, compact=bool(compact), fidelity=fidelity,
+        )
         if overlap:
             if len(overlap) == len(trials.seeds):
                 replay_values = tuple(
@@ -828,12 +1013,29 @@ class CandidateStore:
                         for idx in range(len(stored.seeds))
                     )
                     existing_metadata = exact_record.get("trial_group_metadata")
+                    existing_metadata = (
+                        dict(existing_metadata)
+                        if isinstance(existing_metadata, Mapping) else {}
+                    )
+                    exact_record_type = str(exact_record.get("record_type", ""))
+                    compare_compact = exact_record_type == "candidate_trial_group_v2"
+                    incoming_comparison_metadata = self._trial_group_metadata_payload(
+                        metadata,
+                        compact=compare_compact,
+                        fidelity=str(exact_record.get("fidelity", fidelity)),
+                    )
+                    existing_comparison_metadata = self._trial_group_metadata_payload(
+                        existing_metadata,
+                        compact=compare_compact,
+                        fidelity=str(exact_record.get("fidelity", fidelity)),
+                    )
                     if (
                             replay_values == existing_values
-                            and existing_metadata == metadata_payload
+                            and existing_comparison_metadata
+                            == incoming_comparison_metadata
                     ):
                         return {
-                            "record_type": "candidate_trial_group_v1",
+                            "record_type": exact_record_type,
                             "candidate_key": wanted_key,
                             "action_indices": normalized_action,
                             "idempotent_replay": True,
@@ -844,21 +1046,69 @@ class CandidateStore:
                         )
             raise ValueError(f"duplicate trial seeds for candidate identity: {overlap}")
 
+        trial_group = {
+            "loss": [float(value) for value in trials.loss],
+            "metric1": [float(value) for value in trials.metric1],
+            "metric2": [float(value) for value in trials.metric2],
+            "seeds": [int(value) for value in trials.seeds],
+        }
+        if compact:
+            context_hash = self._intern_identity_context(identity_context)
+            payload = {
+                "record_type": "candidate_trial_group_v2",
+                **self._compact_candidate_identity_fields(
+                    normalized_action, identity_context, context_hash,
+                ),
+                "fidelity": fidelity,
+                "valid": bool(metadata.get("valid", True)),
+                "trial_group": trial_group,
+                "trial_group_metadata": metadata_payload,
+            }
+            payload["rank_key"] = list(candidate_rank_key(payload))
+            return self._append_physical_record(payload)
+
         return self.append({
             "record_type": "candidate_trial_group_v1",
             "action_indices": normalized_action,
             "effective_action_indices": normalized_action,
             "identity_context": dict(identity_context),
-            "fidelity": str(metadata.get("fidelity", "F1")),
+            "fidelity": fidelity,
             "valid": bool(metadata.get("valid", True)),
-            "trial_group": {
-                "loss": [float(value) for value in trials.loss],
-                "metric1": [float(value) for value in trials.metric1],
-                "metric2": [float(value) for value in trials.metric2],
-                "seeds": [int(value) for value in trials.seeds],
-            },
+            "trial_group": trial_group,
             "trial_group_metadata": metadata_payload,
         })
+
+    def append_promotion_status(
+            self,
+            action_indices: Any,
+            identity_context: Mapping[str, Any],
+            *,
+            status: str,
+            metadata: Optional[Mapping[str, Any]] = None,
+            ) -> Dict[str, Any]:
+        """Append one compact F4 promotion/final-revalidation status row."""
+        if not isinstance(identity_context, Mapping):
+            raise TypeError("identity_context must be a mapping")
+        if metadata is not None and not isinstance(metadata, Mapping):
+            raise TypeError("metadata must be a mapping")
+        action = normalize_action_indices(action_indices)
+        context_hash = self._intern_identity_context(identity_context)
+        payload = {
+            "record_type": "candidate_promotion_status_v2",
+            **self._compact_candidate_identity_fields(
+                action, identity_context, context_hash,
+            ),
+            "fidelity": "F4",
+            "valid": str(status) in (
+                "promoted", "final_revalidation_passed",
+            ),
+            "promotion_status": str(status),
+            "promotion_metadata": to_jsonable(
+                dict(metadata or {}), stringify_unknown=True,
+            ),
+        }
+        payload["rank_key"] = list(candidate_rank_key(payload))
+        return self._append_physical_record(payload)
 
     def trial_evidence_for_action(
             self,
@@ -887,7 +1137,7 @@ class CandidateStore:
 
         for record in self._trial_records_for_candidate_key(wanted_key):
             record_type = str(record.get("record_type", ""))
-            if record_type != "candidate_trial_group_v1":
+            if record_type not in _TRIAL_GROUP_RECORD_TYPES:
                 continue
             trial_group = self._trial_group_from_record(record)
             if trial_group is None:
