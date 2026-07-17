@@ -497,6 +497,64 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertIn("promotion_base_env=promotion_base_env", source)
         self.assertIn("authoritative_robust_reference", source)
 
+    def test_resumed_best_reward_uses_historical_diagnostics_maximum(self):
+        from blb_stage2_rl.sequential_runner import resolve_resumed_best_reward
+
+        cases = (
+            ("historical maximum", {"reward": 4.0}, 9.5, 9.5),
+            ("strict maximum", {"reward": 9.5}, 4.0, 9.5),
+            ("strict only", {"reward": 4.0}, None, 4.0),
+            ("no history", {}, None, -math.inf),
+            ("malformed strict", {"reward": "not-a-number"}, None, -math.inf),
+            ("nonfinite strict nan", {"reward": float("nan")}, None, -math.inf),
+            ("nonfinite strict inf", {"reward": float("inf")}, None, -math.inf),
+            ("history survives malformed strict", {"reward": object()}, 9.5, 9.5),
+            ("nonfinite history ignored", {"reward": 4.0}, float("nan"), 4.0),
+        )
+        for label, resumed_best, historical_best, expected in cases:
+            with self.subTest(label=label):
+                actual = resolve_resumed_best_reward(resumed_best, historical_best)
+                if expected == -math.inf:
+                    self.assertTrue(math.isinf(actual))
+                    self.assertLess(actual, 0.0)
+                else:
+                    self.assertEqual(actual, expected)
+
+    def test_layerwise_branch_wires_restored_diagnostics_into_resumed_best_reward(self):
+        source_path = (
+            Path(__file__).resolve().parents[1]
+            / "blb_stage2_rl"
+            / "sequential_runner.py"
+        )
+        source = source_path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        branch = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        initializers = [
+            node.value
+            for node in ast.walk(branch)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "best_reward_so_far"
+                for target in node.targets
+            )
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id == "resolve_resumed_best_reward"
+        ]
+
+        self.assertEqual(len(initializers), 1)
+        self.assertEqual(
+            ast.unparse(initializers[0]),
+            "resolve_resumed_best_reward(resumed_best, "
+            "diag_recorder.best_episode_return)",
+        )
+
     def test_layerwise_stage2_builds_one_shared_probe_owner(self):
         source_path = (
             Path(__file__).resolve().parents[1]
@@ -2660,7 +2718,6 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 assessment=_assessment(0.99),
                 metrics=metrics,
             )
-
         no_promotion = types.SimpleNamespace(
             status="not_evaluated",
             trial_count=0,
@@ -2700,6 +2757,112 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["best_full_vector"], low["full_vector"])
         self.assertEqual(summary["strict_revalidation_status"], "passed")
         self.assertTrue(summary["strict_revalidation_passed"])
+
+    def test_train_bounded_history_can_be_disabled_without_changing_callbacks(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        completed = []
+        ppo_updates = []
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=37, update_every=8),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+                on_episode_end=lambda record: completed.append(
+                    (record.episode_index, record.reward)
+                ),
+                on_ppo_update_end=lambda metrics, count, _record: ppo_updates.append(
+                    (count, metrics["completed_episodes"])
+                ),
+                retain_history=False,
+            )
+
+        self.assertEqual(summary["completed_episodes"], 37)
+        self.assertEqual(summary["episode_records"], [])
+        self.assertEqual(summary["episode_rewards"], [])
+        self.assertEqual(summary["ppo_metrics"], [])
+        self.assertEqual(completed, [(index, -5.0) for index in range(37)])
+        self.assertEqual(
+            ppo_updates,
+            [(8, 8), (16, 16), (24, 24), (32, 32), (37, 37)],
+        )
+
+    def test_train_bounded_history_preserves_nonzero_resume_callback_identities(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        config = self._train_cfg(total_episodes=5, update_every=2)
+        config.absolute_episode_start = 40
+        config.planned_total_episodes = 45
+        completed = []
+        ppo_updates = []
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+                on_episode_end=lambda record: completed.append(record.episode_index),
+                on_ppo_update_end=lambda metrics, count, _record: ppo_updates.append(
+                    (count, metrics["completed_episodes"])
+                ),
+                retain_history=False,
+            )
+
+        self.assertEqual(summary["completed_episodes"], 45)
+        self.assertEqual(summary["episode_records"], [])
+        self.assertEqual(summary["episode_rewards"], [])
+        self.assertEqual(summary["ppo_metrics"], [])
+        self.assertEqual(completed, [40, 41, 42, 43, 44])
+        self.assertEqual(ppo_updates, [(42, 42), (44, 44), (45, 45)])
+
+    def test_train_bounded_history_defaults_to_complete_direct_call_lists(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=3, update_every=2),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["completed_episodes"], 3)
+        self.assertEqual(len(summary["episode_records"]), 3)
+        self.assertEqual(summary["episode_rewards"], [-5.0, -5.0, -5.0])
+        self.assertEqual(len(summary["ppo_metrics"]), 2)
 
     def test_exhaustive_c_fallback_reports_surviving_certified_tie_as_passed(self):
         from blb_stage2_rl.candidate_store import CandidateStore
