@@ -38,7 +38,8 @@ import traceback
 import weakref
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from uuid import uuid4
 
 import torch
 import torch.nn as nn
@@ -77,6 +78,27 @@ def resolve_probe_backend(spec: Optional[str] = None) -> str:
             f"got {raw!r}"
         )
     return value
+
+
+def _resolve_probe_thread_count(env_name: str) -> int:
+    raw = os.environ.get(env_name, "1")
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{env_name} must be a positive integer, got {raw!r}"
+        ) from exc
+    if value <= 0:
+        raise ValueError(f"{env_name} must be a positive integer, got {raw!r}")
+    return value
+
+
+def resolve_probe_intraop_threads() -> int:
+    return _resolve_probe_thread_count("BLB_STAGE2_PROBE_INTRAOP_THREADS")
+
+
+def resolve_probe_interop_threads() -> int:
+    return _resolve_probe_thread_count("BLB_STAGE2_PROBE_INTEROP_THREADS")
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +197,20 @@ def _move_probe_batch_to_device(batch: Any, device: torch.device) -> Any:
         return clone
 
 
+def _normalize_batch_set_key(key: Any) -> str:
+    normalized = str(key).strip()
+    if not normalized:
+        raise ValueError("probe batch-set key must be nonempty")
+    return normalized
+
+
+def _freeze_probe_batches(batches: Sequence[Any]) -> Tuple[Any, ...]:
+    frozen = tuple(batches)
+    if not frozen:
+        raise ValueError("probe batch set must contain at least one batch")
+    return frozen
+
+
 # ---------------------------------------------------------------------------
 # ProbeWorker — one per device
 # ---------------------------------------------------------------------------
@@ -186,10 +222,26 @@ class ProbeWorker:
     model: nn.Module
     handler: Any  # ReversibleLayerHandler
     bridge: Any   # BLBNoiseRLBridge
-    probe_batches: List[Any]
+    probe_batches: Sequence[Any]
     is_regression: bool
     metric_profile: str = ""
     role: str = "primary"  # "primary" (worker 0, reuses env model) or "replica"
+    probe_batch_sets: Dict[str, Tuple[Any, ...]] = field(
+        init=False, repr=False,
+    )
+
+    def __post_init__(self) -> None:
+        initial_batches = _freeze_probe_batches(self.probe_batches)
+        self.probe_batch_sets = {"F1": initial_batches}
+
+    def register_batch_set(self, key: str, batches: Sequence[Any]) -> None:
+        normalized = _normalize_batch_set_key(key)
+        frozen = _freeze_probe_batches(batches)
+        if normalized in self.probe_batch_sets:
+            raise ValueError(
+                f"probe batch-set {normalized!r} is already registered"
+            )
+        self.probe_batch_sets[normalized] = frozen
 
     def install(self, decoded: ActionDecodeResult) -> None:
         """Install the BLB cfg on this worker's model via its bridge."""
@@ -211,15 +263,24 @@ class ProbeWorker:
             self,
             trial_idx: int,
             base_seed: int,
+            batch_set_key: str = "F1",
             ) -> Tuple[float, float, float]:
-        """Run one trial on this worker. Returns (loss, m1, m2) averaged over probe_batches."""
+        """Run one trial and return (loss, m1, m2) for the selected batches."""
+        normalized = _normalize_batch_set_key(batch_set_key)
+        try:
+            probe_batches = self.probe_batch_sets[normalized]
+        except KeyError as exc:
+            raise KeyError(
+                f"unknown probe batch-set {normalized!r}; "
+                f"registered={sorted(self.probe_batch_sets)}"
+            ) from exc
         with torch.cuda.device(self.device):
             seed = _trial_seed(base_seed, trial_idx)
             reseed_noise_rng_for_device(self.device, seed)
 
             return run_installed_probe_trial(
                 self.model,
-                self.probe_batches,
+                probe_batches,
                 metric_profile=str(self.metric_profile),
                 is_regression=bool(self.is_regression),
             )
@@ -237,10 +298,17 @@ def _probe_process_main(
     """Own one replica GPU and serve synchronous probe commands."""
     worker: Optional[ProbeWorker] = None
     try:
+        device = torch.device(f"cuda:{int(device_id)}")
+        if device.type == "cuda":
+            torch.cuda.set_device(device)
+        torch.set_num_threads(resolve_probe_intraop_threads())
+        try:
+            torch.set_num_interop_threads(resolve_probe_interop_threads())
+        except RuntimeError:
+            pass
         if BLBNoiseRLBridge is None:
             raise RuntimeError("BLBNoiseRLBridge is unavailable in probe child")
         enable_cuda_reward_probe_fast_math()
-        device = torch.device(f"cuda:{int(device_id)}")
         with torch.cuda.device(device):
             model = model_template.to(device)
             model.eval()
@@ -296,13 +364,34 @@ def _probe_process_main(
             elif operation == "clear":
                 worker.clear()
                 result = {}
+            elif operation == "register_batch_set":
+                batch_set_key = _normalize_batch_set_key(
+                    payload["batch_set_key"]
+                )
+                if batch_set_key in worker.probe_batch_sets:
+                    raise ValueError(
+                        f"probe batch-set {batch_set_key!r} is already registered"
+                    )
+                with torch.cuda.device(worker.device):
+                    registered_batches = tuple(
+                        _move_probe_batch_to_device(batch, worker.device)
+                        for batch in payload["probe_batches_cpu"]
+                    )
+                worker.register_batch_set(batch_set_key, registered_batches)
+                result = {
+                    "batch_set_key": batch_set_key,
+                    "batch_count": len(registered_batches),
+                }
             elif operation == "run_trials":
                 base_seed = int(payload["base_seed"])
+                batch_set_key = str(payload["batch_set_key"])
                 result = {
                     "results": [
                         (
                             int(trial_idx),
-                            worker.run_trial(int(trial_idx), base_seed),
+                            worker.run_trial(
+                                int(trial_idx), base_seed, batch_set_key,
+                            ),
                         )
                         for trial_idx in payload["trial_indices"]
                     ]
@@ -310,10 +399,13 @@ def _probe_process_main(
             elif operation == "run_action_trial":
                 trial_idx = int(payload["trial_idx"])
                 base_seed = int(payload["base_seed"])
+                batch_set_key = str(payload["batch_set_key"])
                 worker.install(payload["decoded"])
                 result = {
                     "trial_idx": trial_idx,
-                    "result": worker.run_trial(trial_idx, base_seed),
+                    "result": worker.run_trial(
+                        trial_idx, base_seed, batch_set_key,
+                    ),
                 }
             elif operation == "close":
                 try:
@@ -484,6 +576,10 @@ class ProbeRunner:
                 "process probe backend requires exactly one local primary worker"
             )
         self.workers = list(workers) + self._process_workers
+        self.pool_id = f"probe-pool-{uuid4().hex}"
+        self._batch_sets: Dict[str, Tuple[Any, ...]] = {
+            "F1": tuple(getattr(workers[0], "probe_batches", ())),
+        }
         self.last_diagnostics: Optional[ProbeRunnerDiagnostics] = None
         self._closed = False
         self._process_finalizer = (
@@ -514,6 +610,72 @@ class ProbeRunner:
     @property
     def backend(self) -> str:
         return "process" if self._process_workers else "thread"
+
+    def _require_batch_set(self, key: str) -> str:
+        normalized = _normalize_batch_set_key(key)
+        if normalized not in self._batch_sets:
+            raise KeyError(
+                f"unknown probe batch-set {normalized!r}; "
+                f"registered={sorted(self._batch_sets)}"
+            )
+        return normalized
+
+    def register_batch_set(self, key: str, batches: Sequence[Any]) -> None:
+        """Register one immutable batch set on every worker in this pool."""
+        if self._closed:
+            raise RuntimeError("cannot register probe batches on a closed runner")
+        normalized = _normalize_batch_set_key(key)
+        frozen = _freeze_probe_batches(batches)
+        if normalized in self._batch_sets:
+            raise ValueError(
+                f"probe batch-set {normalized!r} is already registered"
+            )
+
+        if self._process_workers:
+            cpu_batches = tuple(
+                _move_probe_batch_to_device(batch, torch.device("cpu"))
+                for batch in frozen
+            )
+            self.workers[0].register_batch_set(normalized, frozen)
+            submitted: List[Tuple[int, Any]] = []
+            errors: List[Tuple[int, BaseException]] = []
+            for worker_index, worker in enumerate(
+                    self._process_workers, start=1,
+                    ):
+                try:
+                    worker.submit("register_batch_set", {
+                        "batch_set_key": normalized,
+                        "probe_batches_cpu": cpu_batches,
+                    })
+                    submitted.append((worker_index, worker))
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append((worker_index, exc))
+            for worker_index, worker in submitted:
+                try:
+                    worker.receive("register_batch_set")
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append((worker_index, exc))
+            if errors:
+                worker_index, exc = errors[0]
+                self._raise_process_error(
+                    worker_index, "register_batch_set", exc,
+                )
+        else:
+            worker_batches = [frozen]
+            worker_batches.extend(
+                tuple(
+                    _move_probe_batch_to_device(batch, worker.device)
+                    for batch in frozen
+                )
+                for worker in self.workers[1:]
+            )
+            for worker, batches_for_worker in zip(self.workers, worker_batches):
+                worker.register_batch_set(normalized, batches_for_worker)
+
+        self._batch_sets[normalized] = frozen
+
+    def view(self, batch_set_key: str) -> "ProbeRunnerView":
+        return ProbeRunnerView(self, _normalize_batch_set_key(batch_set_key))
 
     def _raise_process_error(
             self,
@@ -632,6 +794,7 @@ class ProbeRunner:
             self,
             k: int,
             base_seed: int,
+            batch_set_key: str,
             ) -> List[Tuple[float, float, float]]:
         assignments = _split_round_robin_cached(k, self.num_workers)
         seed_assignments = [
@@ -652,6 +815,7 @@ class ProbeRunner:
                 worker.submit("run_trials", {
                     "trial_indices": list(trials),
                     "base_seed": int(base_seed),
+                    "batch_set_key": batch_set_key,
                 })
                 submitted.append((worker_index, worker))
             except BaseException as exc:  # noqa: BLE001
@@ -661,7 +825,7 @@ class ProbeRunner:
         try:
             for trial_idx in assignments[0]:
                 results_per_trial[trial_idx] = self.workers[0].run_trial(
-                    trial_idx, base_seed,
+                    trial_idx, base_seed, batch_set_key,
                 )
         except BaseException as exc:  # noqa: BLE001
             errors.append((0, exc))
@@ -703,8 +867,14 @@ class ProbeRunner:
             ordered.append(result)
         return ordered
 
-    def run_trials(self, k: int, base_seed: int) -> List[Tuple[float, float, float]]:
+    def run_trials(
+            self,
+            k: int,
+            base_seed: int,
+            batch_set_key: str = "F1",
+            ) -> List[Tuple[float, float, float]]:
         """Run trials [0..k-1] in parallel across workers; return in trial order."""
+        normalized_batch_set_key = self._require_batch_set(batch_set_key)
         k = max(0, int(k))
         if k == 0:
             self.last_diagnostics = ProbeRunnerDiagnostics(
@@ -716,7 +886,9 @@ class ProbeRunner:
             return []
 
         if self._process_workers:
-            return self._run_trials_processes(k, base_seed)
+            return self._run_trials_processes(
+                k, base_seed, normalized_batch_set_key,
+            )
 
         assignments = _split_round_robin_cached(k, len(self.workers))
         seed_assignments = [
@@ -736,7 +908,9 @@ class ProbeRunner:
             t0 = time.perf_counter()
             try:
                 for ti in trials:
-                    res = worker.run_trial(ti, base_seed)
+                    res = worker.run_trial(
+                        ti, base_seed, normalized_batch_set_key,
+                    )
                     results_per_trial[ti] = res
             except BaseException as exc:  # noqa: BLE001
                 with lock:
@@ -790,6 +964,7 @@ class ProbeRunner:
             self,
             actions: Sequence[ActionDecodeResult],
             base_seed: int,
+            batch_set_key: str,
             ) -> List[Tuple[float, float, float]]:
         k = len(actions)
         results_per_trial: List[Optional[Tuple[float, float, float]]] = [None] * k
@@ -810,6 +985,7 @@ class ProbeRunner:
                     "trial_idx": int(worker_index),
                     "base_seed": int(base_seed),
                     "decoded": actions[worker_index],
+                    "batch_set_key": batch_set_key,
                 })
                 submitted.append((worker_index, worker))
             except BaseException as exc:  # noqa: BLE001
@@ -818,7 +994,9 @@ class ProbeRunner:
         local_started = time.perf_counter()
         try:
             self.workers[0].install(actions[0])
-            results_per_trial[0] = self.workers[0].run_trial(0, base_seed)
+            results_per_trial[0] = self.workers[0].run_trial(
+                0, base_seed, batch_set_key,
+            )
         except BaseException as exc:  # noqa: BLE001
             errors.append((0, exc))
         finally:
@@ -863,6 +1041,7 @@ class ProbeRunner:
             self,
             decoded_by_trial: Sequence[ActionDecodeResult],
             base_seed: int,
+            batch_set_key: str = "F1",
             ) -> List[Tuple[float, float, float]]:
         """Run one independent trial for each distinct decoded action.
 
@@ -871,6 +1050,7 @@ class ProbeRunner:
         and each GPU evaluates one of them. Results are returned in the same
         order as ``decoded_by_trial``.
         """
+        normalized_batch_set_key = self._require_batch_set(batch_set_key)
         actions = list(decoded_by_trial)
         k = len(actions)
         if k == 0:
@@ -889,7 +1069,9 @@ class ProbeRunner:
             )
 
         if self._process_workers:
-            return self._run_action_trials_once_processes(actions, base_seed)
+            return self._run_action_trials_once_processes(
+                actions, base_seed, normalized_batch_set_key,
+            )
 
         results_per_trial: List[Optional[Tuple[float, float, float]]] = [None] * k
         per_worker_seconds: List[float] = [0.0] * len(self.workers)
@@ -912,7 +1094,9 @@ class ProbeRunner:
                 # runs exactly one seeded trial for that action.
                 decoded = actions[w_idx]
                 worker.install(decoded)
-                res = worker.run_trial(w_idx, base_seed)
+                res = worker.run_trial(
+                    w_idx, base_seed, normalized_batch_set_key,
+                )
                 results_per_trial[w_idx] = res
             except BaseException as exc:  # noqa: BLE001
                 with lock:
@@ -961,6 +1145,61 @@ class ProbeRunner:
                 )
             ordered.append(result)
         return ordered
+
+
+class ProbeRunnerView:
+    """Non-owning fidelity view over one shared ProbeRunner."""
+
+    def __init__(self, owner: ProbeRunner, batch_set_key: str):
+        self._owner = owner
+        self.batch_set_key = _normalize_batch_set_key(batch_set_key)
+
+    @property
+    def pool_id(self) -> str:
+        return self._owner.pool_id
+
+    @property
+    def num_workers(self) -> int:
+        return self._owner.num_workers
+
+    @property
+    def devices(self) -> List[torch.device]:
+        return self._owner.devices
+
+    @property
+    def backend(self) -> str:
+        return self._owner.backend
+
+    @property
+    def last_diagnostics(self) -> Optional[ProbeRunnerDiagnostics]:
+        return self._owner.last_diagnostics
+
+    def install_action(self, decoded: ActionDecodeResult) -> None:
+        self._owner.install_action(decoded)
+
+    def clear(self) -> None:
+        self._owner.clear()
+
+    def run_trials(
+            self, k: int, base_seed: int,
+            ) -> List[Tuple[float, float, float]]:
+        return self._owner.run_trials(
+            k, base_seed, batch_set_key=self.batch_set_key,
+        )
+
+    def run_action_trials_once(
+            self,
+            decoded_by_trial: Sequence[ActionDecodeResult],
+            base_seed: int,
+            ) -> List[Tuple[float, float, float]]:
+        return self._owner.run_action_trials_once(
+            decoded_by_trial,
+            base_seed,
+            batch_set_key=self.batch_set_key,
+        )
+
+    def close(self) -> None:
+        return None
 
 
 # ---------------------------------------------------------------------------

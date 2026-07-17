@@ -3399,19 +3399,35 @@ def _build_authoritative_validation_env(
     promotion_env._last_probe_diagnostics = {}
 
     devices = [int(value) for value in reward_devices]
-    if len(devices) >= 2:
-        from .probe_runner import build_probe_runner
-
-        promotion_env.probe_runner = build_probe_runner(
-            primary_model=ev.model,
-            primary_handler=ev.reversible_handler,
-            primary_bridge=base_env.bridge,
-            primary_probe_batches=promotion_env.probe_batches,
-            layers_attribute="model." + ev.layers_attribute,
-            is_regression=bool(getattr(ev, "is_regression", False)),
-            device_ids=devices,
-            metric_profile=str(train_cfg.profile),
-            log_fn=lambda message: log(f"  [multi-gpu][F4] {message}"),
+    shared_owner = getattr(base_env, "_shared_probe_runner_owner", None)
+    if shared_owner is not None:
+        frozen_batches = tuple(validation_full_batches)
+        registered_sets = getattr(
+            base_env, "_shared_probe_batch_sets", None,
+        )
+        if registered_sets is None:
+            registered_sets = {}
+            base_env._shared_probe_batch_sets = registered_sets
+        registered_f4 = registered_sets.get("F4")
+        if registered_f4 is None:
+            shared_owner.register_batch_set("F4", frozen_batches)
+            registered_sets["F4"] = frozen_batches
+        elif (
+                len(registered_f4) != len(frozen_batches)
+                or any(
+                    previous is not current
+                    for previous, current in zip(
+                        registered_f4, frozen_batches,
+                    )
+                )
+        ):
+            raise ValueError(
+                "F4 probe batch set is already registered with different batches"
+            )
+        promotion_env.probe_runner = shared_owner.view("F4")
+    elif len(devices) >= 2:
+        raise RuntimeError(
+            "authoritative validation requires the shared F1 probe-runner owner"
         )
     log(
         "  * F4 authoritative validation: "
@@ -5010,16 +5026,22 @@ def _run_layerwise_training_branch(
                                 pass
                         evaluator.apply_configuration(fixed_gelu, fixed_softmax)
                     finally:
-                        promotion_runner = getattr(
-                            promotion_base_env, "probe_runner", None,
+                        shared_owner = getattr(
+                            base_env, "_shared_probe_runner_owner", None,
                         )
-                        if (
-                                promotion_runner is not None
-                                and promotion_runner is not getattr(
-                                    base_env, "probe_runner", None,
-                                )
-                        ):
-                            promotion_runner.close()
+                        if shared_owner is not None:
+                            shared_owner.close()
+                        else:
+                            promotion_runner = getattr(
+                                promotion_base_env, "probe_runner", None,
+                            )
+                            if (
+                                    promotion_runner is not None
+                                    and promotion_runner is not getattr(
+                                        base_env, "probe_runner", None,
+                                    )
+                            ):
+                                promotion_runner.close()
     status.set_phase(completion_status)
 
     compact_summary = {
@@ -5501,7 +5523,7 @@ def _run_sequential_via_runner_locked(
     if reward_devices and len(reward_devices) >= 2:
         from .probe_runner import build_probe_runner
         log(f"  [multi-gpu] reward probe enabled: devices={reward_devices}")
-        base_env.probe_runner = build_probe_runner(
+        shared_probe_runner_owner = build_probe_runner(
             primary_model=ev.model,
             primary_handler=ev.reversible_handler,
             primary_bridge=base_env.bridge,
@@ -5512,6 +5534,11 @@ def _run_sequential_via_runner_locked(
             metric_profile=str(train_cfg.profile),
             log_fn=lambda m: log(f"  [multi-gpu] {m}"),
         )
+        base_env._shared_probe_runner_owner = shared_probe_runner_owner
+        base_env._shared_probe_batch_sets = {
+            "F1": tuple(base_env.probe_batches),
+        }
+        base_env.probe_runner = shared_probe_runner_owner.view("F1")
 
     # ---------- 4) baseline cost / reward weights ----------
     from .env import estimate_baseline_cost_stats
