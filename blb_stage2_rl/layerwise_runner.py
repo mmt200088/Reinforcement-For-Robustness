@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 import fcntl
 import hashlib
 import json
@@ -41,9 +41,10 @@ _REWARD_DESIGNS = frozenset((
 ))
 _LAUNCHER_LOCK_FD_ENV = "BLB_STAGE2_RUN_LOCK_FD"
 _LAUNCHER_LOCK_PATH_ENV = "BLB_STAGE2_RUN_LOCK_PATH"
-DEFAULT_CONVERGENCE_MIN_EPISODES = 100_000
-DEFAULT_CONVERGENCE_PATIENCE_UPDATES = 220
-DEFAULT_CONVERGENCE_MAX_EPISODES = 150_000
+DEFAULT_CONVERGENCE_PATIENCE_UPDATES = 100
+StrictSelectionKey = tuple[tuple[float, ...], tuple[int, ...], str]
+_FINAL_REVALIDATION_PASSED = "final_revalidation_passed"
+_FINAL_REVALIDATION_FAILED = "final_revalidation_failed"
 
 
 def evidence_identity_context(
@@ -464,29 +465,81 @@ def _assessment_probabilities(assessment: Any) -> tuple[float, ...]:
     return probabilities
 
 
+def normalized_constraint_safety_margins(
+        metrics: Any,
+        statistical_reference: Any,
+        ) -> tuple[float, ...]:
+    """Return positive-is-safer margins for all six strict constraints."""
+    specifications = (
+        ("loss_mean", "loss_limit", -1.0),
+        ("metric1_mean", "metric1_limit", 1.0),
+        ("metric2_mean", "metric2_limit", 1.0),
+        ("loss_std", "loss_std_limit", -1.0),
+        ("metric1_std", "metric1_std_limit", -1.0),
+        ("metric2_std", "metric2_std_limit", -1.0),
+    )
+    margins = []
+    for metric_name, limit_name, direction in specifications:
+        observed = _finite(_field(metrics, metric_name), name=metric_name)
+        limit = _finite(
+            _field(statistical_reference, limit_name), name=limit_name,
+        )
+        scale = max(abs(limit), 1.0e-12)
+        margins.append(direction * (observed - limit) / scale)
+    return tuple(margins)
+
+
+def _constraint_safety_margins(candidate: Any) -> tuple[float, ...]:
+    raw = _field(candidate, "constraint_safety_margins")
+    if raw is None:
+        raise ValueError("strict ranking requires six constraint safety margins")
+    margins = tuple(
+        _finite(value, name=f"constraint_safety_margins[{index}]")
+        for index, value in enumerate(raw)
+    )
+    if len(margins) != len(_PROBABILITY_FIELDS):
+        raise ValueError("strict ranking requires six constraint safety margins")
+    return margins
+
+
 def strict_rank_key(candidate: Any) -> tuple[float, ...]:
     """Ascending sort key for robust-feasible layerwise candidates."""
     assessment = _field(candidate, "assessment")
-    metrics = _field(candidate, "metrics")
     probabilities = _assessment_probabilities(assessment)
+    margins = _constraint_safety_margins(candidate)
+    confidence_order = tuple(-value for value in sorted(probabilities))
+    margin_order = tuple(-value for value in sorted(margins))
     return (
         -_finite(_field(candidate, "variable_cost"), name="variable_cost"),
-        -min(probabilities),
-        _finite(_field(metrics, "loss_mean"), name="loss_mean"),
-        -_finite(_field(metrics, "metric1_mean"), name="metric1_mean"),
-        -_finite(_field(metrics, "metric2_mean"), name="metric2_mean"),
+        *confidence_order,
+        *margin_order,
     )
 
 
 def strict_selection_key(
         candidate_key_value: Any,
         candidate: Any,
-        ) -> tuple[tuple[float, ...], str]:
-    """Rank a candidate with its deterministic identity as the final tie-break."""
+        ) -> StrictSelectionKey:
+    """Rank a candidate with action lexicographic order as the final tie-break."""
     identity = str(candidate_key_value).strip()
     if not identity:
         raise ValueError("candidate_key cannot be empty")
-    return strict_rank_key(candidate), identity
+    full_vector = _field(candidate, "full_vector")
+    if not isinstance(full_vector, Sequence) or isinstance(full_vector, (str, bytes)):
+        raise ValueError("strict ranking requires a full action vector")
+    action_identity = tuple(int(value) for value in full_vector)
+    if not action_identity:
+        raise ValueError("strict ranking requires a non-empty full action vector")
+    return strict_rank_key(candidate), action_identity, identity
+
+
+def strict_selection_key_from_snapshot(
+        snapshot: Mapping[str, Any],
+        ) -> Optional[StrictSelectionKey]:
+    """Rebuild the live selection-key shape from a persisted strict snapshot."""
+    if not snapshot.get("rank_key") or not snapshot.get("candidate_key"):
+        return None
+    return strict_selection_key(snapshot["candidate_key"], snapshot)
 
 
 def _strict_best_snapshot(
@@ -520,6 +573,9 @@ def _strict_best_snapshot(
         "assessment": _to_plain_mapping(best["assessment"]),
         "metrics": dict(best["metrics"]),
         "variable_cost": float(best["variable_cost"]),
+        "constraint_safety_margins": list(
+            _constraint_safety_margins(best)
+        ),
         "reward": (
             None if best.get("reward") is None else float(best["reward"])
         ),
@@ -607,7 +663,8 @@ class LayerwiseConvergenceState:
     best_robust_feasible_cost: Optional[float]
     selected_action_identity: Optional[str]
     selected_action_stable_update_windows: int
-    budget_cap_reached: bool
+    plateau_ready: bool
+    strict_revalidation_passed: bool
     termination_reason: str
 
 
@@ -617,26 +674,11 @@ class LayerwiseConvergenceTracker:
     def __init__(
             self,
             *,
-            minimum_episodes: int = DEFAULT_CONVERGENCE_MIN_EPISODES,
             patience_updates: int = DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
-            maximum_episodes: Optional[int] = DEFAULT_CONVERGENCE_MAX_EPISODES,
             ) -> None:
-        self.minimum_episodes = int(minimum_episodes)
         self.patience_updates = int(patience_updates)
-        self.maximum_episodes = (
-            None if maximum_episodes is None else int(maximum_episodes)
-        )
-        if self.minimum_episodes < 0:
-            raise ValueError("minimum_episodes must be nonnegative")
         if self.patience_updates <= 0:
             raise ValueError("patience_updates must be positive")
-        if self.maximum_episodes is not None and self.maximum_episodes <= 0:
-            raise ValueError("maximum_episodes must be positive")
-        if (
-                self.maximum_episodes is not None
-                and self.maximum_episodes < self.minimum_episodes
-        ):
-            raise ValueError("maximum_episodes must cover minimum_episodes")
         self._best_cost: Optional[float] = None
         self._current_frontier_cost: Optional[float] = None
         self._stall_windows = 0
@@ -645,9 +687,7 @@ class LayerwiseConvergenceTracker:
 
     def state_dict(self) -> dict[str, Any]:
         return {
-            "minimum_episodes": int(self.minimum_episodes),
             "patience_updates": int(self.patience_updates),
-            "maximum_episodes": self.maximum_episodes,
             "best_robust_feasible_cost": self._best_cost,
             "current_robust_feasible_cost": self._current_frontier_cost,
             "stall_update_windows": int(self._stall_windows),
@@ -661,9 +701,7 @@ class LayerwiseConvergenceTracker:
         if not isinstance(state, Mapping):
             return
         expected_contract = {
-            "minimum_episodes": int(self.minimum_episodes),
             "patience_updates": int(self.patience_updates),
-            "maximum_episodes": self.maximum_episodes,
         }
         for field_name, expected in expected_contract.items():
             if field_name not in state:
@@ -747,6 +785,7 @@ class LayerwiseConvergenceTracker:
             robust_feasible_cost: Optional[float],
             robust_feasible_action_identity: Optional[str] = None,
             count_patience: bool = True,
+            strict_revalidation_passed: bool = False,
             ) -> LayerwiseConvergenceState:
         episodes = int(completed_episodes)
         if robust_feasible_cost is None:
@@ -788,25 +827,16 @@ class LayerwiseConvergenceTracker:
 
         b4 = _diagnostic_entropy(block4_entropy)
         k_value = _diagnostic_entropy(k_entropy)
-        converged = bool(
-            count_patience
-            and episodes >= self.minimum_episodes
-            and robust_feasible_cost is not None
+        plateau_ready = bool(
+            robust_feasible_cost is not None
             and self._best_cost is not None
             and self._stall_windows >= self.patience_updates
             and self._selected_action_identity is not None
             and self._selected_action_stable_windows >= self.patience_updates
         )
-        budget_cap_reached = bool(
-            not converged
-            and self.maximum_episodes is not None
-            and episodes >= self.maximum_episodes
-        )
-        termination_reason = (
-            "converged" if converged
-            else "budget_cap_reached" if budget_cap_reached
-            else "running"
-        )
+        revalidation_passed = bool(strict_revalidation_passed)
+        converged = bool(plateau_ready and revalidation_passed)
+        termination_reason = "converged" if converged else "running"
         return LayerwiseConvergenceState(
             completed_episodes=episodes,
             block4_entropy=b4,
@@ -819,7 +849,8 @@ class LayerwiseConvergenceTracker:
             ),
             converged=converged,
             extension_required=False,
-            budget_cap_reached=budget_cap_reached,
+            plateau_ready=plateau_ready,
+            strict_revalidation_passed=revalidation_passed,
             termination_reason=termination_reason,
         )
 
@@ -900,7 +931,9 @@ class LayerwiseEpisodeRecord:
     selected_action_stable_update_windows: int
     converged: bool
     extension_required: bool
-    budget_cap_reached: bool
+    plateau_ready: bool
+    strict_revalidation_passed: bool
+    strict_revalidation_status: str
     termination_reason: str
     best_robust_feasible_cost: Optional[float]
 
@@ -984,7 +1017,7 @@ def _append_promotion_status(
         "effective_action_indices": list(action_indices),
         "identity_context": dict(identity_context),
         "fidelity": "F4",
-        "valid": status == "promoted",
+        "valid": status in ("promoted", _FINAL_REVALIDATION_PASSED),
         "promotion_status": str(status),
         "promotion_metadata": dict(metadata or {}),
     })
@@ -1022,6 +1055,52 @@ def _deserialize_boosted_overrides(rows: Any) -> dict[tuple[int, int], dict[str,
     return overrides
 
 
+def _record_final_revalidation_outcome(
+        *,
+        candidate_store: CandidateStore,
+        identity_context: Mapping[str, Any],
+        revalidation_identity_context: Mapping[str, Any],
+        candidate: Mapping[str, Any],
+        passed: bool,
+        revalidation_status: str,
+        bootstrap_seed: int,
+        final_probability: float,
+        final_trial_count: int,
+        ) -> None:
+    """Persist the final verdict on the base F4 identity for honest resume."""
+    action_indices = tuple(int(value) for value in candidate["full_vector"])
+    metadata = {
+        "final_revalidation_identity_context": evidence_identity_context(
+            revalidation_identity_context, "F4",
+        ),
+        "final_revalidation_probability": float(final_probability),
+        "final_revalidation_trial_count": int(final_trial_count),
+        "revalidation_status": str(revalidation_status),
+        "assessment_bootstrap_seed": int(bootstrap_seed),
+        "variable_cost": _finite(candidate["variable_cost"], name="variable_cost"),
+        "action_matrix": [
+            list(map(int, row)) for row in candidate["action_matrix"]
+        ],
+        "boosted_overrides": _serialize_boosted_overrides(
+            candidate["boosted_overrides"],
+        ),
+    }
+    if candidate.get("reward") is not None:
+        metadata["episode_reward"] = _finite(
+            candidate["reward"], name="episode_reward",
+        )
+    _append_promotion_status(
+        candidate_store,
+        action_indices,
+        evidence_identity_context(identity_context, "F4"),
+        status=(
+            _FINAL_REVALIDATION_PASSED
+            if passed else _FINAL_REVALIDATION_FAILED
+        ),
+        metadata=metadata,
+    )
+
+
 def restore_promoted_candidates(
         *,
         candidate_store: CandidateStore,
@@ -1030,6 +1109,8 @@ def restore_promoted_candidates(
         assess_candidate_fn: Callable[..., Any] = assess_candidate,
         promotion_probability: float = 0.80,
         assessment_trial_limit: int = 25,
+        final_probability: float = 0.95,
+        final_assessment_trial_limit: int = 25,
         ) -> dict[str, dict[str, Any]]:
     """Rebuild the current promoted frontier from append-only raw evidence."""
     full_identity_context = evidence_identity_context(identity_context, "F4")
@@ -1053,11 +1134,41 @@ def restore_promoted_candidates(
 
     restored: dict[str, dict[str, Any]] = {}
     for key, (status, action_indices, promotion_metadata) in latest_status.items():
-        if status != "promoted" or not action_indices:
+        if status not in ("promoted", _FINAL_REVALIDATION_PASSED) or not action_indices:
             continue
+        final_revalidated = status == _FINAL_REVALIDATION_PASSED
+        evidence_context = full_identity_context
+        gate_probability = float(promotion_probability)
+        trial_limit = int(assessment_trial_limit)
+        if final_revalidated:
+            raw_context = promotion_metadata.get(
+                "final_revalidation_identity_context",
+            )
+            if not isinstance(raw_context, Mapping):
+                continue
+            evidence_context = dict(raw_context)
+            gate_probability = float(final_probability)
+            trial_limit = int(final_assessment_trial_limit)
+            stored_probability = float(
+                promotion_metadata.get(
+                    "final_revalidation_probability", gate_probability,
+                )
+            )
+            stored_trial_count = int(
+                promotion_metadata.get(
+                    "final_revalidation_trial_count", trial_limit,
+                )
+            )
+            if not math.isclose(
+                    stored_probability, gate_probability,
+                    rel_tol=0.0, abs_tol=1.0e-12,
+            ):
+                raise ValueError("final revalidation probability changed across resume")
+            if stored_trial_count != trial_limit:
+                raise ValueError("final revalidation trial count changed across resume")
         evidence = candidate_store.trial_evidence_for_action(
-            action_indices, full_identity_context,
-            max_trials=int(assessment_trial_limit),
+            action_indices, evidence_context,
+            max_trials=trial_limit,
         )
         if evidence is None or not evidence.promoted:
             continue
@@ -1082,10 +1193,10 @@ def restore_promoted_candidates(
         assessment = assess_candidate_fn(
             evidence.trials,
             statistical_reference,
-            gate_probability=float(promotion_probability),
+            gate_probability=gate_probability,
             bootstrap_seed=int(metadata.get("assessment_bootstrap_seed", 0)),
         )
-        if not _assessment_passes(assessment, promotion_probability):
+        if not _assessment_passes(assessment, gate_probability):
             continue
         action_matrix = tuple(
             tuple(int(value) for value in row)
@@ -1097,10 +1208,14 @@ def restore_promoted_candidates(
             action_matrix,
         ).normalized
         reward = metadata.get("episode_reward")
+        restored_metrics = _metrics_from_trials(evidence.trials)
         restored[key] = {
             "variable_cost": float(variable_cost),
             "assessment": assessment,
-            "metrics": _metrics_from_trials(evidence.trials),
+            "metrics": restored_metrics,
+            "constraint_safety_margins": normalized_constraint_safety_margins(
+                restored_metrics, statistical_reference,
+            ),
             "action_matrix": action_matrix,
             "full_vector": tuple(action_indices),
             "boosted_overrides": _deserialize_boosted_overrides(
@@ -1108,6 +1223,9 @@ def restore_promoted_candidates(
             ),
             "reward": None if reward is None else _finite(reward, name="episode_reward"),
             "promotion_trials": evidence.trials,
+            "final_revalidation_status": (
+                "passed" if final_revalidated else "not_run"
+            ),
         }
     return restored
 
@@ -1214,7 +1332,7 @@ def promote_candidate_if_eligible(
             evidence, assessment, pooled_metrics,
         )
     cost = _finite(variable_cost, name="variable_cost")
-    if frontier_cost is not None and cost <= float(frontier_cost) + 1.0e-12:
+    if frontier_cost is not None and cost < float(frontier_cost) - 1.0e-12:
         return PromotionResult(
             "not_frontier_improvement", trial_count, 0,
             evidence, assessment, pooled_metrics,
@@ -1488,20 +1606,10 @@ def train_layerwise(
         total_episodes,
         planned_total_episodes,
     )
-    convergence_min_episodes = int(getattr(
-        train_cfg,
-        "convergence_min_episodes",
-        DEFAULT_CONVERGENCE_MIN_EPISODES,
-    ))
     convergence_patience_updates = int(getattr(
         train_cfg,
         "convergence_patience_updates",
         DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
-    ))
-    convergence_max_episodes = int(getattr(
-        train_cfg,
-        "convergence_max_episodes",
-        DEFAULT_CONVERGENCE_MAX_EPISODES,
     ))
     absolute_start = int(getattr(train_cfg, "absolute_episode_start", 0))
     base_seed = getattr(train_cfg, "seed", None)
@@ -1516,13 +1624,25 @@ def train_layerwise(
     promotion_probability = float(
         getattr(train_cfg, "promotion_constraint_probability", 0.80)
     )
+    final_probability = float(
+        getattr(train_cfg, "final_constraint_probability", 0.95)
+    )
     promotion_trials = int(getattr(train_cfg, "promotion_validation_trials", 25))
-    if not 0.0 < online_probability <= promotion_probability <= 1.0:
+    final_validation_trials = int(
+        getattr(train_cfg, "final_selection_validation_trials", 25)
+    )
+    if not 0.0 < online_probability <= promotion_probability <= final_probability <= 1.0:
         raise ValueError(
-            "constraint probabilities must satisfy 0 < online <= promotion <= 1"
+            "constraint probabilities must satisfy "
+            "0 < online <= promotion <= final <= 1"
         )
     if promotion_trials < expected_online_trials:
         raise ValueError("promotion_validation_trials must cover the online trial group")
+    if final_validation_trials < promotion_trials:
+        raise ValueError(
+            "final_selection_validation_trials must be at least "
+            "promotion_validation_trials"
+        )
     policy.eval()
 
     records: list[LayerwiseEpisodeRecord] = []
@@ -1535,6 +1655,8 @@ def train_layerwise(
         assess_candidate_fn=assess_candidate_fn,
         promotion_probability=promotion_probability,
         assessment_trial_limit=promotion_trials,
+        final_probability=final_probability,
+        final_assessment_trial_limit=final_validation_trials,
     )
     convergence_resume_state = getattr(train_cfg, "convergence_resume_state", None)
     convergence_resume_state = (
@@ -1542,9 +1664,7 @@ def train_layerwise(
         if isinstance(convergence_resume_state, Mapping) else {}
     )
     convergence_tracker = LayerwiseConvergenceTracker(
-        minimum_episodes=convergence_min_episodes,
         patience_updates=convergence_patience_updates,
-        maximum_episodes=(convergence_max_episodes if unbounded_training else None),
     )
     convergence_tracker.load_state_dict(convergence_resume_state)
     restored_strict_best = _strict_best_snapshot(accepted_candidates)
@@ -1564,22 +1684,34 @@ def train_layerwise(
     restored_block4_entropy = convergence_resume_state.get("block4_entropy")
     restored_k_entropy = convergence_resume_state.get("k_entropy")
     restored_converged = bool(
-        restored_frontier_cost is not None
+        unbounded_training
+        and restored_frontier_cost is not None
         and restored_selected_identity is not None
         and restored_tracker_state["selected_action_identity"]
         == restored_selected_identity
-        and absolute_start >= convergence_min_episodes
         and int(restored_tracker_state["stall_update_windows"])
         >= convergence_patience_updates
         and int(
             restored_tracker_state["selected_action_stable_update_windows"]
         ) >= convergence_patience_updates
+        and convergence_resume_state.get("strict_revalidation_passed", False)
         and convergence_resume_state.get("converged", False)
     )
-    restored_budget_cap_reached = bool(
-        unbounded_training
-        and not restored_converged
-        and absolute_start >= convergence_max_episodes
+    restored_plateau_ready = bool(
+        restored_frontier_cost is not None
+        and restored_selected_identity is not None
+        and int(restored_tracker_state["stall_update_windows"])
+        >= convergence_patience_updates
+        and int(
+            restored_tracker_state["selected_action_stable_update_windows"]
+        ) >= convergence_patience_updates
+    )
+    restored_revalidation_passed = bool(
+        restored_converged
+        and convergence_resume_state.get("strict_revalidation_passed", False)
+    )
+    strict_revalidation_status = str(
+        convergence_resume_state.get("strict_revalidation_status", "not_due")
     )
     convergence_state = LayerwiseConvergenceState(
         completed_episodes=absolute_start,
@@ -1593,19 +1725,14 @@ def train_layerwise(
         ),
         converged=restored_converged,
         extension_required=False,
-        budget_cap_reached=restored_budget_cap_reached,
-        termination_reason=(
-            "converged" if restored_converged
-            else "budget_cap_reached" if restored_budget_cap_reached
-            else "running"
-        ),
+        plateau_ready=restored_plateau_ready,
+        strict_revalidation_passed=restored_revalidation_passed,
+        termination_reason=("converged" if restored_converged else "running"),
     )
     entropy_samples: list[dict[str, np.ndarray]] = []
 
     local_episode = 0
-    while not (
-            convergence_state.converged or convergence_state.budget_cap_reached
-    ) and (
+    while not convergence_state.converged and (
             unbounded_training or local_episode < total_episodes
     ):
         absolute_episode = absolute_start + local_episode
@@ -1853,6 +1980,12 @@ def train_layerwise(
                     "variable_cost": float(variable_cost),
                     "assessment": promotion.assessment,
                     "metrics": dict(promotion.metrics or {}),
+                    "constraint_safety_margins": (
+                        normalized_constraint_safety_margins(
+                            promotion.metrics or {},
+                            authoritative_base_env.statistical_reference,
+                        )
+                    ),
                     "action_matrix": action_matrix,
                     "full_vector": full_vector,
                     "boosted_overrides": copy.deepcopy(
@@ -1877,9 +2010,6 @@ def train_layerwise(
         }
         update_due = completed % update_window == 0 or (
             not unbounded_training and completed == total_episodes
-        ) or (
-            unbounded_training
-            and absolute_start + completed >= convergence_max_episodes
         )
         ppo_metrics: Optional[dict[str, Any]] = None
         if update_due:
@@ -1913,13 +2043,150 @@ def train_layerwise(
                 robust_feasible_action_identity=best_action_identity,
                 count_patience=convergence_update_counted,
             )
+            strict_revalidation_status = "not_due"
+            if (
+                    unbounded_training
+                    and convergence_state.plateau_ready
+                    and strict_best_snapshot is not None
+            ):
+                revalidation_context = {
+                    **dict(identity_context),
+                    "convergence_revalidation_update": int(
+                        absolute_start + completed
+                    ),
+                    "convergence_revalidation_candidate": str(
+                        strict_best_snapshot["candidate_key"]
+                    ),
+                }
+                revalidation_bootstrap_seed = int(base_seed or 0) + int(
+                    absolute_start + completed
+                )
+                revalidation = promote_candidate_if_eligible(
+                    env=env,
+                    promotion_base_env=authoritative_base_env,
+                    candidate_store=candidate_store,
+                    action_indices=strict_best_snapshot["full_vector"],
+                    identity_context=revalidation_context,
+                    action_matrix=strict_best_snapshot["action_matrix"],
+                    assessment=strict_best_snapshot["assessment"],
+                    priority=3,
+                    variable_cost=float(strict_best_snapshot["variable_cost"]),
+                    frontier_cost=None,
+                    boosted_overrides=strict_best_snapshot["boosted_overrides"],
+                    bootstrap_seed=revalidation_bootstrap_seed,
+                    episode_reward=strict_best_snapshot.get("reward"),
+                    assess_candidate_fn=assess_candidate_fn,
+                    prefilter_probability=promotion_probability,
+                    promotion_probability=final_probability,
+                    target_trial_count=final_validation_trials,
+                )
+                revalidation_passed = bool(
+                    revalidation.evidence is not None
+                    and revalidation.evidence.promoted
+                    and int(revalidation.trial_count) >= final_validation_trials
+                    and _assessment_passes(
+                        revalidation.assessment, final_probability,
+                    )
+                )
+                selected_key = str(strict_best_snapshot["candidate_key"])
+                revalidation_status = str(revalidation.status)
+                completed_probability_verdict = bool(
+                    revalidation_passed
+                    or revalidation_status == "failed_probability_gate"
+                )
+                if completed_probability_verdict:
+                    _record_final_revalidation_outcome(
+                        candidate_store=candidate_store,
+                        identity_context=identity_context,
+                        revalidation_identity_context=revalidation_context,
+                        candidate=strict_best_snapshot,
+                        passed=revalidation_passed,
+                        revalidation_status=revalidation_status,
+                        bootstrap_seed=revalidation_bootstrap_seed,
+                        final_probability=final_probability,
+                        final_trial_count=final_validation_trials,
+                    )
+                if revalidation_passed:
+                    selected = accepted_candidates[selected_key]
+                    selected["assessment"] = revalidation.assessment
+                    selected["metrics"] = dict(revalidation.metrics or {})
+                    selected["constraint_safety_margins"] = (
+                        normalized_constraint_safety_margins(
+                            selected["metrics"],
+                            authoritative_base_env.statistical_reference,
+                        )
+                    )
+                    selected["promotion_trials"] = revalidation.evidence.trials
+                    selected["final_revalidation_status"] = "passed"
+                    strict_best_snapshot = _strict_best_snapshot(accepted_candidates)
+                    if (
+                            strict_best_snapshot is not None
+                            and strict_best_snapshot["candidate_key"] == selected_key
+                    ):
+                        strict_revalidation_status = "passed"
+                        convergence_state = convergence_tracker.observe_update(
+                            completed_episodes=absolute_start + completed,
+                            block4_entropy=entropy_snapshot["block4"],
+                            k_entropy=entropy_snapshot["k"],
+                            robust_feasible_cost=float(
+                                strict_best_snapshot["variable_cost"]
+                            ),
+                            robust_feasible_action_identity=selected_key,
+                            count_patience=False,
+                            strict_revalidation_passed=True,
+                        )
+                    else:
+                        strict_revalidation_status = (
+                            "winner_changed_after_revalidation"
+                        )
+                else:
+                    strict_revalidation_status = revalidation_status
+                    if revalidation_status == "failed_probability_gate":
+                        accepted_candidates.pop(selected_key, None)
+                    strict_best_snapshot = _strict_best_snapshot(accepted_candidates)
+
+                if not convergence_state.converged:
+                    best_cost = (
+                        None if strict_best_snapshot is None
+                        else float(strict_best_snapshot["variable_cost"])
+                    )
+                    best_action_identity = (
+                        None if strict_best_snapshot is None
+                        else str(strict_best_snapshot["candidate_key"])
+                    )
+                    convergence_tracker.reconcile_frontier(
+                        best_cost, best_action_identity,
+                    )
+                    convergence_state = convergence_tracker.observe_update(
+                        completed_episodes=absolute_start + completed,
+                        block4_entropy=entropy_snapshot["block4"],
+                        k_entropy=entropy_snapshot["k"],
+                        robust_feasible_cost=best_cost,
+                        robust_feasible_action_identity=best_action_identity,
+                        count_patience=False,
+                    )
+            if (
+                    not unbounded_training
+                    and completed >= total_episodes
+                    and not convergence_state.converged
+            ):
+                strict_revalidation_status = "not_applicable_bounded"
+                convergence_state = replace(
+                    convergence_state,
+                    strict_revalidation_passed=False,
+                    termination_reason="bounded_budget_exhausted",
+                )
             persisted_convergence_state = {
                 **convergence_tracker.state_dict(),
                 "block4_entropy": convergence_state.block4_entropy,
                 "k_entropy": convergence_state.k_entropy,
                 "converged": convergence_state.converged,
                 "extension_required": convergence_state.extension_required,
-                "budget_cap_reached": convergence_state.budget_cap_reached,
+                "plateau_ready": convergence_state.plateau_ready,
+                "strict_revalidation_passed": (
+                    convergence_state.strict_revalidation_passed
+                ),
+                "strict_revalidation_status": strict_revalidation_status,
                 "termination_reason": convergence_state.termination_reason,
             }
             ppo_metrics.update({
@@ -1933,7 +2200,11 @@ def train_layerwise(
                 ),
                 "converged": convergence_state.converged,
                 "extension_required": convergence_state.extension_required,
-                "budget_cap_reached": convergence_state.budget_cap_reached,
+                "plateau_ready": convergence_state.plateau_ready,
+                "strict_revalidation_passed": (
+                    convergence_state.strict_revalidation_passed
+                ),
+                "strict_revalidation_status": strict_revalidation_status,
                 "termination_reason": convergence_state.termination_reason,
                 "best_robust_feasible_cost": convergence_state.best_robust_feasible_cost,
                 "convergence_update_counted": convergence_update_counted,
@@ -2001,7 +2272,11 @@ def train_layerwise(
             ),
             converged=bool(convergence_state.converged),
             extension_required=bool(convergence_state.extension_required),
-            budget_cap_reached=bool(convergence_state.budget_cap_reached),
+            plateau_ready=bool(convergence_state.plateau_ready),
+            strict_revalidation_passed=bool(
+                convergence_state.strict_revalidation_passed
+            ),
+            strict_revalidation_status=str(strict_revalidation_status),
             termination_reason=str(convergence_state.termination_reason),
             best_robust_feasible_cost=convergence_state.best_robust_feasible_cost,
         )
@@ -2014,6 +2289,13 @@ def train_layerwise(
             rollout_buffer.clear()
             entropy_samples.clear()
 
+    if not unbounded_training and not convergence_state.converged:
+        strict_revalidation_status = "not_applicable_bounded"
+        convergence_state = replace(
+            convergence_state,
+            strict_revalidation_passed=False,
+            termination_reason="bounded_budget_exhausted",
+        )
     strict_best = _strict_best_snapshot(accepted_candidates)
     final_convergence_state = {
         **convergence_tracker.state_dict(),
@@ -2021,7 +2303,9 @@ def train_layerwise(
         "k_entropy": convergence_state.k_entropy,
         "converged": convergence_state.converged,
         "extension_required": convergence_state.extension_required,
-        "budget_cap_reached": convergence_state.budget_cap_reached,
+        "plateau_ready": convergence_state.plateau_ready,
+        "strict_revalidation_passed": convergence_state.strict_revalidation_passed,
+        "strict_revalidation_status": strict_revalidation_status,
         "termination_reason": convergence_state.termination_reason,
     }
     return {
@@ -2070,7 +2354,9 @@ def train_layerwise(
         ),
         "converged": convergence_state.converged,
         "extension_required": convergence_state.extension_required,
-        "budget_cap_reached": convergence_state.budget_cap_reached,
+        "plateau_ready": convergence_state.plateau_ready,
+        "strict_revalidation_passed": convergence_state.strict_revalidation_passed,
+        "strict_revalidation_status": strict_revalidation_status,
         "termination_reason": convergence_state.termination_reason,
         "recommended_extension_episodes": 0,
         "completed_episodes": absolute_start + local_episode,

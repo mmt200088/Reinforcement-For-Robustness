@@ -39,7 +39,10 @@ class LayerwiseSeedTests(unittest.TestCase):
 
 class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     @staticmethod
-    def _candidate(*, cost, probabilities, loss=0.3, metric1=0.9, metric2=0.8):
+    def _candidate(
+            *, cost, probabilities, margins=None, full_vector=None,
+            loss=0.3, metric1=0.9, metric2=0.8,
+            ):
         names = (
             "loss_precision_probability",
             "metric1_precision_probability",
@@ -56,9 +59,13 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 "metric1_mean": metric1,
                 "metric2_mean": metric2,
             },
+            "constraint_safety_margins": list(
+                [0.1] * 6 if margins is None else margins
+            ),
+            "full_vector": list([0] if full_vector is None else full_vector),
         }
 
-    def test_strict_rank_orders_cost_then_confidence_then_metrics(self):
+    def test_strict_rank_orders_cost_then_confidence_then_safety_margin(self):
         from blb_stage2_rl.layerwise_runner import strict_rank_key
 
         lower_cost_high_reward = self._candidate(
@@ -73,17 +80,71 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         high_confidence = self._candidate(cost=0.5, probabilities=[0.91] * 6)
         self.assertLess(strict_rank_key(high_confidence), strict_rank_key(low_confidence))
 
-        high_loss = self._candidate(cost=0.5, probabilities=[0.91] * 6, loss=0.4)
-        low_loss = self._candidate(cost=0.5, probabilities=[0.91] * 6, loss=0.2)
-        self.assertLess(strict_rank_key(low_loss), strict_rank_key(high_loss))
+        weak_margin = self._candidate(
+            cost=0.5, probabilities=[0.91] * 6, margins=[0.01] * 6,
+        )
+        strong_margin = self._candidate(
+            cost=0.5, probabilities=[0.91] * 6, margins=[0.03] * 6,
+        )
+        self.assertLess(strict_rank_key(strong_margin), strict_rank_key(weak_margin))
 
-        weak_metrics = self._candidate(
-            cost=0.5, probabilities=[0.91] * 6, loss=0.2, metric1=0.8, metric2=0.7,
+    def test_strict_rank_uses_all_six_confidences_and_margins(self):
+        from blb_stage2_rl.layerwise_runner import strict_rank_key
+
+        weaker_confidence = self._candidate(
+            cost=0.5,
+            probabilities=[0.80, 0.80, 0.90, 0.90, 1.00, 1.00],
         )
-        strong_metrics = self._candidate(
-            cost=0.5, probabilities=[0.91] * 6, loss=0.2, metric1=0.9, metric2=0.8,
+        stronger_confidence = self._candidate(
+            cost=0.5,
+            probabilities=[0.80, 0.85, 0.85, 0.90, 1.00, 1.00],
         )
-        self.assertLess(strict_rank_key(strong_metrics), strict_rank_key(weak_metrics))
+        self.assertLess(
+            strict_rank_key(stronger_confidence),
+            strict_rank_key(weaker_confidence),
+        )
+
+        weaker_margin = self._candidate(
+            cost=0.5,
+            probabilities=[0.90] * 6,
+            margins=[0.10, 0.10, 0.20, 0.20, 0.30, 0.30],
+        )
+        stronger_margin = self._candidate(
+            cost=0.5,
+            probabilities=[0.90] * 6,
+            margins=[0.10, 0.15, 0.15, 0.20, 0.30, 0.30],
+        )
+        self.assertLess(strict_rank_key(stronger_margin), strict_rank_key(weaker_margin))
+
+    def test_normalized_safety_margins_cover_all_six_constraints(self):
+        from blb_stage2_rl.layerwise_runner import normalized_constraint_safety_margins
+
+        metrics = {
+            "loss_mean": 0.30,
+            "metric1_mean": 0.81,
+            "metric2_mean": 0.72,
+            "loss_std": 0.03,
+            "metric1_std": 0.02,
+            "metric2_std": 0.01,
+        }
+        reference = types.SimpleNamespace(
+            loss_limit=0.40,
+            metric1_limit=0.80,
+            metric2_limit=0.70,
+            loss_std_limit=0.04,
+            metric1_std_limit=0.04,
+            metric2_std_limit=0.02,
+        )
+
+        margins = normalized_constraint_safety_margins(metrics, reference)
+
+        self.assertEqual(len(margins), 6)
+        self.assertAlmostEqual(margins[0], 0.25)
+        self.assertAlmostEqual(margins[1], 0.0125)
+        self.assertAlmostEqual(margins[2], 2.0 / 70.0)
+        self.assertAlmostEqual(margins[3], 0.25)
+        self.assertAlmostEqual(margins[4], 0.5)
+        self.assertAlmostEqual(margins[5], 0.5)
 
     def test_normalized_entropy_excludes_masked_and_one_option_slots(self):
         from blb_stage2_rl.layerwise_runner import normalized_entropy_snapshot
@@ -181,76 +242,64 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
         self.assertIn("if online_probe_example_count != 256:", sequential_source)
 
-    def test_practical_convergence_respects_minimum_patience_and_budget(self):
+    def test_objective_convergence_ignores_episode_count_and_requires_revalidation(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
 
-        tracker = LayerwiseConvergenceTracker(
-            minimum_episodes=100_000,
-            patience_updates=220,
-            maximum_episodes=150_000,
-        )
+        tracker = LayerwiseConvergenceTracker(patience_updates=100)
         tracker.observe_update(
-            completed_episodes=70_000,
+            completed_episodes=1,
             block4_entropy=0.9,
             k_entropy=0.9,
             robust_feasible_cost=0.4,
             robust_feasible_action_identity="candidate-a",
         )
-        for update_idx in range(220):
+        for update_idx in range(100):
             state = tracker.observe_update(
-                completed_episodes=70_120 + update_idx * 120,
+                completed_episodes=2 + update_idx,
                 block4_entropy=0.9,
                 k_entropy=0.9,
                 robust_feasible_cost=0.4,
                 robust_feasible_action_identity="candidate-a",
             )
 
-        self.assertEqual(state.stall_update_windows, 220)
+        self.assertEqual(state.stall_update_windows, 100)
+        self.assertTrue(state.plateau_ready)
         self.assertFalse(state.converged)
-        self.assertFalse(state.budget_cap_reached)
         self.assertEqual(state.termination_reason, "running")
 
         state = tracker.observe_update(
-            completed_episodes=100_000,
+            completed_episodes=1_000_000,
             block4_entropy=0.9,
             k_entropy=0.9,
             robust_feasible_cost=0.4,
             robust_feasible_action_identity="candidate-a",
+            count_patience=False,
+            strict_revalidation_passed=True,
         )
         self.assertTrue(state.converged)
-        self.assertFalse(state.budget_cap_reached)
         self.assertEqual(state.termination_reason, "converged")
 
-        capped = LayerwiseConvergenceTracker(
-            minimum_episodes=100_000,
-            patience_updates=220,
-            maximum_episodes=150_000,
-        ).observe_update(
-            completed_episodes=150_000,
+        huge_episode_without_plateau = LayerwiseConvergenceTracker().observe_update(
+            completed_episodes=10_000_000,
             block4_entropy=0.9,
             k_entropy=0.9,
             robust_feasible_cost=0.4,
             robust_feasible_action_identity="candidate-b",
         )
-        self.assertFalse(capped.converged)
-        self.assertTrue(capped.budget_cap_reached)
-        self.assertEqual(capped.termination_reason, "budget_cap_reached")
+        self.assertFalse(huge_episode_without_plateau.plateau_ready)
+        self.assertFalse(huge_episode_without_plateau.converged)
 
     def test_convergence_checkpoint_persists_and_validates_contract(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
 
-        tracker = LayerwiseConvergenceTracker(
-            minimum_episodes=100_000,
-            patience_updates=220,
-            maximum_episodes=150_000,
-        )
+        tracker = LayerwiseConvergenceTracker(patience_updates=100)
         state = tracker.state_dict()
 
-        self.assertEqual(state["minimum_episodes"], 100_000)
-        self.assertEqual(state["patience_updates"], 220)
-        self.assertEqual(state["maximum_episodes"], 150_000)
+        self.assertEqual(state["patience_updates"], 100)
+        self.assertNotIn("minimum_episodes", state)
+        self.assertNotIn("maximum_episodes", state)
 
-        incompatible = dict(state, patience_updates=100)
+        incompatible = dict(state, patience_updates=99)
         with self.assertRaisesRegex(ValueError, "convergence contract mismatch"):
             tracker.load_state_dict(incompatible)
 
@@ -262,22 +311,19 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
         source = source_path.read_text(encoding="utf-8")
 
-        self.assertIn("factorized_slot_credit_multifidelity_convergence_v7", source)
+        self.assertIn("factorized_slot_credit_multifidelity_convergence_v8", source)
         self.assertIn('"F1": {', source)
         self.assertIn('"F4": {', source)
-        self.assertIn('"minimum_episodes": convergence_min_episodes', source)
-        self.assertIn('"maximum_episodes": convergence_max_episodes', source)
-        self.assertIn('completion_status = "budget_cap_reached"', source)
+        self.assertNotIn('"minimum_episodes": convergence_min_episodes', source)
+        self.assertNotIn('"maximum_episodes": convergence_max_episodes', source)
+        self.assertNotIn('completion_status = "budget_cap_reached"', source)
+        self.assertIn('"strict_revalidation_required": True', source)
         self.assertIn('completion_status = "bounded_budget_exhausted"', source)
 
     def test_convergence_depends_on_policy_and_frontier_not_episode_count(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
 
-        tracker = LayerwiseConvergenceTracker(
-            minimum_episodes=0,
-            patience_updates=100,
-            maximum_episodes=None,
-        )
+        tracker = LayerwiseConvergenceTracker(patience_updates=100)
         for _ in range(50):
             state = tracker.observe_update(
                 completed_episodes=40_000,
@@ -317,7 +363,8 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             robust_feasible_action_identity="candidate-a",
         )
         self.assertEqual(state.stall_update_windows, 100)
-        self.assertTrue(state.converged)
+        self.assertTrue(state.plateau_ready)
+        self.assertFalse(state.converged)
 
         state = tracker.observe_update(
             completed_episodes=40_360,
@@ -333,11 +380,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     def test_convergence_uses_stable_selected_action_not_entropy(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
 
-        tracker = LayerwiseConvergenceTracker(
-            minimum_episodes=0,
-            patience_updates=100,
-            maximum_episodes=None,
-        )
+        tracker = LayerwiseConvergenceTracker(patience_updates=100)
         state = tracker.observe_update(
             completed_episodes=120,
             block4_entropy=0.99,
@@ -359,6 +402,18 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(state.stall_update_windows, 100)
         self.assertEqual(state.selected_action_stable_update_windows, 100)
         self.assertEqual(state.selected_action_identity, "candidate-a")
+        self.assertTrue(state.plateau_ready)
+        self.assertFalse(state.converged)
+
+        state = tracker.observe_update(
+            completed_episodes=12_241,
+            block4_entropy=0.99,
+            k_entropy=0.99,
+            robust_feasible_cost=0.4,
+            robust_feasible_action_identity="candidate-a",
+            count_patience=False,
+            strict_revalidation_passed=True,
+        )
         self.assertTrue(state.converged)
 
     def test_same_cost_selected_action_change_resets_action_stability(self):
@@ -394,7 +449,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertEqual(state.selected_action_identity, "candidate-b")
         self.assertFalse(state.converged)
 
-    def test_strict_best_snapshot_uses_candidate_key_as_final_tie_break(self):
+    def test_strict_best_snapshot_uses_action_lexicographic_final_tie_break(self):
         from blb_stage2_rl.layerwise_runner import _strict_best_snapshot
 
         common = {
@@ -410,33 +465,64 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             "boosted_overrides": {},
             "reward": 1.4,
             "promotion_trials": None,
+            "constraint_safety_margins": [0.1] * 6,
         }
-        later_key = dict(common)
-        earlier_key = dict(common)
-        earlier_key["full_vector"] = list(range(20, 40))
+        lex_first = dict(common)
+        lex_last = dict(common)
+        lex_first["full_vector"] = [0, 9]
+        lex_last["full_vector"] = [1, 0]
 
         snapshot = _strict_best_snapshot({
-            "candidate-z": later_key,
-            "candidate-a": earlier_key,
+            "candidate-z": lex_first,
+            "candidate-a": lex_last,
         })
 
-        self.assertEqual(snapshot["candidate_key"], "candidate-a")
-        self.assertEqual(snapshot["full_vector"], list(range(20, 40)))
+        self.assertEqual(snapshot["candidate_key"], "candidate-z")
+        self.assertEqual(snapshot["full_vector"], [0, 9])
 
-    def test_strict_selection_key_matches_candidate_key_tie_break(self):
+    def test_strict_selection_key_uses_action_vector_before_candidate_key(self):
         from blb_stage2_rl.layerwise_runner import strict_selection_key
 
-        candidate = self._candidate(cost=0.5, probabilities=[0.9] * 6)
+        candidate = self._candidate(
+            cost=0.5, probabilities=[0.9] * 6, full_vector=[0, 9],
+        )
+        lex_later = self._candidate(
+            cost=0.5, probabilities=[0.9] * 6, full_vector=[1, 0],
+        )
         lower_cost = self._candidate(cost=0.4, probabilities=[0.99] * 6)
 
         self.assertLess(
-            strict_selection_key("candidate-a", candidate),
             strict_selection_key("candidate-z", candidate),
+            strict_selection_key("candidate-a", lex_later),
         )
         self.assertLess(
             strict_selection_key("candidate-z", candidate),
             strict_selection_key("candidate-a", lower_cost),
         )
+
+    def test_strict_snapshot_selection_key_matches_live_key_shape(self):
+        from blb_stage2_rl.layerwise_runner import (
+            strict_selection_key,
+            strict_selection_key_from_snapshot,
+        )
+
+        restored = self._candidate(
+            cost=0.5, probabilities=[0.9] * 6, full_vector=[0, 9],
+        )
+        restored["candidate_key"] = "candidate-z"
+        restored["rank_key"] = [0.0]
+        live = self._candidate(
+            cost=0.5, probabilities=[0.9] * 6, full_vector=[1, 0],
+        )
+
+        restored_key = strict_selection_key_from_snapshot(restored)
+        live_key = strict_selection_key("candidate-a", live)
+
+        self.assertEqual(
+            restored_key,
+            strict_selection_key("candidate-z", restored),
+        )
+        self.assertLess(restored_key, live_key)
 
     def test_orphaned_selected_action_counter_resets_on_restore(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
@@ -1015,7 +1101,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('"factorized_actor_clip": True', branch_source)
         self.assertIn('"algorithm_revision": algorithm_revision', branch_source)
         self.assertIn(
-            '"factorized_slot_credit_multifidelity_convergence_v7"',
+            '"factorized_slot_credit_multifidelity_convergence_v8"',
             branch_source,
         )
         self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
@@ -1052,7 +1138,10 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             '"selected_action_stable_update_windows": convergence_patience_updates',
             branch_source,
         )
-        self.assertIn('"selection_tie_break": "candidate_key"', branch_source)
+        self.assertIn(
+            '"feasible,cost,confidence_vector,safety_margin_vector,"',
+            branch_source,
+        )
         self.assertIn("strict_selection_key(", branch_source)
         self.assertIn("record.promotion_candidate_key", branch_source)
         self.assertIn("diag_recorder.write_best_action_snapshot(", branch_source)
@@ -1192,7 +1281,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("status.set_best(", branch_source)
         self.assertIn("run_manifest.update({", branch_source)
         self.assertIn('"converged"', branch_source)
-        self.assertIn('"budget_cap_reached"', branch_source)
+        self.assertIn('"strict_revalidation_passed"', branch_source)
+        self.assertIn('"plateau_ready"', branch_source)
         self.assertIn('"bounded_budget_exhausted"', branch_source)
         self.assertIn('completion_status = "failed"', branch_source)
         self.assertIn('"status": completion_status', branch_source)
@@ -1527,6 +1617,17 @@ class _FakePolicy:
         return result
 
 
+def _strict_reference():
+    return types.SimpleNamespace(
+        loss_limit=0.40,
+        metric1_limit=0.80,
+        metric2_limit=0.70,
+        loss_std_limit=0.02,
+        metric1_std_limit=0.02,
+        metric2_std_limit=0.02,
+    )
+
+
 class _FakeLayerwiseEnv:
     horizon = 12
     max_step_dim = 6
@@ -1537,7 +1638,7 @@ class _FakeLayerwiseEnv:
         self.actions = []
         self.boosted_overrides = {(4, 3): {"v_mask_rescale_sf": 47}}
         self.base = types.SimpleNamespace(
-            statistical_reference=object(),
+            statistical_reference=_strict_reference(),
             probe_noise_seed=None,
         )
         self.runtime_terminal_info = None
@@ -1667,11 +1768,14 @@ class LayerwiseRolloutTests(unittest.TestCase):
             total_episodes=total_episodes,
             update_every_n_episodes=update_every,
             absolute_episode_start=0,
-            convergence_min_episodes=0,
             convergence_patience_updates=100,
-            convergence_max_episodes=1_000_000,
             seed=42,
             online_num_trials_per_step=5,
+            promotion_validation_trials=25,
+            final_selection_validation_trials=25,
+            online_constraint_probability=0.50,
+            promotion_constraint_probability=0.80,
+            final_constraint_probability=0.95,
             ent_coef_schedule="cosine",
             ent_coef_cosine_start=0.05,
             ent_coef_cosine_end=0.001,
@@ -1759,8 +1863,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
             "boosted_overrides": {},
             "reward": 1.4,
             "promotion_trials": None,
+            "constraint_safety_margins": [0.1] * 6,
         }
         config = self._train_cfg(total_episodes=0, update_every=1)
+        config.final_selection_validation_trials = 31
         config.convergence_resume_state = {
             "best_robust_feasible_cost": 0.4,
             "current_robust_feasible_cost": 0.4,
@@ -1777,9 +1883,60 @@ class LayerwiseRolloutTests(unittest.TestCase):
             update_ent_coef.append(kwargs["ent_coef_override"])
             return {"entropy": 0.0}
 
+        revalidation_calls = []
+
+        def successful_revalidation(**kwargs):
+            if "convergence_revalidation_update" not in kwargs["identity_context"]:
+                return types.SimpleNamespace(
+                    status="promotion_probability_below_gate",
+                    trial_count=0,
+                    fresh_trial_count=0,
+                    evidence=None,
+                    assessment=_assessment(0.7),
+                    metrics=None,
+                )
+            revalidation_calls.append(kwargs)
+            trial_count = int(kwargs["target_trial_count"])
+            return types.SimpleNamespace(
+                status="promoted",
+                trial_count=trial_count,
+                fresh_trial_count=trial_count,
+                evidence=types.SimpleNamespace(
+                    promoted=True,
+                    trials=types.SimpleNamespace(
+                        loss=(0.30,) * trial_count,
+                        metric1=(0.90,) * trial_count,
+                        metric2=(0.80,) * trial_count,
+                        seeds=tuple(range(trial_count)),
+                    ),
+                ),
+                assessment=_assessment(0.99),
+                metrics={
+                    "loss_mean": 0.30,
+                    "loss_std": 0.001,
+                    "metric1_mean": 0.90,
+                    "metric1_std": 0.001,
+                    "metric2_mean": 0.80,
+                    "metric2_std": 0.001,
+                },
+            )
+
+        reference = types.SimpleNamespace(
+            loss_limit=0.40,
+            metric1_limit=0.80,
+            metric2_limit=0.70,
+            loss_std_limit=0.01,
+            metric1_std_limit=0.01,
+            metric2_std_limit=0.01,
+        )
+        promotion_env = types.SimpleNamespace(statistical_reference=reference)
+
         with tempfile.TemporaryDirectory() as td, mock.patch(
             "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
             return_value={"frontier": frontier},
+        ), mock.patch(
+            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            side_effect=successful_revalidation,
         ), mock.patch(
             "blb_stage2_rl.layerwise_runner._current_policy_entropy",
             return_value={
@@ -1791,6 +1948,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         ):
             summary = train_layerwise(
                 env=_FakeLayerwiseEnv(probabilities=0.7),
+                promotion_base_env=promotion_env,
                 policy=_FakePolicy(),
                 train_cfg=config,
                 candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
@@ -1809,9 +1967,286 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(len(summary["episode_records"]), 1)
         self.assertEqual(update_ent_coef, [0.0])
         self.assertTrue(summary["converged"])
+        self.assertTrue(summary["strict_revalidation_passed"])
         self.assertEqual(summary["stall_update_windows"], 100)
         self.assertEqual(summary["selected_action_identity"], "frontier")
         self.assertEqual(summary["selected_action_stable_update_windows"], 100)
+        self.assertEqual(len(revalidation_calls), 1)
+        self.assertEqual(revalidation_calls[0]["target_trial_count"], 31)
+        self.assertEqual(revalidation_calls[0]["promotion_probability"], 0.95)
+        self.assertEqual(revalidation_calls[0]["prefilter_probability"], 0.80)
+        self.assertIn(
+            "convergence_revalidation_update",
+            revalidation_calls[0]["identity_context"],
+        )
+
+    def test_failed_strict_revalidation_removes_winner_before_continuing(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        frontier = {
+            "variable_cost": 0.4,
+            "assessment": _assessment(0.9),
+            "metrics": {
+                "loss_mean": 0.3,
+                "metric1_mean": 0.9,
+                "metric2_mean": 0.8,
+            },
+            "action_matrix": [[1, 0, 1, 2, 3, 4] for _ in range(12)],
+            "full_vector": list(range(20)),
+            "boosted_overrides": {},
+            "reward": 1.4,
+            "promotion_trials": None,
+            "constraint_safety_margins": [0.1] * 6,
+        }
+        config = self._train_cfg(total_episodes=0, update_every=1)
+        config.convergence_patience_updates = 1
+        config.convergence_resume_state = {
+            "best_robust_feasible_cost": 0.4,
+            "current_robust_feasible_cost": 0.4,
+            "stall_update_windows": 0,
+            "selected_action_identity": "frontier",
+            "selected_action_stable_update_windows": 0,
+        }
+        failed = types.SimpleNamespace(
+            status="failed_probability_gate",
+            trial_count=25,
+            fresh_trial_count=25,
+            evidence=None,
+            assessment=_assessment(0.7),
+            metrics=None,
+        )
+        promoted_trials = types.SimpleNamespace(
+            loss=(0.30,) * 25,
+            metric1=(0.90,) * 25,
+            metric2=(0.80,) * 25,
+            seeds=tuple(range(25)),
+        )
+        promoted_evidence = types.SimpleNamespace(
+            promoted=True,
+            trial_count=25,
+            candidate_key="candidate-b",
+            trials=promoted_trials,
+        )
+        promoted_metrics = {
+            "loss_mean": 0.30,
+            "loss_std": 0.001,
+            "metric1_mean": 0.90,
+            "metric1_std": 0.001,
+            "metric2_mean": 0.80,
+            "metric2_std": 0.001,
+        }
+        online_calls = 0
+        revalidation_calls = 0
+
+        def promotion_flow(**kwargs):
+            nonlocal online_calls, revalidation_calls
+            if "convergence_revalidation_update" in kwargs["identity_context"]:
+                revalidation_calls += 1
+                if revalidation_calls == 1:
+                    return failed
+                return types.SimpleNamespace(
+                    status="promoted",
+                    trial_count=25,
+                    fresh_trial_count=25,
+                    evidence=promoted_evidence,
+                    assessment=_assessment(0.99),
+                    metrics=promoted_metrics,
+                )
+            online_calls += 1
+            if online_calls == 1:
+                return types.SimpleNamespace(
+                    status="promotion_probability_below_gate",
+                    trial_count=0,
+                    fresh_trial_count=0,
+                    evidence=None,
+                    assessment=_assessment(0.7),
+                    metrics=None,
+                )
+            return types.SimpleNamespace(
+                status=("promoted" if online_calls == 2 else "already_promoted"),
+                trial_count=25,
+                fresh_trial_count=(25 if online_calls == 2 else 0),
+                evidence=promoted_evidence,
+                assessment=_assessment(0.99),
+                metrics=promoted_metrics,
+            )
+        promotion_env = types.SimpleNamespace(
+            statistical_reference=_strict_reference(),
+        )
+
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            return_value={"frontier": frontier},
+        ), mock.patch(
+            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            side_effect=promotion_flow,
+        ), mock.patch(
+            "blb_stage2_rl.layerwise_runner._current_policy_entropy",
+            return_value={
+                "block4": 0.2,
+                "k": 0.6,
+                "block4_slot_count": 12,
+                "k_slot_count": 59,
+            },
+        ):
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                promotion_base_env=promotion_env,
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(summary["completed_episodes"], 3)
+        self.assertTrue(summary["converged"])
+        self.assertEqual(revalidation_calls, 2)
+        first = summary["episode_records"][0]
+        self.assertFalse(first.converged)
+        self.assertFalse(first.strict_revalidation_passed)
+        self.assertEqual(first.strict_revalidation_status, "failed_probability_gate")
+        self.assertIsNone(first.selected_action_identity)
+        self.assertEqual(first.stall_update_windows, 0)
+        self.assertEqual(summary["selected_action_identity"], "candidate-b")
+
+    def test_transient_strict_revalidation_error_keeps_winner_and_retries(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        frontier = {
+            "variable_cost": 0.4,
+            "assessment": _assessment(0.9),
+            "metrics": {
+                "loss_mean": 0.3,
+                "metric1_mean": 0.9,
+                "metric2_mean": 0.8,
+            },
+            "action_matrix": [[1, 0, 1, 2, 3, 4] for _ in range(12)],
+            "full_vector": list(range(20)),
+            "boosted_overrides": {},
+            "reward": 1.4,
+            "promotion_trials": None,
+            "constraint_safety_margins": [0.1] * 6,
+        }
+        config = self._train_cfg(total_episodes=0, update_every=1)
+        config.convergence_resume_state = {
+            "best_robust_feasible_cost": 0.4,
+            "current_robust_feasible_cost": 0.4,
+            "stall_update_windows": 99,
+            "selected_action_identity": "frontier",
+            "selected_action_stable_update_windows": 99,
+        }
+        revalidation_calls = 0
+        online_calls = 0
+
+        def promoted_result(trial_count):
+            evidence = types.SimpleNamespace(
+                promoted=True,
+                trial_count=trial_count,
+                candidate_key="frontier",
+                trials=types.SimpleNamespace(
+                    loss=(0.30,) * trial_count,
+                    metric1=(0.90,) * trial_count,
+                    metric2=(0.80,) * trial_count,
+                    seeds=tuple(range(trial_count)),
+                ),
+            )
+            return types.SimpleNamespace(
+                status="promoted",
+                trial_count=trial_count,
+                fresh_trial_count=trial_count,
+                evidence=evidence,
+                assessment=_assessment(0.99),
+                metrics={
+                    "loss_mean": 0.30,
+                    "loss_std": 0.001,
+                    "metric1_mean": 0.90,
+                    "metric1_std": 0.001,
+                    "metric2_mean": 0.80,
+                    "metric2_std": 0.001,
+                },
+            )
+
+        def promotion_flow(**kwargs):
+            nonlocal online_calls, revalidation_calls
+            if "convergence_revalidation_update" not in kwargs["identity_context"]:
+                online_calls += 1
+                if online_calls > 1:
+                    return promoted_result(25)
+                return types.SimpleNamespace(
+                    status="promotion_probability_below_gate",
+                    trial_count=0,
+                    fresh_trial_count=0,
+                    evidence=None,
+                    assessment=_assessment(0.7),
+                    metrics=None,
+                )
+            revalidation_calls += 1
+            if revalidation_calls == 1:
+                return types.SimpleNamespace(
+                    status="failed_evaluation",
+                    trial_count=0,
+                    fresh_trial_count=0,
+                    evidence=None,
+                    assessment=_assessment(0.9),
+                    metrics=None,
+                )
+            return promoted_result(int(kwargs["target_trial_count"]))
+
+        promotion_env = types.SimpleNamespace(
+            statistical_reference=_strict_reference(),
+        )
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            return_value={"frontier": frontier},
+        ), mock.patch(
+            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            side_effect=promotion_flow,
+        ), mock.patch(
+            "blb_stage2_rl.layerwise_runner._current_policy_entropy",
+            return_value={
+                "block4": 0.2,
+                "k": 0.6,
+                "block4_slot_count": 12,
+                "k_slot_count": 59,
+            },
+        ):
+            store_path = Path(td) / "candidates.jsonl"
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                promotion_base_env=promotion_env,
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(store_path),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+            persisted = store_path.read_text(encoding="utf-8")
+
+        self.assertEqual(summary["completed_episodes"], 2)
+        self.assertEqual(revalidation_calls, 2)
+        self.assertTrue(summary["converged"])
+        first = summary["episode_records"][0]
+        self.assertEqual(first.strict_revalidation_status, "failed_evaluation")
+        self.assertEqual(first.selected_action_identity, "frontier")
+        self.assertEqual(first.stall_update_windows, 100)
+        self.assertNotIn("final_revalidation_failed", persisted)
 
     def test_positive_episode_budget_remains_a_bounded_smoke_run(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -1837,6 +2272,80 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["completed_episodes"], 2)
         self.assertEqual(len(summary["episode_records"]), 2)
         self.assertFalse(summary["converged"])
+        self.assertEqual(summary["termination_reason"], "bounded_budget_exhausted")
+        self.assertEqual(
+            summary["episode_records"][-1].termination_reason,
+            "bounded_budget_exhausted",
+        )
+
+    def test_bounded_smoke_never_runs_natural_revalidation(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        frontier = {
+            "variable_cost": 0.4,
+            "assessment": _assessment(0.9),
+            "metrics": {
+                "loss_mean": 0.3,
+                "metric1_mean": 0.9,
+                "metric2_mean": 0.8,
+            },
+            "action_matrix": [[1, 0, 1, 2, 3, 4] for _ in range(12)],
+            "full_vector": list(range(20)),
+            "boosted_overrides": {},
+            "reward": 1.4,
+            "promotion_trials": None,
+            "constraint_safety_margins": [0.1] * 6,
+        }
+        config = self._train_cfg(total_episodes=1, update_every=1)
+        config.convergence_patience_updates = 1
+        config.convergence_resume_state = {
+            "best_robust_feasible_cost": 0.4,
+            "current_robust_feasible_cost": 0.4,
+            "stall_update_windows": 1,
+            "selected_action_identity": "frontier",
+            "selected_action_stable_update_windows": 1,
+        }
+        online_result = types.SimpleNamespace(
+            status="promotion_probability_below_gate",
+            trial_count=0,
+            fresh_trial_count=0,
+            evidence=None,
+            assessment=_assessment(0.7),
+            metrics=None,
+        )
+
+        def promotion_only(**kwargs):
+            self.assertNotIn("convergence_revalidation_update", kwargs["identity_context"])
+            return online_result
+
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "blb_stage2_rl.layerwise_runner.restore_promoted_candidates",
+            return_value={"frontier": frontier},
+        ), mock.patch(
+            "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+            side_effect=promotion_only,
+        ):
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertFalse(summary["converged"])
+        self.assertTrue(summary["plateau_ready"])
+        self.assertFalse(summary["strict_revalidation_passed"])
+        self.assertEqual(summary["termination_reason"], "bounded_budget_exhausted")
 
     def test_exhausted_bounded_resume_does_not_become_unbounded(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -1865,6 +2374,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["completed_episodes"], 2)
         self.assertEqual(summary["episode_records"], [])
         self.assertFalse(summary["converged"])
+        self.assertEqual(summary["termination_reason"], "bounded_budget_exhausted")
 
     def test_nonfinite_restored_entropy_is_unavailable_not_fatal(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -1912,6 +2422,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
             "boosted_overrides": {},
             "reward": 1.4,
             "promotion_trials": None,
+            "constraint_safety_margins": [0.1] * 6,
         }
         config = self._train_cfg(total_episodes=1, update_every=1)
         config.convergence_resume_state = {
@@ -2144,7 +2655,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         ):
             self.assertNotIn(retired, source)
 
-    def test_zero_remaining_resume_preserves_frontier_and_convergence_summary(self):
+    def test_zero_remaining_bounded_resume_preserves_frontier_without_convergence(self):
         from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
         from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import (
@@ -2199,6 +2710,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 "selected_action_stable_update_windows": 101,
                 "block4_entropy": 0.95,
                 "k_entropy": 0.96,
+                "strict_revalidation_passed": True,
+                "strict_revalidation_status": "passed",
                 "converged": True,
                 "extension_required": False,
             }
@@ -2230,9 +2743,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["stall_update_windows"], 101)
         self.assertEqual(summary["selected_action_identity"], expected_identity)
         self.assertEqual(summary["selected_action_stable_update_windows"], 101)
-        self.assertTrue(summary["converged"])
+        self.assertFalse(summary["converged"])
         self.assertEqual(summary["strict_best"]["full_vector"], action)
-        self.assertTrue(summary["convergence_state"]["converged"])
+        self.assertFalse(summary["convergence_state"]["converged"])
+        self.assertEqual(summary["termination_reason"], "bounded_budget_exhausted")
 
     def test_promoted_reward_and_install_metadata_restore_from_promotion_record(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -2314,7 +2828,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 restored = restore_promoted_candidates(
                     candidate_store=store,
                     identity_context=context,
-                    statistical_reference=object(),
+                    statistical_reference=_strict_reference(),
                     assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
                     promotion_probability=0.8,
                     assessment_trial_limit=25,
@@ -2469,7 +2983,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
 class _PromotionBase:
     def __init__(self, fresh_probability=0.9):
-        self.statistical_reference = object()
+        self.statistical_reference = _strict_reference()
         self.prepare_calls = []
         self.evaluate_calls = []
         self.fresh_probability = fresh_probability
@@ -2842,7 +3356,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             restored = restore_promoted_candidates(
                 candidate_store=store,
                 identity_context=context,
-                statistical_reference=object(),
+                statistical_reference=_strict_reference(),
                 assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
                 promotion_probability=0.8,
             )
@@ -2857,6 +3371,218 @@ class LayerwisePromotionTests(unittest.TestCase):
             candidate["boosted_overrides"],
             {(4, 3): {"v_mask_rescale_sf": 47}},
         )
+
+    def test_final_revalidation_pass_restores_fresh_strict_evidence(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import (
+            _record_final_revalidation_outcome,
+            evidence_identity_context,
+            restore_promoted_candidates,
+        )
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        base_context = evidence_identity_context(context, "F4")
+        revalidation_context = {
+            **context,
+            "convergence_revalidation_update": 12_000,
+            "convergence_revalidation_candidate": "candidate-a",
+        }
+        strict_context = evidence_identity_context(revalidation_context, "F4")
+        action = list(range(20))
+        matrix = [[0] * 6 for _layer in range(12)]
+        candidate = {
+            "candidate_key": "candidate-a",
+            "variable_cost": 0.0,
+            "action_matrix": matrix,
+            "full_vector": action,
+            "boosted_overrides": {},
+            "reward": 1.25,
+        }
+        observed_assessments = []
+
+        def assess(trials, _reference, *, gate_probability, bootstrap_seed):
+            observed_assessments.append(
+                (len(trials.loss), float(gate_probability), int(bootstrap_seed))
+            )
+            return _assessment(0.99)
+
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 25,
+                    metric1=[0.9] * 25,
+                    metric2=[0.8] * 25,
+                    seeds=list(range(1, 26)),
+                ),
+                {
+                    "identity_context": base_context,
+                    "fidelity": "F4",
+                    "action_matrix": matrix,
+                    "variable_cost": 0.0,
+                    "boosted_overrides": [],
+                },
+            )
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": base_context,
+                "promotion_status": "promoted",
+                "fidelity": "F4",
+                "valid": True,
+            })
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.29] * 31,
+                    metric1=[0.91] * 31,
+                    metric2=[0.81] * 31,
+                    seeds=list(range(100, 131)),
+                ),
+                {
+                    "identity_context": strict_context,
+                    "fidelity": "F4",
+                    "action_matrix": matrix,
+                    "variable_cost": 0.0,
+                    "boosted_overrides": [],
+                },
+            )
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": strict_context,
+                "promotion_status": "promoted",
+                "fidelity": "F4",
+                "valid": True,
+            })
+            _record_final_revalidation_outcome(
+                candidate_store=store,
+                identity_context=context,
+                revalidation_identity_context=revalidation_context,
+                candidate=candidate,
+                passed=True,
+                revalidation_status="promoted",
+                bootstrap_seed=123,
+                final_probability=0.95,
+                final_trial_count=31,
+            )
+
+            restored = restore_promoted_candidates(
+                candidate_store=store,
+                identity_context=context,
+                statistical_reference=_strict_reference(),
+                assess_candidate_fn=assess,
+                promotion_probability=0.80,
+                assessment_trial_limit=25,
+                final_probability=0.95,
+                final_assessment_trial_limit=31,
+            )
+
+        self.assertEqual(len(restored), 1)
+        restored_candidate = next(iter(restored.values()))
+        self.assertEqual(len(restored_candidate["promotion_trials"].loss), 31)
+        self.assertAlmostEqual(restored_candidate["metrics"]["loss_mean"], 0.29)
+        self.assertEqual(restored_candidate["final_revalidation_status"], "passed")
+        self.assertEqual(observed_assessments, [(31, 0.95, 123)])
+
+    def test_final_revalidation_failure_remains_excluded_after_restore(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import (
+            _record_final_revalidation_outcome,
+            evidence_identity_context,
+            promote_candidate_if_eligible,
+            restore_promoted_candidates,
+        )
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        context = {"action_space_version": "layerwise-v1"}
+        base_context = evidence_identity_context(context, "F4")
+        revalidation_context = {
+            **context,
+            "convergence_revalidation_update": 12_000,
+            "convergence_revalidation_candidate": "candidate-a",
+        }
+        action = list(range(20))
+        matrix = [[0] * 6 for _layer in range(12)]
+        candidate = {
+            "candidate_key": "candidate-a",
+            "variable_cost": 0.0,
+            "action_matrix": matrix,
+            "full_vector": action,
+            "boosted_overrides": {},
+            "reward": 1.25,
+        }
+
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3] * 25,
+                    metric1=[0.9] * 25,
+                    metric2=[0.8] * 25,
+                    seeds=list(range(1, 26)),
+                ),
+                {
+                    "identity_context": base_context,
+                    "fidelity": "F4",
+                    "action_matrix": matrix,
+                    "variable_cost": 0.0,
+                    "boosted_overrides": [],
+                },
+            )
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": base_context,
+                "promotion_status": "promoted",
+                "fidelity": "F4",
+                "valid": True,
+            })
+            _record_final_revalidation_outcome(
+                candidate_store=store,
+                identity_context=context,
+                revalidation_identity_context=revalidation_context,
+                candidate=candidate,
+                passed=False,
+                revalidation_status="failed_probability_gate",
+                bootstrap_seed=123,
+                final_probability=0.95,
+                final_trial_count=31,
+            )
+
+            restored = restore_promoted_candidates(
+                candidate_store=store,
+                identity_context=context,
+                statistical_reference=_strict_reference(),
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.99),
+                final_assessment_trial_limit=31,
+            )
+            base = _PromotionBase()
+            retry = promote_candidate_if_eligible(
+                env=types.SimpleNamespace(base=base),
+                candidate_store=store,
+                action_indices=action,
+                identity_context=context,
+                action_matrix=matrix,
+                assessment=_assessment(0.99),
+                priority=3,
+                variable_cost=0.0,
+                frontier_cost=None,
+                boosted_overrides={},
+                bootstrap_seed=77,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.99),
+            )
+
+        self.assertEqual(restored, {})
+        self.assertEqual(retry.status, "promotion_already_attempted")
+        self.assertEqual(base.prepare_calls, [])
+        self.assertEqual(base.evaluate_calls, [])
 
     def test_promotion_selects_fresh_trial_seeds_disjoint_from_existing_evidence(self):
         from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
@@ -2908,7 +3634,6 @@ class LayerwisePromotionTests(unittest.TestCase):
             (1, 0.9, 0.6, 0.5, "priority_not_p3"),
             (2, 0.9, 0.6, 0.5, "priority_not_p3"),
             (3, 0.79, 0.6, 0.5, "promotion_probability_below_gate"),
-            (3, 0.9, 0.5, 0.5, "not_frontier_improvement"),
             (3, 0.9, 0.4, 0.5, "not_frontier_improvement"),
         )
         for priority, probability, cost, frontier, status in cases:
@@ -2933,6 +3658,30 @@ class LayerwisePromotionTests(unittest.TestCase):
                 self.assertEqual(result.status, status)
                 self.assertEqual(base.prepare_calls, [])
                 self.assertEqual(base.evaluate_calls, [])
+
+    def test_promotion_allows_equal_cost_candidates_for_deterministic_tie_ranking(self):
+        from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
+
+        with tempfile.TemporaryDirectory() as td:
+            store = self._store_with_five(td)
+            base = _PromotionBase()
+            result = promote_candidate_if_eligible(
+                env=types.SimpleNamespace(base=base),
+                candidate_store=store,
+                action_indices=list(range(20)),
+                identity_context={"action_space_version": "layerwise-v1"},
+                action_matrix=[[0] * 6 for _ in range(12)],
+                assessment=_assessment(0.9),
+                priority=3,
+                variable_cost=0.5,
+                frontier_cost=0.5,
+                boosted_overrides={},
+                bootstrap_seed=77,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.9),
+            )
+
+        self.assertEqual(result.status, "promoted")
+        self.assertEqual(len(base.evaluate_calls), 1)
 
     def test_failed_required_promotion_is_not_marked_promoted(self):
         from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible

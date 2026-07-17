@@ -505,13 +505,17 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   robust-constrained PPO runs use `--stage2-search-episodes 0`, meaning no
   fixed episode budget. The active PPO objective has entropy regularization
   disabled (`ent_coef=0.0`) for the entire run; Block4 and K entropy are
-  diagnostics and stop signals only. Stop after a complete PPO update only
-  when both normalized entropies are below `0.1`, a promotion-qualified robust
-  feasible candidate exists, and its cost frontier has not improved for 100
-  complete finite PPO updates; skipped/non-finite updates do not advance this
-  patience. Positive episode limits are smoke/debug budgets and do not imply
-  convergence. Do not restore entropy schedules, floors, recovery, or forced
-  concentration to make the policy stop.
+  diagnostics only and do not force or prevent stopping. Stop after a complete
+  PPO update only when a strict full-validation robust-feasible candidate
+  exists, its maximum cost has not improved for 100 complete finite PPO
+  updates, the deterministic strict winner has not changed for the same 100
+  updates, and a fresh independent full-validation re-evaluation still passes
+  all loss/metric1/metric2 precision and stability constraints at the final
+  confidence gate. Skipped/non-finite updates do not advance either patience
+  counter. Positive episode limits are smoke/debug budgets and always terminate
+  as `bounded_budget_exhausted`, never natural convergence. Do not restore
+  entropy schedules, floors, recovery, or forced concentration to make the
+  policy stop.
 - Stage-2 fusion-count map build status, updated 2026-06-03: commit `ea27408`
   fixed the builder-side enum domain so rescale slots enumerate only SF choices
   (`index 1..levels-1`) and never `index 0`/`None`, preserving the CKKS rule

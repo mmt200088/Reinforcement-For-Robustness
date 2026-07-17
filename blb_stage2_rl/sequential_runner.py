@@ -118,9 +118,7 @@ class SequentialTrainConfig:
     absolute_episode_start: int = 0
     planned_total_episodes: Optional[int] = None
     convergence_resume_state: Optional[Mapping[str, Any]] = None
-    convergence_min_episodes: int = 100_000
-    convergence_patience_updates: int = 220
-    convergence_max_episodes: int = 150_000
+    convergence_patience_updates: int = 100
     warmstart_neighbor_sampling: bool = False
     warmstart_neighbor_ramp_episodes: int = 0
     warmstart_neighbor_max_mutations: int = 12
@@ -166,12 +164,13 @@ class SequentialTrainConfig:
     fast_reward_mode_enabled: bool = False
     online_num_trials_per_step: int = 5
     terminal_eval_batch_size: int = 4
-    promotion_validation_trials: int = 4
+    promotion_validation_trials: int = 25
     promotion_margin_window: float = 0.25
     final_selection_top_n: int = 20
-    final_selection_validation_trials: int = 20
+    final_selection_validation_trials: int = 25
     online_constraint_probability: float = 0.50
     promotion_constraint_probability: float = 0.80
+    final_constraint_probability: float = 0.95
 
 
 # ---------------------------------------------------------------------------
@@ -3752,16 +3751,17 @@ def _run_layerwise_training_branch(
     )
     from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_runner import (
-        DEFAULT_CONVERGENCE_MAX_EPISODES,
-        DEFAULT_CONVERGENCE_MIN_EPISODES,
         DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
         _PROBABILITY_FIELDS,
         _to_plain_mapping,
         build_layerwise_run_context,
         CheckpointFileFingerprintTracker,
         initialize_layerwise_policy,
+        normalized_constraint_safety_margins,
         resolve_layerwise_episode_budget,
+        StrictSelectionKey,
         strict_selection_key,
+        strict_selection_key_from_snapshot,
         train_layerwise,
         validate_fresh_layerwise_run_state,
         validate_layerwise_checkpoint_metadata,
@@ -3775,28 +3775,14 @@ def _run_layerwise_training_branch(
     )
     requested_total_episodes = int(train_cfg.total_episodes)
     resolve_layerwise_episode_budget(requested_total_episodes, 0)
-    convergence_min_episodes = int(getattr(
-        train_cfg,
-        "convergence_min_episodes",
-        DEFAULT_CONVERGENCE_MIN_EPISODES,
-    ))
     convergence_patience_updates = int(getattr(
         train_cfg,
         "convergence_patience_updates",
         DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
     ))
-    convergence_max_episodes = int(getattr(
-        train_cfg,
-        "convergence_max_episodes",
-        DEFAULT_CONVERGENCE_MAX_EPISODES,
-    ))
-    if convergence_min_episodes < 0:
-        raise ValueError("layerwise convergence minimum must be nonnegative")
     if convergence_patience_updates <= 0:
         raise ValueError("layerwise convergence patience must be positive")
-    if convergence_max_episodes < convergence_min_episodes:
-        raise ValueError("layerwise convergence maximum must cover minimum")
-    algorithm_revision = "factorized_slot_credit_multifidelity_convergence_v7"
+    algorithm_revision = "factorized_slot_credit_multifidelity_convergence_v8"
     rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
     layerwise_entropy_regularization = {
         "kind": "disabled",
@@ -3806,13 +3792,21 @@ def _run_layerwise_training_branch(
     layerwise_termination = {
         "mode": "natural_convergence",
         "episode_limit": None,
-        "minimum_episodes": convergence_min_episodes,
         "patience_updates": convergence_patience_updates,
-        "maximum_episodes": convergence_max_episodes,
         "requires_robust_feasible_candidate": True,
         "frontier_stall_update_windows": convergence_patience_updates,
         "selected_action_stable_update_windows": convergence_patience_updates,
-        "selection_tie_break": "candidate_key",
+        "strict_revalidation_required": True,
+        "strict_revalidation_trials": int(
+            getattr(train_cfg, "final_selection_validation_trials", 25)
+        ),
+        "strict_revalidation_probability": float(
+            getattr(train_cfg, "final_constraint_probability", 0.95)
+        ),
+        "selection_order": (
+            "feasible,cost,confidence_vector,safety_margin_vector,"
+            "action_lexicographic"
+        ),
         "entropy_role": "diagnostic_only",
         "counts_only_finite_ppo_updates": True,
     }
@@ -4083,20 +4077,24 @@ def _run_layerwise_training_branch(
         absolute_episode_start=int(start_episode),
         planned_total_episodes=int(planned_total_episodes),
         convergence_resume_state=resumed_convergence_state,
-        convergence_min_episodes=convergence_min_episodes,
         convergence_patience_updates=convergence_patience_updates,
-        convergence_max_episodes=convergence_max_episodes,
         ppo=ppo,
         rl_algo="ppo",
         online_num_trials_per_step=int(train_cfg.num_trials_per_step),
         promotion_validation_trials=int(
             getattr(train_cfg, "promotion_validation_trials", 25)
         ),
+        final_selection_validation_trials=int(
+            getattr(train_cfg, "final_selection_validation_trials", 25)
+        ),
         online_constraint_probability=float(
             getattr(train_cfg, "online_constraint_probability", 0.50)
         ),
         promotion_constraint_probability=float(
             getattr(train_cfg, "promotion_constraint_probability", 0.80)
+        ),
+        final_constraint_probability=float(
+            getattr(train_cfg, "final_constraint_probability", 0.95)
         ),
         reward_design="robust_constrained",
     )
@@ -4309,13 +4307,9 @@ def _run_layerwise_training_branch(
     log(f"  {bullet} [data-points] layerwise Stage-2 → {stage2_data_writer.run_dir}")
 
     episode_records: List[Any] = []
-    best_selection_key: Optional[Tuple[Tuple[float, ...], str]] = None
+    best_selection_key: Optional[StrictSelectionKey] = None
     strict_best: Dict[str, Any] = dict(resumed_best)
-    if resumed_best.get("rank_key") and resumed_best.get("candidate_key"):
-        best_selection_key = (
-            tuple(float(value) for value in resumed_best["rank_key"]),
-            str(resumed_best["candidate_key"]),
-        )
+    best_selection_key = strict_selection_key_from_snapshot(resumed_best)
     ppo_update_counter = int(resumed_ppo_update_count)
     started_at = time.time()
 
@@ -4510,9 +4504,16 @@ def _run_layerwise_training_branch(
             selection_key = strict_selection_key(
                 record.promotion_candidate_key,
                 {
-                "variable_cost": record.variable_cost,
-                "assessment": promotion_assessment,
-                "metrics": promotion_metrics,
+                    "variable_cost": record.variable_cost,
+                    "assessment": promotion_assessment,
+                    "metrics": promotion_metrics,
+                    "constraint_safety_margins": (
+                        normalized_constraint_safety_margins(
+                            promotion_metrics,
+                            authoritative_robust_reference,
+                        )
+                    ),
+                    "full_vector": record.pending_full_vector,
                 },
             )
             if best_selection_key is None or selection_key < best_selection_key:
@@ -4526,7 +4527,13 @@ def _run_layerwise_training_branch(
             ),
             "converged": bool(record.converged),
             "extension_required": bool(record.extension_required),
-            "budget_cap_reached": bool(record.budget_cap_reached),
+            "plateau_ready": bool(record.plateau_ready),
+            "strict_revalidation_passed": bool(
+                record.strict_revalidation_passed
+            ),
+            "strict_revalidation_status": str(
+                record.strict_revalidation_status
+            ),
             "termination_reason": str(record.termination_reason),
             "best_robust_feasible_cost": record.best_robust_feasible_cost,
         }
@@ -4639,11 +4646,7 @@ def _run_layerwise_training_branch(
         nonlocal ppo_update_counter, strict_best, best_selection_key
         ppo_update_counter += 1
         strict_best = dict(metrics.get("strict_best") or {})
-        best_selection_key = (
-            strict_selection_key(strict_best["candidate_key"], strict_best)
-            if strict_best.get("rank_key") and strict_best.get("candidate_key")
-            else None
-        )
+        best_selection_key = strict_selection_key_from_snapshot(strict_best)
         write_strict_best_diagnostics(strict_best, episode=int(record.episode_index))
         recent = episode_records[-max(1, int(train_cfg.rollout_size)):]
         recent_rewards = [float(item.reward) for item in recent] or [0.0]
@@ -4687,7 +4690,13 @@ def _run_layerwise_training_branch(
             ),
             converged=bool(metrics.get("converged", False)),
             extension_required=bool(metrics.get("extension_required", False)),
-            budget_cap_reached=bool(metrics.get("budget_cap_reached", False)),
+            plateau_ready=bool(metrics.get("plateau_ready", False)),
+            strict_revalidation_passed=bool(
+                metrics.get("strict_revalidation_passed", False)
+            ),
+            strict_revalidation_status=str(
+                metrics.get("strict_revalidation_status", "not_due")
+            ),
             termination_reason=str(metrics.get("termination_reason", "running")),
             best_robust_feasible_cost=metrics.get("best_robust_feasible_cost"),
             actor_clip_mode=str(metrics.get("actor_clip_mode", "joint")),
@@ -4736,7 +4745,13 @@ def _run_layerwise_training_branch(
                 ),
                 "converged": bool(update_stats.converged),
                 "extension_required": bool(update_stats.extension_required),
-                "budget_cap_reached": bool(update_stats.budget_cap_reached),
+                "plateau_ready": bool(update_stats.plateau_ready),
+                "strict_revalidation_passed": bool(
+                    update_stats.strict_revalidation_passed
+                ),
+                "strict_revalidation_status": (
+                    update_stats.strict_revalidation_status
+                ),
                 "termination_reason": update_stats.termination_reason,
                 "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
                 "actor_clip_mode": update_stats.actor_clip_mode,
@@ -4795,13 +4810,11 @@ def _run_layerwise_training_branch(
         )
         if summary.get("converged", False):
             completion_status = "converged"
-        elif summary.get("budget_cap_reached", False):
-            completion_status = "budget_cap_reached"
         elif requested_total_episodes > 0:
             completion_status = "bounded_budget_exhausted"
         else:
             raise RuntimeError(
-                "unbounded layerwise training stopped without convergence or budget cap"
+                "unbounded layerwise training stopped without strict convergence"
             )
         training_completed = True
     finally:
@@ -4869,8 +4882,11 @@ def _run_layerwise_training_branch(
         "best_promotion_evidence": summary.get("best_promotion_evidence"),
         "final_evidence": {
             "status": (
-                "pending_post_search_revalidation"
-                if summary.get("best_full_vector") is not None else "no_candidate"
+                "strict_revalidation_passed"
+                if summary.get("strict_revalidation_passed", False)
+                else "pending_strict_revalidation"
+                if summary.get("best_full_vector") is not None
+                else "no_candidate"
             ),
             "required_probability": float(
                 getattr(train_cfg, "final_constraint_probability", 0.95)
@@ -4880,8 +4896,8 @@ def _run_layerwise_training_branch(
             ),
             "current_assessment": summary.get("best_assessment"),
             "note": (
-                "Promotion evidence is not final revalidation evidence; "
-                "Task-9 revalidation must complete before local-optimum claims."
+                "Natural convergence requires an independent 25-trial F4 "
+                "revalidation at the final probability gate."
             ),
         },
         "block4_entropy": summary.get("block4_entropy"),
@@ -4893,7 +4909,13 @@ def _run_layerwise_training_branch(
         ),
         "converged": bool(summary.get("converged", False)),
         "extension_required": bool(summary.get("extension_required", False)),
-        "budget_cap_reached": bool(summary.get("budget_cap_reached", False)),
+        "plateau_ready": bool(summary.get("plateau_ready", False)),
+        "strict_revalidation_passed": bool(
+            summary.get("strict_revalidation_passed", False)
+        ),
+        "strict_revalidation_status": str(
+            summary.get("strict_revalidation_status", "not_due")
+        ),
         "recommended_extension_episodes": int(
             summary.get("recommended_extension_episodes", 0) or 0
         ),
@@ -5043,7 +5065,13 @@ def _run_layerwise_training_branch(
             ),
             "converged": bool(summary.get("converged", False)),
             "extension_required": bool(summary.get("extension_required", False)),
-            "budget_cap_reached": bool(summary.get("budget_cap_reached", False)),
+            "plateau_ready": bool(summary.get("plateau_ready", False)),
+            "strict_revalidation_passed": bool(
+                summary.get("strict_revalidation_passed", False)
+            ),
+            "strict_revalidation_status": str(
+                summary.get("strict_revalidation_status", "not_due")
+            ),
             "termination_reason": str(
                 summary.get("termination_reason") or completion_status
             ),

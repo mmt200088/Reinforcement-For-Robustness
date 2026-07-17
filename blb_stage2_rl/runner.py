@@ -647,17 +647,9 @@ class BLBStage2TrainConfig:
             raise ValueError(
                 "constraint probabilities must satisfy online <= promotion <= final"
             )
-        self.convergence_min_episodes = int(self.convergence_min_episodes)
         self.convergence_patience_updates = int(self.convergence_patience_updates)
-        self.convergence_max_episodes = int(self.convergence_max_episodes)
-        if self.convergence_min_episodes < 0:
-            raise ValueError("convergence_min_episodes must be nonnegative")
         if self.convergence_patience_updates <= 0:
             raise ValueError("convergence_patience_updates must be positive")
-        if self.convergence_max_episodes < self.convergence_min_episodes:
-            raise ValueError(
-                "convergence_max_episodes must cover convergence_min_episodes"
-            )
     # 环境
     # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
     # making one outlier trial blow up the std and trip priority-2 (stability)
@@ -765,9 +757,7 @@ class BLBStage2TrainConfig:
     promotion_constraint_probability: float = 0.80
     final_constraint_probability: float = 0.95
     stage2_stability_multiplier: float = 2.0
-    convergence_min_episodes: int = 100_000
-    convergence_patience_updates: int = 220
-    convergence_max_episodes: int = 150_000
+    convergence_patience_updates: int = 100
     # ---- 4-sub-stage mode (opt-in 2026-05-27) -----------------------------
     # When ``substage_mode`` is True, ``BLBStage2RLRunner.run`` dispatches to
     # ``substage_runner.run_substage_via_runner`` instead of the legacy

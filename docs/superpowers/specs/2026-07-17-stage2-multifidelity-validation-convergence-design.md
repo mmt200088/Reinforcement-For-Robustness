@@ -8,8 +8,8 @@ fixed stratified 256-example probe with five noise trials. Candidate promotion,
 the robust frontier, convergence, and final selection use `validation_full`
 with 25 independent trials and a separately calibrated baseline.
 
-The search should stop after useful progress has flattened and should not run
-past 150,000 episodes merely to capture a negligible late improvement.
+The search stops only when its authoritative objective has stabilized. Episode
+count and policy entropy are diagnostics, not stopping gates or budgets.
 
 ## Evidence Tiers
 
@@ -56,36 +56,50 @@ each owns its own batch set and multi-GPU replicas. Before and after an F4
 evaluation, the online persistent-install cache is cleared so a shared primary
 model cannot incorrectly skip the next install.
 
-## Convergence And Budget
+## Objective-Driven Convergence
 
-The current long-run evidence shows a 203-update improvement gap between about
-98,000 and 122,500 episodes, while the improvement after 150,000 episodes was
-only about 0.0094 normalized cost, or 1.6% of the eventual best score. The
-future stopping contract is therefore:
+Natural convergence has no minimum episode count and no maximum episode cap.
+The future stopping contract is:
 
-- minimum search length: 100,000 episodes;
-- plateau patience: 220 finite PPO updates, equivalent to 26,400 episodes at a
-  120-episode rollout;
-- both the F4 frontier cost and the exact selected F4 candidate identity must
-  remain unchanged throughout the patience window;
-- maximum search budget: 150,000 episodes;
-- entropy remains diagnostic only and cannot force or prevent convergence.
+- at least one candidate has passed all six precision and stability constraints
+  on F4;
+- the maximum robust-feasible variable-cost score has not improved for 100
+  finite PPO updates;
+- the exact deterministically selected F4 action has not changed for the same
+  100 finite PPO updates;
+- entropy remains diagnostic only and cannot force or prevent convergence;
+- once the plateau conditions hold, the selected action is evaluated again on
+  `validation_full` with 25 fresh trials that do not reuse its promotion trials;
+- termination is `converged` only if that fresh assessment passes all six
+  constraints at the final 0.95 probability gate.
 
-If the plateau rule fires, termination is `converged`. If 150,000 episodes are
-reached first, termination is `budget_cap_reached`; it must not be reported as
-algorithmic convergence. In either case, the returned action is the best F4
-qualified candidate observed so far. A bounded smoke run still stops at its
-explicit episode count and does not use the long-run budget contract.
+If the fresh revalidation fails, the candidate is removed from the current
+strict frontier, the deterministic winner and both stability counters are
+reconciled, and PPO continues. A bounded smoke run still stops at its explicit
+episode count and is reported as `bounded_budget_exhausted`, never as natural
+convergence.
+
+The strict winner is unique. Candidates are ordered by: all constraints
+passing, maximum variable-cost score, lexicographically strongest sorted vector
+of all six constraint probabilities (worst constraint first), lexicographically
+largest sorted vector of all six normalized safety margins (worst constraint
+first), lexicographically smallest full action vector, then candidate identity
+only as an unreachable duplicate fallback. Equal-cost candidates remain
+eligible for F4 promotion so discovery order cannot bypass these tie-breakers.
 
 ## Persistence And Resume
 
 - The algorithm revision and run-context hash change because old checkpoints
   pooled F1 and pseudo-F4 probe evidence.
-- New checkpoints persist the minimum episode count, patience, hard budget,
-  termination reason, and both stability counters.
+- New checkpoints persist the 100-update patience, termination reason, both
+  stability counters, and final-revalidation evidence/status.
 - F1 and F4 records carry fidelity-specific identity contexts.
 - A resume rebuilds the strict frontier only from promoted F4 evidence and the
   F4 baseline reference.
+- Final revalidation writes a durable pass/fail verdict onto the base F4
+  identity. A pass restores from the fresh final-evaluation context at the 0.95
+  gate; a failure remains excluded after restart and cannot be silently
+  re-admitted from the earlier 0.80 promotion record.
 - Old revision checkpoints fail closed rather than being silently resumed.
 
 ## Current Run Handling
@@ -103,8 +117,9 @@ new full-validation comparison as the authoritative final result.
 - Promotion tests prove the first five F1 trials are not counted toward the 25
   F4 trials and that F4 uses a distinct evaluator/reference.
 - Restore tests prove only promoted F4 evidence reconstructs the frontier.
-- Convergence tests cover the 100,000 minimum, 219/220-update boundary,
-  frontier/action resets, non-finite updates, and the 150,000 budget status.
+- Convergence tests cover the 99/100-update boundary, frontier/action resets,
+  non-finite updates, strict revalidation pass/fail, and absence of episode
+  count gates.
 - Runner tests prove the complete validation loader has no probe-size cap and
   that the algorithm contract records both evidence tiers.
 - The current run report is generated only after Paean records 25

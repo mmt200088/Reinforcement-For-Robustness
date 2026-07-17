@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Stage-2 PPO learn on the fixed 256-example probe while allowing only independent `validation_full` evidence into the authoritative frontier, and stop naturally by 150,000 episodes under a practical plateau rule.
+**Goal:** Make Stage-2 PPO learn on the fixed 256-example probe while allowing only independent `validation_full` evidence into the authoritative frontier, and stop naturally when the authoritative optimum is stable and freshly revalidated.
 
-**Architecture:** Keep the existing layerwise PPO and reward path unchanged for F1. Add fidelity-specific candidate contexts, a second probe environment whose batches cover all of `validation_full`, and an F4-only promotion/frontier path. Parameterize the convergence tracker with a 100,000-episode minimum, 220 finite-update patience, and 150,000-episode cap; entropy remains diagnostic.
+**Architecture:** Keep the existing layerwise PPO and reward path unchanged for F1. Add fidelity-specific candidate contexts, a second probe environment whose batches cover all of `validation_full`, and an F4-only promotion/frontier path. Convergence uses a 100-finite-update frontier/action plateau followed by a fresh 25-trial F4 revalidation; episode count and entropy remain diagnostic.
 
 **Tech Stack:** Python 3, PyTorch, existing BLB `ProbeRunner`, append-only JSONL `CandidateStore`, `unittest`/`pytest`, Paean final evaluation.
 
@@ -89,7 +89,7 @@ Add `promotion_base_env` and `promotion_statistical_reference` parameters to `tr
 
 - [ ] **Step 6: Persist both evidence contracts**
 
-Add probe/full split names, example counts, trial counts, and both baseline summaries to the algorithm contract, run context, manifest, and structured baseline payload. Bump the revision to `factorized_slot_credit_multifidelity_convergence_v7` so old pooled-evidence checkpoints fail closed.
+Add probe/full split names, example counts, trial counts, and both baseline summaries to the algorithm contract, run context, manifest, and structured baseline payload. Bump the revision to `factorized_slot_credit_multifidelity_convergence_v8` so old pooled-evidence checkpoints fail closed.
 
 - [ ] **Step 7: Run focused tests**
 
@@ -97,7 +97,7 @@ Run: `python3 -m pytest -q tests/test_blb_stage2_rl_regressions.py tests/test_bl
 
 Expected: PASS.
 
-### Task 3: Implement Practical Plateau Convergence With A Hard Budget
+### Task 3: Implement Objective-Driven Plateau Convergence
 
 **Files:**
 - Modify: `blb_stage2_rl/layerwise_runner.py`
@@ -110,37 +110,49 @@ Expected: PASS.
 Test all cases:
 
 ```python
-# 220 stable updates before 100k: not converged
-# at 100k with 219 stable updates: not converged
-# at 100k with 220 stable updates: converged
+# 99 stable updates: not plateau-ready
+# 100 stable updates: plateau-ready but not converged before strict revalidation
+# a fresh 25-trial F4 revalidation pass confirms convergence
+# a failed revalidation removes the selected candidate and resumes search
 # a frontier improvement or selected identity change resets its counter
 # non-finite PPO updates do not advance patience
-# at 150k without plateau: budget_cap_reached=True, converged=False
+# completed episode count never forces or prevents convergence
 ```
 
 - [ ] **Step 2: Run tests and verify RED**
 
 Run: `python3 -m pytest -q tests/test_blb_layerwise_runner.py -k convergence`
 
-Expected: FAIL because the tracker hardcodes 100 windows and has no minimum or cap status.
+Expected: FAIL because the tracker still applies episode limits and does not
+require fresh strict revalidation.
 
 - [ ] **Step 3: Parameterize the tracker and loop**
 
-Add defaults to the long-run train configs:
+Keep one active natural-convergence setting in the long-run train configs:
 
 ```python
-convergence_min_episodes = 100_000
-convergence_patience_updates = 220
-convergence_max_episodes = 150_000
+convergence_patience_updates = 100
 ```
 
-Extend `LayerwiseConvergenceState` with `budget_cap_reached` and `termination_reason`. Stop the unbounded loop when either `converged` or `budget_cap_reached`; bounded smoke runs continue to obey only their explicit episode limit.
+Expose plateau readiness separately from convergence. At the plateau boundary,
+collect a new F4 trial group under a distinct evidence identity and assess it at
+the final 0.95 gate. Stop the unbounded loop only after that revalidation passes;
+bounded smoke runs continue to obey only their explicit episode limit.
 
 - [ ] **Step 4: Persist honest termination state**
 
-Write `converged`, `budget_cap_reached`, or `bounded_budget_exhausted` consistently to checkpoint, manifest, status, PPO diagnostics, summary, and algorithm contract. Keep B4/K entropy monitor-only.
+Write `running`, `plateau_revalidation_failed`, `converged`, or
+`bounded_budget_exhausted` consistently to checkpoint, manifest, status, PPO
+diagnostics, summary, and algorithm contract. Keep B4/K entropy monitor-only.
 
-- [ ] **Step 5: Run convergence and runner tests**
+- [ ] **Step 5: Make strict selection deterministic and objective-aligned**
+
+Rank feasible candidates by maximum cost, then worst-first lexicographic vectors
+covering all six constraint probabilities and all six normalized safety margins,
+then full-action-vector lexicographic order, and only then candidate identity.
+Keep equal-cost candidates eligible for F4 and add focused equal-cost tests.
+
+- [ ] **Step 6: Run convergence and runner tests**
 
 Run: `python3 -m pytest -q tests/test_blb_layerwise_runner.py tests/test_sequential_smoke.py -k 'layerwise or convergence or termination'`
 

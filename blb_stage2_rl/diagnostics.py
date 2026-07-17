@@ -278,7 +278,9 @@ class PPOUpdateStats:
     selected_action_stable_update_windows: int = 0
     converged: bool = False
     extension_required: bool = False
-    budget_cap_reached: bool = False
+    plateau_ready: bool = False
+    strict_revalidation_passed: bool = False
+    strict_revalidation_status: str = "not_due"
     termination_reason: str = "running"
     best_robust_feasible_cost: Optional[float] = None
     actor_clip_mode: str = "joint"
