@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from fractions import Fraction
 import pathlib
 import sys
 import unittest
@@ -198,28 +199,38 @@ class VariableCostTest(unittest.TestCase):
             actions.append(layerwise.LayerwiseDecodedAction(fusion, blocks))
         return actions
 
-    def test_exact_cost_formula_and_monotonicity(self):
+    def test_independent_resource_axes_and_monotonicity(self):
         low = layerwise.compute_variable_cost(self._actions(0, 13))
         high = layerwise.compute_variable_cost(self._actions(1, 8))
-        middle = layerwise.compute_variable_cost(self._actions(1, 13))
-        self.assertEqual((low.fusion_saving, low.truncation_saving, low.normalized), (0.0, 0.0, 0.0))
-        self.assertEqual((high.fusion_saving, high.truncation_saving, high.normalized), (1.0, 1.0, 1.0))
-        self.assertEqual((low.fusion_units, low.truncation_units, low.total_units), (0.0, 0.0, 0.0))
-        self.assertEqual((high.fusion_units, high.truncation_units), (12.0, 147.5))
-        self.assertEqual(high.total_units, high.max_units)
-        self.assertEqual(len(high.layer_cost_rewards), 12)
-        self.assertEqual(len(high.slot_cost_rewards), 12)
-        self.assertTrue(all(len(row) == 6 for row in high.slot_cost_rewards))
-        self.assertAlmostEqual(sum(high.layer_cost_rewards), high.normalized)
-        for layer_cost, slot_costs in zip(
-                high.layer_cost_rewards, high.slot_cost_rewards,
-        ):
-            self.assertAlmostEqual(sum(slot_costs), layer_cost)
-        self.assertGreater(middle.normalized, low.normalized)
-        self.assertLess(middle.normalized, high.normalized)
-        self.assertAlmostEqual(middle.normalized, 12.0 / 159.5)
+        fusion_only = layerwise.compute_variable_cost(self._actions(1, 13))
+        communication_only = layerwise.compute_variable_cost(self._actions(0, 8))
 
-    def test_k_drop_two_equals_one_block4_fusion_toggle(self):
+        self.assertEqual(
+            (low.compute_saving, low.communication_saving, low.ppo_resource_score),
+            (0.0, 0.0, 0.0),
+        )
+        self.assertEqual(
+            (high.compute_saving, high.communication_saving, high.ppo_resource_score),
+            (1.0, 1.0, 1.0),
+        )
+        self.assertEqual((fusion_only.compute_saving, fusion_only.communication_saving), (1.0, 0.0))
+        self.assertEqual((communication_only.compute_saving, communication_only.communication_saving), (0.0, 1.0))
+        self.assertEqual((low.fusion_count, low.removed_k_bits), (0, 0))
+        self.assertEqual((high.fusion_count, high.removed_k_bits), (12, 295))
+        self.assertEqual(len(high.layer_resource_rewards), 12)
+        self.assertEqual(len(high.slot_resource_rewards), 12)
+        self.assertTrue(all(len(row) == 6 for row in high.slot_resource_rewards))
+        self.assertAlmostEqual(sum(high.layer_resource_rewards), high.ppo_resource_score)
+        for layer_reward, slot_rewards in zip(
+                high.layer_resource_rewards, high.slot_resource_rewards,
+        ):
+            self.assertAlmostEqual(sum(slot_rewards), layer_reward)
+        self.assertGreater(fusion_only.ppo_resource_score, low.ppo_resource_score)
+        self.assertGreater(communication_only.ppo_resource_score, low.ppo_resource_score)
+        self.assertLess(fusion_only.ppo_resource_score, high.ppo_resource_score)
+        self.assertLess(communication_only.ppo_resource_score, high.ppo_resource_score)
+
+    def test_one_axis_cannot_modify_the_other_axis(self):
         baseline_actions = self._actions(0, 13)
         baseline = layerwise.compute_variable_cost(baseline_actions)
 
@@ -235,33 +246,64 @@ class VariableCostTest(unittest.TestCase):
         lower_k_actions[7] = layerwise.LayerwiseDecodedAction(0, changed_k)
         lower_k = layerwise.compute_variable_cost(lower_k_actions)
 
-        fusion_delta = fused.normalized - baseline.normalized
-        k_delta = lower_k.normalized - baseline.normalized
-        self.assertAlmostEqual(fusion_delta, 1.0 / 159.5)
-        self.assertAlmostEqual(k_delta, fusion_delta)
+        self.assertAlmostEqual(fused.compute_saving - baseline.compute_saving, 1.0 / 12.0)
+        self.assertEqual(fused.communication_saving, baseline.communication_saving)
+        self.assertEqual(lower_k.compute_saving, baseline.compute_saving)
         self.assertAlmostEqual(
-            fused.layer_cost_rewards[7], lower_k.layer_cost_rewards[7],
+            lower_k.communication_saving - baseline.communication_saving,
+            2.0 / 295.0,
         )
-        self.assertAlmostEqual(fused.slot_cost_rewards[7][0], fusion_delta)
-        self.assertAlmostEqual(lower_k.slot_cost_rewards[7][3], k_delta)
 
-    def test_layer_cost_terms_cover_every_active_k_once(self):
+    def test_shapley_and_slot_credits_cover_each_resource_family_once(self):
         result = layerwise.compute_variable_cost(self._actions(1, 11))
-        expected_layer0_units = 1.0 + 4 * 1.0
-        expected_other_units = 1.0 + 5 * 1.0
-        self.assertAlmostEqual(result.layer_cost_rewards[0], expected_layer0_units / 159.5)
-        self.assertEqual(result.slot_cost_rewards[0][1], 0.0)
-        self.assertAlmostEqual(result.slot_cost_rewards[0][0], 1.0 / 159.5)
-        for value in result.layer_cost_rewards[1:]:
-            self.assertAlmostEqual(value, expected_other_units / 159.5)
-        self.assertEqual(result.fusion_units, 12.0)
-        self.assertEqual(result.truncation_units, 59.0)
-        self.assertEqual(result.total_units, 71.0)
+        self.assertEqual(result.fusion_count, 12)
+        self.assertEqual(result.removed_k_bits, 118)
+        self.assertAlmostEqual(result.compute_saving, 1.0)
+        self.assertAlmostEqual(result.communication_saving, 118.0 / 295.0)
+        self.assertAlmostEqual(
+            result.compute_shapley_credit + result.communication_shapley_credit,
+            result.ppo_resource_score,
+        )
+        self.assertEqual(result.slot_resource_rewards[0][1], 0.0)
+        compute_slot_total = sum(row[0] for row in result.slot_resource_rewards)
+        communication_slot_total = sum(
+            sum(row[1:]) for row in result.slot_resource_rewards
+        )
+        self.assertAlmostEqual(compute_slot_total, result.compute_shapley_credit)
+        self.assertAlmostEqual(
+            communication_slot_total, result.communication_shapley_credit,
+        )
+        self.assertAlmostEqual(
+            sum(map(sum, result.slot_resource_rewards)), result.ppo_resource_score,
+        )
+
+    def test_packed_score_preserves_every_realisable_robust_floor_improvement(self):
+        score_bounds = {}
+        for fusion_count in range(13):
+            for removed_k_bits in range(296):
+                compute = fusion_count / 12.0
+                communication = removed_k_bits / 295.0
+                robust_floor = min(
+                    Fraction(fusion_count, 12),
+                    Fraction(removed_k_bits, 295),
+                )
+                _floor, _secondary, packed = layerwise.dual_resource_score(
+                    compute, communication,
+                )
+                lower, upper = score_bounds.get(robust_floor, (packed, packed))
+                score_bounds[robust_floor] = (min(lower, packed), max(upper, packed))
+
+        previous_max = None
+        for robust_floor in sorted(score_bounds):
+            current_min, current_max = score_bounds[robust_floor]
+            if previous_max is not None:
+                self.assertGreater(current_min, previous_max)
+            previous_max = current_max
 
     def test_cost_uses_decoded_k_values_not_category_order(self):
         actions = self._actions(0, 8)
         result = layerwise.compute_variable_cost(actions)
-        self.assertEqual(result.truncation_saving, 1.0)
+        self.assertEqual(result.communication_saving, 1.0)
         actions[0] = layerwise.LayerwiseDecodedAction(0, {2: 8, 3: 8, 4: 8, 5: 8, 1: 8})
         with self.assertRaises(ValueError):
             layerwise.compute_variable_cost(actions)
@@ -305,8 +347,8 @@ class KLevelsContractTest(unittest.TestCase):
                 for _ in range(11)
             )
             self.assertAlmostEqual(
-                layerwise.compute_variable_cost(actions).normalized,
-                147.5 / 159.5,
+                layerwise.compute_variable_cost(actions).communication_saving,
+                1.0,
             )
 
 

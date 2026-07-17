@@ -8,6 +8,7 @@ truncation-K choices per Transformer layer.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import os
 from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence, Tuple
@@ -64,12 +65,10 @@ _BLOCK_STARTS = {1: 0, 2: 9, 3: 32, 4: 40, 5: 57}
 _LAYER_WIDTH = sum(_BLOCK_SLOT_COUNTS.values())
 _BLOCK_ORDER = (1, 2, 3, 4, 5)
 
-BLOCK4_FUSION_COST_UNIT = 1.0
-TRUNCATION_COST_UNIT_PER_BIT = 0.5
-MAX_FUSION_COST_UNITS = 12.0
-MAX_TRUNCATION_COST_UNITS = 0.5 * 59.0 * (13.0 - 8.0)
-MAX_VARIABLE_COST_UNITS = MAX_FUSION_COST_UNITS + MAX_TRUNCATION_COST_UNITS
-LAYERWISE_COST_MODEL_REVISION = "fusion1_khalf_per_bit_v1"
+MAX_COMPUTE_SAVING_UNITS = 12.0
+MAX_COMMUNICATION_SAVING_UNITS = 59.0 * (13.0 - 8.0)
+RESOURCE_SECONDARY_EPSILON = 1.0e-4
+LAYERWISE_COST_MODEL_REVISION = "dual_resource_maxmin_shapley_v1"
 
 
 @dataclass(frozen=True)
@@ -129,15 +128,93 @@ class LayerActionApplication:
 
 @dataclass(frozen=True)
 class VariableCost:
-    fusion_saving: float
-    truncation_saving: float
-    normalized: float
-    fusion_units: float
-    truncation_units: float
-    total_units: float
-    max_units: float
-    layer_cost_rewards: Tuple[float, ...]
-    slot_cost_rewards: Tuple[Tuple[float, ...], ...]
+    compute_saving: float
+    communication_saving: float
+    robust_floor: float
+    secondary_progress: float
+    ppo_resource_score: float
+    compute_shapley_credit: float
+    communication_shapley_credit: float
+    fusion_count: int
+    removed_k_bits: int
+    layer_resource_rewards: Tuple[float, ...]
+    slot_resource_rewards: Tuple[Tuple[float, ...], ...]
+
+    @property
+    def fusion_saving(self) -> float:
+        return self.compute_saving
+
+    @property
+    def truncation_saving(self) -> float:
+        return self.communication_saving
+
+    @property
+    def normalized(self) -> float:
+        return self.ppo_resource_score
+
+    @property
+    def fusion_units(self) -> float:
+        return float(self.fusion_count)
+
+    @property
+    def truncation_units(self) -> float:
+        return float(self.removed_k_bits)
+
+    @property
+    def layer_cost_rewards(self) -> Tuple[float, ...]:
+        return self.layer_resource_rewards
+
+    @property
+    def slot_cost_rewards(self) -> Tuple[Tuple[float, ...], ...]:
+        return self.slot_resource_rewards
+
+
+def _unit_interval(name: str, value: float) -> float:
+    result = float(value)
+    if not math.isfinite(result) or not 0.0 <= result <= 1.0:
+        raise ValueError(f"{name} must be finite and in [0, 1], got {value!r}")
+    return result
+
+
+def dual_resource_score(
+        compute_saving: float,
+        communication_saving: float,
+        ) -> Tuple[float, float, float]:
+    """Return robust floor, secondary progress, and the bounded PPO score."""
+    compute = _unit_interval("compute_saving", compute_saving)
+    communication = _unit_interval("communication_saving", communication_saving)
+    robust_floor = min(compute, communication)
+    secondary_progress = 0.5 * (compute + communication)
+    score = (
+        robust_floor + RESOURCE_SECONDARY_EPSILON * secondary_progress
+    ) / (1.0 + RESOURCE_SECONDARY_EPSILON)
+    return float(robust_floor), float(secondary_progress), float(score)
+
+
+def resource_shapley_credits(
+        compute_saving: float,
+        communication_saving: float,
+        ) -> Tuple[float, float]:
+    """Split the coupled PPO score between compute and communication."""
+    compute = _unit_interval("compute_saving", compute_saving)
+    communication = _unit_interval("communication_saving", communication_saving)
+
+    def value(compute_value: float, communication_value: float) -> float:
+        return dual_resource_score(compute_value, communication_value)[2]
+
+    empty = value(0.0, 0.0)
+    compute_credit = 0.5 * (value(compute, 0.0) - empty) + 0.5 * (
+        value(compute, communication) - value(0.0, communication)
+    )
+    total = value(compute, communication)
+    if abs(compute_credit) < 1.0e-15:
+        compute_credit = 0.0
+    communication_credit = total - compute_credit
+    if abs(communication_credit) < 1.0e-15:
+        communication_credit = 0.0
+    if compute_credit < 0.0 or communication_credit < 0.0:
+        raise RuntimeError("dual-resource Shapley credits must be nonnegative")
+    return float(compute_credit), float(communication_credit)
 
 
 def _graph_keys(layer_idx: int, profile: str, gelu_degree: int) -> Tuple[Tuple[int, str], ...]:
@@ -332,14 +409,13 @@ def apply_layer_action(
 
 
 def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> VariableCost:
-    """Compute the learnable BERT-base variable cost from decoded actions."""
+    """Compute independent compute/communication savings from decoded actions."""
     _validate_k_levels()
     if len(actions) != 12:
         raise ValueError(f"variable cost requires 12 layer actions, got {len(actions)}")
     fusion_values = []
     k_values = []
-    layer_units = []
-    slot_units = []
+    raw_slot_contributions = []
     for layer_idx, action in enumerate(actions):
         expected_blocks = {2, 3, 4, 5} if layer_idx == 0 else {1, 2, 3, 4, 5}
         actual_blocks = set(action.k_by_block)
@@ -356,39 +432,64 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
             if k not in K_LEVELS:
                 raise ValueError(f"layer {layer_idx} block {block_idx} has unsupported K={k}")
             k_values.append(k)
-        current_slot_units = [BLOCK4_FUSION_COST_UNIT * float(fusion)]
-        current_slot_units.extend(
-            TRUNCATION_COST_UNIT_PER_BIT
-            * (13.0 - float(action.k_by_block[block_idx]))
+        current_slot_contributions = [
+            float(fusion) / MAX_COMPUTE_SAVING_UNITS,
+        ]
+        current_slot_contributions.extend(
+            (13.0 - float(action.k_by_block[block_idx]))
+            / MAX_COMMUNICATION_SAVING_UNITS
             if block_idx in action.k_by_block else 0.0
             for block_idx in _BLOCK_ORDER
         )
-        slot_units.append(current_slot_units)
-        layer_units.append(sum(current_slot_units))
+        raw_slot_contributions.append(current_slot_contributions)
     if len(k_values) != 59:
         raise RuntimeError(f"BERT-base layer actions yielded {len(k_values)} active K values, expected 59")
-    fusion_units = BLOCK4_FUSION_COST_UNIT * float(sum(fusion_values))
-    truncation_units = TRUNCATION_COST_UNIT_PER_BIT * float(
-        sum(13 - k for k in k_values)
+    fusion_count = int(sum(fusion_values))
+    removed_k_bits = int(sum(13 - k for k in k_values))
+    compute_saving = float(fusion_count) / MAX_COMPUTE_SAVING_UNITS
+    communication_saving = (
+        float(removed_k_bits) / MAX_COMMUNICATION_SAVING_UNITS
     )
-    total_units = fusion_units + truncation_units
-    fusion_saving = fusion_units / MAX_FUSION_COST_UNITS
-    truncation_saving = truncation_units / MAX_TRUNCATION_COST_UNITS
+    robust_floor, secondary_progress, ppo_resource_score = dual_resource_score(
+        compute_saving, communication_saving,
+    )
+    compute_credit, communication_credit = resource_shapley_credits(
+        compute_saving, communication_saving,
+    )
+
+    slot_resource_rewards = []
+    for raw_row in raw_slot_contributions:
+        row = [
+            compute_credit * raw_row[0] / compute_saving
+            if compute_saving > 0.0 else 0.0,
+        ]
+        row.extend(
+            communication_credit * value / communication_saving
+            if communication_saving > 0.0 else 0.0
+            for value in raw_row[1:]
+        )
+        slot_resource_rewards.append(tuple(float(value) for value in row))
+    layer_resource_rewards = tuple(
+        float(sum(row)) for row in slot_resource_rewards
+    )
+    if not math.isclose(
+            sum(layer_resource_rewards), ppo_resource_score,
+            rel_tol=0.0, abs_tol=1.0e-12,
+    ):
+        raise RuntimeError("dual-resource slot credits do not sum to PPO score")
+
     return VariableCost(
-        fusion_saving=float(fusion_saving),
-        truncation_saving=float(truncation_saving),
-        normalized=float(total_units / MAX_VARIABLE_COST_UNITS),
-        fusion_units=float(fusion_units),
-        truncation_units=float(truncation_units),
-        total_units=float(total_units),
-        max_units=float(MAX_VARIABLE_COST_UNITS),
-        layer_cost_rewards=tuple(
-            float(value / MAX_VARIABLE_COST_UNITS) for value in layer_units
-        ),
-        slot_cost_rewards=tuple(
-            tuple(float(value / MAX_VARIABLE_COST_UNITS) for value in row)
-            for row in slot_units
-        ),
+        compute_saving=float(compute_saving),
+        communication_saving=float(communication_saving),
+        robust_floor=float(robust_floor),
+        secondary_progress=float(secondary_progress),
+        ppo_resource_score=float(ppo_resource_score),
+        compute_shapley_credit=float(compute_credit),
+        communication_shapley_credit=float(communication_credit),
+        fusion_count=int(fusion_count),
+        removed_k_bits=int(removed_k_bits),
+        layer_resource_rewards=layer_resource_rewards,
+        slot_resource_rewards=tuple(slot_resource_rewards),
     )
 
 
