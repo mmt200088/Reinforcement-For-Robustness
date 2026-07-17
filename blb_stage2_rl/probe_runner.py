@@ -582,6 +582,7 @@ class ProbeRunner:
         }
         self.last_diagnostics: Optional[ProbeRunnerDiagnostics] = None
         self._closed = False
+        self._poisoned_reason: Optional[str] = None
         self._process_finalizer = (
             weakref.finalize(
                 self,
@@ -611,6 +612,14 @@ class ProbeRunner:
     def backend(self) -> str:
         return "process" if self._process_workers else "thread"
 
+    def _require_open(self) -> None:
+        if self._poisoned_reason is not None:
+            raise RuntimeError(
+                f"probe runner pool is poisoned: {self._poisoned_reason}"
+            )
+        if self._closed:
+            raise RuntimeError("probe runner pool is closed")
+
     def _require_batch_set(self, key: str) -> str:
         normalized = _normalize_batch_set_key(key)
         if normalized not in self._batch_sets:
@@ -622,8 +631,7 @@ class ProbeRunner:
 
     def register_batch_set(self, key: str, batches: Sequence[Any]) -> None:
         """Register one immutable batch set on every worker in this pool."""
-        if self._closed:
-            raise RuntimeError("cannot register probe batches on a closed runner")
+        self._require_open()
         normalized = _normalize_batch_set_key(key)
         frozen = _freeze_probe_batches(batches)
         if normalized in self._batch_sets:
@@ -631,50 +639,61 @@ class ProbeRunner:
                 f"probe batch-set {normalized!r} is already registered"
             )
 
-        if self._process_workers:
-            cpu_batches = tuple(
-                _move_probe_batch_to_device(batch, torch.device("cpu"))
-                for batch in frozen
-            )
-            self.workers[0].register_batch_set(normalized, frozen)
-            submitted: List[Tuple[int, Any]] = []
-            errors: List[Tuple[int, BaseException]] = []
-            for worker_index, worker in enumerate(
-                    self._process_workers, start=1,
-                    ):
-                try:
-                    worker.submit("register_batch_set", {
-                        "batch_set_key": normalized,
-                        "probe_batches_cpu": cpu_batches,
-                    })
-                    submitted.append((worker_index, worker))
-                except BaseException as exc:  # noqa: BLE001
-                    errors.append((worker_index, exc))
-            for worker_index, worker in submitted:
-                try:
-                    worker.receive("register_batch_set")
-                except BaseException as exc:  # noqa: BLE001
-                    errors.append((worker_index, exc))
-            if errors:
-                worker_index, exc = errors[0]
-                self._raise_process_error(
-                    worker_index, "register_batch_set", exc,
-                )
-        else:
-            worker_batches = [frozen]
-            worker_batches.extend(
-                tuple(
-                    _move_probe_batch_to_device(batch, worker.device)
+        try:
+            if self._process_workers:
+                cpu_batches = tuple(
+                    _move_probe_batch_to_device(batch, torch.device("cpu"))
                     for batch in frozen
                 )
-                for worker in self.workers[1:]
-            )
-            for worker, batches_for_worker in zip(self.workers, worker_batches):
-                worker.register_batch_set(normalized, batches_for_worker)
+                self.workers[0].register_batch_set(normalized, frozen)
+                submitted: List[Tuple[int, Any]] = []
+                for worker_index, worker in enumerate(
+                        self._process_workers, start=1,
+                        ):
+                    try:
+                        worker.submit("register_batch_set", {
+                            "batch_set_key": normalized,
+                            "probe_batches_cpu": cpu_batches,
+                        })
+                        submitted.append((worker_index, worker))
+                    except BaseException as exc:  # noqa: BLE001
+                        self._raise_process_error(
+                            worker_index, "register_batch_set", exc,
+                        )
+                for worker_index, worker in submitted:
+                    try:
+                        worker.receive("register_batch_set")
+                    except BaseException as exc:  # noqa: BLE001
+                        self._raise_process_error(
+                            worker_index, "register_batch_set", exc,
+                        )
+            else:
+                worker_batches = [frozen]
+                worker_batches.extend(
+                    tuple(
+                        _move_probe_batch_to_device(batch, worker.device)
+                        for batch in frozen
+                    )
+                    for worker in self.workers[1:]
+                )
+                for worker, batches_for_worker in zip(
+                        self.workers, worker_batches,
+                        ):
+                    worker.register_batch_set(normalized, batches_for_worker)
 
-        self._batch_sets[normalized] = frozen
+            self._batch_sets[normalized] = frozen
+        except BaseException as exc:  # noqa: BLE001
+            self._poisoned_reason = (
+                f"register_batch_set {normalized!r} failed: {exc}"
+            )
+            self.close()
+            raise RuntimeError(
+                f"probe-runner register_batch_set {normalized!r} failed; "
+                f"pool closed: {exc}"
+            ) from exc
 
     def view(self, batch_set_key: str) -> "ProbeRunnerView":
+        self._require_open()
         return ProbeRunnerView(self, _normalize_batch_set_key(batch_set_key))
 
     def _raise_process_error(
@@ -736,6 +755,7 @@ class ProbeRunner:
 
     def install_action(self, decoded: ActionDecodeResult) -> None:
         """Apply the same cfg on every worker's model."""
+        self._require_open()
         if self._process_workers:
             submitted: List[Tuple[int, Any]] = []
             errors: List[Tuple[int, BaseException]] = []
@@ -762,6 +782,7 @@ class ProbeRunner:
 
     def clear(self) -> None:
         """Reverse install on every worker. Always safe (clear is idempotent)."""
+        self._require_open()
         if self._process_workers:
             submitted = []
             for worker in self._process_workers:
@@ -874,6 +895,7 @@ class ProbeRunner:
             batch_set_key: str = "F1",
             ) -> List[Tuple[float, float, float]]:
         """Run trials [0..k-1] in parallel across workers; return in trial order."""
+        self._require_open()
         normalized_batch_set_key = self._require_batch_set(batch_set_key)
         k = max(0, int(k))
         if k == 0:
@@ -1050,6 +1072,7 @@ class ProbeRunner:
         and each GPU evaluates one of them. Results are returned in the same
         order as ``decoded_by_trial``.
         """
+        self._require_open()
         normalized_batch_set_key = self._require_batch_set(batch_set_key)
         actions = list(decoded_by_trial)
         k = len(actions)
