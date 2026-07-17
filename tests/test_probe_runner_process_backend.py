@@ -4,9 +4,8 @@ from __future__ import annotations
 import os
 import threading
 import time
+import types
 import unittest
-from dataclasses import dataclass
-from typing import Any
 from unittest import mock
 
 try:
@@ -27,14 +26,6 @@ resolve_probe_backend = (
     getattr(_probe_runner, "resolve_probe_backend", None)
     if _probe_runner is not None else None
 )
-
-
-@dataclass
-class _IntegrationProbeBatch:
-    input_ids: Any
-    attention_mask: Any
-    labels: Any
-    token_type_ids: Any = None
 
 
 _GPU_INTEGRATION_READY = (
@@ -291,7 +282,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 with state_lock:
                     self.close_calls += 1
                     arrivals.append(str(self.device))
-                barrier.wait(timeout=5.0)
+                barrier.wait(timeout=2.0)
                 with state_lock:
                     completions.append(str(self.device))
 
@@ -497,7 +488,7 @@ class ProbeBackendSelectionTest(unittest.TestCase):
 class ProbeRunnerFiveGpuIntegrationTest(unittest.TestCase):
     @staticmethod
     def _probe_batch(device, offset):
-        return _IntegrationProbeBatch(
+        return types.SimpleNamespace(
             input_ids=torch.tensor(
                 [[offset, offset + 1, offset + 2, offset + 3]],
                 dtype=torch.long,
