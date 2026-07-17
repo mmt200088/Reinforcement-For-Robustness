@@ -512,27 +512,32 @@ class _ProcessProbeWorker:
             )
         return dict(message.get("payload") or {})
 
+    def _terminate_stubborn_process(self) -> None:
+        if not self.process.is_alive():
+            return
+        self.process.terminate()
+        self.process.join(timeout=5.0)
+        if self.process.is_alive():
+            kill = getattr(self.process, "kill", None)
+            if kill is None:
+                self.process.terminate()
+            else:
+                kill()
+            self.process.join(timeout=5.0)
+        if self.process.is_alive():
+            raise RuntimeError(
+                f"probe child {self.device} did not exit after "
+                f"terminate/kill (pending operation "
+                f"{self._pending_operation!r})"
+            )
+
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
         try:
             if self._pending_operation is not None and self.process.is_alive():
-                self.process.terminate()
-                self.process.join(timeout=5.0)
-                if self.process.is_alive():
-                    kill = getattr(self.process, "kill", None)
-                    if kill is None:
-                        self.process.terminate()
-                    else:
-                        kill()
-                    self.process.join(timeout=5.0)
-                    if self.process.is_alive():
-                        raise RuntimeError(
-                            f"probe child {self.device} did not exit after "
-                            f"terminate/kill (pending operation "
-                            f"{self._pending_operation!r})"
-                        )
+                self._terminate_stubborn_process()
             else:
                 if self._pending_operation is None and self.process.is_alive():
                     self.connection.send({"operation": "close", "payload": {}})
@@ -543,8 +548,7 @@ class _ProcessProbeWorker:
                         pass
                 self.process.join(timeout=5.0)
                 if self.process.is_alive():
-                    self.process.terminate()
-                    self.process.join(timeout=5.0)
+                    self._terminate_stubborn_process()
         finally:
             try:
                 self.connection.close()
@@ -1398,13 +1402,14 @@ def build_probe_runner(
                     name=f"blb-probe-{device}",
                     daemon=True,
                 )
-                process.start()
-                child_connection.close()
-                process_workers.append(_ProcessProbeWorker(
+                process_worker = _ProcessProbeWorker(
                     device=device,
                     connection=parent_connection,
                     process=process,
-                ))
+                )
+                process_workers.append(process_worker)
+                process.start()
+                child_connection.close()
 
             for worker_index, worker in enumerate(process_workers, start=1):
                 worker.wait_until_ready()
