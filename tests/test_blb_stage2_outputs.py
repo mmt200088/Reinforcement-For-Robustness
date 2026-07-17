@@ -638,6 +638,24 @@ class RegeneratorEndToEndTest(unittest.TestCase):
         summary = {
             "best_action_matrix": matrix,
             "best_variable_cost": 0.5,
+            "best_resource_objective": {
+                "compute_saving": 11 / 12,
+                "communication_saving": 0.4,
+                "robust_floor": 0.4,
+                "secondary_progress": (11 / 12 + 0.4) / 2,
+                "ppo_resource_score": 0.40002583075025826,
+                "compute_shapley_credit": 0.2,
+                "communication_shapley_credit": 0.20002583075025826,
+            },
+            "strict_pareto_frontier": [
+                {
+                    "candidate_key": "candidate-a",
+                    "compute_saving": 11 / 12,
+                    "communication_saving": 0.4,
+                    "robust_floor": 0.4,
+                    "secondary_progress": (11 / 12 + 0.4) / 2,
+                }
+            ],
             "best_metrics": {"loss_mean": 0.3, "metric1_mean": 0.88, "metric2_mean": 0.87},
             "best_assessment": {
                 "loss_precision_probability": 0.96,
@@ -690,6 +708,11 @@ class RegeneratorEndToEndTest(unittest.TestCase):
         self.assertIn("K B3", html)
         self.assertIn("metric2_stability_probability", html)
         self.assertIn("0.500000", html)
+        self.assertIn("Compute saving", html)
+        self.assertIn("Communication saving", html)
+        self.assertIn("Robust floor", html)
+        self.assertIn("Strict Resource Pareto Frontier", html)
+        self.assertIn("candidate-a", html)
         self.assertIn("Baseline Trial Distributions", html)
         self.assertIn("Promotion Evidence", html)
         self.assertIn("Final Revalidation Evidence", html)

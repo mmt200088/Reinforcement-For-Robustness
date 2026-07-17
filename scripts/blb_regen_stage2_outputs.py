@@ -285,6 +285,38 @@ def _write_layerwise_html_report(
         tuple((key, pooled_probability_curves.get(key, [])) for key in _CONSTRAINT_PROBABILITY_KEYS),
         y_domain=(0.0, 1.0),
     )
+    resource_objective = summary.get("best_resource_objective") or {}
+    resource_labels = (
+        ("compute_saving", "Compute saving"),
+        ("communication_saving", "Communication saving"),
+        ("robust_floor", "Robust floor"),
+        ("secondary_progress", "Secondary progress"),
+        ("ppo_resource_score", "PPO resource score"),
+    )
+    resource_rows = [
+        {
+            "resource": label,
+            "value": (
+                "N/A"
+                if resource_objective.get(field_name) is None
+                else f"{float(resource_objective[field_name]):.9f}"
+            ),
+        }
+        for field_name, label in resource_labels
+    ]
+    pareto_rows = []
+    for row in summary.get("strict_pareto_frontier") or ():
+        if not isinstance(row, dict):
+            continue
+        pareto_rows.append({
+            "candidate": row.get("candidate_key", "-"),
+            "compute": f"{float(row.get('compute_saving', 0.0)):.9f}",
+            "communication": (
+                f"{float(row.get('communication_saving', 0.0)):.9f}"
+            ),
+            "floor": f"{float(row.get('robust_floor', 0.0)):.9f}",
+            "secondary": f"{float(row.get('secondary_progress', 0.0)):.9f}",
+        })
     best_cost = summary.get("best_variable_cost")
     cost_text = "N/A" if best_cost is None else f"{float(best_cost):.6f}"
     candidate_status = (
@@ -301,7 +333,16 @@ def _write_layerwise_html_report(
         ".line-chart text{font-size:12px;fill:#3c4043}</style></head><body>",
         "<h1>Stage-2 Layerwise Robust PPO</h1>",
         candidate_status,
-        f"<p><strong>Best variable cost:</strong> {cost_text}</p>",
+        "<h2>Best Dual-Resource Objective</h2>",
+        _html_table((("resource", "Resource"), ("value", "Value")), resource_rows),
+        f"<p><strong>Compatibility PPO score:</strong> {cost_text}</p>",
+        "<h2>Strict Resource Pareto Frontier</h2>",
+        _html_table((
+            ("candidate", "Candidate"), ("compute", "Compute saving"),
+            ("communication", "Communication saving"),
+            ("floor", "Robust floor"),
+            ("secondary", "Secondary progress"),
+        ), pareto_rows),
         "<h2>Best Metrics</h2>",
         _html_table((("metric", "Metric"), ("best", "Best")), metric_rows),
         "<h2>Baseline</h2>",

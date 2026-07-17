@@ -3743,11 +3743,11 @@ def _run_layerwise_training_branch(
     from .layerwise_env import BLBStage2LayerwiseEnv
     from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
     from .layerwise_action import (
-        BLOCK4_FUSION_COST_UNIT,
         K_LEVELS as LAYERWISE_K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
-        MAX_VARIABLE_COST_UNITS,
-        TRUNCATION_COST_UNIT_PER_BIT,
+        MAX_COMMUNICATION_SAVING_UNITS,
+        MAX_COMPUTE_SAVING_UNITS,
+        RESOURCE_SECONDARY_EPSILON,
     )
     from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_runner import (
@@ -3782,7 +3782,7 @@ def _run_layerwise_training_branch(
     ))
     if convergence_patience_updates <= 0:
         raise ValueError("layerwise convergence patience must be positive")
-    algorithm_revision = "factorized_slot_credit_multifidelity_convergence_v8"
+    algorithm_revision = "dual_resource_maxmin_shapley_multifidelity_convergence_v9"
     rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
     layerwise_entropy_regularization = {
         "kind": "disabled",
@@ -3804,7 +3804,8 @@ def _run_layerwise_training_branch(
             getattr(train_cfg, "final_constraint_probability", 0.95)
         ),
         "selection_order": (
-            "feasible,cost,confidence_vector,safety_margin_vector,"
+            "feasible,robust_floor,secondary_progress,confidence_vector,"
+            "safety_margin_vector,"
             "action_lexicographic"
         ),
         "entropy_role": "diagnostic_only",
@@ -3819,7 +3820,7 @@ def _run_layerwise_training_branch(
     layerwise_ppo_mode = {
         "factorized_actor_clip": True,
         "behavior_log_prob_source": "sampling_time_per_slot_v1",
-        "actor_credit_mode": "shared_constraint_plus_own_cost",
+        "actor_credit_mode": "shared_constraint_plus_own_resource_shapley",
         "actor_advantage_normalization": "per_slot_center_shared_scale_v1",
         "entropy_average_active_slots": True,
         "entropy_normalize_active_slots": True,
@@ -3866,17 +3867,25 @@ def _run_layerwise_training_branch(
         entropy_normalize_active_slots=True,
     )
     algorithm_contract = {
-        "schema_version": "stage2_layerwise_algorithm_contract_v3",
+        "schema_version": "stage2_layerwise_algorithm_contract_v4",
         "algorithm_revision": algorithm_revision,
         "rl_variant": rl_variant,
         "action_space_version": "stage2_layerwise_12x6_v1",
         "decode_version": "layerwise_action_v1",
         "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
         "k_levels": [int(value) for value in LAYERWISE_K_LEVELS],
-        "cost_units": {
-            "block4_fusion": float(BLOCK4_FUSION_COST_UNIT),
-            "truncation_per_bit": float(TRUNCATION_COST_UNIT_PER_BIT),
-            "maximum": float(MAX_VARIABLE_COST_UNITS),
+        "resource_secondary_epsilon": float(RESOURCE_SECONDARY_EPSILON),
+        "compute_axis_denominator": int(MAX_COMPUTE_SAVING_UNITS),
+        "communication_axis_denominator": int(
+            MAX_COMMUNICATION_SAVING_UNITS
+        ),
+        "resource_credit_mode": "two_family_shapley_per_slot_v1",
+        "strict_resource_order": ["robust_floor", "secondary_progress"],
+        "resource_objective": {
+            "compute_axis": "learnable_block4_fusion_count",
+            "communication_axis": "removed_truncation_k_bits",
+            "selection": "max_min_then_mean",
+            "ppo_surrogate": "(robust_floor+eta*secondary_progress)/(1+eta)",
         },
         "policy": {
             "state_dim": int(policy_cfg.state_dim),
@@ -3980,7 +3989,7 @@ def _run_layerwise_training_branch(
     run_context_hash = sha256_json(run_context)
     run_lock.bind_context(run_context_hash)
     run_manifest = {
-        "schema_version": "stage2_layerwise_robust_run_v3",
+        "schema_version": "stage2_layerwise_robust_run_v4",
         "status": "running",
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
@@ -4019,6 +4028,7 @@ def _run_layerwise_training_branch(
         log(f"  {bullet} 检测到 layerwise live checkpoint，自动 resume: {save_path}")
     start_episode = 0
     resumed_best: Dict[str, Any] = {}
+    resumed_strict_pareto_frontier: List[Dict[str, Any]] = []
     resumed_convergence_state: Dict[str, Any] = {}
     resumed_candidate_store_size: Optional[int] = None
     resumed_diagnostics_jsonl_sizes: Optional[Mapping[str, Any]] = None
@@ -4044,6 +4054,13 @@ def _run_layerwise_training_branch(
         resume_checkpoint = checkpoint
         start_episode = int(checkpoint.get("episode", 0))
         resumed_best = dict(checkpoint.get("strict_best") or {})
+        if checkpoint.get("strict_pareto_frontier") is None:
+            raise RuntimeError(
+                "layerwise checkpoint strict resource Pareto frontier is missing"
+            )
+        resumed_strict_pareto_frontier = [
+            dict(row) for row in checkpoint["strict_pareto_frontier"]
+        ]
         resumed_convergence_state = dict(checkpoint.get("convergence_state") or {})
         resumed_candidate_store_size = checkpoint.get("candidate_store_size")
         resumed_diagnostics_jsonl_sizes = checkpoint.get("diagnostics_jsonl_sizes")
@@ -4282,6 +4299,16 @@ def _run_layerwise_training_branch(
         "algorithm_contract_hash": algorithm_contract_hash,
         "run_context_hash": run_context_hash,
         "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
+        "resource_objective": dict(algorithm_contract["resource_objective"]),
+        "resource_secondary_epsilon": float(RESOURCE_SECONDARY_EPSILON),
+        "compute_axis_denominator": int(MAX_COMPUTE_SAVING_UNITS),
+        "communication_axis_denominator": int(
+            MAX_COMMUNICATION_SAVING_UNITS
+        ),
+        "resource_credit_mode": algorithm_contract["resource_credit_mode"],
+        "strict_resource_order": list(
+            algorithm_contract["strict_resource_order"]
+        ),
         "total_episodes_planned": layerwise_termination["episode_limit"],
         "rollout_size": int(train_cfg.rollout_size),
         "ppo_lr": float(train_cfg.ppo.lr),
@@ -4309,6 +4336,9 @@ def _run_layerwise_training_branch(
     episode_records: List[Any] = []
     best_selection_key: Optional[StrictSelectionKey] = None
     strict_best: Dict[str, Any] = dict(resumed_best)
+    strict_pareto_frontier: List[Dict[str, Any]] = copy.deepcopy(
+        resumed_strict_pareto_frontier
+    )
     best_selection_key = strict_selection_key_from_snapshot(resumed_best)
     ppo_update_counter = int(resumed_ppo_update_count)
     started_at = time.time()
@@ -4386,6 +4416,29 @@ def _run_layerwise_training_branch(
                 terminal_cost_score=variable_cost,
                 terminal_cost_rank_score=variable_cost,
                 variable_cost=variable_cost,
+                compute_saving=float(best_payload.get("compute_saving") or 0.0),
+                communication_saving=float(
+                    best_payload.get("communication_saving") or 0.0
+                ),
+                robust_floor=float(best_payload.get("robust_floor") or 0.0),
+                secondary_progress=float(
+                    best_payload.get("secondary_progress") or 0.0
+                ),
+                ppo_resource_score=float(
+                    best_payload.get("ppo_resource_score") or variable_cost
+                ),
+                compute_shapley_credit=float(
+                    best_payload.get("compute_shapley_credit") or 0.0
+                ),
+                communication_shapley_credit=float(
+                    best_payload.get("communication_shapley_credit") or 0.0
+                ),
+                layer_resource_rewards=list(
+                    best_payload.get("layer_resource_rewards") or []
+                ),
+                slot_resource_rewards=list(
+                    best_payload.get("slot_resource_rewards") or []
+                ),
                 layer_action_matrix=action_matrix,
                 promotion_status="strict_best_reconciled",
             ),
@@ -4416,6 +4469,7 @@ def _run_layerwise_training_branch(
             "optimizer": optimizer.state_dict(),
             "episode": int(completed),
             "strict_best": best_payload,
+            "strict_pareto_frontier": copy.deepcopy(strict_pareto_frontier),
             "best_action": checkpoint_best_action,
             "blb_v3_best_action_vec": checkpoint_best_action,
             "blb_v3_best_action_group": checkpoint_best_group,
@@ -4505,6 +4559,11 @@ def _run_layerwise_training_branch(
                 record.promotion_candidate_key,
                 {
                     "variable_cost": record.variable_cost,
+                    "compute_saving": record.compute_saving,
+                    "communication_saving": record.communication_saving,
+                    "robust_floor": record.robust_floor,
+                    "secondary_progress": record.secondary_progress,
+                    "action_matrix": record.action_matrix,
                     "assessment": promotion_assessment,
                     "metrics": promotion_metrics,
                     "constraint_safety_margins": (
@@ -4536,6 +4595,11 @@ def _run_layerwise_training_branch(
             ),
             "termination_reason": str(record.termination_reason),
             "best_robust_feasible_cost": record.best_robust_feasible_cost,
+            "best_robust_feasible_objective": (
+                None
+                if record.best_robust_feasible_objective is None
+                else list(record.best_robust_feasible_objective)
+            ),
         }
         episode_stats = EpisodeStats(
                 episode=int(record.episode_index),
@@ -4615,6 +4679,22 @@ def _run_layerwise_training_branch(
                     **probability_thresholds,
                 },
                 variable_cost=float(record.variable_cost),
+                compute_saving=float(record.compute_saving),
+                communication_saving=float(record.communication_saving),
+                robust_floor=float(record.robust_floor),
+                secondary_progress=float(record.secondary_progress),
+                ppo_resource_score=float(record.ppo_resource_score),
+                compute_shapley_credit=float(record.compute_shapley_credit),
+                communication_shapley_credit=float(
+                    record.communication_shapley_credit
+                ),
+                layer_resource_rewards=[
+                    float(value) for value in record.layer_resource_rewards
+                ],
+                slot_resource_rewards=[
+                    [float(value) for value in row]
+                    for row in record.slot_resource_rewards
+                ],
                 layer_action_matrix=[list(row) for row in record.action_matrix],
                 block4_entropy=record.block4_entropy,
                 k_entropy=record.k_entropy,
@@ -4636,6 +4716,11 @@ def _run_layerwise_training_branch(
             {
                 "priority": int(record.priority),
                 "variable_cost": float(record.variable_cost),
+                "compute_saving": float(record.compute_saving),
+                "communication_saving": float(record.communication_saving),
+                "robust_floor": float(record.robust_floor),
+                "secondary_progress": float(record.secondary_progress),
+                "ppo_resource_score": float(record.ppo_resource_score),
                 "block4_entropy": record.block4_entropy,
                 "k_entropy": record.k_entropy,
                 **convergence_state,
@@ -4643,9 +4728,13 @@ def _run_layerwise_training_branch(
         )
 
     def on_layerwise_update(metrics: Mapping[str, Any], completed: int, record: Any) -> None:
-        nonlocal ppo_update_counter, strict_best, best_selection_key
+        nonlocal ppo_update_counter, strict_best, strict_pareto_frontier
+        nonlocal best_selection_key
         ppo_update_counter += 1
         strict_best = dict(metrics.get("strict_best") or {})
+        strict_pareto_frontier = [
+            dict(row) for row in metrics.get("strict_pareto_frontier", [])
+        ]
         best_selection_key = strict_selection_key_from_snapshot(strict_best)
         write_strict_best_diagnostics(strict_best, episode=int(record.episode_index))
         recent = episode_records[-max(1, int(train_cfg.rollout_size)):]
@@ -4699,6 +4788,17 @@ def _run_layerwise_training_branch(
             ),
             termination_reason=str(metrics.get("termination_reason", "running")),
             best_robust_feasible_cost=metrics.get("best_robust_feasible_cost"),
+            best_robust_feasible_objective=(
+                None
+                if metrics.get("best_robust_feasible_objective") is None
+                else [
+                    float(value)
+                    for value in metrics["best_robust_feasible_objective"]
+                ]
+            ),
+            strict_pareto_frontier=[
+                dict(row) for row in metrics.get("strict_pareto_frontier", [])
+            ],
             actor_clip_mode=str(metrics.get("actor_clip_mode", "joint")),
             actor_credit_mode=str(metrics.get("actor_credit_mode", "scalar_gae")),
             entropy_objective_mode=str(
@@ -4754,6 +4854,10 @@ def _run_layerwise_training_branch(
                 ),
                 "termination_reason": update_stats.termination_reason,
                 "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
+                "best_robust_feasible_objective": (
+                    update_stats.best_robust_feasible_objective
+                ),
+                "strict_pareto_frontier": update_stats.strict_pareto_frontier,
                 "actor_clip_mode": update_stats.actor_clip_mode,
                 "actor_credit_mode": update_stats.actor_credit_mode,
                 "entropy_objective_mode": update_stats.entropy_objective_mode,
@@ -4770,6 +4874,18 @@ def _run_layerwise_training_branch(
                 best_breakdown={
                     "priority": 3,
                     "variable_cost": strict_best.get("variable_cost"),
+                    "resource_objective": {
+                        field_name: strict_best.get(field_name)
+                        for field_name in (
+                            "compute_saving",
+                            "communication_saving",
+                            "robust_floor",
+                            "secondary_progress",
+                            "ppo_resource_score",
+                            "compute_shapley_credit",
+                            "communication_shapley_credit",
+                        )
+                    },
                     "action_matrix": strict_best.get("action_matrix"),
                     "assessment": strict_best.get("assessment"),
                     "metrics": strict_best.get("metrics"),
@@ -4799,6 +4915,9 @@ def _run_layerwise_training_branch(
             on_ppo_update_end=on_layerwise_update,
         )
         strict_best = dict(summary.get("strict_best") or {})
+        strict_pareto_frontier = [
+            dict(row) for row in summary.get("strict_pareto_frontier", [])
+        ]
         write_strict_best_diagnostics(
             strict_best,
             episode=int(summary.get("completed_episodes", start_episode)),
@@ -4825,6 +4944,23 @@ def _run_layerwise_training_branch(
                 "status": completion_status,
                 "completed_episodes": int(start_episode + len(episode_records)),
                 "ppo_update_count": int(ppo_update_counter),
+                "best_resource_objective": (
+                    None
+                    if not strict_best
+                    else {
+                        field_name: copy.deepcopy(strict_best.get(field_name))
+                        for field_name in (
+                            "compute_saving",
+                            "communication_saving",
+                            "robust_floor",
+                            "secondary_progress",
+                            "ppo_resource_score",
+                        )
+                    }
+                ),
+                "strict_pareto_frontier": copy.deepcopy(
+                    strict_pareto_frontier
+                ),
                 "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             })
             write_strict_json_file(layerwise_manifest_path, run_manifest)
@@ -4865,7 +5001,7 @@ def _run_layerwise_training_branch(
     status.set_phase(completion_status)
 
     compact_summary = {
-        "schema_version": "stage2_layerwise_robust_summary_v3",
+        "schema_version": "stage2_layerwise_robust_summary_v4",
         "status": completion_status,
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
@@ -4877,6 +5013,9 @@ def _run_layerwise_training_branch(
         "best_assessment": summary.get("best_assessment"),
         "strict_best_assessment": summary.get("best_assessment"),
         "best_metrics": summary.get("best_metrics"),
+        "best_resource_objective": summary.get("best_resource_objective"),
+        "strict_pareto_frontier": summary.get("strict_pareto_frontier", []),
+        # Read-only compatibility alias for report consumers predating v4.
         "best_variable_cost": summary.get("best_variable_cost"),
         "best_reward": summary.get("best_reward"),
         "best_promotion_evidence": summary.get("best_promotion_evidence"),
@@ -5042,11 +5181,16 @@ def _run_layerwise_training_branch(
         "algorithm_contract_hash": algorithm_contract_hash,
         "run_context_hash": run_context_hash,
         "selection_diagnostics": {
-            "selection_mode": "layerwise_robust_variable_cost_strict",
+            "selection_mode": "layerwise_robust_dual_resource_strict",
             "best_action_vec": best_full_vector,
             "best_action_matrix": best_action_matrix,
             "best_assessment": summary.get("best_assessment"),
             "best_metrics": summary.get("best_metrics"),
+            "best_resource_objective": summary.get("best_resource_objective"),
+            "strict_pareto_frontier": summary.get(
+                "strict_pareto_frontier", []
+            ),
+            # Read-only compatibility alias for report consumers predating v4.
             "best_variable_cost": summary.get("best_variable_cost"),
             "best_promotion_evidence": summary.get("best_promotion_evidence"),
             "final_evidence": compact_summary["final_evidence"],

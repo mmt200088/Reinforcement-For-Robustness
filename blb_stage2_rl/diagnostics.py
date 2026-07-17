@@ -231,6 +231,15 @@ class EpisodeStats:
     ranking_evidence: str = ""
     constraint_thresholds: Dict[str, Any] = field(default_factory=dict)
     variable_cost: float = 0.0
+    compute_saving: float = 0.0
+    communication_saving: float = 0.0
+    robust_floor: float = 0.0
+    secondary_progress: float = 0.0
+    ppo_resource_score: float = 0.0
+    compute_shapley_credit: float = 0.0
+    communication_shapley_credit: float = 0.0
+    layer_resource_rewards: List[float] = field(default_factory=list)
+    slot_resource_rewards: List[List[float]] = field(default_factory=list)
     layer_action_matrix: List[List[int]] = field(default_factory=list)
     block4_entropy: Optional[float] = None
     k_entropy: Optional[float] = None
@@ -283,6 +292,8 @@ class PPOUpdateStats:
     strict_revalidation_status: str = "not_due"
     termination_reason: str = "running"
     best_robust_feasible_cost: Optional[float] = None
+    best_robust_feasible_objective: Optional[List[float]] = None
+    strict_pareto_frontier: List[Dict[str, Any]] = field(default_factory=list)
     actor_clip_mode: str = "joint"
     actor_credit_mode: str = "scalar_gae"
     entropy_objective_mode: str = "joint_sum"

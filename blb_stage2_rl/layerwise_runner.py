@@ -1101,6 +1101,15 @@ class LayerwiseEpisodeRecord:
     action_matrix: tuple[tuple[int, ...], ...]
     pending_full_vector: tuple[int, ...]
     variable_cost: float
+    compute_saving: float
+    communication_saving: float
+    robust_floor: float
+    secondary_progress: float
+    ppo_resource_score: float
+    compute_shapley_credit: float
+    communication_shapley_credit: float
+    layer_resource_rewards: tuple[float, ...]
+    slot_resource_rewards: tuple[tuple[float, ...], ...]
     raw_trials: Optional[TrialSeries]
     pooled_trials: Optional[TrialSeries]
     fresh_trial_count: int
@@ -1131,6 +1140,7 @@ class LayerwiseEpisodeRecord:
     strict_revalidation_status: str
     termination_reason: str
     best_robust_feasible_cost: Optional[float]
+    best_robust_feasible_objective: Optional[ResourceObjective]
 
 
 def _to_plain_mapping(value: Any) -> dict[str, Any]:
@@ -2547,6 +2557,24 @@ def train_layerwise(
             action_matrix=action_matrix,
             pending_full_vector=full_vector,
             variable_cost=float(variable_cost),
+            compute_saving=float(exact_resource["compute_saving"]),
+            communication_saving=float(exact_resource["communication_saving"]),
+            robust_floor=float(exact_resource["robust_floor"]),
+            secondary_progress=float(exact_resource["secondary_progress"]),
+            ppo_resource_score=float(exact_resource["ppo_resource_score"]),
+            compute_shapley_credit=float(
+                exact_resource["compute_shapley_credit"]
+            ),
+            communication_shapley_credit=float(
+                exact_resource["communication_shapley_credit"]
+            ),
+            layer_resource_rewards=tuple(
+                float(value) for value in exact_resource["layer_resource_rewards"]
+            ),
+            slot_resource_rewards=tuple(
+                tuple(float(value) for value in row)
+                for row in exact_resource["slot_resource_rewards"]
+            ),
             raw_trials=raw_trials,
             pooled_trials=pooled_trials,
             fresh_trial_count=(0 if raw_trials is None else len(raw_trials.loss)),
@@ -2602,6 +2630,11 @@ def train_layerwise(
             strict_revalidation_status=str(strict_revalidation_status),
             termination_reason=str(convergence_state.termination_reason),
             best_robust_feasible_cost=convergence_state.best_robust_feasible_cost,
+            best_robust_feasible_objective=(
+                None
+                if convergence_state.best_robust_feasible_objective is None
+                else tuple(convergence_state.best_robust_feasible_objective)
+            ),
         )
         records.append(record)
         if on_episode_end is not None:

@@ -377,7 +377,9 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
         source = source_path.read_text(encoding="utf-8")
 
-        self.assertIn("factorized_slot_credit_multifidelity_convergence_v8", source)
+        self.assertIn(
+            "dual_resource_maxmin_shapley_multifidelity_convergence_v9", source,
+        )
         self.assertIn('"F1": {', source)
         self.assertIn('"F4": {', source)
         self.assertNotIn('"minimum_episodes": convergence_min_episodes', source)
@@ -886,6 +888,28 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 run_context_hash="run-a",
             )
 
+    def test_layerwise_checkpoint_contract_fails_before_mutating_training_state(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+        validation = branch_source.rindex(
+            "validate_layerwise_checkpoint_metadata("
+        )
+
+        self.assertLess(validation, branch_source.index("policy.load_state_dict("))
+        self.assertLess(validation, branch_source.index("optimizer.load_state_dict("))
+        self.assertLess(
+            validation,
+            branch_source.index("candidate_store.recover_to_checkpoint_size("),
+        )
+
     def test_checkpoint_file_fingerprint_allows_suffix_only_and_rejects_prefix_change(self):
         from blb_stage2_rl import layerwise_runner
 
@@ -1115,6 +1139,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
         for required in (
             'checkpoint.get("convergence_state")',
+            'checkpoint.get("strict_pareto_frontier")',
             'convergence_state=metrics.get("convergence_state")',
             "planned_total_episodes=int(planned_total_episodes)",
             "ppo_update_counter = int(resumed_ppo_update_count)",
@@ -1143,6 +1168,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             '"planned_total_episodes", planned_total_episodes',
             'checkpoint.get("ppo_update_count")',
             '"ppo_update_count": int(ppo_update_counter)',
+            '"strict_pareto_frontier": copy.deepcopy(strict_pareto_frontier)',
         ):
             self.assertIn(required, branch_source)
 
@@ -1167,13 +1193,21 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('"factorized_actor_clip": True', branch_source)
         self.assertIn('"algorithm_revision": algorithm_revision', branch_source)
         self.assertIn(
-            '"factorized_slot_credit_multifidelity_convergence_v8"',
+            '"dual_resource_maxmin_shapley_multifidelity_convergence_v9"',
             branch_source,
         )
         self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
         self.assertIn('"run_context_hash": run_context_hash', branch_source)
         self.assertIn("validate_layerwise_checkpoint_metadata(", branch_source)
         self.assertIn('"cost_model_revision": LAYERWISE_COST_MODEL_REVISION', source)
+        self.assertIn('"resource_secondary_epsilon":', branch_source)
+        self.assertIn('"compute_axis_denominator":', branch_source)
+        self.assertIn('"communication_axis_denominator":', branch_source)
+        self.assertIn('"resource_credit_mode": "two_family_shapley_per_slot_v1"', branch_source)
+        self.assertIn(
+            '"strict_resource_order": ["robust_floor", "secondary_progress"]',
+            branch_source,
+        )
         self.assertIn('"ppo": asdict(ppo)', branch_source)
         self.assertIn('"rollout_size": int(train_cfg.rollout_size)', branch_source)
         self.assertIn(
@@ -1205,7 +1239,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             branch_source,
         )
         self.assertIn(
-            '"feasible,cost,confidence_vector,safety_margin_vector,"',
+            '"feasible,robust_floor,secondary_progress,confidence_vector,"',
             branch_source,
         )
         self.assertIn("strict_selection_key(", branch_source)
@@ -1326,7 +1360,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
         branch_source = ast.get_source_segment(source, branch)
 
-        self.assertIn('"stage2_layerwise_robust_run_v3"', branch_source)
+        self.assertIn('"stage2_layerwise_robust_run_v4"', branch_source)
         self.assertIn('"layerwise_run_manifest.json"', branch_source)
         self.assertIn("write_strict_json_file(", branch_source)
         self.assertNotIn("write_json_file(\n        os.path.join(blb_progress_dir, \"layerwise_summary.json\")", branch_source)

@@ -310,6 +310,13 @@ class RLDataPointWriterTest(unittest.TestCase):
                     "online": 0.50, "promotion": 0.80, "final": 0.95,
                 },
                 "variable_cost": 0.625,
+                "compute_saving": 0.75,
+                "communication_saving": 0.50,
+                "robust_floor": 0.50,
+                "secondary_progress": 0.625,
+                "ppo_resource_score": 0.500012498750125,
+                "compute_shapley_credit": 0.25,
+                "communication_shapley_credit": 0.250012498750125,
                 "layer_action_matrix": [[0, 0, 3, 3, 3, 3]] + [[1, 3, 3, 3, 3, 3]] * 11,
                 "block4_entropy": 0.08,
                 "k_entropy": 0.09,
@@ -328,6 +335,10 @@ class RLDataPointWriterTest(unittest.TestCase):
             self.assertEqual(len(row["pooled_constraint_probabilities"]), 6)
             self.assertEqual(row["fresh_trials"]["seeds"], [11, 12, 13, 14, 15])
             self.assertEqual(len(row["pooled_trials"]["seeds"]), 25)
+            self.assertEqual(row["compute_saving"], 0.75)
+            self.assertEqual(row["communication_saving"], 0.50)
+            self.assertEqual(row["robust_floor"], 0.50)
+            self.assertEqual(row["secondary_progress"], 0.625)
 
     def test_nonfinite_structured_values_are_written_as_json_null(self):
         with tempfile.TemporaryDirectory() as td:
