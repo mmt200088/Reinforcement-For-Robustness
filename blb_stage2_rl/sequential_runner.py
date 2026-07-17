@@ -5476,6 +5476,32 @@ def _run_layerwise_training_branch(
     }
 
 
+class _ProbeRunnerOwnerHolder:
+    """Own one shared probe pool across every Stage-2 exit path."""
+
+    def __init__(self) -> None:
+        self._owner: Optional[Any] = None
+        self._closed = False
+
+    def bind(self, owner: Any) -> None:
+        if owner is None:
+            raise ValueError("probe runner owner must not be None")
+        if self._closed:
+            raise RuntimeError("probe runner owner holder is already closed")
+        if self._owner is None:
+            self._owner = owner
+            return
+        if self._owner is not owner:
+            raise RuntimeError("probe runner owner holder is already bound")
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._owner is not None:
+            self._owner.close()
+
+
 def run_sequential_via_runner(
         *,
         runner,
@@ -5491,17 +5517,22 @@ def run_sequential_via_runner(
     from .runner import resolve_blb_persistence_dir
 
     blb_progress_dir = resolve_blb_persistence_dir(runner.evaluator)
+    probe_runner_owner_holder = _ProbeRunnerOwnerHolder()
     with LayerwiseRunLock(blb_progress_dir) as run_lock:
-        return _run_sequential_via_runner_locked(
-            runner=runner,
-            train_cfg=train_cfg,
-            fixed_gelu=fixed_gelu,
-            fixed_softmax=fixed_softmax,
-            fixed_label=fixed_label,
-            fixed_source=fixed_source,
-            resume_checkpoint_path=resume_checkpoint_path,
-            run_lock=run_lock,
-        )
+        try:
+            return _run_sequential_via_runner_locked(
+                runner=runner,
+                train_cfg=train_cfg,
+                fixed_gelu=fixed_gelu,
+                fixed_softmax=fixed_softmax,
+                fixed_label=fixed_label,
+                fixed_source=fixed_source,
+                resume_checkpoint_path=resume_checkpoint_path,
+                run_lock=run_lock,
+                probe_runner_owner_holder=probe_runner_owner_holder,
+            )
+        finally:
+            probe_runner_owner_holder.close()
 
 
 def _run_sequential_via_runner_locked(
@@ -5514,6 +5545,7 @@ def _run_sequential_via_runner_locked(
         fixed_source,
         resume_checkpoint_path=None,
         run_lock: Any,
+        probe_runner_owner_holder: _ProbeRunnerOwnerHolder,
         ) -> Dict[str, Any]:
     """Drive the sequential RL pipeline using BLBStage2RLRunner's setup helpers.
 
@@ -5747,6 +5779,7 @@ def _run_sequential_via_runner_locked(
             metric_profile=str(train_cfg.profile),
             log_fn=lambda m: log(f"  [multi-gpu] {m}"),
         )
+        probe_runner_owner_holder.bind(shared_probe_runner_owner)
         base_env._shared_probe_runner_owner = shared_probe_runner_owner
         base_env._shared_probe_batch_sets = {
             "F1": tuple(base_env.probe_batches),
