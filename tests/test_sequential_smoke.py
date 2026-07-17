@@ -3442,6 +3442,28 @@ class Stage2ProbeBatchSizeContractTest(unittest.TestCase):
                     }
         raise AssertionError(f"missing function {function_name!r}")
 
+    @staticmethod
+    def _class_method_argument_names(
+            source: str,
+            class_name: str,
+            method_name: str,
+            ) -> set[str]:
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == class_name:
+                for member in node.body:
+                    if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if member.name == method_name:
+                            return {
+                                argument.arg
+                                for argument in (
+                                    list(member.args.posonlyargs)
+                                    + list(member.args.args)
+                                    + list(member.args.kwonlyargs)
+                                )
+                            }
+        raise AssertionError(f"missing {class_name}.{method_name}")
+
     def test_launcher_exposes_and_forwards_independent_probe_batch_sizes(self):
         launcher = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
         expected = {
@@ -3487,7 +3509,11 @@ class Stage2ProbeBatchSizeContractTest(unittest.TestCase):
         )
 
         rl_tune_args = self._function_argument_names(rl_tune, "train")
-        evaluator_init_args = self._function_argument_names(evaluator, "__init__")
+        evaluator_init_args = self._class_method_argument_names(
+            evaluator,
+            "LayerImportanceEvaluator",
+            "__init__",
+        )
         for argument in expected:
             with self.subTest(argument=argument):
                 self.assertIn(argument, rl_tune_args)
