@@ -31,6 +31,15 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         def __init__(self, events):
             self.device = torch.device("cuda:0")
             self.events = events
+            self.probe_batches = ("online-probe",)
+            self.batch_sets = {"F1": self.probe_batches}
+
+        def register_batch_set(self, key, batches):
+            normalized = str(key)
+            if normalized in self.batch_sets:
+                raise ValueError(f"duplicate batch set {normalized}")
+            self.batch_sets[normalized] = tuple(batches)
+            self.events.append(("local-register", normalized, tuple(batches)))
 
         def install(self, decoded):
             self.events.append(("local-install", decoded))
@@ -38,17 +47,20 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         def clear(self):
             self.events.append(("local-clear", None))
 
-        def run_trial(self, trial_idx, base_seed):
-            self.events.append(("local-run", trial_idx, base_seed))
+        def run_trial(self, trial_idx, base_seed, batch_set_key="F1"):
+            self.events.append(
+                ("local-run", trial_idx, base_seed, str(batch_set_key))
+            )
             return (float(trial_idx), float(base_seed), -1.0)
 
     class _RemoteWorker:
-        def __init__(self, events, *, fail_receive=False):
-            self.device = torch.device("cuda:1")
+        def __init__(self, events, *, device_id=1, fail_receive=False):
+            self.device = torch.device(f"cuda:{int(device_id)}")
             self.events = events
             self.fail_receive = fail_receive
             self.pending = None
             self.closed = False
+            self.close_count = 0
 
         def submit(self, operation, payload):
             self.pending = (operation, payload)
@@ -86,12 +98,30 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
 
         def close(self):
             self.closed = True
+            self.close_count += 1
             self.events.append(("remote-close", None))
 
-    def _runner(self, events, *, fail_receive=False):
+    def _runner_with_process_count(
+            self, events, *, process_count, fail_receive=False,
+            ):
         local = self._LocalWorker(events)
-        remote = self._RemoteWorker(events, fail_receive=fail_receive)
-        return ProbeRunner([local], process_workers=[remote]), remote
+        remotes = [
+            self._RemoteWorker(
+                events,
+                device_id=device_id,
+                fail_receive=fail_receive,
+            )
+            for device_id in range(1, int(process_count) + 1)
+        ]
+        return ProbeRunner([local], process_workers=remotes), remotes
+
+    def _runner(self, events, *, fail_receive=False):
+        runner, remotes = self._runner_with_process_count(
+            events,
+            process_count=1,
+            fail_receive=fail_receive,
+        )
+        return runner, remotes[0]
 
     def test_remote_trials_are_submitted_before_local_gpu_runs(self):
         events = []
@@ -160,6 +190,127 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
 
         self.assertTrue(remote.closed)
         self.assertEqual(events, [("remote-close", None)])
+
+    def test_views_route_f1_and_f4_through_one_five_device_pool(self):
+        events = []
+        owner, remotes = self._runner_with_process_count(
+            events, process_count=4,
+        )
+        owner.register_batch_set("F4", ["validation-full"])
+        f1 = owner.view("F1")
+        f4 = owner.view("F4")
+
+        f1_results = f1.run_trials(k=5, base_seed=41)
+        f4_results = f4.run_trials(k=5, base_seed=43)
+
+        self.assertEqual(owner.num_workers, 5)
+        self.assertEqual(
+            [str(device) for device in owner.devices],
+            [f"cuda:{device_id}" for device_id in range(5)],
+        )
+        self.assertEqual(len(remotes), 4)
+        self.assertEqual(f1.pool_id, owner.pool_id)
+        self.assertEqual(f4.pool_id, owner.pool_id)
+        self.assertEqual(f1.backend, "process")
+        self.assertEqual(f1.num_workers, owner.num_workers)
+        self.assertEqual(f1.devices, owner.devices)
+        self.assertEqual(len(f1_results), 5)
+        self.assertEqual(len(f4_results), 5)
+        registration_submissions = [
+            event
+            for event in events
+            if event[:2] == ("remote-submit", "register_batch_set")
+        ]
+        self.assertEqual(len(registration_submissions), 4)
+        run_submissions = [
+            event
+            for event in events
+            if event[:2] == ("remote-submit", "run_trials")
+        ]
+        self.assertEqual(len(run_submissions), 8)
+        self.assertEqual(
+            [event[2]["batch_set_key"] for event in run_submissions],
+            ["F1"] * 4 + ["F4"] * 4,
+        )
+        self.assertIs(f4.last_diagnostics, owner.last_diagnostics)
+
+    def test_view_delegates_actions_with_its_batch_set_key(self):
+        events = []
+        owner, _remote = self._runner(events)
+        owner.register_batch_set("F4", ["validation-full"])
+        view = owner.view("F4")
+        decoded = object()
+        action0 = object()
+        action1 = object()
+
+        view.install_action(decoded)
+        view.clear()
+        results = view.run_action_trials_once([action0, action1], base_seed=73)
+
+        self.assertEqual(len(results), 2)
+        action_submission = next(
+            event
+            for event in events
+            if event[:2] == ("remote-submit", "run_action_trial")
+        )
+        self.assertEqual(action_submission[2]["batch_set_key"], "F4")
+        self.assertIs(view.last_diagnostics, owner.last_diagnostics)
+
+    def test_view_close_is_noop_and_owner_close_is_idempotent(self):
+        events = []
+        owner, remotes = self._runner_with_process_count(
+            events, process_count=4,
+        )
+
+        owner.view("F1").close()
+        owner.view("F4").close()
+
+        self.assertFalse(any(remote.closed for remote in remotes))
+        owner.close()
+        owner.close()
+        self.assertTrue(all(remote.closed for remote in remotes))
+        self.assertEqual([remote.close_count for remote in remotes], [1] * 4)
+        self.assertEqual(events.count(("remote-close", None)), 4)
+
+    def test_batch_set_keys_must_be_nonempty_and_unique(self):
+        events = []
+        owner, _remote = self._runner(events)
+
+        with self.assertRaises(ValueError):
+            owner.register_batch_set("", ["invalid"])
+        owner.register_batch_set("F4", ["validation-full"])
+        with self.assertRaises(ValueError):
+            owner.register_batch_set("F4", ["duplicate"])
+
+    def test_probe_worker_uses_an_immutable_keyed_batch_set(self):
+        model = object()
+        worker = _probe_runner.ProbeWorker(
+            device=torch.device("cuda:0"),
+            model=model,
+            handler=object(),
+            bridge=object(),
+            probe_batches=["online-probe"],
+            is_regression=False,
+            metric_profile="mrpc",
+        )
+        validation_batches = ["validation-full"]
+        worker.register_batch_set("F4", validation_batches)
+        validation_batches.append("late-mutation")
+
+        with mock.patch.object(_probe_runner.torch.cuda, "device"):
+            with mock.patch.object(
+                _probe_runner, "reseed_noise_rng_for_device",
+            ):
+                with mock.patch.object(
+                    _probe_runner,
+                    "run_installed_probe_trial",
+                    return_value=(0.3, 0.9, 0.8),
+                ) as run_probe:
+                    result = worker.run_trial(0, 41, batch_set_key="F4")
+
+        self.assertEqual(result, (0.3, 0.9, 0.8))
+        self.assertEqual(run_probe.call_args.args[1], ("validation-full",))
+        self.assertEqual(run_probe.call_args.kwargs["metric_profile"], "mrpc")
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"probe runner unavailable: {_IMPORT_ERROR!r}")
