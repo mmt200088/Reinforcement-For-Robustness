@@ -1406,8 +1406,6 @@ class RLDiagnosticsRecorder:
         action_hash = str(candidate.get("terminal_pareto_action_hash", "") or "")
         if action_hash and action_hash in self._pareto_seen_hashes:
             return
-        if action_hash:
-            self._pareto_seen_hashes.add(action_hash)
         if any(_pareto_dominates(existing, candidate) for existing in self._pareto_candidates):
             return
         self._pareto_candidates = [
@@ -1416,6 +1414,11 @@ class RLDiagnosticsRecorder:
             if not _pareto_dominates(candidate, existing)
         ]
         self._pareto_candidates.append(candidate)
+        self._pareto_seen_hashes = {
+            str(row["terminal_pareto_action_hash"])
+            for row in self._pareto_candidates
+            if row.get("terminal_pareto_action_hash")
+        }
 
     def _sorted_pareto_candidates(self) -> List[Dict[str, Any]]:
         rows = [dict(row) for row in self._pareto_candidates]

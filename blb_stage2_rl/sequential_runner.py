@@ -74,6 +74,23 @@ def _normalize_supported_rl_algo(value: Any, *, context: str = "rl_algo") -> str
     return "ppo"
 
 
+def resolve_resumed_best_reward(
+        resumed_best: Mapping[str, Any],
+        historical_best: Any,
+        ) -> float:
+    """Return the best finite diagnostic reward available at resume."""
+    candidates = (resumed_best.get("reward"), historical_best)
+    finite_values: List[float] = []
+    for candidate in candidates:
+        try:
+            value = float(candidate)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if math.isfinite(value):
+            finite_values.append(value)
+    return max(finite_values, default=-math.inf)
+
+
 @dataclass
 class SequentialTrainConfig:
     total_episodes: int = 100
@@ -4518,13 +4535,9 @@ def _run_layerwise_training_branch(
 
     recent_episode_records = deque(maxlen=max(1, int(train_cfg.rollout_size)))
     completed_episode_count = int(start_episode)
-    best_reward_so_far = -math.inf
-    try:
-        resumed_reward = float(resumed_best.get("reward", -math.inf))
-    except (TypeError, ValueError):
-        resumed_reward = -math.inf
-    if math.isfinite(resumed_reward):
-        best_reward_so_far = resumed_reward
+    best_reward_so_far = resolve_resumed_best_reward(
+        resumed_best, diag_recorder.best_episode_return
+    )
     best_selection_key: Optional[StrictSelectionKey] = None
     strict_best: Dict[str, Any] = dict(resumed_best)
     strict_pareto_frontier: List[Dict[str, Any]] = copy.deepcopy(
