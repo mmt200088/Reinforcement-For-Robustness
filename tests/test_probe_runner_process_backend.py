@@ -320,6 +320,70 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         self.assertFalse(process.is_alive())
         self.assertTrue(connection.closed)
 
+    def test_graceful_close_kills_if_terminate_does_not_stop_process(self):
+        events = []
+
+        class _FakeProcess:
+            def __init__(self):
+                self.alive = True
+
+            def is_alive(self):
+                return self.alive
+
+            def join(self, timeout=None):
+                events.append(("join", timeout))
+
+            def terminate(self):
+                events.append(("terminate", None))
+
+            def kill(self):
+                events.append(("kill", None))
+                self.alive = False
+
+        class _FakeConnection:
+            def __init__(self):
+                self.closed = False
+
+            def send(self, message):
+                events.append(("send", message.get("operation")))
+
+            def close(self):
+                self.closed = True
+                events.append(("connection-close", None))
+
+        process = _FakeProcess()
+        connection = _FakeConnection()
+        worker = _probe_runner._ProcessProbeWorker(
+            device=torch.device("cuda:1"),
+            connection=connection,
+            process=process,
+        )
+
+        def fail_close_receive(operation, timeout=None):
+            events.append(("receive", operation, timeout))
+            worker._pending_operation = None
+            raise TimeoutError("close receive timeout marker")
+
+        with mock.patch.object(
+                worker, "receive", side_effect=fail_close_receive,
+                ) as receive:
+            worker.close()
+
+        receive.assert_called_once_with("close", timeout=5.0)
+        self.assertIn(("send", "close"), events)
+        lifecycle = [
+            event_name
+            for event_name, *_payload in events
+            if event_name in {"terminate", "join", "kill"}
+        ]
+        terminate_index = lifecycle.index("terminate")
+        self.assertEqual(
+            lifecycle[terminate_index:],
+            ["terminate", "join", "kill", "join"],
+        )
+        self.assertFalse(process.is_alive())
+        self.assertTrue(connection.closed)
+
     def test_owner_closes_all_remote_workers_concurrently(self):
         barrier = threading.Barrier(4)
         state_lock = threading.Lock()
@@ -629,6 +693,124 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         )
         self.assertIn("failed to start persistent probe processes", str(failure))
         self.assertIn("startup marker", str(failure))
+
+    def test_started_process_is_tracked_before_child_pipe_close(self):
+        created_handles = []
+
+        class _FakeParentConnection:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        class _FakeProcess:
+            def __init__(self):
+                self.pid = 2001
+                self.started = False
+                self.reaped = False
+
+            def start(self):
+                self.started = True
+
+        class _FailingChildConnection:
+            def __init__(self, context):
+                self.context = context
+
+            def close(self):
+                if self.context.process is None:
+                    raise AssertionError("child process was not constructed")
+                if not self.context.process.started:
+                    raise AssertionError("child process was not started")
+                raise RuntimeError("child connection close marker")
+
+        class _FakeContext:
+            def __init__(self):
+                self.process = None
+
+            def Pipe(self, duplex=True):
+                if duplex is not True:
+                    raise AssertionError("probe process pipe must be duplex")
+                return _FakeParentConnection(), _FailingChildConnection(self)
+
+            def Process(self, **_kwargs):
+                self.process = _FakeProcess()
+                return self.process
+
+        class _FakeHandle:
+            def __init__(self, *, device, connection, process):
+                self.device = device
+                self.connection = connection
+                self.process = process
+                self.close_calls = 0
+
+            def close(self):
+                self.close_calls += 1
+                self.process.reaped = True
+                self.connection.close()
+
+        def make_handle(*, device, connection, process):
+            handle = _FakeHandle(
+                device=device,
+                connection=connection,
+                process=process,
+            )
+            created_handles.append(handle)
+            return handle
+
+        fake_context = _FakeContext()
+        primary_model = torch.nn.Linear(2, 2)
+        primary_batch = types.SimpleNamespace(
+            input_ids=torch.ones((1, 2), dtype=torch.long),
+            attention_mask=torch.ones((1, 2), dtype=torch.long),
+            labels=torch.zeros((1,), dtype=torch.long),
+            token_type_ids=None,
+        )
+        real_close_helper = ProbeRunner._close_worker_handles
+
+        with mock.patch.object(
+                _probe_runner, "BLBNoiseRLBridge", object(),
+                ), mock.patch.object(
+                    _probe_runner, "resolve_probe_backend", return_value="process",
+                ), mock.patch.object(
+                    _probe_runner, "enable_cuda_reward_probe_fast_math",
+                ), mock.patch.object(
+                    _probe_runner.torch.cuda, "empty_cache",
+                ), mock.patch.object(
+                    _probe_runner.mp, "get_context", return_value=fake_context,
+                ), mock.patch.object(
+                    _probe_runner, "_ProcessProbeWorker", side_effect=make_handle,
+                ), mock.patch.object(
+                    ProbeRunner,
+                    "_close_worker_handles",
+                    wraps=real_close_helper,
+                ) as close_helper:
+            try:
+                _probe_runner.build_probe_runner(
+                    primary_model=primary_model,
+                    primary_handler=object(),
+                    primary_bridge=object(),
+                    primary_probe_batches=[primary_batch],
+                    layers_attribute="unused.layers",
+                    is_regression=False,
+                    device_ids=[0, 1],
+                    metric_profile="start-tracking",
+                )
+            except RuntimeError as exc:
+                failure = exc
+            else:
+                self.fail("child connection close failure must propagate")
+
+        self.assertIsNotNone(fake_context.process)
+        self.assertTrue(fake_context.process.started)
+        self.assertEqual(len(created_handles), 1)
+        self.assertEqual(close_helper.call_count, 1)
+        helper_handles = list(close_helper.call_args.args[0])
+        self.assertEqual(helper_handles, created_handles)
+        self.assertEqual(created_handles[0].close_calls, 1)
+        self.assertTrue(fake_context.process.reaped)
+        self.assertIn("failed to start persistent probe processes", str(failure))
+        self.assertIn("child connection close marker", str(failure))
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"probe runner unavailable: {_IMPORT_ERROR!r}")
