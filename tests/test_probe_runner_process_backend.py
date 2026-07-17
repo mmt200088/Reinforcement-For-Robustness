@@ -54,17 +54,27 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             return (float(trial_idx), float(base_seed), -1.0)
 
     class _RemoteWorker:
-        def __init__(self, events, *, device_id=1, fail_receive=False):
+        def __init__(
+                self,
+                events,
+                *,
+                device_id=1,
+                fail_submit=False,
+                fail_receive=False,
+                ):
             self.device = torch.device(f"cuda:{int(device_id)}")
             self.events = events
+            self.fail_submit = fail_submit
             self.fail_receive = fail_receive
             self.pending = None
             self.closed = False
             self.close_count = 0
 
         def submit(self, operation, payload):
-            self.pending = (operation, payload)
             self.events.append(("remote-submit", operation, payload))
+            if self.fail_submit:
+                raise RuntimeError("child submit marker")
+            self.pending = (operation, payload)
 
         def receive(self, operation):
             self.events.append(("remote-receive", operation))
@@ -102,14 +112,23 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.events.append(("remote-close", None))
 
     def _runner_with_process_count(
-            self, events, *, process_count, fail_receive=False,
+            self,
+            events,
+            *,
+            process_count,
+            fail_submit_device=None,
+            fail_receive=False,
+            fail_receive_device=None,
             ):
         local = self._LocalWorker(events)
         remotes = [
             self._RemoteWorker(
                 events,
                 device_id=device_id,
-                fail_receive=fail_receive,
+                fail_submit=(device_id == fail_submit_device),
+                fail_receive=(
+                    fail_receive or device_id == fail_receive_device
+                ),
             )
             for device_id in range(1, int(process_count) + 1)
         ]
@@ -281,6 +300,44 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         owner.register_batch_set("F4", ["validation-full"])
         with self.assertRaises(ValueError):
             owner.register_batch_set("F4", ["duplicate"])
+
+    def _assert_registration_failure_poisoned_pool(
+            self, *, fail_submit_device=None, fail_receive_device=None,
+            ):
+        events = []
+        owner, remotes = self._runner_with_process_count(
+            events,
+            process_count=4,
+            fail_submit_device=fail_submit_device,
+            fail_receive_device=fail_receive_device,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "register_batch_set"):
+            owner.register_batch_set("F4", ["validation-full"])
+
+        self.assertTrue(all(remote.closed for remote in remotes))
+        self.assertEqual([remote.close_count for remote in remotes], [1] * 4)
+        event_count_after_failure = len(events)
+        with self.assertRaisesRegex(RuntimeError, "closed|poison"):
+            owner.run_trials(k=1, base_seed=41)
+        with self.assertRaisesRegex(RuntimeError, "closed|poison"):
+            owner.register_batch_set("F5", ["final-validation"])
+        with self.assertRaisesRegex(RuntimeError, "closed|poison"):
+            owner.view("F1").run_trials(k=1, base_seed=43)
+        self.assertEqual(len(events), event_count_after_failure)
+
+        owner.close()
+        self.assertEqual([remote.close_count for remote in remotes], [1] * 4)
+
+    def test_batch_registration_submit_failure_closes_and_poisons_pool(self):
+        self._assert_registration_failure_poisoned_pool(
+            fail_submit_device=2,
+        )
+
+    def test_batch_registration_receive_failure_closes_and_poisons_pool(self):
+        self._assert_registration_failure_poisoned_pool(
+            fail_receive_device=2,
+        )
 
     def test_probe_worker_uses_an_immutable_keyed_batch_set(self):
         model = object()
