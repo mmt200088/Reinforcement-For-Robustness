@@ -520,6 +520,19 @@ class _ProcessProbeWorker:
             if self._pending_operation is not None and self.process.is_alive():
                 self.process.terminate()
                 self.process.join(timeout=5.0)
+                if self.process.is_alive():
+                    kill = getattr(self.process, "kill", None)
+                    if kill is None:
+                        self.process.terminate()
+                    else:
+                        kill()
+                    self.process.join(timeout=5.0)
+                    if self.process.is_alive():
+                        raise RuntimeError(
+                            f"probe child {self.device} did not exit after "
+                            f"terminate/kill (pending operation "
+                            f"{self._pending_operation!r})"
+                        )
             else:
                 if self._pending_operation is None and self.process.is_alive():
                     self.connection.send({"operation": "close", "payload": {}})
@@ -1400,8 +1413,7 @@ def build_probe_runner(
                     f"(persistent process pid={worker.process.pid})"
                 )
         except Exception as exc:
-            for worker in process_workers:
-                worker.close()
+            ProbeRunner._close_worker_handles(tuple(process_workers))
             raise RuntimeError(
                 f"failed to start persistent probe processes: {exc!r}"
             ) from exc
