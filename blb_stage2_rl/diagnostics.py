@@ -88,6 +88,7 @@ from collections import Counter
 from dataclasses import dataclass, field, fields as dataclass_fields
 import heapq
 import json
+from numbers import Integral
 import os
 import sys
 import time
@@ -334,6 +335,20 @@ def _write_joined_lines_stream(fh: TextIO, lines: Iterable[str]) -> None:
         fh.write(str(line))
 
 
+def _positive_history_window(value: Optional[int], *, name: str) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, Integral) or int(value) <= 0:
+        raise ValueError(f"{name} must be a positive integer or None")
+    return int(value)
+
+
+def _append_bounded(values: List[Any], value: Any, limit: Optional[int]) -> None:
+    values.append(value)
+    if limit is not None and len(values) > limit:
+        del values[:len(values) - limit]
+
+
 class RLDiagnosticsRecorder:
     def __init__(
             self,
@@ -348,6 +363,8 @@ class RLDiagnosticsRecorder:
             schema_version: str = "blb_v3_slots_human_v1",
             data_point_writer=None,
             strict_writes: bool = False,
+            history_window: Optional[int] = None,
+            ppo_history_window: Optional[int] = None,
             ) -> None:
         """Long-term diagnostics recorder.
 
@@ -360,6 +377,9 @@ class RLDiagnosticsRecorder:
                 :func:`blb_stage2_rl.action_io.action_vec_to_slots_list`.
             schema_version: emitted in ``best_action_vec.json`` so future
                 Paean parsers can pick the right reader.
+            history_window: optional maximum retained episode rows for rolling
+                reports. JSONL and cumulative state remain complete.
+            ppo_history_window: optional maximum retained PPO update rows.
         """
         self.output_dir = os.path.join(str(output_dir), "diagnostics")
         os.makedirs(self.output_dir, exist_ok=True)
@@ -372,6 +392,12 @@ class RLDiagnosticsRecorder:
         self.schema_version = str(schema_version)
         self._data_point_writer = data_point_writer
         self._strict_writes = bool(strict_writes)
+        self._history_window = _positive_history_window(
+            history_window, name="history_window",
+        )
+        self._ppo_history_window = _positive_history_window(
+            ppo_history_window, name="ppo_history_window",
+        )
         self._jsonl_buffer_size = 1024 * 1024
         self._jsonl_flush_interval = 64
         self._jsonl_encoder = json.JSONEncoder(
@@ -397,8 +423,8 @@ class RLDiagnosticsRecorder:
         self.best_json_path = os.path.join(self.output_dir, "best_action_vec.json")
         self.baseline_slots_path = os.path.join(self.output_dir, "baseline_action_vec.json")
 
-        # in-memory accumulators (rebuilt from scratch each run — resume from
-        # the on-disk JSONL is left to post-hoc tooling, kept simple here).
+        # Exact cumulative state plus optional bounded rolling views. Resume
+        # rebuilds both from the authoritative append-only JSONL streams.
         self._first_invalid_counts: Counter = Counter()
         self._action_hist: np.ndarray = np.zeros(
             (self.num_slots, self.max_levels), dtype=np.int64,
@@ -419,12 +445,53 @@ class RLDiagnosticsRecorder:
         self._all_fusion_b4: List[int] = []
         self._all_fusion_b5: List[int] = []
         self._all_margin: List[float] = []
+        self._first_episode_returns: List[float] = []
         self._ppo_history: List[PPOUpdateStats] = []
+        self._episode_count = 0
+        self._ppo_update_count = 0
+        self._episode_high_water = -1
+        self._ppo_update_high_water = 0
+        self._best_episode_return: Optional[float] = None
+        self._worst_episode_return: Optional[float] = None
+        self._first_ppo_entropy: Optional[float] = None
+        self._last_ppo_entropy: Optional[float] = None
         self._t_start = time.time()
         self._meta: Dict[str, Any] = {}
         self._baseline_avg_k: Optional[float] = None
         self._baseline_action_vec: Optional[np.ndarray] = None
         self._baseline_slots: Optional[List[Dict[str, Any]]] = None
+
+    @property
+    def episode_count(self) -> int:
+        return int(self._episode_count)
+
+    @property
+    def ppo_update_count(self) -> int:
+        return int(self._ppo_update_count)
+
+    @property
+    def episode_high_water(self) -> int:
+        return int(self._episode_high_water)
+
+    @property
+    def ppo_update_high_water(self) -> int:
+        return int(self._ppo_update_high_water)
+
+    @property
+    def best_episode_return(self) -> Optional[float]:
+        return self._best_episode_return
+
+    @property
+    def worst_episode_return(self) -> Optional[float]:
+        return self._worst_episode_return
+
+    @property
+    def first_ppo_entropy(self) -> Optional[float]:
+        return self._first_ppo_entropy
+
+    @property
+    def last_ppo_entropy(self) -> Optional[float]:
+        return self._last_ppo_entropy
 
     def _mandatory_write_failure(self, label: str, exc: Exception) -> None:
         message = f"mandatory diagnostics write failed ({label}): {exc}"
@@ -589,7 +656,7 @@ class RLDiagnosticsRecorder:
 
     def restore_existing(self) -> Dict[str, int]:
         """Rebuild in-memory diagnostics from append-only primary JSONL files."""
-        if self._all_episode_returns or self._ppo_history:
+        if self._episode_count or self._ppo_update_count:
             raise RuntimeError("restore_existing must run before new diagnostics")
         self._repair_and_reconcile_jsonl_pair(
             primary_path=self.episodes_path,
@@ -600,15 +667,29 @@ class RLDiagnosticsRecorder:
         self._repair_and_reconcile_jsonl_pair(
             primary_path=self.ppo_updates_path,
             mirror_name="ppo_updates.jsonl",
-            identity_field="completed_episodes",
+            identity_field="update",
             primary_fields={item.name for item in dataclass_fields(PPOUpdateStats)},
         )
-        episode_count = 0
-        update_count = 0
         episode_fields = {item.name for item in dataclass_fields(EpisodeStats)}
         update_fields = {item.name for item in dataclass_fields(PPOUpdateStats)}
+        previous_episode: Optional[int] = None
         if os.path.isfile(self.episodes_path):
             for row in iter_jsonl(self.episodes_path, errors="raise"):
+                try:
+                    episode_identity = int(row["episode"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "diagnostics episode identity is missing or invalid"
+                    ) from exc
+                if (
+                        previous_episode is not None
+                        and episode_identity != previous_episode + 1
+                ):
+                    raise RuntimeError(
+                        "diagnostics episode identities must be contiguous: "
+                        f"{previous_episode} -> {episode_identity}"
+                    )
+                previous_episode = episode_identity
                 full_action_vec = row.get("full_action_vec")
                 stats = _episode_stats_from_json_row(row, episode_fields)
                 self.record_episode(
@@ -618,15 +699,31 @@ class RLDiagnosticsRecorder:
                     best_reward_so_far=float(stats.total_reward),
                     persist=False,
                 )
-                episode_count += 1
+        previous_update: Optional[int] = None
         if os.path.isfile(self.ppo_updates_path):
             for row in iter_jsonl(self.ppo_updates_path, errors="raise"):
+                try:
+                    update_identity = int(row["update"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "diagnostics PPO update identity is missing or invalid"
+                    ) from exc
+                if previous_update is not None and update_identity != previous_update + 1:
+                    raise RuntimeError(
+                        "diagnostics PPO update identities must be contiguous: "
+                        f"{previous_update} -> {update_identity}"
+                    )
+                previous_update = update_identity
                 stats = PPOUpdateStats(**{
                     key: value for key, value in row.items() if key in update_fields
                 })
                 self.record_ppo_update(stats, persist=False)
-                update_count += 1
-        return {"episodes": episode_count, "ppo_updates": update_count}
+        return {
+            "episodes": self.episode_count,
+            "ppo_updates": self.ppo_update_count,
+            "episode_high_water": self.episode_high_water,
+            "ppo_update_high_water": self.ppo_update_high_water,
+        }
 
     @staticmethod
     def _rows_match_primary(primary: Mapping[str, Any], mirror: Mapping[str, Any]) -> bool:
@@ -881,16 +978,65 @@ class RLDiagnosticsRecorder:
                     self._mandatory_write_failure("structured episodes.jsonl", exc)
 
         # 2) accumulate stats
-        self._all_episode_returns.append(float(episode_stats.total_reward))
-        self._all_invalid_counts.append(int(episode_stats.invalid_steps))
-        self._all_terminal.append(float(episode_stats.terminal_reward))
+        episode_return = float(episode_stats.total_reward)
+        self._episode_count += 1
+        self._episode_high_water = max(
+            self._episode_high_water, int(episode_stats.episode),
+        )
+        self._best_episode_return = (
+            episode_return
+            if self._best_episode_return is None
+            else max(self._best_episode_return, episode_return)
+        )
+        self._worst_episode_return = (
+            episode_return
+            if self._worst_episode_return is None
+            else min(self._worst_episode_return, episode_return)
+        )
+        if len(self._first_episode_returns) < 20:
+            self._first_episode_returns.append(episode_return)
+        _append_bounded(
+            self._all_episode_returns, episode_return, self._history_window,
+        )
+        _append_bounded(
+            self._all_invalid_counts,
+            int(episode_stats.invalid_steps),
+            self._history_window,
+        )
+        _append_bounded(
+            self._all_terminal,
+            float(episode_stats.terminal_reward),
+            self._history_window,
+        )
         # ADR-014 rolling-health accumulators.
-        self._all_priority.append(int(episode_stats.terminal_priority))
-        self._all_fusion.append(int(episode_stats.fusion_count))
-        self._all_fusion_b2.append(int(episode_stats.fusion_count_b2))
-        self._all_fusion_b4.append(int(episode_stats.fusion_count_b4))
-        self._all_fusion_b5.append(int(episode_stats.fusion_count_b5))
-        self._all_margin.append(float(episode_stats.terminal_worst_signed_margin))
+        _append_bounded(
+            self._all_priority,
+            int(episode_stats.terminal_priority),
+            self._history_window,
+        )
+        _append_bounded(
+            self._all_fusion, int(episode_stats.fusion_count), self._history_window,
+        )
+        _append_bounded(
+            self._all_fusion_b2,
+            int(episode_stats.fusion_count_b2),
+            self._history_window,
+        )
+        _append_bounded(
+            self._all_fusion_b4,
+            int(episode_stats.fusion_count_b4),
+            self._history_window,
+        )
+        _append_bounded(
+            self._all_fusion_b5,
+            int(episode_stats.fusion_count_b5),
+            self._history_window,
+        )
+        _append_bounded(
+            self._all_margin,
+            float(episode_stats.terminal_worst_signed_margin),
+            self._history_window,
+        )
         self._last_episode_stats = episode_stats
 
         # 3) first-invalid counter
@@ -1089,7 +1235,17 @@ class RLDiagnosticsRecorder:
                     self._data_point_writer.write_ppo_update(dict(stats.__dict__))
                 except Exception as exc:
                     self._mandatory_write_failure("structured ppo_updates.jsonl", exc)
-        self._ppo_history.append(stats)
+        entropy = float(stats.entropy)
+        self._ppo_update_count += 1
+        self._ppo_update_high_water = max(
+            self._ppo_update_high_water, int(stats.update),
+        )
+        if self._first_ppo_entropy is None:
+            self._first_ppo_entropy = entropy
+        self._last_ppo_entropy = entropy
+        _append_bounded(
+            self._ppo_history, stats, self._ppo_history_window,
+        )
 
     def flush_mandatory(self) -> None:
         """Durably flush primary and mirrored JSONL before checkpoint commit."""
@@ -1158,10 +1314,9 @@ class RLDiagnosticsRecorder:
         is a reproducible in-repo artifact: the smoking gun for a hot collapse is
         ``fusion`` rising while ``P3`` falls and ``margin`` goes negative.
         """
-        n = len(self._all_episode_returns)
-        if n == 0:
+        if self.episode_count == 0:
             return
-        w = min(int(window), n)
+        w = min(int(window), len(self._all_episode_returns))
 
         def _tm(xs: List[float]) -> float:
             t = xs[-w:]
@@ -1172,7 +1327,8 @@ class RLDiagnosticsRecorder:
         p2 = sum(1 for p in pri if int(p) == 2)
         p3 = sum(1 for p in pri if int(p) == 3)
         line = (
-            f"{time.strftime('%Y-%m-%dT%H:%M:%S')} ep={n} rolling{w}: "
+            f"{time.strftime('%Y-%m-%dT%H:%M:%S')} "
+            f"ep={self.episode_count} rolling{w}: "
             f"reward={_tm(self._all_episode_returns):.3f} "
             f"P1={p1} P2={p2} P3={p3} "
             f"fusion={_tm([float(x) for x in self._all_fusion]):.2f} "
@@ -1196,8 +1352,8 @@ class RLDiagnosticsRecorder:
                 )
                 self._data_point_writer.write_summary({
                     "status": str(status),
-                    "episode_count": int(len(self._all_episode_returns)),
-                    "ppo_update_count": int(len(self._ppo_history)),
+                    "episode_count": self.episode_count,
+                    "ppo_update_count": self.ppo_update_count,
                     "meta": dict(self._meta),
                     "last_episode": last_episode,
                     "diagnostics_dir": self.output_dir,
@@ -1395,7 +1551,7 @@ class RLDiagnosticsRecorder:
         # 1. 训练进度
         lines.append("## 1. 训练进度（training progress）")
         lines.append("")
-        n_ep = len(self._all_episode_returns)
+        n_ep = self.episode_count
         if n_ep == 0:
             lines.append("_no episodes recorded yet._")
             self._dump(lines)
@@ -1403,8 +1559,8 @@ class RLDiagnosticsRecorder:
         last50 = self._all_episode_returns[-50:]
         last50_inv = self._all_invalid_counts[-50:]
         last50_term = self._all_terminal[-50:]
-        best_so_far = max(self._all_episode_returns)
-        worst_so_far = min(self._all_episode_returns)
+        best_so_far = float(self.best_episode_return)
+        worst_so_far = float(self.worst_episode_return)
         lines.append(f"- 已完成回合数: **{n_ep}**")
         lines.append(
             f"- 最近 50 回合 mean return: **{np.mean(last50):+.4f}** "
@@ -1420,7 +1576,7 @@ class RLDiagnosticsRecorder:
         )
         lines.append(f"- 训练期 best reward: **{best_so_far:+.4f}**")
         lines.append(f"- 训练期 worst reward: **{worst_so_far:+.4f}**")
-        lines.append(f"- PPO 更新次数: **{len(self._ppo_history)}**")
+        lines.append(f"- PPO 更新次数: **{self.ppo_update_count}**")
         if self._baseline_avg_k is not None:
             lines.append(f"- baseline avg_k (per-block 加权): **{self._baseline_avg_k:.3f}**")
         lines.append("")
@@ -1563,9 +1719,9 @@ class RLDiagnosticsRecorder:
                     f"{float(getattr(u, 'entropy_recovery_delta', 0.0)):.5f} | "
                     f"{u.window_mean_return:+.4f} | {u.window_mean_invalid:.2f} |"
                 )
-            if len(self._ppo_history) >= 2:
-                ent0 = self._ppo_history[0].entropy
-                ent1 = self._ppo_history[-1].entropy
+            if self.ppo_update_count >= 2:
+                ent0 = float(self.first_ppo_entropy)
+                ent1 = float(self.last_ppo_entropy)
                 trend = "下降（policy 在收敛）" if ent1 < ent0 else "上升（policy 在分散）"
                 lines.append("")
                 lines.append(
@@ -1601,7 +1757,7 @@ class RLDiagnosticsRecorder:
         lines.append(
             f"- **未收敛 slot**：**{len(spread_slots)}** / {self.num_slots}"
         )
-        if collapsed_slots and len(self._ppo_history) >= 5:
+        if collapsed_slots and self.ppo_update_count >= 5:
             sample = collapsed_slots[:8]
             lines.append("")
             lines.append("已收敛 slot 示例（前 8 个）：")
@@ -1610,7 +1766,7 @@ class RLDiagnosticsRecorder:
                     f"  - slot[{slot_idx:03d}] → action_index={max_idx} "
                     f"（占比 {share*100:.1f}%）"
                 )
-        if spread_slots and len(self._ppo_history) >= 5:
+        if spread_slots and self.ppo_update_count >= 5:
             spread_slots.sort(key=lambda x: -x[1])
             sample = spread_slots[:8]
             lines.append("")
@@ -1628,7 +1784,7 @@ class RLDiagnosticsRecorder:
         flags: List[str] = []
         if n_ep >= 20:
             mean_last20 = float(np.mean(self._all_episode_returns[-20:]))
-            mean_first20 = float(np.mean(self._all_episode_returns[:20]))
+            mean_first20 = float(np.mean(self._first_episode_returns))
             if mean_last20 < mean_first20 - 0.05:
                 flags.append(
                     f"⚠ **学习退化**：最近 20 回合平均回报 {mean_last20:+.4f} 低于前 "
@@ -1638,7 +1794,7 @@ class RLDiagnosticsRecorder:
             elif (
                 abs(mean_last20 - mean_first20) < 0.05
                 and n_ep > 200
-                and len(self._ppo_history) > 5
+                and self.ppo_update_count > 5
             ):
                 flags.append(
                     f"⚠ **训练停滞**：训练 {n_ep} 回合后回报变化 "
@@ -1669,7 +1825,7 @@ class RLDiagnosticsRecorder:
                     f"的 invalid 都首先发生在 {key}。"
                     f"建议：查 stage1_degree[{layer}] / max_sfs 表对应 block {block} 的项。"
                 )
-        if self._ppo_history and len(self._ppo_history) >= 5:
+        if self._ppo_history and self.ppo_update_count >= 5:
             recent_ent = mean_or_default(u.entropy for u in self._ppo_history[-3:])
             if recent_ent < 0.1:
                 flags.append(

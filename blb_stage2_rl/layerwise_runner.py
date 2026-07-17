@@ -1865,6 +1865,7 @@ def train_layerwise(
         ppo_update_fn: Optional[Callable[..., Mapping[str, Any]]] = None,
         assess_candidate_fn: Callable[..., Any] = assess_candidate,
         step_adapter_fn: Optional[Callable[[Any, int, int], tuple[np.ndarray, np.ndarray]]] = None,
+        retain_history: bool = True,
         ) -> dict[str, Any]:
     """Collect 12-step layerwise episodes and update the shared PPO policy."""
     if identity_context is None:
@@ -2384,7 +2385,8 @@ def train_layerwise(
         local_episode += 1
         completed = local_episode
         # The environment's direct terminal return is the PPO source of truth.
-        rewards.append(episode_reward)
+        if retain_history:
+            rewards.append(episode_reward)
         entropy_snapshot = {
             "block4": None, "k": None,
             "block4_slot_count": 0, "k_slot_count": 0,
@@ -2608,7 +2610,8 @@ def train_layerwise(
                     accepted_candidates
                 ),
             })
-            ppo_diagnostics.append(ppo_metrics)
+            if retain_history:
+                ppo_diagnostics.append(ppo_metrics)
 
         invalid_steps = sum(
             not bool(_field(info.get("layer_summary", {}), "all_valid", True))
@@ -2616,7 +2619,7 @@ def train_layerwise(
         )
         record = LayerwiseEpisodeRecord(
             episode_index=absolute_episode,
-            reward=float(rewards[-1]),
+            reward=float(episode_reward),
             priority=priority,
             action_matrix=action_matrix,
             pending_full_vector=full_vector,
@@ -2700,7 +2703,8 @@ def train_layerwise(
                 else tuple(convergence_state.best_robust_feasible_objective)
             ),
         )
-        records.append(record)
+        if retain_history:
+            records.append(record)
         if on_episode_end is not None:
             on_episode_end(record)
         if update_due:
