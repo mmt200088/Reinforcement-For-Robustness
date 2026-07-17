@@ -1127,6 +1127,171 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 run_context_hash="run-a",
             )
 
+    def test_layerwise_checkpoint_metadata_allows_only_explicit_legacy_context(self):
+        from blb_stage2_rl.layerwise_runner import (
+            validate_layerwise_checkpoint_metadata,
+        )
+
+        checkpoint = {
+            "rl_variant": "layerwise",
+            "algorithm_revision": "v3",
+            "algorithm_contract_hash": "algorithm-a",
+            "run_context_hash": "legacy-context",
+        }
+        validate_layerwise_checkpoint_metadata(
+            checkpoint,
+            rl_variant="layerwise",
+            algorithm_revision="v3",
+            algorithm_contract_hash="algorithm-a",
+            run_context_hash="current-context",
+            compatible_run_context_hashes=("legacy-context",),
+        )
+        with self.assertRaisesRegex(RuntimeError, "run context"):
+            validate_layerwise_checkpoint_metadata(
+                {**checkpoint, "run_context_hash": "foreign-context"},
+                rl_variant="layerwise",
+                algorithm_revision="v3",
+                algorithm_contract_hash="algorithm-a",
+                run_context_hash="current-context",
+                compatible_run_context_hashes=("legacy-context",),
+            )
+        with self.assertRaisesRegex(RuntimeError, "algorithm contract"):
+            validate_layerwise_checkpoint_metadata(
+                {**checkpoint, "algorithm_contract_hash": "algorithm-b"},
+                rl_variant="layerwise",
+                algorithm_revision="v3",
+                algorithm_contract_hash="algorithm-a",
+                run_context_hash="current-context",
+                compatible_run_context_hashes=("legacy-context",),
+            )
+
+    def test_legacy_probe_batch_context_hash_removes_only_new_evidence_fields(self):
+        from blb_stage2_rl.candidate_store import sha256_json
+        from blb_stage2_rl.sequential_runner import _legacy_probe_batch_run_context_hash
+
+        run_context = {
+            "schema_version": "stage2_layerwise_run_context_v1",
+            "algorithm_contract_hash": "algorithm-a",
+            "candidate_identity_context": {"profile": "mrpc"},
+            "training_settings": {
+                "rollout_size": 120,
+                "evidence_tiers": {
+                    "F1": {
+                        "example_count": 256,
+                        "probe_batch_size": 64,
+                        "probe_batch_count": 4,
+                        "trials_per_episode": 5,
+                    },
+                    "F4": {
+                        "example_count": 408,
+                        "probe_batch_size": 64,
+                        "probe_batch_count": 7,
+                        "promotion_trial_count": 25,
+                    },
+                },
+            },
+        }
+        expected_legacy_context = {
+            **run_context,
+            "training_settings": {
+                **run_context["training_settings"],
+                "evidence_tiers": {
+                    "F1": {
+                        "example_count": 256,
+                        "trials_per_episode": 5,
+                    },
+                    "F4": {
+                        "example_count": 408,
+                        "promotion_trial_count": 25,
+                    },
+                },
+            },
+        }
+
+        self.assertEqual(
+            _legacy_probe_batch_run_context_hash(run_context),
+            sha256_json(expected_legacy_context),
+        )
+        self.assertIn(
+            "probe_batch_size",
+            run_context["training_settings"]["evidence_tiers"]["F1"],
+        )
+        changed_context = json.loads(json.dumps(run_context))
+        changed_context["training_settings"]["rollout_size"] = 121
+        self.assertNotEqual(
+            _legacy_probe_batch_run_context_hash(run_context),
+            _legacy_probe_batch_run_context_hash(changed_context),
+        )
+
+    def test_legacy_probe_batch_compatibility_requires_both_fidelities_match_fallback(self):
+        from blb_stage2_rl.sequential_runner import (
+            _probe_batches_match_legacy_fallback,
+        )
+
+        evaluator = types.SimpleNamespace(batch_size=64)
+        self.assertTrue(_probe_batches_match_legacy_fallback(
+            types.SimpleNamespace(
+                probe_batch_size=None,
+                validation_probe_batch_size=None,
+            ),
+            evaluator,
+        ))
+        self.assertTrue(_probe_batches_match_legacy_fallback(
+            types.SimpleNamespace(
+                probe_batch_size=64,
+                validation_probe_batch_size=64,
+            ),
+            evaluator,
+        ))
+        for train_cfg in (
+                types.SimpleNamespace(
+                    probe_batch_size=128,
+                    validation_probe_batch_size=64,
+                ),
+                types.SimpleNamespace(
+                    probe_batch_size=64,
+                    validation_probe_batch_size=256,
+                ),
+        ):
+            with self.subTest(train_cfg=train_cfg):
+                self.assertFalse(
+                    _probe_batches_match_legacy_fallback(train_cfg, evaluator),
+                )
+
+    def test_probe_batch_metadata_stays_out_of_algorithm_contract_and_migrates_resume(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        algorithm_contract = source[
+            source.index("algorithm_contract = {"):
+            source.index("algorithm_contract_hash = sha256_json(algorithm_contract)")
+        ]
+        run_context = source[
+            source.index("run_context = build_layerwise_run_context("):
+            source.index("run_context_hash = sha256_json(run_context)")
+        ]
+        run_manifest = source[
+            source.index("run_manifest = {"):
+            source.index("torch.manual_seed", source.index("run_manifest = {"))
+        ]
+        diagnostics_meta = source[
+            source.index("diag_recorder.set_meta({"):
+            source.index("})", source.index("diag_recorder.set_meta({"))
+        ]
+        branch = source[
+            source.index("def _run_layerwise_training_branch("):
+            source.index("def run_sequential_via_runner(")
+        ]
+
+        for field_name in ("probe_batch_size", "probe_batch_count"):
+            self.assertNotIn(field_name, algorithm_contract)
+            self.assertIn(field_name, run_context)
+            self.assertIn(field_name, run_manifest)
+            self.assertIn(field_name, diagnostics_meta)
+        self.assertIn("compatible_run_context_hashes=", branch)
+        self.assertIn('"run_context": run_context', branch)
+        self.assertIn('"run_context_hash": run_context_hash', branch)
+
     def test_layerwise_checkpoint_contract_fails_before_mutating_training_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
