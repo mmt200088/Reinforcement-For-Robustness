@@ -43,8 +43,10 @@ _LAUNCHER_LOCK_FD_ENV = "BLB_STAGE2_RUN_LOCK_FD"
 _LAUNCHER_LOCK_PATH_ENV = "BLB_STAGE2_RUN_LOCK_PATH"
 DEFAULT_CONVERGENCE_PATIENCE_UPDATES = 100
 StrictSelectionKey = tuple[tuple[float, ...], tuple[int, ...], str]
+ResourceObjective = tuple[float, float]
 _FINAL_REVALIDATION_PASSED = "final_revalidation_passed"
 _FINAL_REVALIDATION_FAILED = "final_revalidation_failed"
+_UNSET = object()
 
 
 def evidence_identity_context(
@@ -502,15 +504,66 @@ def _constraint_safety_margins(candidate: Any) -> tuple[float, ...]:
     return margins
 
 
+def _resource_fields_from_action_matrix(
+        action_matrix: Sequence[Sequence[int]],
+        ) -> dict[str, Any]:
+    objective = compute_variable_cost_from_action_matrix(action_matrix)
+    return {
+        "compute_saving": float(objective.compute_saving),
+        "communication_saving": float(objective.communication_saving),
+        "robust_floor": float(objective.robust_floor),
+        "secondary_progress": float(objective.secondary_progress),
+        "ppo_resource_score": float(objective.ppo_resource_score),
+        "compute_shapley_credit": float(objective.compute_shapley_credit),
+        "communication_shapley_credit": float(
+            objective.communication_shapley_credit
+        ),
+        "fusion_count": int(objective.fusion_count),
+        "removed_k_bits": int(objective.removed_k_bits),
+        "layer_resource_rewards": [
+            float(value) for value in objective.layer_resource_rewards
+        ],
+        "slot_resource_rewards": [
+            [float(value) for value in row]
+            for row in objective.slot_resource_rewards
+        ],
+    }
+
+
+def _candidate_resource_fields(candidate: Any) -> dict[str, Any]:
+    action_matrix = _field(candidate, "action_matrix")
+    if action_matrix is not None:
+        return _resource_fields_from_action_matrix(action_matrix)
+    compute = _field(candidate, "compute_saving")
+    communication = _field(candidate, "communication_saving")
+    if compute is None or communication is None:
+        # Read-only compatibility for pre-v9 unit tests/report fixtures.  Live
+        # candidates always carry an action matrix and are recomputed above.
+        legacy = _finite(_field(candidate, "variable_cost"), name="variable_cost")
+        compute = communication = legacy
+    compute_value = _finite(compute, name="compute_saving")
+    communication_value = _finite(communication, name="communication_saving")
+    if not 0.0 <= compute_value <= 1.0 or not 0.0 <= communication_value <= 1.0:
+        raise ValueError("resource savings must be in [0, 1]")
+    return {
+        "compute_saving": compute_value,
+        "communication_saving": communication_value,
+        "robust_floor": min(compute_value, communication_value),
+        "secondary_progress": 0.5 * (compute_value + communication_value),
+    }
+
+
 def strict_rank_key(candidate: Any) -> tuple[float, ...]:
     """Ascending sort key for robust-feasible layerwise candidates."""
     assessment = _field(candidate, "assessment")
     probabilities = _assessment_probabilities(assessment)
     margins = _constraint_safety_margins(candidate)
+    resource = _candidate_resource_fields(candidate)
     confidence_order = tuple(-value for value in sorted(probabilities))
     margin_order = tuple(-value for value in sorted(margins))
     return (
-        -_finite(_field(candidate, "variable_cost"), name="variable_cost"),
+        -resource["robust_floor"],
+        -resource["secondary_progress"],
         *confidence_order,
         *margin_order,
     )
@@ -542,6 +595,35 @@ def strict_selection_key_from_snapshot(
     return strict_selection_key(snapshot["candidate_key"], snapshot)
 
 
+def strict_resource_pareto_frontier(
+        candidates: Mapping[str, Mapping[str, Any]],
+        ) -> dict[str, Mapping[str, Any]]:
+    """Return deterministic strict-feasible non-dominated F/C candidates."""
+    rows = []
+    for identity, candidate in candidates.items():
+        resource = _candidate_resource_fields(candidate)
+        rows.append((str(identity), candidate, resource))
+    frontier = []
+    for identity, candidate, resource in rows:
+        dominated = any(
+            other_resource["compute_saving"] >= resource["compute_saving"] - 1.0e-12
+            and other_resource["communication_saving"]
+            >= resource["communication_saving"] - 1.0e-12
+            and (
+                other_resource["compute_saving"]
+                > resource["compute_saving"] + 1.0e-12
+                or other_resource["communication_saving"]
+                > resource["communication_saving"] + 1.0e-12
+            )
+            for other_identity, _other, other_resource in rows
+            if other_identity != identity
+        )
+        if not dominated:
+            frontier.append((identity, candidate))
+    frontier.sort(key=lambda item: strict_selection_key(item[0], item[1]))
+    return {identity: candidate for identity, candidate in frontier}
+
+
 def _strict_best_snapshot(
         accepted_candidates: Mapping[str, Mapping[str, Any]],
         ) -> Optional[dict[str, Any]]:
@@ -552,6 +634,7 @@ def _strict_best_snapshot(
         accepted_candidates.items(),
         key=lambda item: strict_selection_key(item[0], item[1]),
     )
+    resource = _candidate_resource_fields(best)
     promotion_trials = best.get("promotion_trials")
     promotion_evidence = None
     if isinstance(promotion_trials, TrialSeries):
@@ -572,7 +655,10 @@ def _strict_best_snapshot(
         "full_vector": list(best["full_vector"]),
         "assessment": _to_plain_mapping(best["assessment"]),
         "metrics": dict(best["metrics"]),
-        "variable_cost": float(best["variable_cost"]),
+        **resource,
+        "variable_cost": float(resource.get(
+            "ppo_resource_score", _field(best, "variable_cost", 0.0),
+        )),
         "constraint_safety_margins": list(
             _constraint_safety_margins(best)
         ),
@@ -582,6 +668,16 @@ def _strict_best_snapshot(
         "boosted_overrides": copy.deepcopy(best["boosted_overrides"]),
         "promotion_evidence": promotion_evidence,
     }
+
+
+def _strict_pareto_snapshots(
+        accepted_candidates: Mapping[str, Mapping[str, Any]],
+        ) -> list[dict[str, Any]]:
+    frontier = strict_resource_pareto_frontier(accepted_candidates)
+    return [
+        _strict_best_snapshot({identity: candidate})
+        for identity, candidate in frontier.items()
+    ]
 
 
 def normalized_entropy_snapshot(
@@ -665,12 +761,72 @@ class LayerwiseConvergenceState:
     stall_update_windows: int
     converged: bool
     extension_required: bool
-    best_robust_feasible_cost: Optional[float]
+    best_robust_feasible_objective: Optional[ResourceObjective]
     selected_action_identity: Optional[str]
     selected_action_stable_update_windows: int
     plateau_ready: bool
     strict_revalidation_passed: bool
     termination_reason: str
+
+    @property
+    def best_robust_feasible_cost(self) -> Optional[float]:
+        """Read-only compatibility alias for older report fixtures."""
+        if self.best_robust_feasible_objective is None:
+            return None
+        return float(self.best_robust_feasible_objective[0])
+
+
+def _normalize_resource_objective(
+        value: Optional[Sequence[float]],
+        *,
+        name: str,
+        ) -> Optional[ResourceObjective]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        legacy = _finite(value, name=name)
+        value = (legacy, legacy)
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise ValueError(f"{name} must contain robust_floor and secondary_progress")
+    values = tuple(
+        _finite(item, name=f"{name}[{index}]")
+        for index, item in enumerate(value)
+    )
+    if len(values) != 2:
+        raise ValueError(f"{name} must contain exactly two values")
+    robust_floor, secondary_progress = values
+    if not 0.0 <= robust_floor <= secondary_progress <= 1.0:
+        raise ValueError(
+            f"{name} must satisfy 0 <= robust_floor <= secondary_progress <= 1"
+        )
+    return float(robust_floor), float(secondary_progress)
+
+
+def _resolve_resource_objective(
+        objective: Optional[Sequence[float]],
+        legacy_cost: Any,
+        ) -> Optional[ResourceObjective]:
+    if legacy_cost is not _UNSET:
+        if objective is not None:
+            raise ValueError(
+                "provide robust_feasible_objective, not robust_feasible_cost"
+            )
+        if legacy_cost is None:
+            return None
+        cost = _finite(legacy_cost, name="robust_feasible_cost")
+        objective = (cost, cost)
+    return _normalize_resource_objective(
+        objective, name="robust_feasible_objective",
+    )
+
+
+def _objective_compare(left: ResourceObjective, right: ResourceObjective) -> int:
+    for left_value, right_value in zip(left, right):
+        if left_value > right_value + 1.0e-12:
+            return 1
+        if left_value < right_value - 1.0e-12:
+            return -1
+    return 0
 
 
 class LayerwiseConvergenceTracker:
@@ -684,17 +840,32 @@ class LayerwiseConvergenceTracker:
         self.patience_updates = int(patience_updates)
         if self.patience_updates <= 0:
             raise ValueError("patience_updates must be positive")
-        self._best_cost: Optional[float] = None
-        self._current_frontier_cost: Optional[float] = None
+        self._best_objective: Optional[ResourceObjective] = None
+        self._current_frontier_objective: Optional[ResourceObjective] = None
         self._stall_windows = 0
         self._selected_action_identity: Optional[str] = None
         self._selected_action_stable_windows = 0
 
     def state_dict(self) -> dict[str, Any]:
+        best = (
+            None if self._best_objective is None else list(self._best_objective)
+        )
+        current = (
+            None
+            if self._current_frontier_objective is None
+            else list(self._current_frontier_objective)
+        )
         return {
             "patience_updates": int(self.patience_updates),
-            "best_robust_feasible_cost": self._best_cost,
-            "current_robust_feasible_cost": self._current_frontier_cost,
+            "best_robust_feasible_objective": best,
+            "current_robust_feasible_objective": current,
+            # Read-only aliases retained until report fixtures migrate to v9.
+            "best_robust_feasible_cost": (
+                None if best is None else float(best[0])
+            ),
+            "current_robust_feasible_cost": (
+                None if current is None else float(current[0])
+            ),
             "stall_update_windows": int(self._stall_windows),
             "selected_action_identity": self._selected_action_identity,
             "selected_action_stable_update_windows": int(
@@ -718,14 +889,21 @@ class LayerwiseConvergenceTracker:
                     "layerwise convergence contract mismatch: "
                     f"{field_name} checkpoint={observed!r}, requested={expected!r}"
                 )
-        best_cost = state.get("best_robust_feasible_cost")
-        self._best_cost = (
-            None if best_cost is None else _finite(best_cost, name="best_robust_feasible_cost")
+        raw_best = state.get("best_robust_feasible_objective", _UNSET)
+        if raw_best is _UNSET:
+            legacy_best = state.get("best_robust_feasible_cost")
+            raw_best = None if legacy_best is None else (legacy_best, legacy_best)
+        self._best_objective = _normalize_resource_objective(
+            raw_best, name="best_robust_feasible_objective",
         )
-        current_cost = state.get("current_robust_feasible_cost")
-        self._current_frontier_cost = (
-            None if current_cost is None
-            else _finite(current_cost, name="current_robust_feasible_cost")
+        raw_current = state.get("current_robust_feasible_objective", _UNSET)
+        if raw_current is _UNSET:
+            legacy_current = state.get("current_robust_feasible_cost")
+            raw_current = (
+                None if legacy_current is None else (legacy_current, legacy_current)
+            )
+        self._current_frontier_objective = _normalize_resource_objective(
+            raw_current, name="current_robust_feasible_objective",
         )
         stall_windows = int(state.get("stall_update_windows", 0))
         if stall_windows < 0:
@@ -747,28 +925,32 @@ class LayerwiseConvergenceTracker:
 
     def reconcile_frontier(
             self,
-            robust_feasible_cost: Optional[float],
+            robust_feasible_objective: Optional[Sequence[float]] = None,
             robust_feasible_action_identity: Optional[str] = None,
+            *,
+            robust_feasible_cost: Any = _UNSET,
             ) -> None:
         """Align restored convergence state with the revalidated frontier."""
-        if robust_feasible_cost is None:
+        objective = _resolve_resource_objective(
+            robust_feasible_objective, robust_feasible_cost,
+        )
+        if objective is None:
             if robust_feasible_action_identity is not None:
                 raise ValueError("selected action identity requires a feasible frontier")
-            self._current_frontier_cost = None
+            self._current_frontier_objective = None
             self._stall_windows = 0
             self._selected_action_identity = None
             self._selected_action_stable_windows = 0
             return
-        cost = _finite(robust_feasible_cost, name="robust_feasible_cost")
         if (
-                self._current_frontier_cost is None
-                or not math.isclose(
-                    cost, self._current_frontier_cost, rel_tol=0.0, abs_tol=1.0e-12,
-                )
+                self._current_frontier_objective is None
+                or _objective_compare(
+                    objective, self._current_frontier_objective,
+                ) != 0
         ):
-            self._best_cost = cost
+            self._best_objective = objective
             self._stall_windows = 0
-        self._current_frontier_cost = cost
+        self._current_frontier_objective = objective
 
         selected_identity = (
             None
@@ -787,35 +969,43 @@ class LayerwiseConvergenceTracker:
             completed_episodes: int,
             block4_entropy: Optional[float],
             k_entropy: Optional[float],
-            robust_feasible_cost: Optional[float],
+            robust_feasible_objective: Optional[Sequence[float]] = None,
             robust_feasible_action_identity: Optional[str] = None,
             count_patience: bool = True,
             strict_revalidation_passed: bool = False,
+            robust_feasible_cost: Any = _UNSET,
             ) -> LayerwiseConvergenceState:
         episodes = int(completed_episodes)
-        if robust_feasible_cost is None:
+        objective = _resolve_resource_objective(
+            robust_feasible_objective, robust_feasible_cost,
+        )
+        if objective is None:
             if robust_feasible_action_identity is not None:
                 raise ValueError("selected action identity requires a feasible frontier")
-            self._current_frontier_cost = None
+            self._current_frontier_objective = None
             self._stall_windows = 0
             self._selected_action_identity = None
             self._selected_action_stable_windows = 0
         else:
-            cost = _finite(robust_feasible_cost, name="robust_feasible_cost")
-            frontier_restarted = self._current_frontier_cost is None
+            frontier_restarted = self._current_frontier_objective is None
             frontier_retracted = bool(
-                self._current_frontier_cost is not None
-                and cost < self._current_frontier_cost - 1.0e-12
+                self._current_frontier_objective is not None
+                and _objective_compare(
+                    objective, self._current_frontier_objective,
+                ) < 0
             )
             if frontier_restarted or frontier_retracted:
-                self._best_cost = cost
+                self._best_objective = objective
                 self._stall_windows = 0
-            elif self._best_cost is None or cost > self._best_cost + 1.0e-12:
-                self._best_cost = cost
+            elif (
+                    self._best_objective is None
+                    or _objective_compare(objective, self._best_objective) > 0
+            ):
+                self._best_objective = objective
                 self._stall_windows = 0
             elif count_patience:
                 self._stall_windows += 1
-            self._current_frontier_cost = cost
+            self._current_frontier_objective = objective
 
             selected_identity = (
                 None
@@ -833,8 +1023,8 @@ class LayerwiseConvergenceTracker:
         b4 = _diagnostic_entropy(block4_entropy)
         k_value = _diagnostic_entropy(k_entropy)
         plateau_ready = bool(
-            robust_feasible_cost is not None
-            and self._best_cost is not None
+            objective is not None
+            and self._best_objective is not None
             and self._stall_windows >= self.patience_updates
             and self._selected_action_identity is not None
             and self._selected_action_stable_windows >= self.patience_updates
@@ -847,7 +1037,7 @@ class LayerwiseConvergenceTracker:
             block4_entropy=b4,
             k_entropy=k_value,
             stall_update_windows=int(self._stall_windows),
-            best_robust_feasible_cost=self._best_cost,
+            best_robust_feasible_objective=self._best_objective,
             selected_action_identity=self._selected_action_identity,
             selected_action_stable_update_windows=int(
                 self._selected_action_stable_windows
@@ -1074,6 +1264,7 @@ def _record_final_revalidation_outcome(
         ) -> None:
     """Persist the final verdict on the base F4 identity for honest resume."""
     action_indices = tuple(int(value) for value in candidate["full_vector"])
+    resource = _resource_fields_from_action_matrix(candidate["action_matrix"])
     metadata = {
         "final_revalidation_identity_context": evidence_identity_context(
             revalidation_identity_context, "F4",
@@ -1082,7 +1273,8 @@ def _record_final_revalidation_outcome(
         "final_revalidation_trial_count": int(final_trial_count),
         "revalidation_status": str(revalidation_status),
         "assessment_bootstrap_seed": int(bootstrap_seed),
-        "variable_cost": _finite(candidate["variable_cost"], name="variable_cost"),
+        **resource,
+        "variable_cost": float(resource["ppo_resource_score"]),
         "action_matrix": [
             list(map(int, row)) for row in candidate["action_matrix"]
         ],
@@ -1192,7 +1384,7 @@ def restore_promoted_candidates(
             if name in promotion_metadata:
                 metadata[name] = promotion_metadata[name]
         if not all(name in metadata for name in (
-                "action_matrix", "variable_cost", "boosted_overrides",
+                "action_matrix", "boosted_overrides",
         )):
             continue
         assessment = assess_candidate_fn(
@@ -1209,13 +1401,12 @@ def restore_promoted_candidates(
         )
         if len(action_matrix) != 12 or any(len(row) != 6 for row in action_matrix):
             raise ValueError("persisted layerwise action_matrix must be 12x6")
-        variable_cost = compute_variable_cost_from_action_matrix(
-            action_matrix,
-        ).normalized
+        resource = _resource_fields_from_action_matrix(action_matrix)
         reward = metadata.get("episode_reward")
         restored_metrics = _metrics_from_trials(evidence.trials)
         restored[key] = {
-            "variable_cost": float(variable_cost),
+            **resource,
+            "variable_cost": float(resource["ppo_resource_score"]),
             "assessment": assessment,
             "metrics": restored_metrics,
             "constraint_safety_margins": normalized_constraint_safety_margins(
@@ -1283,8 +1474,9 @@ def promote_candidate_if_eligible(
         action_matrix: Sequence[Sequence[int]],
         assessment: Any,
         priority: int,
-        variable_cost: float,
+        variable_cost: Optional[float],
         frontier_cost: Optional[float],
+        frontier_candidates: Optional[Mapping[str, Mapping[str, Any]]] = None,
         boosted_overrides: Mapping[Any, Any],
         bootstrap_seed: int,
         episode_reward: Optional[float] = None,
@@ -1336,10 +1528,37 @@ def promote_candidate_if_eligible(
             "promotion_probability_below_gate", trial_count, 0,
             evidence, assessment, pooled_metrics,
         )
-    cost = _finite(variable_cost, name="variable_cost")
-    if frontier_cost is not None and cost < float(frontier_cost) - 1.0e-12:
+    resource = _resource_fields_from_action_matrix(action_matrix)
+    cost = float(resource["ppo_resource_score"])
+    dominated = False
+    if frontier_candidates is not None:
+        compute = float(resource["compute_saving"])
+        communication = float(resource["communication_saving"])
+        dominated = any(
+            other["compute_saving"] >= compute - 1.0e-12
+            and other["communication_saving"] >= communication - 1.0e-12
+            and (
+                other["compute_saving"] > compute + 1.0e-12
+                or other["communication_saving"] > communication + 1.0e-12
+            )
+            for other in (
+                _candidate_resource_fields(candidate)
+                for candidate in frontier_candidates.values()
+            )
+        )
+    elif frontier_cost is not None:
+        # Compatibility path for isolated pre-v9 test fixtures only.  The live
+        # trainer always supplies frontier_candidates and uses F/C dominance.
+        legacy_cost = _finite(variable_cost, name="variable_cost")
+        dominated = legacy_cost < float(frontier_cost) - 1.0e-12
+    if dominated:
         return PromotionResult(
-            "not_frontier_improvement", trial_count, 0,
+            (
+                "resource_dominated"
+                if frontier_candidates is not None
+                else "not_frontier_improvement"
+            ),
+            trial_count, 0,
             evidence, assessment, pooled_metrics,
         )
     target = int(target_trial_count)
@@ -1361,6 +1580,7 @@ def promote_candidate_if_eligible(
     status_metadata = {
         "existing_trial_count": int(trial_count),
         "requested_fresh_trial_count": int(fresh_count),
+        **resource,
         "variable_cost": float(cost),
         "assessment_bootstrap_seed": int(bootstrap_seed),
         "action_matrix": [list(map(int, row)) for row in action_matrix],
@@ -1395,6 +1615,7 @@ def promote_candidate_if_eligible(
                     list(action_indices),
                     external_cost_score=cost,
                     external_cost_rank=cost,
+                    external_resource_objective=resource,
                     boosted_overrides=copy.deepcopy(dict(boosted_overrides)),
                 )
                 evaluated = full_base_env.evaluate_prepared_terminal_batch(
@@ -1434,6 +1655,7 @@ def promote_candidate_if_eligible(
                 {
                     "identity_context": full_identity_context,
                     "fidelity": "F4",
+                    **resource,
                     "variable_cost": float(cost),
                     "action_matrix": [list(map(int, row)) for row in action_matrix],
                     "boosted_overrides_hash": sha256_json(boosted_overrides),
@@ -1663,6 +1885,9 @@ def train_layerwise(
         final_probability=final_probability,
         final_assessment_trial_limit=final_validation_trials,
     )
+    accepted_candidates = dict(
+        strict_resource_pareto_frontier(accepted_candidates)
+    )
     convergence_resume_state = getattr(train_cfg, "convergence_resume_state", None)
     convergence_resume_state = (
         dict(convergence_resume_state)
@@ -1673,16 +1898,19 @@ def train_layerwise(
     )
     convergence_tracker.load_state_dict(convergence_resume_state)
     restored_strict_best = _strict_best_snapshot(accepted_candidates)
-    restored_frontier_cost = (
+    restored_frontier_objective = (
         None if restored_strict_best is None
-        else float(restored_strict_best["variable_cost"])
+        else (
+            float(restored_strict_best["robust_floor"]),
+            float(restored_strict_best["secondary_progress"]),
+        )
     )
     restored_selected_identity = (
         None if restored_strict_best is None
         else str(restored_strict_best["candidate_key"])
     )
     convergence_tracker.reconcile_frontier(
-        restored_frontier_cost,
+        restored_frontier_objective,
         restored_selected_identity,
     )
     restored_tracker_state = convergence_tracker.state_dict()
@@ -1690,7 +1918,7 @@ def train_layerwise(
     restored_k_entropy = convergence_resume_state.get("k_entropy")
     restored_converged = bool(
         unbounded_training
-        and restored_frontier_cost is not None
+        and restored_frontier_objective is not None
         and restored_selected_identity is not None
         and restored_tracker_state["selected_action_identity"]
         == restored_selected_identity
@@ -1703,7 +1931,7 @@ def train_layerwise(
         and convergence_resume_state.get("converged", False)
     )
     restored_plateau_ready = bool(
-        restored_frontier_cost is not None
+        restored_frontier_objective is not None
         and restored_selected_identity is not None
         and int(restored_tracker_state["stall_update_windows"])
         >= convergence_patience_updates
@@ -1723,7 +1951,11 @@ def train_layerwise(
         block4_entropy=_diagnostic_entropy(restored_block4_entropy),
         k_entropy=_diagnostic_entropy(restored_k_entropy),
         stall_update_windows=int(restored_tracker_state["stall_update_windows"]),
-        best_robust_feasible_cost=restored_tracker_state["best_robust_feasible_cost"],
+        best_robust_feasible_objective=(
+            None
+            if restored_tracker_state["best_robust_feasible_objective"] is None
+            else tuple(restored_tracker_state["best_robust_feasible_objective"])
+        ),
         selected_action_identity=restored_tracker_state["selected_action_identity"],
         selected_action_stable_update_windows=int(
             restored_tracker_state["selected_action_stable_update_windows"]
@@ -1898,8 +2130,36 @@ def train_layerwise(
                 abs_tol=1.0e-9,
         ):
             raise RuntimeError("K slots do not sum to communication Shapley credit")
-        # Transitional scalar alias for candidate persistence.  Exact ranking
-        # is replaced by the F/C/B/S tuple in the next contract step.
+        exact_resource = _resource_fields_from_action_matrix(action_matrix)
+        for field_name in (
+                "compute_saving",
+                "communication_saving",
+                "robust_floor",
+                "secondary_progress",
+                "ppo_resource_score",
+                "compute_shapley_credit",
+                "communication_shapley_credit",
+        ):
+            observed = _finite(
+                _field(resource_objective, field_name), name=field_name,
+            )
+            if not math.isclose(
+                    observed, float(exact_resource[field_name]),
+                    rel_tol=0.0, abs_tol=1.0e-9,
+            ):
+                raise RuntimeError(
+                    f"terminal {field_name} does not match action-matrix objective"
+                )
+        if not np.allclose(
+                np.asarray(slot_resource_rewards, dtype=np.float64),
+                np.asarray(exact_resource["slot_resource_rewards"], dtype=np.float64),
+                rtol=0.0,
+                atol=1.0e-9,
+        ):
+            raise RuntimeError(
+                "terminal slot_resource_rewards do not match action-matrix objective"
+            )
+        ppo_resource_score = float(exact_resource["ppo_resource_score"])
         variable_cost = ppo_resource_score
         breakdown = runtime_info.get("reward_breakdown")
         priority = int(_field(breakdown, "priority", runtime_info.get("priority", 0)))
@@ -1959,6 +2219,7 @@ def train_layerwise(
                     "identity_context": probe_identity_context,
                     "fidelity": "F1",
                     "episode_index": int(absolute_episode),
+                    **exact_resource,
                     "variable_cost": float(variable_cost),
                     "action_matrix": [list(row) for row in action_matrix],
                     "boosted_overrides_hash": sha256_json(
@@ -1987,10 +2248,6 @@ def train_layerwise(
             )
             pooled_metrics = _metrics_from_trials(evidence.trials)
             pooled_trials = evidence.trials
-            frontier_cost = (
-                max(row["variable_cost"] for row in accepted_candidates.values())
-                if accepted_candidates else None
-            )
             promotion = promote_candidate_if_eligible(
                 env=env,
                 promotion_base_env=authoritative_base_env,
@@ -2001,7 +2258,8 @@ def train_layerwise(
                 assessment=pooled_assessment,
                 priority=priority,
                 variable_cost=variable_cost,
-                frontier_cost=frontier_cost,
+                frontier_cost=None,
+                frontier_candidates=accepted_candidates,
                 boosted_overrides=getattr(env, "boosted_overrides", {}),
                 bootstrap_seed=bootstrap_seed,
                 episode_reward=episode_reward,
@@ -2022,6 +2280,7 @@ def train_layerwise(
             ):
                 existing_candidate = accepted_candidates.get(candidate_key_value)
                 accepted_candidates[candidate_key_value] = {
+                    **exact_resource,
                     "variable_cost": float(variable_cost),
                     "assessment": promotion.assessment,
                     "metrics": dict(promotion.metrics or {}),
@@ -2044,6 +2303,9 @@ def train_layerwise(
                     ),
                     "promotion_trials": promotion.evidence.trials,
                 }
+                accepted_candidates = dict(
+                    strict_resource_pareto_frontier(accepted_candidates)
+                )
 
         local_episode += 1
         completed = local_episode
@@ -2072,9 +2334,12 @@ def train_layerwise(
             )
             entropy_snapshot = _current_policy_entropy(policy, entropy_samples, device)
             strict_best_snapshot = _strict_best_snapshot(accepted_candidates)
-            best_cost = (
+            best_objective = (
                 None if strict_best_snapshot is None
-                else float(strict_best_snapshot["variable_cost"])
+                else (
+                    float(strict_best_snapshot["robust_floor"]),
+                    float(strict_best_snapshot["secondary_progress"]),
+                )
             )
             best_action_identity = (
                 None if strict_best_snapshot is None
@@ -2084,7 +2349,7 @@ def train_layerwise(
                 completed_episodes=absolute_start + completed,
                 block4_entropy=entropy_snapshot["block4"],
                 k_entropy=entropy_snapshot["k"],
-                robust_feasible_cost=best_cost,
+                robust_feasible_objective=best_objective,
                 robust_feasible_action_identity=best_action_identity,
                 count_patience=convergence_update_counted,
             )
@@ -2117,6 +2382,7 @@ def train_layerwise(
                     priority=3,
                     variable_cost=float(strict_best_snapshot["variable_cost"]),
                     frontier_cost=None,
+                    frontier_candidates=None,
                     boosted_overrides=strict_best_snapshot["boosted_overrides"],
                     bootstrap_seed=revalidation_bootstrap_seed,
                     episode_reward=strict_best_snapshot.get("reward"),
@@ -2173,8 +2439,9 @@ def train_layerwise(
                             completed_episodes=absolute_start + completed,
                             block4_entropy=entropy_snapshot["block4"],
                             k_entropy=entropy_snapshot["k"],
-                            robust_feasible_cost=float(
-                                strict_best_snapshot["variable_cost"]
+                            robust_feasible_objective=(
+                                float(strict_best_snapshot["robust_floor"]),
+                                float(strict_best_snapshot["secondary_progress"]),
                             ),
                             robust_feasible_action_identity=selected_key,
                             count_patience=False,
@@ -2191,22 +2458,25 @@ def train_layerwise(
                     strict_best_snapshot = _strict_best_snapshot(accepted_candidates)
 
                 if not convergence_state.converged:
-                    best_cost = (
+                    best_objective = (
                         None if strict_best_snapshot is None
-                        else float(strict_best_snapshot["variable_cost"])
+                        else (
+                            float(strict_best_snapshot["robust_floor"]),
+                            float(strict_best_snapshot["secondary_progress"]),
+                        )
                     )
                     best_action_identity = (
                         None if strict_best_snapshot is None
                         else str(strict_best_snapshot["candidate_key"])
                     )
                     convergence_tracker.reconcile_frontier(
-                        best_cost, best_action_identity,
+                        best_objective, best_action_identity,
                     )
                     convergence_state = convergence_tracker.observe_update(
                         completed_episodes=absolute_start + completed,
                         block4_entropy=entropy_snapshot["block4"],
                         k_entropy=entropy_snapshot["k"],
-                        robust_feasible_cost=best_cost,
+                        robust_feasible_objective=best_objective,
                         robust_feasible_action_identity=best_action_identity,
                         count_patience=False,
                     )
@@ -2252,9 +2522,17 @@ def train_layerwise(
                 "strict_revalidation_status": strict_revalidation_status,
                 "termination_reason": convergence_state.termination_reason,
                 "best_robust_feasible_cost": convergence_state.best_robust_feasible_cost,
+                "best_robust_feasible_objective": (
+                    None
+                    if convergence_state.best_robust_feasible_objective is None
+                    else list(convergence_state.best_robust_feasible_objective)
+                ),
                 "convergence_update_counted": convergence_update_counted,
                 "convergence_state": persisted_convergence_state,
                 "strict_best": strict_best_snapshot,
+                "strict_pareto_frontier": _strict_pareto_snapshots(
+                    accepted_candidates
+                ),
             })
             ppo_diagnostics.append(ppo_metrics)
 
@@ -2342,6 +2620,7 @@ def train_layerwise(
             termination_reason="bounded_budget_exhausted",
         )
     strict_best = _strict_best_snapshot(accepted_candidates)
+    strict_pareto_frontier = _strict_pareto_snapshots(accepted_candidates)
     final_convergence_state = {
         **convergence_tracker.state_dict(),
         "block4_entropy": convergence_state.block4_entropy,
@@ -2355,6 +2634,7 @@ def train_layerwise(
     }
     return {
         "strict_best": strict_best,
+        "strict_pareto_frontier": strict_pareto_frontier,
         "convergence_state": final_convergence_state,
         "best_action": (
             list(strict_best["full_vector"]) if strict_best is not None else None
@@ -2371,6 +2651,26 @@ def train_layerwise(
         ),
         "best_metrics": (
             dict(strict_best["metrics"]) if strict_best is not None else None
+        ),
+        "best_resource_objective": (
+            None
+            if strict_best is None
+            else {
+                field_name: copy.deepcopy(strict_best[field_name])
+                for field_name in (
+                    "compute_saving",
+                    "communication_saving",
+                    "robust_floor",
+                    "secondary_progress",
+                    "ppo_resource_score",
+                    "compute_shapley_credit",
+                    "communication_shapley_credit",
+                    "fusion_count",
+                    "removed_k_bits",
+                    "layer_resource_rewards",
+                    "slot_resource_rewards",
+                )
+            }
         ),
         "best_variable_cost": (
             float(strict_best["variable_cost"]) if strict_best is not None else None

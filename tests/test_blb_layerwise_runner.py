@@ -41,6 +41,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
     @staticmethod
     def _candidate(
             *, cost, probabilities, margins=None, full_vector=None,
+            compute_saving=None, communication_saving=None,
             loss=0.3, metric1=0.9, metric2=0.8,
             ):
         names = (
@@ -51,8 +52,16 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             "metric1_stability_probability",
             "metric2_stability_probability",
         )
+        compute = float(cost if compute_saving is None else compute_saving)
+        communication = float(
+            cost if communication_saving is None else communication_saving
+        )
         return {
             "variable_cost": cost,
+            "compute_saving": compute,
+            "communication_saving": communication,
+            "robust_floor": min(compute, communication),
+            "secondary_progress": 0.5 * (compute + communication),
             "assessment": dict(zip(names, probabilities)),
             "metrics": {
                 "loss_mean": loss,
@@ -64,6 +73,63 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             ),
             "full_vector": list([0] if full_vector is None else full_vector),
         }
+
+    def test_strict_rank_and_pareto_use_both_resource_axes(self):
+        from blb_stage2_rl.layerwise_runner import (
+            strict_rank_key,
+            strict_resource_pareto_frontier,
+        )
+
+        common = {"cost": 0.99, "probabilities": [0.9] * 6}
+        candidates = {
+            "a": self._candidate(
+                **common, compute_saving=0.2, communication_saving=0.9,
+                full_vector=[2],
+            ),
+            "b": self._candidate(
+                **common, compute_saving=0.3, communication_saving=0.3,
+                full_vector=[1],
+            ),
+            "c": self._candidate(
+                **common, compute_saving=0.3, communication_saving=0.5,
+                full_vector=[0],
+            ),
+        }
+
+        self.assertLess(strict_rank_key(candidates["c"]), strict_rank_key(candidates["b"]))
+        self.assertLess(strict_rank_key(candidates["b"]), strict_rank_key(candidates["a"]))
+        frontier = strict_resource_pareto_frontier(candidates)
+        self.assertEqual(list(frontier), ["c", "a"])
+
+    def test_convergence_resets_on_exact_resource_objective_improvement(self):
+        from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
+
+        tracker = LayerwiseConvergenceTracker(patience_updates=2)
+        tracker.observe_update(
+            completed_episodes=120,
+            block4_entropy=0.9,
+            k_entropy=0.9,
+            robust_feasible_objective=(0.2, 0.55),
+            robust_feasible_action_identity="a",
+        )
+        tracker.observe_update(
+            completed_episodes=240,
+            block4_entropy=0.9,
+            k_entropy=0.9,
+            robust_feasible_objective=(0.2, 0.55),
+            robust_feasible_action_identity="a",
+        )
+        improved = tracker.observe_update(
+            completed_episodes=360,
+            block4_entropy=0.9,
+            k_entropy=0.9,
+            robust_feasible_objective=(0.3, 0.3),
+            robust_feasible_action_identity="b",
+        )
+
+        self.assertEqual(improved.stall_update_windows, 0)
+        self.assertEqual(improved.selected_action_stable_update_windows, 0)
+        self.assertEqual(improved.best_robust_feasible_objective, (0.3, 0.3))
 
     def test_strict_rank_orders_cost_then_confidence_then_safety_margin(self):
         from blb_stage2_rl.layerwise_runner import strict_rank_key
@@ -1719,46 +1785,21 @@ class _FakeLayerwiseEnv:
         }
         if self._evidence_mode != "missing":
             self.runtime_terminal_info["statistical_trials"] = statistical_trials
-        from blb_stage2_rl.layerwise_action import (
-            RESOURCE_SECONDARY_EPSILON,
-            dual_resource_score,
-            resource_shapley_credits,
-        )
+        from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
 
-        communication_saving = 0.8
-        compute_saving = (
-            0.4 * (1.0 + RESOURCE_SECONDARY_EPSILON)
-            - 0.5 * RESOURCE_SECONDARY_EPSILON * communication_saving
-        ) / (1.0 + 0.5 * RESOURCE_SECONDARY_EPSILON)
-        robust_floor, secondary_progress, _packed = dual_resource_score(
-            compute_saving, communication_saving,
-        )
-        compute_credit, communication_credit = resource_shapley_credits(
-            compute_saving, communication_saving,
-        )
-        ppo_resource_score = 0.4
-        communication_credit += ppo_resource_score - (
-            compute_credit + communication_credit
-        )
-        slot_resource_rewards = []
-        for layer_idx in range(12):
-            row = [compute_credit / 12.0] + [communication_credit / 59.0] * 5
-            if layer_idx == 0:
-                row[1] = 0.0
-            slot_resource_rewards.append(row)
-        layer_resource_rewards = [sum(row) for row in slot_resource_rewards]
+        objective = compute_variable_cost_from_action_matrix(self.actions)
         resource_objective = {
-            "compute_saving": compute_saving,
-            "communication_saving": communication_saving,
-            "robust_floor": robust_floor,
-            "secondary_progress": secondary_progress,
-            "ppo_resource_score": ppo_resource_score,
-            "compute_shapley_credit": compute_credit,
-            "communication_shapley_credit": communication_credit,
-            "fusion_count": 0,
-            "removed_k_bits": 0,
-            "layer_resource_rewards": layer_resource_rewards,
-            "slot_resource_rewards": slot_resource_rewards,
+            "compute_saving": objective.compute_saving,
+            "communication_saving": objective.communication_saving,
+            "robust_floor": objective.robust_floor,
+            "secondary_progress": objective.secondary_progress,
+            "ppo_resource_score": objective.ppo_resource_score,
+            "compute_shapley_credit": objective.compute_shapley_credit,
+            "communication_shapley_credit": objective.communication_shapley_credit,
+            "fusion_count": objective.fusion_count,
+            "removed_k_bits": objective.removed_k_bits,
+            "layer_resource_rewards": list(objective.layer_resource_rewards),
+            "slot_resource_rewards": [list(row) for row in objective.slot_resource_rewards],
         }
         self.last_resource_objective = resource_objective
         return np.zeros(4, dtype=np.float32), (-5.0 if self._invalid else 7.5), True, {
@@ -1792,6 +1833,23 @@ def _assessment(probability):
         online_precision_pass=probability >= 0.8,
         online_stability_pass=probability >= 0.8,
     )
+
+
+def _resource_objective_for_matrix(action_matrix):
+    from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
+
+    objective = compute_variable_cost_from_action_matrix(action_matrix)
+    return {
+        "compute_saving": objective.compute_saving,
+        "communication_saving": objective.communication_saving,
+        "robust_floor": objective.robust_floor,
+        "secondary_progress": objective.secondary_progress,
+        "ppo_resource_score": objective.ppo_resource_score,
+    }
+
+
+def _fake_policy_action_matrix():
+    return [[1, 0, 4, 3, 2, 1]] + [[1, 5, 4, 3, 2, 1] for _ in range(11)]
 
 
 class LayerwiseRolloutTests(unittest.TestCase):
@@ -1917,9 +1975,14 @@ class LayerwiseRolloutTests(unittest.TestCase):
         }
         config = self._train_cfg(total_episodes=0, update_every=1)
         config.final_selection_validation_trials = 31
+        objective = _resource_objective_for_matrix(action_matrix)
         config.convergence_resume_state = {
-            "best_robust_feasible_cost": 0.4,
-            "current_robust_feasible_cost": 0.4,
+            "best_robust_feasible_objective": [
+                objective["robust_floor"], objective["secondary_progress"],
+            ],
+            "current_robust_feasible_objective": [
+                objective["robust_floor"], objective["secondary_progress"],
+            ],
             "stall_update_windows": 99,
             "selected_action_identity": "frontier",
             "selected_action_stable_update_windows": 99,
@@ -2180,7 +2243,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 "metric1_mean": 0.9,
                 "metric2_mean": 0.8,
             },
-            "action_matrix": [[1, 0, 1, 2, 3, 4] for _ in range(12)],
+            "action_matrix": _fake_policy_action_matrix(),
             "full_vector": list(range(20)),
             "boosted_overrides": {},
             "reward": 1.4,
@@ -2188,9 +2251,14 @@ class LayerwiseRolloutTests(unittest.TestCase):
             "constraint_safety_margins": [0.1] * 6,
         }
         config = self._train_cfg(total_episodes=0, update_every=1)
+        objective = _resource_objective_for_matrix(frontier["action_matrix"])
         config.convergence_resume_state = {
-            "best_robust_feasible_cost": 0.4,
-            "current_robust_feasible_cost": 0.4,
+            "best_robust_feasible_objective": [
+                objective["robust_floor"], objective["secondary_progress"],
+            ],
+            "current_robust_feasible_objective": [
+                objective["robust_floor"], objective["secondary_progress"],
+            ],
             "stall_update_windows": 99,
             "selected_action_identity": "frontier",
             "selected_action_stable_update_windows": 99,
@@ -2475,9 +2543,14 @@ class LayerwiseRolloutTests(unittest.TestCase):
             "constraint_safety_margins": [0.1] * 6,
         }
         config = self._train_cfg(total_episodes=1, update_every=1)
+        objective = _resource_objective_for_matrix(action_matrix)
         config.convergence_resume_state = {
-            "best_robust_feasible_cost": 0.4,
-            "current_robust_feasible_cost": 0.4,
+            "best_robust_feasible_objective": [
+                objective["robust_floor"], objective["secondary_progress"],
+            ],
+            "current_robust_feasible_objective": [
+                objective["robust_floor"], objective["secondary_progress"],
+            ],
             "stall_update_windows": 99,
             "selected_action_identity": "frontier",
             "selected_action_stable_update_windows": 99,
@@ -2718,8 +2791,9 @@ class LayerwiseRolloutTests(unittest.TestCase):
         full_context = evidence_identity_context(context, "F4")
         action = list(range(20))
         expected_identity = candidate_key(action, full_context)
-        matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
-        expected_cost = compute_variable_cost_from_action_matrix(matrix).normalized
+        matrix = _fake_policy_action_matrix()
+        expected_resource = compute_variable_cost_from_action_matrix(matrix)
+        expected_cost = expected_resource.normalized
         with tempfile.TemporaryDirectory() as td:
             store = CandidateStore(Path(td) / "candidates.jsonl")
             store.append_trial_group(
@@ -2753,8 +2827,14 @@ class LayerwiseRolloutTests(unittest.TestCase):
             config.absolute_episode_start = 60_000
             config.planned_total_episodes = 60_000
             config.convergence_resume_state = {
-                "best_robust_feasible_cost": expected_cost,
-                "current_robust_feasible_cost": expected_cost,
+                "best_robust_feasible_objective": [
+                    expected_resource.robust_floor,
+                    expected_resource.secondary_progress,
+                ],
+                "current_robust_feasible_objective": [
+                    expected_resource.robust_floor,
+                    expected_resource.secondary_progress,
+                ],
                 "stall_update_windows": 101,
                 "selected_action_identity": expected_identity,
                 "selected_action_stable_update_windows": 101,
@@ -2885,7 +2965,18 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 )
 
         candidate = next(iter(restored.values()))
+        expected_resource = _resource_objective_for_matrix(matrix)
         self.assertEqual(candidate["reward"], 1.25)
+        self.assertEqual(
+            candidate["ppo_resource_score"],
+            expected_resource["ppo_resource_score"],
+        )
+        self.assertEqual(candidate["variable_cost"], expected_resource["ppo_resource_score"])
+        self.assertEqual(candidate["robust_floor"], expected_resource["robust_floor"])
+        self.assertEqual(
+            candidate["secondary_progress"],
+            expected_resource["secondary_progress"],
+        )
         self.assertEqual(
             candidate["boosted_overrides"],
             {(4, 3): {"v_mask_rescale_sf": 47}},
@@ -2903,7 +2994,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
         action = list(range(20))
-        matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        matrix = _fake_policy_action_matrix()
         expected_cost = compute_variable_cost_from_action_matrix(matrix).normalized
         with tempfile.TemporaryDirectory() as td:
             store = CandidateStore(Path(td) / "candidates.jsonl")
@@ -2963,8 +3054,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
             )
 
         self.assertEqual(summary["completed_episodes"], 60_001)
-        self.assertEqual(summary["best_variable_cost"], 0.4)
-        self.assertEqual(summary["stall_update_windows"], 0)
+        self.assertEqual(summary["best_variable_cost"], expected_cost)
+        self.assertEqual(summary["stall_update_windows"], 1)
         self.assertFalse(summary["converged"])
 
     def test_ppo_update_exposes_current_strict_frontier_snapshot(self):
@@ -2978,7 +3069,8 @@ class LayerwiseRolloutTests(unittest.TestCase):
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
         action = list(range(20))
-        matrix = [[1, 0, 1, 2, 3, 4] for _ in range(12)]
+        matrix = _fake_policy_action_matrix()
+        expected_cost = _resource_objective_for_matrix(matrix)["ppo_resource_score"]
         observed_updates = []
         with tempfile.TemporaryDirectory() as td:
             store = CandidateStore(Path(td) / "candidates.jsonl")
@@ -3027,7 +3119,9 @@ class LayerwiseRolloutTests(unittest.TestCase):
             )
 
         self.assertEqual(observed_updates[0]["strict_best"]["full_vector"], action)
-        self.assertEqual(observed_updates[0]["strict_best"]["variable_cost"], 0.4)
+        self.assertEqual(
+            observed_updates[0]["strict_best"]["variable_cost"], expected_cost,
+        )
         self.assertEqual(summary["best_reward"], 1.25)
 
 
@@ -3099,8 +3193,11 @@ class LayerwisePromotionTests(unittest.TestCase):
         return store
 
     def test_promotion_tops_up_five_to_25_through_real_chain_once(self):
+        from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
 
+        action_matrix = [[0] * 6 for _ in range(12)]
+        expected_objective = compute_variable_cost_from_action_matrix(action_matrix)
         with tempfile.TemporaryDirectory() as td:
             store = self._store_with_five(td)
             base = _PromotionBase()
@@ -3110,7 +3207,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=list(range(20)),
                 identity_context={"action_space_version": "layerwise-v1"},
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=action_matrix,
                 assessment=_assessment(0.85),
                 priority=3,
                 variable_cost=0.6,
@@ -3129,8 +3226,18 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(promoted.fresh_trial_count, 20)
         self.assertEqual(repeated.status, "already_promoted")
         self.assertEqual(len(base.prepare_calls), 1)
-        self.assertEqual(base.prepare_calls[0][1]["external_cost_score"], 0.6)
-        self.assertEqual(base.prepare_calls[0][1]["external_cost_rank"], 0.6)
+        self.assertEqual(
+            base.prepare_calls[0][1]["external_cost_score"],
+            expected_objective.ppo_resource_score,
+        )
+        self.assertEqual(
+            base.prepare_calls[0][1]["external_cost_rank"],
+            expected_objective.ppo_resource_score,
+        )
+        self.assertEqual(
+            base.prepare_calls[0][1]["external_resource_objective"]["robust_floor"],
+            expected_objective.robust_floor,
+        )
         self.assertEqual(
             base.prepare_calls[0][1]["boosted_overrides"],
             {(4, 3): {"v_mask_rescale_sf": 47}},
