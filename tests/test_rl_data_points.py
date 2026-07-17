@@ -1382,10 +1382,10 @@ class RLDataPointWriterTest(unittest.TestCase):
 
         cases = (
             ("duplicate episode", "episodes.jsonl", [0, 1, 1]),
-            ("decreasing episode", "episodes.jsonl", [0, 2, 1]),
+            ("decreasing episode", "episodes.jsonl", [0, 1, 0]),
             ("gapped episode", "episodes.jsonl", [0, 2]),
             ("duplicate PPO update", "ppo_updates.jsonl", [1, 2, 2]),
-            ("decreasing PPO update", "ppo_updates.jsonl", [1, 3, 2]),
+            ("decreasing PPO update", "ppo_updates.jsonl", [1, 2, 1]),
             ("gapped PPO update", "ppo_updates.jsonl", [1, 3]),
         )
         for label, filename, identities in cases:
