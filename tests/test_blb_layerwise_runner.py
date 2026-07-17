@@ -4157,7 +4157,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             )
             status_rows = [
                 row for row in store.iter_active_records()
-                if row.get("record_type") == "candidate_promotion_status_v1"
+                if row.get("record_type") == "candidate_promotion_status_v2"
             ]
 
         self.assertEqual(result.status, "failed_probability_gate")
