@@ -267,6 +267,59 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         self.assertFalse(process.is_alive())
         self.assertTrue(connection.closed)
 
+    def test_pending_child_close_kills_if_terminate_does_not_stop_process(self):
+        events = []
+
+        class _FakeProcess:
+            def __init__(self):
+                self.alive = True
+
+            def is_alive(self):
+                return self.alive
+
+            def join(self, timeout=None):
+                events.append(("join", timeout))
+
+            def terminate(self):
+                events.append(("terminate", None))
+
+            def kill(self):
+                events.append(("kill", None))
+                self.alive = False
+
+        class _FakeConnection:
+            def __init__(self):
+                self.closed = False
+
+            def send(self, message):
+                events.append(("send", message.get("operation")))
+
+            def close(self):
+                self.closed = True
+                events.append(("connection-close", None))
+
+        process = _FakeProcess()
+        connection = _FakeConnection()
+        worker = _probe_runner._ProcessProbeWorker(
+            device=torch.device("cuda:1"),
+            connection=connection,
+            process=process,
+        )
+        worker._pending_operation = "register_batch_set"
+
+        worker.close()
+
+        lifecycle = [
+            event_name
+            for event_name, _payload in events
+            if event_name in {"terminate", "join", "kill"}
+        ]
+        self.assertEqual(
+            lifecycle, ["terminate", "join", "kill", "join"]
+        )
+        self.assertFalse(process.is_alive())
+        self.assertTrue(connection.closed)
+
     def test_owner_closes_all_remote_workers_concurrently(self):
         barrier = threading.Barrier(4)
         state_lock = threading.Lock()
@@ -466,6 +519,116 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         self.assertEqual(result, (0.3, 0.9, 0.8))
         self.assertEqual(run_probe.call_args.args[1], ("validation-full",))
         self.assertEqual(run_probe.call_args.kwargs["metric_profile"], "mrpc")
+
+    def test_build_startup_failure_reaps_all_handles_via_shared_helper(self):
+        created_handles = []
+
+        class _FakeConnection:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        class _FakeProcess:
+            def __init__(self, pid):
+                self.pid = pid
+                self.started = False
+
+            def start(self):
+                self.started = True
+
+        class _FakeContext:
+            def __init__(self):
+                self.processes = []
+
+            def Pipe(self, duplex=True):
+                self.assert_duplex(duplex)
+                return _FakeConnection(), _FakeConnection()
+
+            def Process(self, **_kwargs):
+                process = _FakeProcess(pid=1000 + len(self.processes))
+                self.processes.append(process)
+                return process
+
+            @staticmethod
+            def assert_duplex(duplex):
+                if duplex is not True:
+                    raise AssertionError("probe process pipe must be duplex")
+
+        class _FakeHandle:
+            def __init__(self, *, device, process):
+                self.device = device
+                self.process = process
+                self.close_calls = 0
+
+            def wait_until_ready(self):
+                if str(self.device) == "cuda:2":
+                    raise RuntimeError("startup marker")
+
+            def close(self):
+                self.close_calls += 1
+                if str(self.device) == "cuda:2":
+                    raise RuntimeError("close marker")
+
+        def make_handle(*, device, connection, process):
+            del connection
+            handle = _FakeHandle(device=device, process=process)
+            created_handles.append(handle)
+            return handle
+
+        fake_context = _FakeContext()
+        primary_model = torch.nn.Linear(2, 2)
+        primary_batch = types.SimpleNamespace(
+            input_ids=torch.ones((1, 2), dtype=torch.long),
+            attention_mask=torch.ones((1, 2), dtype=torch.long),
+            labels=torch.zeros((1,), dtype=torch.long),
+            token_type_ids=None,
+        )
+        real_close_helper = ProbeRunner._close_worker_handles
+
+        with mock.patch.object(
+                _probe_runner, "BLBNoiseRLBridge", object(),
+                ), mock.patch.object(
+                    _probe_runner, "resolve_probe_backend", return_value="process",
+                ), mock.patch.object(
+                    _probe_runner, "enable_cuda_reward_probe_fast_math",
+                ), mock.patch.object(
+                    _probe_runner.torch.cuda, "empty_cache",
+                ), mock.patch.object(
+                    _probe_runner.mp, "get_context", return_value=fake_context,
+                ), mock.patch.object(
+                    _probe_runner, "_ProcessProbeWorker", side_effect=make_handle,
+                ), mock.patch.object(
+                    ProbeRunner,
+                    "_close_worker_handles",
+                    wraps=real_close_helper,
+                ) as close_helper:
+            try:
+                _probe_runner.build_probe_runner(
+                    primary_model=primary_model,
+                    primary_handler=object(),
+                    primary_bridge=object(),
+                    primary_probe_batches=[primary_batch],
+                    layers_attribute="unused.layers",
+                    is_regression=False,
+                    device_ids=[0, 1, 2, 3, 4],
+                    metric_profile="startup-failure",
+                )
+            except RuntimeError as exc:
+                failure = exc
+            else:
+                self.fail("startup failure must propagate as RuntimeError")
+
+        self.assertEqual(len(created_handles), 4)
+        self.assertEqual(close_helper.call_count, 1)
+        helper_handles = list(close_helper.call_args.args[0])
+        self.assertEqual(helper_handles, created_handles)
+        self.assertEqual(
+            [handle.close_calls for handle in created_handles], [1] * 4
+        )
+        self.assertIn("failed to start persistent probe processes", str(failure))
+        self.assertIn("startup marker", str(failure))
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"probe runner unavailable: {_IMPORT_ERROR!r}")
