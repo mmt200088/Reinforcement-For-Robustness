@@ -517,17 +517,21 @@ class _ProcessProbeWorker:
             return
         self._closed = True
         try:
-            if self._pending_operation is None and self.process.is_alive():
-                self.connection.send({"operation": "close", "payload": {}})
-                self._pending_operation = "close"
-                try:
-                    self.receive("close", timeout=5.0)
-                except Exception:
-                    pass
-            self.process.join(timeout=5.0)
-            if self.process.is_alive():
+            if self._pending_operation is not None and self.process.is_alive():
                 self.process.terminate()
                 self.process.join(timeout=5.0)
+            else:
+                if self._pending_operation is None and self.process.is_alive():
+                    self.connection.send({"operation": "close", "payload": {}})
+                    self._pending_operation = "close"
+                    try:
+                        self.receive("close", timeout=5.0)
+                    except Exception:
+                        pass
+                self.process.join(timeout=5.0)
+                if self.process.is_alive():
+                    self.process.terminate()
+                    self.process.join(timeout=5.0)
         finally:
             try:
                 self.connection.close()
@@ -594,11 +598,24 @@ class ProbeRunner:
 
     @staticmethod
     def _close_worker_handles(workers: Sequence[Any]) -> None:
-        for worker in workers:
+        def close_one(worker: Any) -> None:
             try:
                 worker.close()
             except Exception:
                 pass
+
+        if len(workers) == 1:
+            close_one(workers[0])
+            return
+
+        threads = [
+            threading.Thread(target=close_one, args=(worker,), daemon=True)
+            for worker in workers
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
 
     @property
     def num_workers(self) -> int:
@@ -694,7 +711,8 @@ class ProbeRunner:
 
     def view(self, batch_set_key: str) -> "ProbeRunnerView":
         self._require_open()
-        return ProbeRunnerView(self, _normalize_batch_set_key(batch_set_key))
+        normalized = self._require_batch_set(batch_set_key)
+        return ProbeRunnerView(self, normalized)
 
     def _raise_process_error(
             self,
