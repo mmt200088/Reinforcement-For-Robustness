@@ -591,6 +591,12 @@ class ProbeRunnerDiagnostics:
     per_worker_trial_seeds: List[List[int]] = field(default_factory=list)
     devices: List[str] = field(default_factory=list)
     multi_action: bool = False
+    pool_id: str = ""
+    batch_set_key: str = ""
+    batch_count: int = 0
+    process_count: int = 0
+    worker_intraop_threads: int = 0
+    worker_interop_threads: int = 0
 
     @property
     def speedup_vs_sequential(self) -> float:
@@ -601,6 +607,13 @@ class ProbeRunnerDiagnostics:
 
 class ProbeRunner:
     """Fan trials across N workers, aggregate results in trial order."""
+
+    @staticmethod
+    def _resolve_worker_thread_limit(resolver: Callable[[], int]) -> int:
+        try:
+            return max(0, int(resolver()))
+        except Exception:
+            return 0
 
     def __init__(
             self,
@@ -617,6 +630,12 @@ class ProbeRunner:
             )
         self.workers = list(workers) + self._process_workers
         self.pool_id = f"probe-pool-{uuid4().hex}"
+        self._worker_intraop_threads = self._resolve_worker_thread_limit(
+            resolve_probe_intraop_threads,
+        )
+        self._worker_interop_threads = self._resolve_worker_thread_limit(
+            resolve_probe_interop_threads,
+        )
         self._batch_sets: Dict[str, Tuple[Any, ...]] = {
             "F1": tuple(getattr(workers[0], "probe_batches", ())),
         }
@@ -664,6 +683,22 @@ class ProbeRunner:
     @property
     def backend(self) -> str:
         return "process" if self._process_workers else "thread"
+
+    def _set_diagnostics(
+            self,
+            *,
+            batch_set_key: str,
+            **kwargs: Any,
+            ) -> None:
+        self.last_diagnostics = ProbeRunnerDiagnostics(
+            pool_id=self.pool_id,
+            batch_set_key=batch_set_key,
+            batch_count=len(self._batch_sets[batch_set_key]),
+            process_count=len(self._process_workers),
+            worker_intraop_threads=self._worker_intraop_threads,
+            worker_interop_threads=self._worker_interop_threads,
+            **kwargs,
+        )
 
     def _require_open(self) -> None:
         if self._poisoned_reason is not None:
@@ -919,7 +954,8 @@ class ProbeRunner:
                 errors.append((worker_index, exc))
         wall_elapsed = time.perf_counter() - wall_started
 
-        self.last_diagnostics = ProbeRunnerDiagnostics(
+        self._set_diagnostics(
+            batch_set_key=batch_set_key,
             k=k,
             wall_seconds=float(wall_elapsed),
             per_worker_seconds=[float(value) for value in per_worker_seconds],
@@ -953,7 +989,8 @@ class ProbeRunner:
         normalized_batch_set_key = self._require_batch_set(batch_set_key)
         k = max(0, int(k))
         if k == 0:
-            self.last_diagnostics = ProbeRunnerDiagnostics(
+            self._set_diagnostics(
+                batch_set_key=normalized_batch_set_key,
                 k=0, wall_seconds=0.0,
                 per_worker_trial_indices=[[] for _ in self.workers],
                 per_worker_trial_seeds=[[] for _ in self.workers],
@@ -1009,7 +1046,8 @@ class ProbeRunner:
                 t.join()
         wall_elapsed = time.perf_counter() - wall_t0
 
-        self.last_diagnostics = ProbeRunnerDiagnostics(
+        self._set_diagnostics(
+            batch_set_key=normalized_batch_set_key,
             k=k,
             wall_seconds=float(wall_elapsed),
             per_worker_seconds=[float(x) for x in per_worker_seconds],
@@ -1090,7 +1128,8 @@ class ProbeRunner:
                 errors.append((worker_index, exc))
         wall_elapsed = time.perf_counter() - wall_started
 
-        self.last_diagnostics = ProbeRunnerDiagnostics(
+        self._set_diagnostics(
+            batch_set_key=batch_set_key,
             k=k,
             wall_seconds=float(wall_elapsed),
             per_worker_seconds=[float(value) for value in per_worker_seconds],
@@ -1131,7 +1170,8 @@ class ProbeRunner:
         actions = list(decoded_by_trial)
         k = len(actions)
         if k == 0:
-            self.last_diagnostics = ProbeRunnerDiagnostics(
+            self._set_diagnostics(
+                batch_set_key=normalized_batch_set_key,
                 k=0, wall_seconds=0.0,
                 per_worker_trial_indices=[[] for _ in self.workers],
                 per_worker_trial_seeds=[[] for _ in self.workers],
@@ -1195,7 +1235,8 @@ class ProbeRunner:
                 t.join()
         wall_elapsed = time.perf_counter() - wall_t0
 
-        self.last_diagnostics = ProbeRunnerDiagnostics(
+        self._set_diagnostics(
+            batch_set_key=normalized_batch_set_key,
             k=k,
             wall_seconds=float(wall_elapsed),
             per_worker_seconds=[float(x) for x in per_worker_seconds],
@@ -1519,6 +1560,12 @@ def diagnostics_payload(diag: ProbeRunnerDiagnostics) -> dict:
     """Canonical JSON-ready payload for ProbeRunner diagnostics."""
     payload = {
         "k": int(diag.k),
+        "pool_id": str(diag.pool_id),
+        "batch_set_key": str(diag.batch_set_key),
+        "batch_count": int(diag.batch_count),
+        "process_count": int(diag.process_count),
+        "worker_intraop_threads": int(diag.worker_intraop_threads),
+        "worker_interop_threads": int(diag.worker_interop_threads),
         "wall_seconds": float(diag.wall_seconds),
         "per_worker_seconds": [float(x) for x in diag.per_worker_seconds],
         "per_worker_trial_counts": [int(x) for x in diag.per_worker_trial_counts],
