@@ -167,6 +167,19 @@ def _make_fake_nvidia_smi(path):
             printf '%s, GPU-fake, 10\n' \
               "${FAKE_RUNTIME_COMPUTE_PID:-999999}"
           fi
+          current_case=''
+          if [ -s "${FAKE_CASE_RUNNING_FILE:-}" ]; then
+            current_case="$(cat "$FAKE_CASE_RUNNING_FILE")"
+          fi
+          if [ -s "${FAKE_OWNED_COMPUTE_PIDS_FILE:-}" ] && \
+             [ "${FAKE_SUPPRESS_OWNED_COMPUTE_CASE:-}" != "$current_case" ]; then
+            gpu_index=0
+            while IFS= read -r owned_pid; do
+              [ -n "$owned_pid" ] || continue
+              printf '%s, GPU-fake-%s, 10\n' "$owned_pid" "$gpu_index"
+              gpu_index=$((gpu_index + 1))
+            done < "$FAKE_OWNED_COMPUTE_PIDS_FILE"
+          fi
           exit 0
         fi
 
@@ -234,6 +247,11 @@ def _make_fake_case_launcher(path):
           printf '%s\n' "$case_name" > "$FAKE_CASE_RUNNING_FILE"
         fi
         cleanup_fake_case() {
+          for worker_pid in ${worker_pids:-}; do
+            kill "$worker_pid" 2>/dev/null || true
+            wait "$worker_pid" 2>/dev/null || true
+          done
+          rm -f "${FAKE_OWNED_COMPUTE_PIDS_FILE:-}"
           if [ -n "${FAKE_CASE_RUNNING_FILE:-}" ]; then
             rm -f "$FAKE_CASE_RUNNING_FILE"
           fi
@@ -244,7 +262,23 @@ def _make_fake_case_launcher(path):
           "$reward_devices" "$case_dir" >> "${FAKE_LAUNCH_LOG:?}"
 
         mkdir -p "$case_dir/diagnostics"
-        printf '%s\n' "$$" > "$case_dir/worker_pids.txt"
+        worker_pids=''
+        worker_pid_json=''
+        worker_thread_json=''
+        worker_index=1
+        while [ "$worker_index" -le 4 ]; do
+          sleep 30 &
+          worker_pid=$!
+          worker_pids="${worker_pids}${worker_pids:+ }${worker_pid}"
+          worker_pid_json="${worker_pid_json}${worker_pid_json:+,}${worker_pid}"
+          worker_thread_json="${worker_thread_json}${worker_thread_json:+,}1"
+          worker_index=$((worker_index + 1))
+        done
+        printf '%s\n' $worker_pids > "$case_dir/worker_pids.txt"
+        {
+          printf '%s\n' "$$"
+          printf '%s\n' $worker_pids
+        } > "${FAKE_OWNED_COMPUTE_PIDS_FILE:?}"
 
         process_count=4
         if [ "${FAKE_INVALID_POOL_TELEMETRY_CASE:-}" = "$case_name" ]; then
@@ -354,6 +388,18 @@ def _make_fake_case_launcher(path):
 
         printf '{"pool_id":"%s","batch_set_key":"F1","batch_count":4,"process_count":4,"worker_intraop_threads":1,"worker_interop_threads":1}\n' \
           "$case_name-pool" > "$case_dir/diagnostics/diagnostics_summary.json"
+        f4_calls=1
+        if [ "${FAKE_MISSING_F4_TOPOLOGY_CASE:-}" = "$case_name" ]; then
+          f4_calls=0
+        fi
+        topology_worker_pid_json="$worker_pid_json"
+        if [ "${FAKE_UNINVENTORIED_TOPOLOGY_PID_CASE:-}" = "$case_name" ]; then
+          topology_worker_pid_json="999998,${topology_worker_pid_json}"
+        fi
+        printf '{"schema_version":"probe_pool_topology_v1","pool_id":"%s","backend":"process","devices":["cuda:0","cuda:1","cuda:2","cuda:3","cuda:4"],"process_count":4,"primary_pid":%s,"worker_pids":[%s],"worker_intraop_threads":[1,%s],"worker_interop_threads":[1,%s],"batch_sets":{"F1":{"batch_count":4},"F4":{"batch_count":4}},"call_counts_by_batch_set":{"F1":1,"F4":%s}}\n' \
+          "$case_name-pool" "$$" "$topology_worker_pid_json" \
+          "$worker_thread_json" "$worker_thread_json" "$f4_calls" \
+          > "$case_dir/diagnostics/probe_pool_topology.json"
         printf 'fake launch %s\n' "$case_name" > "$case_dir/launch.log"
         case "$case_name" in
           base64) wall=40 ;;
@@ -416,6 +462,7 @@ def _base_gate_env(root, baseline, optimized, artifact_dir):
         "FAKE_NVIDIA_SAMPLE_COUNT_FILE": str(root / "nvidia-smi-sample-count.txt"),
         "FAKE_CURRENT_CASE_FILE": str(root / "current-case.txt"),
         "FAKE_CASE_RUNNING_FILE": str(root / "running-case.txt"),
+        "FAKE_OWNED_COMPUTE_PIDS_FILE": str(root / "owned-compute-pids.txt"),
         "FAKE_LAUNCH_LOG": str(launch_log),
         "GPU_SAMPLE_INTERVAL_SECONDS": "0.005",
         "GATE_POLL_INTERVAL_SECONDS": "0.01",
@@ -999,6 +1046,78 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
                 artifact_dir,
             )
             env["FAKE_RUNTIME_COMPUTE_PID_CASE"] = "opt128"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["evidence_pass"])
+            self.assertEqual(verdict["fastest_eligible_case"], "opt256")
+
+    def test_empty_runtime_compute_pid_evidence_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, _launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_SUPPRESS_OWNED_COMPUTE_CASE"] = "opt128"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["evidence_pass"])
+            self.assertEqual(verdict["fastest_eligible_case"], "opt256")
+
+    def test_shared_pool_topology_requires_f4_calls(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, _launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_MISSING_F4_TOPOLOGY_CASE"] = "opt128"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["evidence_pass"])
+            self.assertEqual(verdict["fastest_eligible_case"], "opt256")
+
+    def test_shared_pool_topology_pids_must_match_runtime_inventory(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, _launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_UNINVENTORIED_TOPOLOGY_PID_CASE"] = "opt128"
 
             proc = _run_gate(env)
             output = _combined_output(proc)
