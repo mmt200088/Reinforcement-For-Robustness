@@ -627,6 +627,41 @@ copy_case_evidence() {
   done
 }
 
+collect_case_training_data_points() {
+  local source_root="$1"
+  local case_dir="$2"
+  local relative source destination
+  local moved_manifest="$case_dir/rl_training_data_points_files.txt"
+  : > "$moved_manifest"
+  while IFS= read -r -d '' relative; do
+    case "$relative" in
+      rl_training_data_points/*) ;;
+      *)
+        printf '[gate][FATAL] unexpected structured-data path: %s\n' \
+          "$relative" >&2
+        return 1
+        ;;
+    esac
+    source="$source_root/$relative"
+    destination="$case_dir/$relative"
+    [ -f "$source" ] || {
+      printf '[gate][FATAL] structured-data file disappeared: %s\n' \
+        "$source" >&2
+      return 1
+    }
+    mkdir -p "$(dirname "$destination")" || return 1
+    mv -- "$source" "$destination" || return 1
+    printf '%s\n' "$relative" >> "$moved_manifest"
+  done < <(
+    git -C "$source_root" ls-files --others --exclude-standard -z -- \
+      rl_training_data_points
+  )
+  if [ -d "$source_root/rl_training_data_points" ]; then
+    find "$source_root/rl_training_data_points" -depth -type d -empty \
+      -delete 2>/dev/null || return 1
+  fi
+}
+
 normalize_candidate_evidence() {
   local input_path="$1"
   local output_path="$2"
@@ -1285,6 +1320,7 @@ run_case() {
   wait "$sampler_pid" 2>/dev/null || true
   ACTIVE_SAMPLER_PID=""
   verify_requested_gpus_idle "${case_name}:after" || exit $?
+  collect_case_training_data_points "$source_root" "$case_dir" || exit $?
   end_s="$(date +%s)"
   measured_wall=$((end_s - start_s))
   if [ ! -s "$case_dir/wall_seconds.txt" ]; then
