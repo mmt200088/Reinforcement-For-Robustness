@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "batch": 64,
+      "candidate_pass": true,
+      "case": "base64",
+      "comparator_pass": true,
+      "comparison_report": "/hy-tmp/rfr_stage2_rl_runtime_opt/experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/gpu_gate/cases/base64/reference.txt",
+      "evidence_pass": true,
+      "kind": "baseline",
+      "launch_pass": true,
+      "semantic_pass": true,
+      "source_root": "/hy-tmp/rfr_stage2_rl_runtime_base",
+      "speedup": 1.0,
+      "wall_seconds": 1255.0
+    },
+    {
+      "batch": 64,
+      "candidate_pass": true,
+      "case": "opt64",
+      "comparator_pass": true,
+      "comparison_report": "/hy-tmp/rfr_stage2_rl_runtime_opt/experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/gpu_gate/cases/opt64/semantic_comparison.txt",
+      "evidence_pass": true,
+      "kind": "optimized",
+      "launch_pass": true,
+      "semantic_pass": true,
+      "source_root": "/hy-tmp/rfr_stage2_rl_runtime_opt",
+      "speedup": 1.038047974,
+      "wall_seconds": 1209.0
+    }
+  ],
+  "fastest_eligible_case": "opt64",
+  "schema_version": "stage2_runtime_optimization_gate_v1",
+  "semantic_parity": "PASS",
+  "speed_ranking_policy": "lowest wall time among semantic-passing optimized cases"
+}

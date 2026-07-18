@@ -1,0 +1,6 @@
+[gate] running base64 from /hy-tmp/rfr_stage2_rl_runtime_opt/experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/gpu_gate/runtime_source (batch=64)
+[gate] case=base64 launch_rc=0 evidence=1 wall=1255s
+[gate] running opt64 from /hy-tmp/rfr_stage2_rl_runtime_opt/experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/gpu_gate/runtime_source (batch=64)
+[gate] case=opt64 launch_rc=0 evidence=1 wall=1209s
+[gate] verdict=/hy-tmp/rfr_stage2_rl_runtime_opt/experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/gpu_gate/verdict.json winner=opt64
+[gate][PASS] all optimized cases passed semantic parity

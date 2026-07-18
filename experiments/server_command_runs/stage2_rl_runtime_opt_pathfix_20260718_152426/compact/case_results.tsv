@@ -1,0 +1,3 @@
+case	kind	source_root	batch	launch_pass	evidence_pass	comparator_pass	candidate_pass	semantic_pass	wall_seconds	speedup	comparison_report
+base64	baseline	/hy-tmp/rfr_stage2_rl_runtime_base	64	1	1	1	1	1	1255	1.0	/hy-tmp/rfr_stage2_rl_runtime_opt/experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/gpu_gate/cases/base64/reference.txt
+opt64	optimized	/hy-tmp/rfr_stage2_rl_runtime_opt	64	1	1	1	1	1	1209	1.038047974	/hy-tmp/rfr_stage2_rl_runtime_opt/experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/gpu_gate/cases/opt64/semantic_comparison.txt

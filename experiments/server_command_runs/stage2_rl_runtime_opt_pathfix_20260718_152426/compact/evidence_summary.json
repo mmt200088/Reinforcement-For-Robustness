@@ -1,0 +1,171 @@
+{
+  "baseline_sha": "48b03e869934aa8b3aa904a1fe8b611a1e2d618a",
+  "deltas": {
+    "candidate_store_size_reduction_pct": 60.35402265427775,
+    "mean_gpu_active_rate_delta_points": 3.2839582263310962,
+    "mean_gpu_utilization_delta_points": 3.1540510186611925,
+    "probe_worker_process_reduction_pct": 50.0,
+    "summed_per_gpu_max_memory_reduction_mib": 13889.0,
+    "summed_per_gpu_max_memory_reduction_pct": 43.3300056155238
+  },
+  "episode_458": {
+    "base64": {
+      "candidate_key": "f90cdf8e2503826bd8ed9d23f8c765a2fff30dd6da96a059c1dc2c3298ea51da",
+      "candidate_promotion_status": "failed_probability_gate",
+      "f4_trial_seeds": [
+        4611686442659606140,
+        4611686440810747853,
+        4611686447829425438,
+        4611686444108579695,
+        4611686433947125944,
+        4611686438547787273,
+        4611686436976538714,
+        4611686459025505707,
+        4611686457446114292,
+        4611686462046775621,
+        4611686451818475158,
+        4611686448097645799,
+        4611686455116061232,
+        4611686477165020033,
+        4611686475325327826,
+        4611686480194424611,
+        4611686478614001004,
+        4611686466305325757,
+        4611686473053462542,
+        4611686471415096927,
+        4611686493463801768,
+        4611686491892553209,
+        4611686496761649994,
+        4611686486323888283,
+        4611686482603050724
+      ],
+      "promotion_status": "failed_probability_gate",
+      "terminal_priority": 3,
+      "total_reward": 1.237949410684986
+    },
+    "opt64": {
+      "candidate_key": "f90cdf8e2503826bd8ed9d23f8c765a2fff30dd6da96a059c1dc2c3298ea51da",
+      "candidate_promotion_status": "failed_probability_gate",
+      "f4_trial_seeds": [
+        4611686442659606140,
+        4611686440810747853,
+        4611686447829425438,
+        4611686444108579695,
+        4611686433947125944,
+        4611686438547787273,
+        4611686436976538714,
+        4611686459025505707,
+        4611686457446114292,
+        4611686462046775621,
+        4611686451818475158,
+        4611686448097645799,
+        4611686455116061232,
+        4611686477165020033,
+        4611686475325327826,
+        4611686480194424611,
+        4611686478614001004,
+        4611686466305325757,
+        4611686473053462542,
+        4611686471415096927,
+        4611686493463801768,
+        4611686491892553209,
+        4611686496761649994,
+        4611686486323888283,
+        4611686482603050724
+      ],
+      "promotion_status": "failed_probability_gate",
+      "terminal_priority": 3,
+      "total_reward": 1.237949410684986
+    }
+  },
+  "limitations": {
+    "baseline_parent_rss": "not emitted by 48b03e8; optimized parent peak RSS is reported without claiming a baseline reduction"
+  },
+  "optimized_sha": "de8bb2d276818ab1e6c362103c1d6c3652a83bda",
+  "performance": {
+    "baseline_wall_seconds": 1255.0,
+    "optimized_wall_seconds": 1209.0,
+    "speedup": 1.0380479735318444,
+    "wall_time_reduction_pct": 3.6653386454183265
+  },
+  "resources": {
+    "base64": {
+      "candidate_store_bytes": 24816152,
+      "candidate_store_bytes_per_episode": 41360.253333333334,
+      "episodes_per_hour": 1721.1155378486055,
+      "gpu_max_memory_mib": {
+        "cuda:0": 5314.0,
+        "cuda:1": 6685.0,
+        "cuda:2": 6685.0,
+        "cuda:3": 6685.0,
+        "cuda:4": 6685.0
+      },
+      "max_os_threads_per_probe_worker": 7,
+      "mean_gpu_active_sample_rate": 0.8967272727272728,
+      "mean_gpu_util_pct": 82.23163636363637,
+      "normalized_candidate_rows": 944,
+      "parent_peak_rss_bytes": null,
+      "probe_worker_pids": [
+        3417468,
+        3417469,
+        3417470,
+        3417471,
+        3417808,
+        3417809,
+        3417810,
+        3417811
+      ],
+      "probe_worker_processes": 8,
+      "summed_per_gpu_max_memory_mib": 32054.0,
+      "wall_seconds": 1255.0
+    },
+    "opt64": {
+      "candidate_store_bytes": 9838606,
+      "candidate_store_bytes_per_episode": 16397.676666666666,
+      "episodes_per_hour": 1786.6004962779157,
+      "gpu_max_memory_mib": {
+        "cuda:0": 3285.0,
+        "cuda:1": 3720.0,
+        "cuda:2": 3720.0,
+        "cuda:3": 3720.0,
+        "cuda:4": 3720.0
+      },
+      "max_os_threads_per_probe_worker": 5,
+      "mean_gpu_active_sample_rate": 0.9295668549905838,
+      "mean_gpu_util_pct": 85.38568738229756,
+      "normalized_candidate_rows": 944,
+      "parent_peak_rss_bytes": 3940802560,
+      "probe_worker_pids": [
+        3472857,
+        3472858,
+        3472859,
+        3472860
+      ],
+      "probe_worker_processes": 4,
+      "summed_per_gpu_max_memory_mib": 18165.0,
+      "wall_seconds": 1209.0
+    }
+  },
+  "run": "/hy-tmp/rfr_stage2_rl_runtime_opt/experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426",
+  "schema_version": "stage2_runtime_optimization_evidence_v1",
+  "semantic_parity": "PASS",
+  "sha256": {
+    "gpu_gate/cases/base64/diagnostics/candidate_store.jsonl": "5458db5d0cbae461d519a8c41a4222c56e0f439dce58d4cbb654c3e6ee4aee6e",
+    "gpu_gate/cases/base64/diagnostics/candidate_store.normalized.jsonl": "00236bcbfb04565cebd1eb73ed7f396549e6c5b88b1c0fc51793c0bf3cbd7101",
+    "gpu_gate/cases/base64/diagnostics/episodes.jsonl": "47353345b02c230a9ad58767221f8aaba73f4674cc92c1abf11ad060431267bd",
+    "gpu_gate/cases/base64/diagnostics/ppo_updates.jsonl": "fb80b057ef301641dcb1960106d1981950ebda256d3d7c02ece086ec3578445d",
+    "gpu_gate/cases/base64/gpu_utilization.json": "95be64aae12006a9be8fadd3ae386826af674dd91a6875c8929d4989ddc89ed6",
+    "gpu_gate/cases/base64/runtime_source_head.txt": "c097343621ff5d5bd0c4cde99356989dcf2374a7cd98ca9daa663675d0c25ace",
+    "gpu_gate/cases/base64/runtime_source_tree.txt": "fae9b641848065af255dd2e31660ee2635af9e3c42f623c42f88927cd565dc67",
+    "gpu_gate/cases/base64/wall_seconds.txt": "496222367cc0759bc434f6983eff416c2f54cdb8667a94c5a1ab8a05aed55658",
+    "gpu_gate/cases/opt64/diagnostics/candidate_store.jsonl": "81debf461c3e81aa8474689a69a40c577e5f18673a4d3632661000ac51418016",
+    "gpu_gate/cases/opt64/diagnostics/candidate_store.normalized.jsonl": "00236bcbfb04565cebd1eb73ed7f396549e6c5b88b1c0fc51793c0bf3cbd7101",
+    "gpu_gate/cases/opt64/diagnostics/episodes.jsonl": "df4469af58d76bbbb1dcc4042f4536941d709ca2e9abcaac38c54bd5c2a17b15",
+    "gpu_gate/cases/opt64/diagnostics/ppo_updates.jsonl": "2e1821e9b71c4bcb789784daad6c191146291a17e039290bab2f4425c70c7e0c",
+    "gpu_gate/cases/opt64/gpu_utilization.json": "d50d8b187f7461079d52f5e61978b69a6d2096d26145039fd561769a29a3f261",
+    "gpu_gate/cases/opt64/runtime_source_head.txt": "c762bd91213d3bf1b118f8f83ff82f06ad5ccf564669a15811acd454f1ab404f",
+    "gpu_gate/cases/opt64/runtime_source_tree.txt": "99fac10a9b23a5d1964433e7745fefff9b9324925f977d3eff66f6e9ae594a18",
+    "gpu_gate/cases/opt64/wall_seconds.txt": "b5803baeda902cec52361a534cb99defde4214196b2c292c27275c6b62ce1457"
+  },
+  "winner": "opt64"
+}
