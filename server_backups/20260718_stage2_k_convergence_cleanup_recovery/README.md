@@ -3,6 +3,10 @@
 This directory is the content-complete recovery record for three temporary
 server worktrees removed from `/hy-tmp` on 2026-07-18.
 
+Deletion completed at `2026-07-18T12:41:42+08:00`. See
+[`DELETION_RECEIPT.md`](DELETION_RECEIPT.md) for the remote Git gate, full
+restore rehearsal, disk-space result, and preserved-checkpoint evidence.
+
 The original directories totalled 20.53 GB of file content. Most of that data
 was tracked content already represented by Git commits, so the backup stores a
 reconstructable snapshot instead of duplicating the same repository data:
