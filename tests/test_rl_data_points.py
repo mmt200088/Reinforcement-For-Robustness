@@ -1155,6 +1155,79 @@ class RLDataPointWriterTest(unittest.TestCase):
         self.assertEqual(len(episode_rows), 3)
         self.assertEqual(len(update_rows), 2)
 
+    def test_stage2_episode_persists_shared_probe_pool_runtime_topology(self):
+        source = (
+            REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py"
+        ).read_text(encoding="utf-8")
+        for field_name in (
+            "pool_id",
+            "batch_set_key",
+            "batch_count",
+            "process_count",
+            "worker_intraop_threads",
+            "worker_interop_threads",
+        ):
+            self.assertIn(
+                f'{field_name}=probe_diagnostics.get("{field_name}"',
+                source,
+            )
+
+        spec = importlib.util.spec_from_file_location(
+            "blb_stage2_diagnostics_probe_topology_for_test",
+            REPO_ROOT / "blb_stage2_rl" / "diagnostics.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / "progress"
+            recorder = module.RLDiagnosticsRecorder(
+                output_dir=str(output),
+                num_layers=12,
+                num_action_slots=3,
+                strict_writes=True,
+            )
+            recorder.record_episode(
+                episode_stats=module.EpisodeStats(
+                    episode=0,
+                    total_reward=1.0,
+                    terminal_reward=1.0,
+                    per_step_sum=0.0,
+                    valid_steps=12,
+                    invalid_steps=0,
+                    steps_taken=12,
+                    total_bits=0,
+                    fusion_count=24,
+                    first_invalid_step=None,
+                    first_invalid_block=None,
+                    first_invalid_layer=None,
+                    early_terminated=False,
+                    pool_id="shared-five-gpu-pool",
+                    batch_set_key="F1",
+                    batch_count=4,
+                    process_count=4,
+                    worker_intraop_threads=1,
+                    worker_interop_threads=1,
+                ),
+                full_action_vec=np.array([0, 1, 2]),
+                is_new_best=False,
+                best_reward_so_far=1.0,
+            )
+            recorder.finalize()
+            row = json.loads(
+                (output / "diagnostics" / "episodes.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()[0]
+            )
+
+        self.assertEqual(row["pool_id"], "shared-five-gpu-pool")
+        self.assertEqual(row["batch_set_key"], "F1")
+        self.assertEqual(row["batch_count"], 4)
+        self.assertEqual(row["process_count"], 4)
+        self.assertEqual(row["worker_intraop_threads"], 1)
+        self.assertEqual(row["worker_interop_threads"], 1)
+
     def test_stage2_diagnostics_bounded_history_preserves_exact_cumulative_state(self):
         spec = importlib.util.spec_from_file_location(
             "blb_stage2_diagnostics_bounded_history_for_test",
