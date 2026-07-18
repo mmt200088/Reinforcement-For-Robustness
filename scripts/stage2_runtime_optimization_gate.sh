@@ -1381,7 +1381,8 @@ for case_index in "${!CASE_NAMES[@]}"; do
 
   if [ "$base_semantic_pass" -eq 1 ] && [ "$launch_pass" -eq 1 ] \
       && [ "$evidence_pass" -eq 1 ]; then
-    "$STAGE2_GATE_PYTHON" "$COMPARATOR" \
+    PYTHONPATH="${SCRIPT_DIR}/..${PYTHONPATH:+:${PYTHONPATH}}" \
+      "$STAGE2_GATE_PYTHON" "$COMPARATOR" \
       --one "$base_dir/diagnostics/episodes.jsonl" \
       --many "$case_dir/diagnostics/episodes.jsonl" \
       --one-ppo "$base_dir/diagnostics/ppo_updates.jsonl" \
