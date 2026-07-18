@@ -557,6 +557,33 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertIsNone(promotion_env._installed_action_hash)
         self.assertFalse(promotion_env.env_cfg.persistent_probe_install)
 
+    def test_shared_probe_topology_is_persisted_once_for_gate_evidence(self):
+        from blb_stage2_rl.sequential_runner import (
+            _write_probe_pool_topology_snapshot,
+        )
+
+        expected = {
+            "schema_version": "probe_pool_topology_v1",
+            "pool_id": "five-device-pool",
+            "call_counts_by_batch_set": {"F1": 10, "F4": 2},
+        }
+        owner = types.SimpleNamespace(topology_snapshot=lambda: expected)
+        base_env = types.SimpleNamespace(
+            _shared_probe_runner_owner=owner,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            output_path = _write_probe_pool_topology_snapshot(base_env, td)
+
+            self.assertEqual(
+                output_path,
+                os.path.join(td, "probe_pool_topology.json"),
+            )
+            self.assertEqual(
+                json.loads(Path(output_path).read_text(encoding="utf-8")),
+                expected,
+            )
+
     def test_layerwise_online_probe_is_fixed_to_256_examples(self):
         runner_path = (
             Path(__file__).resolve().parents[1]

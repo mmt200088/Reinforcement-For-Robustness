@@ -81,6 +81,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.pending = None
             self.closed = False
             self.close_count = 0
+            self.process = types.SimpleNamespace(pid=20_000 + int(device_id))
 
         def submit(self, operation, payload):
             self.events.append(("remote-submit", operation, payload))
@@ -338,6 +339,47 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                     if event[0] == "remote-submit"
                 ],
                 ["register_batch_set"] * 4 + ["run_trials"] * 8,
+            )
+        finally:
+            owner.close()
+
+    @mock.patch.dict(os.environ, {
+        "BLB_STAGE2_PROBE_INTRAOP_THREADS": "7",
+        "BLB_STAGE2_PROBE_INTEROP_THREADS": "5",
+    })
+    def test_topology_snapshot_binds_f1_f4_calls_to_worker_pids(self):
+        events = []
+        owner, remotes = self._runner_with_process_count(
+            events, process_count=4,
+        )
+        try:
+            owner.register_batch_set("F4", ["validation-a", "validation-b"])
+            owner.view("F1").run_trials(k=5, base_seed=41)
+            owner.view("F4").run_trials(k=5, base_seed=43)
+
+            topology = owner.topology_snapshot()
+
+            self.assertEqual(topology["schema_version"], "probe_pool_topology_v1")
+            self.assertEqual(topology["pool_id"], owner.pool_id)
+            self.assertEqual(topology["backend"], "process")
+            self.assertEqual(
+                topology["devices"],
+                [f"cuda:{device_id}" for device_id in range(5)],
+            )
+            self.assertEqual(topology["process_count"], 4)
+            self.assertEqual(
+                topology["worker_pids"],
+                [remote.process.pid for remote in remotes],
+            )
+            self.assertEqual(topology["worker_intraop_threads"], [7] * 5)
+            self.assertEqual(topology["worker_interop_threads"], [5] * 5)
+            self.assertEqual(
+                topology["batch_sets"],
+                {"F1": {"batch_count": 1}, "F4": {"batch_count": 2}},
+            )
+            self.assertEqual(
+                topology["call_counts_by_batch_set"],
+                {"F1": 1, "F4": 1},
             )
         finally:
             owner.close()
