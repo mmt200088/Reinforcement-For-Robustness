@@ -1205,6 +1205,7 @@ class LayerwiseEpisodeRecord:
     termination_reason: str
     best_robust_feasible_cost: Optional[float]
     best_robust_feasible_objective: Optional[ResourceObjective]
+    candidate_bytes_written: int = 0
 
 
 def _to_plain_mapping(value: Any) -> dict[str, Any]:
@@ -1847,6 +1848,13 @@ def _current_policy_entropy(
     )
 
 
+def _candidate_store_size_bytes(candidate_store: CandidateStore) -> int:
+    try:
+        return max(0, int(candidate_store.path.stat().st_size))
+    except FileNotFoundError:
+        return 0
+
+
 def train_layerwise(
         *,
         env: Any,
@@ -2047,6 +2055,9 @@ def train_layerwise(
     while not convergence_state.converged and (
             unbounded_training or local_episode < total_episodes
     ):
+        candidate_store_size_before_episode = _candidate_store_size_bytes(
+            candidate_store
+        )
         absolute_episode = absolute_start + local_episode
         state = env.reset(
             seed=(None if base_seed is None else int(base_seed) + absolute_episode)
@@ -2611,6 +2622,14 @@ def train_layerwise(
             if retain_history:
                 ppo_diagnostics.append(ppo_metrics)
 
+        candidate_store_size_after_episode = _candidate_store_size_bytes(
+            candidate_store
+        )
+        candidate_bytes_written = max(
+            0,
+            candidate_store_size_after_episode
+            - candidate_store_size_before_episode,
+        )
         invalid_steps = sum(
             not bool(_field(info.get("layer_summary", {}), "all_valid", True))
             for info in step_infos
@@ -2700,6 +2719,7 @@ def train_layerwise(
                 if convergence_state.best_robust_feasible_objective is None
                 else tuple(convergence_state.best_robust_feasible_objective)
             ),
+            candidate_bytes_written=int(candidate_bytes_written),
         )
         if retain_history:
             records.append(record)
