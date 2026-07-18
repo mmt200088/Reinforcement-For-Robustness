@@ -16,6 +16,9 @@ GATE_POLL_INTERVAL_SECONDS="${GATE_POLL_INTERVAL_SECONDS:-2}"
 STAGE2_GATE_CASE_TIMEOUT_SECONDS="${STAGE2_GATE_CASE_TIMEOUT_SECONDS:-14400}"
 STAGE2_GATE_PYTHON="${STAGE2_GATE_PYTHON:-python3}"
 STAGE2_GATE_TERMINATION_GRACE_SECONDS="${STAGE2_GATE_TERMINATION_GRACE_SECONDS:-10}"
+STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES="${STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES:-3}"
+STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE="${STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE:-0.01}"
+STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT="${STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT:-10}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 COMPARATOR="${STAGE2_GATE_COMPARATOR:-${SCRIPT_DIR}/stage2_ngpu_ab_compare.py}"
@@ -84,6 +87,32 @@ preflight_clean_root() {
   fi
 }
 
+verify_source_state() {
+  local label="$1"
+  local root="$2"
+  local expected_sha="$3"
+  local allowed_scope="${4:-}"
+  local actual_sha
+  actual_sha="$(git -C "$root" rev-parse HEAD 2>/dev/null)" || {
+    printf '[gate][FATAL] cannot resolve %s source HEAD: %s\n' \
+      "$label" "$root" >&2
+    return 1
+  }
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    printf '[gate][FATAL] %s source HEAD %s != expected %s\n' \
+      "$label" "$actual_sha" "$expected_sha" >&2
+    return 1
+  fi
+  preflight_clean_root "$label" "$root" "$allowed_scope"
+}
+
+verify_all_source_states() {
+  verify_source_state baseline "$BASELINE_ROOT" "$EXPECTED_BASELINE_SHA" \
+    || return 1
+  verify_source_state optimized "$OPTIMIZED_ROOT" "$EXPECTED_OPTIMIZED_SHA" \
+    "$STAGE2_GATE_ARTIFACT_SCOPE"
+}
+
 BASELINE_ROOT="$(canonical_directory "$BASELINE_ROOT")" \
   || fatal "baseline root does not exist: ${BASELINE_ROOT}"
 OPTIMIZED_ROOT="$(canonical_directory "$OPTIMIZED_ROOT")" \
@@ -121,8 +150,7 @@ actual_optimized_sha="$(git -C "$OPTIMIZED_ROOT" rev-parse HEAD)" \
 [ "$actual_optimized_sha" = "$EXPECTED_OPTIMIZED_SHA" ] \
   || fatal "optimized HEAD ${actual_optimized_sha} != expected ${EXPECTED_OPTIMIZED_SHA}"
 
-preflight_clean_root baseline "$BASELINE_ROOT" || exit $?
-preflight_clean_root optimized "$OPTIMIZED_ROOT" "$STAGE2_GATE_ARTIFACT_SCOPE" || exit $?
+verify_all_source_states || exit $?
 
 case "$EPISODES" in
   ''|*[!0-9]*) fatal "EPISODES must be a positive integer: ${EPISODES}" ;;
@@ -134,6 +162,23 @@ esac
 case "$STAGE2_GATE_TERMINATION_GRACE_SECONDS" in
   ''|*[!0-9]*|0) fatal "STAGE2_GATE_TERMINATION_GRACE_SECONDS must be positive" ;;
 esac
+case "$STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES" in
+  ''|*[!0-9]*|0) fatal "STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES must be positive" ;;
+esac
+if ! awk -v value="$STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE" '
+    BEGIN {
+      valid = value ~ /^[0-9]+([.][0-9]+)?$/ && value + 0 > 0 && value + 0 <= 1
+      exit !valid
+    }'; then
+  fatal "STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE must be in (0, 1]"
+fi
+if ! awk -v value="$STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT" '
+    BEGIN {
+      valid = value ~ /^[0-9]+([.][0-9]+)?$/ && value + 0 > 0 && value + 0 <= 100
+      exit !valid
+    }'; then
+  fatal "STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT must be in (0, 100]"
+fi
 case "$REWARD_DEVICES" in
   ''|*[!0-9,]*) fatal "REWARD_DEVICES must be a comma-separated index list" ;;
   *,) fatal "REWARD_DEVICES must not end with a comma" ;;
@@ -261,6 +306,21 @@ terminate_process_group() {
     || true
 }
 
+terminate_owned_pid_or_group() {
+  local pid="$1"
+  local pgid
+  case "$pid" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+  if [ "$pgid" = "$pid" ]; then
+    terminate_process_group "$pgid"
+  else
+    kill -TERM "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
 wait_for_owned_launcher() {
   local launcher_pid="$1"
   local timeout_seconds="$2"
@@ -300,7 +360,7 @@ default_case_launcher() {
   local source_launcher="$source_root/llama_7B_LayerImportance.sh"
   local logical_devices
   local launcher_pid
-  local launch_rc reported_rc
+  local launch_rc reported_rc training_rc
   local -a probe_batch_args=()
 
   logical_devices="$(logical_device_spec "$physical_devices")" || return 64
@@ -399,12 +459,23 @@ default_case_launcher() {
   launch_rc=$?
   reported_rc="$launch_rc"
   if [ -s "$training_exit_file" ]; then
-    reported_rc="$(tr -d '[:space:]' < "$training_exit_file")"
-    case "$reported_rc" in
+    training_rc="$(tr -d '[:space:]' < "$training_exit_file")"
+    case "$training_rc" in
       ''|*[!0-9]*)
         printf '[gate][FATAL] %s wrote invalid training exit code: %s\n' \
-          "$case_name" "$reported_rc" >&2
+          "$case_name" "$training_rc" >&2
         reported_rc=125
+        ;;
+      *)
+        if [ "$launch_rc" -eq 124 ]; then
+          reported_rc=124
+        elif [ "$training_rc" -ne "$launch_rc" ]; then
+          printf '[gate][FATAL] %s launcher/training exit mismatch: %s != %s\n' \
+            "$case_name" "$launch_rc" "$training_rc" >&2
+          reported_rc=125
+        else
+          reported_rc="$training_rc"
+        fi
         ;;
     esac
   else
@@ -516,8 +587,10 @@ normalize_candidate_evidence() {
   local output_path="$2"
   "$STAGE2_GATE_PYTHON" - \
     "$input_path" "$output_path" "${SCRIPT_DIR}/.." <<'PY'
+import hashlib
 import json
 import pathlib
+import shutil
 import sys
 
 source = pathlib.Path(sys.argv[1])
@@ -525,9 +598,37 @@ destination = pathlib.Path(sys.argv[2])
 repo_root = pathlib.Path(sys.argv[3])
 sys.path.insert(0, str(repo_root))
 
-from blb_stage2_rl.candidate_store import CandidateStore
+from blb_stage2_rl.candidate_store import (
+    CandidateStore,
+    action_hash,
+    candidate_key,
+    sha256_json,
+)
 
-rows = CandidateStore(source).iter_active_records()
+validation_copy = destination.with_name(destination.name + ".validation-copy.tmp")
+
+
+def file_signature(path):
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+    return size, digest.hexdigest()
+
+
+original_signature = file_signature(source)
+try:
+    validation_copy.unlink()
+except FileNotFoundError:
+    pass
+shutil.copyfile(source, validation_copy)
+if file_signature(validation_copy) != original_signature:
+    raise ValueError("candidate evidence changed while creating validation copy")
 
 storage_fields = {
     "created_at",
@@ -559,43 +660,180 @@ def identity_context(row):
         return metadata["identity_context"]
     raise ValueError("candidate evidence row has no logical identity context")
 
+def canonical_identity(row):
+    context = identity_context(row)
+    action = [int(value) for value in row["action_indices"]]
+    raw_action = [
+        int(value) for value in row.get("raw_action_indices", action)
+    ]
+    effective_action = [
+        int(value) for value in row.get("effective_action_indices", action)
+    ]
+    expected_raw_hash = action_hash(raw_action)
+    expected_effective_hash = action_hash(effective_action)
+    for field in ("raw_action_hash", "action_hash", "action_vector_hash"):
+        if str(row.get(field, "")) != expected_raw_hash:
+            raise ValueError(f"candidate {field} mismatch")
+    if str(row.get("effective_action_hash", "")) != expected_effective_hash:
+        raise ValueError("candidate effective_action_hash mismatch")
+    expected_basis = "effective_action_hash + identity_context"
+    if str(row.get("candidate_key_basis", "")) != expected_basis:
+        raise ValueError("candidate_key_basis mismatch")
+    expected_context_hash = sha256_json(context)
+    if str(row.get("identity_context_hash", "")) != expected_context_hash:
+        raise ValueError("candidate identity_context_hash mismatch")
+    expected_key = candidate_key(
+        action,
+        context,
+        effective_action_indices=effective_action,
+        effective_action_hash_value=expected_effective_hash,
+    )
+    if str(row.get("candidate_key", "")) != expected_key:
+        raise ValueError("candidate_key mismatch")
+    return (
+        context,
+        effective_action,
+        expected_effective_hash,
+        expected_basis,
+        expected_key,
+        expected_context_hash,
+    )
+
+
 normalized = []
-for row in rows:
-    record_type = str(row.get("record_type", ""))
-    if record_type in {"candidate_identity_context_v1", "candidate_store_recovery_v1"}:
-        continue
-    payload = {
-        str(key): value
-        for key, value in row.items()
-        if key not in storage_fields and key != "record_type"
-    }
-    if record_type in trial_types:
-        payload["record_type"] = "candidate_trial_group"
-        payload["action_indices"] = [int(value) for value in row["action_indices"]]
-        payload["identity_context"] = identity_context(row)
-        metadata = row.get("trial_group_metadata")
-        metadata = dict(metadata) if isinstance(metadata, dict) else {}
-        metadata.pop("identity_context", None)
-        if str(row.get("fidelity", "")).upper() == "F1":
-            metadata.pop("boosted_overrides", None)
-        payload["trial_group_metadata"] = metadata
-    elif record_type in promotion_types:
-        payload["record_type"] = "candidate_promotion_status"
-        payload["action_indices"] = [int(value) for value in row["action_indices"]]
-        payload["identity_context"] = identity_context(row)
-        metadata = row.get("promotion_metadata")
-        payload["promotion_metadata"] = (
-            dict(metadata) if isinstance(metadata, dict) else {}
-        )
-    else:
-        payload["record_type"] = record_type
-    normalized.append(payload)
+try:
+    rows = CandidateStore(validation_copy).iter_active_records()
+    for row in rows:
+        record_type = str(row.get("record_type", ""))
+        if record_type in {
+            "candidate_identity_context_v1",
+            "candidate_store_recovery_v1",
+        }:
+            continue
+        payload = {
+            str(key): value
+            for key, value in row.items()
+            if key not in storage_fields and key != "record_type"
+        }
+        if record_type in trial_types or record_type in promotion_types:
+            (
+                context,
+                effective_action,
+                effective_hash,
+                key_basis,
+                key,
+                context_hash,
+            ) = canonical_identity(row)
+            payload["action_indices"] = effective_action
+            payload["effective_action_hash"] = effective_hash
+            payload["candidate_key_basis"] = key_basis
+            payload["candidate_key"] = key
+            payload["identity_context_hash"] = context_hash
+            payload["identity_context"] = context
+        if record_type in trial_types:
+            payload["record_type"] = "candidate_trial_group"
+            metadata = row.get("trial_group_metadata")
+            metadata = dict(metadata) if isinstance(metadata, dict) else {}
+            metadata.pop("identity_context", None)
+            if str(row.get("fidelity", "")).upper() == "F1":
+                metadata.pop("boosted_overrides", None)
+            payload["trial_group_metadata"] = metadata
+        elif record_type in promotion_types:
+            payload["record_type"] = "candidate_promotion_status"
+            metadata = row.get("promotion_metadata")
+            payload["promotion_metadata"] = (
+                dict(metadata) if isinstance(metadata, dict) else {}
+            )
+        else:
+            payload["record_type"] = record_type
+        normalized.append(payload)
+
+    if file_signature(validation_copy) != original_signature:
+        raise ValueError("candidate evidence requires tail repair")
+    if file_signature(source) != original_signature:
+        raise ValueError("candidate evidence changed during validation")
+finally:
+    try:
+        validation_copy.unlink()
+    except FileNotFoundError:
+        pass
 
 encoded = [json.dumps(row, sort_keys=True, separators=(",", ":")) for row in normalized]
 encoded.sort()
 with destination.open("w", encoding="utf-8") as handle:
     for line in encoded:
         handle.write(line + "\n")
+PY
+}
+
+validate_gpu_evidence() {
+  local gpu_json="$1"
+  local logical_devices
+  logical_devices="$(logical_device_spec "$REWARD_DEVICES")" || return 1
+  "$STAGE2_GATE_PYTHON" - \
+    "$gpu_json" "$REWARD_DEVICES" "$logical_devices" \
+    "$STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES" \
+    "$STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE" \
+    "$STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT" <<'PY'
+import json
+import pathlib
+import sys
+
+summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+physical_devices = {f"cuda:{int(value)}" for value in sys.argv[2].split(",")}
+logical_devices = {f"cuda:{int(value)}" for value in sys.argv[3].split(",")}
+minimum_active_samples = int(sys.argv[4])
+minimum_active_rate = float(sys.argv[5])
+minimum_max_util = float(sys.argv[6])
+gpu_utilization = summary.get("gpu_utilization") or {}
+errors = []
+
+for device in sorted(physical_devices):
+    info = gpu_utilization.get(device)
+    if not isinstance(info, dict):
+        errors.append(f"{device}: no nvidia-smi samples")
+        continue
+    samples = int(info.get("samples", 0) or 0)
+    active_rate = float(info.get("active_sample_rate", 0.0) or 0.0)
+    max_util = float(info.get("max_util_pct", 0.0) or 0.0)
+    if samples < minimum_active_samples:
+        errors.append(
+            f"{device}: samples={samples} < {minimum_active_samples}"
+        )
+    if active_rate * samples + 1.0e-9 < minimum_active_samples:
+        errors.append(
+            f"{device}: active_samples={active_rate * samples:.3f} "
+            f"< {minimum_active_samples}"
+        )
+    if active_rate < minimum_active_rate:
+        errors.append(
+            f"{device}: active_sample_rate={active_rate:.6f} "
+            f"< {minimum_active_rate:.6f}"
+        )
+    if max_util < minimum_max_util:
+        errors.append(
+            f"{device}: max_util_pct={max_util:.3f} < {minimum_max_util:.3f}"
+        )
+
+used_probe_devices = set(summary.get("used_probe_devices") or ())
+if used_probe_devices != logical_devices:
+    errors.append(
+        "logical probe devices mismatch: "
+        f"observed={sorted(used_probe_devices)} expected={sorted(logical_devices)}"
+    )
+for field in (
+    "probe_trial_counts_by_device",
+    "probe_episode_counts_by_device",
+):
+    counts = summary.get(field) or {}
+    for device in sorted(logical_devices):
+        if int(counts.get(device, 0) or 0) <= 0:
+            errors.append(f"{field}[{device}] is not positive")
+
+if errors:
+    for error in errors:
+        print(f"[gate][FATAL] {error}", file=sys.stderr)
+    raise SystemExit(2)
 PY
 }
 
@@ -650,6 +888,14 @@ validate_case_evidence() {
     printf 'FAIL requested GPU activity\n' > "$case_dir/evidence_status.txt"
     return 1
   fi
+  if ! validate_gpu_evidence "$gpu_json" \
+      >> "$case_dir/gpu_activity_validation.log" 2>&1; then
+    printf 'FAIL sustained GPU or probe-device coverage\n' \
+      > "$case_dir/gpu_activity_status.txt"
+    printf 'FAIL sustained GPU or probe-device coverage\n' \
+      > "$case_dir/evidence_status.txt"
+    return 1
+  fi
   printf 'PASS\n' > "$case_dir/gpu_activity_status.txt"
   printf 'PASS\n' > "$case_dir/evidence_status.txt"
 }
@@ -658,10 +904,11 @@ LAST_LAUNCH_RC=0
 LAST_EVIDENCE_PASS=0
 ACTIVE_CASE_DIR=""
 ACTIVE_SAMPLER_PID=""
+ACTIVE_GATE_LAUNCHER_PID=""
 
 cleanup_active_case() {
   local pgid=""
-  local gate_launcher_pid=""
+  local child_pid
   if [ -n "$ACTIVE_SAMPLER_PID" ]; then
     kill "$ACTIVE_SAMPLER_PID" 2>/dev/null || true
     wait "$ACTIVE_SAMPLER_PID" 2>/dev/null || true
@@ -674,19 +921,15 @@ cleanup_active_case() {
       *) terminate_process_group "$pgid" ;;
     esac
   fi
-  if [ -n "$ACTIVE_CASE_DIR" ] \
-      && [ -s "$ACTIVE_CASE_DIR/gate_launcher_pid.txt" ]; then
-    gate_launcher_pid="$(
-      tr -d '[:space:]' < "$ACTIVE_CASE_DIR/gate_launcher_pid.txt"
-    )"
-    case "$gate_launcher_pid" in
-      ''|*[!0-9]*) ;;
-      *)
-        kill -TERM "$gate_launcher_pid" 2>/dev/null || true
-        wait "$gate_launcher_pid" 2>/dev/null || true
-        ;;
-    esac
+  if [ -n "$ACTIVE_GATE_LAUNCHER_PID" ]; then
+    terminate_owned_pid_or_group "$ACTIVE_GATE_LAUNCHER_PID"
+  else
+    while IFS= read -r child_pid; do
+      [ "$child_pid" = "$ACTIVE_SAMPLER_PID" ] && continue
+      terminate_owned_pid_or_group "$child_pid"
+    done < <(jobs -pr)
   fi
+  ACTIVE_GATE_LAUNCHER_PID=""
 }
 
 handle_gate_signal() {
@@ -722,7 +965,7 @@ run_case() {
   ACTIVE_SAMPLER_PID="$sampler_pid"
 
   if [ -n "${STAGE2_GATE_CASE_LAUNCHER:-}" ]; then
-    "$STAGE2_GATE_CASE_LAUNCHER" \
+    setsid "$STAGE2_GATE_CASE_LAUNCHER" \
       "$case_name" "$source_root" "$batch_size" "$EPISODES" \
       "$REWARD_DEVICES" "$case_dir" > "$launcher_log" 2>&1 &
   else
@@ -731,6 +974,7 @@ run_case() {
       "$REWARD_DEVICES" "$case_dir" > "$launcher_log" 2>&1 &
   fi
   launcher_pid=$!
+  ACTIVE_GATE_LAUNCHER_PID="$launcher_pid"
   printf '%s\n' "$launcher_pid" > "$case_dir/gate_launcher_pid.txt"
 
   sample_worker_inventory "$case_dir" "$launcher_pid"
@@ -740,6 +984,7 @@ run_case() {
   done
   wait "$launcher_pid"
   launch_rc=$?
+  ACTIVE_GATE_LAUNCHER_PID=""
 
   kill "$sampler_pid" 2>/dev/null || true
   wait "$sampler_pid" 2>/dev/null || true
@@ -791,9 +1036,11 @@ for case_index in "${!CASE_NAMES[@]}"; do
   case_root="${CASE_ROOTS[$case_index]}"
   case_batch="${CASE_BATCHES[$case_index]}"
   case_dir="$ARTIFACT_DIR/cases/$case_name"
+  verify_all_source_states || exit $?
   printf '[gate] running %s from %s (batch=%s)\n' \
     "$case_name" "$case_root" "$case_batch"
   run_case "$case_name" "$case_root" "$case_batch" "$case_dir"
+  verify_all_source_states || exit $?
   CASE_LAUNCH_RCS+=("$LAST_LAUNCH_RC")
   CASE_EVIDENCE_PASSES+=("$LAST_EVIDENCE_PASS")
 done
