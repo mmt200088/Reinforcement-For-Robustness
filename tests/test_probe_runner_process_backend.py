@@ -154,6 +154,194 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         )
         return runner, remotes[0]
 
+    def _assert_pool_telemetry(
+            self,
+            diagnostics,
+            *,
+            owner,
+            batch_set_key,
+            batch_count,
+            process_count,
+            worker_intraop_threads,
+            worker_interop_threads,
+            ):
+        expected = {
+            "pool_id": owner.pool_id,
+            "batch_set_key": batch_set_key,
+            "batch_count": batch_count,
+            "process_count": process_count,
+            "worker_intraop_threads": worker_intraop_threads,
+            "worker_interop_threads": worker_interop_threads,
+        }
+        missing_fields = [
+            field_name
+            for field_name in expected
+            if not hasattr(diagnostics, field_name)
+        ]
+        self.assertEqual(
+            missing_fields,
+            [],
+            "ProbeRunnerDiagnostics is missing pool telemetry fields",
+        )
+        self.assertEqual(
+            {
+                field_name: getattr(diagnostics, field_name)
+                for field_name in expected
+            },
+            expected,
+        )
+
+        payload = _probe_runner.diagnostics_payload(diagnostics)
+        missing_payload_fields = [
+            field_name
+            for field_name in expected
+            if field_name not in payload
+        ]
+        self.assertEqual(
+            missing_payload_fields,
+            [],
+            "diagnostics_payload is missing pool telemetry fields",
+        )
+        self.assertEqual(
+            {field_name: payload[field_name] for field_name in expected},
+            expected,
+        )
+
+    @mock.patch.dict(os.environ, {
+        "BLB_STAGE2_PROBE_INTRAOP_THREADS": "7",
+        "BLB_STAGE2_PROBE_INTEROP_THREADS": "5",
+    })
+    def test_all_diagnostics_paths_populate_low_overhead_pool_telemetry(self):
+        cases = [
+            (
+                "process run_trials",
+                1,
+                lambda view: view.run_trials(k=2, base_seed=41),
+            ),
+            (
+                "empty run_trials",
+                1,
+                lambda view: view.run_trials(k=0, base_seed=41),
+            ),
+            (
+                "thread run_trials",
+                0,
+                lambda view: view.run_trials(k=1, base_seed=41),
+            ),
+            (
+                "process run_action_trials_once",
+                1,
+                lambda view: view.run_action_trials_once(
+                    [object(), object()], base_seed=43,
+                ),
+            ),
+            (
+                "empty run_action_trials_once",
+                1,
+                lambda view: view.run_action_trials_once([], base_seed=43),
+            ),
+            (
+                "thread run_action_trials_once",
+                0,
+                lambda view: view.run_action_trials_once(
+                    [object()], base_seed=43,
+                ),
+            ),
+        ]
+
+        for name, process_count, invoke in cases:
+            with self.subTest(name=name):
+                events = []
+                if process_count:
+                    owner, _remotes = self._runner_with_process_count(
+                        events, process_count=process_count,
+                    )
+                else:
+                    owner = ProbeRunner([self._LocalWorker(events)])
+                try:
+                    owner.register_batch_set(
+                        "F4", ["validation-a", "validation-b"],
+                    )
+                    view = owner.view("F4")
+
+                    invoke(view)
+
+                    diagnostics = view.last_diagnostics
+                    self.assertIsNotNone(diagnostics)
+                    self._assert_pool_telemetry(
+                        diagnostics,
+                        owner=owner,
+                        batch_set_key="F4",
+                        batch_count=2,
+                        process_count=process_count,
+                        worker_intraop_threads=7,
+                        worker_interop_threads=5,
+                    )
+                finally:
+                    owner.close()
+
+    @mock.patch.dict(os.environ, {
+        "BLB_STAGE2_PROBE_INTRAOP_THREADS": "7",
+        "BLB_STAGE2_PROBE_INTEROP_THREADS": "5",
+    })
+    def test_process_pool_views_report_distinct_f1_f4_batch_telemetry(self):
+        events = []
+        owner, remotes = self._runner_with_process_count(
+            events, process_count=4,
+        )
+        try:
+            with mock.patch.object(
+                    torch.cuda,
+                    "synchronize",
+                    side_effect=AssertionError(
+                        "pool telemetry must not synchronize CUDA",
+                    ),
+                    ) as synchronize:
+                owner.register_batch_set(
+                    "F4", ["validation-a", "validation-b"],
+                )
+                f1 = owner.view("F1")
+                f4 = owner.view("F4")
+
+                f1.run_trials(k=5, base_seed=41)
+                f1_diagnostics = f1.last_diagnostics
+                f4.run_trials(k=5, base_seed=43)
+                f4_diagnostics = f4.last_diagnostics
+
+            self.assertEqual(synchronize.call_count, 0)
+            self.assertEqual(len(remotes), 4)
+            self.assertIsNotNone(f1_diagnostics)
+            self.assertIsNotNone(f4_diagnostics)
+            self._assert_pool_telemetry(
+                f1_diagnostics,
+                owner=owner,
+                batch_set_key="F1",
+                batch_count=1,
+                process_count=4,
+                worker_intraop_threads=7,
+                worker_interop_threads=5,
+            )
+            self._assert_pool_telemetry(
+                f4_diagnostics,
+                owner=owner,
+                batch_set_key="F4",
+                batch_count=2,
+                process_count=4,
+                worker_intraop_threads=7,
+                worker_interop_threads=5,
+            )
+            self.assertEqual(f1_diagnostics.pool_id, f4_diagnostics.pool_id)
+            self.assertEqual(
+                [
+                    event[1]
+                    for event in events
+                    if event[0] == "remote-submit"
+                ],
+                ["register_batch_set"] * 4 + ["run_trials"] * 8,
+            )
+        finally:
+            owner.close()
+
     def test_remote_trials_are_submitted_before_local_gpu_runs(self):
         events = []
         runner, _remote = self._runner(events)
