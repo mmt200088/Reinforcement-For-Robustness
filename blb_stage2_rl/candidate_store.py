@@ -408,6 +408,25 @@ class CandidateStore:
             Dict[str, Tuple[bool, str]]
         ] = None
         self._identity_context_by_hash: Optional[Dict[str, Dict[str, Any]]] = None
+        self._storage_signature = self._current_storage_signature()
+
+    def _current_storage_signature(self) -> Tuple[bool, int, int, int]:
+        if not self.path.exists():
+            return (False, 0, 0, 0)
+        try:
+            stat = self.path.stat()
+        except FileNotFoundError:
+            return (False, 0, 0, 0)
+        return (True, int(stat.st_dev), int(stat.st_ino), int(stat.st_size))
+
+    def _refresh_external_storage(self, *, for_write: bool = False) -> None:
+        signature = self._current_storage_signature()
+        if signature == self._storage_signature:
+            return
+        if not signature[0] and not for_write:
+            return
+        self._invalidate_recovery_layout()
+        self._storage_signature = signature
 
     def _reset_trial_indices(self) -> None:
         self._trial_offsets_by_candidate_key = None
@@ -499,14 +518,9 @@ class CandidateStore:
         payload = copy.deepcopy(dict(record))
         if str(payload.get("record_type", "")) not in _COMPACT_RECORD_TYPES:
             return payload
-        context_hash = str(payload.get("identity_context_hash", ""))
-        context = context_index.get(context_hash)
-        if not context_hash or context is None:
-            raise ValueError(
-                "candidate compact record references a missing identity context"
-            )
-        if sha256_json(context) != context_hash:
-            raise ValueError("candidate identity context hash/content mismatch")
+        context = CandidateStore._compact_record_identity_context(
+            payload, context_index,
+        )
         action = normalize_action_indices(payload.get("action_indices", ()))
         payload["action_indices"] = action
         payload["raw_action_indices"] = list(action)
@@ -519,9 +533,46 @@ class CandidateStore:
             payload["trial_group_metadata"] = metadata
         return payload
 
+    @staticmethod
+    def _compact_record_identity_context(
+            record: Mapping[str, Any],
+            context_index: Mapping[str, Mapping[str, Any]],
+            ) -> Mapping[str, Any]:
+        context_hash = str(record.get("identity_context_hash", ""))
+        context = context_index.get(context_hash)
+        if not context_hash or context is None:
+            raise ValueError(
+                "candidate compact record references a missing identity context"
+            )
+        return context
+
+    @staticmethod
+    def _hydrate_compact_evidence_record(
+            record: Mapping[str, Any],
+            context_index: Mapping[str, Mapping[str, Any]],
+            ) -> Dict[str, Any]:
+        payload = dict(record)
+        if str(payload.get("record_type", "")) not in _COMPACT_RECORD_TYPES:
+            return payload
+        context = CandidateStore._compact_record_identity_context(
+            payload, context_index,
+        )
+        payload["identity_context"] = copy.deepcopy(dict(context))
+        if payload.get("record_type") == "candidate_trial_group_v2":
+            metadata = payload.get("trial_group_metadata")
+            metadata = copy.deepcopy(dict(metadata)) if isinstance(metadata, Mapping) else {}
+            metadata["identity_context"] = copy.deepcopy(dict(context))
+            payload["trial_group_metadata"] = metadata
+        return payload
+
     def _load_recovery_layout(self) -> None:
+        self._refresh_external_storage()
         self._repair_unterminated_tail()
-        file_size = self.path.stat().st_size if self.path.exists() else 0
+        signature = self._current_storage_signature()
+        if signature != self._storage_signature:
+            self._invalidate_recovery_layout()
+            self._storage_signature = signature
+        file_size = signature[3]
         if self._recovery_layout_size == file_size:
             return
         if self._recovery_layout_size is not None:
@@ -571,6 +622,7 @@ class CandidateStore:
             (marker[3] for marker in markers),
             default=0,
         )
+        self._storage_signature = signature
 
     def _iter_active_records(self) -> Iterator[Tuple[int, Dict[str, Any]]]:
         self._load_recovery_layout()
@@ -598,6 +650,7 @@ class CandidateStore:
         size = int(committed_size)
         if size < 0:
             raise ValueError("committed_size must be non-negative")
+        self._refresh_external_storage(for_write=True)
         self._repair_unterminated_tail()
         current = self.path.stat().st_size if self.path.exists() else 0
         if size > current:
@@ -629,6 +682,7 @@ class CandidateStore:
             self._recovery_markers = markers
             self._active_spans = self._resolve_active_spans(markers, marker_end)
             self._logical_generation = next_generation
+        self._storage_signature = self._current_storage_signature()
         self._reset_trial_indices()
 
     def _repair_unterminated_tail(self) -> None:
@@ -700,6 +754,7 @@ class CandidateStore:
         payload.setdefault(
             "created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
+        self._refresh_external_storage(for_write=True)
         self._load_recovery_layout()
         payload.setdefault("logical_generation", self._logical_generation)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -707,10 +762,12 @@ class CandidateStore:
         row_offset = self.path.stat().st_size if self.path.exists() else 0
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(_CANDIDATE_JSONL_ENCODER.encode(payload) + "\n")
-        if self.path.exists():
-            self._extend_active_tail(row_offset, self.path.stat().st_size)
+        signature = self._current_storage_signature()
+        if signature[0]:
+            self._extend_active_tail(row_offset, signature[3])
         else:
             self._invalidate_recovery_layout()
+        self._storage_signature = signature
 
         record_type = str(payload.get("record_type", ""))
         if (
@@ -730,7 +787,7 @@ class CandidateStore:
                 if self._identity_context_by_hash is None:
                     self._reset_trial_indices()
                     return payload
-                indexed_payload = self._hydrate_compact_record(
+                self._compact_record_identity_context(
                     payload, self._identity_context_by_hash,
                 )
             self._index_trial_record(indexed_payload, offset=row_offset)
@@ -828,6 +885,7 @@ class CandidateStore:
         self._promotion_state_by_candidate_key[key] = (attempted, status)
 
     def _ensure_trial_indices(self) -> None:
+        self._refresh_external_storage()
         if (
                 self._trial_offsets_by_candidate_key is not None
                 and self._trial_seeds_by_candidate_key is not None
@@ -858,7 +916,7 @@ class CandidateStore:
                 if record_type not in _INDEXED_RECORD_TYPES:
                     continue
                 if record_type in _COMPACT_RECORD_TYPES:
-                    record = self._hydrate_compact_record(
+                    self._compact_record_identity_context(
                         record, self._identity_context_by_hash,
                     )
                 if not record.get("candidate_key"):
@@ -886,7 +944,7 @@ class CandidateStore:
                 )
                 if record is not None:
                     if str(record.get("record_type", "")) in _COMPACT_RECORD_TYPES:
-                        record = self._hydrate_compact_record(
+                        record = self._hydrate_compact_evidence_record(
                             record, self._identity_context_by_hash,
                         )
                     yield record
@@ -977,6 +1035,7 @@ class CandidateStore:
         normalized_action = normalize_action_indices(action_indices)
         wanted_key = candidate_key(normalized_action, identity_context)
         fidelity = str(metadata.get("fidelity", "F1"))
+        self._refresh_external_storage(for_write=True)
         self._ensure_trial_indices()
         existing_seeds = self._trial_seeds_by_candidate_key.get(wanted_key, set())
         overlap = sorted(
@@ -1019,7 +1078,10 @@ class CandidateStore:
                         if isinstance(existing_metadata, Mapping) else {}
                     )
                     exact_record_type = str(exact_record.get("record_type", ""))
-                    compare_compact = exact_record_type == "candidate_trial_group_v2"
+                    compare_compact = (
+                        bool(compact)
+                        or exact_record_type == "candidate_trial_group_v2"
+                    )
                     incoming_comparison_metadata = self._trial_group_metadata_payload(
                         metadata,
                         compact=compare_compact,
@@ -1093,6 +1155,7 @@ class CandidateStore:
         if metadata is not None and not isinstance(metadata, Mapping):
             raise TypeError("metadata must be a mapping")
         action = normalize_action_indices(action_indices)
+        self._refresh_external_storage(for_write=True)
         context_hash = self._intern_identity_context(identity_context)
         payload = {
             "record_type": "candidate_promotion_status_v2",
