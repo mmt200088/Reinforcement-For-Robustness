@@ -246,6 +246,22 @@ class Stage2Stage1AlignmentDefaultsTest(unittest.TestCase):
                 f"default preset re-enables Stage-2 scaffold: {forbidden}",
             )
 
+    def test_default_stage2_preset_pins_verified_probe_batch_sizes(self):
+        active = _active_config_lines("presets/mrpc-blb-stage2-rl.conf")
+
+        self.assertEqual(
+            [
+                line
+                for line in active
+                if line.startswith("--blb-v3-probe-batch-size")
+                or line.startswith("--blb-v3-validation-probe-batch-size")
+            ],
+            [
+                "--blb-v3-probe-batch-size 64",
+                "--blb-v3-validation-probe-batch-size 64",
+            ],
+        )
+
     def test_server_60k_command_does_not_reenable_stage2_scaffolds(self):
         text = (REPO_ROOT / "SERVER_COMMAND.md").read_text(encoding="utf-8")
         marker = "[phase60k]"
