@@ -63,6 +63,14 @@ def _make_fake_detached_llama(path):
         #!/usr/bin/env bash
         set -euo pipefail
 
+        if [ "${FAKE_REQUIRE_ORIGINAL_LAUNCHER_PATH:-0}" = "1" ]; then
+          launcher_root="$(cd "$(dirname "$0")" && pwd -P)"
+          [ -f "$launcher_root/presets/mrpc-blb-stage2-rl.conf" ] || {
+            printf 'preset lookup failed relative to launcher path: %s\n' "$0" >&2
+            exit 69
+          }
+        fi
+
         persistent_root=''
         while [ "$#" -gt 0 ]; do
           if [ "$1" = "--persistent-root" ]; then
@@ -94,6 +102,11 @@ def _make_fake_detached_llama(path):
 def _init_clean_root(path):
     path.mkdir(parents=True)
     (path / "README.txt").write_text("fixture\n", encoding="utf-8")
+    presets = path / "presets"
+    presets.mkdir()
+    (presets / "mrpc-blb-stage2-rl.conf").write_text(
+        "# fixture preset\n", encoding="utf-8",
+    )
     scripts = path / "scripts"
     scripts.mkdir()
     shutil.copy2(_COMPARATOR, scripts / _COMPARATOR.name)
@@ -596,6 +609,42 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             self.assertTrue(launch_log.is_file(), output)
             self.assertTrue((cpu_tests / "full_pytest.log").is_file())
 
+    def test_artifact_scope_cannot_hide_unrelated_worktree_dirtiness(self):
+        cases = ("root_scope", "outside_scope")
+        for case_name in cases:
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as td:
+                root = pathlib.Path(td)
+                baseline, optimized = self._roots(root)
+                run_artifact = (
+                    optimized / "experiments" / "server_command_runs" / "existing"
+                )
+                (run_artifact / "cpu_tests").mkdir(parents=True)
+                (run_artifact / "cpu_tests" / "full_pytest.log").write_text(
+                    "allowed evidence\n", encoding="utf-8",
+                )
+                if case_name == "outside_scope":
+                    (optimized / "unexpected.tmp").write_text(
+                        "unrelated\n", encoding="utf-8",
+                    )
+                harness = root / "harness"
+                harness.mkdir()
+                env, _nvidia_log, launch_log = _base_gate_env(
+                    harness,
+                    baseline,
+                    optimized,
+                    run_artifact / "gpu_gate",
+                )
+                env["STAGE2_GATE_ARTIFACT_SCOPE"] = str(
+                    optimized if case_name == "root_scope" else run_artifact
+                )
+
+                proc = _run_gate(env)
+                output = _combined_output(proc)
+
+                self.assertNotEqual(proc.returncode, 0, output)
+                self.assertRegex(output.lower(), r"scope|dirty|worktree root")
+                self.assertFalse(launch_log.exists(), output)
+
     def test_nonempty_compute_pid_fails_idle_gpu_preflight_before_training(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -816,6 +865,39 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             self.assertFalse(by_case["opt128"]["launch_pass"])
             self.assertFalse(by_case["opt128"]["semantic_pass"])
             self.assertEqual(verdict["fastest_eligible_case"], "opt256")
+
+    def test_default_launcher_preserves_original_launcher_path_resolution(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env.pop("STAGE2_GATE_CASE_LAUNCHER")
+            env["FAKE_REQUIRE_ORIGINAL_LAUNCHER_PATH"] = "1"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertEqual(proc.returncode, 0, output)
+            self.assertEqual(
+                [
+                    line.split("|", 1)[0]
+                    for line in launch_log.read_text(encoding="utf-8").splitlines()
+                ],
+                ["base64", "opt64", "opt128", "opt256"],
+            )
+            for case_name in ("base64", "opt64", "opt128", "opt256"):
+                self.assertEqual(
+                    (artifact_dir / "cases" / case_name / "training_exit_code.txt")
+                    .read_text(encoding="utf-8")
+                    .strip(),
+                    "0",
+                )
 
     def test_semantic_mismatch_exits_nonzero_and_excludes_faster_case_from_ranking(self):
         with tempfile.TemporaryDirectory() as td:
