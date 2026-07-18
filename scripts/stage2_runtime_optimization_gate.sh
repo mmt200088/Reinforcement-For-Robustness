@@ -332,11 +332,12 @@ process_group_exists() {
 wait_for_process_group_exit() {
   local pgid="$1"
   local timeout_seconds="$2"
-  local started now
-  started="$(date +%s)"
+  local started_ns now_ns timeout_ns
+  started_ns="$(date +%s%N)"
+  timeout_ns=$((timeout_seconds * 1000000000))
   while process_group_exists "$pgid"; do
-    now="$(date +%s)"
-    [ $((now - started)) -lt "$timeout_seconds" ] || return 1
+    now_ns="$(date +%s%N)"
+    [ $((now_ns - started_ns)) -lt "$timeout_ns" ] || return 1
     sleep 1
   done
 }
@@ -377,11 +378,12 @@ wait_for_owned_launcher() {
   local launcher_pid="$1"
   local timeout_seconds="$2"
   local case_dir="${3:-}"
-  local started now wait_rc timed_out=0 residual=0
-  started="$(date +%s)"
+  local started_ns now_ns timeout_ns wait_rc timed_out=0 residual=0
+  started_ns="$(date +%s%N)"
+  timeout_ns=$((timeout_seconds * 1000000000))
   while kill -0 "$launcher_pid" 2>/dev/null; do
-    now="$(date +%s)"
-    if [ $((now - started)) -ge "$timeout_seconds" ]; then
+    now_ns="$(date +%s%N)"
+    if [ $((now_ns - started_ns)) -ge "$timeout_ns" ]; then
       printf '[gate][FATAL] owned training group %s exceeded %ss\n' \
         "$launcher_pid" "$timeout_seconds" >&2
       terminate_owned_pid_or_group "$launcher_pid"

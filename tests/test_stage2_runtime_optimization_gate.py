@@ -416,7 +416,7 @@ def _base_gate_env(root, baseline, optimized, artifact_dir):
         "FAKE_CURRENT_CASE_FILE": str(root / "current-case.txt"),
         "FAKE_CASE_RUNNING_FILE": str(root / "running-case.txt"),
         "FAKE_LAUNCH_LOG": str(launch_log),
-        "GPU_SAMPLE_INTERVAL_SECONDS": "0.01",
+        "GPU_SAMPLE_INTERVAL_SECONDS": "0.005",
         "GATE_POLL_INTERVAL_SECONDS": "0.01",
         "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
     })
