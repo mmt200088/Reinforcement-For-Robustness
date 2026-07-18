@@ -24,7 +24,6 @@ TIMING_OR_DEVICE_KEYS = {
     "terminal_probe_wall_seconds",
     "terminal_probe_devices",
     "terminal_probe_trial_counts",
-    "terminal_probe_trial_indices",
     "terminal_probe_speedup",
     "terminal_cost_eval_wall_seconds",
     "terminal_probe_install_wall_seconds",
@@ -41,13 +40,32 @@ PPO_TIMING_KEYS = {
     "elapsed_sec",
 }
 
+RUNTIME_TELEMETRY_KEYS = {
+    "candidate_bytes_written",
+    "process_rss_bytes",
+    "process_peak_rss_bytes",
+    "pool_id",
+    "batch_set_key",
+    "batch_count",
+    "process_count",
+    "worker_intraop_threads",
+    "worker_interop_threads",
+}
+
 DIAGNOSTIC_BOOKKEEPING_KEYS = {
     # Frontier event classification is diagnostic bookkeeping. It can differ
     # between historical 1-GPU and N-GPU artifacts even when rewards, metrics,
     # actions, hashes, and PPO-visible fields are identical.
     "terminal_pareto_event_kind",
     "terminal_pareto_frontier_removed",
+    # Preserve the historical lenient direct API. Strict diagnostics and
+    # --require-equal compare trial assignment exactly.
+    "terminal_probe_trial_indices",
 }
+
+
+def _default_episode_exclusions() -> set[str]:
+    return set(TIMING_OR_DEVICE_KEYS) | set(RUNTIME_TELEMETRY_KEYS)
 
 
 def _find_jsonl(path: str, filename: str) -> str:
@@ -124,7 +142,10 @@ def _canonical(
         strict_diagnostics: bool = False,
         excluded_keys: Optional[Iterable[str]] = None,
         ) -> Dict[str, Any]:
-    excluded = set(TIMING_OR_DEVICE_KEYS if excluded_keys is None else excluded_keys)
+    excluded = (
+        _default_episode_exclusions()
+        if excluded_keys is None else set(excluded_keys)
+    )
     if not bool(strict_diagnostics):
         excluded.update(DIAGNOSTIC_BOOKKEEPING_KEYS)
     return _canonical_with_exclusions(row, excluded)
@@ -200,7 +221,10 @@ def compare_rows(
         ) -> Tuple[bool, List[str]]:
     if len(one) != len(many):
         return False, [f"{row_label} count differs: {len(one)} != {len(many)}"]
-    excluded = set(TIMING_OR_DEVICE_KEYS if excluded_keys is None else excluded_keys)
+    excluded = (
+        _default_episode_exclusions()
+        if excluded_keys is None else set(excluded_keys)
+    )
     if not bool(strict_diagnostics):
         excluded.update(DIAGNOSTIC_BOOKKEEPING_KEYS)
     diffs: List[str] = []
@@ -356,12 +380,13 @@ def _timing_report_lines(label: str, summary: Mapping[str, float]) -> List[str]:
 def iter_report_lines(args: argparse.Namespace) -> Iterable[str]:
     one = _load_episodes(args.one)
     many = _load_episodes(args.many)
+    require_equal = bool(getattr(args, "require_equal", False))
     equality_ok, diffs = compare_rows(
         one,
         many,
         atol=float(args.atol),
         limit=int(args.max_diffs),
-        strict_diagnostics=bool(args.strict_diagnostics),
+        strict_diagnostics=bool(args.strict_diagnostics) or require_equal,
     )
     _diag_ok, diag_diffs = compare_rows(
         one,
@@ -396,7 +421,7 @@ def iter_report_lines(args: argparse.Namespace) -> Iterable[str]:
                 strict_diagnostics=True,
                 key_field="update",
                 row_label="ppo_update",
-                excluded_keys=PPO_TIMING_KEYS,
+                excluded_keys=PPO_TIMING_KEYS | RUNTIME_TELEMETRY_KEYS,
             )
     one_wall = _read_wall_seconds(args.one_wall)
     many_wall = _read_wall_seconds(args.many_wall)
