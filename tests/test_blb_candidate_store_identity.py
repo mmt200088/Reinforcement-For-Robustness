@@ -735,6 +735,70 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                     metadata,
                 )
 
+    def test_legacy_f1_replay_uses_compact_metadata_normalization_strictly(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        fixture = self._representative_compact_fixture()
+        action = fixture["action"]
+        trials = fixture["trials"]["F1"]
+        legacy_metadata = fixture["metadata"]["F1"]
+        compact_metadata = dict(legacy_metadata)
+        compact_metadata.pop("boosted_overrides")
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            store = CandidateStore(path)
+            store.append_trial_group(action, trials, legacy_metadata)
+            size_before_replay = path.stat().st_size
+
+            replay = store.append_trial_group(
+                action, trials, compact_metadata, compact=True,
+            )
+            self.assertTrue(replay["idempotent_replay"])
+            self.assertEqual(path.stat().st_size, size_before_replay)
+
+            changed_metadata = (
+                {
+                    **compact_metadata,
+                    "boosted_overrides_hash": "changed-overrides-hash",
+                },
+                {
+                    **compact_metadata,
+                    "boosted_overrides_provenance": "changed-provenance",
+                },
+                {**compact_metadata, "episode_index": 999},
+            )
+            for metadata in changed_metadata:
+                with self.subTest(metadata=metadata):
+                    with self.assertRaisesRegex(ValueError, "metadata"):
+                        store.append_trial_group(
+                            action, trials, metadata, compact=True,
+                        )
+
+            changed_trials = TrialSeries(
+                loss=[9.9, *trials.loss[1:]],
+                metric1=trials.metric1,
+                metric2=trials.metric2,
+                seeds=trials.seeds,
+            )
+            with self.assertRaisesRegex(ValueError, "duplicate trial seeds"):
+                store.append_trial_group(
+                    action, changed_trials, compact_metadata, compact=True,
+                )
+
+            compact_first_path = Path(td) / "compact_first.jsonl"
+            compact_first = CandidateStore(compact_first_path)
+            compact_first.append_trial_group(
+                action, trials, compact_metadata, compact=True,
+            )
+            compact_size = compact_first_path.stat().st_size
+            legacy_replay = compact_first.append_trial_group(
+                action, trials, legacy_metadata,
+            )
+            self.assertTrue(legacy_replay["idempotent_replay"])
+            self.assertEqual(compact_first_path.stat().st_size, compact_size)
+
     def test_trial_index_streams_and_keeps_only_offsets_and_seed_sets(self):
         from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
         from blb_stage2_rl.statistical_constraints import TrialSeries
@@ -916,6 +980,36 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(recovery_generations, [1, 2, 3])
         self.assertEqual(evidence_after_reusing_orphan_seed.trials.seeds, (1, 3, 2))
 
+    def test_warm_trial_index_refreshes_after_external_checkpoint_recovery(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [1, 2, 3]
+        context = {"action_space_version": "layerwise-v1"}
+        metadata = {"identity_context": context}
+
+        def one_trial(seed, value):
+            return TrialSeries(
+                loss=[value], metric1=[1.0 - value], metric2=[2.0 - value],
+                seeds=[seed],
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            warm = CandidateStore(path)
+            warm.append_trial_group(action, one_trial(1, 0.1), metadata)
+            committed_size = path.stat().st_size
+            warm.append_trial_group(action, one_trial(2, 0.2), metadata)
+            self.assertEqual(warm.trial_count_for_action(action, context), 2)
+
+            CandidateStore(path).recover_to_checkpoint_size(committed_size)
+
+            self.assertEqual(warm.trial_count_for_action(action, context), 1)
+            self.assertEqual(
+                warm.trial_evidence_for_action(action, context).trials.seeds,
+                (1,),
+            )
+
     def test_trial_evidence_index_avoids_read_all_and_tracks_new_appends(self):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.statistical_constraints import TrialSeries
@@ -1033,6 +1127,87 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             )
 
         self.assertEqual(store.trial_count_for_action(action, context), 4)
+
+    def test_unlinked_compact_store_keeps_read_cache_but_rebuilds_before_write(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [1, 2, 3]
+        context = {"action_space_version": "layerwise-v1", "fidelity": "F1"}
+        metadata = {"identity_context": context, "fidelity": "F1"}
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            store = CandidateStore(path)
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.1], metric1=[0.9], metric2=[0.8], seeds=[1],
+                ),
+                metadata,
+                compact=True,
+            )
+            path.unlink()
+
+            self.assertEqual(store.trial_count_for_action(action, context), 1)
+
+            store.append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.2], metric1=[0.8], metric2=[0.7], seeds=[2],
+                ),
+                metadata,
+                compact=True,
+            )
+            records = store.read_all()
+            evidence = store.trial_evidence_for_action(action, context)
+            physical_rows = [
+                json.loads(line) for line in path.read_bytes().splitlines()
+            ]
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(evidence.trials.seeds, (2,))
+        self.assertEqual(
+            [row["record_type"] for row in physical_rows],
+            ["candidate_identity_context_v1", "candidate_trial_group_v2"],
+        )
+
+    def test_compact_index_append_and_evidence_avoid_full_record_hydration(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [idx % 6 for idx in range(73 * 12 + 1)]
+        context = {"action_space_version": "layerwise-v1", "fidelity": "F1"}
+        metadata = {"identity_context": context, "fidelity": "F1"}
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            CandidateStore(path).append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.1], metric1=[0.9], metric2=[0.8], seeds=[1],
+                ),
+                metadata,
+                compact=True,
+            )
+            store = CandidateStore(path)
+            with mock.patch.object(
+                store,
+                "_hydrate_compact_record",
+                side_effect=AssertionError("hot path must not fully hydrate rows"),
+            ) as hydrate:
+                first = store.trial_evidence_for_action(action, context)
+                store.append_trial_group(
+                    action,
+                    TrialSeries(
+                        loss=[0.2], metric1=[0.8], metric2=[0.7], seeds=[2],
+                    ),
+                    metadata,
+                    compact=True,
+                )
+                second = store.trial_evidence_for_action(action, context)
+
+        self.assertEqual(first.trials.seeds, (1,))
+        self.assertEqual(second.trials.seeds, (1, 2))
+        hydrate.assert_not_called()
 
     def test_compact_and_legacy_candidate_store_have_identical_logical_evidence(self):
         from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
