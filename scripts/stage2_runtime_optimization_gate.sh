@@ -618,7 +618,7 @@ copy_case_evidence() {
   mkdir -p "$case_dir/diagnostics"
   for filename in \
     episodes.jsonl ppo_updates.jsonl candidate_store.jsonl \
-    diagnostics_summary.json; do
+    diagnostics_summary.json probe_pool_topology.json; do
     destination="$case_dir/diagnostics/$filename"
     [ -f "$destination" ] && continue
     source="$(find_latest_case_file "$case_dir" "$filename")"
@@ -815,12 +815,14 @@ validate_gpu_evidence() {
   local episodes_jsonl="$2"
   local compute_csv="$3"
   local worker_inventory="$4"
-  local require_pool_telemetry="$5"
+  local topology_json="$5"
+  local require_pool_telemetry="$6"
   local logical_devices
   logical_devices="$(logical_device_spec "$REWARD_DEVICES")" || return 1
   "$STAGE2_GATE_PYTHON" - \
     "$gpu_json" "$episodes_jsonl" "$compute_csv" "$worker_inventory" \
-    "$REWARD_DEVICES" "$logical_devices" "$require_pool_telemetry" \
+    "$topology_json" "$REWARD_DEVICES" "$logical_devices" \
+    "$require_pool_telemetry" \
     "$STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES" \
     "$STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE" \
     "$STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT" \
@@ -837,14 +839,15 @@ summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 episodes_path = pathlib.Path(sys.argv[2])
 compute_path = pathlib.Path(sys.argv[3])
 inventory_path = pathlib.Path(sys.argv[4])
-physical_devices = {f"cuda:{int(value)}" for value in sys.argv[5].split(",")}
-logical_devices = {f"cuda:{int(value)}" for value in sys.argv[6].split(",")}
-require_pool_telemetry = sys.argv[7] == "1"
-minimum_active_samples = int(sys.argv[8])
-minimum_active_rate = float(sys.argv[9])
-minimum_max_util = float(sys.argv[10])
-minimum_episode_coverage = float(sys.argv[11])
-minimum_trial_balance = float(sys.argv[12])
+topology_path = pathlib.Path(sys.argv[5])
+physical_devices = {f"cuda:{int(value)}" for value in sys.argv[6].split(",")}
+logical_devices = {f"cuda:{int(value)}" for value in sys.argv[7].split(",")}
+require_pool_telemetry = sys.argv[8] == "1"
+minimum_active_samples = int(sys.argv[9])
+minimum_active_rate = float(sys.argv[10])
+minimum_max_util = float(sys.argv[11])
+minimum_episode_coverage = float(sys.argv[12])
+minimum_trial_balance = float(sys.argv[13])
 gpu_utilization = summary.get("gpu_utilization") or {}
 errors = []
 
@@ -944,13 +947,21 @@ if require_pool_telemetry:
     if len(pool_ids) != 1:
         errors.append(f"expected one shared probe pool_id, observed={sorted(pool_ids)}")
 
+inventory_text = inventory_path.read_text(encoding="utf-8", errors="replace")
 inventory_pids = {
     int(match.group(1))
     for match in re.finditer(
         r"\bpid=([0-9]+)\b",
-        inventory_path.read_text(encoding="utf-8", errors="replace"),
+        inventory_text,
     )
 }
+inventory_thread_counts = {}
+for match in re.finditer(
+        r"\bpid=([0-9]+)\s+thread_count=([0-9]+)\b",
+        inventory_text,
+):
+    pid = int(match.group(1))
+    inventory_thread_counts.setdefault(pid, set()).add(int(match.group(2)))
 compute_pids = set()
 with compute_path.open(newline="", encoding="utf-8") as handle:
     for row in csv.DictReader(handle):
@@ -961,9 +972,117 @@ with compute_path.open(newline="", encoding="utf-8") as handle:
             compute_pids.add(int(raw_pid))
         except ValueError:
             errors.append(f"invalid sampled compute PID: {raw_pid!r}")
+if not compute_pids:
+    errors.append("no runtime compute PID was sampled")
 unowned_compute_pids = sorted(compute_pids - inventory_pids)
 if unowned_compute_pids:
     errors.append(f"sampled compute PIDs outside owned process tree: {unowned_compute_pids}")
+
+if require_pool_telemetry:
+    topology = json.loads(topology_path.read_text(encoding="utf-8"))
+    if topology.get("schema_version") != "probe_pool_topology_v1":
+        errors.append("invalid probe-pool topology schema")
+    topology_pool_id = str(topology.get("pool_id", ""))
+    if not topology_pool_id or pool_ids != {topology_pool_id}:
+        errors.append(
+            "probe-pool topology pool_id mismatch: "
+            f"topology={topology_pool_id!r} episodes={sorted(pool_ids)}"
+        )
+    if str(topology.get("backend", "")) != "process":
+        errors.append("probe-pool topology backend is not process")
+    topology_devices = set(topology.get("devices") or ())
+    if topology_devices != logical_devices:
+        errors.append(
+            "probe-pool topology devices mismatch: "
+            f"observed={sorted(topology_devices)} "
+            f"expected={sorted(logical_devices)}"
+        )
+    expected_process_count = max(0, len(logical_devices) - 1)
+    if int(topology.get("process_count", -1)) != expected_process_count:
+        errors.append(
+            "probe-pool topology process_count="
+            f"{topology.get('process_count')} expected={expected_process_count}"
+        )
+
+    raw_worker_pids = topology.get("worker_pids") or []
+    try:
+        worker_pids = [int(value) for value in raw_worker_pids]
+        primary_pid = int(topology.get("primary_pid", 0) or 0)
+    except (TypeError, ValueError):
+        worker_pids = []
+        primary_pid = 0
+        errors.append("probe-pool topology contains invalid worker PIDs")
+    if (
+            len(worker_pids) != expected_process_count
+            or len(set(worker_pids)) != expected_process_count
+            or any(pid <= 0 for pid in worker_pids)
+    ):
+        errors.append(
+            "probe-pool topology worker PID count/identity mismatch: "
+            f"observed={worker_pids} expected_count={expected_process_count}"
+        )
+    if primary_pid <= 0 or primary_pid in worker_pids:
+        errors.append(f"probe-pool topology primary_pid is invalid: {primary_pid}")
+    topology_pids = (
+        {primary_pid, *worker_pids} if primary_pid > 0 else set(worker_pids)
+    )
+    missing_inventory_pids = sorted(topology_pids - inventory_pids)
+    if missing_inventory_pids:
+        errors.append(
+            "probe-pool PIDs absent from owned process inventory: "
+            f"{missing_inventory_pids}"
+        )
+    missing_thread_inventory = sorted(
+        topology_pids - set(inventory_thread_counts)
+    )
+    if missing_thread_inventory:
+        errors.append(
+            "probe-pool PIDs lack numeric thread inventory: "
+            f"{missing_thread_inventory}"
+        )
+    nonpositive_thread_inventory = sorted(
+        pid for pid in topology_pids
+        if pid in inventory_thread_counts
+        and not any(value > 0 for value in inventory_thread_counts[pid])
+    )
+    if nonpositive_thread_inventory:
+        errors.append(
+            "probe-pool PIDs have nonpositive thread inventory: "
+            f"{nonpositive_thread_inventory}"
+        )
+    missing_compute_pids = sorted(topology_pids - compute_pids)
+    if missing_compute_pids:
+        errors.append(
+            "probe-pool PIDs were never observed as GPU compute processes: "
+            f"{missing_compute_pids}"
+        )
+
+    expected_worker_total = len(logical_devices)
+    for field_name in ("worker_intraop_threads", "worker_interop_threads"):
+        try:
+            values = [int(value) for value in topology.get(field_name, [])]
+        except (TypeError, ValueError):
+            values = []
+        if (
+                len(values) != expected_worker_total
+                or any(value != 1 for value in values)
+        ):
+            errors.append(
+                f"probe-pool {field_name}={values} "
+                f"expected={[1] * expected_worker_total}"
+            )
+
+    batch_sets = topology.get("batch_sets") or {}
+    call_counts = topology.get("call_counts_by_batch_set") or {}
+    trial_counts = topology.get("trial_counts_by_batch_set") or {}
+    for batch_set_key in ("F1", "F4"):
+        batch_info = batch_sets.get(batch_set_key) or {}
+        if int(batch_info.get("batch_count", 0) or 0) <= 0:
+            errors.append(f"probe-pool {batch_set_key} batch_count is nonpositive")
+        if int(call_counts.get(batch_set_key, 0) or 0) <= 0:
+            errors.append(f"probe-pool {batch_set_key} call_count is nonpositive")
+        if int(trial_counts.get(batch_set_key, 0) or 0) <= 0:
+            errors.append(f"probe-pool {batch_set_key} trial_count is nonpositive")
 
 if errors:
     for error in errors:
@@ -983,6 +1102,7 @@ validate_case_evidence() {
   local normalized="$case_dir/diagnostics/candidate_store.normalized.jsonl"
   local gpu_json="$case_dir/gpu_utilization.json"
   local gpu_markdown="$case_dir/gpu_utilization.md"
+  local topology="$case_dir/diagnostics/probe_pool_topology.json"
   local filename
   for filename in episodes.jsonl ppo_updates.jsonl candidate_store.jsonl; do
     if [ ! -s "$case_dir/diagnostics/$filename" ]; then
@@ -997,6 +1117,9 @@ validate_case_evidence() {
       missing="${missing} ${filename}"
     fi
   done
+  if [ "$require_pool_telemetry" = "1" ] && [ ! -s "$topology" ]; then
+    missing="${missing} probe_pool_topology.json"
+  fi
   if [ -n "$missing" ]; then
     printf 'FAIL missing:%s\n' "$missing" > "$case_dir/evidence_status.txt"
     return 1
@@ -1034,6 +1157,7 @@ validate_case_evidence() {
       "$case_dir/diagnostics/episodes.jsonl" \
       "$case_dir/nvidia_compute_samples.csv" \
       "$case_dir/worker_thread_inventory.txt" \
+      "$topology" \
       "$require_pool_telemetry" \
       >> "$case_dir/gpu_activity_validation.log" 2>&1; then
     printf 'FAIL sustained GPU or probe-device coverage\n' \

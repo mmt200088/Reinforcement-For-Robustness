@@ -3455,6 +3455,19 @@ def _build_authoritative_validation_env(
     return promotion_env, int(example_count)
 
 
+def _write_probe_pool_topology_snapshot(
+        base_env: Any,
+        output_dir: str,
+        ) -> Optional[str]:
+    """Persist one final shared-pool snapshot for the external runtime gate."""
+    owner = getattr(base_env, "_shared_probe_runner_owner", None)
+    if owner is None:
+        return None
+    output_path = os.path.join(output_dir, "probe_pool_topology.json")
+    write_strict_json_file(output_path, owner.topology_snapshot())
+    return output_path
+
+
 def _legacy_probe_batch_run_context_hash(run_context: Mapping[str, Any]) -> str:
     """Hash the pre-batch-metadata run context without mutating the current one."""
     normalized = copy.deepcopy(dict(run_context))
@@ -5195,7 +5208,12 @@ def _run_layerwise_training_branch(
                             base_env, "_shared_probe_runner_owner", None,
                         )
                         if shared_owner is not None:
-                            shared_owner.close()
+                            try:
+                                _write_probe_pool_topology_snapshot(
+                                    base_env, blb_progress_dir,
+                                )
+                            finally:
+                                shared_owner.close()
                         else:
                             promotion_runner = getattr(
                                 promotion_base_env, "probe_runner", None,

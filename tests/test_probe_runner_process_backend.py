@@ -82,6 +82,12 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.closed = False
             self.close_count = 0
             self.process = types.SimpleNamespace(pid=20_000 + int(device_id))
+            self.intraop_threads = (
+                _probe_runner.resolve_probe_intraop_threads()
+            )
+            self.interop_threads = (
+                _probe_runner.resolve_probe_interop_threads()
+            )
 
         def submit(self, operation, payload):
             self.events.append(("remote-submit", operation, payload))
@@ -357,7 +363,12 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             owner.view("F1").run_trials(k=5, base_seed=41)
             owner.view("F4").run_trials(k=5, base_seed=43)
 
-            topology = owner.topology_snapshot()
+            with mock.patch.object(
+                    torch, "get_num_threads", return_value=7,
+                    ), mock.patch.object(
+                        torch, "get_num_interop_threads", return_value=5,
+                    ):
+                topology = owner.topology_snapshot()
 
             self.assertEqual(topology["schema_version"], "probe_pool_topology_v1")
             self.assertEqual(topology["pool_id"], owner.pool_id)
@@ -380,6 +391,10 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.assertEqual(
                 topology["call_counts_by_batch_set"],
                 {"F1": 1, "F4": 1},
+            )
+            self.assertEqual(
+                topology["trial_counts_by_batch_set"],
+                {"F1": 5, "F4": 5},
             )
         finally:
             owner.close()

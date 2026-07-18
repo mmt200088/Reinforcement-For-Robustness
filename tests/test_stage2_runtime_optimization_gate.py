@@ -396,9 +396,10 @@ def _make_fake_case_launcher(path):
         if [ "${FAKE_UNINVENTORIED_TOPOLOGY_PID_CASE:-}" = "$case_name" ]; then
           topology_worker_pid_json="999998,${topology_worker_pid_json}"
         fi
-        printf '{"schema_version":"probe_pool_topology_v1","pool_id":"%s","backend":"process","devices":["cuda:0","cuda:1","cuda:2","cuda:3","cuda:4"],"process_count":4,"primary_pid":%s,"worker_pids":[%s],"worker_intraop_threads":[1,%s],"worker_interop_threads":[1,%s],"batch_sets":{"F1":{"batch_count":4},"F4":{"batch_count":4}},"call_counts_by_batch_set":{"F1":1,"F4":%s}}\n' \
+        printf '{"schema_version":"probe_pool_topology_v1","pool_id":"%s","backend":"process","devices":["cuda:0","cuda:1","cuda:2","cuda:3","cuda:4"],"process_count":4,"primary_pid":%s,"worker_pids":[%s],"worker_intraop_threads":[1,%s],"worker_interop_threads":[1,%s],"batch_sets":{"F1":{"batch_count":4},"F4":{"batch_count":4}},"call_counts_by_batch_set":{"F1":1,"F4":%s},"trial_counts_by_batch_set":{"F1":5,"F4":%s}}\n' \
           "$case_name-pool" "$$" "$topology_worker_pid_json" \
           "$worker_thread_json" "$worker_thread_json" "$f4_calls" \
+          "$((f4_calls * 25))" \
           > "$case_dir/diagnostics/probe_pool_topology.json"
         printf 'fake launch %s\n' "$case_name" > "$case_dir/launch.log"
         case "$case_name" in

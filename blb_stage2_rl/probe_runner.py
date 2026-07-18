@@ -336,6 +336,9 @@ def _probe_process_main(
             "status": "ready",
             "operation": "startup",
             "device": str(device),
+            "pid": int(os.getpid()),
+            "intraop_threads": int(torch.get_num_threads()),
+            "interop_threads": int(torch.get_num_interop_threads()),
         })
     except BaseException as exc:  # noqa: BLE001
         try:
@@ -444,6 +447,8 @@ class _ProcessProbeWorker:
         self.role = "replica_process"
         self._pending_operation: Optional[str] = None
         self._closed = False
+        self.intraop_threads = 0
+        self.interop_threads = 0
 
     def _receive_message(self, timeout: float) -> dict:
         deadline = time.monotonic() + max(0.1, float(timeout))
@@ -467,6 +472,21 @@ class _ProcessProbeWorker:
             details = message.get("traceback") or message.get("error") or message
             raise RuntimeError(
                 f"probe child {self.device} startup failed: {details}"
+            )
+        expected_pid = getattr(self.process, "pid", None)
+        reported_pid = int(message.get("pid", 0) or 0)
+        if reported_pid <= 0 or reported_pid != expected_pid:
+            raise RuntimeError(
+                f"probe child {self.device} reported pid {reported_pid}, "
+                f"expected {expected_pid}"
+            )
+        self.intraop_threads = int(message.get("intraop_threads", 0) or 0)
+        self.interop_threads = int(message.get("interop_threads", 0) or 0)
+        if self.intraop_threads <= 0 or self.interop_threads <= 0:
+            raise RuntimeError(
+                f"probe child {self.device} reported invalid torch thread "
+                f"topology intra={self.intraop_threads} "
+                f"inter={self.interop_threads}"
             )
 
     def submit(self, operation: str, payload: dict) -> None:
@@ -639,6 +659,8 @@ class ProbeRunner:
         self._batch_sets: Dict[str, Tuple[Any, ...]] = {
             "F1": tuple(getattr(workers[0], "probe_batches", ())),
         }
+        self._batch_set_call_counts: Dict[str, int] = {"F1": 0}
+        self._batch_set_trial_counts: Dict[str, int] = {"F1": 0}
         self.last_diagnostics: Optional[ProbeRunnerDiagnostics] = None
         self._closed = False
         self._poisoned_reason: Optional[str] = None
@@ -690,6 +712,13 @@ class ProbeRunner:
             batch_set_key: str,
             **kwargs: Any,
             ) -> None:
+        self._batch_set_call_counts[batch_set_key] = (
+            self._batch_set_call_counts.get(batch_set_key, 0) + 1
+        )
+        self._batch_set_trial_counts[batch_set_key] = (
+            self._batch_set_trial_counts.get(batch_set_key, 0)
+            + max(0, int(kwargs.get("k", 0) or 0))
+        )
         self.last_diagnostics = ProbeRunnerDiagnostics(
             pool_id=self.pool_id,
             batch_set_key=batch_set_key,
@@ -699,6 +728,53 @@ class ProbeRunner:
             worker_interop_threads=self._worker_interop_threads,
             **kwargs,
         )
+
+    def topology_snapshot(self) -> dict:
+        """Return one low-overhead, runtime-verifiable pool topology snapshot."""
+        self._require_open()
+        worker_pids: List[int] = []
+        remote_intraop_threads: List[int] = []
+        remote_interop_threads: List[int] = []
+        for worker in self._process_workers:
+            pid = getattr(getattr(worker, "process", None), "pid", None)
+            if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+                raise RuntimeError(f"probe worker has invalid pid: {pid!r}")
+            worker_pids.append(int(pid))
+            remote_intraop_threads.append(int(
+                getattr(worker, "intraop_threads", self._worker_intraop_threads)
+                or 0
+            ))
+            remote_interop_threads.append(int(
+                getattr(worker, "interop_threads", self._worker_interop_threads)
+                or 0
+            ))
+        return {
+            "schema_version": "probe_pool_topology_v1",
+            "pool_id": self.pool_id,
+            "backend": self.backend,
+            "devices": [str(device) for device in self.devices],
+            "process_count": len(self._process_workers),
+            "primary_pid": int(os.getpid()),
+            "worker_pids": worker_pids,
+            "worker_intraop_threads": [
+                int(torch.get_num_threads()), *remote_intraop_threads,
+            ],
+            "worker_interop_threads": [
+                int(torch.get_num_interop_threads()), *remote_interop_threads,
+            ],
+            "batch_sets": {
+                key: {"batch_count": len(batches)}
+                for key, batches in sorted(self._batch_sets.items())
+            },
+            "call_counts_by_batch_set": {
+                key: int(self._batch_set_call_counts.get(key, 0))
+                for key in sorted(self._batch_sets)
+            },
+            "trial_counts_by_batch_set": {
+                key: int(self._batch_set_trial_counts.get(key, 0))
+                for key in sorted(self._batch_sets)
+            },
+        }
 
     def _require_open(self) -> None:
         if self._poisoned_reason is not None:
@@ -770,6 +846,8 @@ class ProbeRunner:
                     worker.register_batch_set(normalized, batches_for_worker)
 
             self._batch_sets[normalized] = frozen
+            self._batch_set_call_counts[normalized] = 0
+            self._batch_set_trial_counts[normalized] = 0
         except BaseException as exc:  # noqa: BLE001
             self._poisoned_reason = (
                 f"register_batch_set {normalized!r} failed: {exc}"
@@ -1410,6 +1488,11 @@ def build_probe_runner(
     if not device_ids:
         raise ValueError("build_probe_runner requires at least one device id")
 
+    torch.set_num_threads(resolve_probe_intraop_threads())
+    try:
+        torch.set_num_interop_threads(resolve_probe_interop_threads())
+    except RuntimeError:
+        pass
     enable_cuda_reward_probe_fast_math()
     log = log_fn or (lambda _msg: None)
 
