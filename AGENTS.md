@@ -66,6 +66,18 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   dependencies, shared artifacts, and handoff contracts, then choose
   optimizations by end-to-end wall-clock impact and hardware utilization rather
   than by isolated local speedups.
+- Stage-2 runtime optimization result, added 2026-07-18: the latest `48b03e8`
+  RL line now shares one five-GPU process pool across F1/F4, caps worker Torch
+  threads, bounds in-memory diagnostics, and writes compact backward-compatible
+  candidate evidence. The exact 600-episode gate passed reward/action/trial/F4
+  promotion/PPO parity at batch `64/64`, with `1255s -> 1209s` wall time,
+  43.33% lower sampled summed peak GPU memory, four rather than eight replica
+  processes, and 60.35% lower candidate-store bytes. Batch 128/256 is rejected:
+  changing the forward-batch shape changes BLB noise RNG mapping and therefore
+  scientific results. The MRPC Stage-2 preset must remain explicitly pinned to
+  F1/F4 `64/64` unless a future exact-parity gate proves another batch shape.
+  Compact evidence is under
+  `experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/compact/`.
 - Runtime-optimization completion audit, updated 2026-07-14: source `8308bbd`
   was verified in the clean five-RTX-5090 checkout. The six-stage audit found
   all 30 expected flow files and every required artifact-evidence class. The

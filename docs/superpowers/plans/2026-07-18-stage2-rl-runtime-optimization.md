@@ -36,7 +36,7 @@
 - Use: local branch `codex/stage2-rl-runtime-opt-48b03e8`
 - Create on server through Git: `/hy-tmp/rfr_stage2_rl_runtime_opt`
 
-- [ ] **Step 1: Verify the local baseline and cleanliness**
+- [x] **Step 1: Verify the local baseline and cleanliness**
 
 Run locally, without executing project code:
 
@@ -48,7 +48,7 @@ git status --short
 
 Expected: the full baseline SHA is `48b03e869934aa8b3aa904a1fe8b611a1e2d618a`, the ancestry check exits `0`, and status is empty before each implementation batch.
 
-- [ ] **Step 2: Push the current plan commit before server work**
+- [x] **Step 2: Push the current plan commit before server work**
 
 ```bash
 git push origin codex/stage2-rl-runtime-opt-48b03e8
@@ -57,7 +57,7 @@ git ls-remote --heads origin codex/stage2-rl-runtime-opt-48b03e8
 
 Expected: the remote SHA exactly equals local `HEAD`.
 
-- [ ] **Step 3: Verify that the active server run is untouched**
+- [x] **Step 3: Verify that the active server run is untouched**
 
 Run read-only server inspection:
 
@@ -68,7 +68,7 @@ git -C /hy-tmp/rfr_runtime_optimization rev-parse HEAD
 
 Expected: if PID `2236414` still exists it remains running from `/hy-tmp/rfr_runtime_optimization`; that checkout remains at `48b03e8`. Do not stop it, update it, or run a GPU test beside it.
 
-- [ ] **Step 4: Create the separate server worktree from the pushed branch**
+- [x] **Step 4: Create the separate server worktree from the pushed branch**
 
 From the server repository that owns `/hy-tmp/rfr_runtime_optimization`:
 
@@ -93,7 +93,7 @@ Expected: optimized server SHA equals the pushed SHA, baseline SHA equals `48b03
 - Test: `tests/test_probe_runner_process_backend.py`
 - Test: `tests/test_blb_layerwise_runner.py`
 
-- [ ] **Step 1: Write failing keyed-batch and ownership tests**
+- [x] **Step 1: Write failing keyed-batch and ownership tests**
 
 Add process-backend tests with local/remote stubs that record `batch_set_key` and registration commands:
 
@@ -125,7 +125,7 @@ def test_view_close_never_closes_owner_and_owner_closes_once(self):
 
 Add a layerwise construction test asserting `base_env.probe_runner.pool_id == promotion_env.probe_runner.pool_id`, keys `F1` and `F4`, and one owner with four replica processes for device IDs `0..4`.
 
-- [ ] **Step 2: Commit and push the RED tests**
+- [x] **Step 2: Commit and push the RED tests**
 
 ```bash
 git add tests/test_probe_runner_process_backend.py tests/test_blb_layerwise_runner.py
@@ -133,7 +133,7 @@ git commit -m "test: pin shared Stage-2 probe pool contracts"
 git push origin codex/stage2-rl-runtime-opt-48b03e8
 ```
 
-- [ ] **Step 3: Run the RED tests on the server CPU lane**
+- [x] **Step 3: Run the RED tests on the server CPU lane**
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
@@ -143,7 +143,7 @@ CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
 
 Expected: FAIL because `ProbeRunner.view`, `register_batch_set`, `pool_id`, and keyed child commands do not exist.
 
-- [ ] **Step 4: Implement keyed worker batches and child controls**
+- [x] **Step 4: Implement keyed worker batches and child controls**
 
 Keep `ProbeWorker.probe_batches` as the compatibility default and add immutable keyed sets:
 
@@ -178,7 +178,7 @@ Support `register_batch_set`, and require `batch_set_key` on `run_trials` and `r
 
 For dynamically registered F4 batches, first make one CPU copy in the parent, send only CPU tensors through each pipe, and let each child move that copy to its already-bound target device. Never pickle a CUDA-0 tensor into a replica child.
 
-- [ ] **Step 5: Implement owner and non-owning views**
+- [x] **Step 5: Implement owner and non-owning views**
 
 Add a thin view with no duplicated model/process state:
 
@@ -201,7 +201,7 @@ class ProbeRunnerView:
 
 Delegate `install_action`, `clear`, `run_action_trials_once`, `num_workers`, `devices`, `backend`, and `last_diagnostics`. `ProbeRunner.close()` remains idempotent and is the only operation that reaps replica processes.
 
-- [ ] **Step 6: Reuse the owner in the layerwise F4 builder**
+- [x] **Step 6: Reuse the owner in the layerwise F4 builder**
 
 When the F1 pool is created, store its owner on the base environment and install an F1 view. In `_build_authoritative_validation_env`, register `validation_full` as `F4` and install an F4 view instead of calling `build_probe_runner()` again:
 
@@ -214,7 +214,7 @@ if owner is not None:
 
 The finalizer closes `base_env._shared_probe_runner_owner` once. Preserve all existing pre/post-F4 `clear_installed_blb()` and `_installed_action_hash = None` operations.
 
-- [ ] **Step 7: Run focused tests and commit GREEN**
+- [x] **Step 7: Run focused tests and commit GREEN**
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
@@ -242,7 +242,7 @@ git push origin codex/stage2-rl-runtime-opt-48b03e8
 - Test: `tests/test_sequential_smoke.py`
 - Test: `tests/test_blb_stage2_rl_regressions.py`
 
-- [ ] **Step 1: Write failing fallback and plumbing tests**
+- [x] **Step 1: Write failing fallback and plumbing tests**
 
 Pin these contracts:
 
@@ -255,7 +255,7 @@ self.assertEqual(len(f4_batches), math.ceil(len(validation_full) / 256))
 
 Add launcher/static assertions for `--blb-v3-probe-batch-size` and `--blb-v3-validation-probe-batch-size`, including positive-integer rejection and forwarding to Python underscore names.
 
-- [ ] **Step 2: Push and prove RED on the server**
+- [x] **Step 2: Push and prove RED on the server**
 
 ```bash
 git add tests/test_sequential_smoke.py tests/test_blb_stage2_rl_regressions.py
@@ -273,7 +273,7 @@ CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
 
 Expected: FAIL because the new config and CLI attributes do not exist.
 
-- [ ] **Step 3: Implement compatibility-first batch-size plumbing**
+- [x] **Step 3: Implement compatibility-first batch-size plumbing**
 
 Add optional fields to `BLBStage2TrainConfig`:
 
@@ -284,7 +284,7 @@ validation_probe_batch_size: Optional[int] = None
 
 Resolve `None` to `ev.batch_size`; reject non-positive explicit values. Pass the resolved F1 value to `_build_probe_batches` and the resolved F4 value to `_build_validation_full_batches`. Record effective sizes and batch counts in run context, manifest, and probe diagnostics. Defaults must create exactly the same batches as `48b03e8`.
 
-- [ ] **Step 4: Run tests and commit GREEN**
+- [x] **Step 4: Run tests and commit GREEN**
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
@@ -311,7 +311,7 @@ git push origin codex/stage2-rl-runtime-opt-48b03e8
 - Test: `tests/test_blb_layerwise_runner.py`
 - Test: `tests/test_rl_data_points.py`
 
-- [ ] **Step 1: Write failing long synthetic-history tests**
+- [x] **Step 1: Write failing long synthetic-history tests**
 
 Add a production-mode layerwise test that runs many cheap fake episodes and asserts no returned duplicate history:
 
@@ -334,7 +334,7 @@ self.assertEqual(recorder.worst_episode_return, 0.0)
 
 Restore the JSONL into a fresh recorder and require the same counters, high-water IDs, top-K, histogram, and last 600 health rows. Add negative tests for duplicate, decreasing, and gapped episode/update identities.
 
-- [ ] **Step 2: Push and prove RED on the server**
+- [x] **Step 2: Push and prove RED on the server**
 
 ```bash
 git add tests/test_blb_layerwise_runner.py tests/test_rl_data_points.py
@@ -350,11 +350,11 @@ CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
 
 Expected: FAIL because all episode/PPO objects and identity sets are retained.
 
-- [ ] **Step 3: Make `train_layerwise` history optional**
+- [x] **Step 3: Make `train_layerwise` history optional**
 
 Add `retain_history: bool = True` for direct-call compatibility. Append `records`, `rewards`, and `ppo_diagnostics` only when true. The production call in `sequential_runner.py` passes `retain_history=False`; training math continues to use the rollout buffer, entropy samples for the current update, strict frontier, and convergence tracker exactly as before.
 
-- [ ] **Step 4: Replace caller history with bounded/scalar state**
+- [x] **Step 4: Replace caller history with bounded/scalar state**
 
 Use a deque and counters:
 
@@ -366,7 +366,7 @@ best_reward_so_far = float(resumed_best.get("reward", -math.inf))
 
 The episode callback requires `record.episode_index + 1 == completed_episode_count + 1`, increments the count, updates the scalar best, and appends only to the recent deque. The PPO callback derives window statistics from that deque. Manifest/checkpoint/summary counts use the scalar count, not `len(episode_records)`. Replace the current `reward=float(rewards[-1])` construction with the already-computed scalar `episode_reward`, so disabling returned history cannot alter training.
 
-- [ ] **Step 5: Bound `RLDiagnosticsRecorder` without losing full artifacts**
+- [x] **Step 5: Bound `RLDiagnosticsRecorder` without losing full artifacts**
 
 Add `history_window: Optional[int] = None` and `ppo_history_window: Optional[int] = None`. The new layerwise path uses `600` and `10`; legacy callers retain existing defaults. Maintain exact `_episode_count`, `_ppo_update_count`, best/worst return, first/last PPO entropy, histograms, top-K, first-invalid counts, and Pareto state. Trim only rolling arrays after each append:
 
@@ -379,7 +379,7 @@ def _append_bounded(values, value, limit):
 
 `restore_existing()` streams every physical row to rebuild cumulative state but keeps only bounded windows. It validates contiguous episode IDs and contiguous PPO `update` IDs, returns counts and high-water marks, and removes the second JSONL scans plus unbounded `existing_diagnostic_episodes`/`existing_diagnostic_updates` sets from `sequential_runner.py`.
 
-- [ ] **Step 6: Run focused and regression tests, then commit GREEN**
+- [x] **Step 6: Run focused and regression tests, then commit GREEN**
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
@@ -405,7 +405,7 @@ git push origin codex/stage2-rl-runtime-opt-48b03e8
 - Test: `tests/test_blb_candidate_store_identity.py`
 - Test: `tests/test_blb_layerwise_runner.py`
 
-- [ ] **Step 1: Write failing v2, compaction, and mixed-restore tests**
+- [x] **Step 1: Write failing v2, compaction, and mixed-restore tests**
 
 Build one legacy v1 store and one compact store from the same F1/F4 trial groups. Assert identical logical evidence, candidate keys, promotion state, strict selection input, trial order, and seeds. Inspect physical compact rows:
 
@@ -421,7 +421,7 @@ self.assertNotIn("boosted_overrides", row["trial_group_metadata"])
 
 Require F4/final rows to retain `boosted_overrides`, and require compact F1 bytes to be less than half the equivalent v1 row for the representative 12-layer payload. Append v2 rows after v1 rows, recover to a checkpoint boundary, and require idempotent replay and fingerprint validation to behave exactly as before.
 
-- [ ] **Step 2: Push and prove RED on the server**
+- [x] **Step 2: Push and prove RED on the server**
 
 ```bash
 git add tests/test_blb_candidate_store_identity.py tests/test_blb_layerwise_runner.py
@@ -437,7 +437,7 @@ CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
 
 Expected: FAIL because every candidate row currently stores three action arrays, a full identity context, and verbose F1 overrides.
 
-- [ ] **Step 3: Add physical v2 records and identity-context interning**
+- [x] **Step 3: Add physical v2 records and identity-context interning**
 
 Add internal record types:
 
@@ -451,7 +451,7 @@ _PROMOTION_STATUS_RECORD_TYPES = {
 
 Before the first compact candidate row for a context, append one internal context record keyed by `sha256_json(identity_context)`. Compact rows physically store one canonical action, hashes/key, `identity_context_hash`, evidence, and metadata. Keep recovery markers, row boundaries, logical generations, committed sizes, and fingerprint algorithms unchanged.
 
-- [ ] **Step 4: Hydrate old and new rows into one logical API**
+- [x] **Step 4: Hydrate old and new rows into one logical API**
 
 Build the context index while scanning active physical rows. For v2 candidate rows, return a copy with compatibility aliases restored in memory:
 
@@ -464,11 +464,11 @@ logical["trial_group_metadata"]["identity_context"] = logical["identity_context"
 
 Index v1 and v2 types, hydrate random-offset reads, and hide internal context records from normal candidate iteration. Fail closed for a missing/hash-mismatched context.
 
-- [ ] **Step 5: Use compact status rows and remove only derivable F1 payload**
+- [x] **Step 5: Use compact status rows and remove only derivable F1 payload**
 
 Add `CandidateStore.append_promotion_status()` so F4 status rows also avoid duplicate action/context fields. In `train_layerwise`, retain the F1 `boosted_overrides_hash` and provenance but omit materialized overrides; F4 promotion and final revalidation retain the complete serialized override list.
 
-- [ ] **Step 6: Run focused/full candidate tests and commit GREEN**
+- [x] **Step 6: Run focused/full candidate tests and commit GREEN**
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
@@ -497,11 +497,11 @@ git push origin codex/stage2-rl-runtime-opt-48b03e8
 - Test: `tests/test_blb_layerwise_runner.py`
 - Create test: `tests/test_stage2_runtime_optimization_gate.py`
 
-- [ ] **Step 1: Write failing telemetry tests**
+- [x] **Step 1: Write failing telemetry tests**
 
 Require diagnostics to include `pool_id`, `batch_set_key`, `batch_count`, `process_count`, and worker thread limits. Require episode/update persistence to include candidate bytes written and current/peak RSS, while the semantic comparator ignores only these telemetry fields. Add a static harness test that requires an idle-GPU guard, clean baseline/optimized source roots, cases `base64`, `opt64`, `opt128`, `opt256`, and a strict semantic comparator verdict before any speed verdict.
 
-- [ ] **Step 2: Commit, push, and prove RED**
+- [x] **Step 2: Commit, push, and prove RED**
 
 ```bash
 git add tests/test_probe_runner_process_backend.py tests/test_blb_layerwise_runner.py \
@@ -515,7 +515,7 @@ CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
 
 Expected: FAIL because pool/resource telemetry is not persisted.
 
-- [ ] **Step 3: Implement telemetry without per-batch synchronization**
+- [x] **Step 3: Implement telemetry without per-batch synchronization**
 
 Populate pool fields from already-available runner state. Measure candidate bytes once per episode from file-size deltas. Sample RSS only at PPO update boundaries using `/proc/self/statm` plus `resource.getrusage(resource.RUSAGE_SELF).ru_maxrss` fallback. Add no CUDA synchronize beyond existing startup/trial boundaries.
 
@@ -532,7 +532,7 @@ REWARD_DEVICES="${REWARD_DEVICES:-0,1,2,3,4}"
 
 The script refuses dirty roots or non-idle GPUs, runs `base64` once from `BASELINE_ROOT`, runs all optimized sizes from `OPTIMIZED_ROOT`, samples `nvidia-smi`, inventories worker PIDs/threads, copies diagnostics/candidate records, normalizes v1/v2 candidate evidence, and writes `verdict.json` plus `verdict.md`. It exits nonzero unless every accepted optimized case has semantic parity with `base64`; speed ranking considers only passing cases.
 
-- [ ] **Step 4: Run tests and commit**
+- [x] **Step 4: Run tests and commit**
 
 ```bash
 CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
@@ -559,7 +559,7 @@ git push origin codex/stage2-rl-runtime-opt-48b03e8
 - Check: all changed source and tests
 - Generate on server: `experiments/server_command_runs/stage2_rl_runtime_opt_${TS}/cpu_tests/`
 
-- [ ] **Step 1: Refresh the clean server worktree through Git**
+- [x] **Step 1: Refresh the clean server worktree through Git**
 
 ```bash
 git -C /hy-tmp/rfr_runtime_optimization fetch \
@@ -575,7 +575,7 @@ git -C /hy-tmp/rfr_stage2_rl_runtime_opt status --short
 
 Expected: empty status and server SHA equal to local/remote SHA.
 
-- [ ] **Step 2: Compile changed modules on the server**
+- [x] **Step 2: Compile changed modules on the server**
 
 ```bash
 set -o pipefail
@@ -591,7 +591,7 @@ CUDA_VISIBLE_DEVICES="" python3 -m py_compile \
 
 Expected: exit `0`.
 
-- [ ] **Step 3: Run focused Stage-2 tests on CPU**
+- [x] **Step 3: Run focused Stage-2 tests on CPU**
 
 ```bash
 set -o pipefail
@@ -611,7 +611,7 @@ CUDA_VISIBLE_DEVICES="" nice -n 10 python3 -m pytest -q \
 
 Expected: all runnable tests PASS; only tests with explicit unavailable-hardware/dependency skip conditions SKIP.
 
-- [ ] **Step 4: Run the repository test gate on CPU**
+- [x] **Step 4: Run the repository test gate on CPU**
 
 ```bash
 set -o pipefail
@@ -631,7 +631,7 @@ Expected: no failures. Capture command, SHA, duration, pass/skip counts, and log
 - Test after evidence only: `tests/test_stage2_stage1_rl_alignment.py`
 - Generate on server: `experiments/server_command_runs/stage2_rl_runtime_opt_${TS}/gpu_gate/`
 
-- [ ] **Step 1: Wait for an uncontaminated GPU lane**
+- [x] **Step 1: Wait for an uncontaminated GPU lane**
 
 ```bash
 ps -p 2236414 -o pid=,stat=,etime=,cmd=
@@ -640,7 +640,7 @@ nvidia-smi --query-compute-apps=pid,gpu_uuid,used_memory --format=csv,noheader
 
 Expected before proceeding: PID `2236414` has exited normally and no unrelated compute process owns GPUs `0..4`. Do not terminate a job to satisfy this condition.
 
-- [ ] **Step 2: Benchmark F1/F4 batch sizes 64, 128, and 256**
+- [x] **Step 2: Benchmark F1/F4 batch sizes 64, 128, and 256**
 
 For each size, use identical fixed actions, F1/F4 seed sets, five/25 trial counts, datasets, and device IDs `0,1,2,3,4`. Save raw per-trial loss/metric1/metric2, all six probabilities, priorities, rewards, promotions, wall times, process/thread inventory, RSS, and `nvidia-smi` samples.
 
@@ -661,7 +661,7 @@ bash scripts/stage2_runtime_optimization_gate.sh
 
 Expected: `verdict.json` reports semantic parity for every eligible case and names the fastest passing F1/F4 batch-size pair.
 
-- [ ] **Step 3: Pin only the fastest passing batch sizes**
+- [x] **Step 3: Pin only the fastest passing batch sizes**
 
 First return the batch-gate verdict through a server artifact commit and fast-forward it into the local source branch. Then, locally only, set `--blb-v3-probe-batch-size` and `--blb-v3-validation-probe-batch-size` in `presets/mrpc-blb-stage2-rl.conf` from `verdict.json`. Add exact preset assertions to `tests/test_stage2_stage1_rl_alignment.py`. If neither 128 nor 256 passes and improves wall time, pin both to 64 explicitly.
 
@@ -686,13 +686,13 @@ CUDA_VISIBLE_DEVICES="" python3 -m pytest -q \
 
 Expected: PASS and the effective preset contains exactly the evidence-selected sizes.
 
-- [ ] **Step 4: Run a seeded baseline-versus-optimized end-to-end smoke**
+- [x] **Step 4: Run a seeded baseline-versus-optimized end-to-end smoke**
 
 Run the same bounded episode count from clean `48b03e8` and optimized worktrees. Use `scripts/stage2_ngpu_ab_compare.py --require-equal` to require identical non-telemetry episode rows and PPO updates. Additionally compare normalized candidate evidence, F4 promotion/final decisions, and strict winner/frontier.
 
 Expected: semantic parity PASS. Record baseline/optimized wall time, episodes/hour, F1 mean/P50/P95, F4 mean/P95, RSS, candidate bytes/episode, process count, thread count, per-GPU memory, and utilization. Report end-to-end speedup only from this gate, not from microbenchmarks.
 
-- [ ] **Step 5: Inspect the complete diff**
+- [x] **Step 5: Inspect the complete diff**
 
 ```bash
 git diff 48b03e8...HEAD --check
@@ -708,7 +708,7 @@ Expected: no whitespace errors, no uncommitted source changes, and no reward/eva
 - Create on server: `experiments/server_command_runs/stage2_rl_runtime_opt_${TS}/`
 - Update locally through Git only: the same artifact directory
 
-- [ ] **Step 1: Commit server-generated evidence on a results branch**
+- [x] **Step 1: Commit server-generated evidence on a results branch**
 
 On the server, create a results branch from the exact optimized source SHA, add only compact logs/JSON/CSV/Markdown evidence (exclude checkpoints, model caches, and large transient persistent directories), commit, and push through Git. Repeat this procedure once after the batch-only verdict if the local preset still needs to be pinned, then again after the final end-to-end gate.
 
@@ -722,7 +722,7 @@ git commit -m "perf: record Stage-2 runtime optimization evidence"
 git push origin "$RESULTS_BRANCH"
 ```
 
-- [ ] **Step 2: Fast-forward the evidence locally and push the source branch**
+- [x] **Step 2: Fast-forward the evidence locally and push the source branch**
 
 Fetch the results branch locally while the source branch still points to its parent, fast-forward merge it onto `codex/stage2-rl-runtime-opt-48b03e8`, and push. Do not cherry-pick: preserving the server artifact commit object is required for exact three-way SHA equality.
 
@@ -732,7 +732,7 @@ git merge --ff-only "origin/$RESULTS_BRANCH"
 git push origin codex/stage2-rl-runtime-opt-48b03e8
 ```
 
-- [ ] **Step 3: Verify exact local, GitHub, and server SHA equality**
+- [x] **Step 3: Verify exact local, GitHub, and server SHA equality**
 
 ```bash
 git rev-parse HEAD
@@ -743,6 +743,35 @@ git status --short
 
 Expected: all three SHAs are identical; local and server source worktrees are clean. The original active-run checkout remains separate and unmodified.
 
-- [ ] **Step 4: Write the final audit**
+- [x] **Step 4: Write the final audit**
 
 Report exact changed components, parity gates, test totals, baseline and optimized wall times, measured end-to-end speedup, GPU memory/process/thread reduction, RSS reduction, candidate-store byte reduction, selected batch sizes, artifact path, and exact three-way SHA. State clearly if a GPU gate remained pending; do not estimate or extrapolate a project speedup without completed end-to-end evidence.
+
+## Completion Evidence (2026-07-18)
+
+- Final exact-parity gate source: `de8bb2d276818ab1e6c362103c1d6c3652a83bda`
+  against baseline `48b03e869934aa8b3aa904a1fe8b611a1e2d618a`.
+- The gate materialized each verified Git SHA serially at one canonical runtime
+  path. This removed absolute-worktree-path contamination from candidate keys
+  and F4 promotion seeds without weakening reward, action, trial, frontier, or
+  PPO comparisons.
+- `base64` and `opt64` both completed 600 episodes with five PPO updates,
+  five-GPU evidence, strict diagnostic equality, and normalized candidate
+  equality. Wall time was `1255s -> 1209s` (`1.038x`, 3.67% less wall time).
+- Sampled summed per-GPU peak memory fell from `32054 MiB` to `18165 MiB`
+  (43.33%). Probe replica processes fell from eight to four. Mean sampled GPU
+  utilization rose from 82.23% to 85.39%.
+- Raw candidate evidence fell from `24816152` to `9838606` bytes (60.35%),
+  while both normalized streams contained 944 identical logical rows.
+- Episode 458, the prior path-contaminated divergence point, retained the same
+  candidate key, all 25 F4 seeds, reward, priority, and
+  `failed_probability_gate` decision in both cases.
+- Batch sizes 128 and 256 were rejected because changing forward-batch shape
+  changed BLB noise RNG mapping and scientific results. The production MRPC
+  Stage-2 preset is therefore pinned explicitly to F1/F4 batch `64/64`.
+- Final server verification after the preset decision: `1799 passed, 3 skipped`
+  in the full suite, plus the explicit five-GPU integration test `1 passed`.
+- Baseline `48b03e8` does not emit parent RSS telemetry. The optimized parent
+  peaked at 3.670 GiB; no unsupported RSS reduction is claimed.
+- Compact evidence is tracked under
+  `experiments/server_command_runs/stage2_rl_runtime_opt_pathfix_20260718_152426/compact/`.
