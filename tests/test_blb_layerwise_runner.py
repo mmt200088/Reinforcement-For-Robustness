@@ -949,6 +949,107 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             recorder.clear_best_action_snapshot()
             self.assertFalse(Path(recorder.best_json_path).exists())
 
+    def test_candidate_bytes_and_process_rss_jsonl_round_trip_preserves_cumulative_semantics(self):
+        from blb_stage2_rl.diagnostics import (
+            EpisodeStats,
+            PPOUpdateStats,
+            RLDiagnosticsRecorder,
+        )
+
+        def persist_and_restore(root, *, candidate_bytes, rss_bytes, peak_rss_bytes):
+            recorder = RLDiagnosticsRecorder(
+                output_dir=str(root),
+                num_layers=12,
+                num_action_slots=6,
+                strict_writes=True,
+            )
+            recorder.record_episode(
+                episode_stats=EpisodeStats(
+                    episode=0,
+                    total_reward=1.5,
+                    terminal_reward=1.5,
+                    per_step_sum=0.0,
+                    valid_steps=12,
+                    invalid_steps=0,
+                    steps_taken=12,
+                    total_bits=0,
+                    fusion_count=24,
+                    first_invalid_step=None,
+                    first_invalid_block=None,
+                    first_invalid_layer=None,
+                    early_terminated=False,
+                    candidate_bytes_written=int(candidate_bytes),
+                    timestamp=123.0,
+                ),
+                full_action_vec=None,
+                is_new_best=False,
+                best_reward_so_far=1.5,
+            )
+            recorder.record_ppo_update(PPOUpdateStats(
+                update=1,
+                completed_episodes=1,
+                policy_loss=0.1,
+                value_loss=0.2,
+                entropy=0.3,
+                clip_fraction=0.4,
+                n_samples=12,
+                window_mean_return=1.5,
+                window_max_return=1.5,
+                window_min_return=1.5,
+                window_mean_invalid=0.0,
+                best_reward_so_far=1.5,
+                elapsed_sec=0.5,
+                process_rss_bytes=int(rss_bytes),
+                process_peak_rss_bytes=int(peak_rss_bytes),
+                timestamp=124.0,
+            ))
+            recorder.flush_mandatory()
+            episode_row = json.loads(
+                Path(recorder.episodes_path).read_text(encoding="utf-8")
+            )
+            update_row = json.loads(
+                Path(recorder.ppo_updates_path).read_text(encoding="utf-8")
+            )
+            recorder._close_primary_jsonl()
+
+            restored = RLDiagnosticsRecorder(
+                output_dir=str(root),
+                num_layers=12,
+                num_action_slots=6,
+                strict_writes=True,
+            )
+            restored_counts = restored.restore_existing()
+            cumulative_state = {
+                "counts": restored_counts,
+                "best_episode_return": restored.best_episode_return,
+                "worst_episode_return": restored.worst_episode_return,
+                "first_ppo_entropy": restored.first_ppo_entropy,
+                "last_ppo_entropy": restored.last_ppo_entropy,
+            }
+            return episode_row, update_row, cumulative_state
+
+        with tempfile.TemporaryDirectory() as td:
+            low = persist_and_restore(
+                Path(td) / "low",
+                candidate_bytes=111,
+                rss_bytes=222,
+                peak_rss_bytes=333,
+            )
+            high = persist_and_restore(
+                Path(td) / "high",
+                candidate_bytes=111_000_000,
+                rss_bytes=222_000_000,
+                peak_rss_bytes=333_000_000,
+            )
+
+        self.assertEqual(low[0]["candidate_bytes_written"], 111)
+        self.assertEqual(low[1]["process_rss_bytes"], 222)
+        self.assertEqual(low[1]["process_peak_rss_bytes"], 333)
+        self.assertEqual(high[0]["candidate_bytes_written"], 111_000_000)
+        self.assertEqual(high[1]["process_rss_bytes"], 222_000_000)
+        self.assertEqual(high[1]["process_peak_rss_bytes"], 333_000_000)
+        self.assertEqual(low[2], high[2])
+
     def test_convergence_cannot_trigger_while_current_frontier_is_empty(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker
 
@@ -1713,6 +1814,142 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             expression = keyword_sources[field_name]
             self.assertIn("probe_diagnostics", expression)
             self.assertIn(probe_key, expression)
+
+    def test_layerwise_candidate_bytes_written_reaches_episode_diagnostics(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        callback = next(
+            node for node in branch.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "on_layerwise_episode"
+        )
+        episode_stats_call = next(
+            node for node in ast.walk(callback)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "EpisodeStats"
+        )
+        keyword_sources = {
+            keyword.arg: ast.unparse(keyword.value)
+            for keyword in episode_stats_call.keywords
+        }
+
+        self.assertIn("candidate_bytes_written", keyword_sources)
+        self.assertIn(
+            "record.candidate_bytes_written",
+            keyword_sources["candidate_bytes_written"],
+        )
+
+    def test_process_rss_sampling_is_confined_to_layerwise_ppo_update_boundaries(self):
+        diagnostics_source = Path("blb_stage2_rl/diagnostics.py").read_text(
+            encoding="utf-8",
+        )
+        diagnostics_tree = ast.parse(diagnostics_source)
+        rss_helpers = {
+            node.name: node
+            for node in ast.walk(diagnostics_tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and (
+                "rss" in node.name.lower()
+                or "process_memory" in node.name.lower()
+            )
+        }
+        self.assertTrue(rss_helpers, "diagnostics must own an RSS sampling helper")
+
+        sequential_source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        sequential_tree = ast.parse(sequential_source)
+        branch = next(
+            node for node in sequential_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        episode_callback = next(
+            node for node in branch.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "on_layerwise_episode"
+        )
+        update_callback = next(
+            node for node in branch.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "on_layerwise_update"
+        )
+
+        def called_name(call):
+            if isinstance(call.func, ast.Name):
+                return call.func.id
+            if isinstance(call.func, ast.Attribute):
+                return call.func.attr
+            return ""
+
+        def helper_calls(node):
+            return [
+                call for call in ast.walk(node)
+                if isinstance(call, ast.Call)
+                and called_name(call) in rss_helpers
+            ]
+
+        branch_calls = helper_calls(branch)
+        episode_calls = helper_calls(episode_callback)
+        update_calls = helper_calls(update_callback)
+        self.assertEqual(episode_calls, [])
+        self.assertEqual(len(update_calls), 1)
+        self.assertEqual(
+            {id(call) for call in branch_calls},
+            {id(call) for call in update_calls},
+        )
+
+        update_stats_call = next(
+            node for node in ast.walk(update_callback)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "PPOUpdateStats"
+        )
+        update_fields = {keyword.arg for keyword in update_stats_call.keywords}
+        self.assertIn("process_rss_bytes", update_fields)
+        self.assertIn("process_peak_rss_bytes", update_fields)
+
+        layerwise_source = Path("blb_stage2_rl/layerwise_runner.py").read_text(
+            encoding="utf-8",
+        )
+        layerwise_tree = ast.parse(layerwise_source)
+        train = next(
+            node for node in layerwise_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "train_layerwise"
+        )
+        self.assertEqual(helper_calls(train), [])
+
+        def cuda_synchronize_calls(node):
+            calls = []
+            for call in ast.walk(node):
+                if not isinstance(call, ast.Call):
+                    continue
+                if not isinstance(call.func, ast.Attribute):
+                    continue
+                if call.func.attr != "synchronize":
+                    continue
+                if "cuda" in ast.unparse(call.func.value).lower():
+                    calls.append(call)
+            return calls
+
+        telemetry_nodes = [*rss_helpers.values(), episode_callback, update_callback, train]
+        self.assertEqual(
+            [
+                ast.unparse(call)
+                for node in telemetry_nodes
+                for call in cuda_synchronize_calls(node)
+            ],
+            [],
+        )
 
     def test_layerwise_checkpoint_preserves_long_run_search_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
@@ -2579,6 +2816,50 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["episode_rewards"], [7.5])
         self.assertIn("best_action", summary)
         self.assertIsNone(summary["best_action"])
+
+    def test_train_candidate_bytes_written_matches_each_episode_file_size_delta(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        observed = []
+        with tempfile.TemporaryDirectory() as td:
+            store_path = Path(td) / "candidates.jsonl"
+            store = CandidateStore(store_path)
+            previous_size = store_path.stat().st_size if store_path.exists() else 0
+
+            def capture_episode(record):
+                nonlocal previous_size
+                current_size = store_path.stat().st_size
+                observed.append({
+                    "reported": int(record.candidate_bytes_written),
+                    "file_delta": int(current_size - previous_size),
+                })
+                previous_size = current_size
+
+            train_layerwise(
+                env=_FakeLayerwiseEnv(probabilities=0.7),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=2, update_every=2),
+                candidate_store=store,
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+                on_episode_end=capture_episode,
+                retain_history=False,
+            )
+
+        self.assertEqual(len(observed), 2)
+        self.assertTrue(all(row["file_delta"] > 0 for row in observed))
+        self.assertEqual(
+            [row["reported"] for row in observed],
+            [row["file_delta"] for row in observed],
+        )
 
     def test_train_bounded_history_can_be_disabled_without_changing_callbacks(self):
         from blb_stage2_rl.candidate_store import CandidateStore
