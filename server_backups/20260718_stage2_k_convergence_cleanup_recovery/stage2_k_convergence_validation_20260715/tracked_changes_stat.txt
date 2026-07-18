@@ -1,0 +1,12 @@
+ blb_stage2_rl/diagnostics.py       |   3 +
+ blb_stage2_rl/layerwise_action.py  |  79 ++++++++-
+ blb_stage2_rl/layerwise_env.py     |  11 ++
+ blb_stage2_rl/layerwise_runner.py  | 215 +++++++++++++++++++++-
+ blb_stage2_rl/sequential_policy.py | 352 ++++++++++++++++++++++++++++++++++---
+ blb_stage2_rl/sequential_runner.py | 345 ++++++++++++++++++++++++++++--------
+ tests/test_blb_fusion_reward.py    |  24 ++-
+ tests/test_blb_layerwise_action.py |  56 +++++-
+ tests/test_blb_layerwise_env.py    |  20 +++
+ tests/test_blb_layerwise_policy.py | 344 ++++++++++++++++++++++++++++++++++++
+ tests/test_blb_layerwise_runner.py | 279 +++++++++++++++++++++++++++--
+ 11 files changed, 1602 insertions(+), 126 deletions(-)

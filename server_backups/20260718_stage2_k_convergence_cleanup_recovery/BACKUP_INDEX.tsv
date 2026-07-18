@@ -1,0 +1,4 @@
+snapshot	original_server_path	base_commit	original_bytes	tracked_files	status_rows	extra_files	extra_archive_bytes	description
+stage2_k_convergence_5f223f0	/hy-tmp/stage2_k_convergence_5f223f0	e154f54484f017555264d515df87967c9bf24dab	6844619439	7392	30	79	1516346	Intermediate K-convergence implementation and smoke evidence worktree
+stage2_k_convergence_tdd_red_20260715	/hy-tmp/stage2_k_convergence_tdd_red_20260715	14187ee1c1778f4dee598cb755017effc8332869	6848047317	7350	43	109	2810101	TDD and diagnostic K-convergence worktree with v3/v4 smoke evidence
+stage2_k_convergence_validation_20260715	/hy-tmp/stage2_k_convergence_validation_20260715	14187ee1c1778f4dee598cb755017effc8332869	6840453309	7350	31	97	2314045	Independent validation worktree for the K-convergence changes

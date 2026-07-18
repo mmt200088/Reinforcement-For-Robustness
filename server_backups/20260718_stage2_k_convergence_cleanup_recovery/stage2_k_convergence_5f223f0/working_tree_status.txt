@@ -1,0 +1,30 @@
+ M blb_stage2_rl/diagnostics.py
+ M blb_stage2_rl/layerwise_action.py
+ M blb_stage2_rl/layerwise_env.py
+ M blb_stage2_rl/layerwise_runner.py
+ M blb_stage2_rl/sequential_policy.py
+ M blb_stage2_rl/sequential_runner.py
+ M tests/test_blb_fusion_reward.py
+ M tests/test_blb_layerwise_action.py
+ M tests/test_blb_layerwise_env.py
+ M tests/test_blb_layerwise_policy.py
+ M tests/test_blb_layerwise_runner.py
+?? SOURCE_COMMIT.txt
+?? blb_stage2_rl/._diagnostics.py
+?? blb_stage2_rl/._layerwise_action.py
+?? blb_stage2_rl/._layerwise_env.py
+?? blb_stage2_rl/._layerwise_runner.py
+?? blb_stage2_rl/._sequential_policy.py
+?? blb_stage2_rl/._sequential_runner.py
+?? docs/superpowers/plans/._2026-07-14-stage2-k-convergence.md
+?? docs/superpowers/plans/2026-07-14-stage2-k-convergence.md
+?? docs/superpowers/specs/._2026-07-14-stage2-k-convergence-design.md
+?? docs/superpowers/specs/2026-07-14-stage2-k-convergence-design.md
+?? rl_training_data_points/stage2/bert-base/mrpc/stage2_k_convergence_smoke_5f223f0_20260715_0113_persistent_rl_bert-base_mrpc_s1t0.001_s2t0.001_s2st2.0__20260714T171830138604Z__pid2138072/episodes.jsonl
+?? rl_training_data_points/stage2/bert-base/mrpc/stage2_k_convergence_smoke_5f223f0_20260715_0113_persistent_rl_bert-base_mrpc_s1t0.001_s2t0.001_s2st2.0__20260714T171830138604Z__pid2138072/manifest.json
+?? stage2_k_convergence_5f223f0_overlay.tar.gz
+?? tests/._test_blb_fusion_reward.py
+?? tests/._test_blb_layerwise_action.py
+?? tests/._test_blb_layerwise_env.py
+?? tests/._test_blb_layerwise_policy.py
+?? tests/._test_blb_layerwise_runner.py

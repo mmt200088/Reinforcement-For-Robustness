@@ -1,0 +1,1625 @@
+diff --git a/blb_stage2_rl/diagnostics.py b/blb_stage2_rl/diagnostics.py
+index a9c52277f568f06e043260ace12c90c646fcfbc3..6ac272ee7529670b9095c1c9e663910cacabb762 100644
+--- a/blb_stage2_rl/diagnostics.py
++++ b/blb_stage2_rl/diagnostics.py
+@@ -274,6 +274,9 @@ class PPOUpdateStats:
+     converged: bool = False
+     extension_required: bool = False
+     best_robust_feasible_cost: Optional[float] = None
++    actor_clip_mode: str = "joint"
++    actor_credit_mode: str = "scalar_gae"
++    entropy_objective_mode: str = "joint_sum"
+     timestamp: float = field(default_factory=time.time)
+ 
+ 
+diff --git a/blb_stage2_rl/layerwise_action.py b/blb_stage2_rl/layerwise_action.py
+index 3b798624494ae280e53023716fd7685ef51d811c..54b026f0f5c49359588a472118b070a190223a8d 100644
+--- a/blb_stage2_rl/layerwise_action.py
++++ b/blb_stage2_rl/layerwise_action.py
+@@ -64,6 +64,12 @@ _BLOCK_STARTS = {1: 0, 2: 9, 3: 32, 4: 40, 5: 57}
+ _LAYER_WIDTH = sum(_BLOCK_SLOT_COUNTS.values())
+ _BLOCK_ORDER = (1, 2, 3, 4, 5)
+ 
++BLOCK4_FUSION_COST_UNIT = 1.0
++TRUNCATION_COST_UNIT_PER_BIT = 0.5
++MAX_FUSION_COST_UNITS = 12.0
++MAX_TRUNCATION_COST_UNITS = 0.5 * 59.0 * (13.0 - 8.0)
++MAX_VARIABLE_COST_UNITS = MAX_FUSION_COST_UNITS + MAX_TRUNCATION_COST_UNITS
++
+ 
+ @dataclass(frozen=True)
+ class LayerwiseStepSpec:
+@@ -125,6 +131,12 @@ class VariableCost:
+     fusion_saving: float
+     truncation_saving: float
+     normalized: float
++    fusion_units: float
++    truncation_units: float
++    total_units: float
++    max_units: float
++    layer_cost_rewards: Tuple[float, ...]
++    slot_cost_rewards: Tuple[Tuple[float, ...], ...]
+ 
+ 
+ def _graph_keys(layer_idx: int, profile: str, gelu_degree: int) -> Tuple[Tuple[int, str], ...]:
+@@ -325,6 +337,8 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
+         raise ValueError(f"variable cost requires 12 layer actions, got {len(actions)}")
+     fusion_values = []
+     k_values = []
++    layer_units = []
++    slot_units = []
+     for layer_idx, action in enumerate(actions):
+         expected_blocks = {2, 3, 4, 5} if layer_idx == 0 else {1, 2, 3, 4, 5}
+         actual_blocks = set(action.k_by_block)
+@@ -341,14 +355,39 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
+             if k not in K_LEVELS:
+                 raise ValueError(f"layer {layer_idx} block {block_idx} has unsupported K={k}")
+             k_values.append(k)
++        current_slot_units = [BLOCK4_FUSION_COST_UNIT * float(fusion)]
++        current_slot_units.extend(
++            TRUNCATION_COST_UNIT_PER_BIT
++            * (13.0 - float(action.k_by_block[block_idx]))
++            if block_idx in action.k_by_block else 0.0
++            for block_idx in _BLOCK_ORDER
++        )
++        slot_units.append(current_slot_units)
++        layer_units.append(sum(current_slot_units))
+     if len(k_values) != 59:
+         raise RuntimeError(f"BERT-base layer actions yielded {len(k_values)} active K values, expected 59")
+-    fusion_saving = float(sum(fusion_values) / 12)
+-    truncation_saving = float(sum((13 - k) / 5 for k in k_values) / 59)
++    fusion_units = BLOCK4_FUSION_COST_UNIT * float(sum(fusion_values))
++    truncation_units = TRUNCATION_COST_UNIT_PER_BIT * float(
++        sum(13 - k for k in k_values)
++    )
++    total_units = fusion_units + truncation_units
++    fusion_saving = fusion_units / MAX_FUSION_COST_UNITS
++    truncation_saving = truncation_units / MAX_TRUNCATION_COST_UNITS
+     return VariableCost(
+-        fusion_saving=fusion_saving,
+-        truncation_saving=truncation_saving,
+-        normalized=0.5 * fusion_saving + 0.5 * truncation_saving,
++        fusion_saving=float(fusion_saving),
++        truncation_saving=float(truncation_saving),
++        normalized=float(total_units / MAX_VARIABLE_COST_UNITS),
++        fusion_units=float(fusion_units),
++        truncation_units=float(truncation_units),
++        total_units=float(total_units),
++        max_units=float(MAX_VARIABLE_COST_UNITS),
++        layer_cost_rewards=tuple(
++            float(value / MAX_VARIABLE_COST_UNITS) for value in layer_units
++        ),
++        slot_cost_rewards=tuple(
++            tuple(float(value / MAX_VARIABLE_COST_UNITS) for value in row)
++            for row in slot_units
++        ),
+     )
+ 
+ 
+diff --git a/blb_stage2_rl/layerwise_env.py b/blb_stage2_rl/layerwise_env.py
+index 6012e8388cae2710f2e32880b108f56cd4690356..1a0691e4b93ee417a089a17552441b95965564f5 100644
+--- a/blb_stage2_rl/layerwise_env.py
++++ b/blb_stage2_rl/layerwise_env.py
+@@ -477,6 +477,17 @@ class BLBStage2LayerwiseEnv:
+                 "fusion_saving": float(variable_cost.fusion_saving),
+                 "truncation_saving": float(variable_cost.truncation_saving),
+                 "normalized": float(variable_cost.normalized),
++                "fusion_units": float(variable_cost.fusion_units),
++                "truncation_units": float(variable_cost.truncation_units),
++                "total_units": float(variable_cost.total_units),
++                "max_units": float(variable_cost.max_units),
++                "layer_cost_rewards": [
++                    float(value) for value in variable_cost.layer_cost_rewards
++                ],
++                "slot_cost_rewards": [
++                    [float(value) for value in row]
++                    for row in variable_cost.slot_cost_rewards
++                ],
+             },
+             "policy_actions": self.action_history,
+             "decoded_actions": decoded_actions,
+diff --git a/blb_stage2_rl/layerwise_runner.py b/blb_stage2_rl/layerwise_runner.py
+index df40d13d0ff0fccdd2b072a2c12b4ff98a2fad9f..a6b5b678282753e9e5150797e26a3ba9cf839ef2 100644
+--- a/blb_stage2_rl/layerwise_runner.py
++++ b/blb_stage2_rl/layerwise_runner.py
+@@ -208,6 +208,45 @@ def normalized_entropy_snapshot(
+     }
+ 
+ 
++def redistribute_layerwise_rewards(
++        *,
++        terminal_reward: float,
++        priority: int,
++        variable_cost: float,
++        layer_cost_rewards: Sequence[float],
++        ) -> tuple[float, ...]:
++    """Move P3 cost credit to its twelve source layer transitions.
++
++    The returned rewards always sum to ``terminal_reward``. Precision/stability
++    failures retain terminal-only credit, so cost cannot leak into P1 or P2.
++    """
++    reward = _finite(terminal_reward, name="terminal_reward")
++    cost = _finite(variable_cost, name="variable_cost")
++    layer_costs = tuple(
++        _finite(value, name=f"layer_cost_rewards[{index}]")
++        for index, value in enumerate(layer_cost_rewards)
++    )
++    if len(layer_costs) != 12:
++        raise ValueError(
++            f"layer_cost_rewards must contain 12 values, got {len(layer_costs)}"
++        )
++    if cost < 0.0 or cost > 1.0:
++        raise ValueError(f"variable_cost must be in [0, 1], got {cost}")
++    if not math.isclose(sum(layer_costs), cost, rel_tol=0.0, abs_tol=1.0e-9):
++        raise ValueError(
++            "layer_cost_rewards sum must equal variable_cost: "
++            f"{sum(layer_costs)} != {cost}"
++        )
++    if int(priority) != 3:
++        return (0.0,) * 11 + (reward,)
++
++    redistributed = list(layer_costs)
++    redistributed[-1] += reward - cost
++    if not math.isclose(sum(redistributed), reward, rel_tol=0.0, abs_tol=1.0e-9):
++        raise RuntimeError("layerwise reward redistribution changed episode return")
++    return tuple(float(value) for value in redistributed)
++
++
+ @dataclass(frozen=True)
+ class LayerwiseConvergenceState:
+     completed_episodes: int
+@@ -820,13 +859,21 @@ def _cosine_entropy_coefficient(train_cfg: Any, completed_episodes: int) -> floa
+     plateau = min(1.0, max(0.0, float(
+         getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)
+     )))
++    decay_end = min(1.0, max(plateau, float(
++        getattr(train_cfg, "ent_coef_cosine_decay_end", 1.0)
++    )))
+     start = float(getattr(train_cfg, "ent_coef_cosine_start", 0.05))
+     end = float(getattr(train_cfg, "ent_coef_cosine_end", 0.001))
+     lower_bound = float(getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012))
+     if progress <= plateau:
+         value = start
++    elif progress >= decay_end:
++        value = end
+     else:
+-        phase = min(1.0, max(0.0, (progress - plateau) / max(1.0e-8, 1.0 - plateau)))
++        phase = min(1.0, max(
++            0.0,
++            (progress - plateau) / max(1.0e-8, decay_end - plateau),
++        ))
+         value = end + 0.5 * (start - end) * (1.0 + math.cos(math.pi * phase))
+     return max(lower_bound, value)
+ 
+@@ -1007,6 +1054,7 @@ def train_layerwise(
+                 trial_count=expected_online_trials,
+             )
+         step_infos: list[Mapping[str, Any]] = []
++        transition_indices: list[int] = []
+         terminal_info: Optional[Mapping[str, Any]] = None
+         episode_reward = 0.0
+         for step_idx in range(12):
+@@ -1030,8 +1078,7 @@ def train_layerwise(
+                 raise RuntimeError(
+                     f"layerwise episode termination mismatch at step {step_idx}: done={done}"
+                 )
+-            stored_reward = float(reward) if expected_done else 0.0
+-            rollout_buffer.add(
++            transition_index = rollout_buffer.add(
+                 state=state_np,
+                 action=action,
+                 slot_mask=slot_mask,
+@@ -1039,10 +1086,11 @@ def train_layerwise(
+                 action_level_mask=None,
+                 log_prob=log_prob,
+                 value=value,
+-                reward=stored_reward,
++                reward=0.0,
+                 done=bool(done),
+                 baseline_prior_scale=0.0,
+             )
++            transition_indices.append(int(transition_index))
+             entropy_samples.append({
+                 "state": state_np.copy(),
+                 "action": action.copy(),
+@@ -1074,6 +1122,34 @@ def train_layerwise(
+             _field(terminal_info.get("variable_cost", {}), "normalized"),
+             name="variable_cost",
+         )
++        layer_cost_rewards = tuple(
++            float(value) for value in _field(
++                terminal_info.get("variable_cost", {}),
++                "layer_cost_rewards",
++                (),
++            )
++        )
++        slot_cost_rewards = tuple(
++            tuple(float(value) for value in row)
++            for row in _field(
++                terminal_info.get("variable_cost", {}),
++                "slot_cost_rewards",
++                (),
++            )
++        )
++        if len(slot_cost_rewards) != 12 or any(
++                len(row) != 6 for row in slot_cost_rewards
++        ):
++            raise RuntimeError("layerwise terminal slot_cost_rewards must be a 12x6 matrix")
++        for layer_idx, (layer_cost, slot_costs) in enumerate(zip(
++                layer_cost_rewards, slot_cost_rewards,
++        )):
++            if not math.isclose(
++                    sum(slot_costs), layer_cost, rel_tol=0.0, abs_tol=1.0e-9,
++            ):
++                raise RuntimeError(
++                    f"layer {layer_idx} slot cost sum does not match layer cost"
++                )
+         breakdown = runtime_info.get("reward_breakdown")
+         priority = int(_field(breakdown, "priority", runtime_info.get("priority", 0)))
+         invalid_terminal = bool(runtime_info.get("invalid", False))
+@@ -1081,6 +1157,29 @@ def train_layerwise(
+             raise RuntimeError(
+                 f"invalid layerwise terminal reward must be -5, got {episode_reward}"
+             )
++        reward_priority = 0 if invalid_terminal else priority
++        redistributed_rewards = redistribute_layerwise_rewards(
++            terminal_reward=episode_reward,
++            priority=reward_priority,
++            variable_cost=variable_cost,
++            layer_cost_rewards=layer_cost_rewards,
++        )
++        zero_slot_costs = ((0.0,) * 6,) * 12
++        actor_slot_costs = (
++            slot_cost_rewards if reward_priority == 3 else zero_slot_costs
++        )
++        actor_shared_return = (
++            episode_reward - variable_cost
++            if reward_priority == 3 else episode_reward
++        )
++        for transition_index, reward_delta, per_slot_cost in zip(
++                transition_indices, redistributed_rewards, actor_slot_costs,
++        ):
++            rollout_buffer.add_reward_at(transition_index, reward_delta)
++            rollout_buffer.set_actor_cost_at(transition_index, per_slot_cost)
++            rollout_buffer.set_actor_shared_return_at(
++                transition_index, actor_shared_return,
++            )
+         raw_trials = (
+             None
+             if invalid_terminal
+diff --git a/blb_stage2_rl/sequential_policy.py b/blb_stage2_rl/sequential_policy.py
+index 87428e8969d2758844a1b83066a0da81a8b13f43..52130aca18702ff05e7b088af974d34b61c04f9b 100644
+--- a/blb_stage2_rl/sequential_policy.py
++++ b/blb_stage2_rl/sequential_policy.py
+@@ -753,6 +753,7 @@ class BLBStage2SequentialPolicy(nn.Module):
+             logit_mask: Optional[torch.Tensor] = None,
+             baseline_prior_scale: Optional[Any] = None,
+             return_per_slot_entropy: bool = False,
++            return_per_slot_log_prob: bool = False,
+             truncate_to_current: bool = False,
+             truncate_seq_len: Optional[int] = None,
+             ) -> Tuple[torch.Tensor, ...]:
+@@ -783,8 +784,12 @@ class BLBStage2SequentialPolicy(nn.Module):
+         log_prob = log_prob_per_slot.sum(dim=-1)
+         entropy_per_slot = dist.entropy() * slot_mask.float()
+         entropy = entropy_per_slot.sum(dim=-1)
++        if return_per_slot_entropy and return_per_slot_log_prob:
++            return log_prob, entropy, value, entropy_per_slot, log_prob_per_slot
+         if return_per_slot_entropy:
+             return log_prob, entropy, value, entropy_per_slot
++        if return_per_slot_log_prob:
++            return log_prob, entropy, value, log_prob_per_slot
+         return log_prob, entropy, value
+ 
+     def set_slot_exploration_epsilon(self, eps_per_slot) -> None:
+@@ -979,6 +984,8 @@ class SequentialTransition:
+     # action_level_mask: np.ndarray when provided; shape [max_step_dim, max_num_levels].
+     action_level_mask: Optional[np.ndarray] = None
+     baseline_prior_scale: float = 0.0
++    actor_cost_per_slot: Optional[np.ndarray] = None
++    actor_shared_return: Optional[float] = None
+ 
+ 
+ def _compute_gae_from_arrays(
+@@ -1115,6 +1122,70 @@ class SequentialRolloutBuffer:
+             raise IndexError(f"transition index {idx} out of range")
+         self._buf[idx].reward = float(self._buf[idx].reward) + float(delta)
+ 
++    def set_actor_cost_at(self, index: int, per_slot_cost: np.ndarray) -> None:
++        """Attach P3 cost credit for each active factor at one transition."""
++        idx = int(index)
++        if idx < 0 or idx >= len(self._buf):
++            raise IndexError(f"transition index {idx} out of range")
++        transition = self._buf[idx]
++        values = np.asarray(per_slot_cost, dtype=np.float32)
++        if values.shape != transition.action.shape:
++            raise ValueError(
++                f"per-slot actor cost shape {values.shape} != action shape "
++                f"{transition.action.shape}"
++            )
++        if not np.all(np.isfinite(values)) or np.any(values < 0.0):
++            raise ValueError("per-slot actor costs must be finite and nonnegative")
++        if np.any(values[~transition.slot_mask] != 0.0):
++            raise ValueError("inactive action slots cannot receive actor cost credit")
++        transition.actor_cost_per_slot = values.copy()
++
++    def set_actor_shared_return_at(self, index: int, shared_return: float) -> None:
++        """Attach the terminal constraint return shared by all action factors."""
++        idx = int(index)
++        if idx < 0 or idx >= len(self._buf):
++            raise IndexError(f"transition index {idx} out of range")
++        value = float(shared_return)
++        if not math.isfinite(value):
++            raise ValueError("actor shared return must be finite")
++        self._buf[idx].actor_shared_return = value
++
++    def factorized_actor_advantages(
++            self,
++            scalar_advantages: torch.Tensor,
++            device: torch.device,
++            ) -> Optional[torch.Tensor]:
++        """Build shared-constraint plus own-cost actor credit per factor."""
++        if not any(row.actor_cost_per_slot is not None for row in self._buf):
++            return None
++        if scalar_advantages.ndim != 1 or scalar_advantages.shape[0] != len(self._buf):
++            raise ValueError("scalar advantages must contain one value per transition")
++        width = int(self._buf[0].action.size)
++        costs = np.zeros((len(self._buf), width), dtype=np.float32)
++        for index, transition in enumerate(self._buf):
++            values = transition.actor_cost_per_slot
++            if values is None:
++                continue
++            if values.shape != (width,):
++                raise ValueError("all per-slot actor cost rows must share one width")
++            costs[index] = values
++        costs_t = torch.from_numpy(costs).to(device=device)
++        has_shared_return = [row.actor_shared_return is not None for row in self._buf]
++        if any(has_shared_return):
++            if not all(has_shared_return):
++                raise ValueError("actor shared returns must be set for the whole update window")
++            shared = torch.as_tensor(
++                [float(row.actor_shared_return) for row in self._buf],
++                dtype=scalar_advantages.dtype,
++                device=device,
++            )
++            return shared.unsqueeze(-1) + costs_t
++        return (
++            scalar_advantages.unsqueeze(-1)
++            - costs_t.sum(dim=-1, keepdim=True)
++            + costs_t
++        )
++
+     def clear(self) -> None:
+         self._buf.clear()
+ 
+@@ -1303,6 +1374,80 @@ class SequentialPPOConfig:
+     per_slot_entropy_recovery: bool = False
+     per_slot_entropy_floor_frac: float = 0.22
+     per_slot_entropy_recovery_multiplier: float = 6.0
++    factorized_actor_clip: bool = False
++    entropy_average_active_slots: bool = False
++    entropy_normalize_active_slots: bool = False
++
++
++def _factorized_clipped_policy_loss(
++        new_log_prob_per_slot: torch.Tensor,
++        old_log_prob_per_slot: torch.Tensor,
++        advantages: torch.Tensor,
++        active_slots: torch.Tensor,
++        *,
++        clip_range: float,
++        ) -> Tuple[torch.Tensor, torch.Tensor]:
++    """PPO-clip each active MultiDiscrete factor independently."""
++    if new_log_prob_per_slot.shape != old_log_prob_per_slot.shape:
++        raise ValueError("new and old per-slot log probabilities must align")
++    if active_slots.shape != new_log_prob_per_slot.shape:
++        raise ValueError("active slot mask must align with per-slot log probabilities")
++    if advantages.ndim == 1:
++        if advantages.shape[0] != new_log_prob_per_slot.shape[0]:
++            raise ValueError("advantages must have one scalar per transition")
++        slot_advantages = advantages.unsqueeze(-1)
++    elif advantages.shape == new_log_prob_per_slot.shape:
++        slot_advantages = advantages
++    else:
++        raise ValueError(
++            "advantages must be one scalar per transition or one value per slot"
++        )
++    active = active_slots.to(dtype=new_log_prob_per_slot.dtype)
++    denominator = torch.clamp(active.sum(), min=1.0)
++    ratio = torch.exp(new_log_prob_per_slot - old_log_prob_per_slot)
++    unclipped = ratio * slot_advantages
++    clipped = torch.clamp(
++        ratio, 1.0 - float(clip_range), 1.0 + float(clip_range),
++    ) * slot_advantages
++    loss = -(torch.min(unclipped, clipped) * active).sum() / denominator
++    return loss, ratio
++
++
++def _factorized_approx_kl(
++        new_log_prob_per_slot: torch.Tensor,
++        old_log_prob_per_slot: torch.Tensor,
++        active_slots: torch.Tensor,
++        ) -> torch.Tensor:
++    """Estimate behavior KL on the same per-factor scale as PPO clipping."""
++    if new_log_prob_per_slot.shape != old_log_prob_per_slot.shape:
++        raise ValueError("new and old per-slot log probabilities must align")
++    if active_slots.shape != new_log_prob_per_slot.shape:
++        raise ValueError("active slot mask must align with per-slot log probabilities")
++    active = active_slots.to(dtype=new_log_prob_per_slot.dtype)
++    denominator = torch.clamp(active.sum(), min=1.0)
++    return ((old_log_prob_per_slot - new_log_prob_per_slot) * active).sum() / denominator
++
++
++def _active_slot_entropy_objective(
++        entropy_per_slot: torch.Tensor,
++        per_slot_num_levels: torch.Tensor,
++        active_slots: torch.Tensor,
++        *,
++        normalize_by_levels: bool,
++        ) -> torch.Tensor:
++    """Average entropy over active factors, optionally on a [0, 1] scale."""
++    if entropy_per_slot.shape != active_slots.shape:
++        raise ValueError("entropy and active slot mask must align")
++    if per_slot_num_levels.shape != entropy_per_slot.shape:
++        raise ValueError("level counts and entropy must align")
++    active = active_slots.to(dtype=entropy_per_slot.dtype)
++    values = entropy_per_slot
++    if normalize_by_levels:
++        max_entropy = torch.log(
++            per_slot_num_levels.to(dtype=entropy_per_slot.dtype).clamp_min(2.0)
++        )
++        values = values / max_entropy
++    return (values * active).sum() / torch.clamp(active.sum(), min=1.0)
+ 
+ 
+ def _robust_normalize_advantages(
+@@ -1376,7 +1521,13 @@ def sequential_ppo_update(
+                 "approx_kl": 0.0, "kl_early_stop": False,
+                 "lr": float(cfg.lr), "lr_scale": 1.0,
+                 "entropy_recovery_delta": 0.0,
+-                "return_mean": 0.0, "return_std": 1.0}
++                "return_mean": 0.0, "return_std": 1.0,
++                "actor_clip_mode": (
++                    "factorized_per_slot"
++                    if bool(getattr(cfg, "factorized_actor_clip", False)) else "joint"
++                ),
++                "actor_credit_mode": "scalar_gae",
++                "entropy_objective_mode": "joint_sum"}
+     effective_ent_coef = (
+         float(cfg.ent_coef) if ent_coef_override is None else float(ent_coef_override)
+     )
+@@ -1403,7 +1554,38 @@ def sequential_ppo_update(
+     normalize_returns = bool(getattr(cfg, "normalize_returns", True)) and return_normalizer is not None
+     if normalize_returns:
+         return_normalizer.update(returns)
+-    if bool(getattr(cfg, "robust_advantage_norm", True)):
++    factorized_actor_clip = bool(getattr(cfg, "factorized_actor_clip", False))
++    factorized_actor_advantages = (
++        buffer.factorized_actor_advantages(advantages, device)
++        if factorized_actor_clip else None
++    )
++    robust_advantage_norm = bool(getattr(cfg, "robust_advantage_norm", True))
++    if factorized_actor_advantages is not None:
++        centered_factorized = factorized_actor_advantages.clone()
++        for slot_idx in range(centered_factorized.shape[1]):
++            slot_active = slot_masks[:, slot_idx]
++            if bool(slot_active.any()):
++                slot_values = centered_factorized[slot_active, slot_idx]
++                centered_factorized[slot_active, slot_idx] = (
++                    slot_values - slot_values.mean()
++                )
++        active_advantages = centered_factorized[slot_masks]
++        if robust_advantage_norm:
++            active_advantages = _robust_normalize_advantages(
++                active_advantages,
++                outlier_clip=float(getattr(cfg, "adv_outlier_clip", 6.0)),
++            )
++        elif active_advantages.numel() > 1:
++            std = torch.std(active_advantages, unbiased=False)
++            std_ok = torch.isfinite(std) & (std > 1e-8)
++            normalized = (
++                active_advantages - torch.mean(active_advantages)
++            ) / (std + 1e-8)
++            active_advantages = torch.where(std_ok, normalized, active_advantages)
++        normalized_factorized = torch.zeros_like(factorized_actor_advantages)
++        normalized_factorized[slot_masks] = active_advantages
++        factorized_actor_advantages = normalized_factorized
++    elif robust_advantage_norm:
+         advantages = _robust_normalize_advantages(
+             advantages,
+             outlier_clip=float(getattr(cfg, "adv_outlier_clip", 6.0)),
+@@ -1414,6 +1596,32 @@ def sequential_ppo_update(
+         normalized_advantages = (advantages - torch.mean(advantages)) / (std + 1e-8)
+         advantages = torch.where(std_ok, normalized_advantages, advantages)
+ 
++    old_log_probs_per_slot = None
++    if factorized_actor_clip:
++        with torch.no_grad():
++            old_eval_out = policy.evaluate_action(
++                states,
++                actions,
++                slot_masks,
++                levels,
++                action_level_mask=level_masks,
++                baseline_prior_scale=prior_scales,
++                return_per_slot_entropy=True,
++                return_per_slot_log_prob=True,
++            )
++        if len(old_eval_out) != 5:
++            raise RuntimeError(
++                "factorized PPO requires evaluate_action per-slot log probabilities"
++            )
++        old_log_probs_per_slot = old_eval_out[4].detach()
++        reconstructed_joint = old_log_probs_per_slot.sum(dim=-1)
++        if not bool(torch.allclose(
++                reconstructed_joint, old_log_probs, rtol=1.0e-5, atol=1.0e-6,
++        )):
++            raise RuntimeError(
++                "factorized behavior log probabilities do not match rollout joint log probabilities"
++            )
++
+     n = states.shape[0]
+     current_lr, lr_scale = _apply_adaptive_kl_lr(policy, optimizer, cfg)
+ 
+@@ -1453,24 +1661,59 @@ def sequential_ppo_update(
+                 None if level_masks is None else level_masks.index_select(0, mb)
+             )
+             mb_prior_scales = prior_scales.index_select(0, mb)
+-            eval_out = policy.evaluate_action(
+-                mb_states,
+-                mb_actions,
+-                mb_slot_masks,
+-                mb_levels,
+-                action_level_mask=mb_level_masks,
+-                baseline_prior_scale=mb_prior_scales,
+-                return_per_slot_entropy=True,
+-            )
+-            new_log_probs, entropy, value, entropy_per_slot = eval_out
++            if factorized_actor_clip:
++                eval_out = policy.evaluate_action(
++                    mb_states,
++                    mb_actions,
++                    mb_slot_masks,
++                    mb_levels,
++                    action_level_mask=mb_level_masks,
++                    baseline_prior_scale=mb_prior_scales,
++                    return_per_slot_entropy=True,
++                    return_per_slot_log_prob=True,
++                )
++                (
++                    new_log_probs,
++                    entropy,
++                    value,
++                    entropy_per_slot,
++                    new_log_probs_per_slot,
++                ) = eval_out
++            else:
++                eval_out = policy.evaluate_action(
++                    mb_states,
++                    mb_actions,
++                    mb_slot_masks,
++                    mb_levels,
++                    action_level_mask=mb_level_masks,
++                    baseline_prior_scale=mb_prior_scales,
++                    return_per_slot_entropy=True,
++                )
++                new_log_probs, entropy, value, entropy_per_slot = eval_out
++                new_log_probs_per_slot = None
+             old_lp = old_log_probs.index_select(0, mb)
+             old_value = old_values.index_select(0, mb)
+             ret = returns.index_select(0, mb)
+-            adv = advantages.index_select(0, mb)
+-            ratio = torch.exp(new_log_probs - old_lp)
+-            unclipped = ratio * adv
+-            clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * adv
+-            policy_loss = -torch.min(unclipped, clipped).mean()
++            adv = (
++                factorized_actor_advantages.index_select(0, mb)
++                if factorized_actor_advantages is not None
++                else advantages.index_select(0, mb)
++            )
++            if factorized_actor_clip:
++                old_lp_per_slot = old_log_probs_per_slot.index_select(0, mb)
++                policy_loss, ratio = _factorized_clipped_policy_loss(
++                    new_log_probs_per_slot,
++                    old_lp_per_slot,
++                    adv,
++                    mb_slot_masks,
++                    clip_range=cfg.clip_range,
++                )
++            else:
++                old_lp_per_slot = None
++                ratio = torch.exp(new_log_probs - old_lp)
++                unclipped = ratio * adv
++                clipped = torch.clamp(ratio, 1.0 - cfg.clip_range, 1.0 + cfg.clip_range) * adv
++                policy_loss = -torch.min(unclipped, clipped).mean()
+             if normalize_returns:
+                 value_target = return_normalizer.normalize(ret)
+                 value_pred = return_normalizer.normalize(value)
+@@ -1498,6 +1741,20 @@ def sequential_ppo_update(
+             )
+             value_loss = torch.max(value_loss_raw, value_loss_clipped).mean()
+             entropy_mean = entropy.mean()
++            if (
++                    factorized_actor_clip
++                    and bool(getattr(cfg, "entropy_average_active_slots", False))
++            ):
++                entropy_objective = _active_slot_entropy_objective(
++                    entropy_per_slot,
++                    mb_levels,
++                    mb_slot_masks,
++                    normalize_by_levels=bool(getattr(
++                        cfg, "entropy_normalize_active_slots", False,
++                    )),
++                )
++            else:
++                entropy_objective = entropy_mean
+             entropy_recovery_delta = torch.zeros((), device=device)
+             if bool(getattr(cfg, "per_slot_entropy_recovery", True)):
+                 mb_slot_masks_float = mb_slot_masks.float()
+@@ -1512,13 +1769,22 @@ def sequential_ppo_update(
+                 )
+                 denom = torch.clamp(mb_slot_masks_float.sum(), min=1.0)
+                 entropy_recovery_delta = entropy_deficit.sum() / denom
+-            loss = (
+-                policy_loss
+-                + cfg.value_coef * value_loss
+-                - effective_ent_coef * entropy_mean
+-                - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
+-                * entropy_recovery_delta
+-            )
++            if factorized_actor_clip:
++                loss = (
++                    policy_loss
++                    + cfg.value_coef * value_loss
++                    - effective_ent_coef * entropy_objective
++                    - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
++                    * entropy_recovery_delta
++                )
++            else:
++                loss = (
++                    policy_loss
++                    + cfg.value_coef * value_loss
++                    - effective_ent_coef * entropy_mean
++                    - float(getattr(cfg, "per_slot_entropy_recovery_multiplier", 6.0))
++                    * entropy_recovery_delta
++                )
+             finite_tensors = (
+                 new_log_probs,
+                 entropy,
+@@ -1527,6 +1793,7 @@ def sequential_ppo_update(
+                 policy_loss,
+                 value_loss,
+                 entropy_mean,
++                entropy_objective,
+                 entropy_recovery_delta,
+                 loss,
+             )
+@@ -1551,8 +1818,22 @@ def sequential_ppo_update(
+                     break
+             optimizer.step()
+             with torch.no_grad():
+-                clip_frac_t = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean()
+-                approx_kl_t = (old_lp - new_log_probs).mean()
++                if factorized_actor_clip:
++                    active_clip_mask = mb_slot_masks.float()
++                    clip_frac_t = (
++                        (torch.abs(ratio - 1.0) > cfg.clip_range).float()
++                        * active_clip_mask
++                    ).sum() / torch.clamp(active_clip_mask.sum(), min=1.0)
++                else:
++                    clip_frac_t = ((torch.abs(ratio - 1.0) > cfg.clip_range).float()).mean()
++                if factorized_actor_clip:
++                    approx_kl_t = _factorized_approx_kl(
++                        new_log_probs_per_slot,
++                        old_lp_per_slot,
++                        mb_slot_masks,
++                    )
++                else:
++                    approx_kl_t = (old_lp - new_log_probs).mean()
+             metrics_sum_t["policy_loss"] += policy_loss.detach()
+             metrics_sum_t["value_loss"] += value_loss.detach()
+             metrics_sum_t["entropy"] += entropy_mean.detach()
+@@ -1593,6 +1874,25 @@ def sequential_ppo_update(
+         "return_std": float(return_normalizer.std if return_normalizer is not None else 1.0),
+         "nonfinite_minibatches": int(nonfinite_minibatches),
+         "nonfinite_update_skipped": bool(nonfinite_minibatches > 0 and n_minibatches == 0),
++        "actor_clip_mode": (
++            "factorized_per_slot" if factorized_actor_clip else "joint"
++        ),
++        "actor_credit_mode": (
++            "shared_constraint_plus_own_cost"
++            if factorized_actor_advantages is not None else "scalar_gae"
++        ),
++        "entropy_objective_mode": (
++            "normalized_active_slot_mean"
++            if factorized_actor_clip
++            and bool(getattr(cfg, "entropy_average_active_slots", False))
++            and bool(getattr(cfg, "entropy_normalize_active_slots", False))
++            else (
++                "active_slot_mean"
++                if factorized_actor_clip
++                and bool(getattr(cfg, "entropy_average_active_slots", False))
++                else "joint_sum"
++            )
++        ),
+     }
+ 
+ 
+diff --git a/blb_stage2_rl/sequential_runner.py b/blb_stage2_rl/sequential_runner.py
+index 03782f1e77a347d436abe95ec6e34990bb5817c2..4d7945d31138d7c8956c12e832640bccd8e1fb8b 100644
+--- a/blb_stage2_rl/sequential_runner.py
++++ b/blb_stage2_rl/sequential_runner.py
+@@ -109,6 +109,7 @@ class SequentialTrainConfig:
+     ent_coef_cosine_start: float = 0.05
+     ent_coef_cosine_end: float = 0.001
+     ent_coef_cosine_plateau: float = 0.25
++    ent_coef_cosine_decay_end: float = 1.0
+     ent_coef_cosine_lower_bound: float = 0.012
+     # ADR-015/Stage-1 alignment: "stage1_aligned" is the active default.
+     # "continuous" and "tiered" remain for historical A/B only.
+@@ -3657,16 +3658,34 @@ def _run_layerwise_training_branch(
+     layerwise_manifest_path = os.path.join(
+         blb_progress_dir, "layerwise_run_manifest.json",
+     )
++    algorithm_revision = "factorized_slot_credit_v2"
++    layerwise_entropy_schedule = {
++        "kind": "cosine",
++        "start": float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
++        "end": 0.0,
++        "plateau": float(getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)),
++        "decay_end": 0.85,
++        "lower_bound": 0.0,
++    }
++    layerwise_ppo_mode = {
++        "factorized_actor_clip": True,
++        "actor_credit_mode": "shared_constraint_plus_own_cost",
++        "entropy_average_active_slots": True,
++        "entropy_normalize_active_slots": True,
++    }
+     run_manifest = {
+         "schema_version": "stage2_layerwise_robust_run_v1",
+         "status": "running",
+         "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
++        "algorithm_revision": algorithm_revision,
+         "profile": str(train_cfg.profile),
+         "decision_granularity": "layer",
+         "reward_design": "robust_constrained",
+         "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
+         "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
+         "planned_episodes": int(train_cfg.total_episodes),
++        "entropy_schedule": layerwise_entropy_schedule,
++        "ppo_mode": layerwise_ppo_mode,
+         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+     }
+     write_strict_json_file(layerwise_manifest_path, run_manifest)
+@@ -3719,6 +3738,12 @@ def _run_layerwise_training_branch(
+             raise RuntimeError(
+                 f"layerwise checkpoint variant {checkpoint_variant!r} != {rl_variant!r}"
+             )
++        checkpoint_revision = str(checkpoint.get("algorithm_revision", "") or "")
++        if checkpoint_revision != algorithm_revision:
++            raise RuntimeError(
++                f"layerwise checkpoint algorithm revision {checkpoint_revision!r} "
++                f"!= {algorithm_revision!r}; start a fresh run"
++            )
+         policy.load_state_dict(checkpoint["policy"])
+         if checkpoint.get("policy_ppo_aux") is not None:
+             policy.load_ppo_aux_state_dict(checkpoint["policy_ppo_aux"])
+@@ -3757,6 +3782,9 @@ def _run_layerwise_training_branch(
+         max_grad_norm=float(train_cfg.ppo.max_grad_norm),
+         gamma=1.0,
+         gae_lambda=1.0,
++        factorized_actor_clip=True,
++        entropy_average_active_slots=True,
++        entropy_normalize_active_slots=True,
+     )
+     layerwise_train_cfg = SequentialTrainConfig(
+         total_episodes=max(0, int(train_cfg.total_episodes) - int(start_episode)),
+@@ -3769,14 +3797,11 @@ def _run_layerwise_training_branch(
+         ppo=ppo,
+         rl_algo="ppo",
+         ent_coef_schedule="cosine",
+-        ent_coef_cosine_start=float(getattr(train_cfg, "ent_coef_cosine_start", 0.05)),
+-        ent_coef_cosine_end=float(getattr(train_cfg, "ent_coef_cosine_end", 0.001)),
+-        ent_coef_cosine_plateau=float(
+-            getattr(train_cfg, "ent_coef_cosine_plateau", 0.25)
+-        ),
+-        ent_coef_cosine_lower_bound=float(
+-            getattr(train_cfg, "ent_coef_cosine_lower_bound", 0.012)
+-        ),
++        ent_coef_cosine_start=float(layerwise_entropy_schedule["start"]),
++        ent_coef_cosine_end=0.0,
++        ent_coef_cosine_plateau=float(layerwise_entropy_schedule["plateau"]),
++        ent_coef_cosine_decay_end=0.85,
++        ent_coef_cosine_lower_bound=0.0,
+         online_num_trials_per_step=int(train_cfg.num_trials_per_step),
+         promotion_validation_trials=int(
+             getattr(train_cfg, "promotion_validation_trials", 25)
+@@ -3906,6 +3931,8 @@ def _run_layerwise_training_branch(
+         "ppo_lr": float(train_cfg.ppo.lr),
+         "gamma": 1.0,
+         "gae_lambda": 1.0,
++        "entropy_schedule": layerwise_entropy_schedule,
++        "ppo_mode": layerwise_ppo_mode,
+         "stage2_k_trials": int(train_cfg.num_trials_per_step),
+         "baseline_groups": int(getattr(train_cfg, "baseline_groups", 5)),
+         "baseline_trials_per_group": int(
+@@ -3995,6 +4022,7 @@ def _run_layerwise_training_branch(
+             "numpy_rng_state": np.random.get_state(),
+             "python_rng_state": random.getstate(),
+             "rl_variant": rl_variant,
++            "algorithm_revision": algorithm_revision,
+         }
+         tmp_path = save_path + ".tmp"
+         torch.save(checkpoint, tmp_path)
+@@ -4167,6 +4195,11 @@ def _run_layerwise_training_branch(
+             converged=bool(metrics.get("converged", False)),
+             extension_required=bool(metrics.get("extension_required", False)),
+             best_robust_feasible_cost=metrics.get("best_robust_feasible_cost"),
++            actor_clip_mode=str(metrics.get("actor_clip_mode", "joint")),
++            actor_credit_mode=str(metrics.get("actor_credit_mode", "scalar_gae")),
++            entropy_objective_mode=str(
++                metrics.get("entropy_objective_mode", "joint_sum")
++            ),
+         )
+         if int(completed) not in existing_diagnostic_updates:
+             diag_recorder.record_ppo_update(update_stats)
+@@ -4202,6 +4235,9 @@ def _run_layerwise_training_branch(
+                 "converged": bool(update_stats.converged),
+                 "extension_required": bool(update_stats.extension_required),
+                 "best_robust_feasible_cost": update_stats.best_robust_feasible_cost,
++                "actor_clip_mode": update_stats.actor_clip_mode,
++                "actor_credit_mode": update_stats.actor_credit_mode,
++                "entropy_objective_mode": update_stats.entropy_objective_mode,
+             },
+         )
+         if strict_best.get("reward") is not None and strict_best.get("full_vector"):
+@@ -4287,6 +4323,7 @@ def _run_layerwise_training_branch(
+         "schema_version": "stage2_layerwise_robust_summary_v1",
+         "status": "completed",
+         "rl_variant": rl_variant,
++        "algorithm_revision": algorithm_revision,
+         "completed_episodes": int(summary.get("completed_episodes", start_episode)),
+         "best_action_matrix": summary.get("best_action_matrix"),
+         "best_full_vector": summary.get("best_full_vector"),
+@@ -4434,6 +4471,7 @@ def _run_layerwise_training_branch(
+         "blb_v3_fusion_count_action": True,
+         "blb_v3_total_episodes": int(train_cfg.total_episodes),
+         "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
++        "algorithm_revision": algorithm_revision,
+         "selection_diagnostics": {
+             "selection_mode": "layerwise_robust_variable_cost_strict",
+             "best_action_vec": best_full_vector,
+diff --git a/tests/test_blb_fusion_reward.py b/tests/test_blb_fusion_reward.py
+index 6575640189a468c8a7d60d156db7101901ac62ac..cad12d24a18ff84735fdd0ca0c5f9a7f4392d3cf 100644
+--- a/tests/test_blb_fusion_reward.py
++++ b/tests/test_blb_fusion_reward.py
+@@ -53,7 +53,7 @@ def _layerwise_actions(*, block4_fusion=0, k=13):
+ 
+ 
+ class LayerwiseVariableCostContractTest(unittest.TestCase):
+-    def test_higher_block4_fusion_increases_only_fusion_half(self):
++    def test_higher_block4_fusion_increases_only_fusion_units(self):
+         baseline = layerwise_action.compute_variable_cost(
+             _layerwise_actions(block4_fusion=0, k=13)
+         )
+@@ -64,7 +64,27 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
+         self.assertEqual(baseline.normalized, 0.0)
+         self.assertEqual(fused.fusion_saving, 1.0)
+         self.assertEqual(fused.truncation_saving, baseline.truncation_saving)
+-        self.assertEqual(fused.normalized, 0.5)
++        self.assertEqual(fused.fusion_units, 12.0)
++        self.assertEqual(fused.truncation_units, 0.0)
++        self.assertAlmostEqual(fused.normalized, 12.0 / 159.5)
++
++    def test_two_k_bits_have_same_reward_as_one_fusion_toggle(self):
++        baseline_actions = _layerwise_actions(block4_fusion=0, k=13)
++        fusion_actions = _layerwise_actions(block4_fusion=0, k=13)
++        fusion_actions[3] = layerwise_action.LayerwiseDecodedAction(
++            1, dict(fusion_actions[3].k_by_block),
++        )
++        k_actions = _layerwise_actions(block4_fusion=0, k=13)
++        changed = dict(k_actions[3].k_by_block)
++        changed[4] = 11
++        k_actions[3] = layerwise_action.LayerwiseDecodedAction(0, changed)
++
++        baseline = layerwise_action.compute_variable_cost(baseline_actions).normalized
++        fusion_delta = layerwise_action.compute_variable_cost(fusion_actions).normalized - baseline
++        k_delta = layerwise_action.compute_variable_cost(k_actions).normalized - baseline
++
++        self.assertAlmostEqual(fusion_delta, k_delta)
++        self.assertAlmostEqual(fusion_delta, 1.0 / 159.5)
+ 
+     def test_lowering_each_actual_k_slot_increases_cost(self):
+         baseline_actions = _layerwise_actions(block4_fusion=0, k=13)
+diff --git a/tests/test_blb_layerwise_action.py b/tests/test_blb_layerwise_action.py
+index ae8854d64b990107ccb82751d59b533030ade612..e853d15b313b4411672087139f5f85894f608186 100644
+--- a/tests/test_blb_layerwise_action.py
++++ b/tests/test_blb_layerwise_action.py
+@@ -204,8 +204,59 @@ class VariableCostTest(unittest.TestCase):
+         middle = layerwise.compute_variable_cost(self._actions(1, 13))
+         self.assertEqual((low.fusion_saving, low.truncation_saving, low.normalized), (0.0, 0.0, 0.0))
+         self.assertEqual((high.fusion_saving, high.truncation_saving, high.normalized), (1.0, 1.0, 1.0))
++        self.assertEqual((low.fusion_units, low.truncation_units, low.total_units), (0.0, 0.0, 0.0))
++        self.assertEqual((high.fusion_units, high.truncation_units), (12.0, 147.5))
++        self.assertEqual(high.total_units, high.max_units)
++        self.assertEqual(len(high.layer_cost_rewards), 12)
++        self.assertEqual(len(high.slot_cost_rewards), 12)
++        self.assertTrue(all(len(row) == 6 for row in high.slot_cost_rewards))
++        self.assertAlmostEqual(sum(high.layer_cost_rewards), high.normalized)
++        for layer_cost, slot_costs in zip(
++                high.layer_cost_rewards, high.slot_cost_rewards,
++        ):
++            self.assertAlmostEqual(sum(slot_costs), layer_cost)
+         self.assertGreater(middle.normalized, low.normalized)
+         self.assertLess(middle.normalized, high.normalized)
++        self.assertAlmostEqual(middle.normalized, 12.0 / 159.5)
++
++    def test_k_drop_two_equals_one_block4_fusion_toggle(self):
++        baseline_actions = self._actions(0, 13)
++        baseline = layerwise.compute_variable_cost(baseline_actions)
++
++        fused_actions = self._actions(0, 13)
++        fused_actions[7] = layerwise.LayerwiseDecodedAction(
++            1, dict(fused_actions[7].k_by_block),
++        )
++        fused = layerwise.compute_variable_cost(fused_actions)
++
++        lower_k_actions = self._actions(0, 13)
++        changed_k = dict(lower_k_actions[7].k_by_block)
++        changed_k[3] = 11
++        lower_k_actions[7] = layerwise.LayerwiseDecodedAction(0, changed_k)
++        lower_k = layerwise.compute_variable_cost(lower_k_actions)
++
++        fusion_delta = fused.normalized - baseline.normalized
++        k_delta = lower_k.normalized - baseline.normalized
++        self.assertAlmostEqual(fusion_delta, 1.0 / 159.5)
++        self.assertAlmostEqual(k_delta, fusion_delta)
++        self.assertAlmostEqual(
++            fused.layer_cost_rewards[7], lower_k.layer_cost_rewards[7],
++        )
++        self.assertAlmostEqual(fused.slot_cost_rewards[7][0], fusion_delta)
++        self.assertAlmostEqual(lower_k.slot_cost_rewards[7][3], k_delta)
++
++    def test_layer_cost_terms_cover_every_active_k_once(self):
++        result = layerwise.compute_variable_cost(self._actions(1, 11))
++        expected_layer0_units = 1.0 + 4 * 1.0
++        expected_other_units = 1.0 + 5 * 1.0
++        self.assertAlmostEqual(result.layer_cost_rewards[0], expected_layer0_units / 159.5)
++        self.assertEqual(result.slot_cost_rewards[0][1], 0.0)
++        self.assertAlmostEqual(result.slot_cost_rewards[0][0], 1.0 / 159.5)
++        for value in result.layer_cost_rewards[1:]:
++            self.assertAlmostEqual(value, expected_other_units / 159.5)
++        self.assertEqual(result.fusion_units, 12.0)
++        self.assertEqual(result.truncation_units, 59.0)
++        self.assertEqual(result.total_units, 71.0)
+ 
+     def test_cost_uses_decoded_k_values_not_category_order(self):
+         actions = self._actions(0, 8)
+@@ -253,7 +304,10 @@ class KLevelsContractTest(unittest.TestCase):
+                 layerwise.LayerwiseDecodedAction(0, {1: 8, 2: 8, 3: 8, 4: 8, 5: 8})
+                 for _ in range(11)
+             )
+-            self.assertEqual(layerwise.compute_variable_cost(actions).normalized, 0.5)
++            self.assertAlmostEqual(
++                layerwise.compute_variable_cost(actions).normalized,
++                147.5 / 159.5,
++            )
+ 
+ 
+ class LayerwiseOwnershipTest(unittest.TestCase):
+diff --git a/tests/test_blb_layerwise_env.py b/tests/test_blb_layerwise_env.py
+index 0018b61c4b259691ff56dd7f2b74eac58f8ef061..c875d184a592aca2c56ee062aba02f258bc383b4 100644
+--- a/tests/test_blb_layerwise_env.py
++++ b/tests/test_blb_layerwise_env.py
+@@ -196,6 +196,26 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
+         self.assertEqual(info["external_cost_rank"], info["variable_cost"]["normalized"])
+         self.assertGreaterEqual(info["external_cost_score"], 0.0)
+         self.assertLessEqual(info["external_cost_score"], 1.0)
++        self.assertEqual(len(info["variable_cost"]["layer_cost_rewards"]), 12)
++        self.assertEqual(len(info["variable_cost"]["slot_cost_rewards"]), 12)
++        self.assertTrue(all(
++            len(row) == 6 for row in info["variable_cost"]["slot_cost_rewards"]
++        ))
++        for layer_cost, slot_costs in zip(
++                info["variable_cost"]["layer_cost_rewards"],
++                info["variable_cost"]["slot_cost_rewards"],
++        ):
++            self.assertAlmostEqual(sum(slot_costs), layer_cost)
++        self.assertAlmostEqual(
++            sum(info["variable_cost"]["layer_cost_rewards"]),
++            info["variable_cost"]["normalized"],
++        )
++        self.assertAlmostEqual(
++            info["variable_cost"]["fusion_units"]
++            + info["variable_cost"]["truncation_units"],
++            info["variable_cost"]["total_units"],
++        )
++        self.assertEqual(info["variable_cost"]["max_units"], 159.5)
+         expected_boosted_rows = [
+             {
+                 "block_idx": int(block_idx),
+diff --git a/tests/test_blb_layerwise_policy.py b/tests/test_blb_layerwise_policy.py
+index 6225fa94417821a21a7f2419bb03cca79cfc37e2..057f32b5ef012db9bbcc4f85d05c15fe4ca8cb94 100644
+--- a/tests/test_blb_layerwise_policy.py
++++ b/tests/test_blb_layerwise_policy.py
+@@ -358,6 +358,162 @@ class LayerwisePolicyTest(unittest.TestCase):
+         torch.testing.assert_close(changed_log_prob, replay_log_prob)
+         torch.testing.assert_close(changed_entropy, masked_entropy)
+ 
++    def test_evaluate_action_exposes_factorized_log_probabilities(self):
++        policy = self._policy()
++        state = torch.zeros(3, policy.cfg.state_dim)
++        state[:, 4] = 1.0
++        actions = torch.tensor([
++            [0, 0, 1, 2, 3, 4],
++            [1, 5, 4, 3, 2, 1],
++            [0, 2, 2, 2, 2, 2],
++        ])
++        levels = torch.tensor([[2, 6, 6, 6, 6, 6]]).expand(3, -1)
++        masks = torch.ones((3, 6), dtype=torch.bool)
++        masks[0, 1] = False
++
++        joint_log_prob, entropy, value, entropy_per_slot, log_prob_per_slot = (
++            policy.evaluate_action(
++                state,
++                actions,
++                masks,
++                levels,
++                return_per_slot_entropy=True,
++                return_per_slot_log_prob=True,
++            )
++        )
++
++        self.assertEqual(log_prob_per_slot.shape, (3, 6))
++        torch.testing.assert_close(log_prob_per_slot.sum(dim=-1), joint_log_prob)
++        torch.testing.assert_close(entropy_per_slot.sum(dim=-1), entropy)
++        self.assertEqual(value.shape, (3,))
++        self.assertEqual(float(log_prob_per_slot[0, 1].detach()), 0.0)
++
++    def test_factorized_clipping_does_not_cross_clip_sibling_slots(self):
++        from blb_stage2_rl.sequential_policy import _factorized_clipped_policy_loss
++
++        old_log_prob = torch.zeros((1, 2))
++        new_log_prob = torch.log(torch.tensor([[1.50, 0.95]]))
++        advantages = torch.ones(1)
++        active = torch.ones((1, 2), dtype=torch.bool)
++
++        loss, ratio = _factorized_clipped_policy_loss(
++            new_log_prob,
++            old_log_prob,
++            advantages,
++            active,
++            clip_range=0.2,
++        )
++
++        torch.testing.assert_close(ratio, torch.tensor([[1.50, 0.95]]))
++        self.assertAlmostEqual(float(loss), -(1.20 + 0.95) / 2.0, places=6)
++
++        active[0, 1] = False
++        masked_loss, _ = _factorized_clipped_policy_loss(
++            new_log_prob,
++            old_log_prob,
++            advantages,
++            active,
++            clip_range=0.2,
++        )
++        self.assertAlmostEqual(float(masked_loss), -1.20, places=6)
++
++    def test_factorized_kl_uses_active_slot_mean_not_joint_sum(self):
++        from blb_stage2_rl.sequential_policy import _factorized_approx_kl
++
++        old_log_prob = torch.zeros((1, 2))
++        new_log_prob = torch.tensor([[-0.10, -0.30]])
++        active = torch.ones((1, 2), dtype=torch.bool)
++
++        mean_kl = _factorized_approx_kl(new_log_prob, old_log_prob, active)
++        self.assertAlmostEqual(float(mean_kl), 0.20, places=6)
++
++        active[0, 1] = False
++        masked_kl = _factorized_approx_kl(new_log_prob, old_log_prob, active)
++        self.assertAlmostEqual(float(masked_kl), 0.10, places=6)
++
++    def test_normalized_entropy_objective_equalizes_binary_and_six_way_slots(self):
++        from blb_stage2_rl.sequential_policy import _active_slot_entropy_objective
++
++        entropy = torch.log(torch.tensor([[2.0, 6.0]]))
++        levels = torch.tensor([[2, 6]])
++        active = torch.ones((1, 2), dtype=torch.bool)
++
++        normalized = _active_slot_entropy_objective(
++            entropy,
++            levels,
++            active,
++            normalize_by_levels=True,
++        )
++        raw = _active_slot_entropy_objective(
++            entropy,
++            levels,
++            active,
++            normalize_by_levels=False,
++        )
++
++        self.assertAlmostEqual(float(normalized), 1.0, places=6)
++        self.assertAlmostEqual(float(raw), float(entropy.mean()), places=6)
++
++    def test_factorized_actor_cost_removes_same_step_sibling_noise(self):
++        from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
++
++        buffer = SequentialRolloutBuffer()
++        transition_index = buffer.add(
++            state=np.zeros(1, dtype=np.float32),
++            action=np.zeros(2, dtype=np.int64),
++            slot_mask=np.ones(2, dtype=bool),
++            per_slot_num_levels=np.full(2, 2, dtype=np.int64),
++            log_prob=0.0,
++            value=0.0,
++            reward=0.3,
++            done=True,
++        )
++        buffer.set_actor_cost_at(transition_index, np.asarray([0.1, 0.2]))
++
++        factorized = buffer.factorized_actor_advantages(
++            torch.tensor([0.7]),
++            torch.device("cpu"),
++        )
++
++        torch.testing.assert_close(factorized, torch.tensor([[0.5, 0.6]]))
++
++    def test_explicit_shared_constraint_return_replaces_scalar_critic_noise(self):
++        from blb_stage2_rl.sequential_policy import SequentialRolloutBuffer
++
++        buffer = SequentialRolloutBuffer()
++        transition_index = buffer.add(
++            state=np.zeros(1, dtype=np.float32),
++            action=np.zeros(2, dtype=np.int64),
++            slot_mask=np.ones(2, dtype=bool),
++            per_slot_num_levels=np.full(2, 2, dtype=np.int64),
++            log_prob=0.0,
++            value=0.0,
++            reward=99.0,
++            done=True,
++        )
++        buffer.set_actor_cost_at(transition_index, np.asarray([0.1, 0.2]))
++        buffer.set_actor_shared_return_at(transition_index, -0.25)
++
++        factorized = buffer.factorized_actor_advantages(
++            torch.tensor([50.0]),
++            torch.device("cpu"),
++        )
++
++        torch.testing.assert_close(factorized, torch.tensor([[-0.15, -0.05]]))
++
++    def test_factorized_policy_loss_accepts_one_advantage_per_slot(self):
++        from blb_stage2_rl.sequential_policy import _factorized_clipped_policy_loss
++
++        loss, _ = _factorized_clipped_policy_loss(
++            torch.log(torch.tensor([[1.50, 0.95]])),
++            torch.zeros((1, 2)),
++            torch.tensor([[1.0, -1.0]]),
++            torch.ones((1, 2), dtype=torch.bool),
++            clip_range=0.2,
++        )
++
++        self.assertAlmostEqual(float(loss), -0.125, places=6)
++
+     def test_stochastic_sampling_zeros_masked_slot_without_changing_active_semantics(self):
+         policy = self._policy()
+         fusion_probs = {0: 0.60, 1: 0.40}
+@@ -440,6 +596,188 @@ class LayerwisePolicyTest(unittest.TestCase):
+         torch.testing.assert_close(returns_t, torch.full((12,), 2.0))
+         torch.testing.assert_close(advantages_t, torch.full((12,), 2.0))
+ 
++    def test_factorized_ppo_converges_fusion_and_k_on_contextual_cost_bandit(self):
++        from blb_stage2_rl.sequential_policy import (
++            SequentialPPOConfig,
++            SequentialRolloutBuffer,
++            sequential_ppo_update,
++        )
++        from blb_stage2_rl.layerwise_runner import _cosine_entropy_coefficient
++        import types
++
++        class ContextualCostPolicy(torch.nn.Module):
++            def __init__(self):
++                super().__init__()
++                initial = torch.empty((12, 6, 6), dtype=torch.float32)
++                initial[:, 0, :] = -20.0
++                initial[:, 0, :2] = torch.log(torch.tensor([0.90, 0.10]))
++                k_probs = torch.tensor([0.50, 0.20, 0.12, 0.08, 0.06, 0.04])
++                initial[:, 1:, :] = torch.log(k_probs)
++                self.logits = torch.nn.Parameter(initial)
++                self.values = torch.nn.Parameter(torch.zeros(12))
++
++            def _distribution(self, state, slot_mask, per_slot_num_levels):
++                layer = state[:, 0].long()
++                logits = self.logits.index_select(0, layer)
++                level_index = torch.arange(6).view(1, 1, 6)
++                valid = level_index < per_slot_num_levels.unsqueeze(-1)
++                valid = valid & slot_mask.unsqueeze(-1)
++                safe_logits = logits.masked_fill(~valid, -20.0)
++                safe_logits = torch.where(
++                    slot_mask.unsqueeze(-1), safe_logits, torch.zeros_like(safe_logits),
++                )
++                return torch.distributions.Categorical(logits=safe_logits), layer
++
++            def sample_action(self, state, slot_mask, per_slot_num_levels):
++                dist, layer = self._distribution(state, slot_mask, per_slot_num_levels)
++                action = dist.sample()
++                action = torch.where(slot_mask, action, torch.zeros_like(action))
++                per_slot = dist.log_prob(action) * slot_mask.float()
++                return action, per_slot.sum(dim=-1), self.values.index_select(0, layer)
++
++            def evaluate_action(
++                    self,
++                    state,
++                    actions,
++                    slot_mask,
++                    per_slot_num_levels,
++                    action_level_mask=None,
++                    baseline_prior_scale=None,
++                    return_per_slot_entropy=False,
++                    return_per_slot_log_prob=False,
++                    ):
++                del action_level_mask, baseline_prior_scale
++                dist, layer = self._distribution(state, slot_mask, per_slot_num_levels)
++                per_slot = dist.log_prob(actions.long()) * slot_mask.float()
++                entropy_per_slot = dist.entropy() * slot_mask.float()
++                result = (
++                    per_slot.sum(dim=-1),
++                    entropy_per_slot.sum(dim=-1),
++                    self.values.index_select(0, layer),
++                )
++                if return_per_slot_entropy and return_per_slot_log_prob:
++                    return result + (entropy_per_slot, per_slot)
++                if return_per_slot_entropy:
++                    return result + (entropy_per_slot,)
++                if return_per_slot_log_prob:
++                    return result + (per_slot,)
++                return result
++
++        torch.manual_seed(20260714)
++        policy = ContextualCostPolicy()
++        policy.eval()
++        optimizer = torch.optim.Adam(policy.parameters(), lr=0.05)
++        config = SequentialPPOConfig(
++            lr=0.05,
++            clip_range=0.2,
++            n_epochs=4,
++            minibatch_size=256,
++            ent_coef=0.0,
++            value_coef=0.1,
++            gamma=1.0,
++            gae_lambda=1.0,
++            normalize_returns=False,
++            use_kl_early_stop=False,
++            adaptive_lr_kl=False,
++            factorized_actor_clip=True,
++            entropy_average_active_slots=True,
++            entropy_normalize_active_slots=True,
++        )
++        slot_levels = np.asarray([2, 6, 6, 6, 6, 6], dtype=np.int64)
++        update_count = 180
++        entropy_schedule = types.SimpleNamespace(
++            total_episodes=update_count * 120,
++            planned_total_episodes=update_count * 120,
++            ent_coef_cosine_start=0.05,
++            ent_coef_cosine_end=0.0,
++            ent_coef_cosine_plateau=0.25,
++            ent_coef_cosine_decay_end=0.85,
++            ent_coef_cosine_lower_bound=0.0,
++        )
++        last_metrics = None
++
++        for update_idx in range(update_count):
++            buffer = SequentialRolloutBuffer()
++            for sample_idx in range(120):
++                layer_idx = sample_idx % 12
++                slot_mask = np.ones(6, dtype=bool)
++                if layer_idx == 0:
++                    slot_mask[1] = False
++                state = np.asarray([layer_idx], dtype=np.float32)
++                with torch.no_grad():
++                    action, log_prob, value = policy.sample_action(
++                        torch.from_numpy(state).unsqueeze(0),
++                        torch.from_numpy(slot_mask).unsqueeze(0),
++                        torch.from_numpy(slot_levels).unsqueeze(0),
++                    )
++                action_np = action[0].numpy()
++                raw_cost_units = float(action_np[0]) + 0.5 * float(
++                    action_np[1:][slot_mask[1:]].sum()
++                )
++                transition_index = buffer.add(
++                    state=state,
++                    action=action_np,
++                    slot_mask=slot_mask,
++                    per_slot_num_levels=slot_levels,
++                    log_prob=log_prob[0],
++                    value=value[0],
++                    reward=raw_cost_units / 159.5,
++                    done=True,
++                )
++                per_slot_cost = np.concatenate((
++                    np.asarray([float(action_np[0])]),
++                    0.5 * action_np[1:].astype(np.float32),
++                )) / 159.5
++                per_slot_cost[~slot_mask] = 0.0
++                buffer.set_actor_cost_at(transition_index, per_slot_cost)
++                buffer.set_actor_shared_return_at(transition_index, 0.0)
++            entropy_coefficient = _cosine_entropy_coefficient(
++                entropy_schedule,
++                (update_idx + 1) * 120,
++            )
++            last_metrics = sequential_ppo_update(
++                policy,
++                optimizer,
++                buffer,
++                config,
++                torch.device("cpu"),
++                ent_coef_override=entropy_coefficient,
++            )
++
++        self.assertEqual(last_metrics["actor_clip_mode"], "factorized_per_slot")
++        self.assertEqual(
++            last_metrics["actor_credit_mode"],
++            "shared_constraint_plus_own_cost",
++        )
++        self.assertEqual(
++            last_metrics["entropy_objective_mode"],
++            "normalized_active_slot_mean",
++        )
++
++        with torch.no_grad():
++            fusion_dist = torch.distributions.Categorical(logits=policy.logits[:, 0, :2])
++            k_dist = torch.distributions.Categorical(logits=policy.logits[:, 1:, :])
++            fusion_entropy = float((fusion_dist.entropy() / np.log(2.0)).mean())
++            active_k_entropy = torch.cat((
++                k_dist.entropy()[0, 1:].reshape(-1),
++                k_dist.entropy()[1:].reshape(-1),
++            ))
++            k_entropy = float((active_k_entropy / np.log(6.0)).mean())
++            fusion_modes = torch.argmax(policy.logits[:, 0, :2], dim=-1)
++            k_modes = torch.argmax(policy.logits[:, 1:, :], dim=-1)
++            active_k_modes = torch.cat((
++                k_modes[0, 1:].reshape(-1),
++                k_modes[1:].reshape(-1),
++            ))
++            diagnostic = (
++                f"fusion_entropy={fusion_entropy:.6f}, k_entropy={k_entropy:.6f}, "
++                f"fusion_modes={fusion_modes.tolist()}, k_modes={k_modes.tolist()}"
++            )
++            self.assertTrue(torch.all(fusion_modes == 1), diagnostic)
++            self.assertTrue(torch.all(active_k_modes == 5), diagnostic)
++        self.assertLess(fusion_entropy, 0.1, diagnostic)
++        self.assertLess(k_entropy, 0.1, diagnostic)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_blb_layerwise_runner.py b/tests/test_blb_layerwise_runner.py
+index e75297d65235f76a89b08053b40550bd5d81247e..6cc9732309f5f76019045f686351d5b959dbea69 100644
+--- a/tests/test_blb_layerwise_runner.py
++++ b/tests/test_blb_layerwise_runner.py
+@@ -271,6 +271,68 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
+             _cosine_entropy_coefficient(uninterrupted, 30_000),
+         )
+ 
++    def test_layerwise_entropy_schedule_reaches_zero_and_stays_zero(self):
++        from blb_stage2_rl.layerwise_runner import _cosine_entropy_coefficient
++
++        config = types.SimpleNamespace(
++            total_episodes=60_000,
++            planned_total_episodes=60_000,
++            ent_coef_cosine_start=0.05,
++            ent_coef_cosine_end=0.0,
++            ent_coef_cosine_plateau=0.25,
++            ent_coef_cosine_decay_end=0.85,
++            ent_coef_cosine_lower_bound=0.0,
++        )
++
++        self.assertEqual(_cosine_entropy_coefficient(config, 60_000), 0.0)
++        self.assertEqual(_cosine_entropy_coefficient(config, 72_000), 0.0)
++        self.assertGreater(_cosine_entropy_coefficient(config, 30_000), 0.0)
++        self.assertGreater(_cosine_entropy_coefficient(config, 48_000), 0.0)
++        self.assertEqual(_cosine_entropy_coefficient(config, 51_000), 0.0)
++
++    def test_p3_cost_is_redistributed_without_changing_episode_return(self):
++        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
++
++        layer_costs = tuple((index + 1) / 780.0 for index in range(12))
++        variable_cost = sum(layer_costs)
++        rewards = redistribute_layerwise_rewards(
++            terminal_reward=1.75 + variable_cost,
++            priority=3,
++            variable_cost=variable_cost,
++            layer_cost_rewards=layer_costs,
++        )
++
++        self.assertEqual(len(rewards), 12)
++        self.assertEqual(rewards[:-1], layer_costs[:-1])
++        self.assertAlmostEqual(rewards[-1], layer_costs[-1] + 1.75)
++        self.assertAlmostEqual(sum(rewards), 1.75 + variable_cost)
++
++    def test_p1_and_p2_never_receive_cost_credit(self):
++        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
++
++        layer_costs = (0.01,) * 12
++        for priority, terminal_reward in ((1, -3.2), (2, -1.7)):
++            with self.subTest(priority=priority):
++                rewards = redistribute_layerwise_rewards(
++                    terminal_reward=terminal_reward,
++                    priority=priority,
++                    variable_cost=sum(layer_costs),
++                    layer_cost_rewards=layer_costs,
++                )
++                self.assertEqual(rewards[:-1], (0.0,) * 11)
++                self.assertEqual(rewards[-1], terminal_reward)
++
++    def test_reward_redistribution_rejects_inconsistent_cost_terms(self):
++        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
++
++        with self.assertRaisesRegex(ValueError, "sum"):
++            redistribute_layerwise_rewards(
++                terminal_reward=1.5,
++                priority=3,
++                variable_cost=0.5,
++                layer_cost_rewards=(0.01,) * 12,
++            )
++
+ 
+ class LayerwiseDispatchRulesTests(unittest.TestCase):
+     def test_sequential_train_config_carries_layerwise_resume_state(self):
+@@ -331,6 +393,52 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
+         ):
+             self.assertIn(required, branch_source)
+ 
++    def test_layerwise_branch_enables_factorized_actor_clipping_only_in_its_ppo(self):
++        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
++            encoding="utf-8",
++        )
++        tree = ast.parse(source)
++        branch = next(
++            node for node in tree.body
++            if isinstance(node, ast.FunctionDef)
++            and node.name == "_run_layerwise_training_branch"
++        )
++        branch_source = ast.get_source_segment(source, branch)
++
++        self.assertIn("factorized_actor_clip=True", branch_source)
++        self.assertIn("entropy_average_active_slots=True", branch_source)
++        self.assertIn("entropy_normalize_active_slots=True", branch_source)
++        self.assertIn("ent_coef_cosine_end=0.0", branch_source)
++        self.assertIn("ent_coef_cosine_decay_end=0.85", branch_source)
++        self.assertIn("ent_coef_cosine_lower_bound=0.0", branch_source)
++        self.assertIn('"factorized_actor_clip": True', branch_source)
++        self.assertIn('"algorithm_revision": algorithm_revision', branch_source)
++        self.assertIn('"factorized_slot_credit_v2"', branch_source)
++        self.assertIn('"entropy_average_active_slots": True', branch_source)
++        self.assertIn('"end": 0.0', branch_source)
++        self.assertIn('"lower_bound": 0.0', branch_source)
++
++    def test_factorized_ppo_uses_active_slot_kl_scale(self):
++        source = Path("blb_stage2_rl/sequential_policy.py").read_text(
++            encoding="utf-8",
++        )
++
++        self.assertIn("def _factorized_approx_kl(", source)
++        self.assertIn(
++            "approx_kl_t = _factorized_approx_kl(",
++            source,
++        )
++
++    def test_factorized_ppo_uses_per_slot_cost_control_variate(self):
++        source = Path("blb_stage2_rl/sequential_policy.py").read_text(
++            encoding="utf-8",
++        )
++
++        self.assertIn("def set_actor_cost_at(", source)
++        self.assertIn("def set_actor_shared_return_at(", source)
++        self.assertIn("def factorized_actor_advantages(", source)
++        self.assertIn("factorized_actor_advantages = (", source)
++
+     def test_layerwise_checkpoint_and_result_publish_reloadable_fusion_best(self):
+         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+             encoding="utf-8",
+@@ -645,6 +753,17 @@ class _FakeBuffer:
+         self.transitions.append(dict(transition))
+         return len(self.transitions) - 1
+ 
++    def add_reward_at(self, index, delta):
++        self.transitions[int(index)]["reward"] += float(delta)
++
++    def set_actor_cost_at(self, index, per_slot_cost):
++        self.transitions[int(index)]["actor_cost_per_slot"] = np.asarray(
++            per_slot_cost, dtype=np.float32,
++        )
++
++    def set_actor_shared_return_at(self, index, shared_return):
++        self.transitions[int(index)]["actor_shared_return"] = float(shared_return)
++
+     def clear(self):
+         self.cleared = True
+ 
+@@ -741,10 +860,22 @@ class _FakeLayerwiseEnv:
+         }
+         if self._evidence_mode != "missing":
+             self.runtime_terminal_info["statistical_trials"] = statistical_trials
++        layer_cost = 0.4 / 12.0
++        slot_cost_rewards = []
++        for layer_idx in range(12):
++            active_count = 5 if layer_idx == 0 else 6
++            row = [layer_cost / active_count] * 6
++            if layer_idx == 0:
++                row[1] = 0.0
++            slot_cost_rewards.append(row)
+         return np.zeros(4, dtype=np.float32), (-5.0 if self._invalid else 7.5), True, {
+             "policy_actions": [row[:] for row in self.actions],
+             "pending_full_vector": list(range(20)),
+-            "variable_cost": {"normalized": 0.4},
++            "variable_cost": {
++                "normalized": 0.4,
++                "layer_cost_rewards": [0.4 / 12.0] * 12,
++                "slot_cost_rewards": slot_cost_rewards,
++            },
+             "layer_summaries": [
+                 {"all_valid": True} for _ in range(12)
+             ],
+@@ -823,8 +954,22 @@ class LayerwiseRolloutTests(unittest.TestCase):
+             )
+ 
+         self.assertEqual(len(buffer.transitions), 12)
+-        self.assertEqual([row["reward"] for row in buffer.transitions[:-1]], [0.0] * 11)
+-        self.assertEqual(buffer.transitions[-1]["reward"], 7.5)
++        expected_local = 0.4 / 12.0
++        for row in buffer.transitions[:-1]:
++            self.assertAlmostEqual(row["reward"], expected_local)
++        self.assertAlmostEqual(
++            buffer.transitions[-1]["reward"],
++            7.5 - 0.4 + expected_local,
++        )
++        self.assertAlmostEqual(
++            sum(row["reward"] for row in buffer.transitions), 7.5,
++        )
++        for row in buffer.transitions:
++            self.assertIn("actor_cost_per_slot", row)
++            self.assertEqual(row["actor_shared_return"], 7.5 - 0.4)
++            self.assertAlmostEqual(
++                float(row["actor_cost_per_slot"].sum()), expected_local,
++            )
+         self.assertEqual([row["done"] for row in buffer.transitions], [False] * 11 + [True])
+         self.assertEqual([float(row["log_prob"]) for row in buffer.transitions], [5.0] + [6.0] * 11)
+         self.assertFalse(policy.masks[0][1])
+@@ -962,6 +1107,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
+         from blb_stage2_rl.candidate_store import CandidateStore
+         from blb_stage2_rl.layerwise_runner import train_layerwise
+ 
++        buffer = _FakeBuffer()
+         with tempfile.TemporaryDirectory() as td:
+             summary = train_layerwise(
+                 env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
+@@ -970,7 +1116,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
+                 candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                 identity_context={"action_space_version": "layerwise-v1"},
+                 optimizer=object(),
+-                rollout_buffer=_FakeBuffer(),
++                rollout_buffer=buffer,
+                 ppo_update_fn=lambda *_args, **_kwargs: {},
+                 assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                 step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+@@ -981,6 +1127,16 @@ class LayerwiseRolloutTests(unittest.TestCase):
+ 
+         self.assertEqual(summary["episode_rewards"], [-5.0])
+         self.assertEqual(summary["episode_records"][0].promotion_status, "invalid_terminal")
++        self.assertEqual([row["reward"] for row in buffer.transitions[:-1]], [0.0] * 11)
++        self.assertEqual(buffer.transitions[-1]["reward"], -5.0)
++        self.assertTrue(all(
++            np.count_nonzero(row["actor_cost_per_slot"]) == 0
++            for row in buffer.transitions
++        ))
++        self.assertEqual(
++            [row["actor_shared_return"] for row in buffer.transitions],
++            [-5.0] * 12,
++        )
+ 
+     def test_layerwise_loop_contains_no_retired_blockwise_scaffolds(self):
+         from blb_stage2_rl.layerwise_runner import train_layerwise
