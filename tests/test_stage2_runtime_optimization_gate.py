@@ -560,15 +560,20 @@ def _invoke_require_equal(one_episode, many_episode, one_ppo, many_ppo):
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         paths = {}
-        for name, row in (
+        for name, rows in (
             ("one.jsonl", one_episode),
             ("many.jsonl", many_episode),
             ("one_ppo.jsonl", one_ppo),
             ("many_ppo.jsonl", many_ppo),
         ):
             paths[name] = root / name
+            if isinstance(rows, dict):
+                rows = [rows]
             paths[name].write_text(
-                json.dumps(row, sort_keys=True) + "\n",
+                "".join(
+                    json.dumps(row, sort_keys=True) + "\n"
+                    for row in rows
+                ),
                 encoding="utf-8",
             )
         argv = [
@@ -1163,11 +1168,39 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             self.assertEqual(
                 [parts[:5] for parts in launches],
                 [
-                    ["base64", str(baseline), "64", "600", "0,1,2,3,4"],
-                    ["opt64", str(optimized), "64", "600", "0,1,2,3,4"],
-                    ["opt128", str(optimized), "128", "600", "0,1,2,3,4"],
-                    ["opt256", str(optimized), "256", "600", "0,1,2,3,4"],
+                    [
+                        "base64",
+                        str(artifact_dir / "runtime_source"),
+                        "64",
+                        "600",
+                        "0,1,2,3,4",
+                    ],
+                    [
+                        "opt64",
+                        str(artifact_dir / "runtime_source"),
+                        "64",
+                        "600",
+                        "0,1,2,3,4",
+                    ],
+                    [
+                        "opt128",
+                        str(artifact_dir / "runtime_source"),
+                        "128",
+                        "600",
+                        "0,1,2,3,4",
+                    ],
+                    [
+                        "opt256",
+                        str(artifact_dir / "runtime_source"),
+                        "256",
+                        "600",
+                        "0,1,2,3,4",
+                    ],
                 ],
+            )
+            self.assertFalse(
+                (artifact_dir / "runtime_source").exists(),
+                "the serial execution snapshot must be removed after the gate",
             )
             self.assertEqual(_git_status(baseline), "")
             self.assertEqual(_git_status(optimized), "")
@@ -1700,6 +1733,32 @@ class Stage2NgpuComparatorRuntimeTelemetryTests(unittest.TestCase):
         self.assertEqual(rc, 0, report)
         self.assertIn("quality/effect equality: PASS", report)
         self.assertIn("PPO update equality: PASS", report)
+
+    def test_require_equal_derives_episode_best_reward_from_reward_history(self):
+        one_episodes = []
+        many_episodes = []
+        for episode, reward in ((1, 10.0), (2, 5.0)):
+            one_row = _episode_row()
+            one_row.update({
+                "episode": episode,
+                "timestamp": float(episode),
+                "total_reward": reward,
+                "best_reward_so_far": reward,
+            })
+            many_row = copy.deepcopy(one_row)
+            many_row["best_reward_so_far"] = 10.0
+            one_episodes.append(one_row)
+            many_episodes.append(many_row)
+
+        rc, report = _invoke_require_equal(
+            one_episodes,
+            many_episodes,
+            _ppo_row(),
+            _ppo_row(),
+        )
+
+        self.assertEqual(rc, 0, report)
+        self.assertIn("quality/effect equality: PASS", report)
 
     def test_require_equal_rejects_reward_action_trial_and_frontier_drift(self):
         cases = (
