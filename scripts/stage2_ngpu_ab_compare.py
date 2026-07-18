@@ -109,6 +109,32 @@ def _load_ppo_updates(path: str) -> List[Dict[str, Any]]:
     return _load_jsonl(path, filename="ppo_updates.jsonl", sort_key="update")
 
 
+def _derive_episode_best_reward(
+        rows: Sequence[Mapping[str, Any]],
+        ) -> List[Dict[str, Any]]:
+    """Canonicalize a writer-derived field from the scientific reward trace."""
+    out: List[Dict[str, Any]] = []
+    running_best: Optional[float] = None
+    for row in rows:
+        normalized = dict(row)
+        reward = row.get("total_reward")
+        if (
+                "best_reward_so_far" in row
+                and isinstance(reward, (int, float))
+                and not isinstance(reward, bool)
+                and math.isfinite(float(reward))
+        ):
+            reward_value = float(reward)
+            running_best = (
+                reward_value
+                if running_best is None
+                else max(running_best, reward_value)
+            )
+            normalized["best_reward_so_far"] = running_best
+        out.append(normalized)
+    return out
+
+
 def _read_wall_seconds(path: Optional[str]) -> Optional[float]:
     if not path:
         return None
@@ -378,8 +404,8 @@ def _timing_report_lines(label: str, summary: Mapping[str, float]) -> List[str]:
 
 
 def iter_report_lines(args: argparse.Namespace) -> Iterable[str]:
-    one = _load_episodes(args.one)
-    many = _load_episodes(args.many)
+    one = _derive_episode_best_reward(_load_episodes(args.one))
+    many = _derive_episode_best_reward(_load_episodes(args.many))
     require_equal = bool(getattr(args, "require_equal", False))
     equality_ok, diffs = compare_rows(
         one,

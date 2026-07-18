@@ -146,6 +146,11 @@ OPTIMIZED_ROOT="$(canonical_directory "$OPTIMIZED_ROOT")" \
 mkdir -p "$ARTIFACT_DIR" || fatal "cannot create ARTIFACT_DIR: ${ARTIFACT_DIR}"
 ARTIFACT_DIR="$(canonical_directory "$ARTIFACT_DIR")" \
   || fatal "cannot resolve ARTIFACT_DIR: ${ARTIFACT_DIR}"
+RUNTIME_SOURCE_ROOT="$ARTIFACT_DIR/runtime_source"
+[ ! -e "$RUNTIME_SOURCE_ROOT" ] \
+  || fatal "runtime source path already exists: ${RUNTIME_SOURCE_ROOT}"
+path_is_within "$RUNTIME_SOURCE_ROOT" "$ARTIFACT_DIR" \
+  || fatal "runtime source must remain inside ARTIFACT_DIR"
 STAGE2_GATE_ARTIFACT_SCOPE="${STAGE2_GATE_ARTIFACT_SCOPE:-$(dirname "$ARTIFACT_DIR")}"
 STAGE2_GATE_ARTIFACT_SCOPE="$(canonical_directory "$STAGE2_GATE_ARTIFACT_SCOPE")" \
   || fatal "artifact scope does not exist: ${STAGE2_GATE_ARTIFACT_SCOPE}"
@@ -242,6 +247,8 @@ command -v nvidia-smi >/dev/null 2>&1 \
   || fatal "nvidia-smi is required for the idle-GPU preflight"
 command -v setsid >/dev/null 2>&1 \
   || fatal "setsid is required for owned training process groups"
+command -v tar >/dev/null 2>&1 \
+  || fatal "tar is required for exact Git runtime snapshots"
 command -v "$STAGE2_GATE_PYTHON" >/dev/null 2>&1 \
   || fatal "Python interpreter not found: ${STAGE2_GATE_PYTHON}"
 [ -f "$COMPARATOR" ] || fatal "Stage-2 comparator not found: ${COMPARATOR}"
@@ -282,6 +289,49 @@ printf '%s\n' "$actual_baseline_sha" > "$ARTIFACT_DIR/baseline_head.txt"
 printf '%s\n' "$actual_optimized_sha" > "$ARTIFACT_DIR/optimized_head.txt"
 printf '%s\n' "$EXPECTED_BASELINE_SHA" > "$ARTIFACT_DIR/expected_baseline_head.txt"
 printf '%s\n' "$EXPECTED_OPTIMIZED_SHA" > "$ARTIFACT_DIR/expected_optimized_head.txt"
+printf '%s\n' "$RUNTIME_SOURCE_ROOT" > "$ARTIFACT_DIR/runtime_source_root.txt"
+
+remove_runtime_source() {
+  local active_root="${ACTIVE_RUNTIME_SOURCE_ROOT:-}"
+  [ -n "$active_root" ] || return 0
+  [ "$active_root" = "$RUNTIME_SOURCE_ROOT" ] \
+    || fatal "refusing to remove unexpected runtime source: ${active_root}"
+  path_is_within "$active_root" "$ARTIFACT_DIR" \
+    || fatal "refusing to remove runtime source outside ARTIFACT_DIR"
+  rm -rf -- "$active_root" || return 1
+  ACTIVE_RUNTIME_SOURCE_ROOT=""
+}
+
+materialize_runtime_source() {
+  local case_name="$1"
+  local source_root="$2"
+  local expected_sha="$3"
+  local case_dir="$4"
+  local source_tree
+
+  [ ! -e "$RUNTIME_SOURCE_ROOT" ] || {
+    printf '[gate][FATAL] runtime source path is not empty before %s: %s\n' \
+      "$case_name" "$RUNTIME_SOURCE_ROOT" >&2
+    return 1
+  }
+  ACTIVE_RUNTIME_SOURCE_ROOT="$RUNTIME_SOURCE_ROOT"
+  mkdir -p "$RUNTIME_SOURCE_ROOT" || return 1
+  if ! git -C "$source_root" archive --format=tar "$expected_sha" -- \
+      . ':(exclude)rl_training_data_points' \
+      ':(exclude)experiments/server_command_runs' \
+      | tar -xf - -C "$RUNTIME_SOURCE_ROOT"; then
+    printf '[gate][FATAL] failed to materialize %s at %s\n' \
+      "$case_name" "$expected_sha" >&2
+    remove_runtime_source || true
+    return 1
+  fi
+  source_tree="$(git -C "$source_root" rev-parse "${expected_sha}^{tree}")" \
+    || return 1
+  printf '%s\n' "$source_root" > "$case_dir/verified_source_root.txt"
+  printf '%s\n' "$expected_sha" > "$case_dir/runtime_source_head.txt"
+  printf '%s\n' "$source_tree" > "$case_dir/runtime_source_tree.txt"
+  printf '%s\n' "$RUNTIME_SOURCE_ROOT" > "$case_dir/runtime_source_root.txt"
+}
 
 logical_device_spec() {
   local physical_spec="$1"
@@ -633,7 +683,9 @@ collect_case_training_data_points() {
   local relative source destination
   local moved_manifest="$case_dir/rl_training_data_points_files.txt"
   : > "$moved_manifest"
-  while IFS= read -r -d '' relative; do
+  [ -d "$source_root/rl_training_data_points" ] || return 0
+  while IFS= read -r -d '' source; do
+    relative="${source#"$source_root"/}"
     case "$relative" in
       rl_training_data_points/*) ;;
       *)
@@ -642,7 +694,6 @@ collect_case_training_data_points() {
         return 1
         ;;
     esac
-    source="$source_root/$relative"
     destination="$case_dir/$relative"
     [ -f "$source" ] || {
       printf '[gate][FATAL] structured-data file disappeared: %s\n' \
@@ -653,8 +704,7 @@ collect_case_training_data_points() {
     mv -- "$source" "$destination" || return 1
     printf '%s\n' "$relative" >> "$moved_manifest"
   done < <(
-    git -C "$source_root" ls-files --others --exclude-standard -z -- \
-      rl_training_data_points
+    find "$source_root/rl_training_data_points" -type f -print0
   )
   if [ -d "$source_root/rl_training_data_points" ]; then
     find "$source_root/rl_training_data_points" -depth -type d -empty \
@@ -1210,6 +1260,7 @@ LAST_EVIDENCE_PASS=0
 ACTIVE_CASE_DIR=""
 ACTIVE_SAMPLER_PID=""
 ACTIVE_GATE_LAUNCHER_PID=""
+ACTIVE_RUNTIME_SOURCE_ROOT=""
 
 cleanup_active_case() {
   local pgid=""
@@ -1235,6 +1286,7 @@ cleanup_active_case() {
     done < <(jobs -pr)
   fi
   ACTIVE_GATE_LAUNCHER_PID=""
+  remove_runtime_source || true
 }
 
 handle_gate_signal() {
@@ -1249,6 +1301,7 @@ handle_gate_signal() {
 trap 'handle_gate_signal HUP' HUP
 trap 'handle_gate_signal INT' INT
 trap 'handle_gate_signal TERM' TERM
+trap cleanup_active_case EXIT
 
 run_case() {
   local case_name="$1"
@@ -1321,6 +1374,7 @@ run_case() {
   ACTIVE_SAMPLER_PID=""
   verify_requested_gpus_idle "${case_name}:after" || exit $?
   collect_case_training_data_points "$source_root" "$case_dir" || exit $?
+  remove_runtime_source || exit $?
   end_s="$(date +%s)"
   measured_wall=$((end_s - start_s))
   if [ ! -s "$case_dir/wall_seconds.txt" ]; then
@@ -1348,6 +1402,7 @@ run_case() {
 # baseline fixed at 64 and creates one optimized case per requested size.
 CASE_NAMES=(base64)
 CASE_ROOTS=("$BASELINE_ROOT")
+CASE_SHAS=("$EXPECTED_BASELINE_SHA")
 CASE_BATCHES=(64)
 for batch_size in $BATCH_SIZES; do
   case "$batch_size" in
@@ -1355,6 +1410,7 @@ for batch_size in $BATCH_SIZES; do
   esac
   CASE_NAMES+=("opt${batch_size}")
   CASE_ROOTS+=("$OPTIMIZED_ROOT")
+  CASE_SHAS+=("$EXPECTED_OPTIMIZED_SHA")
   CASE_BATCHES+=("$batch_size")
 done
 
@@ -1368,12 +1424,16 @@ CASE_EVIDENCE_PASSES=()
 for case_index in "${!CASE_NAMES[@]}"; do
   case_name="${CASE_NAMES[$case_index]}"
   case_root="${CASE_ROOTS[$case_index]}"
+  case_sha="${CASE_SHAS[$case_index]}"
   case_batch="${CASE_BATCHES[$case_index]}"
   case_dir="$ARTIFACT_DIR/cases/$case_name"
   verify_all_source_states || exit $?
+  mkdir -p "$case_dir" || exit $?
+  materialize_runtime_source \
+    "$case_name" "$case_root" "$case_sha" "$case_dir" || exit $?
   printf '[gate] running %s from %s (batch=%s)\n' \
-    "$case_name" "$case_root" "$case_batch"
-  run_case "$case_name" "$case_root" "$case_batch" "$case_dir"
+    "$case_name" "$RUNTIME_SOURCE_ROOT" "$case_batch"
+  run_case "$case_name" "$RUNTIME_SOURCE_ROOT" "$case_batch" "$case_dir"
   verify_all_source_states || exit $?
   CASE_LAUNCH_RCS+=("$LAST_LAUNCH_RC")
   CASE_EVIDENCE_PASSES+=("$LAST_EVIDENCE_PASS")
