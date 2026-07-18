@@ -91,6 +91,9 @@ def _make_fake_detached_llama(path):
           "${FAKE_DEFAULT_REWARD_DEVICES:-0,1,2,3,4}" \
           "$case_dir" &
         JOB_PID=$!
+        if [ "${FAKE_PREWRITE_TRAIN_EXIT_CASE:-}" = "$case_name" ]; then
+          printf '0\n' > "${STAGE2_GATE_TRAIN_EXIT_FILE:?}"
+        fi
         printf '%s\n' "$JOB_PID" \
           > "$persistent_root/rl/bert-base/mrpc/LATEST_PID"
         printf '%s\n' "$JOB_PID" > "$persistent_root/rl.pid"
@@ -166,10 +169,28 @@ def _make_fake_nvidia_smi(path):
           exit 0
         fi
 
+        sample_call=1
+        if [ -n "${FAKE_NVIDIA_SAMPLE_COUNT_FILE:-}" ]; then
+          sample_count_file="$FAKE_NVIDIA_SAMPLE_COUNT_FILE"
+          if [ -s "${FAKE_CURRENT_CASE_FILE:-}" ]; then
+            sample_count_file="${sample_count_file}.$(cat "$FAKE_CURRENT_CASE_FILE")"
+          fi
+          previous=0
+          if [ -f "$sample_count_file" ]; then
+            previous="$(cat "$sample_count_file")"
+          fi
+          sample_call=$((previous + 1))
+          printf '%s\n' "$sample_call" > "$sample_count_file"
+        fi
         for gpu in 0 1 2 3 4; do
           memory=1024
           utilization=50
           if [ "${FAKE_INACTIVE_GPU:-}" = "$gpu" ]; then
+            memory=0
+            utilization=0
+          fi
+          if [ "${FAKE_TRANSIENT_GPU:-}" = "$gpu" ] \
+              && [ "$sample_call" -gt 1 ]; then
             memory=0
             utilization=0
           fi
@@ -200,6 +221,7 @@ def _make_fake_case_launcher(path):
         reward_devices="$5"
         case_dir="$6"
 
+        printf '%s\n' "$case_name" > "${FAKE_CURRENT_CASE_FILE:?}"
         printf '%s|%s|%s|%s|%s|%s\n' \
           "$case_name" "$source_root" "$batch_size" "$episodes" \
           "$reward_devices" "$case_dir" >> "${FAKE_LAUNCH_LOG:?}"
@@ -211,6 +233,12 @@ def _make_fake_case_launcher(path):
         if [ "$case_name" != "base64" ]; then
           telemetry=',"candidate_bytes_written":321,"process_rss_bytes":10000,"process_peak_rss_bytes":20000,"pool_id":"optimized-pool","batch_set_key":"F1","batch_count":4,"process_count":4,"worker_intraop_threads":1,"worker_interop_threads":1'
         fi
+        probe_devices='["cuda:0","cuda:1","cuda:2","cuda:3","cuda:4"]'
+        probe_trial_counts='[1,1,1,1,1]'
+        if [ "${FAKE_MISSING_PROBE_DEVICE_CASE:-}" = "$case_name" ]; then
+          probe_devices='["cuda:0","cuda:1","cuda:2","cuda:3"]'
+          probe_trial_counts='[1,1,1,1]'
+        fi
 
         : > "$case_dir/diagnostics/episodes.jsonl"
         episode=1
@@ -220,8 +248,9 @@ def _make_fake_case_launcher(path):
              [ "$episode" -eq 1 ]; then
             reward='99.0'
           fi
-          printf '{"episode":%s,"timestamp":%s,"total_reward":%s,"terminal_reward":8.0,"terminal_priority":3,"action_indices":[1,2],"action_hash":"action-1","terminal_loss_mean":0.1,"terminal_metric1_mean":0.9,"terminal_metric2_mean":0.8,"terminal_probe_devices":["cuda:0","cuda:1","cuda:2","cuda:3","cuda:4"],"terminal_probe_trial_counts":[1,1,1,1,1],"terminal_probe_trial_indices":[[0],[1],[2],[3],[4]],"terminal_probe_trial_seeds":[101,102,103,104,105],"terminal_pareto_event_kind":"expanded"%s}\n' \
-            "$episode" "$episode" "$reward" "$telemetry" \
+          printf '{"episode":%s,"timestamp":%s,"total_reward":%s,"terminal_reward":8.0,"terminal_priority":3,"action_indices":[1,2],"action_hash":"action-1","terminal_loss_mean":0.1,"terminal_metric1_mean":0.9,"terminal_metric2_mean":0.8,"terminal_probe_devices":%s,"terminal_probe_trial_counts":%s,"terminal_probe_trial_indices":[[0],[1],[2],[3],[4]],"terminal_probe_trial_seeds":[101,102,103,104,105],"terminal_pareto_event_kind":"expanded"%s}\n' \
+            "$episode" "$episode" "$reward" "$probe_devices" \
+            "$probe_trial_counts" "$telemetry" \
             >> "$case_dir/diagnostics/episodes.jsonl"
           episode=$((episode + 1))
         done
@@ -240,6 +269,8 @@ def _make_fake_case_launcher(path):
         done
 
         context_hash='215d3b7bb8cc42e90514045ee959cbce4f046e0cb52ca5f5e9757450eed24940'
+        action_hash='49a64717d5d4cb19952e6eac2946415cf6879adacf9908e7d872332d32c6e684'
+        candidate_key='3b1dcdbc7faf538e140e2e970438f8c39ae0d2ec56b13b77364850ebf0b01410'
         context_profile='mrpc'
         if [ "${FAKE_CONTEXT_HASH_MISMATCH_CASE:-}" = "$case_name" ]; then
           context_profile='corrupt-context'
@@ -248,14 +279,17 @@ def _make_fake_case_launcher(path):
         if [ "${FAKE_CANDIDATE_MISMATCH_CASE:-}" = "$case_name" ]; then
           candidate_loss='0.2'
         fi
+        if [ "${FAKE_CANDIDATE_KEY_MISMATCH_CASE:-}" = "$case_name" ]; then
+          candidate_key='corrupt-candidate-key'
+        fi
         if [ "$case_name" = "base64" ]; then
           printf '%s\n' \
-            '{"record_type":"candidate_trial_group_v1","candidate_key":"candidate-1","action_indices":[1,2],"raw_action_indices":[1,2],"effective_action_indices":[1,2],"identity_context":{"profile":"mrpc"},"fidelity":"F1","valid":true,"trial_group":{"loss":[0.1],"metric1":[0.9],"metric2":[0.8],"seeds":[101]},"trial_group_metadata":{"fidelity":"F1","identity_context":{"profile":"mrpc"}}}' \
+            "{\"record_type\":\"candidate_trial_group_v1\",\"candidate_key\":\"${candidate_key}\",\"candidate_key_basis\":\"effective_action_hash + identity_context\",\"action_indices\":[1,2],\"raw_action_indices\":[1,2],\"effective_action_indices\":[1,2],\"raw_action_hash\":\"${action_hash}\",\"action_hash\":\"${action_hash}\",\"action_vector_hash\":\"${action_hash}\",\"effective_action_hash\":\"${action_hash}\",\"identity_context_hash\":\"${context_hash}\",\"identity_context\":{\"profile\":\"mrpc\"},\"fidelity\":\"F1\",\"valid\":true,\"trial_group\":{\"loss\":[0.1],\"metric1\":[0.9],\"metric2\":[0.8],\"seeds\":[101]},\"trial_group_metadata\":{\"fidelity\":\"F1\",\"identity_context\":{\"profile\":\"mrpc\"}}}" \
             > "$case_dir/diagnostics/candidate_store.jsonl"
         else
           printf '%s\n' \
             "{\"record_type\":\"candidate_identity_context_v1\",\"identity_context_hash\":\"${context_hash}\",\"identity_context\":{\"profile\":\"${context_profile}\"}}" \
-            "{\"record_type\":\"candidate_trial_group_v2\",\"candidate_key\":\"candidate-1\",\"action_indices\":[1,2],\"identity_context_hash\":\"${context_hash}\",\"fidelity\":\"F1\",\"valid\":true,\"trial_group\":{\"loss\":[${candidate_loss}],\"metric1\":[0.9],\"metric2\":[0.8],\"seeds\":[101]},\"trial_group_metadata\":{\"fidelity\":\"F1\"}}" \
+            "{\"record_type\":\"candidate_trial_group_v2\",\"candidate_key\":\"${candidate_key}\",\"candidate_key_basis\":\"effective_action_hash + identity_context\",\"action_indices\":[1,2],\"raw_action_hash\":\"${action_hash}\",\"action_hash\":\"${action_hash}\",\"action_vector_hash\":\"${action_hash}\",\"effective_action_hash\":\"${action_hash}\",\"identity_context_hash\":\"${context_hash}\",\"fidelity\":\"F1\",\"valid\":true,\"trial_group\":{\"loss\":[${candidate_loss}],\"metric1\":[0.9],\"metric2\":[0.8],\"seeds\":[101]},\"trial_group_metadata\":{\"fidelity\":\"F1\"}}" \
             > "$case_dir/diagnostics/candidate_store.jsonl"
         fi
 
@@ -265,6 +299,11 @@ def _make_fake_case_launcher(path):
             "{\"record_type\":\"candidate_trial_group_v2\",\"candidate_key\":\"abandoned\",\"action_indices\":[1,2],\"identity_context_hash\":\"${context_hash}\",\"fidelity\":\"F1\",\"valid\":true,\"trial_group\":{\"loss\":[99.0],\"metric1\":[0.0],\"metric2\":[0.0],\"seeds\":[999]},\"trial_group_metadata\":{\"fidelity\":\"F1\"}}" \
             "{\"record_type\":\"candidate_store_recovery_v1\",\"checkpoint_size\":${checkpoint_size},\"logical_generation\":1}" \
             >> "$case_dir/diagnostics/candidate_store.jsonl"
+        fi
+        if [ "${FAKE_UNTERMINATED_CANDIDATE_CASE:-}" = "$case_name" ]; then
+          candidate_size="$(wc -c < "$case_dir/diagnostics/candidate_store.jsonl")"
+          truncate -s "$((candidate_size - 1))" \
+            "$case_dir/diagnostics/candidate_store.jsonl"
         fi
 
         printf '{"pool_id":"%s","batch_set_key":"F1","batch_count":4,"process_count":4,"worker_intraop_threads":1,"worker_interop_threads":1}\n' \
@@ -278,6 +317,13 @@ def _make_fake_case_launcher(path):
           *) exit 65 ;;
         esac
         printf '%s\n' "$wall" > "$case_dir/wall_seconds.txt"
+        if [ "${FAKE_MUTATE_SOURCE_CASE:-}" = "$case_name" ]; then
+          printf 'concurrent mutation\n' >> "${FAKE_MUTATE_SOURCE_PATH:?}"
+        fi
+        if [ "${FAKE_LAUNCH_HANG_CASE:-}" = "$case_name" ]; then
+          trap 'exit 0' INT TERM
+          while true; do sleep 1; done
+        fi
         sleep "${FAKE_LAUNCH_DELAY_SECONDS:-0.3}"
         if [ "${FAKE_LAUNCH_EXIT_CASE:-}" = "$case_name" ]; then
           exit "${FAKE_LAUNCH_EXIT_CODE:-17}"
@@ -313,6 +359,8 @@ def _base_gate_env(root, baseline, optimized, artifact_dir):
         "FAKE_DEFAULT_EPISODES": "600",
         "FAKE_DEFAULT_REWARD_DEVICES": "0,1,2,3,4",
         "FAKE_NVIDIA_LOG": str(nvidia_log),
+        "FAKE_NVIDIA_SAMPLE_COUNT_FILE": str(root / "nvidia-smi-sample-count.txt"),
+        "FAKE_CURRENT_CASE_FILE": str(root / "current-case.txt"),
         "FAKE_LAUNCH_LOG": str(launch_log),
         "GPU_SAMPLE_INTERVAL_SECONDS": "0.01",
         "GATE_POLL_INTERVAL_SECONDS": "0.01",
@@ -580,6 +628,32 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
                 self.assertRegex(output.lower(), r"same root|sha|commit|head")
                 self.assertFalse(launch_log.exists(), output)
 
+    def test_source_state_is_revalidated_between_serial_cases(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            env, _nvidia_log, launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                root / "artifacts",
+            )
+            env["FAKE_MUTATE_SOURCE_CASE"] = "base64"
+            env["FAKE_MUTATE_SOURCE_PATH"] = str(optimized / "README.txt")
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            self.assertRegex(output.lower(), r"source|dirty|head|sha")
+            self.assertEqual(
+                [
+                    line.split("|", 1)[0]
+                    for line in launch_log.read_text(encoding="utf-8").splitlines()
+                ],
+                ["base64"],
+            )
+
     def test_existing_run_artifact_scope_is_allowed_but_other_dirtiness_is_not(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -715,6 +789,54 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             )
             self.assertEqual(verdict["semantic_parity"], "FAIL")
             self.assertIsNone(verdict["fastest_eligible_case"])
+
+    def test_transient_gpu_spike_does_not_count_as_sustained_five_gpu_use(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, _launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_TRANSIENT_GPU"] = "4"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(verdict["semantic_parity"], "FAIL")
+            self.assertIsNone(verdict["fastest_eligible_case"])
+
+    def test_missing_probe_trials_on_one_gpu_fail_case_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, _launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_MISSING_PROBE_DEVICE_CASE"] = "opt128"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["evidence_pass"])
+            self.assertFalse(by_case["opt128"]["semantic_pass"])
+            self.assertEqual(verdict["fastest_eligible_case"], "opt256")
 
     def test_fake_gate_runs_default_cases_from_clean_roots_and_collects_evidence(self):
         with tempfile.TemporaryDirectory() as td:
@@ -899,6 +1021,52 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
                     "0",
                 )
 
+    def test_timeout_cannot_be_overridden_by_graceful_training_exit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env.pop("STAGE2_GATE_CASE_LAUNCHER")
+            env["FAKE_LAUNCH_HANG_CASE"] = "opt128"
+            env["FAKE_PREWRITE_TRAIN_EXIT_CASE"] = "opt128"
+            env["STAGE2_GATE_CASE_TIMEOUT_SECONDS"] = "1"
+            env["STAGE2_GATE_TERMINATION_GRACE_SECONDS"] = "1"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            self.assertEqual(
+                [
+                    line.split("|", 1)[0]
+                    for line in launch_log.read_text(encoding="utf-8").splitlines()
+                ],
+                ["base64", "opt64", "opt128", "opt256"],
+            )
+            opt128 = artifact_dir / "cases" / "opt128"
+            self.assertEqual(
+                (opt128 / "launcher_exit_code.txt").read_text(encoding="utf-8").strip(),
+                "124",
+            )
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["launch_pass"])
+            worker_pid = int(
+                (opt128 / "persistent" / "rl" / "bert-base" / "mrpc" / "LATEST_PID")
+                .read_text(encoding="utf-8")
+                .strip()
+            )
+            with self.assertRaises(ProcessLookupError):
+                os.kill(worker_pid, 0)
+
     def test_semantic_mismatch_exits_nonzero_and_excludes_faster_case_from_ranking(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -1030,6 +1198,60 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             self.assertFalse(by_case["opt128"]["candidate_pass"])
             self.assertFalse(by_case["opt128"]["semantic_pass"])
             self.assertEqual(verdict["fastest_eligible_case"], "opt256")
+
+    def test_candidate_key_mismatch_fails_normalization(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, _launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_CANDIDATE_KEY_MISMATCH_CASE"] = "opt128"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["evidence_pass"])
+            self.assertFalse(by_case["opt128"]["candidate_pass"])
+            self.assertFalse(by_case["opt128"]["semantic_pass"])
+
+    def test_candidate_validation_never_repairs_original_evidence_in_place(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, _launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_UNTERMINATED_CANDIDATE_CASE"] = "opt128"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            candidate_path = (
+                artifact_dir / "cases" / "opt128" / "diagnostics"
+                / "candidate_store.jsonl"
+            )
+            self.assertFalse(candidate_path.read_bytes().endswith(b"\n"))
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["evidence_pass"])
+            self.assertFalse(by_case["opt128"]["semantic_pass"])
 
 
 class Stage2NgpuComparatorRuntimeTelemetryTests(unittest.TestCase):
