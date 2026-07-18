@@ -30,12 +30,12 @@ _compare_spec.loader.exec_module(compare_mod)
 
 RUNTIME_TELEMETRY = {
     "candidate_bytes_written": 321,
-    "process_rss_current_bytes": 10_000,
-    "process_rss_peak_bytes": 20_000,
+    "process_rss_bytes": 10_000,
+    "process_peak_rss_bytes": 20_000,
     "pool_id": "optimized-pool",
     "batch_set_key": "F1",
     "batch_count": 4,
-    "process_count": 5,
+    "process_count": 4,
     "worker_intraop_threads": 1,
     "worker_interop_threads": 1,
 }
@@ -153,7 +153,7 @@ def _make_fake_case_launcher(path):
 
         telemetry=''
         if [ "$case_name" != "base64" ]; then
-          telemetry=',"candidate_bytes_written":321,"process_rss_current_bytes":10000,"process_rss_peak_bytes":20000,"pool_id":"optimized-pool","batch_set_key":"F1","batch_count":4,"process_count":5,"worker_intraop_threads":1,"worker_interop_threads":1'
+          telemetry=',"candidate_bytes_written":321,"process_rss_bytes":10000,"process_peak_rss_bytes":20000,"pool_id":"optimized-pool","batch_set_key":"F1","batch_count":4,"process_count":4,"worker_intraop_threads":1,"worker_interop_threads":1'
         fi
 
         : > "$case_dir/diagnostics/episodes.jsonl"
@@ -199,7 +199,7 @@ def _make_fake_case_launcher(path):
             > "$case_dir/diagnostics/candidate_store.jsonl"
         fi
 
-        printf '{"pool_id":"%s","batch_set_key":"F1","batch_count":4,"process_count":5,"worker_intraop_threads":1,"worker_interop_threads":1}\n' \
+        printf '{"pool_id":"%s","batch_set_key":"F1","batch_count":4,"process_count":4,"worker_intraop_threads":1,"worker_interop_threads":1}\n' \
           "$case_name-pool" > "$case_dir/diagnostics/diagnostics_summary.json"
         printf 'fake launch %s\n' "$case_name" > "$case_dir/launch.log"
         case "$case_name" in
