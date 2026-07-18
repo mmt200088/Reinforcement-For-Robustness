@@ -262,6 +262,14 @@ def _make_fake_case_launcher(path):
           "$reward_devices" "$case_dir" >> "${FAKE_LAUNCH_LOG:?}"
 
         mkdir -p "$case_dir/diagnostics"
+        if [ "${FAKE_WRITE_SOURCE_DATA_POINTS:-0}" = "1" ]; then
+          source_data_dir="$source_root/rl_training_data_points/stage2/bert-base/mrpc/$case_name"
+          mkdir -p "$source_data_dir"
+          printf '{"episode":1,"case":"%s"}\n' "$case_name" \
+            > "$source_data_dir/episodes.jsonl"
+          printf '{"case":"%s"}\n' "$case_name" \
+            > "$source_data_dir/manifest.json"
+        fi
         worker_pids=''
         worker_pid_json=''
         worker_thread_json=''
@@ -464,6 +472,7 @@ def _base_gate_env(root, baseline, optimized, artifact_dir):
         "FAKE_CURRENT_CASE_FILE": str(root / "current-case.txt"),
         "FAKE_CASE_RUNNING_FILE": str(root / "running-case.txt"),
         "FAKE_OWNED_COMPUTE_PIDS_FILE": str(root / "owned-compute-pids.txt"),
+        "FAKE_WRITE_SOURCE_DATA_POINTS": "1",
         "FAKE_LAUNCH_LOG": str(launch_log),
         "GPU_SAMPLE_INTERVAL_SECONDS": "0.005",
         "GATE_POLL_INTERVAL_SECONDS": "0.01",
@@ -1191,6 +1200,18 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
                 self.assertTrue((case_dir / "diagnostics" / "episodes.jsonl").is_file())
                 self.assertTrue((case_dir / "diagnostics" / "ppo_updates.jsonl").is_file())
                 self.assertTrue((case_dir / "diagnostics" / "candidate_store.jsonl").is_file())
+                self.assertTrue(
+                    (
+                        case_dir
+                        / "rl_training_data_points"
+                        / "stage2"
+                        / "bert-base"
+                        / "mrpc"
+                        / case_name
+                        / "episodes.jsonl"
+                    ).is_file(),
+                    f"{case_name} lacks its required structured data mirror",
+                )
                 gpu_samples = [
                     path
                     for path in case_dir.rglob("*")
