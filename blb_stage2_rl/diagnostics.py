@@ -94,6 +94,11 @@ import sys
 import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO
 
+try:
+    import resource
+except ImportError:  # pragma: no cover - unavailable on non-POSIX platforms.
+    resource = None
+
 import numpy as np
 
 from rl_data_points import _strict_jsonable
@@ -248,6 +253,7 @@ class EpisodeStats:
     promotion_status: str = ""
     convergence_state: Dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
+    candidate_bytes_written: int = 0
 
 
 @dataclass
@@ -299,6 +305,35 @@ class PPOUpdateStats:
     actor_credit_mode: str = "scalar_gae"
     entropy_objective_mode: str = "joint_sum"
     timestamp: float = field(default_factory=time.time)
+    process_rss_bytes: int = 0
+    process_peak_rss_bytes: int = 0
+
+
+def sample_process_rss_bytes() -> tuple[int, int]:
+    """Return current and peak process RSS without synchronizing accelerators."""
+    current_rss_bytes = 0
+    try:
+        with open("/proc/self/statm", "r", encoding="ascii") as handle:
+            fields = handle.readline().split()
+        if len(fields) >= 2:
+            resident_pages = max(0, int(fields[1]))
+            page_size = max(0, int(os.sysconf("SC_PAGE_SIZE")))
+            current_rss_bytes = resident_pages * page_size
+    except (AttributeError, OSError, TypeError, ValueError, OverflowError):
+        current_rss_bytes = 0
+
+    peak_rss_bytes = 0
+    if resource is not None:
+        try:
+            peak_rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+            # Linux reports ru_maxrss in KiB; Darwin already reports bytes.
+            if sys.platform.startswith("linux"):
+                peak_rss *= 1024
+            peak_rss_bytes = max(0, peak_rss)
+        except (AttributeError, OSError, TypeError, ValueError, OverflowError):
+            peak_rss_bytes = 0
+
+    return int(current_rss_bytes), int(peak_rss_bytes)
 
 
 _RESTORED_EPISODE_NULL_SENTINELS = {

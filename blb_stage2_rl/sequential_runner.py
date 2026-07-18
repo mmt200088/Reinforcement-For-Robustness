@@ -3830,7 +3830,12 @@ def _run_layerwise_training_branch(
 
     from .candidate_store import CandidateStore, sha256_json
     from .layerwise_env import BLBStage2LayerwiseEnv
-    from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
+    from .diagnostics import (
+        EpisodeStats,
+        PPOUpdateStats,
+        RLDiagnosticsRecorder,
+        sample_process_rss_bytes,
+    )
     from .layerwise_action import (
         K_LEVELS as LAYERWISE_K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
@@ -4549,6 +4554,7 @@ def _run_layerwise_training_branch(
                 first_invalid_block=None,
                 first_invalid_layer=None,
                 early_terminated=False,
+                candidate_bytes_written=int(record.candidate_bytes_written),
                 fusion_count_b2=12,
                 fusion_count_b4=b4_count,
                 fusion_count_b5=12,
@@ -4900,6 +4906,7 @@ def _run_layerwise_training_branch(
                 f"high_water={diag_recorder.ppo_update_high_water}, "
                 f"received={ppo_update_counter}"
             )
+        process_rss_bytes, process_peak_rss_bytes = sample_process_rss_bytes()
         strict_best = dict(metrics.get("strict_best") or {})
         strict_pareto_frontier = [
             dict(row) for row in metrics.get("strict_pareto_frontier", [])
@@ -4922,6 +4929,8 @@ def _run_layerwise_training_branch(
             window_mean_invalid=float(np.mean([item.invalid_steps for item in recent])),
             best_reward_so_far=float(best_reward_so_far),
             elapsed_sec=float(time.time() - started_at),
+            process_rss_bytes=int(process_rss_bytes),
+            process_peak_rss_bytes=int(process_peak_rss_bytes),
             ent_coef=float(metrics.get("ent_coef", 0.0)),
             approx_kl=float(metrics.get("approx_kl", 0.0)),
             kl_early_stop=bool(metrics.get("kl_early_stop", False)),
@@ -5024,6 +5033,8 @@ def _run_layerwise_training_branch(
                 "best_robust_feasible_objective": (
                     update_stats.best_robust_feasible_objective
                 ),
+                "process_rss_bytes": update_stats.process_rss_bytes,
+                "process_peak_rss_bytes": update_stats.process_peak_rss_bytes,
                 "strict_pareto_frontier": update_stats.strict_pareto_frontier,
                 "actor_clip_mode": update_stats.actor_clip_mode,
                 "actor_credit_mode": update_stats.actor_credit_mode,
