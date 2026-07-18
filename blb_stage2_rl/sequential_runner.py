@@ -4813,6 +4813,12 @@ def _run_layerwise_training_branch(
                 terminal_probe_speedup=float(
                     probe_diagnostics.get("speedup_vs_sequential", 1.0) or 1.0
                 ),
+                pool_id=probe_diagnostics.get("pool_id", ""),
+                batch_set_key=probe_diagnostics.get("batch_set_key", ""),
+                batch_count=probe_diagnostics.get("batch_count", 0),
+                process_count=probe_diagnostics.get("process_count", 0),
+                worker_intraop_threads=probe_diagnostics.get("worker_intraop_threads", 0),
+                worker_interop_threads=probe_diagnostics.get("worker_interop_threads", 0),
                 terminal_cost_eval_wall_seconds=float(
                     probe_diagnostics.get("cost_eval_wall_seconds", 0.0) or 0.0
                 ),

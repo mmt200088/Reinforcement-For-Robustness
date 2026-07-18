@@ -17,8 +17,10 @@ STAGE2_GATE_CASE_TIMEOUT_SECONDS="${STAGE2_GATE_CASE_TIMEOUT_SECONDS:-14400}"
 STAGE2_GATE_PYTHON="${STAGE2_GATE_PYTHON:-python3}"
 STAGE2_GATE_TERMINATION_GRACE_SECONDS="${STAGE2_GATE_TERMINATION_GRACE_SECONDS:-10}"
 STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES="${STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES:-3}"
-STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE="${STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE:-0.01}"
+STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE="${STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE:-0.05}"
 STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT="${STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT:-10}"
+STAGE2_GATE_MIN_PROBE_EPISODE_COVERAGE="${STAGE2_GATE_MIN_PROBE_EPISODE_COVERAGE:-0.95}"
+STAGE2_GATE_MIN_PROBE_TRIAL_BALANCE="${STAGE2_GATE_MIN_PROBE_TRIAL_BALANCE:-0.95}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 COMPARATOR="${STAGE2_GATE_COMPARATOR:-${SCRIPT_DIR}/stage2_ngpu_ab_compare.py}"
@@ -52,6 +54,7 @@ preflight_clean_root() {
   local allowed_relative=""
   local path
   local rejected=""
+  local rejected_ignored=""
   if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     printf '[gate][FATAL] %s root is not a Git worktree: %s\n' "$label" "$root" >&2
     return 1
@@ -83,6 +86,26 @@ preflight_clean_root() {
   if [ -n "$rejected" ]; then
     printf '[gate][FATAL] %s root is dirty outside the artifact scope: %s\n%s\n' \
       "$label" "$root" "$rejected" >&2
+    return 1
+  fi
+  while IFS= read -r -d '' path; do
+    case "$path" in
+      "$allowed_relative"|"$allowed_relative"/*)
+        [ -n "$allowed_relative" ] && continue
+        ;;
+    esac
+    case "$path" in
+      __pycache__/*|*/__pycache__/*|*.py[co]|.pytest_cache/*|*/.pytest_cache/*|\
+      .mypy_cache/*|*/.mypy_cache/*|.ruff_cache/*|*/.ruff_cache/*)
+        ;;
+      *)
+        rejected_ignored="${rejected_ignored}${rejected_ignored:+$'\n'}!! ${path}"
+        ;;
+    esac
+  done < <(git -C "$root" ls-files --others --ignored --exclude-standard -z)
+  if [ -n "$rejected_ignored" ]; then
+    printf '[gate][FATAL] %s root has ignored runtime inputs outside the artifact scope: %s\n%s\n' \
+      "$label" "$root" "$rejected_ignored" >&2
     return 1
   fi
 }
@@ -130,6 +153,15 @@ path_is_within "$ARTIFACT_DIR" "$STAGE2_GATE_ARTIFACT_SCOPE" \
   || fatal "ARTIFACT_DIR must be inside STAGE2_GATE_ARTIFACT_SCOPE"
 [ "$STAGE2_GATE_ARTIFACT_SCOPE" != "$OPTIMIZED_ROOT" ] \
   || fatal "STAGE2_GATE_ARTIFACT_SCOPE cannot be the optimized worktree root"
+if path_is_within "$STAGE2_GATE_ARTIFACT_SCOPE" "$OPTIMIZED_ROOT"; then
+  CANONICAL_SERVER_RUN_ROOT="$OPTIMIZED_ROOT/experiments/server_command_runs"
+  [ -d "$CANONICAL_SERVER_RUN_ROOT" ] \
+    || fatal "artifact scope inside optimized source must use experiments/server_command_runs"
+  CANONICAL_SERVER_RUN_ROOT="$(canonical_directory "$CANONICAL_SERVER_RUN_ROOT")" \
+    || fatal "cannot resolve canonical server run root"
+  path_is_within "$STAGE2_GATE_ARTIFACT_SCOPE" "$CANONICAL_SERVER_RUN_ROOT" \
+    || fatal "artifact scope inside optimized source must be under experiments/server_command_runs"
+fi
 
 case "$EXPECTED_BASELINE_SHA" in
   *[!0-9a-fA-F]*|'') fatal "EXPECTED_BASELINE_SHA must be a Git object id" ;;
@@ -179,6 +211,18 @@ if ! awk -v value="$STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT" '
     }'; then
   fatal "STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT must be in (0, 100]"
 fi
+for rate_name in \
+    STAGE2_GATE_MIN_PROBE_EPISODE_COVERAGE \
+    STAGE2_GATE_MIN_PROBE_TRIAL_BALANCE; do
+  rate_value="${!rate_name}"
+  if ! awk -v value="$rate_value" '
+      BEGIN {
+        valid = value ~ /^[0-9]+([.][0-9]+)?$/ && value + 0 > 0 && value + 0 <= 1
+        exit !valid
+      }'; then
+    fatal "${rate_name} must be in (0, 1]"
+  fi
+done
 case "$REWARD_DEVICES" in
   ''|*[!0-9,]*) fatal "REWARD_DEVICES must be a comma-separated index list" ;;
   *,) fatal "REWARD_DEVICES must not end with a comma" ;;
@@ -203,24 +247,32 @@ command -v "$STAGE2_GATE_PYTHON" >/dev/null 2>&1 \
 [ -f "$COMPARATOR" ] || fatal "Stage-2 comparator not found: ${COMPARATOR}"
 [ -f "$GPU_REPORTER" ] || fatal "GPU utilization reporter not found: ${GPU_REPORTER}"
 
-compute_apps_output="$({
-  nvidia-smi --id="$REWARD_DEVICES" \
-    --query-compute-apps=pid,gpu_uuid,used_gpu_memory \
-    --format=csv,noheader,nounits
-} 2>&1)"
-compute_apps_rc=$?
-if [ "$compute_apps_rc" -ne 0 ]; then
-  fatal "failed to query requested GPUs ${REWARD_DEVICES}: ${compute_apps_output}"
-fi
-busy_compute_apps="$(
-  printf '%s\n' "$compute_apps_output" \
-    | awk 'NF && $0 !~ /No running processes found/ {print}'
-)"
-if [ -n "$busy_compute_apps" ]; then
-  printf '[gate][FATAL] requested GPUs are not idle; compute owners:\n%s\n' \
-    "$busy_compute_apps" >&2
-  exit 3
-fi
+verify_requested_gpus_idle() {
+  local boundary="$1"
+  local compute_apps_output compute_apps_rc busy_compute_apps
+  compute_apps_output="$({
+    nvidia-smi --id="$REWARD_DEVICES" \
+      --query-compute-apps=pid,gpu_uuid,used_gpu_memory \
+      --format=csv,noheader,nounits
+  } 2>&1)"
+  compute_apps_rc=$?
+  if [ "$compute_apps_rc" -ne 0 ]; then
+    printf '[gate][FATAL] failed to query requested GPUs %s at %s: %s\n' \
+      "$REWARD_DEVICES" "$boundary" "$compute_apps_output" >&2
+    return 3
+  fi
+  busy_compute_apps="$(
+    printf '%s\n' "$compute_apps_output" \
+      | awk 'NF && $0 !~ /No running processes found/ {print}'
+  )"
+  if [ -n "$busy_compute_apps" ]; then
+    printf '[gate][FATAL] requested GPUs are not idle at %s; compute owners:\n%s\n' \
+      "$boundary" "$busy_compute_apps" >&2
+    return 3
+  fi
+}
+
+verify_requested_gpus_idle preflight || exit $?
 
 mkdir -p "$ARTIFACT_DIR/cases"
 
@@ -324,18 +376,22 @@ terminate_owned_pid_or_group() {
 wait_for_owned_launcher() {
   local launcher_pid="$1"
   local timeout_seconds="$2"
-  local started now wait_rc timed_out=0
+  local case_dir="${3:-}"
+  local started now wait_rc timed_out=0 residual=0
   started="$(date +%s)"
   while kill -0 "$launcher_pid" 2>/dev/null; do
     now="$(date +%s)"
     if [ $((now - started)) -ge "$timeout_seconds" ]; then
       printf '[gate][FATAL] owned training group %s exceeded %ss\n' \
         "$launcher_pid" "$timeout_seconds" >&2
-      terminate_process_group "$launcher_pid"
+      terminate_owned_pid_or_group "$launcher_pid"
       timed_out=1
       break
     fi
     sleep "$GATE_POLL_INTERVAL_SECONDS"
+    if [ -n "$case_dir" ]; then
+      sample_worker_inventory "$case_dir" "$launcher_pid"
+    fi
   done
   wait "$launcher_pid"
   wait_rc=$?
@@ -343,8 +399,12 @@ wait_for_owned_launcher() {
     printf '[gate][warning] reaping residual processes in group %s\n' \
       "$launcher_pid" >&2
     terminate_process_group "$launcher_pid"
+    residual=1
   fi
   [ "$timed_out" -eq 0 ] || return 124
+  if [ "$residual" -eq 1 ] && [ "$wait_rc" -eq 0 ]; then
+    return 125
+  fi
   return "$wait_rc"
 }
 
@@ -359,8 +419,6 @@ default_case_launcher() {
   local training_exit_file="$case_dir/training_exit_code.txt"
   local source_launcher="$source_root/llama_7B_LayerImportance.sh"
   local logical_devices
-  local launcher_pid
-  local launch_rc reported_rc training_rc
   local -a probe_batch_args=()
 
   logical_devices="$(logical_device_spec "$physical_devices")" || return 64
@@ -380,33 +438,35 @@ default_case_launcher() {
     )
   fi
 
-  (
-    cd "$source_root" || exit 67
-    export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}${source_root}:${source_root}/Rescale_optimizer"
-    export HF_HOME="${HF_HOME:-/hy-tmp/hf_cache}"
-    export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
-    export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
-    export GLUE_LOCAL_DATASET_DIR="${GLUE_LOCAL_DATASET_DIR:-/hy-tmp/glue_data}"
-    export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
-    export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
-    export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
-    export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
-    export BLB_STAGE2_POLICY_DEVICE="${BLB_STAGE2_POLICY_DEVICE:-worker}"
-    export BLB_STAGE2_DYNAMIC_ASSIGNMENT="${BLB_STAGE2_DYNAMIC_ASSIGNMENT:-1}"
-    export ALLOW_SHORT_RL_BENCHMARK=1
-    export CUDA_VISIBLE_DEVICES="$physical_devices"
-    export STAGE2_GATE_TRAIN_EXIT_FILE="$training_exit_file"
+  cd "$source_root" || return 67
+  export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}${source_root}:${source_root}/Rescale_optimizer"
+  export HF_HOME="${HF_HOME:-/hy-tmp/hf_cache}"
+  export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+  export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
+  export GLUE_LOCAL_DATASET_DIR="${GLUE_LOCAL_DATASET_DIR:-/hy-tmp/glue_data}"
+  export OMP_NUM_THREADS=1
+  export MKL_NUM_THREADS=1
+  export OPENBLAS_NUM_THREADS=1
+  export NUMEXPR_NUM_THREADS=1
+  export BLB_STAGE2_PROBE_BACKEND=process
+  export BLB_STAGE2_PROBE_INTRAOP_THREADS=1
+  export BLB_STAGE2_PROBE_INTEROP_THREADS=1
+  export BLB_STAGE2_POLICY_DEVICE="${BLB_STAGE2_POLICY_DEVICE:-worker}"
+  export BLB_STAGE2_DYNAMIC_ASSIGNMENT="${BLB_STAGE2_DYNAMIC_ASSIGNMENT:-1}"
+  export ALLOW_SHORT_RL_BENCHMARK=1
+  export CUDA_VISIBLE_DEVICES="$physical_devices"
+  export STAGE2_GATE_TRAIN_EXIT_FILE="$training_exit_file"
 
-    exec setsid bash -c '
-      launcher_path="$1"
-      shift
-      source "$launcher_path"
-      set +e
-      wait "$JOB_PID"
-      stage2_gate_train_rc=$?
-      printf "%s\n" "$stage2_gate_train_rc" > "$STAGE2_GATE_TRAIN_EXIT_FILE"
-      exit "$stage2_gate_train_rc"
-    ' "$source_launcher" "$source_launcher" run rl \
+  exec setsid bash -c '
+    launcher_path="$1"
+    shift
+    source "$launcher_path"
+    set +e
+    wait "$JOB_PID"
+    stage2_gate_train_rc=$?
+    printf "%s\n" "$stage2_gate_train_rc" > "$STAGE2_GATE_TRAIN_EXIT_FILE"
+    exit "$stage2_gate_train_rc"
+  ' "$source_launcher" "$source_launcher" run rl \
         --preset mrpc-blb-stage2-rl \
         --persistent-root "$persistent_root" \
         --stage2-fixed-config-source all4 \
@@ -447,50 +507,33 @@ default_case_launcher() {
         --rl-algo ppo \
         --skip-final-eval \
         --fresh \
-        "${probe_batch_args[@]}"
-  ) > "$case_dir/launch.log" 2>&1 &
-  launcher_pid=$!
-  printf '%s\n' "$launcher_pid" > "$case_dir/training_process_group.txt"
-  printf '%s\n' "$launcher_pid" > "$case_dir/worker_pids.txt"
-  printf '[gate] %s owns training process group=%s\n' \
-    "$case_name" "$launcher_pid"
-
-  wait_for_owned_launcher "$launcher_pid" "$STAGE2_GATE_CASE_TIMEOUT_SECONDS"
-  launch_rc=$?
-  reported_rc="$launch_rc"
-  if [ -s "$training_exit_file" ]; then
-    training_rc="$(tr -d '[:space:]' < "$training_exit_file")"
-    case "$training_rc" in
-      ''|*[!0-9]*)
-        printf '[gate][FATAL] %s wrote invalid training exit code: %s\n' \
-          "$case_name" "$training_rc" >&2
-        reported_rc=125
-        ;;
-      *)
-        if [ "$launch_rc" -eq 124 ]; then
-          reported_rc=124
-        elif [ "$training_rc" -ne "$launch_rc" ]; then
-          printf '[gate][FATAL] %s launcher/training exit mismatch: %s != %s\n' \
-            "$case_name" "$launch_rc" "$training_rc" >&2
-          reported_rc=125
-        else
-          reported_rc="$training_rc"
-        fi
-        ;;
-    esac
-  else
-    printf '%s\n' "$reported_rc" > "$training_exit_file"
-  fi
-  return "$reported_rc"
+        "${probe_batch_args[@]}" \
+        > "$case_dir/launch.log" 2>&1
 }
 
 sample_gpu_usage() {
   local out_file="$1"
+  local compute_file="$2"
+  local sample_timestamp compute_output compute_row
   printf 'timestamp,index,name,memory_used_mib,utilization_gpu_pct\n' > "$out_file"
+  printf 'sample_timestamp,pid,gpu_uuid,used_gpu_memory_mib\n' > "$compute_file"
   while true; do
     nvidia-smi --id="$REWARD_DEVICES" \
       --query-gpu=timestamp,index,name,memory.used,utilization.gpu \
       --format=csv,noheader,nounits >> "$out_file" 2>/dev/null || true
+    sample_timestamp="$(date '+%Y-%m-%dT%H:%M:%S')"
+    compute_output="$(
+      nvidia-smi --id="$REWARD_DEVICES" \
+        --query-compute-apps=pid,gpu_uuid,used_gpu_memory \
+        --format=csv,noheader,nounits 2>/dev/null || true
+    )"
+    while IFS= read -r compute_row; do
+      [ -n "$compute_row" ] || continue
+      case "$compute_row" in
+        *"No running processes found"*) continue ;;
+      esac
+      printf '%s,%s\n' "$sample_timestamp" "$compute_row" >> "$compute_file"
+    done <<< "$compute_output"
     sleep "$GPU_SAMPLE_INTERVAL_SECONDS"
   done
 }
@@ -759,7 +802,6 @@ finally:
         pass
 
 encoded = [json.dumps(row, sort_keys=True, separators=(",", ":")) for row in normalized]
-encoded.sort()
 with destination.open("w", encoding="utf-8") as handle:
     for line in encoded:
         handle.write(line + "\n")
@@ -768,23 +810,39 @@ PY
 
 validate_gpu_evidence() {
   local gpu_json="$1"
+  local episodes_jsonl="$2"
+  local compute_csv="$3"
+  local worker_inventory="$4"
+  local require_pool_telemetry="$5"
   local logical_devices
   logical_devices="$(logical_device_spec "$REWARD_DEVICES")" || return 1
   "$STAGE2_GATE_PYTHON" - \
-    "$gpu_json" "$REWARD_DEVICES" "$logical_devices" \
+    "$gpu_json" "$episodes_jsonl" "$compute_csv" "$worker_inventory" \
+    "$REWARD_DEVICES" "$logical_devices" "$require_pool_telemetry" \
     "$STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLES" \
     "$STAGE2_GATE_MIN_GPU_ACTIVE_SAMPLE_RATE" \
-    "$STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT" <<'PY'
+    "$STAGE2_GATE_MIN_GPU_MAX_UTIL_PCT" \
+    "$STAGE2_GATE_MIN_PROBE_EPISODE_COVERAGE" \
+    "$STAGE2_GATE_MIN_PROBE_TRIAL_BALANCE" <<'PY'
+import csv
 import json
+import math
 import pathlib
+import re
 import sys
 
 summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-physical_devices = {f"cuda:{int(value)}" for value in sys.argv[2].split(",")}
-logical_devices = {f"cuda:{int(value)}" for value in sys.argv[3].split(",")}
-minimum_active_samples = int(sys.argv[4])
-minimum_active_rate = float(sys.argv[5])
-minimum_max_util = float(sys.argv[6])
+episodes_path = pathlib.Path(sys.argv[2])
+compute_path = pathlib.Path(sys.argv[3])
+inventory_path = pathlib.Path(sys.argv[4])
+physical_devices = {f"cuda:{int(value)}" for value in sys.argv[5].split(",")}
+logical_devices = {f"cuda:{int(value)}" for value in sys.argv[6].split(",")}
+require_pool_telemetry = sys.argv[7] == "1"
+minimum_active_samples = int(sys.argv[8])
+minimum_active_rate = float(sys.argv[9])
+minimum_max_util = float(sys.argv[10])
+minimum_episode_coverage = float(sys.argv[11])
+minimum_trial_balance = float(sys.argv[12])
 gpu_utilization = summary.get("gpu_utilization") or {}
 errors = []
 
@@ -821,14 +879,89 @@ if used_probe_devices != logical_devices:
         "logical probe devices mismatch: "
         f"observed={sorted(used_probe_devices)} expected={sorted(logical_devices)}"
     )
-for field in (
-    "probe_trial_counts_by_device",
-    "probe_episode_counts_by_device",
-):
-    counts = summary.get(field) or {}
-    for device in sorted(logical_devices):
-        if int(counts.get(device, 0) or 0) <= 0:
-            errors.append(f"{field}[{device}] is not positive")
+episode_total = int(summary.get("episodes", 0) or 0)
+minimum_covered_episodes = int(math.ceil(episode_total * minimum_episode_coverage))
+episode_counts = summary.get("probe_episode_counts_by_device") or {}
+trial_counts = summary.get("probe_trial_counts_by_device") or {}
+for device in sorted(logical_devices):
+    episode_count = int(episode_counts.get(device, 0) or 0)
+    trial_count = int(trial_counts.get(device, 0) or 0)
+    if episode_count < minimum_covered_episodes:
+        errors.append(
+            f"probe_episode_counts_by_device[{device}]={episode_count} "
+            f"< {minimum_covered_episodes}"
+        )
+    if trial_count < minimum_covered_episodes:
+        errors.append(
+            f"probe_trial_counts_by_device[{device}]={trial_count} "
+            f"< {minimum_covered_episodes}"
+        )
+logical_trial_counts = [
+    int(trial_counts.get(device, 0) or 0) for device in logical_devices
+]
+if logical_trial_counts and max(logical_trial_counts) > 0:
+    observed_balance = min(logical_trial_counts) / float(max(logical_trial_counts))
+    if observed_balance < minimum_trial_balance:
+        errors.append(
+            f"probe trial balance={observed_balance:.6f} "
+            f"< {minimum_trial_balance:.6f}"
+        )
+
+episode_rows = []
+with episodes_path.open(encoding="utf-8") as handle:
+    for line_number, line in enumerate(handle, 1):
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if not isinstance(row, dict):
+            errors.append(f"episode row {line_number} is not an object")
+            continue
+        episode_rows.append(row)
+if require_pool_telemetry:
+    expected_process_count = max(0, len(logical_devices) - 1)
+    pool_ids = set()
+    for row_number, row in enumerate(episode_rows, 1):
+        pool_id = str(row.get("pool_id", ""))
+        if not pool_id:
+            errors.append(f"episode row {row_number} has no pool_id")
+        else:
+            pool_ids.add(pool_id)
+        if str(row.get("batch_set_key", "")) not in {"F1", "F4"}:
+            errors.append(f"episode row {row_number} has invalid batch_set_key")
+        if int(row.get("batch_count", 0) or 0) <= 0:
+            errors.append(f"episode row {row_number} has nonpositive batch_count")
+        if int(row.get("process_count", -1)) != expected_process_count:
+            errors.append(
+                f"episode row {row_number} process_count="
+                f"{row.get('process_count')} expected={expected_process_count}"
+            )
+        if int(row.get("worker_intraop_threads", 0) or 0) != 1:
+            errors.append(f"episode row {row_number} worker_intraop_threads != 1")
+        if int(row.get("worker_interop_threads", 0) or 0) != 1:
+            errors.append(f"episode row {row_number} worker_interop_threads != 1")
+    if len(pool_ids) != 1:
+        errors.append(f"expected one shared probe pool_id, observed={sorted(pool_ids)}")
+
+inventory_pids = {
+    int(match.group(1))
+    for match in re.finditer(
+        r"\bpid=([0-9]+)\b",
+        inventory_path.read_text(encoding="utf-8", errors="replace"),
+    )
+}
+compute_pids = set()
+with compute_path.open(newline="", encoding="utf-8") as handle:
+    for row in csv.DictReader(handle):
+        raw_pid = str(row.get("pid", "")).strip()
+        if not raw_pid:
+            continue
+        try:
+            compute_pids.add(int(raw_pid))
+        except ValueError:
+            errors.append(f"invalid sampled compute PID: {raw_pid!r}")
+unowned_compute_pids = sorted(compute_pids - inventory_pids)
+if unowned_compute_pids:
+    errors.append(f"sampled compute PIDs outside owned process tree: {unowned_compute_pids}")
 
 if errors:
     for error in errors:
@@ -840,6 +973,7 @@ PY
 validate_case_evidence() {
   local case_dir="$1"
   local expected_episodes="$2"
+  local require_pool_telemetry="$3"
   local missing=""
   local episode_count
   local wall
@@ -856,6 +990,11 @@ validate_case_evidence() {
   if [ ! -s "$case_dir/wall_seconds.txt" ]; then
     missing="${missing} wall_seconds.txt"
   fi
+  for filename in nvidia_compute_samples.csv worker_thread_inventory.txt; do
+    if [ ! -s "$case_dir/$filename" ]; then
+      missing="${missing} ${filename}"
+    fi
+  done
   if [ -n "$missing" ]; then
     printf 'FAIL missing:%s\n' "$missing" > "$case_dir/evidence_status.txt"
     return 1
@@ -888,7 +1027,12 @@ validate_case_evidence() {
     printf 'FAIL requested GPU activity\n' > "$case_dir/evidence_status.txt"
     return 1
   fi
-  if ! validate_gpu_evidence "$gpu_json" \
+  if ! validate_gpu_evidence \
+      "$gpu_json" \
+      "$case_dir/diagnostics/episodes.jsonl" \
+      "$case_dir/nvidia_compute_samples.csv" \
+      "$case_dir/worker_thread_inventory.txt" \
+      "$require_pool_telemetry" \
       >> "$case_dir/gpu_activity_validation.log" 2>&1; then
     printf 'FAIL sustained GPU or probe-device coverage\n' \
       > "$case_dir/gpu_activity_status.txt"
@@ -951,16 +1095,19 @@ run_case() {
   local batch_size="$3"
   local case_dir="$4"
   local gpu_samples="$case_dir/nvidia_smi_samples.csv"
+  local compute_samples="$case_dir/nvidia_compute_samples.csv"
   local launcher_log="$case_dir/gate_launcher.log"
   local inventory="$case_dir/worker_thread_inventory.txt"
+  local training_exit_file="$case_dir/training_exit_code.txt"
   local start_s end_s measured_wall
-  local sampler_pid launcher_pid launch_rc
+  local sampler_pid launcher_pid launch_rc training_rc require_pool_telemetry=1
 
   mkdir -p "$case_dir/diagnostics"
   ACTIVE_CASE_DIR="$case_dir"
+  verify_requested_gpus_idle "${case_name}:before" || exit $?
   : > "$inventory"
   start_s="$(date +%s)"
-  sample_gpu_usage "$gpu_samples" &
+  sample_gpu_usage "$gpu_samples" "$compute_samples" &
   sampler_pid=$!
   ACTIVE_SAMPLER_PID="$sampler_pid"
 
@@ -976,19 +1123,42 @@ run_case() {
   launcher_pid=$!
   ACTIVE_GATE_LAUNCHER_PID="$launcher_pid"
   printf '%s\n' "$launcher_pid" > "$case_dir/gate_launcher_pid.txt"
+  printf '%s\n' "$launcher_pid" > "$case_dir/training_process_group.txt"
 
   sample_worker_inventory "$case_dir" "$launcher_pid"
-  while kill -0 "$launcher_pid" 2>/dev/null; do
-    sleep "$GATE_POLL_INTERVAL_SECONDS"
-    sample_worker_inventory "$case_dir" "$launcher_pid"
-  done
-  wait "$launcher_pid"
+  wait_for_owned_launcher \
+    "$launcher_pid" "$STAGE2_GATE_CASE_TIMEOUT_SECONDS" "$case_dir"
   launch_rc=$?
   ACTIVE_GATE_LAUNCHER_PID=""
+
+  if [ -z "${STAGE2_GATE_CASE_LAUNCHER:-}" ]; then
+    if [ -s "$training_exit_file" ]; then
+      training_rc="$(tr -d '[:space:]' < "$training_exit_file")"
+      case "$training_rc" in
+        ''|*[!0-9]*)
+          printf '[gate][FATAL] %s wrote invalid training exit code: %s\n' \
+            "$case_name" "$training_rc" >&2
+          launch_rc=125
+          ;;
+        *)
+          if [ "$launch_rc" -eq 124 ]; then
+            launch_rc=124
+          elif [ "$training_rc" -ne "$launch_rc" ]; then
+            printf '[gate][FATAL] %s launcher/training exit mismatch: %s != %s\n' \
+              "$case_name" "$launch_rc" "$training_rc" >&2
+            launch_rc=125
+          fi
+          ;;
+      esac
+    else
+      printf '%s\n' "$launch_rc" > "$training_exit_file"
+    fi
+  fi
 
   kill "$sampler_pid" 2>/dev/null || true
   wait "$sampler_pid" 2>/dev/null || true
   ACTIVE_SAMPLER_PID=""
+  verify_requested_gpus_idle "${case_name}:after" || exit $?
   end_s="$(date +%s)"
   measured_wall=$((end_s - start_s))
   if [ ! -s "$case_dir/wall_seconds.txt" ]; then
@@ -998,7 +1168,9 @@ run_case() {
 
   copy_case_evidence "$case_dir" \
     > "$case_dir/evidence_copy.log" 2>&1 || true
-  if validate_case_evidence "$case_dir" "$EPISODES"; then
+  [ "$case_name" != "base64" ] || require_pool_telemetry=0
+  if validate_case_evidence \
+      "$case_dir" "$EPISODES" "$require_pool_telemetry"; then
     LAST_EVIDENCE_PASS=1
   else
     LAST_EVIDENCE_PASS=0
