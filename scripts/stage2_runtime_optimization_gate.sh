@@ -99,6 +99,8 @@ STAGE2_GATE_ARTIFACT_SCOPE="$(canonical_directory "$STAGE2_GATE_ARTIFACT_SCOPE")
   || fatal "artifact scope does not exist: ${STAGE2_GATE_ARTIFACT_SCOPE}"
 path_is_within "$ARTIFACT_DIR" "$STAGE2_GATE_ARTIFACT_SCOPE" \
   || fatal "ARTIFACT_DIR must be inside STAGE2_GATE_ARTIFACT_SCOPE"
+[ "$STAGE2_GATE_ARTIFACT_SCOPE" != "$OPTIMIZED_ROOT" ] \
+  || fatal "STAGE2_GATE_ARTIFACT_SCOPE cannot be the optimized worktree root"
 
 case "$EXPECTED_BASELINE_SHA" in
   *[!0-9a-fA-F]*|'') fatal "EXPECTED_BASELINE_SHA must be a Git object id" ;;
@@ -225,30 +227,6 @@ prepare_stage1_record() {
   ln -s "$(cd "$(dirname "$source")" && pwd -P)/$(basename "$source")" "$target"
 }
 
-write_instrumented_launcher() {
-  local source_root="$1"
-  local case_dir="$2"
-  local source="$source_root/llama_7B_LayerImportance.sh"
-  local target="$case_dir/instrumented_llama_7B_LayerImportance.sh"
-  [ -f "$source" ] || {
-    printf '[gate][FATAL] launcher not found: %s\n' "$source" >&2
-    return 1
-  }
-  cp "$source" "$target" || return 1
-  cat >> "$target" <<'SH'
-
-if [ -n "${STAGE2_GATE_TRAIN_EXIT_FILE:-}" ]; then
-  set +e
-  wait "$JOB_PID"
-  stage2_gate_train_rc=$?
-  printf '%s\n' "$stage2_gate_train_rc" > "$STAGE2_GATE_TRAIN_EXIT_FILE"
-  exit "$stage2_gate_train_rc"
-fi
-SH
-  chmod +x "$target" || return 1
-  printf '%s\n' "$target"
-}
-
 process_group_exists() {
   local pgid="$1"
   kill -0 -- "-${pgid}" 2>/dev/null
@@ -319,8 +297,8 @@ default_case_launcher() {
   local case_dir="$6"
   local persistent_root="$case_dir/persistent"
   local training_exit_file="$case_dir/training_exit_code.txt"
+  local source_launcher="$source_root/llama_7B_LayerImportance.sh"
   local logical_devices
-  local instrumented_launcher
   local launcher_pid
   local launch_rc reported_rc
   local -a probe_batch_args=()
@@ -328,8 +306,10 @@ default_case_launcher() {
   logical_devices="$(logical_device_spec "$physical_devices")" || return 64
   prepare_stage1_record "$source_root" "$case_dir" || return 65
   mkdir -p "$persistent_root" || return 66
-  instrumented_launcher="$(write_instrumented_launcher "$source_root" "$case_dir")" \
-    || return 68
+  [ -f "$source_launcher" ] || {
+    printf '[gate][FATAL] launcher not found: %s\n' "$source_launcher" >&2
+    return 68
+  }
 
   # The 48b03e8 baseline predates these flags and gets its F1/F4 batch 64
   # behavior from the preset/evaluator defaults. Optimized cases set both.
@@ -357,7 +337,16 @@ default_case_launcher() {
     export CUDA_VISIBLE_DEVICES="$physical_devices"
     export STAGE2_GATE_TRAIN_EXIT_FILE="$training_exit_file"
 
-    exec setsid bash "$instrumented_launcher" run rl \
+    exec setsid bash -c '
+      launcher_path="$1"
+      shift
+      source "$launcher_path"
+      set +e
+      wait "$JOB_PID"
+      stage2_gate_train_rc=$?
+      printf "%s\n" "$stage2_gate_train_rc" > "$STAGE2_GATE_TRAIN_EXIT_FILE"
+      exit "$stage2_gate_train_rc"
+    ' "$source_launcher" "$source_launcher" run rl \
         --preset mrpc-blb-stage2-rl \
         --persistent-root "$persistent_root" \
         --stage2-fixed-config-source all4 \
