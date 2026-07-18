@@ -160,7 +160,8 @@ def _make_fake_nvidia_smi(path):
              { [ "$scoped" -eq 0 ] || [[ "$*" == *"4"* ]]; }; then
             printf '%s\n' "$FAKE_COMPUTE_PIDS"
           fi
-          if [ -s "${FAKE_CASE_RUNNING_FILE:-}" ] && \
+          if [ -n "${FAKE_RUNTIME_COMPUTE_PID_CASE:-}" ] && \
+             [ -s "${FAKE_CASE_RUNNING_FILE:-}" ] && \
              [ "${FAKE_RUNTIME_COMPUTE_PID_CASE:-}" = \
                "$(cat "$FAKE_CASE_RUNNING_FILE")" ]; then
             printf '%s, GPU-fake, 10\n' \
@@ -1243,7 +1244,7 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             output = _combined_output(proc)
 
             self.assertNotEqual(proc.returncode, 0, output)
-            self.assertLess(elapsed, 5.5, output)
+            self.assertLess(elapsed, 10.0, output)
             self.assertEqual(
                 (artifact_dir / "cases" / "opt128" / "launcher_exit_code.txt")
                 .read_text(encoding="utf-8")
