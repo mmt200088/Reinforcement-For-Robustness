@@ -1560,12 +1560,16 @@ def diagnostics_payload(diag: ProbeRunnerDiagnostics) -> dict:
     """Canonical JSON-ready payload for ProbeRunner diagnostics."""
     payload = {
         "k": int(diag.k),
-        "pool_id": str(diag.pool_id),
-        "batch_set_key": str(diag.batch_set_key),
-        "batch_count": int(diag.batch_count),
-        "process_count": int(diag.process_count),
-        "worker_intraop_threads": int(diag.worker_intraop_threads),
-        "worker_interop_threads": int(diag.worker_interop_threads),
+        "pool_id": str(getattr(diag, "pool_id", "")),
+        "batch_set_key": str(getattr(diag, "batch_set_key", "")),
+        "batch_count": int(getattr(diag, "batch_count", 0)),
+        "process_count": int(getattr(diag, "process_count", 0)),
+        "worker_intraop_threads": int(
+            getattr(diag, "worker_intraop_threads", 0)
+        ),
+        "worker_interop_threads": int(
+            getattr(diag, "worker_interop_threads", 0)
+        ),
         "wall_seconds": float(diag.wall_seconds),
         "per_worker_seconds": [float(x) for x in diag.per_worker_seconds],
         "per_worker_trial_counts": [int(x) for x in diag.per_worker_trial_counts],
