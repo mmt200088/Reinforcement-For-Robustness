@@ -56,6 +56,41 @@ def _run_checked(command, *, cwd=None):
     )
 
 
+def _make_fake_detached_llama(path):
+    _write_executable(
+        path,
+        r'''
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        persistent_root=''
+        while [ "$#" -gt 0 ]; do
+          if [ "$1" = "--persistent-root" ]; then
+            persistent_root="$2"
+            shift 2
+          else
+            shift
+          fi
+        done
+        [ -n "$persistent_root" ] || exit 64
+
+        case_dir="$(dirname "$persistent_root")"
+        case_name="$(basename "$case_dir")"
+        mkdir -p "$persistent_root/rl/bert-base/mrpc"
+        "${FAKE_DEFAULT_PAYLOAD_WRITER:?}" \
+          "$case_name" "$PWD" 64 \
+          "${FAKE_DEFAULT_EPISODES:-600}" \
+          "${FAKE_DEFAULT_REWARD_DEVICES:-0,1,2,3,4}" \
+          "$case_dir" &
+        JOB_PID=$!
+        printf '%s\n' "$JOB_PID" \
+          > "$persistent_root/rl/bert-base/mrpc/LATEST_PID"
+        printf '%s\n' "$JOB_PID" > "$persistent_root/rl.pid"
+        printf 'fake detached training pid=%s\n' "$JOB_PID"
+        ''',
+    )
+
+
 def _init_clean_root(path):
     path.mkdir(parents=True)
     (path / "README.txt").write_text("fixture\n", encoding="utf-8")
@@ -64,6 +99,7 @@ def _init_clean_root(path):
     shutil.copy2(_COMPARATOR, scripts / _COMPARATOR.name)
     shutil.copy2(_REPO / "jsonl_utils.py", path / "jsonl_utils.py")
     shutil.copy2(_REPO / "jsonl_utils.py", scripts / "jsonl_utils.py")
+    _make_fake_detached_llama(path / "llama_7B_LayerImportance.sh")
     _run_checked(["git", "init", "-q"], cwd=path)
     _run_checked(["git", "add", "."], cwd=path)
     _run_checked(
@@ -118,7 +154,14 @@ def _make_fake_nvidia_smi(path):
         fi
 
         for gpu in 0 1 2 3 4; do
-          printf '2026-07-18 00:00:00, %s, Fake GPU, 0, 0\n' "$gpu"
+          memory=1024
+          utilization=50
+          if [ "${FAKE_INACTIVE_GPU:-}" = "$gpu" ]; then
+            memory=0
+            utilization=0
+          fi
+          printf '2026-07-18 00:00:00, %s, Fake GPU, %s, %s\n' \
+            "$gpu" "$memory" "$utilization"
         done
         ''',
     )
@@ -184,6 +227,10 @@ def _make_fake_case_launcher(path):
         done
 
         context_hash='215d3b7bb8cc42e90514045ee959cbce4f046e0cb52ca5f5e9757450eed24940'
+        context_profile='mrpc'
+        if [ "${FAKE_CONTEXT_HASH_MISMATCH_CASE:-}" = "$case_name" ]; then
+          context_profile='corrupt-context'
+        fi
         candidate_loss='0.1'
         if [ "${FAKE_CANDIDATE_MISMATCH_CASE:-}" = "$case_name" ]; then
           candidate_loss='0.2'
@@ -194,9 +241,17 @@ def _make_fake_case_launcher(path):
             > "$case_dir/diagnostics/candidate_store.jsonl"
         else
           printf '%s\n' \
-            "{\"record_type\":\"candidate_identity_context_v1\",\"identity_context_hash\":\"${context_hash}\",\"identity_context\":{\"profile\":\"mrpc\"}}" \
+            "{\"record_type\":\"candidate_identity_context_v1\",\"identity_context_hash\":\"${context_hash}\",\"identity_context\":{\"profile\":\"${context_profile}\"}}" \
             "{\"record_type\":\"candidate_trial_group_v2\",\"candidate_key\":\"candidate-1\",\"action_indices\":[1,2],\"identity_context_hash\":\"${context_hash}\",\"fidelity\":\"F1\",\"valid\":true,\"trial_group\":{\"loss\":[${candidate_loss}],\"metric1\":[0.9],\"metric2\":[0.8],\"seeds\":[101]},\"trial_group_metadata\":{\"fidelity\":\"F1\"}}" \
             > "$case_dir/diagnostics/candidate_store.jsonl"
+        fi
+
+        if [ "${FAKE_ABANDONED_CANDIDATE_CASE:-}" = "$case_name" ]; then
+          checkpoint_size="$(wc -c < "$case_dir/diagnostics/candidate_store.jsonl" | tr -d '[:space:]')"
+          printf '%s\n' \
+            "{\"record_type\":\"candidate_trial_group_v2\",\"candidate_key\":\"abandoned\",\"action_indices\":[1,2],\"identity_context_hash\":\"${context_hash}\",\"fidelity\":\"F1\",\"valid\":true,\"trial_group\":{\"loss\":[99.0],\"metric1\":[0.0],\"metric2\":[0.0],\"seeds\":[999]},\"trial_group_metadata\":{\"fidelity\":\"F1\"}}" \
+            "{\"record_type\":\"candidate_store_recovery_v1\",\"checkpoint_size\":${checkpoint_size},\"logical_generation\":1}" \
+            >> "$case_dir/diagnostics/candidate_store.jsonl"
         fi
 
         printf '{"pool_id":"%s","batch_set_key":"F1","batch_count":4,"process_count":4,"worker_intraop_threads":1,"worker_interop_threads":1}\n' \
@@ -211,6 +266,9 @@ def _make_fake_case_launcher(path):
         esac
         printf '%s\n' "$wall" > "$case_dir/wall_seconds.txt"
         sleep "${FAKE_LAUNCH_DELAY_SECONDS:-0.3}"
+        if [ "${FAKE_LAUNCH_EXIT_CASE:-}" = "$case_name" ]; then
+          exit "${FAKE_LAUNCH_EXIT_CODE:-17}"
+        fi
         ''',
     )
 
@@ -223,13 +281,24 @@ def _base_gate_env(root, baseline, optimized, artifact_dir):
     launcher = root / "fake-case-launcher.sh"
     _make_fake_nvidia_smi(fake_bin / "nvidia-smi")
     _make_fake_case_launcher(launcher)
+    baseline_head = _run_checked(
+        ["git", "rev-parse", "HEAD"], cwd=baseline,
+    ).stdout.strip()
+    optimized_head = _run_checked(
+        ["git", "rev-parse", "HEAD"], cwd=optimized,
+    ).stdout.strip()
 
     env = os.environ.copy()
     env.update({
         "BASELINE_ROOT": str(baseline),
         "OPTIMIZED_ROOT": str(optimized),
         "ARTIFACT_DIR": str(artifact_dir),
+        "EXPECTED_BASELINE_SHA": baseline_head,
+        "EXPECTED_OPTIMIZED_SHA": optimized_head,
         "STAGE2_GATE_CASE_LAUNCHER": str(launcher),
+        "FAKE_DEFAULT_PAYLOAD_WRITER": str(launcher),
+        "FAKE_DEFAULT_EPISODES": "600",
+        "FAKE_DEFAULT_REWARD_DEVICES": "0,1,2,3,4",
         "FAKE_NVIDIA_LOG": str(nvidia_log),
         "FAKE_LAUNCH_LOG": str(launch_log),
         "GPU_SAMPLE_INTERVAL_SECONDS": "0.01",
@@ -395,6 +464,24 @@ class Stage2RuntimeOptimizationGateStaticTests(unittest.TestCase):
         self.assertIn("semantic", lowered)
         self.assertIn("speed", lowered)
 
+    def test_static_contract_hardens_identity_gpu_exit_and_candidate_recovery(self):
+        source = self._source()
+
+        for token in (
+            "48b03e869934aa8b3aa904a1fe8b611a1e2d618a",
+            "EXPECTED_BASELINE_SHA",
+            "EXPECTED_OPTIMIZED_SHA",
+            "STAGE2_GATE_ARTIFACT_SCOPE",
+            "STAGE2_GATE_TRAIN_EXIT_FILE",
+            "CandidateStore",
+            "iter_active_records",
+            "gpu_utilization_report.py",
+            "--require-all-visible-sampled-active",
+        ):
+            self.assertIn(token, source)
+        self.assertRegex(source, r'wait\s+["\']?\$JOB_PID')
+        self.assertIn("kill -KILL", source)
+
 
 class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
     def _roots(self, root):
@@ -455,6 +542,60 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
                 self.assertIn(dirty_name, output.lower())
                 self.assertFalse(launch_log.exists(), output)
 
+    def test_source_identity_mismatch_or_identical_roots_fail_before_training(self):
+        cases = ("identical", "baseline_sha", "optimized_sha")
+        for case_name in cases:
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as td:
+                root = pathlib.Path(td)
+                baseline, optimized = self._roots(root)
+                selected_optimized = baseline if case_name == "identical" else optimized
+                env, _nvidia_log, launch_log = _base_gate_env(
+                    root,
+                    baseline,
+                    selected_optimized,
+                    root / "artifacts",
+                )
+                if case_name == "baseline_sha":
+                    env["EXPECTED_BASELINE_SHA"] = "0" * 40
+                elif case_name == "optimized_sha":
+                    env["EXPECTED_OPTIMIZED_SHA"] = "f" * 40
+
+                proc = _run_gate(env)
+                output = _combined_output(proc)
+
+                self.assertNotEqual(proc.returncode, 0, output)
+                self.assertRegex(output.lower(), r"same root|sha|commit|head")
+                self.assertFalse(launch_log.exists(), output)
+
+    def test_existing_run_artifact_scope_is_allowed_but_other_dirtiness_is_not(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            run_artifact = (
+                optimized / "experiments" / "server_command_runs" / "existing"
+            )
+            cpu_tests = run_artifact / "cpu_tests"
+            cpu_tests.mkdir(parents=True)
+            (cpu_tests / "full_pytest.log").write_text(
+                "existing Task 7 evidence\n", encoding="utf-8",
+            )
+            harness = root / "harness"
+            harness.mkdir()
+            env, _nvidia_log, launch_log = _base_gate_env(
+                harness,
+                baseline,
+                optimized,
+                run_artifact / "gpu_gate",
+            )
+            env["STAGE2_GATE_ARTIFACT_SCOPE"] = str(run_artifact)
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertEqual(proc.returncode, 0, output)
+            self.assertTrue(launch_log.is_file(), output)
+            self.assertTrue((cpu_tests / "full_pytest.log").is_file())
+
     def test_nonempty_compute_pid_fails_idle_gpu_preflight_before_training(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -476,6 +617,55 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             query_log = nvidia_log.read_text(encoding="utf-8")
             self.assertIn("query-compute-apps", query_log)
             self.assertIn("pid", query_log)
+
+    def test_duplicate_reward_devices_fail_before_training(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            env, _nvidia_log, launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                root / "artifacts",
+            )
+            env["REWARD_DEVICES"] = "0,1,1,2,3"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            self.assertIn("duplicate", output.lower())
+            self.assertFalse(launch_log.exists(), output)
+
+    def test_inactive_requested_gpu_fails_evidence_after_all_cases_run(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_INACTIVE_GPU"] = "4"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            self.assertEqual(
+                [
+                    line.split("|", 1)[0]
+                    for line in launch_log.read_text(encoding="utf-8").splitlines()
+                ],
+                ["base64", "opt64", "opt128", "opt256"],
+            )
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(verdict["semantic_parity"], "FAIL")
+            self.assertIsNone(verdict["fastest_eligible_case"])
 
     def test_fake_gate_runs_default_cases_from_clean_roots_and_collects_evidence(self):
         with tempfile.TemporaryDirectory() as td:
@@ -587,6 +777,46 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             nvidia_calls = nvidia_log.read_text(encoding="utf-8").splitlines()
             self.assertGreaterEqual(len(nvidia_calls), 5)
 
+    def test_default_launcher_reaps_detached_training_and_propagates_exit_code(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env.pop("STAGE2_GATE_CASE_LAUNCHER")
+            env["FAKE_LAUNCH_EXIT_CASE"] = "opt128"
+            env["FAKE_LAUNCH_EXIT_CODE"] = "17"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            self.assertEqual(
+                [
+                    line.split("|", 1)[0]
+                    for line in launch_log.read_text(encoding="utf-8").splitlines()
+                ],
+                ["base64", "opt64", "opt128", "opt256"],
+            )
+            self.assertEqual(
+                (artifact_dir / "cases" / "opt128" / "training_exit_code.txt")
+                .read_text(encoding="utf-8")
+                .strip(),
+                "17",
+            )
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["launch_pass"])
+            self.assertFalse(by_case["opt128"]["semantic_pass"])
+            self.assertEqual(verdict["fastest_eligible_case"], "opt256")
+
     def test_semantic_mismatch_exits_nonzero_and_excludes_faster_case_from_ranking(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -660,6 +890,64 @@ class Stage2RuntimeOptimizationGateBehaviorTests(unittest.TestCase):
             ]
             self.assertTrue(any("opt256" in line for line in winner_lines), verdict_md)
             self.assertFalse(any("opt128" in line for line in winner_lines), verdict_md)
+
+    def test_candidate_recovery_ignores_abandoned_physical_branch(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, _launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_ABANDONED_CANDIDATE_CASE"] = "opt128"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertEqual(proc.returncode, 0, output)
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertTrue(by_case["opt128"]["candidate_pass"])
+            self.assertTrue(by_case["opt128"]["semantic_pass"])
+            self.assertEqual(verdict["semantic_parity"], "PASS")
+
+    def test_candidate_context_hash_mismatch_fails_normalization(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline, optimized = self._roots(root)
+            artifact_dir = root / "artifacts"
+            env, _nvidia_log, launch_log = _base_gate_env(
+                root,
+                baseline,
+                optimized,
+                artifact_dir,
+            )
+            env["FAKE_CONTEXT_HASH_MISMATCH_CASE"] = "opt128"
+
+            proc = _run_gate(env)
+            output = _combined_output(proc)
+
+            self.assertNotEqual(proc.returncode, 0, output)
+            self.assertEqual(
+                [
+                    line.split("|", 1)[0]
+                    for line in launch_log.read_text(encoding="utf-8").splitlines()
+                ],
+                ["base64", "opt64", "opt128", "opt256"],
+            )
+            verdict = json.loads(
+                (artifact_dir / "verdict.json").read_text(encoding="utf-8")
+            )
+            by_case = {row["case"]: row for row in verdict["cases"]}
+            self.assertFalse(by_case["opt128"]["evidence_pass"])
+            self.assertFalse(by_case["opt128"]["candidate_pass"])
+            self.assertFalse(by_case["opt128"]["semantic_pass"])
+            self.assertEqual(verdict["fastest_eligible_case"], "opt256")
 
 
 class Stage2NgpuComparatorRuntimeTelemetryTests(unittest.TestCase):
