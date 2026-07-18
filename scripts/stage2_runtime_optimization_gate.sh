@@ -57,7 +57,7 @@ preflight_clean_root() {
       || ! git -C "$root" diff --cached --quiet --ignore-submodules --; then
     printf '[gate][FATAL] %s root is dirty: tracked modifications in %s\n' \
       "$label" "$root" >&2
-    git -C "$root" status --short --untracked-files=no >&2 || true
+    git -C "$root" status --porcelain --untracked-files=no >&2 || true
     return 1
   fi
 
