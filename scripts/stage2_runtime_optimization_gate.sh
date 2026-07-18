@@ -15,9 +15,15 @@ GPU_SAMPLE_INTERVAL_SECONDS="${GPU_SAMPLE_INTERVAL_SECONDS:-2}"
 GATE_POLL_INTERVAL_SECONDS="${GATE_POLL_INTERVAL_SECONDS:-2}"
 STAGE2_GATE_CASE_TIMEOUT_SECONDS="${STAGE2_GATE_CASE_TIMEOUT_SECONDS:-14400}"
 STAGE2_GATE_PYTHON="${STAGE2_GATE_PYTHON:-python3}"
+STAGE2_GATE_TERMINATION_GRACE_SECONDS="${STAGE2_GATE_TERMINATION_GRACE_SECONDS:-10}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 COMPARATOR="${STAGE2_GATE_COMPARATOR:-${SCRIPT_DIR}/stage2_ngpu_ab_compare.py}"
+GPU_REPORTER="${STAGE2_GATE_GPU_REPORTER:-${SCRIPT_DIR}/gpu_utilization_report.py}"
+EXPECTED_BASELINE_SHA="${EXPECTED_BASELINE_SHA:-48b03e869934aa8b3aa904a1fe8b611a1e2d618a}"
+EXPECTED_OPTIMIZED_SHA="${EXPECTED_OPTIMIZED_SHA:-$(
+  git -C "${SCRIPT_DIR}/.." rev-parse HEAD 2>/dev/null
+)}"
 
 fatal() {
   printf '[gate][FATAL] %s\n' "$*" >&2
@@ -30,22 +36,50 @@ canonical_directory() {
   (cd "$path" && pwd -P)
 }
 
+path_is_within() {
+  local path="$1"
+  local scope="$2"
+  [ "$path" = "$scope" ] || [ "${path#"$scope"/}" != "$path" ]
+}
+
 preflight_clean_root() {
   local label="$1"
   local root="$2"
-  local status
+  local allowed_scope="${3:-}"
+  local allowed_relative=""
+  local path
+  local rejected=""
   if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     printf '[gate][FATAL] %s root is not a Git worktree: %s\n' "$label" "$root" >&2
     return 1
   fi
-  if ! status="$(git -C "$root" status --porcelain 2>&1)"; then
-    printf '[gate][FATAL] cannot inspect %s root: %s\n%s\n' \
-      "$label" "$root" "$status" >&2
+  if ! git -C "$root" diff --quiet --ignore-submodules -- \
+      || ! git -C "$root" diff --cached --quiet --ignore-submodules --; then
+    printf '[gate][FATAL] %s root is dirty: tracked modifications in %s\n' \
+      "$label" "$root" >&2
+    git -C "$root" status --short --untracked-files=no >&2 || true
     return 1
   fi
-  if [ -n "$status" ]; then
-    printf '[gate][FATAL] %s root is dirty: %s\n%s\n' \
-      "$label" "$root" "$status" >&2
+
+  if [ -n "$allowed_scope" ] && path_is_within "$allowed_scope" "$root"; then
+    if [ "$allowed_scope" = "$root" ]; then
+      allowed_relative="."
+    else
+      allowed_relative="${allowed_scope#"$root"/}"
+    fi
+  fi
+  while IFS= read -r -d '' path; do
+    if [ "$allowed_relative" = "." ]; then
+      continue
+    fi
+    case "$path" in
+      "$allowed_relative"|"$allowed_relative"/*) ;;
+      *) rejected="${rejected}${rejected:+$'\n'}?? ${path}" ;;
+    esac
+  done < <(git -C "$root" ls-files --others --exclude-standard -z)
+  if [ -n "$rejected" ]; then
+    printf '[gate][FATAL] %s root is dirty outside the artifact scope: %s\n%s\n' \
+      "$label" "$root" "$rejected" >&2
     return 1
   fi
 }
@@ -54,22 +88,73 @@ BASELINE_ROOT="$(canonical_directory "$BASELINE_ROOT")" \
   || fatal "baseline root does not exist: ${BASELINE_ROOT}"
 OPTIMIZED_ROOT="$(canonical_directory "$OPTIMIZED_ROOT")" \
   || fatal "optimized root does not exist: ${OPTIMIZED_ROOT}"
+[ "$BASELINE_ROOT" != "$OPTIMIZED_ROOT" ] \
+  || fatal "baseline and optimized roots resolve to the same root: ${BASELINE_ROOT}"
+
+mkdir -p "$ARTIFACT_DIR" || fatal "cannot create ARTIFACT_DIR: ${ARTIFACT_DIR}"
+ARTIFACT_DIR="$(canonical_directory "$ARTIFACT_DIR")" \
+  || fatal "cannot resolve ARTIFACT_DIR: ${ARTIFACT_DIR}"
+STAGE2_GATE_ARTIFACT_SCOPE="${STAGE2_GATE_ARTIFACT_SCOPE:-$(dirname "$ARTIFACT_DIR")}"
+STAGE2_GATE_ARTIFACT_SCOPE="$(canonical_directory "$STAGE2_GATE_ARTIFACT_SCOPE")" \
+  || fatal "artifact scope does not exist: ${STAGE2_GATE_ARTIFACT_SCOPE}"
+path_is_within "$ARTIFACT_DIR" "$STAGE2_GATE_ARTIFACT_SCOPE" \
+  || fatal "ARTIFACT_DIR must be inside STAGE2_GATE_ARTIFACT_SCOPE"
+
+case "$EXPECTED_BASELINE_SHA" in
+  *[!0-9a-fA-F]*|'') fatal "EXPECTED_BASELINE_SHA must be a Git object id" ;;
+esac
+case "$EXPECTED_OPTIMIZED_SHA" in
+  *[!0-9a-fA-F]*|'') fatal "EXPECTED_OPTIMIZED_SHA must be a Git object id" ;;
+esac
+[ "${#EXPECTED_BASELINE_SHA}" -eq 40 ] \
+  || fatal "EXPECTED_BASELINE_SHA must be a full 40-character SHA"
+[ "${#EXPECTED_OPTIMIZED_SHA}" -eq 40 ] \
+  || fatal "EXPECTED_OPTIMIZED_SHA must be a full 40-character SHA"
+actual_baseline_sha="$(git -C "$BASELINE_ROOT" rev-parse HEAD)" \
+  || fatal "cannot resolve baseline HEAD"
+actual_optimized_sha="$(git -C "$OPTIMIZED_ROOT" rev-parse HEAD)" \
+  || fatal "cannot resolve optimized HEAD"
+[ "$actual_baseline_sha" = "$EXPECTED_BASELINE_SHA" ] \
+  || fatal "baseline HEAD ${actual_baseline_sha} != expected ${EXPECTED_BASELINE_SHA}"
+[ "$actual_optimized_sha" = "$EXPECTED_OPTIMIZED_SHA" ] \
+  || fatal "optimized HEAD ${actual_optimized_sha} != expected ${EXPECTED_OPTIMIZED_SHA}"
 
 preflight_clean_root baseline "$BASELINE_ROOT" || exit $?
-preflight_clean_root optimized "$OPTIMIZED_ROOT" || exit $?
+preflight_clean_root optimized "$OPTIMIZED_ROOT" "$STAGE2_GATE_ARTIFACT_SCOPE" || exit $?
 
 case "$EPISODES" in
   ''|*[!0-9]*) fatal "EPISODES must be a positive integer: ${EPISODES}" ;;
   0) fatal "EPISODES must be positive" ;;
 esac
+case "$STAGE2_GATE_CASE_TIMEOUT_SECONDS" in
+  ''|*[!0-9]*|0) fatal "STAGE2_GATE_CASE_TIMEOUT_SECONDS must be positive" ;;
+esac
+case "$STAGE2_GATE_TERMINATION_GRACE_SECONDS" in
+  ''|*[!0-9]*|0) fatal "STAGE2_GATE_TERMINATION_GRACE_SECONDS must be positive" ;;
+esac
 case "$REWARD_DEVICES" in
   ''|*[!0-9,]*) fatal "REWARD_DEVICES must be a comma-separated index list" ;;
+  *,) fatal "REWARD_DEVICES must not end with a comma" ;;
+  *,,*) fatal "REWARD_DEVICES must not contain empty indices" ;;
 esac
+seen_devices=","
+old_ifs="$IFS"
+IFS=','
+for reward_device in $REWARD_DEVICES; do
+  case "$seen_devices" in
+    *",${reward_device},"*) fatal "duplicate GPU index in REWARD_DEVICES: ${reward_device}" ;;
+  esac
+  seen_devices="${seen_devices}${reward_device},"
+done
+IFS="$old_ifs"
 command -v nvidia-smi >/dev/null 2>&1 \
   || fatal "nvidia-smi is required for the idle-GPU preflight"
+command -v setsid >/dev/null 2>&1 \
+  || fatal "setsid is required for owned training process groups"
 command -v "$STAGE2_GATE_PYTHON" >/dev/null 2>&1 \
   || fatal "Python interpreter not found: ${STAGE2_GATE_PYTHON}"
 [ -f "$COMPARATOR" ] || fatal "Stage-2 comparator not found: ${COMPARATOR}"
+[ -f "$GPU_REPORTER" ] || fatal "GPU utilization reporter not found: ${GPU_REPORTER}"
 
 compute_apps_output="$({
   nvidia-smi --id="$REWARD_DEVICES" \
@@ -90,15 +175,14 @@ if [ -n "$busy_compute_apps" ]; then
   exit 3
 fi
 
-mkdir -p "$ARTIFACT_DIR" || fatal "cannot create ARTIFACT_DIR: ${ARTIFACT_DIR}"
-ARTIFACT_DIR="$(canonical_directory "$ARTIFACT_DIR")" \
-  || fatal "cannot resolve ARTIFACT_DIR: ${ARTIFACT_DIR}"
 mkdir -p "$ARTIFACT_DIR/cases"
 
 printf '%s\n' "$BASELINE_ROOT" > "$ARTIFACT_DIR/baseline_root.txt"
 printf '%s\n' "$OPTIMIZED_ROOT" > "$ARTIFACT_DIR/optimized_root.txt"
-git -C "$BASELINE_ROOT" rev-parse HEAD > "$ARTIFACT_DIR/baseline_head.txt"
-git -C "$OPTIMIZED_ROOT" rev-parse HEAD > "$ARTIFACT_DIR/optimized_head.txt"
+printf '%s\n' "$actual_baseline_sha" > "$ARTIFACT_DIR/baseline_head.txt"
+printf '%s\n' "$actual_optimized_sha" > "$ARTIFACT_DIR/optimized_head.txt"
+printf '%s\n' "$EXPECTED_BASELINE_SHA" > "$ARTIFACT_DIR/expected_baseline_head.txt"
+printf '%s\n' "$EXPECTED_OPTIMIZED_SHA" > "$ARTIFACT_DIR/expected_optimized_head.txt"
 
 logical_device_spec() {
   local physical_spec="$1"
@@ -141,40 +225,89 @@ prepare_stage1_record() {
   ln -s "$(cd "$(dirname "$source")" && pwd -P)/$(basename "$source")" "$target"
 }
 
-find_background_pid() {
-  local persistent_root="$1"
-  local exact="$persistent_root/rl/bert-base/mrpc/LATEST_PID"
-  local pid_file=""
-  if [ -f "$exact" ]; then
-    pid_file="$exact"
-  else
-    pid_file="$(
-      find "$persistent_root" -type f \
-        \( -name LATEST_PID -o -name run.pid -o -name rl.pid \) \
-        -print 2>/dev/null | LC_ALL=C sort | tail -n 1
-    )"
-  fi
-  [ -n "$pid_file" ] || return 1
-  head -n 1 "$pid_file" | tr -d '[:space:]'
+write_instrumented_launcher() {
+  local source_root="$1"
+  local case_dir="$2"
+  local source="$source_root/llama_7B_LayerImportance.sh"
+  local target="$case_dir/instrumented_llama_7B_LayerImportance.sh"
+  [ -f "$source" ] || {
+    printf '[gate][FATAL] launcher not found: %s\n' "$source" >&2
+    return 1
+  }
+  cp "$source" "$target" || return 1
+  cat >> "$target" <<'SH'
+
+if [ -n "${STAGE2_GATE_TRAIN_EXIT_FILE:-}" ]; then
+  set +e
+  wait "$JOB_PID"
+  stage2_gate_train_rc=$?
+  printf '%s\n' "$stage2_gate_train_rc" > "$STAGE2_GATE_TRAIN_EXIT_FILE"
+  exit "$stage2_gate_train_rc"
+fi
+SH
+  chmod +x "$target" || return 1
+  printf '%s\n' "$target"
 }
 
-wait_for_background_run() {
-  local pid="$1"
+process_group_exists() {
+  local pgid="$1"
+  kill -0 -- "-${pgid}" 2>/dev/null
+}
+
+wait_for_process_group_exit() {
+  local pgid="$1"
   local timeout_seconds="$2"
   local started now
   started="$(date +%s)"
-  while kill -0 "$pid" 2>/dev/null; do
+  while process_group_exists "$pgid"; do
+    now="$(date +%s)"
+    [ $((now - started)) -lt "$timeout_seconds" ] || return 1
+    sleep 1
+  done
+}
+
+terminate_process_group() {
+  local pgid="$1"
+  process_group_exists "$pgid" || return 0
+  printf '[gate] sending SIGINT to owned process group %s\n' "$pgid" >&2
+  kill -INT -- "-${pgid}" 2>/dev/null || true
+  wait_for_process_group_exit "$pgid" "$STAGE2_GATE_TERMINATION_GRACE_SECONDS" \
+    && return 0
+  printf '[gate] sending SIGTERM to owned process group %s\n' "$pgid" >&2
+  kill -TERM -- "-${pgid}" 2>/dev/null || true
+  wait_for_process_group_exit "$pgid" "$STAGE2_GATE_TERMINATION_GRACE_SECONDS" \
+    && return 0
+  printf '[gate] sending SIGKILL to owned process group %s\n' "$pgid" >&2
+  kill -KILL -- "-${pgid}" 2>/dev/null || true
+  wait_for_process_group_exit "$pgid" "$STAGE2_GATE_TERMINATION_GRACE_SECONDS" \
+    || true
+}
+
+wait_for_owned_launcher() {
+  local launcher_pid="$1"
+  local timeout_seconds="$2"
+  local started now wait_rc timed_out=0
+  started="$(date +%s)"
+  while kill -0 "$launcher_pid" 2>/dev/null; do
     now="$(date +%s)"
     if [ $((now - started)) -ge "$timeout_seconds" ]; then
-      printf '[gate][FATAL] training pid %s exceeded %ss; sending SIGINT\n' \
-        "$pid" "$timeout_seconds" >&2
-      kill -INT "$pid" 2>/dev/null || true
-      sleep 10
-      kill -TERM "$pid" 2>/dev/null || true
-      return 124
+      printf '[gate][FATAL] owned training group %s exceeded %ss\n' \
+        "$launcher_pid" "$timeout_seconds" >&2
+      terminate_process_group "$launcher_pid"
+      timed_out=1
+      break
     fi
-    sleep 2
+    sleep "$GATE_POLL_INTERVAL_SECONDS"
   done
+  wait "$launcher_pid"
+  wait_rc=$?
+  if process_group_exists "$launcher_pid"; then
+    printf '[gate][warning] reaping residual processes in group %s\n' \
+      "$launcher_pid" >&2
+    terminate_process_group "$launcher_pid"
+  fi
+  [ "$timed_out" -eq 0 ] || return 124
+  return "$wait_rc"
 }
 
 default_case_launcher() {
@@ -185,15 +318,18 @@ default_case_launcher() {
   local physical_devices="$5"
   local case_dir="$6"
   local persistent_root="$case_dir/persistent"
+  local training_exit_file="$case_dir/training_exit_code.txt"
   local logical_devices
-  local latest_pid
-  local launch_rc
-  local wait_rc
+  local instrumented_launcher
+  local launcher_pid
+  local launch_rc reported_rc
   local -a probe_batch_args=()
 
   logical_devices="$(logical_device_spec "$physical_devices")" || return 64
   prepare_stage1_record "$source_root" "$case_dir" || return 65
   mkdir -p "$persistent_root" || return 66
+  instrumented_launcher="$(write_instrumented_launcher "$source_root" "$case_dir")" \
+    || return 68
 
   # The 48b03e8 baseline predates these flags and gets its F1/F4 batch 64
   # behavior from the preset/evaluator defaults. Optimized cases set both.
@@ -217,10 +353,11 @@ default_case_launcher() {
     export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
     export BLB_STAGE2_POLICY_DEVICE="${BLB_STAGE2_POLICY_DEVICE:-worker}"
     export BLB_STAGE2_DYNAMIC_ASSIGNMENT="${BLB_STAGE2_DYNAMIC_ASSIGNMENT:-1}"
+    export ALLOW_SHORT_RL_BENCHMARK=1
+    export CUDA_VISIBLE_DEVICES="$physical_devices"
+    export STAGE2_GATE_TRAIN_EXIT_FILE="$training_exit_file"
 
-    ALLOW_SHORT_RL_BENCHMARK=1 CUDA_VISIBLE_DEVICES="$physical_devices" \
-      timeout "$STAGE2_GATE_CASE_TIMEOUT_SECONDS" \
-      bash llama_7B_LayerImportance.sh run rl \
+    exec setsid bash "$instrumented_launcher" run rl \
         --preset mrpc-blb-stage2-rl \
         --persistent-root "$persistent_root" \
         --stage2-fixed-config-source all4 \
@@ -261,30 +398,30 @@ default_case_launcher() {
         --rl-algo ppo \
         --skip-final-eval \
         --fresh \
-        "${probe_batch_args[@]}" \
-        2>&1 | tee "$case_dir/launch.log"
-    exit "${PIPESTATUS[0]}"
-  )
-  launch_rc=$?
-  [ "$launch_rc" -eq 0 ] || return "$launch_rc"
+        "${probe_batch_args[@]}"
+  ) > "$case_dir/launch.log" 2>&1 &
+  launcher_pid=$!
+  printf '%s\n' "$launcher_pid" > "$case_dir/training_process_group.txt"
+  printf '%s\n' "$launcher_pid" > "$case_dir/worker_pids.txt"
+  printf '[gate] %s owns training process group=%s\n' \
+    "$case_name" "$launcher_pid"
 
-  latest_pid="$(find_background_pid "$persistent_root")" || {
-    printf '[gate][FATAL] %s could not identify its background PID under %s\n' \
-      "$case_name" "$persistent_root" >&2
-    return 125
-  }
-  case "$latest_pid" in
-    ''|*[!0-9]*)
-      printf '[gate][FATAL] %s reported invalid background PID: %s\n' \
-        "$case_name" "$latest_pid" >&2
-      return 125
-      ;;
-  esac
-  printf '%s\n' "$latest_pid" > "$case_dir/worker_pids.txt"
-  printf '[gate] %s launched training pid=%s\n' "$case_name" "$latest_pid"
-  wait_for_background_run "$latest_pid" "$STAGE2_GATE_CASE_TIMEOUT_SECONDS"
-  wait_rc=$?
-  return "$wait_rc"
+  wait_for_owned_launcher "$launcher_pid" "$STAGE2_GATE_CASE_TIMEOUT_SECONDS"
+  launch_rc=$?
+  reported_rc="$launch_rc"
+  if [ -s "$training_exit_file" ]; then
+    reported_rc="$(tr -d '[:space:]' < "$training_exit_file")"
+    case "$reported_rc" in
+      ''|*[!0-9]*)
+        printf '[gate][FATAL] %s wrote invalid training exit code: %s\n' \
+          "$case_name" "$reported_rc" >&2
+        reported_rc=125
+        ;;
+    esac
+  else
+    printf '%s\n' "$reported_rc" > "$training_exit_file"
+  fi
+  return "$reported_rc"
 }
 
 sample_gpu_usage() {
@@ -388,34 +525,20 @@ copy_case_evidence() {
 normalize_candidate_evidence() {
   local input_path="$1"
   local output_path="$2"
-  "$STAGE2_GATE_PYTHON" - "$input_path" "$output_path" <<'PY'
+  "$STAGE2_GATE_PYTHON" - \
+    "$input_path" "$output_path" "${SCRIPT_DIR}/.." <<'PY'
 import json
 import pathlib
 import sys
 
 source = pathlib.Path(sys.argv[1])
 destination = pathlib.Path(sys.argv[2])
-rows = []
-with source.open(encoding="utf-8") as handle:
-    for line_number, line in enumerate(handle, 1):
-        if not line.strip():
-            continue
-        row = json.loads(line)
-        if not isinstance(row, dict):
-            raise ValueError(f"{source}:{line_number}: candidate row is not an object")
-        rows.append(row)
+repo_root = pathlib.Path(sys.argv[3])
+sys.path.insert(0, str(repo_root))
 
-contexts = {}
-for row in rows:
-    if row.get("record_type") != "candidate_identity_context_v1":
-        continue
-    context_hash = str(row.get("identity_context_hash", ""))
-    context = row.get("identity_context")
-    if not context_hash or not isinstance(context, dict):
-        raise ValueError("candidate_identity_context_v1 row is incomplete")
-    if context_hash in contexts and contexts[context_hash] != context:
-        raise ValueError("candidate identity context hash collision")
-    contexts[context_hash] = context
+from blb_stage2_rl.candidate_store import CandidateStore
+
+rows = CandidateStore(source).iter_active_records()
 
 storage_fields = {
     "created_at",
@@ -440,10 +563,6 @@ promotion_types = {
 
 def identity_context(row):
     context = row.get("identity_context")
-    if isinstance(context, dict):
-        return context
-    context_hash = str(row.get("identity_context_hash", ""))
-    context = contexts.get(context_hash)
     if isinstance(context, dict):
         return context
     metadata = row.get("trial_group_metadata")
@@ -499,6 +618,8 @@ validate_case_evidence() {
   local wall
   local candidate="$case_dir/diagnostics/candidate_store.jsonl"
   local normalized="$case_dir/diagnostics/candidate_store.normalized.jsonl"
+  local gpu_json="$case_dir/gpu_utilization.json"
+  local gpu_markdown="$case_dir/gpu_utilization.md"
   local filename
   for filename in episodes.jsonl ppo_updates.jsonl candidate_store.jsonl; do
     if [ ! -s "$case_dir/diagnostics/$filename" ]; then
@@ -528,11 +649,69 @@ validate_case_evidence() {
     printf 'FAIL candidate normalization\n' > "$case_dir/evidence_status.txt"
     return 1
   fi
+  if ! "$STAGE2_GATE_PYTHON" "$GPU_REPORTER" \
+      --episodes "$case_dir/diagnostics/episodes.jsonl" \
+      --nvidia-smi-csv "$case_dir/nvidia_smi_samples.csv" \
+      --visible-devices "$REWARD_DEVICES" \
+      --out-json "$gpu_json" \
+      --out-md "$gpu_markdown" \
+      --require-all-visible-sampled-active \
+      > "$case_dir/gpu_activity_validation.log" 2>&1; then
+    printf 'FAIL requested GPU activity\n' > "$case_dir/gpu_activity_status.txt"
+    printf 'FAIL requested GPU activity\n' > "$case_dir/evidence_status.txt"
+    return 1
+  fi
+  printf 'PASS\n' > "$case_dir/gpu_activity_status.txt"
   printf 'PASS\n' > "$case_dir/evidence_status.txt"
 }
 
 LAST_LAUNCH_RC=0
 LAST_EVIDENCE_PASS=0
+ACTIVE_CASE_DIR=""
+ACTIVE_SAMPLER_PID=""
+
+cleanup_active_case() {
+  local pgid=""
+  local gate_launcher_pid=""
+  if [ -n "$ACTIVE_SAMPLER_PID" ]; then
+    kill "$ACTIVE_SAMPLER_PID" 2>/dev/null || true
+    wait "$ACTIVE_SAMPLER_PID" 2>/dev/null || true
+  fi
+  if [ -n "$ACTIVE_CASE_DIR" ] \
+      && [ -s "$ACTIVE_CASE_DIR/training_process_group.txt" ]; then
+    pgid="$(tr -d '[:space:]' < "$ACTIVE_CASE_DIR/training_process_group.txt")"
+    case "$pgid" in
+      ''|*[!0-9]*) ;;
+      *) terminate_process_group "$pgid" ;;
+    esac
+  fi
+  if [ -n "$ACTIVE_CASE_DIR" ] \
+      && [ -s "$ACTIVE_CASE_DIR/gate_launcher_pid.txt" ]; then
+    gate_launcher_pid="$(
+      tr -d '[:space:]' < "$ACTIVE_CASE_DIR/gate_launcher_pid.txt"
+    )"
+    case "$gate_launcher_pid" in
+      ''|*[!0-9]*) ;;
+      *)
+        kill -TERM "$gate_launcher_pid" 2>/dev/null || true
+        wait "$gate_launcher_pid" 2>/dev/null || true
+        ;;
+    esac
+  fi
+}
+
+handle_gate_signal() {
+  local signal_name="$1"
+  trap - HUP INT TERM
+  printf '[gate][FATAL] received %s; cleaning active case\n' \
+    "$signal_name" >&2
+  cleanup_active_case
+  exit 130
+}
+
+trap 'handle_gate_signal HUP' HUP
+trap 'handle_gate_signal INT' INT
+trap 'handle_gate_signal TERM' TERM
 
 run_case() {
   local case_name="$1"
@@ -546,10 +725,12 @@ run_case() {
   local sampler_pid launcher_pid launch_rc
 
   mkdir -p "$case_dir/diagnostics"
+  ACTIVE_CASE_DIR="$case_dir"
   : > "$inventory"
   start_s="$(date +%s)"
   sample_gpu_usage "$gpu_samples" &
   sampler_pid=$!
+  ACTIVE_SAMPLER_PID="$sampler_pid"
 
   if [ -n "${STAGE2_GATE_CASE_LAUNCHER:-}" ]; then
     "$STAGE2_GATE_CASE_LAUNCHER" \
@@ -573,6 +754,7 @@ run_case() {
 
   kill "$sampler_pid" 2>/dev/null || true
   wait "$sampler_pid" 2>/dev/null || true
+  ACTIVE_SAMPLER_PID=""
   end_s="$(date +%s)"
   measured_wall=$((end_s - start_s))
   if [ ! -s "$case_dir/wall_seconds.txt" ]; then
@@ -588,6 +770,7 @@ run_case() {
     LAST_EVIDENCE_PASS=0
   fi
   LAST_LAUNCH_RC="$launch_rc"
+  ACTIVE_CASE_DIR=""
   printf '[gate] case=%s launch_rc=%s evidence=%s wall=%ss\n' \
     "$case_name" "$launch_rc" "$LAST_EVIDENCE_PASS" \
     "$(cat "$case_dir/wall_seconds.txt" 2>/dev/null || printf 'n/a')"
