@@ -12,6 +12,7 @@ This is torch-gated: the decode helper imports ``action_space`` (pulls torch) an
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import pathlib
 import sys
@@ -21,6 +22,28 @@ _REPO = pathlib.Path(__file__).resolve().parents[1]
 for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimizer")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+
+class GlueNoiseSeedWiringStaticTest(unittest.TestCase):
+    def test_blb_seed_reseeds_the_independent_noise_rng(self):
+        tree = ast.parse((_REPO / "generate_glue_submission.py").read_text())
+        function = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_seed_all_for_reproducibility"
+        )
+        calls = [
+            node
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "reseed_noise_rng"
+        ]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls[0].args), 1)
+        self.assertIsInstance(calls[0].args[0], ast.Name)
+        self.assertEqual(calls[0].args[0].id, "seed")
 
 
 @unittest.skipUnless(
@@ -71,6 +94,26 @@ class GlueBoostInstallTest(unittest.TestCase):
 
         np.testing.assert_array_equal(round_trip, action)
         self.assertEqual(notes, [])
+
+    def test_blb_seed_controls_the_independent_noise_stream(self):
+        import torch
+
+        from function_handler import _sample_independent_gaussian, reseed_noise_rng
+        from generate_glue_submission import _seed_all_for_reproducibility
+
+        reference = torch.zeros(32)
+        try:
+            _seed_all_for_reproducibility(2026071901)
+            first = _sample_independent_gaussian(reference, 1.0)
+            _seed_all_for_reproducibility(2026071901)
+            replay = _sample_independent_gaussian(reference, 1.0)
+            _seed_all_for_reproducibility(2026071902)
+            second = _sample_independent_gaussian(reference, 1.0)
+        finally:
+            reseed_noise_rng(None)
+
+        self.assertTrue(torch.equal(first, replay))
+        self.assertFalse(torch.equal(first, second))
 
     def test_decode_helper_installs_boosted_block2_output(self):
         import numpy as np
