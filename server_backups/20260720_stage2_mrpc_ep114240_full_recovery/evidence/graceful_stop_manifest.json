@@ -1,0 +1,23 @@
+{
+  "schema": "stage2_checkpoint_safe_stop_v1",
+  "requested_at": "2026-07-19T20:18:44+08:00",
+  "stopped_at": "2026-07-19T20:29:04+08:00",
+  "requested_mechanism": "STOP_RL then SIGINT",
+  "observed_stop_rl_support": false,
+  "observed_sigint_disposition": "ignored by background process",
+  "effective_signal": "SIGTERM",
+  "sigkill_used": false,
+  "all_run_processes_exited": true,
+  "resumable": true,
+  "resume_validation": "torch.load plus required state fields and episode consistency",
+  "checkpoint_episode": 114240,
+  "checkpoint_ppo_update": 952,
+  "checkpoint_path": "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__dual_resource_natconv_fresh_20260718_190924/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt",
+  "checkpoint_size_bytes": 64190927,
+  "checkpoint_sha256": "c039f3de3619261880aa3eb771d80318b1b17984cae926c4f6e819a3a03b1ab4",
+  "structured_run_id": "Parting_Chapter_persistent_rl_bert-base_mrpc_s1t0.001_s2t0.001_s2st2.0__dual_resource_natconv_fresh_20260718_190924__20260718T111042090914Z__pid1943348",
+  "run_context_hash": "07ec36e379bfe48455773b6be5c804e37e9c7309ae7d2f4f28472f2a40b9888c",
+  "algorithm_contract_hash": "10a90a2f1e2fc1d3dfa5efcacb3279ecdb2ac372b6008d9b623f72ec7a425c4e",
+  "source_commit": "fa4ee9cbd27d6265238f8d1091b712e14ee86066",
+  "note": "The active sequential runner did not consume STOP_RL and the background process ignored SIGINT. SIGTERM was sent only after a matching, loadable, atomic PPO-boundary checkpoint had been verified."
+}
