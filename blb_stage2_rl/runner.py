@@ -648,8 +648,15 @@ class BLBStage2TrainConfig:
                 "constraint probabilities must satisfy online <= promotion <= final"
             )
         self.convergence_patience_updates = int(self.convergence_patience_updates)
-        if self.convergence_patience_updates <= 0:
-            raise ValueError("convergence_patience_updates must be positive")
+        if self.convergence_patience_updates < 100:
+            raise ValueError(
+                "convergence_patience_updates must be at least 100"
+            )
+        self.convergence_min_episodes = int(self.convergence_min_episodes)
+        if self.convergence_min_episodes < 90_000:
+            raise ValueError(
+                "convergence_min_episodes must be at least 90000"
+            )
     # 环境
     # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
     # making one outlier trial blow up the std and trip priority-2 (stability)
@@ -757,6 +764,7 @@ class BLBStage2TrainConfig:
     promotion_constraint_probability: float = 0.80
     final_constraint_probability: float = 0.95
     stage2_stability_multiplier: float = 2.0
+    convergence_min_episodes: int = 90_000
     convergence_patience_updates: int = 100
     # ---- 4-sub-stage mode (opt-in 2026-05-27) -----------------------------
     # When ``substage_mode`` is True, ``BLBStage2RLRunner.run`` dispatches to
@@ -2819,6 +2827,8 @@ class BLBStage2RLRunner:
                 ("baseline_groups", "blb_v3_baseline_groups"),
                 ("baseline_trials_per_group", "blb_v3_baseline_trials_per_group"),
                 ("constraint_bootstrap_samples", "blb_v3_constraint_bootstrap_samples"),
+                ("convergence_min_episodes", "blb_v3_min_convergence_episodes"),
+                ("convergence_patience_updates", "blb_v3_convergence_patience_updates"),
                 ("seed", "final_eval_random_seed"),
         ):
             v = getattr(ev, attr_name, None)

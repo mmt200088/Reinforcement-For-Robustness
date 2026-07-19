@@ -118,6 +118,7 @@ class SequentialTrainConfig:
     absolute_episode_start: int = 0
     planned_total_episodes: Optional[int] = None
     convergence_resume_state: Optional[Mapping[str, Any]] = None
+    convergence_min_episodes: int = 90_000
     convergence_patience_updates: int = 100
     warmstart_neighbor_sampling: bool = False
     warmstart_neighbor_ramp_episodes: int = 0
@@ -3456,6 +3457,7 @@ def _collect_robust_baseline_reference(
         baseline_groups: int = 5,
         trials_per_group: int = 5,
         max_groups: int = 10,
+        group_index_start: int = 0,
         ) -> Tuple["BaselineReference", Dict[str, Any]]:
     """Collect deterministic grouped baseline trials for robust constraints."""
     from .seed_utils import derive_baseline_group_probe_seed
@@ -3489,12 +3491,16 @@ def _collect_robust_baseline_reference(
         required_groups = int(baseline_groups)
         group_trials = int(trials_per_group)
         group_limit = int(max_groups)
+        group_start = int(group_index_start)
         if required_groups <= 0 or group_trials <= 0 or group_limit < required_groups:
             raise ValueError("robust baseline group counts must be positive and ordered")
+        if group_start < 0:
+            raise ValueError("robust baseline group_index_start must be nonnegative")
         if required_groups * group_trials < 25:
             raise ValueError("robust baseline calibration requires at least 25 total trials")
         base_env.env_cfg.num_trials_per_step = group_trials
-        for group_idx in range(group_limit):
+        for local_group_idx in range(group_limit):
+            group_idx = group_start + local_group_idx
             group_probe_seed = derive_baseline_group_probe_seed(base_seed, group_idx)
             base_env.probe_noise_seed = group_probe_seed
             base_env.clear_installed_blb()
@@ -3541,7 +3547,7 @@ def _collect_robust_baseline_reference(
                     seed=base_seed,
                 )
             except DegenerateBaselineVariance as exc:
-                if group_idx == group_limit - 1:
+                if local_group_idx == group_limit - 1:
                     exc.raw_groups = tuple(raw_groups)
                     raise
                 continue
@@ -3609,6 +3615,7 @@ def _build_layerwise_candidate_identity_context(
         fixed_softmax: np.ndarray,
         robust_reference: Any,
         authoritative_robust_reference: Any,
+        validation_banks: Any,
         probe_example_count: int,
         authoritative_example_count: int,
         schedule: Sequence[Any],
@@ -3673,6 +3680,7 @@ def _build_layerwise_candidate_identity_context(
                 "split": "validation_full",
                 "example_count": int(authoritative_example_count),
                 "reference": reference_payload(authoritative_robust_reference),
+                "validation_banks": validation_banks.contract_payload(),
             },
         },
     }
@@ -3734,6 +3742,7 @@ def _run_layerwise_training_branch(
         promotion_base_env: Any,
         authoritative_robust_reference: Any,
         authoritative_robust_summary: Optional[Mapping[str, Any]],
+        authoritative_validation_banks: Any,
         authoritative_validation_example_count: int,
         static_skeletons_baseline: Any,
         fixed_gelu: np.ndarray,
@@ -3748,7 +3757,11 @@ def _run_layerwise_training_branch(
     """Run Task-7 layerwise PPO without entering legacy block scaffolds."""
     if robust_reference is None:
         raise RuntimeError("layerwise robust PPO requires a calibrated statistical reference")
-    if promotion_base_env is None or authoritative_robust_reference is None:
+    if (
+            promotion_base_env is None
+            or authoritative_robust_reference is None
+            or authoritative_validation_banks is None
+    ):
         raise RuntimeError(
             "layerwise robust PPO requires an authoritative validation_full evaluator"
         )
@@ -3772,6 +3785,7 @@ def _run_layerwise_training_branch(
     from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_runner import (
         DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
+        DEFAULT_CONVERGENCE_MIN_EPISODES,
         _PROBABILITY_FIELDS,
         _to_plain_mapping,
         build_layerwise_run_context,
@@ -3785,6 +3799,7 @@ def _run_layerwise_training_branch(
         train_layerwise,
         validate_fresh_layerwise_run_state,
         validate_layerwise_checkpoint_metadata,
+        validate_layerwise_episode_limit_extension,
     )
     from .persistence import write_training_curves
     from .runner import _build_legacy_compatible_best_noise_config
@@ -3802,7 +3817,14 @@ def _run_layerwise_training_branch(
     ))
     if convergence_patience_updates <= 0:
         raise ValueError("layerwise convergence patience must be positive")
-    algorithm_revision = "dual_resource_maxmin_shapley_multifidelity_convergence_v9"
+    convergence_min_episodes = int(getattr(
+        train_cfg,
+        "convergence_min_episodes",
+        DEFAULT_CONVERGENCE_MIN_EPISODES,
+    ))
+    if convergence_min_episodes < 0:
+        raise ValueError("layerwise convergence minimum episodes must be nonnegative")
+    algorithm_revision = "dual_resource_maxmin_shapley_three_bank_convergence_v10"
     rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
     layerwise_entropy_regularization = {
         "kind": "disabled",
@@ -3810,17 +3832,20 @@ def _run_layerwise_training_branch(
         "optimization_role": "monitor_only",
     }
     layerwise_termination = {
-        "mode": "natural_convergence",
-        "episode_limit": None,
+        "mode": "convergence_or_max_episodes",
+        "episode_limit": (
+            None if requested_total_episodes == 0 else requested_total_episodes
+        ),
+        "minimum_episodes": convergence_min_episodes,
         "patience_updates": convergence_patience_updates,
         "requires_robust_feasible_candidate": True,
         "frontier_stall_update_windows": convergence_patience_updates,
         "selected_action_stable_update_windows": convergence_patience_updates,
         "strict_revalidation_required": True,
         "strict_revalidation_trials": int(
-            getattr(train_cfg, "final_selection_validation_trials", 25)
+            authoritative_validation_banks.bank_c.trial_count
         ),
-        "strict_revalidation_probability": float(
+        "strict_revalidation_diagnostic_probability": float(
             getattr(train_cfg, "final_constraint_probability", 0.95)
         ),
         "selection_order": (
@@ -3829,14 +3854,11 @@ def _run_layerwise_training_branch(
             "action_lexicographic"
         ),
         "entropy_role": "diagnostic_only",
+        "validation_banks": authoritative_validation_banks.contract_payload(),
         "counts_only_finite_ppo_updates": True,
     }
-    if requested_total_episodes > 0:
-        layerwise_termination = {
-            **layerwise_termination,
-            "mode": "bounded_smoke",
-            "episode_limit": requested_total_episodes,
-        }
+    algorithm_termination = dict(layerwise_termination)
+    algorithm_termination["episode_limit"] = "runtime_extendable"
     layerwise_ppo_mode = {
         "factorized_actor_clip": True,
         "behavior_log_prob_source": "sampling_time_per_slot_v1",
@@ -3887,7 +3909,7 @@ def _run_layerwise_training_branch(
         entropy_normalize_active_slots=True,
     )
     algorithm_contract = {
-        "schema_version": "stage2_layerwise_algorithm_contract_v4",
+        "schema_version": "stage2_layerwise_algorithm_contract_v5",
         "algorithm_revision": algorithm_revision,
         "rl_variant": rl_variant,
         "action_space_version": "stage2_layerwise_12x6_v1",
@@ -3917,7 +3939,7 @@ def _run_layerwise_training_branch(
         "rollout_size": int(train_cfg.rollout_size),
         "ppo_mode": layerwise_ppo_mode,
         "entropy_regularization": layerwise_entropy_regularization,
-        "termination": layerwise_termination,
+        "termination": algorithm_termination,
         "evidence_tiers": {
             "F1": {
                 "split": "validation_full_stratified_probe",
@@ -3933,13 +3955,23 @@ def _run_layerwise_training_branch(
             "F4": {
                 "split": "validation_full",
                 "example_count": int(authoritative_validation_example_count),
-                "promotion_trial_count": int(
-                    getattr(train_cfg, "promotion_validation_trials", 25)
+                "bank_a_trial_count": int(
+                    authoritative_validation_banks.bank_a.trial_count
                 ),
-                "baseline_trial_count": int(
-                    getattr(train_cfg, "baseline_groups", 5)
-                    * getattr(train_cfg, "baseline_trials_per_group", 5)
+                "bank_b_trial_count": int(
+                    authoritative_validation_banks.bank_b.trial_count
                 ),
+                "bank_c_trial_count": int(
+                    authoritative_validation_banks.bank_c.trial_count
+                ),
+                "promotion_pooled_trial_count": int(
+                    authoritative_validation_banks.promotion_trial_count
+                ),
+                "final_pooled_trial_count": int(
+                    authoritative_validation_banks.final_trial_count
+                ),
+                "hard_gate": "six_point_constraints",
+                "bootstrap_probability_role": "diagnostic_tiebreak_only",
                 "roles": ["strict_frontier", "convergence", "final_selection"],
                 "authoritative": True,
             },
@@ -3956,6 +3988,7 @@ def _run_layerwise_training_branch(
         fixed_softmax=fixed_softmax,
         robust_reference=robust_reference,
         authoritative_robust_reference=authoritative_robust_reference,
+        validation_banks=authoritative_validation_banks,
         probe_example_count=int(online_probe_example_count),
         authoritative_example_count=int(authoritative_validation_example_count),
         schedule=layerwise_env.schedule,
@@ -3990,6 +4023,9 @@ def _run_layerwise_training_branch(
             "final_constraint_probability": float(
                 getattr(train_cfg, "final_constraint_probability", 0.95)
             ),
+            "convergence_min_episodes": int(convergence_min_episodes),
+            "convergence_patience_updates": int(convergence_patience_updates),
+            "validation_banks": authoritative_validation_banks.contract_payload(),
             "evidence_tiers": {
                 "F1": {
                     "split": "validation_full_stratified_probe",
@@ -4011,7 +4047,7 @@ def _run_layerwise_training_branch(
     run_context_hash = sha256_json(run_context)
     run_lock.bind_context(run_context_hash)
     run_manifest = {
-        "schema_version": "stage2_layerwise_robust_run_v4",
+        "schema_version": "stage2_layerwise_robust_run_v5",
         "status": "running",
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
@@ -4098,11 +4134,9 @@ def _run_layerwise_training_branch(
         checkpoint_planned_total = int(checkpoint.get(
             "planned_total_episodes", planned_total_episodes,
         ))
-        if checkpoint_planned_total != planned_total_episodes:
-            raise RuntimeError(
-                "layerwise checkpoint episode-limit contract mismatch: "
-                f"checkpoint={checkpoint_planned_total}, requested={planned_total_episodes}"
-            )
+        validate_layerwise_episode_limit_extension(
+            checkpoint_planned_total, planned_total_episodes,
+        )
         log(f"  {bullet} layerwise resume @ episode {start_episode}")
     remaining_episode_budget = resolve_layerwise_episode_budget(
         requested_total_episodes,
@@ -4116,6 +4150,7 @@ def _run_layerwise_training_branch(
         absolute_episode_start=int(start_episode),
         planned_total_episodes=int(planned_total_episodes),
         convergence_resume_state=resumed_convergence_state,
+        convergence_min_episodes=convergence_min_episodes,
         convergence_patience_updates=convergence_patience_updates,
         ppo=ppo,
         rl_algo="ppo",
@@ -4927,6 +4962,7 @@ def _run_layerwise_training_branch(
         summary = train_layerwise(
             env=layerwise_env,
             promotion_base_env=promotion_base_env,
+            validation_banks=authoritative_validation_banks,
             policy=policy,
             train_cfg=layerwise_train_cfg,
             candidate_store=candidate_store,
@@ -4952,7 +4988,7 @@ def _run_layerwise_training_branch(
         if summary.get("converged", False):
             completion_status = "converged"
         elif requested_total_episodes > 0:
-            completion_status = "bounded_budget_exhausted"
+            completion_status = "max_episodes_reached"
         else:
             raise RuntimeError(
                 "unbounded layerwise training stopped without strict convergence"
@@ -5022,8 +5058,9 @@ def _run_layerwise_training_branch(
                             promotion_runner.close()
     status.set_phase(completion_status)
 
+    bank_b_best = dict(summary.get("bank_b_best") or {})
     compact_summary = {
-        "schema_version": "stage2_layerwise_robust_summary_v4",
+        "schema_version": "stage2_layerwise_robust_summary_v5",
         "status": completion_status,
         "rl_variant": rl_variant,
         "algorithm_revision": algorithm_revision,
@@ -5041,24 +5078,39 @@ def _run_layerwise_training_branch(
         "best_variable_cost": summary.get("best_variable_cost"),
         "best_reward": summary.get("best_reward"),
         "best_promotion_evidence": summary.get("best_promotion_evidence"),
+        "bank_b_best": bank_b_best or None,
         "final_evidence": {
             "status": (
                 "strict_revalidation_passed"
                 if summary.get("strict_revalidation_passed", False)
-                else "pending_strict_revalidation"
-                if summary.get("best_full_vector") is not None
+                else "bank_b_confirmed_not_final_certified"
+                if bank_b_best
                 else "no_candidate"
             ),
-            "required_probability": float(
+            "diagnostic_probability": float(
                 getattr(train_cfg, "final_constraint_probability", 0.95)
             ),
-            "required_trial_count": int(
-                getattr(train_cfg, "final_selection_validation_trials", 25)
+            "hard_gate": "six_point_constraints",
+            "bank_a_trial_count": int(
+                authoritative_validation_banks.bank_a.trial_count
             ),
-            "current_assessment": summary.get("best_assessment"),
+            "bank_b_trial_count": int(
+                authoritative_validation_banks.bank_b.trial_count
+            ),
+            "bank_c_trial_count": int(
+                authoritative_validation_banks.bank_c.trial_count
+            ),
+            "pooled_final_trial_count": int(
+                authoritative_validation_banks.final_trial_count
+            ),
+            "current_assessment": (
+                summary.get("best_assessment")
+                or bank_b_best.get("assessment")
+            ),
             "note": (
-                "Natural convergence requires an independent 25-trial F4 "
-                "revalidation at the final probability gate."
+                "Bank A qualifies a candidate, independent Bank B confirms "
+                "the pooled AB point gate, and held-out Bank C certifies the "
+                "pooled ABC point gate; probabilities are diagnostics only."
             ),
         },
         "block4_entropy": summary.get("block4_entropy"),
@@ -5752,12 +5804,29 @@ def _run_sequential_via_runner_locked(
     promotion_base_env = None
     authoritative_robust_reference = None
     authoritative_robust_summary = None
+    authoritative_validation_banks = None
     authoritative_validation_example_count = 0
     if robust_mode:
         precision_tolerance, stability_multiplier, bootstrap_samples = (
             _resolve_robust_baseline_config(train_cfg, ev)
         )
-        configured_baseline_groups = int(getattr(train_cfg, "baseline_groups", 5))
+        if decision_path == "layerwise":
+            from .layerwise_runner import (
+                validate_layerwise_three_bank_convergence_config,
+                validate_layerwise_validation_bank_config,
+            )
+
+            configured_baseline_groups, configured_baseline_trials = (
+                validate_layerwise_validation_bank_config(train_cfg)
+            )
+            validate_layerwise_three_bank_convergence_config(train_cfg)
+        else:
+            configured_baseline_groups = int(
+                getattr(train_cfg, "baseline_groups", 5)
+            )
+            configured_baseline_trials = int(
+                getattr(train_cfg, "baseline_trials_per_group", 5)
+            )
         robust_reference, robust_summary = _collect_robust_baseline_reference(
             base_env=base_env,
             baseline_action_vec=baseline_action_vec,
@@ -5766,7 +5835,7 @@ def _run_sequential_via_runner_locked(
             stability_multiplier=stability_multiplier,
             bootstrap_samples=bootstrap_samples,
             baseline_groups=configured_baseline_groups,
-            trials_per_group=int(getattr(train_cfg, "baseline_trials_per_group", 5)),
+            trials_per_group=configured_baseline_trials,
             max_groups=max(10, 2 * configured_baseline_groups),
         )
         _install_robust_baseline_reference(
@@ -5818,22 +5887,105 @@ def _run_sequential_via_runner_locked(
                 reward_devices=reward_devices,
                 log=log,
             )
-            (
-                authoritative_robust_reference,
-                authoritative_robust_summary,
-            ) = _collect_robust_baseline_reference(
-                base_env=promotion_base_env,
-                baseline_action_vec=baseline_action_vec,
-                base_seed=int(train_cfg.seed),
+            from .layerwise_runner import (
+                LayerwiseValidationBank,
+                LayerwiseValidationBanks,
+            )
+            from .statistical_constraints import build_baseline_reference
+
+            bank_references = {}
+            bank_summaries = {}
+            bank_group_starts = {"A": 1_000, "B": 2_000, "C": 3_000}
+            trials_per_bank_group = configured_baseline_trials
+            for bank_label in ("A", "B", "C"):
+                bank_reference, bank_summary = _collect_robust_baseline_reference(
+                    base_env=promotion_base_env,
+                    baseline_action_vec=baseline_action_vec,
+                    base_seed=int(train_cfg.seed),
+                    precision_tolerance=precision_tolerance,
+                    stability_multiplier=stability_multiplier,
+                    bootstrap_samples=bootstrap_samples,
+                    baseline_groups=configured_baseline_groups,
+                    trials_per_group=trials_per_bank_group,
+                    max_groups=configured_baseline_groups,
+                    group_index_start=bank_group_starts[bank_label],
+                )
+                bank_references[bank_label] = bank_reference
+                bank_summaries[bank_label] = bank_summary
+
+            promotion_reference = build_baseline_reference(
+                [bank_references["A"].trials, bank_references["B"].trials],
                 precision_tolerance=precision_tolerance,
                 stability_multiplier=stability_multiplier,
                 bootstrap_samples=bootstrap_samples,
-                baseline_groups=configured_baseline_groups,
-                trials_per_group=int(
-                    getattr(train_cfg, "baseline_trials_per_group", 5)
-                ),
-                max_groups=max(10, 2 * configured_baseline_groups),
+                seed=int(train_cfg.seed) + 10_001,
             )
+            final_reference = build_baseline_reference(
+                [
+                    bank_references["A"].trials,
+                    bank_references["B"].trials,
+                    bank_references["C"].trials,
+                ],
+                precision_tolerance=precision_tolerance,
+                stability_multiplier=stability_multiplier,
+                bootstrap_samples=bootstrap_samples,
+                seed=int(train_cfg.seed) + 10_002,
+            )
+
+            def build_bank(label):
+                summary = bank_summaries[label]
+                return LayerwiseValidationBank(
+                    label=label,
+                    reference=bank_references[label],
+                    probe_seeds=tuple(
+                        int(group["group_probe_seed"])
+                        for group in summary["groups"]
+                    ),
+                    trials_per_probe=trials_per_bank_group,
+                )
+
+            authoritative_validation_banks = LayerwiseValidationBanks(
+                bank_a=build_bank("A"),
+                bank_b=build_bank("B"),
+                bank_c=build_bank("C"),
+                promotion_reference=promotion_reference,
+                final_reference=final_reference,
+            )
+            authoritative_robust_reference = promotion_reference
+
+            def pooled_reference_summary(reference):
+                return {
+                    "trial_count": int(reference.trial_count),
+                    "loss_mean": float(reference.loss_mean),
+                    "metric1_mean": float(reference.metric1_mean),
+                    "metric2_mean": float(reference.metric2_mean),
+                    "loss_std": float(reference.loss_std),
+                    "metric1_std": float(reference.metric1_std),
+                    "metric2_std": float(reference.metric2_std),
+                    "limits": {
+                        "loss": float(reference.loss_limit),
+                        "metric1": float(reference.metric1_limit),
+                        "metric2": float(reference.metric2_limit),
+                        "loss_std": float(reference.loss_std_limit),
+                        "metric1_std": float(reference.metric1_std_limit),
+                        "metric2_std": float(reference.metric2_std_limit),
+                    },
+                }
+
+            authoritative_robust_summary = {
+                "ok": True,
+                "schema_version": "stage2_validation_banks_v1",
+                "hard_gate": "six_point_constraints",
+                "bootstrap_probability_role": "diagnostic_tiebreak_only",
+                "banks": bank_summaries,
+                "promotion_reference_ab": pooled_reference_summary(
+                    promotion_reference,
+                ),
+                "final_reference_abc": pooled_reference_summary(
+                    final_reference,
+                ),
+                "contract": authoritative_validation_banks.contract_payload(),
+            }
             _install_robust_baseline_reference(
                 promotion_base_env,
                 promotion_base_env.baseline,
@@ -5979,6 +6131,7 @@ def _run_sequential_via_runner_locked(
             promotion_base_env=promotion_base_env,
             authoritative_robust_reference=authoritative_robust_reference,
             authoritative_robust_summary=authoritative_robust_summary,
+            authoritative_validation_banks=authoritative_validation_banks,
             authoritative_validation_example_count=(
                 authoritative_validation_example_count
             ),

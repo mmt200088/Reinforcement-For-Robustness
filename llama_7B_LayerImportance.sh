@@ -149,6 +149,9 @@ GA / Greedy：
   --blb-v3-online-constraint-probability P
   --blb-v3-promotion-constraint-probability P
   --blb-v3-final-constraint-probability P 三档六通道约束置信门槛
+                                          A/B/C 权威门禁使用六项点约束；概率仅诊断/同资源排序
+  --blb-v3-min-convergence-episodes N     最早允许收敛认证的 episode（默认 90000）
+  --blb-v3-convergence-patience-updates N frontier 与最优动作稳定的 PPO update 数（默认 100）
   --blb-v3-decision-granularity layer|block
                                           Stage-2 决策粒度（默认 block）
   --blb-v3-reward-design DESIGN           robust_constrained|stage1_aligned|continuous|tiered
@@ -562,6 +565,8 @@ BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES="4096"; S_BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLE
 BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="0.50"; S_BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="false"
 BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="0.80"; S_BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="false"
 BLB_V3_FINAL_CONSTRAINT_PROBABILITY="0.95"; S_BLB_V3_FINAL_CONSTRAINT_PROBABILITY="false"
+BLB_V3_MIN_CONVERGENCE_EPISODES="90000"; S_BLB_V3_MIN_CONVERGENCE_EPISODES="false"
+BLB_V3_CONVERGENCE_PATIENCE_UPDATES="100"; S_BLB_V3_CONVERGENCE_PATIENCE_UPDATES="false"
 # Per-block sequential RL (default ON since 2026-05-15). Pass --blb-v3-sequential-rl=false to
 # get back the legacy single-shot 577-dim path.
 BLB_V3_SEQUENTIAL_RL="true"; S_BLB_V3_SEQUENTIAL_RL="false"
@@ -790,6 +795,8 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-online-constraint-probability) needv "$@"; BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="$2"; S_BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="true"; shift 2 ;;
     --blb-v3-promotion-constraint-probability) needv "$@"; BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="$2"; S_BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="true"; shift 2 ;;
     --blb-v3-final-constraint-probability) needv "$@"; BLB_V3_FINAL_CONSTRAINT_PROBABILITY="$2"; S_BLB_V3_FINAL_CONSTRAINT_PROBABILITY="true"; shift 2 ;;
+    --blb-v3-min-convergence-episodes) needv "$@"; BLB_V3_MIN_CONVERGENCE_EPISODES="$2"; S_BLB_V3_MIN_CONVERGENCE_EPISODES="true"; shift 2 ;;
+    --blb-v3-convergence-patience-updates) needv "$@"; BLB_V3_CONVERGENCE_PATIENCE_UPDATES="$2"; S_BLB_V3_CONVERGENCE_PATIENCE_UPDATES="true"; shift 2 ;;
     # Per-block sequential RL knobs (default sequential_rl=true since 2026-05-15)
     --blb-v3-sequential-rl) needv "$@"; BLB_V3_SEQUENTIAL_RL="$2"; S_BLB_V3_SEQUENTIAL_RL="true"; shift 2 ;;
     --blb-v3-no-sequential-rl) BLB_V3_SEQUENTIAL_RL="false"; S_BLB_V3_SEQUENTIAL_RL="true"; shift ;;
@@ -1048,6 +1055,10 @@ is_pos_int "$BLB_V3_ROLLOUT_SIZE" || err "--stage2-rollout-size 必须是正整�
 is_pos_int "$BLB_V3_BASELINE_GROUPS" || err "--blb-v3-baseline-groups 必须是正整数"
 is_pos_int "$BLB_V3_BASELINE_TRIALS_PER_GROUP" || err "--blb-v3-baseline-trials-per-group 必须是正整数"
 is_pos_int "$BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES" || err "--blb-v3-constraint-bootstrap-samples 必须是正整数"
+is_nonneg_int "$BLB_V3_MIN_CONVERGENCE_EPISODES" || err "--blb-v3-min-convergence-episodes 必须是非负整数"
+is_pos_int "$BLB_V3_CONVERGENCE_PATIENCE_UPDATES" || err "--blb-v3-convergence-patience-updates 必须是正整数"
+[ "$BLB_V3_MIN_CONVERGENCE_EPISODES" -ge 90000 ] || err "--blb-v3-min-convergence-episodes 不得小于 90000"
+[ "$BLB_V3_CONVERGENCE_PATIENCE_UPDATES" -ge 100 ] || err "--blb-v3-convergence-patience-updates 不得小于 100"
 for _probability_spec in \
   "--blb-v3-online-constraint-probability:$BLB_V3_ONLINE_CONSTRAINT_PROBABILITY" \
   "--blb-v3-promotion-constraint-probability:$BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY" \
@@ -1830,6 +1841,8 @@ else
     CMD+=(--blb_v3_online_constraint_probability "$BLB_V3_ONLINE_CONSTRAINT_PROBABILITY")
     CMD+=(--blb_v3_promotion_constraint_probability "$BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY")
     CMD+=(--blb_v3_final_constraint_probability "$BLB_V3_FINAL_CONSTRAINT_PROBABILITY")
+    CMD+=(--blb_v3_min_convergence_episodes "$BLB_V3_MIN_CONVERGENCE_EPISODES")
+    CMD+=(--blb_v3_convergence_patience_updates "$BLB_V3_CONVERGENCE_PATIENCE_UPDATES")
     # Sequential RL: default ON. Always pass the boolean so users can flip via
     # --blb-v3-no-sequential-rl. Shaping coeffs / early-terminate are only
     # forwarded when user explicitly set them.
@@ -1932,6 +1945,8 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     show "BLB promotion validation trials" "$BLB_V3_PROMOTION_VALIDATION_TRIALS" "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS"
     show "BLB final selection top N" "$BLB_V3_FINAL_SELECTION_TOP_N" "$S_BLB_V3_FINAL_SELECTION_TOP_N"
     show "BLB final selection validation trials" "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS"
+    show "BLB min convergence episodes" "$BLB_V3_MIN_CONVERGENCE_EPISODES" "$S_BLB_V3_MIN_CONVERGENCE_EPISODES"
+    show "BLB convergence patience updates" "$BLB_V3_CONVERGENCE_PATIENCE_UPDATES" "$S_BLB_V3_CONVERGENCE_PATIENCE_UPDATES"
     [ -n "$BLB_V3_SAVE_INTERVAL" ] && show "BLB checkpoint 间隔" "$BLB_V3_SAVE_INTERVAL" "$S_BLB_V3_SAVE_INTERVAL"
     [ -n "$BLB_V3_EVAL_INTERVAL" ] && show "BLB 日志评估间隔" "$BLB_V3_EVAL_INTERVAL" "$S_BLB_V3_EVAL_INTERVAL"
   fi

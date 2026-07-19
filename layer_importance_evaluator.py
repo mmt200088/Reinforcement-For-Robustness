@@ -2374,6 +2374,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_online_constraint_probability=0.50,
                   blb_v3_promotion_constraint_probability=0.80,
                   blb_v3_final_constraint_probability=0.95,
+                  blb_v3_min_convergence_episodes=90000,
+                  blb_v3_convergence_patience_updates=100,
                   blb_v3_substage_mode=False,
                   blb_v3_substage_block_order="1,2,4,5",
                   blb_v3_substage_frozen_blocks="3",
@@ -3134,6 +3136,20 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
         except Exception:
             self.blb_v3_final_selection_validation_trials = 20
+        self.blb_v3_min_convergence_episodes = int(
+            blb_v3_min_convergence_episodes
+        )
+        self.blb_v3_convergence_patience_updates = int(
+            blb_v3_convergence_patience_updates
+        )
+        if self.blb_v3_min_convergence_episodes < 90_000:
+            raise ValueError(
+                "blb_v3_min_convergence_episodes must be at least 90000"
+            )
+        if self.blb_v3_convergence_patience_updates < 100:
+            raise ValueError(
+                "blb_v3_convergence_patience_updates must be at least 100"
+            )
         try:
             self.blb_v3_promotion_margin_window = max(0.0, float(blb_v3_promotion_margin_window))
         except Exception:

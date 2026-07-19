@@ -622,6 +622,8 @@ def train(
         blb_v3_online_constraint_probability: float = 0.50,
         blb_v3_promotion_constraint_probability: float = 0.80,
         blb_v3_final_constraint_probability: float = 0.95,
+        blb_v3_min_convergence_episodes: int = 90_000,
+        blb_v3_convergence_patience_updates: int = 100,
         # 2026-05-27: 4-sub-stage Stage-2 RL (opt-in). When True, trains one
         # block per sub-stage in --blb_v3_substage_block_order; blocks listed
         # in --blb_v3_substage_frozen_blocks stay at static_skeletons baseline
@@ -750,6 +752,14 @@ def train(
     ):
         raise ValueError(
             "constraint probabilities must satisfy online <= promotion <= final"
+        )
+    if int(blb_v3_min_convergence_episodes) < 90_000:
+        raise ValueError(
+            "blb_v3_min_convergence_episodes must be at least 90000"
+        )
+    if int(blb_v3_convergence_patience_updates) < 100:
+        raise ValueError(
+            "blb_v3_convergence_patience_updates must be at least 100"
         )
     blb_v3_fusion_neighbor_curriculum = parse_bool_flag(
         blb_v3_fusion_neighbor_curriculum, "blb_v3_fusion_neighbor_curriculum"
@@ -1349,6 +1359,10 @@ def train(
             blb_v3_online_constraint_probability=blb_v3_online_constraint_probability,
             blb_v3_promotion_constraint_probability=blb_v3_promotion_constraint_probability,
             blb_v3_final_constraint_probability=blb_v3_final_constraint_probability,
+            blb_v3_min_convergence_episodes=blb_v3_min_convergence_episodes,
+            blb_v3_convergence_patience_updates=(
+                blb_v3_convergence_patience_updates
+            ),
             blb_v3_substage_mode=blb_v3_substage_mode,
             blb_v3_fusion_count_action=blb_v3_fusion_count_action,
             blb_v3_decision_granularity=blb_v3_decision_granularity,

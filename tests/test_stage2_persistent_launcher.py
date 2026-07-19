@@ -69,6 +69,8 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             "blb_v3_online_constraint_probability": "float",
             "blb_v3_promotion_constraint_probability": "float",
             "blb_v3_final_constraint_probability": "float",
+            "blb_v3_min_convergence_episodes": "int",
+            "blb_v3_convergence_patience_updates": "int",
         }
         tune_tree = ast.parse((REPO_ROOT / "rl_tune.py").read_text(encoding="utf-8"))
         train_fn = next(
@@ -248,6 +250,8 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             "--blb_v3_final_constraint_probability": "0.95",
             "--blb_v3_promotion_validation_trials": "25",
             "--blb_v3_final_selection_validation_trials": "25",
+            "--blb_v3_min_convergence_episodes": "90000",
+            "--blb_v3_convergence_patience_updates": "100",
             "--blb_v3_rollout_size": "120",
             "--stage2_rl_lr": "5e-5",
         }
@@ -790,7 +794,9 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         preset = (REPO_ROOT / "presets" / "mrpc-blb-stage2-rl.conf").read_text(
             encoding="utf-8",
         )
-        self.assertIn("--stage2-search-episodes 0", preset)
+        self.assertIn("--stage2-search-episodes 150000", preset)
+        self.assertIn("--blb-v3-min-convergence-episodes 90000", preset)
+        self.assertIn("--blb-v3-convergence-patience-updates 100", preset)
 
     def test_server_command_short_rl_runs_use_tagged_persistent_dirs(self):
         source = (REPO_ROOT / "SERVER_COMMAND.md").read_text(encoding="utf-8")

@@ -42,10 +42,12 @@ _REWARD_DESIGNS = frozenset((
 _LAUNCHER_LOCK_FD_ENV = "BLB_STAGE2_RUN_LOCK_FD"
 _LAUNCHER_LOCK_PATH_ENV = "BLB_STAGE2_RUN_LOCK_PATH"
 DEFAULT_CONVERGENCE_PATIENCE_UPDATES = 100
+DEFAULT_CONVERGENCE_MIN_EPISODES = 90_000
 StrictSelectionKey = tuple[tuple[float, ...], tuple[int, ...], str]
 ResourceObjective = tuple[float, float]
 _FINAL_REVALIDATION_PASSED = "final_revalidation_passed"
 _FINAL_REVALIDATION_FAILED = "final_revalidation_failed"
+_FINAL_REVALIDATION_RETRYABLE = "failed_evaluation"
 _UNSET = object()
 
 
@@ -539,6 +541,235 @@ def normalized_constraint_safety_margins(
     return tuple(margins)
 
 
+def point_constraints_pass(
+        metrics: Any,
+        statistical_reference: Any,
+        *,
+        tolerance: float = 1.0e-12,
+        ) -> bool:
+    """Return whether all loss/m1/m2 mean and std point limits pass."""
+    slack = _finite(tolerance, name="point_constraint_tolerance")
+    if slack < 0.0:
+        raise ValueError("point constraint tolerance must be nonnegative")
+    return all(
+        margin >= -slack
+        for margin in normalized_constraint_safety_margins(
+            metrics, statistical_reference,
+        )
+    )
+
+
+def validate_layerwise_validation_bank_config(train_cfg: Any) -> tuple[int, int]:
+    """Fail before calibration unless the fixed A/B/C 25-trial contract is used."""
+    baseline_groups = int(getattr(train_cfg, "baseline_groups", 5))
+    trials_per_group = int(getattr(train_cfg, "baseline_trials_per_group", 5))
+    promotion_trials = int(getattr(train_cfg, "promotion_validation_trials", 25))
+    final_trials = int(
+        getattr(train_cfg, "final_selection_validation_trials", 25)
+    )
+    if (
+            baseline_groups != 5
+            or trials_per_group != 5
+            or promotion_trials != 25
+            or final_trials != 25
+    ):
+        raise ValueError(
+            "layerwise validation requires fixed A=25, B=25, C=25 banks "
+            "(baseline_groups=5, baseline_trials_per_group=5, "
+            "promotion_validation_trials=25, "
+            "final_selection_validation_trials=25)"
+        )
+    return baseline_groups, trials_per_group
+
+
+def validate_layerwise_three_bank_convergence_config(
+        train_cfg: Any,
+        ) -> tuple[int, int]:
+    """Enforce the minimum evidence horizon agreed for three-bank search."""
+    minimum_episodes = int(getattr(
+        train_cfg,
+        "convergence_min_episodes",
+        DEFAULT_CONVERGENCE_MIN_EPISODES,
+    ))
+    patience_updates = int(getattr(
+        train_cfg,
+        "convergence_patience_updates",
+        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
+    ))
+    if minimum_episodes < DEFAULT_CONVERGENCE_MIN_EPISODES:
+        raise ValueError(
+            "three-bank convergence requires at least "
+            f"{DEFAULT_CONVERGENCE_MIN_EPISODES} episodes"
+        )
+    if patience_updates < DEFAULT_CONVERGENCE_PATIENCE_UPDATES:
+        raise ValueError(
+            "three-bank convergence requires at least "
+            f"{DEFAULT_CONVERGENCE_PATIENCE_UPDATES} finite PPO updates"
+        )
+    return minimum_episodes, patience_updates
+
+
+def validate_layerwise_episode_limit_extension(
+        checkpoint_limit: int,
+        requested_limit: int,
+        ) -> int:
+    """Allow an equal/larger runtime cap without changing search identity."""
+    previous = int(checkpoint_limit)
+    requested = int(requested_limit)
+    if previous < 0 or requested < 0:
+        raise ValueError("layerwise episode limits must be nonnegative")
+    if previous == 0 and requested != 0:
+        raise RuntimeError(
+            "an unbounded layerwise run cannot become bounded on resume"
+        )
+    if previous > 0 and requested > 0 and requested < previous:
+        raise RuntimeError(
+            "layerwise resume cannot shrink the episode limit: "
+            f"checkpoint={previous}, requested={requested}"
+        )
+    return requested
+
+
+@dataclass(frozen=True)
+class LayerwiseValidationBank:
+    """One fixed common-random-number validation bank."""
+
+    label: str
+    reference: Any
+    probe_seeds: Sequence[int]
+    trials_per_probe: int
+
+    def __post_init__(self) -> None:
+        from .seed_utils import derive_probe_trial_seed
+
+        label = str(self.label).strip().upper()
+        if label not in ("A", "B", "C"):
+            raise ValueError(f"validation bank label must be A, B, or C, got {label!r}")
+        probe_seeds = tuple(int(value) for value in self.probe_seeds)
+        trials_per_probe = int(self.trials_per_probe)
+        if not probe_seeds or len(set(probe_seeds)) != len(probe_seeds):
+            raise ValueError("validation bank probe seeds must be nonempty and unique")
+        if trials_per_probe <= 0:
+            raise ValueError("validation bank trials_per_probe must be positive")
+        reference_trials = _field(self.reference, "trials")
+        if not isinstance(reference_trials, TrialSeries):
+            raise TypeError("validation bank reference must carry TrialSeries trials")
+        expected_trial_seeds = tuple(
+            derive_probe_trial_seed(probe_seed, trial_idx)
+            for probe_seed in probe_seeds
+            for trial_idx in range(trials_per_probe)
+        )
+        if tuple(reference_trials.seeds) != expected_trial_seeds:
+            raise ValueError(
+                f"validation bank {label} reference seeds do not match its probe bank"
+            )
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "probe_seeds", probe_seeds)
+        object.__setattr__(self, "trials_per_probe", trials_per_probe)
+
+    @property
+    def trial_seeds(self) -> tuple[int, ...]:
+        from .seed_utils import derive_probe_trial_seed
+
+        return tuple(
+            derive_probe_trial_seed(probe_seed, trial_idx)
+            for probe_seed in self.probe_seeds
+            for trial_idx in range(self.trials_per_probe)
+        )
+
+    @property
+    def trial_count(self) -> int:
+        return len(self.probe_seeds) * self.trials_per_probe
+
+
+@dataclass(frozen=True)
+class LayerwiseValidationBanks:
+    """Independent A/B/C banks plus their pooled baseline references."""
+
+    bank_a: LayerwiseValidationBank
+    bank_b: LayerwiseValidationBank
+    bank_c: LayerwiseValidationBank
+    promotion_reference: Any
+    final_reference: Any
+
+    def __post_init__(self) -> None:
+        banks = (self.bank_a, self.bank_b, self.bank_c)
+        if tuple(bank.label for bank in banks) != ("A", "B", "C"):
+            raise ValueError("validation banks must be ordered A, B, C")
+        if any(bank.trial_count != 25 for bank in banks):
+            raise ValueError("validation banks A, B, and C must each contain exactly 25 trials")
+        all_probe_seeds: set[int] = set()
+        all_trial_seeds: set[int] = set()
+        for bank in banks:
+            probe_seeds = set(bank.probe_seeds)
+            trial_seeds = set(bank.trial_seeds)
+            if all_probe_seeds.intersection(probe_seeds):
+                raise ValueError("validation bank probe seeds must be pairwise disjoint")
+            if all_trial_seeds.intersection(trial_seeds):
+                raise ValueError("validation bank trial seeds must be pairwise disjoint")
+            all_probe_seeds.update(probe_seeds)
+            all_trial_seeds.update(trial_seeds)
+        expected_ab = self.bank_a.trial_seeds + self.bank_b.trial_seeds
+        expected_abc = expected_ab + self.bank_c.trial_seeds
+        promotion_trials = _field(self.promotion_reference, "trials")
+        final_trials = _field(self.final_reference, "trials")
+        if not isinstance(promotion_trials, TrialSeries):
+            raise TypeError("promotion reference must carry TrialSeries trials")
+        if not isinstance(final_trials, TrialSeries):
+            raise TypeError("final reference must carry TrialSeries trials")
+        if tuple(promotion_trials.seeds) != expected_ab:
+            raise ValueError("promotion reference must pool Bank A then Bank B")
+        if tuple(final_trials.seeds) != expected_abc:
+            raise ValueError("final reference must pool Bank A, Bank B, then Bank C")
+        for channel in ("loss", "metric1", "metric2"):
+            expected_promotion = tuple(
+                value
+                for bank in (self.bank_a, self.bank_b)
+                for value in getattr(_field(bank.reference, "trials"), channel)
+            )
+            if tuple(getattr(promotion_trials, channel)) != expected_promotion:
+                raise ValueError(
+                    "promotion reference must contain the exact Bank A then "
+                    f"Bank B trials for {channel}"
+                )
+            expected_final = tuple(
+                value
+                for bank in banks
+                for value in getattr(_field(bank.reference, "trials"), channel)
+            )
+            if tuple(getattr(final_trials, channel)) != expected_final:
+                raise ValueError(
+                    "final reference must contain the exact Bank A, Bank B, "
+                    f"then Bank C trials for {channel}"
+                )
+
+    @property
+    def promotion_trial_count(self) -> int:
+        return self.bank_a.trial_count + self.bank_b.trial_count
+
+    @property
+    def final_trial_count(self) -> int:
+        return self.promotion_trial_count + self.bank_c.trial_count
+
+    def contract_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": "layerwise_validation_banks_v1",
+            "banks": {
+                bank.label: {
+                    "probe_seeds": list(bank.probe_seeds),
+                    "trial_seeds": list(bank.trial_seeds),
+                    "trials_per_probe": int(bank.trials_per_probe),
+                    "trial_count": int(bank.trial_count),
+                }
+                for bank in (self.bank_a, self.bank_b, self.bank_c)
+            },
+            "promotion_trial_count": int(self.promotion_trial_count),
+            "final_trial_count": int(self.final_trial_count),
+            "hard_gate": "six_point_constraints",
+            "bootstrap_probability_role": "diagnostic_tiebreak_only",
+        }
+
+
 def _constraint_safety_margins(candidate: Any) -> tuple[float, ...]:
     raw = _field(candidate, "constraint_safety_margins")
     if raw is None:
@@ -884,10 +1115,14 @@ class LayerwiseConvergenceTracker:
             self,
             *,
             patience_updates: int = DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
+            minimum_episodes: int = 0,
             ) -> None:
         self.patience_updates = int(patience_updates)
+        self.minimum_episodes = int(minimum_episodes)
         if self.patience_updates <= 0:
             raise ValueError("patience_updates must be positive")
+        if self.minimum_episodes < 0:
+            raise ValueError("minimum_episodes must be nonnegative")
         self._best_objective: Optional[ResourceObjective] = None
         self._current_frontier_objective: Optional[ResourceObjective] = None
         self._stall_windows = 0
@@ -905,6 +1140,7 @@ class LayerwiseConvergenceTracker:
         )
         return {
             "patience_updates": int(self.patience_updates),
+            "minimum_episodes": int(self.minimum_episodes),
             "best_robust_feasible_objective": best,
             "current_robust_feasible_objective": current,
             # Read-only aliases retained until report fixtures migrate to v9.
@@ -926,6 +1162,7 @@ class LayerwiseConvergenceTracker:
             return
         expected_contract = {
             "patience_updates": int(self.patience_updates),
+            "minimum_episodes": int(self.minimum_episodes),
         }
         for field_name, expected in expected_contract.items():
             if field_name not in state:
@@ -1071,7 +1308,8 @@ class LayerwiseConvergenceTracker:
         b4 = _diagnostic_entropy(block4_entropy)
         k_value = _diagnostic_entropy(k_entropy)
         plateau_ready = bool(
-            objective is not None
+            episodes >= self.minimum_episodes
+            and objective is not None
             and self._best_objective is not None
             and self._stall_windows >= self.patience_updates
             and self._selected_action_identity is not None
@@ -1356,6 +1594,125 @@ def _record_final_revalidation_outcome(
     )
 
 
+def _restore_three_bank_candidates(
+        *,
+        candidate_store: CandidateStore,
+        identity_context: Mapping[str, Any],
+        assess_candidate_fn: Callable[..., Any],
+        promotion_probability: float,
+        final_probability: float,
+        validation_banks: LayerwiseValidationBanks,
+        ) -> dict[str, dict[str, Any]]:
+    full_identity_context = evidence_identity_context(identity_context, "F4")
+    wanted_context_hash = sha256_json(full_identity_context)
+    latest_status: dict[
+        str, tuple[str, tuple[int, ...], dict[str, Any]]
+    ] = {}
+    for record in candidate_store.iter_active_records():
+        if record.get("record_type") != "candidate_promotion_status_v1":
+            continue
+        if str(record.get("identity_context_hash", "")) != wanted_context_hash:
+            continue
+        key = str(record.get("candidate_key", ""))
+        action_indices = tuple(
+            int(value) for value in record.get("action_indices", ())
+        )
+        if key and action_indices:
+            latest_status[key] = (
+                str(record.get("promotion_status", "")),
+                action_indices,
+                dict(record.get("promotion_metadata") or {}),
+            )
+
+    restored: dict[str, dict[str, Any]] = {}
+    for key, (status, action_indices, status_metadata) in latest_status.items():
+        if status not in (
+                "promoted",
+                _FINAL_REVALIDATION_PASSED,
+                _FINAL_REVALIDATION_RETRYABLE,
+        ):
+            continue
+        final_certified = status == _FINAL_REVALIDATION_PASSED
+        trial_limit = (
+            validation_banks.final_trial_count
+            if final_certified else validation_banks.promotion_trial_count
+        )
+        reference = (
+            validation_banks.final_reference
+            if final_certified else validation_banks.promotion_reference
+        )
+        expected_seeds = (
+            validation_banks.bank_a.trial_seeds
+            + validation_banks.bank_b.trial_seeds
+            + (validation_banks.bank_c.trial_seeds if final_certified else ())
+        )
+        evidence = candidate_store.trial_evidence_for_action(
+            action_indices, full_identity_context, max_trials=trial_limit,
+        )
+        observed_count = _validate_bank_evidence_prefix(
+            evidence, expected_seeds, context="restored validation banks",
+        )
+        if evidence is None or observed_count != trial_limit:
+            continue
+        metrics = _metrics_from_trials(evidence.trials)
+        if not point_constraints_pass(metrics, reference):
+            continue
+        metadata = dict(status_metadata)
+        for group in evidence.groups:
+            for name in (
+                    "action_matrix", "episode_reward",
+                    "assessment_bootstrap_seed", "boosted_overrides",
+            ):
+                if name in group and name not in metadata:
+                    metadata[name] = group[name]
+        if not all(name in metadata for name in (
+                "action_matrix", "boosted_overrides",
+        )):
+            continue
+        action_matrix = tuple(
+            tuple(int(value) for value in row)
+            for row in metadata["action_matrix"]
+        )
+        if len(action_matrix) != 12 or any(len(row) != 6 for row in action_matrix):
+            raise ValueError("persisted layerwise action_matrix must be 12x6")
+        assessment = assess_candidate_fn(
+            evidence.trials,
+            reference,
+            gate_probability=(
+                float(final_probability)
+                if final_certified else float(promotion_probability)
+            ),
+            bootstrap_seed=int(metadata.get("assessment_bootstrap_seed", 0)),
+        )
+        resource = _resource_fields_from_action_matrix(action_matrix)
+        reward = metadata.get("episode_reward")
+        restored[key] = {
+            **resource,
+            "variable_cost": float(resource["ppo_resource_score"]),
+            "assessment": assessment,
+            "metrics": metrics,
+            "constraint_safety_margins": (
+                normalized_constraint_safety_margins(metrics, reference)
+            ),
+            "action_matrix": action_matrix,
+            "full_vector": tuple(action_indices),
+            "boosted_overrides": _deserialize_boosted_overrides(
+                metadata["boosted_overrides"],
+            ),
+            "reward": (
+                None if reward is None else _finite(reward, name="episode_reward")
+            ),
+            "promotion_trials": evidence.trials,
+            "final_revalidation_status": (
+                "passed" if final_certified else "not_run"
+            ),
+            "validation_evidence": (
+                "ABC_75" if final_certified else "AB_50"
+            ),
+        }
+    return restored
+
+
 def restore_promoted_candidates(
         *,
         candidate_store: CandidateStore,
@@ -1366,8 +1723,18 @@ def restore_promoted_candidates(
         assessment_trial_limit: int = 25,
         final_probability: float = 0.95,
         final_assessment_trial_limit: int = 25,
+        validation_banks: Optional[LayerwiseValidationBanks] = None,
         ) -> dict[str, dict[str, Any]]:
     """Rebuild the current promoted frontier from append-only raw evidence."""
+    if validation_banks is not None:
+        return _restore_three_bank_candidates(
+            candidate_store=candidate_store,
+            identity_context=identity_context,
+            assess_candidate_fn=assess_candidate_fn,
+            promotion_probability=promotion_probability,
+            final_probability=final_probability,
+            validation_banks=validation_banks,
+        )
     full_identity_context = evidence_identity_context(identity_context, "F4")
     latest_status: dict[
         str, tuple[str, tuple[int, ...], dict[str, Any]]
@@ -1522,6 +1889,432 @@ def _promotion_probe_seed(
     raise RuntimeError("could not allocate disjoint layerwise promotion trial seeds")
 
 
+def _latest_promotion_status(
+        candidate_store: CandidateStore,
+        action_indices: Sequence[int],
+        identity_context: Mapping[str, Any],
+        ) -> tuple[str, dict[str, Any]]:
+    wanted_key = candidate_key(action_indices, identity_context)
+    latest_status = ""
+    latest_metadata: dict[str, Any] = {}
+    for record in candidate_store.iter_active_records():
+        if record.get("record_type") != "candidate_promotion_status_v1":
+            continue
+        if str(record.get("candidate_key", "")) != wanted_key:
+            continue
+        latest_status = str(record.get("promotion_status", ""))
+        latest_metadata = dict(record.get("promotion_metadata") or {})
+    return latest_status, latest_metadata
+
+
+def _validation_bank_prefix(
+        validation_banks: LayerwiseValidationBanks,
+        label: str,
+        ) -> tuple[tuple[int, ...], int, int, LayerwiseValidationBank]:
+    normalized = str(label).strip().upper()
+    if normalized == "A":
+        bank = validation_banks.bank_a
+        before: tuple[int, ...] = ()
+    elif normalized == "B":
+        bank = validation_banks.bank_b
+        before = validation_banks.bank_a.trial_seeds
+    elif normalized == "C":
+        bank = validation_banks.bank_c
+        before = (
+            validation_banks.bank_a.trial_seeds
+            + validation_banks.bank_b.trial_seeds
+        )
+    else:
+        raise ValueError(f"unknown validation bank {label!r}")
+    expected = before + bank.trial_seeds
+    return expected, len(before), len(expected), bank
+
+
+def _validate_bank_evidence_prefix(
+        evidence: Optional[CandidateTrialEvidence],
+        expected_seeds: Sequence[int],
+        *,
+        context: str,
+        ) -> int:
+    if evidence is None:
+        return 0
+    observed = tuple(int(value) for value in evidence.trials.seeds)
+    expected = tuple(int(value) for value in expected_seeds)
+    if len(observed) > len(expected) or observed != expected[:len(observed)]:
+        raise RuntimeError(
+            f"{context} evidence does not match the fixed validation-bank seed prefix"
+        )
+    return len(observed)
+
+
+def _collect_fixed_validation_bank(
+        *,
+        env: Any,
+        full_base_env: Any,
+        candidate_store: CandidateStore,
+        action_indices: Sequence[int],
+        full_identity_context: Mapping[str, Any],
+        action_matrix: Sequence[Sequence[int]],
+        boosted_overrides: Mapping[Any, Any],
+        bootstrap_seed: int,
+        episode_reward: Optional[float],
+        validation_banks: LayerwiseValidationBanks,
+        bank_label: str,
+        ) -> tuple[CandidateTrialEvidence, int]:
+    expected_seeds, start_count, target_count, bank = _validation_bank_prefix(
+        validation_banks, bank_label,
+    )
+    evidence = candidate_store.trial_evidence_for_action(
+        action_indices, full_identity_context, max_trials=target_count,
+    )
+    existing_count = _validate_bank_evidence_prefix(
+        evidence, expected_seeds, context=f"Bank {bank.label}",
+    )
+    if existing_count < start_count:
+        raise RuntimeError(
+            f"Bank {bank.label} cannot start before {start_count} earlier-bank trials"
+        )
+    if (existing_count - start_count) % bank.trials_per_probe:
+        raise RuntimeError(
+            f"Bank {bank.label} evidence ends inside a probe group"
+        )
+    if existing_count >= target_count:
+        if evidence is None:
+            raise AssertionError("complete validation bank has no evidence")
+        return evidence, 0
+
+    resource = _resource_fields_from_action_matrix(action_matrix)
+    cost = float(resource["ppo_resource_score"])
+    next_group = (existing_count - start_count) // bank.trials_per_probe
+    online_clear = getattr(env.base, "clear_installed_blb", None)
+    if full_base_env is not env.base and callable(online_clear):
+        online_clear()
+        env.base._installed_action_hash = None
+    previous_probe_seed = getattr(full_base_env, "probe_noise_seed", None)
+    fresh_count = 0
+    try:
+        prepared = full_base_env.prepare_action_for_terminal_probe(
+            list(action_indices),
+            external_cost_score=cost,
+            external_cost_rank=cost,
+            external_resource_objective=resource,
+            boosted_overrides=copy.deepcopy(dict(boosted_overrides)),
+        )
+        for group_index in range(next_group, len(bank.probe_seeds)):
+            probe_seed = int(bank.probe_seeds[group_index])
+            full_base_env.probe_noise_seed = probe_seed
+            evaluated = full_base_env.evaluate_prepared_terminal_batch(
+                [prepared],
+                num_trials_per_action=bank.trials_per_probe,
+                validation_required=True,
+            )
+            if len(evaluated) != 1:
+                raise RuntimeError(
+                    f"Bank {bank.label} expected one terminal result, "
+                    f"received {len(evaluated)}"
+                )
+            terminal_info = evaluated[0][3]
+            if (
+                    not isinstance(terminal_info, Mapping)
+                    or bool(terminal_info.get("invalid", False))
+            ):
+                raise RuntimeError(
+                    f"Bank {bank.label} terminal evaluation was invalid"
+                )
+            fresh_trials = _trial_series_from_info(
+                terminal_info,
+                required=True,
+                expected_count=bank.trials_per_probe,
+                context=f"Bank {bank.label} terminal",
+            )
+            expected_group_seeds = bank.trial_seeds[
+                group_index * bank.trials_per_probe:
+                (group_index + 1) * bank.trials_per_probe
+            ]
+            if tuple(fresh_trials.seeds) != expected_group_seeds:
+                raise RuntimeError(
+                    f"Bank {bank.label} terminal trial seeds did not match "
+                    "the fixed common-random-number group"
+                )
+            metadata = {
+                "identity_context": dict(full_identity_context),
+                "fidelity": "F4",
+                "validation_bank": bank.label,
+                "validation_bank_group_index": int(group_index),
+                "validation_bank_probe_seed": probe_seed,
+                "validation_bank_trials_per_probe": int(bank.trials_per_probe),
+                "hard_gate": "six_point_constraints",
+                "bootstrap_probability_role": "diagnostic_tiebreak_only",
+                **resource,
+                "variable_cost": cost,
+                "action_matrix": [list(map(int, row)) for row in action_matrix],
+                "boosted_overrides_hash": sha256_json(boosted_overrides),
+                "boosted_overrides": _serialize_boosted_overrides(
+                    boosted_overrides,
+                ),
+                "boosted_overrides_provenance": "layerwise_env",
+                "assessment_bootstrap_seed": int(bootstrap_seed),
+                "promotion_marker": f"validation_bank_{bank.label.lower()}",
+                "promotion_status": "pending_reassessment",
+            }
+            if episode_reward is not None:
+                metadata["episode_reward"] = float(episode_reward)
+            candidate_store.append_trial_group(
+                action_indices, fresh_trials, metadata,
+            )
+            fresh_count += len(fresh_trials.loss)
+    finally:
+        full_base_env.probe_noise_seed = previous_probe_seed
+        if full_base_env is not env.base:
+            full_clear = getattr(full_base_env, "clear_installed_blb", None)
+            if callable(full_clear):
+                full_clear()
+            if callable(online_clear):
+                online_clear()
+            env.base._installed_action_hash = None
+
+    evidence = candidate_store.trial_evidence_for_action(
+        action_indices, full_identity_context, max_trials=target_count,
+    )
+    observed_count = _validate_bank_evidence_prefix(
+        evidence, expected_seeds, context=f"Bank {bank.label}",
+    )
+    if evidence is None or observed_count != target_count:
+        raise RuntimeError(
+            f"Bank {bank.label} evidence count {observed_count} != {target_count}"
+        )
+    return evidence, fresh_count
+
+
+def _promote_candidate_through_validation_banks(
+        *,
+        env: Any,
+        promotion_base_env: Optional[Any],
+        candidate_store: CandidateStore,
+        action_indices: Sequence[int],
+        identity_context: Mapping[str, Any],
+        action_matrix: Sequence[Sequence[int]],
+        assessment: Any,
+        priority: int,
+        variable_cost: Optional[float],
+        frontier_cost: Optional[float],
+        frontier_candidates: Optional[Mapping[str, Mapping[str, Any]]],
+        boosted_overrides: Mapping[Any, Any],
+        bootstrap_seed: int,
+        episode_reward: Optional[float],
+        assess_candidate_fn: Callable[..., Any],
+        promotion_probability: float,
+        validation_banks: LayerwiseValidationBanks,
+        ) -> PromotionResult:
+    full_identity_context = evidence_identity_context(identity_context, "F4")
+    full_base_env = promotion_base_env or env.base
+    evidence = candidate_store.trial_evidence_for_action(
+        action_indices,
+        full_identity_context,
+        max_trials=validation_banks.final_trial_count,
+    )
+    trial_count = 0 if evidence is None else evidence.trial_count
+    latest_status, _latest_metadata = _latest_promotion_status(
+        candidate_store, action_indices, full_identity_context,
+    )
+    if latest_status in ("promoted", _FINAL_REVALIDATION_PASSED):
+        trial_limit = (
+            validation_banks.final_trial_count
+            if latest_status == _FINAL_REVALIDATION_PASSED
+            else validation_banks.promotion_trial_count
+        )
+        expected = (
+            validation_banks.bank_a.trial_seeds
+            + validation_banks.bank_b.trial_seeds
+            + (
+                validation_banks.bank_c.trial_seeds
+                if latest_status == _FINAL_REVALIDATION_PASSED else ()
+            )
+        )
+        evidence = candidate_store.trial_evidence_for_action(
+            action_indices, full_identity_context, max_trials=trial_limit,
+        )
+        _validate_bank_evidence_prefix(
+            evidence, expected, context="restored validation banks",
+        )
+        reference = (
+            validation_banks.final_reference
+            if latest_status == _FINAL_REVALIDATION_PASSED
+            else validation_banks.promotion_reference
+        )
+        metrics = None if evidence is None else _metrics_from_trials(evidence.trials)
+        diagnostic = (
+            None if evidence is None else assess_candidate_fn(
+                evidence.trials,
+                reference,
+                gate_probability=float(promotion_probability),
+                bootstrap_seed=int(bootstrap_seed),
+            )
+        )
+        return PromotionResult(
+            "already_promoted", trial_count, 0, evidence, diagnostic, metrics,
+        )
+    terminal_failures = {
+        "bank_a_point_failed",
+        "bank_b_point_failed",
+        "bank_c_point_failed",
+        _FINAL_REVALIDATION_FAILED,
+    }
+    if latest_status in terminal_failures:
+        return PromotionResult(
+            "promotion_already_attempted", trial_count, 0,
+            evidence, assessment,
+            None if evidence is None else _metrics_from_trials(evidence.trials),
+        )
+    if int(priority) != 3:
+        return PromotionResult(
+            "priority_not_p3", trial_count, 0, evidence, assessment, None,
+        )
+
+    resource = _resource_fields_from_action_matrix(action_matrix)
+    dominated = False
+    if frontier_candidates is not None:
+        compute = float(resource["compute_saving"])
+        communication = float(resource["communication_saving"])
+        dominated = any(
+            other["compute_saving"] >= compute - 1.0e-12
+            and other["communication_saving"] >= communication - 1.0e-12
+            and (
+                other["compute_saving"] > compute + 1.0e-12
+                or other["communication_saving"] > communication + 1.0e-12
+            )
+            for other in (
+                _candidate_resource_fields(candidate)
+                for candidate in frontier_candidates.values()
+            )
+        )
+    elif frontier_cost is not None:
+        legacy_cost = _finite(variable_cost, name="variable_cost")
+        dominated = legacy_cost < float(frontier_cost) - 1.0e-12
+    if dominated:
+        return PromotionResult(
+            (
+                "resource_dominated"
+                if frontier_candidates is not None
+                else "not_frontier_improvement"
+            ),
+            trial_count, 0, evidence, assessment, None,
+        )
+
+    status_metadata = {
+        **resource,
+        "variable_cost": float(resource["ppo_resource_score"]),
+        "assessment_bootstrap_seed": int(bootstrap_seed),
+        "action_matrix": [list(map(int, row)) for row in action_matrix],
+        "boosted_overrides": _serialize_boosted_overrides(boosted_overrides),
+        "hard_gate": "six_point_constraints",
+        "bootstrap_probability_role": "diagnostic_tiebreak_only",
+        "validation_bank_contract": validation_banks.contract_payload(),
+    }
+    if episode_reward is not None:
+        status_metadata["episode_reward"] = float(episode_reward)
+    fresh_count = 0
+    pooled_assessment = assessment
+    pooled_metrics: Optional[Mapping[str, float]] = None
+    promotion_status = "failed_evaluation"
+    try:
+        bank_a_evidence, bank_a_fresh = _collect_fixed_validation_bank(
+            env=env,
+            full_base_env=full_base_env,
+            candidate_store=candidate_store,
+            action_indices=action_indices,
+            full_identity_context=full_identity_context,
+            action_matrix=action_matrix,
+            boosted_overrides=boosted_overrides,
+            bootstrap_seed=bootstrap_seed,
+            episode_reward=episode_reward,
+            validation_banks=validation_banks,
+            bank_label="A",
+        )
+        fresh_count += bank_a_fresh
+        bank_a_metrics = _metrics_from_trials(bank_a_evidence.trials)
+        bank_a_assessment = assess_candidate_fn(
+            bank_a_evidence.trials,
+            validation_banks.bank_a.reference,
+            gate_probability=float(promotion_probability),
+            bootstrap_seed=int(bootstrap_seed),
+        )
+        status_metadata["bank_a_metrics"] = bank_a_metrics
+        status_metadata["bank_a_assessment"] = _to_plain_mapping(
+            bank_a_assessment,
+        )
+        status_metadata["bank_a_point_pass"] = point_constraints_pass(
+            bank_a_metrics, validation_banks.bank_a.reference,
+        )
+        if not status_metadata["bank_a_point_pass"]:
+            promotion_status = "bank_a_point_failed"
+            pooled_assessment = bank_a_assessment
+            pooled_metrics = bank_a_metrics
+        else:
+            bank_b_evidence, bank_b_fresh = _collect_fixed_validation_bank(
+                env=env,
+                full_base_env=full_base_env,
+                candidate_store=candidate_store,
+                action_indices=action_indices,
+                full_identity_context=full_identity_context,
+                action_matrix=action_matrix,
+                boosted_overrides=boosted_overrides,
+                bootstrap_seed=bootstrap_seed,
+                episode_reward=episode_reward,
+                validation_banks=validation_banks,
+                bank_label="B",
+            )
+            fresh_count += bank_b_fresh
+            pooled_metrics = _metrics_from_trials(bank_b_evidence.trials)
+            pooled_assessment = assess_candidate_fn(
+                bank_b_evidence.trials,
+                validation_banks.promotion_reference,
+                gate_probability=float(promotion_probability),
+                bootstrap_seed=int(bootstrap_seed),
+            )
+            status_metadata["bank_ab_metrics"] = pooled_metrics
+            status_metadata["bank_ab_assessment"] = _to_plain_mapping(
+                pooled_assessment,
+            )
+            status_metadata["bank_ab_point_pass"] = point_constraints_pass(
+                pooled_metrics, validation_banks.promotion_reference,
+            )
+            promotion_status = (
+                "promoted"
+                if status_metadata["bank_ab_point_pass"]
+                else "bank_b_point_failed"
+            )
+    except Exception as exc:
+        status_metadata["error"] = str(exc)
+
+    _append_promotion_status(
+        candidate_store,
+        action_indices,
+        full_identity_context,
+        status=promotion_status,
+        metadata=status_metadata,
+    )
+    target = (
+        validation_banks.promotion_trial_count
+        if promotion_status in ("promoted", "bank_b_point_failed")
+        else validation_banks.bank_a.trial_count
+    )
+    evidence = candidate_store.trial_evidence_for_action(
+        action_indices, full_identity_context, max_trials=target,
+    )
+    trial_count = candidate_store.trial_count_for_action(
+        action_indices, full_identity_context,
+    )
+    return PromotionResult(
+        status=promotion_status,
+        trial_count=trial_count,
+        fresh_trial_count=fresh_count,
+        evidence=evidence,
+        assessment=pooled_assessment,
+        metrics=pooled_metrics,
+    )
+
+
 def promote_candidate_if_eligible(
         *,
         env: Any,
@@ -1542,8 +2335,29 @@ def promote_candidate_if_eligible(
         prefilter_probability: Optional[float] = None,
         promotion_probability: float = 0.80,
         target_trial_count: int = 25,
+        validation_banks: Optional[LayerwiseValidationBanks] = None,
         ) -> PromotionResult:
     """Promote one robust frontier improvement using fresh real probes."""
+    if validation_banks is not None:
+        return _promote_candidate_through_validation_banks(
+            env=env,
+            promotion_base_env=promotion_base_env,
+            candidate_store=candidate_store,
+            action_indices=action_indices,
+            identity_context=identity_context,
+            action_matrix=action_matrix,
+            assessment=assessment,
+            priority=priority,
+            variable_cost=variable_cost,
+            frontier_cost=frontier_cost,
+            frontier_candidates=frontier_candidates,
+            boosted_overrides=boosted_overrides,
+            bootstrap_seed=bootstrap_seed,
+            episode_reward=episode_reward,
+            assess_candidate_fn=assess_candidate_fn,
+            promotion_probability=promotion_probability,
+            validation_banks=validation_banks,
+        )
     full_identity_context = evidence_identity_context(identity_context, "F4")
     full_base_env = promotion_base_env or env.base
     evidence = candidate_store.trial_evidence_for_action(
@@ -1775,6 +2589,275 @@ def promote_candidate_if_eligible(
     )
 
 
+def certify_candidate_with_bank_c(
+        *,
+        env: Any,
+        promotion_base_env: Optional[Any],
+        candidate_store: CandidateStore,
+        identity_context: Mapping[str, Any],
+        candidate: Mapping[str, Any],
+        bootstrap_seed: int,
+        assess_candidate_fn: Callable[..., Any] = assess_candidate,
+        final_probability: float = 0.95,
+        validation_banks: LayerwiseValidationBanks,
+        ) -> PromotionResult:
+    """Run the held-out C bank and certify the pooled A+B+C point estimate."""
+    full_identity_context = evidence_identity_context(identity_context, "F4")
+    action_indices = tuple(int(value) for value in candidate["full_vector"])
+    action_matrix = tuple(
+        tuple(int(value) for value in row)
+        for row in candidate["action_matrix"]
+    )
+    boosted_overrides = dict(candidate.get("boosted_overrides") or {})
+    latest_status, _metadata = _latest_promotion_status(
+        candidate_store, action_indices, full_identity_context,
+    )
+    if latest_status == _FINAL_REVALIDATION_PASSED:
+        evidence = candidate_store.trial_evidence_for_action(
+            action_indices,
+            full_identity_context,
+            max_trials=validation_banks.final_trial_count,
+        )
+        _validate_bank_evidence_prefix(
+            evidence,
+            validation_banks.bank_a.trial_seeds
+            + validation_banks.bank_b.trial_seeds
+            + validation_banks.bank_c.trial_seeds,
+            context="final validation banks",
+        )
+        if evidence is None:
+            raise RuntimeError("final certification status has no raw evidence")
+        metrics = _metrics_from_trials(evidence.trials)
+        diagnostic = assess_candidate_fn(
+            evidence.trials,
+            validation_banks.final_reference,
+            gate_probability=float(final_probability),
+            bootstrap_seed=int(bootstrap_seed),
+        )
+        return PromotionResult(
+            "already_final_certified",
+            evidence.trial_count,
+            0,
+            evidence,
+            diagnostic,
+            metrics,
+        )
+    if latest_status in ("bank_c_point_failed", _FINAL_REVALIDATION_FAILED):
+        evidence = candidate_store.trial_evidence_for_action(
+            action_indices,
+            full_identity_context,
+            max_trials=validation_banks.final_trial_count,
+        )
+        return PromotionResult(
+            "final_certification_already_attempted",
+            0 if evidence is None else evidence.trial_count,
+            0,
+            evidence,
+            None,
+            None if evidence is None else _metrics_from_trials(evidence.trials),
+        )
+    retryable_ab_evidence = False
+    if latest_status == _FINAL_REVALIDATION_RETRYABLE:
+        ab_evidence = candidate_store.trial_evidence_for_action(
+            action_indices,
+            full_identity_context,
+            max_trials=validation_banks.promotion_trial_count,
+        )
+        observed_count = _validate_bank_evidence_prefix(
+            ab_evidence,
+            validation_banks.bank_a.trial_seeds
+            + validation_banks.bank_b.trial_seeds,
+            context="retryable final validation",
+        )
+        retryable_ab_evidence = bool(
+            ab_evidence is not None
+            and observed_count == validation_banks.promotion_trial_count
+            and point_constraints_pass(
+                _metrics_from_trials(ab_evidence.trials),
+                validation_banks.promotion_reference,
+            )
+        )
+    if latest_status != "promoted" and not retryable_ab_evidence:
+        evidence = candidate_store.trial_evidence_for_action(
+            action_indices,
+            full_identity_context,
+            max_trials=validation_banks.promotion_trial_count,
+        )
+        return PromotionResult(
+            "candidate_not_bank_b_confirmed",
+            0 if evidence is None else evidence.trial_count,
+            0,
+            evidence,
+            None,
+            None if evidence is None else _metrics_from_trials(evidence.trials),
+        )
+
+    full_base_env = promotion_base_env or env.base
+    resource = _resource_fields_from_action_matrix(action_matrix)
+    status_metadata = {
+        **resource,
+        "variable_cost": float(resource["ppo_resource_score"]),
+        "assessment_bootstrap_seed": int(bootstrap_seed),
+        "action_matrix": [list(row) for row in action_matrix],
+        "boosted_overrides": _serialize_boosted_overrides(boosted_overrides),
+        "hard_gate": "six_point_constraints",
+        "bootstrap_probability_role": "diagnostic_tiebreak_only",
+        "validation_bank_contract": validation_banks.contract_payload(),
+    }
+    reward = candidate.get("reward")
+    if reward is not None:
+        status_metadata["episode_reward"] = _finite(
+            reward, name="episode_reward",
+        )
+    fresh_count = 0
+    assessment = None
+    metrics = None
+    status = "failed_evaluation"
+    try:
+        evidence, fresh_count = _collect_fixed_validation_bank(
+            env=env,
+            full_base_env=full_base_env,
+            candidate_store=candidate_store,
+            action_indices=action_indices,
+            full_identity_context=full_identity_context,
+            action_matrix=action_matrix,
+            boosted_overrides=boosted_overrides,
+            bootstrap_seed=bootstrap_seed,
+            episode_reward=(None if reward is None else float(reward)),
+            validation_banks=validation_banks,
+            bank_label="C",
+        )
+        metrics = _metrics_from_trials(evidence.trials)
+        assessment = assess_candidate_fn(
+            evidence.trials,
+            validation_banks.final_reference,
+            gate_probability=float(final_probability),
+            bootstrap_seed=int(bootstrap_seed),
+        )
+        passed = point_constraints_pass(
+            metrics, validation_banks.final_reference,
+        )
+        status = _FINAL_REVALIDATION_PASSED if passed else "bank_c_point_failed"
+        status_metadata.update({
+            "bank_abc_metrics": metrics,
+            "bank_abc_assessment": _to_plain_mapping(assessment),
+            "bank_abc_point_pass": bool(passed),
+        })
+    except Exception as exc:
+        status_metadata["error"] = str(exc)
+
+    _append_promotion_status(
+        candidate_store,
+        action_indices,
+        full_identity_context,
+        status=status,
+        metadata=status_metadata,
+    )
+    evidence = candidate_store.trial_evidence_for_action(
+        action_indices,
+        full_identity_context,
+        max_trials=validation_banks.final_trial_count,
+    )
+    return PromotionResult(
+        status=status,
+        trial_count=(0 if evidence is None else evidence.trial_count),
+        fresh_trial_count=int(fresh_count),
+        evidence=evidence,
+        assessment=assessment,
+        metrics=metrics,
+    )
+
+
+def _certify_strict_best_candidates(
+        *,
+        env: Any,
+        promotion_base_env: Optional[Any],
+        candidate_store: CandidateStore,
+        identity_context: Mapping[str, Any],
+        accepted_candidates: dict[str, dict[str, Any]],
+        bootstrap_seed: int,
+        assess_candidate_fn: Callable[..., Any],
+        final_probability: float,
+        validation_banks: LayerwiseValidationBanks,
+        exhaustive_fallback: bool,
+        ) -> tuple[str, Optional[dict[str, Any]]]:
+    """Certify the deterministic winner, falling back only at the max cap."""
+    attempts_remaining = len(accepted_candidates) if exhaustive_fallback else 1
+    status = "no_bank_b_confirmed_candidate"
+    while attempts_remaining > 0:
+        selected = _strict_best_snapshot(accepted_candidates)
+        if selected is None:
+            return "no_bank_b_confirmed_candidate", None
+        attempts_remaining -= 1
+        selected_key = str(selected["candidate_key"])
+        result = certify_candidate_with_bank_c(
+            env=env,
+            promotion_base_env=promotion_base_env,
+            candidate_store=candidate_store,
+            identity_context=identity_context,
+            candidate=selected,
+            bootstrap_seed=int(bootstrap_seed),
+            assess_candidate_fn=assess_candidate_fn,
+            final_probability=final_probability,
+            validation_banks=validation_banks,
+        )
+        passed = bool(
+            result.status in (
+                _FINAL_REVALIDATION_PASSED,
+                "already_final_certified",
+            )
+            and result.evidence is not None
+            and result.evidence.trial_count >= validation_banks.final_trial_count
+            and point_constraints_pass(
+                result.metrics or {}, validation_banks.final_reference,
+            )
+        )
+        if not passed:
+            status = str(result.status)
+            if result.status == "bank_c_point_failed":
+                accepted_candidates.pop(selected_key, None)
+                survivor = _strict_best_snapshot(accepted_candidates)
+                if survivor is not None:
+                    survivor_candidate = accepted_candidates[
+                        str(survivor["candidate_key"])
+                    ]
+                    if (
+                            survivor_candidate.get("final_revalidation_status")
+                            == "passed"
+                    ):
+                        return "passed", survivor
+                if exhaustive_fallback:
+                    continue
+            return status, _strict_best_snapshot(accepted_candidates)
+
+        candidate = accepted_candidates[selected_key]
+        candidate["assessment"] = result.assessment
+        candidate["metrics"] = dict(result.metrics or {})
+        candidate["constraint_safety_margins"] = (
+            normalized_constraint_safety_margins(
+                candidate["metrics"], validation_banks.final_reference,
+            )
+        )
+        candidate["promotion_trials"] = result.evidence.trials
+        candidate["final_revalidation_status"] = "passed"
+        candidate["validation_evidence"] = "ABC_75"
+        winner = _strict_best_snapshot(accepted_candidates)
+        if winner is None:
+            return "no_bank_b_confirmed_candidate", None
+        winner_candidate = accepted_candidates[str(winner["candidate_key"])]
+        if winner_candidate.get("final_revalidation_status") == "passed":
+            return "passed", winner
+        status = "winner_changed_after_bank_c_certification"
+        if not exhaustive_fallback:
+            return status, winner
+    winner = _strict_best_snapshot(accepted_candidates)
+    if winner is not None:
+        winner_candidate = accepted_candidates[str(winner["candidate_key"])]
+        if winner_candidate.get("final_revalidation_status") == "passed":
+            return "passed", winner
+    return status, winner
+
+
 def _as_numpy(value: Any) -> np.ndarray:
     if hasattr(value, "detach"):
         value = value.detach()
@@ -1839,6 +2922,7 @@ def train_layerwise(
         candidate_store: CandidateStore,
         identity_context: Optional[Mapping[str, Any]] = None,
         promotion_base_env: Optional[Any] = None,
+        validation_banks: Optional[LayerwiseValidationBanks] = None,
         on_episode_end: Optional[Callable[[LayerwiseEpisodeRecord], None]] = None,
         on_ppo_update_end: Optional[
             Callable[[Mapping[str, Any], int, LayerwiseEpisodeRecord], None]
@@ -1896,6 +2980,16 @@ def train_layerwise(
         "convergence_patience_updates",
         DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
     ))
+    convergence_min_episodes = int(getattr(
+        train_cfg,
+        "convergence_min_episodes",
+        (DEFAULT_CONVERGENCE_MIN_EPISODES if validation_banks is not None else 0),
+    ))
+    if validation_banks is not None:
+        (
+            convergence_min_episodes,
+            convergence_patience_updates,
+        ) = validate_layerwise_three_bank_convergence_config(train_cfg)
     absolute_start = int(getattr(train_cfg, "absolute_episode_start", 0))
     base_seed = getattr(train_cfg, "seed", None)
     expected_online_trials = int(
@@ -1921,13 +3015,25 @@ def train_layerwise(
             "constraint probabilities must satisfy "
             "0 < online <= promotion <= final <= 1"
         )
-    if promotion_trials < expected_online_trials:
-        raise ValueError("promotion_validation_trials must cover the online trial group")
-    if final_validation_trials < promotion_trials:
-        raise ValueError(
-            "final_selection_validation_trials must be at least "
-            "promotion_validation_trials"
-        )
+    if validation_banks is not None:
+        if promotion_trials != validation_banks.bank_a.trial_count:
+            raise ValueError(
+                "promotion_validation_trials must equal each A/B bank trial count"
+            )
+        if final_validation_trials != validation_banks.bank_c.trial_count:
+            raise ValueError(
+                "final_selection_validation_trials must equal Bank C trial count"
+            )
+    else:
+        if promotion_trials < expected_online_trials:
+            raise ValueError(
+                "promotion_validation_trials must cover the online trial group"
+            )
+        if final_validation_trials < promotion_trials:
+            raise ValueError(
+                "final_selection_validation_trials must be at least "
+                "promotion_validation_trials"
+            )
     policy.eval()
 
     records: list[LayerwiseEpisodeRecord] = []
@@ -1942,9 +3048,7 @@ def train_layerwise(
         assessment_trial_limit=promotion_trials,
         final_probability=final_probability,
         final_assessment_trial_limit=final_validation_trials,
-    )
-    accepted_candidates = dict(
-        strict_resource_pareto_frontier(accepted_candidates)
+        validation_banks=validation_banks,
     )
     convergence_resume_state = getattr(train_cfg, "convergence_resume_state", None)
     convergence_resume_state = (
@@ -1953,6 +3057,7 @@ def train_layerwise(
     )
     convergence_tracker = LayerwiseConvergenceTracker(
         patience_updates=convergence_patience_updates,
+        minimum_episodes=convergence_min_episodes,
     )
     convergence_tracker.load_state_dict(convergence_resume_state)
     restored_strict_best = _strict_best_snapshot(accepted_candidates)
@@ -1975,7 +3080,7 @@ def train_layerwise(
     restored_block4_entropy = convergence_resume_state.get("block4_entropy")
     restored_k_entropy = convergence_resume_state.get("k_entropy")
     restored_converged = bool(
-        unbounded_training
+        (unbounded_training or validation_banks is not None)
         and restored_frontier_objective is not None
         and restored_selected_identity is not None
         and restored_tracker_state["selected_action_identity"]
@@ -1989,7 +3094,8 @@ def train_layerwise(
         and convergence_resume_state.get("converged", False)
     )
     restored_plateau_ready = bool(
-        restored_frontier_objective is not None
+        absolute_start >= convergence_min_episodes
+        and restored_frontier_objective is not None
         and restored_selected_identity is not None
         and int(restored_tracker_state["stall_update_windows"])
         >= convergence_patience_updates
@@ -2325,17 +3431,33 @@ def train_layerwise(
                 prefilter_probability=online_probability,
                 promotion_probability=promotion_probability,
                 target_trial_count=promotion_trials,
+                validation_banks=validation_banks,
             )
             promotion_evidence = promotion.evidence or evidence
             candidate_key_value = promotion_evidence.candidate_key
-            if (
-                    promotion.evidence is not None
-                    and promotion.evidence.promoted
-                    and promotion_evidence.trial_count >= promotion_trials
-                    and _assessment_passes(
-                        promotion.assessment, promotion_probability,
+            promotion_passed = bool(
+                promotion.evidence is not None
+                and promotion.evidence.promoted
+                and (
+                    (
+                        validation_banks is not None
+                        and promotion_evidence.trial_count
+                        >= validation_banks.promotion_trial_count
+                        and point_constraints_pass(
+                            promotion.metrics or {},
+                            validation_banks.promotion_reference,
+                        )
                     )
-            ):
+                    or (
+                        validation_banks is None
+                        and promotion_evidence.trial_count >= promotion_trials
+                        and _assessment_passes(
+                            promotion.assessment, promotion_probability,
+                        )
+                    )
+                )
+            )
+            if promotion_passed:
                 existing_candidate = accepted_candidates.get(candidate_key_value)
                 accepted_candidates[candidate_key_value] = {
                     **exact_resource,
@@ -2345,7 +3467,11 @@ def train_layerwise(
                     "constraint_safety_margins": (
                         normalized_constraint_safety_margins(
                             promotion.metrics or {},
-                            authoritative_base_env.statistical_reference,
+                            (
+                                validation_banks.promotion_reference
+                                if validation_banks is not None
+                                else authoritative_base_env.statistical_reference
+                            ),
                         )
                     ),
                     "action_matrix": action_matrix,
@@ -2361,9 +3487,6 @@ def train_layerwise(
                     ),
                     "promotion_trials": promotion.evidence.trials,
                 }
-                accepted_candidates = dict(
-                    strict_resource_pareto_frontier(accepted_candidates)
-                )
 
         local_episode += 1
         completed = local_episode
@@ -2412,8 +3535,68 @@ def train_layerwise(
                 count_patience=convergence_update_counted,
             )
             strict_revalidation_status = "not_due"
+            maximum_reached = bool(
+                not unbounded_training
+                and absolute_start + completed
+                >= (
+                    total_episodes
+                    if planned_total_episodes is None
+                    else int(planned_total_episodes)
+                )
+            )
             if (
-                    unbounded_training
+                    validation_banks is not None
+                    and (convergence_state.plateau_ready or maximum_reached)
+            ):
+                strict_revalidation_status, strict_best_snapshot = (
+                    _certify_strict_best_candidates(
+                        env=env,
+                        promotion_base_env=authoritative_base_env,
+                        candidate_store=candidate_store,
+                        identity_context=identity_context,
+                        accepted_candidates=accepted_candidates,
+                        bootstrap_seed=(
+                            int(base_seed or 0) + absolute_start + completed
+                        ),
+                        assess_candidate_fn=assess_candidate_fn,
+                        final_probability=final_probability,
+                        validation_banks=validation_banks,
+                        exhaustive_fallback=maximum_reached,
+                    )
+                )
+
+                if not convergence_state.converged:
+                    strict_best_snapshot = _strict_best_snapshot(
+                        accepted_candidates,
+                    )
+                    best_objective = (
+                        None if strict_best_snapshot is None
+                        else (
+                            float(strict_best_snapshot["robust_floor"]),
+                            float(strict_best_snapshot["secondary_progress"]),
+                        )
+                    )
+                    best_action_identity = (
+                        None if strict_best_snapshot is None
+                        else str(strict_best_snapshot["candidate_key"])
+                    )
+                    convergence_tracker.reconcile_frontier(
+                        best_objective, best_action_identity,
+                    )
+                    convergence_state = convergence_tracker.observe_update(
+                        completed_episodes=absolute_start + completed,
+                        block4_entropy=entropy_snapshot["block4"],
+                        k_entropy=entropy_snapshot["k"],
+                        robust_feasible_objective=best_objective,
+                        robust_feasible_action_identity=best_action_identity,
+                        count_patience=False,
+                        strict_revalidation_passed=(
+                            strict_revalidation_status == "passed"
+                        ),
+                    )
+            if (
+                    validation_banks is None
+                    and unbounded_training
                     and convergence_state.plateau_ready
                     and strict_best_snapshot is not None
             ):
@@ -2539,7 +3722,8 @@ def train_layerwise(
                         count_patience=False,
                     )
             if (
-                    not unbounded_training
+                    validation_banks is None
+                    and not unbounded_training
                     and completed >= total_episodes
                     and not convergence_state.converged
             ):
@@ -2548,6 +3732,14 @@ def train_layerwise(
                     convergence_state,
                     strict_revalidation_passed=False,
                     termination_reason="bounded_budget_exhausted",
+                )
+            elif maximum_reached and not convergence_state.converged:
+                convergence_state = replace(
+                    convergence_state,
+                    strict_revalidation_passed=(
+                        strict_revalidation_status == "passed"
+                    ),
+                    termination_reason="max_episodes_reached",
                 )
             persisted_convergence_state = {
                 **convergence_tracker.state_dict(),
@@ -2693,14 +3885,84 @@ def train_layerwise(
             rollout_buffer.clear()
             entropy_samples.clear()
 
-    if not unbounded_training and not convergence_state.converged:
-        strict_revalidation_status = "not_applicable_bounded"
-        convergence_state = replace(
-            convergence_state,
-            strict_revalidation_passed=False,
-            termination_reason="bounded_budget_exhausted",
+    maximum_boundary_reached = bool(
+        validation_banks is not None
+        and not unbounded_training
+        and absolute_start + local_episode
+        >= (
+            total_episodes
+            if planned_total_episodes is None
+            else int(planned_total_episodes)
         )
-    strict_best = _strict_best_snapshot(accepted_candidates)
+    )
+    if maximum_boundary_reached and strict_revalidation_status != "passed":
+        strict_revalidation_status, strict_best_snapshot = (
+            _certify_strict_best_candidates(
+                env=env,
+                promotion_base_env=authoritative_base_env,
+                candidate_store=candidate_store,
+                identity_context=identity_context,
+                accepted_candidates=accepted_candidates,
+                bootstrap_seed=(
+                    int(base_seed or 0) + absolute_start + local_episode
+                ),
+                assess_candidate_fn=assess_candidate_fn,
+                final_probability=final_probability,
+                validation_banks=validation_banks,
+                exhaustive_fallback=True,
+            )
+        )
+        best_objective = (
+            None if strict_best_snapshot is None
+            else (
+                float(strict_best_snapshot["robust_floor"]),
+                float(strict_best_snapshot["secondary_progress"]),
+            )
+        )
+        best_action_identity = (
+            None if strict_best_snapshot is None
+            else str(strict_best_snapshot["candidate_key"])
+        )
+        convergence_tracker.reconcile_frontier(
+            best_objective, best_action_identity,
+        )
+        convergence_state = convergence_tracker.observe_update(
+            completed_episodes=absolute_start + local_episode,
+            block4_entropy=convergence_state.block4_entropy,
+            k_entropy=convergence_state.k_entropy,
+            robust_feasible_objective=best_objective,
+            robust_feasible_action_identity=best_action_identity,
+            count_patience=False,
+            strict_revalidation_passed=(
+                strict_revalidation_status == "passed"
+            ),
+        )
+
+    if not unbounded_training and not convergence_state.converged:
+        if validation_banks is None:
+            strict_revalidation_status = "not_applicable_bounded"
+            convergence_state = replace(
+                convergence_state,
+                strict_revalidation_passed=False,
+                termination_reason="bounded_budget_exhausted",
+            )
+        else:
+            convergence_state = replace(
+                convergence_state,
+                strict_revalidation_passed=(
+                    strict_revalidation_status == "passed"
+                ),
+                termination_reason="max_episodes_reached",
+            )
+    bank_b_best = _strict_best_snapshot(accepted_candidates)
+    final_candidates = accepted_candidates
+    if maximum_boundary_reached:
+        final_candidates = {
+            key: candidate
+            for key, candidate in accepted_candidates.items()
+            if candidate.get("final_revalidation_status") == "passed"
+        }
+    strict_best = _strict_best_snapshot(final_candidates)
     strict_pareto_frontier = _strict_pareto_snapshots(accepted_candidates)
     final_convergence_state = {
         **convergence_tracker.state_dict(),
@@ -2715,6 +3977,7 @@ def train_layerwise(
     }
     return {
         "strict_best": strict_best,
+        "bank_b_best": bank_b_best,
         "strict_pareto_frontier": strict_pareto_frontier,
         "convergence_state": final_convergence_state,
         "best_action": (
