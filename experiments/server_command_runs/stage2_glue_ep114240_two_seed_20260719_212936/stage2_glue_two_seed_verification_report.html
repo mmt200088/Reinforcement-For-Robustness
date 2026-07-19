@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stage-2 MRPC GLUE 双种子提交审计</title>
+<style>
+:root { color-scheme: light; --ink:#17202a; --muted:#64748b; --line:#d8dee8; --paper:#fff; --band:#f4f7fa; --green:#137a4a; --red:#a23a3a; --blue:#225ea8; }
+* { box-sizing:border-box; } body { margin:0; font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink); background:#eef2f6; }
+main { max-width:1180px; margin:24px auto; background:var(--paper); padding:30px 34px 40px; border:1px solid var(--line); }
+h1 { font-size:25px; margin:0 0 6px; letter-spacing:0; } h2 { font-size:18px; margin:28px 0 10px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+p { margin:7px 0; } .sub { color:var(--muted); } .hero { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); margin:18px 0; }
+.metric { background:#fff; padding:13px; min-height:76px; } .metric b { display:block; font-size:20px; margin-top:3px; } .metric span { color:var(--muted); font-size:12px; }
+table { width:100%; border-collapse:collapse; margin:8px 0 18px; } th,td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; } thead th { background:var(--band); } tbody th { background:#fafbfc; white-space:nowrap; }
+code { font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; } .pass { color:var(--green); font-weight:700; } .muted { color:var(--muted); }
+.badge { display:inline-block; min-width:35px; text-align:center; border:1px solid var(--line); padding:1px 5px; font-size:11px; } .badge.on { color:#fff; background:var(--green); border-color:var(--green); } .badge.off { background:#eef1f4; } .boost { color:var(--blue); font-size:11px; }
+.note { border-left:3px solid var(--blue); background:#f5f9ff; padding:10px 12px; } a { color:var(--blue); }
+@media(max-width:760px) { main { margin:0; padding:20px 14px; border:0; } .hero { grid-template-columns:1fr 1fr; } table { display:block; overflow-x:auto; } }
+</style>
+</head>
+<body><main>
+<h1>Stage-2 MRPC GLUE 双种子提交审计</h1>
+<p class="sub">最新 Stage-2 selector-best，episode 114240，两次独立高斯噪声推理</p>
+<div class="hero">
+  <div class="metric"><span>候选 fusion 总数</span><b>27</b></div>
+  <div class="metric"><span>加大精度选项</span><b>27</b></div>
+  <div class="metric"><span>平均 truncation K</span><b>11.4468</b></div>
+  <div class="metric"><span>两次预测分歧</span><b>19 / 1725</b></div>
+</div>
+<p class="note"><b>结论：</b>两个 ZIP 均由同一个 checkpoint selector-best 配置生成；配置从解码、bridge 参数到模型 handler 实际安装三处哈希完全一致。不同噪声种子造成 19 条预测差异，符合“同配置、独立高斯噪声”要求。</p>
+
+<h2>候选来源</h2>
+<table><tbody>
+<tr><th>候选 key</th><td><code>b89b74a0b2e56e7931a8c1f1972348456451d2b9b64692573df8e28ac7366053</code></td></tr>
+<tr><th>Checkpoint</th><td><code>/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__dual_resource_natconv_fresh_20260718_190924/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt</code></td></tr>
+<tr><th>Checkpoint SHA-256</th><td><code>c039f3de3619261880aa3eb771d80318b1b17984cae926c4f6e819a3a03b1ab4</code></td></tr>
+<tr><th>训练源码 commit</th><td><code>fa4ee9cbd27d6265238f8d1091b712e14ee86066</code></td></tr>
+<tr><th>提交推理源码 commit</th><td><code>3889a9d0c215c2d4603ab4459fdf347599140cad</code></td></tr>
+<tr><th>动作配置 SHA-256</th><td><code>db8b4223b6d5edf0690ae29e59ae6c468261f36eaa5578a855693e561aaee117</code></td></tr>
+<tr><th>模型实际安装配置 SHA-256</th><td><code>c848eb9f972a221bdf9390742ffd85e80cb1521e49cea7291eadfabb7a5d3314</code></td></tr>
+<tr><th>Stage-1 固定函数</th><td>GELU = [4] x 12；Softmax = [6] x 12</td></tr>
+</tbody></table>
+
+<h2>逐层 Fusion 与 K</h2>
+<p class="sub">F 为 fusion count；boost 表示该融合选项已通过 precision-boost 后的显式 SF 路径送入模型。</p>
+<table><thead><tr><th>层</th><th>Block 1</th><th>Block 2</th><th>Block 4</th><th>Block 5</th></tr></thead><tbody><tr><th>L0</th><td class='muted'>N/A</td><td><span class='badge on'>F=1</span> <span>K=12</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=11</span></td><td><span class='badge on'>F=1</span> <span>K=12</span> <span class='boost'>boost</span></td></tr><tr><th>L1</th><td><span class='badge off'>F=0</span> <span>K=8</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=8</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td></tr><tr><th>L2</th><td><span class='badge off'>F=0</span> <span>K=12</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=13</span></td><td><span class='badge on'>F=1</span> <span>K=11</span> <span class='boost'>boost</span></td></tr><tr><th>L3</th><td><span class='badge off'>F=0</span> <span>K=12</span></td><td><span class='badge on'>F=1</span> <span>K=12</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=8</span></td><td><span class='badge on'>F=1</span> <span>K=8</span> <span class='boost'>boost</span></td></tr><tr><th>L4</th><td><span class='badge off'>F=0</span> <span>K=12</span></td><td><span class='badge on'>F=1</span> <span>K=12</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=13</span></td><td><span class='badge on'>F=1</span> <span>K=8</span> <span class='boost'>boost</span></td></tr><tr><th>L5</th><td><span class='badge off'>F=0</span> <span>K=12</span></td><td><span class='badge on'>F=1</span> <span>K=10</span> <span class='boost'>boost</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td></tr><tr><th>L6</th><td><span class='badge off'>F=0</span> <span>K=8</span></td><td><span class='badge on'>F=1</span> <span>K=11</span> <span class='boost'>boost</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td></tr><tr><th>L7</th><td><span class='badge off'>F=0</span> <span>K=9</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td></tr><tr><th>L8</th><td><span class='badge off'>F=0</span> <span>K=12</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=13</span></td><td><span class='badge on'>F=1</span> <span>K=8</span> <span class='boost'>boost</span></td></tr><tr><th>L9</th><td><span class='badge off'>F=0</span> <span>K=12</span></td><td><span class='badge on'>F=1</span> <span>K=12</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=12</span></td><td><span class='badge on'>F=1</span> <span>K=13</span> <span class='boost'>boost</span></td></tr><tr><th>L10</th><td><span class='badge off'>F=0</span> <span>K=13</span></td><td><span class='badge on'>F=1</span> <span>K=12</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=13</span></td><td><span class='badge on'>F=1</span> <span>K=11</span> <span class='boost'>boost</span></td></tr><tr><th>L11</th><td><span class='badge off'>F=0</span> <span>K=12</span></td><td><span class='badge on'>F=1</span> <span>K=11</span> <span class='boost'>boost</span></td><td><span class='badge off'>F=0</span> <span>K=11</span></td><td><span class='badge on'>F=1</span> <span>K=8</span> <span class='boost'>boost</span></td></tr></tbody></table>
+
+<h2>两个官方提交包</h2>
+<table><thead><tr><th>噪声种子</th><th>预测 0 / 1</th><th>MRPC.tsv SHA-256</th><th>ZIP SHA-256</th><th>文件</th></tr></thead><tbody><tr><td>2026071901</td><td>516 / 1209</td><td><code>d50b9edcfc25d43716d0d1c16e0a563a660e9a6982d521860139044a8b8c19d7</code></td><td><code>27951e8bfd0f5ad9e9d05cbf73f0814a966e67125c08920e9f857fb627b5f483</code></td><td><a href='20260719_stage2_ep114240_glue_seed_2026071901.zip'>ZIP</a></td></tr><tr><td>2026071902</td><td>515 / 1210</td><td><code>ce96ba99f000d1e6d95f002be130ec48d096ebe02311cc918f4d8854e6f3138b</code></td><td><code>d0762a792f41172bb6a422addb9aa1f0dcc0b9bb052dfa874a90776bb1a31b01</code></td><td><a href='20260719_stage2_ep114240_glue_seed_2026071902.zip'>ZIP</a></td></tr></tbody></table>
+<p>预测分歧率：<b>1.1014%</b>。分歧 index：<code>277, 291, 384, 390, 617, 651, 703, 746, 757, 797, 807, 864, 1163, 1325, 1443, 1494, 1593, 1663, 1696</code></p>
+
+<h2>硬门禁</h2>
+<table><thead><tr><th>检查</th><th>结果</th></tr></thead><tbody><tr><td>checkpoint candidate matches both runs</td><td class='pass'>PASS</td></tr><tr><td>expected equals bridge equals installed</td><td class='pass'>PASS</td></tr><tr><td>dataset test rows match cached arrow</td><td class='pass'>PASS</td></tr><tr><td>mrpc indices are 0 through 1724</td><td class='pass'>PASS</td></tr><tr><td>zip members and crc valid</td><td class='pass'>PASS</td></tr><tr><td>only mrpc member differs from template</td><td class='pass'>PASS</td></tr></tbody></table>
+<p>MRPC test 本地 Parquet 与缓存 Arrow：1725 行逐行比较，差异 <b>0</b>；字段顺序为 <code>[&#x27;sentence1&#x27;, &#x27;sentence2&#x27;, &#x27;label&#x27;, &#x27;idx&#x27;]</code>。两个 ZIP 都包含 GLUE 要求的 11 个 TSV，CRC 正常，index 连续为 0..1724；除 MRPC.tsv 外，其余 10 个成员与已验证模板逐字节相同。</p>
+
+<h2>说明</h2>
+<p>GLUE ZIP 需要包含全部任务。本次只重新生成 MRPC.tsv；其他任务沿用已验证的完整 GLUE 模板。两个包之间唯一变化是 MRPC 的高斯噪声种子及由此产生的预测。</p>
+</main></body></html>
