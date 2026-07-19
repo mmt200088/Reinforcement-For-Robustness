@@ -1,0 +1,14 @@
+test_blb_seed_controls_the_independent_noise_stream (tests.test_blb_glue_boost_install.GlueBoostInstallTest.test_blb_seed_controls_the_independent_noise_stream) ... /usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+ok
+test_decode_helper_installs_boosted_block2_output (tests.test_blb_glue_boost_install.GlueBoostInstallTest.test_decode_helper_installs_boosted_block2_output) ... ok
+test_blb_seed_reseeds_the_independent_noise_rng (tests.test_blb_glue_boost_install.GlueNoiseSeedWiringStaticTest.test_blb_seed_reseeds_the_independent_noise_rng) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 4.100s
+
+OK

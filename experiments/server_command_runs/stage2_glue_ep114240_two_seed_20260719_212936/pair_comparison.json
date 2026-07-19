@@ -1,0 +1,129 @@
+{
+  "candidate": {
+    "action_config_sha256": "db8b4223b6d5edf0690ae29e59ae6c468261f36eaa5578a855693e561aaee117",
+    "attn_degree": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "average_k": 11.446808510638299,
+    "boosted_option_count": 27,
+    "candidate_key": "b89b74a0b2e56e7931a8c1f1972348456451d2b9b64692573df8e28ac7366053",
+    "checkpoint_sha256": "c039f3de3619261880aa3eb771d80318b1b17984cae926c4f6e819a3a03b1ab4",
+    "episode": 114240,
+    "fusion_count": 27,
+    "gelu_degree": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+    ],
+    "installed_config_sha256": "c848eb9f972a221bdf9390742ffd85e80cb1521e49cea7291eadfabb7a5d3314",
+    "ppo_update_count": 952,
+    "source_checkpoint": "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__dual_resource_natconv_fresh_20260718_190924/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt",
+    "submission_runtime_commit": "3889a9d0c215c2d4603ab4459fdf347599140cad",
+    "training_source_commit": "fa4ee9cbd27d6265238f8d1091b712e14ee86066"
+  },
+  "checks": {
+    "checkpoint_candidate_matches_both_runs": true,
+    "dataset_test_rows_match_cached_arrow": true,
+    "expected_equals_bridge_equals_installed": true,
+    "mrpc_indices_are_0_through_1724": true,
+    "only_mrpc_member_differs_from_template": true,
+    "zip_members_and_crc_valid": true
+  },
+  "dataset": {
+    "parquet_files": {
+      "test": {
+        "path": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/test-00000-of-00001.parquet",
+        "rows": 1725,
+        "sha256": "a623ed1cbdf445b11f8e249acbf649d7d3a5ee58c918554c40cbd8307e488693"
+      },
+      "train": {
+        "path": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/train-00000-of-00001.parquet",
+        "rows": 3668,
+        "sha256": "61fd41301e0e244b0420c4350a170c8e7cf64740335fc875a4af2d79af0df0af"
+      },
+      "validation": {
+        "path": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/validation-00000-of-00001.parquet",
+        "rows": 408,
+        "sha256": "33c007dbf5bfa8463d87a13e6226df8c0fcf2596c2cd39d0f3bb79754e00f50f"
+      }
+    },
+    "reference_test_arrow": "/hy-tmp/hf_cache/datasets/nyu-mll___glue/mrpc/0.0.0/1edab70c7fdff5d2/glue-test.arrow",
+    "reference_test_arrow_sha256": "c36756c995e05013a1740ac1d0f7f7062e62c9eefeeb1158fb739f13f31b26de",
+    "route": "verified_local_parquet",
+    "test_columns": [
+      "sentence1",
+      "sentence2",
+      "label",
+      "idx"
+    ],
+    "test_row_mismatches_vs_cached_arrow": 0,
+    "test_rows": 1725,
+    "test_rows_canonical_sha256": "bb8d2dbcc91c900c22587390c97933cd238dbfee84e5d1194adea0972e345094"
+  },
+  "prediction_disagreement_count": 19,
+  "prediction_disagreement_indices": [
+    277,
+    291,
+    384,
+    390,
+    617,
+    651,
+    703,
+    746,
+    757,
+    797,
+    807,
+    864,
+    1163,
+    1325,
+    1443,
+    1494,
+    1593,
+    1663,
+    1696
+  ],
+  "prediction_disagreement_rate": 0.011014492753623189,
+  "runs": [
+    {
+      "desktop_name": "20260719_stage2_ep114240_glue_seed_2026071901.zip",
+      "label_counts": {
+        "0": 516,
+        "1": 1209
+      },
+      "mrpc_tsv_sha256": "d50b9edcfc25d43716d0d1c16e0a563a660e9a6982d521860139044a8b8c19d7",
+      "seed": 2026071901,
+      "submission_zip_sha256": "27951e8bfd0f5ad9e9d05cbf73f0814a966e67125c08920e9f857fb627b5f483"
+    },
+    {
+      "desktop_name": "20260719_stage2_ep114240_glue_seed_2026071902.zip",
+      "label_counts": {
+        "0": 515,
+        "1": 1210
+      },
+      "mrpc_tsv_sha256": "ce96ba99f000d1e6d95f002be130ec48d096ebe02311cc918f4d8854e6f3138b",
+      "seed": 2026071902,
+      "submission_zip_sha256": "d0762a792f41172bb6a422addb9aa1f0dcc0b9bb052dfa874a90776bb1a31b01"
+    }
+  ],
+  "schema_version": "stage2_glue_two_seed_comparison_v1"
+}

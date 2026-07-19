@@ -1,0 +1,118 @@
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+
+============================================================
+Task: MRPC (BLB action path)
+  GELU:    [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  BLB profile: mrpc, action_length=877
+============================================================
+  Loading model: textattack/bert-base-uncased-MRPC
+/usr/local/lib/python3.11/dist-packages/huggingface_hub/file_download.py:949: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+  Model label mapping: {0: 'LABEL_0', 1: 'LABEL_1'}
+  Layers: bert.encoder.layer (12 layers)
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+  Loading GLUE test set: mrpc
+Map:   0%|          | 0/1725 [00:00<?, ? examples/s]Map:  58%|█████▊    | 1000/1725 [00:00<00:00, 5757.53 examples/s]Map: 100%|██████████| 1725/1725 [00:00<00:00, 5703.33 examples/s]Map: 100%|██████████| 1725/1725 [00:00<00:00, 5646.71 examples/s]
+You're using a BertTokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+  Inference:   0%|          | 0/108 [00:00<?, ?it/s]  Inference:   3%|▎         | 3/108 [00:00<00:04, 23.31it/s]  Inference:   6%|▌         | 6/108 [00:00<00:04, 23.85it/s]  Inference:   8%|▊         | 9/108 [00:00<00:04, 24.08it/s]  Inference:  11%|█         | 12/108 [00:00<00:03, 24.19it/s]  Inference:  14%|█▍        | 15/108 [00:00<00:03, 24.18it/s]  Inference:  17%|█▋        | 18/108 [00:00<00:03, 24.26it/s]  Inference:  19%|█▉        | 21/108 [00:00<00:03, 24.12it/s]  Inference:  22%|██▏       | 24/108 [00:00<00:03, 24.40it/s]  Inference:  25%|██▌       | 27/108 [00:01<00:03, 24.58it/s]  Inference:  28%|██▊       | 30/108 [00:01<00:03, 24.72it/s]  Inference:  31%|███       | 33/108 [00:01<00:03, 24.02it/s]  Inference:  33%|███▎      | 36/108 [00:01<00:02, 24.13it/s]  Inference:  36%|███▌      | 39/108 [00:01<00:02, 24.03it/s]  Inference:  39%|███▉      | 42/108 [00:01<00:02, 24.10it/s]  Inference:  42%|████▏     | 45/108 [00:01<00:02, 24.20it/s]  Inference:  44%|████▍     | 48/108 [00:01<00:02, 24.25it/s]  Inference:  47%|████▋     | 51/108 [00:02<00:02, 24.28it/s]  Inference:  50%|█████     | 54/108 [00:02<00:02, 24.33it/s]  Inference:  53%|█████▎    | 57/108 [00:02<00:02, 24.18it/s]  Inference:  56%|█████▌    | 60/108 [00:02<00:02, 23.99it/s]  Inference:  58%|█████▊    | 63/108 [00:02<00:01, 24.13it/s]  Inference:  61%|██████    | 66/108 [00:02<00:01, 24.18it/s]  Inference:  64%|██████▍   | 69/108 [00:02<00:01, 24.24it/s]  Inference:  67%|██████▋   | 72/108 [00:02<00:01, 24.27it/s]  Inference:  69%|██████▉   | 75/108 [00:03<00:01, 24.33it/s]  Inference:  72%|███████▏  | 78/108 [00:03<00:01, 24.36it/s]  Inference:  75%|███████▌  | 81/108 [00:03<00:01, 24.36it/s]  Inference:  78%|███████▊  | 84/108 [00:03<00:01, 23.93it/s]  Inference:  81%|████████  | 87/108 [00:03<00:00, 23.30it/s]  Inference:  83%|████████▎ | 90/108 [00:03<00:00, 23.33it/s]  Inference:  86%|████████▌ | 93/108 [00:03<00:00, 23.63it/s]  Inference:  89%|████████▉ | 96/108 [00:03<00:00, 23.87it/s]  Inference:  92%|█████████▏| 99/108 [00:04<00:00, 23.72it/s]  Inference:  94%|█████████▍| 102/108 [00:04<00:00, 23.71it/s]  Inference:  97%|█████████▋| 105/108 [00:04<00:00, 23.93it/s]  Inference: 100%|██████████| 108/108 [00:04<00:00, 24.07it/s]  Inference: 100%|██████████| 108/108 [00:04<00:00, 24.08it/s]
+  -> MRPC.tsv: 1726 lines (incl. header)
+
+============================================================
+Verification: TSV format, labels, and line counts
+============================================================
+  AX.tsv         :     1105 lines  [OK]
+  CoLA.tsv       :     1064 lines  [OK]
+  MNLI-m.tsv     :     9797 lines  [OK]
+  MNLI-mm.tsv    :     9848 lines  [OK]
+  MRPC.tsv       :     1726 lines  [OK]
+  QNLI.tsv       :     5464 lines  [OK]
+  QQP.tsv        :   390966 lines  [OK]
+  RTE.tsv        :     3001 lines  [OK]
+  SST-2.tsv      :     1822 lines  [OK]
+  STS-B.tsv      :     1380 lines  [OK]
+  WNLI.tsv       :      147 lines  [OK]
+
+Creating: /hy-tmp/stage2_glue_ep114240_3889a9d0_20260719_212936/outputs/seed_2026071901_final2/submission.zip
+{
+  "action_config_sha256": "db8b4223b6d5edf0690ae29e59ae6c468261f36eaa5578a855693e561aaee117",
+  "candidate_key": "b89b74a0b2e56e7931a8c1f1972348456451d2b9b64692573df8e28ac7366053",
+  "dataset": {
+    "parquet_files": {
+      "test": {
+        "path": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/test-00000-of-00001.parquet",
+        "rows": 1725,
+        "sha256": "a623ed1cbdf445b11f8e249acbf649d7d3a5ee58c918554c40cbd8307e488693"
+      },
+      "train": {
+        "path": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/train-00000-of-00001.parquet",
+        "rows": 3668,
+        "sha256": "61fd41301e0e244b0420c4350a170c8e7cf64740335fc875a4af2d79af0df0af"
+      },
+      "validation": {
+        "path": "/hy-tmp/stage2_layerwise_robust_24e919c_20260713_175542/local_glue/mrpc/validation-00000-of-00001.parquet",
+        "rows": 408,
+        "sha256": "33c007dbf5bfa8463d87a13e6226df8c0fcf2596c2cd39d0f3bb79754e00f50f"
+      }
+    },
+    "reference_test_arrow": "/hy-tmp/hf_cache/datasets/nyu-mll___glue/mrpc/0.0.0/1edab70c7fdff5d2/glue-test.arrow",
+    "reference_test_arrow_sha256": "c36756c995e05013a1740ac1d0f7f7062e62c9eefeeb1158fb739f13f31b26de",
+    "route": "verified_local_parquet",
+    "test_columns": [
+      "sentence1",
+      "sentence2",
+      "label",
+      "idx"
+    ],
+    "test_row_mismatches_vs_cached_arrow": 0,
+    "test_rows": 1725,
+    "test_rows_canonical_sha256": "bb8d2dbcc91c900c22587390c97933cd238dbfee84e5d1194adea0972e345094"
+  },
+  "install_audit_sha256": "58454a31cab7e69592acc4b9060c24e3a9a85ad038e14b2ceb1d92de12914321",
+  "install_config_sha256": "c848eb9f972a221bdf9390742ffd85e80cb1521e49cea7291eadfabb7a5d3314",
+  "mrpc_label_counts": {
+    "0": 516,
+    "1": 1209
+  },
+  "mrpc_tsv_sha256": "d50b9edcfc25d43716d0d1c16e0a563a660e9a6982d521860139044a8b8c19d7",
+  "schema_version": "stage2_glue_submission_run_v1",
+  "seed": 2026071901,
+  "source_training_commit": "fa4ee9cbd27d6265238f8d1091b712e14ee86066",
+  "submission_runtime_commit": "3889a9d0c215c2d4603ab4459fdf347599140cad",
+  "submission_zip_sha256": "27951e8bfd0f5ad9e9d05cbf73f0814a966e67125c08920e9f857fb627b5f483",
+  "template_zip_sha256": "1ca642a19cd66ba7723e42529214d76290ccf9ddc92a835331243848e341efc0",
+  "zip_member_lines": {
+    "AX.tsv": 1105,
+    "CoLA.tsv": 1064,
+    "MNLI-m.tsv": 9797,
+    "MNLI-mm.tsv": 9848,
+    "MRPC.tsv": 1726,
+    "QNLI.tsv": 5464,
+    "QQP.tsv": 390966,
+    "RTE.tsv": 3001,
+    "SST-2.tsv": 1822,
+    "STS-B.tsv": 1380,
+    "WNLI.tsv": 147
+  },
+  "zip_members": [
+    "AX.tsv",
+    "CoLA.tsv",
+    "MNLI-m.tsv",
+    "MNLI-mm.tsv",
+    "MRPC.tsv",
+    "QNLI.tsv",
+    "QQP.tsv",
+    "RTE.tsv",
+    "SST-2.tsv",
+    "STS-B.tsv",
+    "WNLI.tsv"
+  ]
+}
