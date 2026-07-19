@@ -151,6 +151,7 @@ from function_handler import (
     INPUT_NOISE_ALLOWED_SCALING_FACTORS,
     WEIGHT_NOISE_ALLOWED_SCALING_FACTORS,
     WFFN1_NOISE_ALLOWED_SCALING_FACTORS,
+    reseed_noise_rng,
 )
 
 sys.setrecursionlimit(50000)
@@ -1331,6 +1332,7 @@ def _seed_all_for_reproducibility(seed: int) -> None:
     seed = int(seed) & 0xFFFFFFFF
     _random.seed(seed)
     np.random.seed(seed)
+    reseed_noise_rng(seed)
     try:
         torch.manual_seed(seed)
         if torch.cuda.is_available():
