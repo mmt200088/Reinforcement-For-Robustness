@@ -71,14 +71,6 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertGreater(
             policies["shared_gtrxl_v1"].network_parameter_summary()["shared"], 0
         )
-        self.assertEqual(
-            policies["shared_gtrxl_v1"].network_parameter_summary()["total"],
-            5_330_461,
-        )
-        self.assertEqual(
-            policies["shared_gtrxl_v1"].network_parameter_summary()["shared"],
-            5_295_160,
-        )
         for name in ("separate_critic_gtrxl_v1", "separate_critic_mlp_v1"):
             self.assertEqual(
                 policies[name].network_parameter_summary()["shared"], 0
@@ -89,6 +81,99 @@ class LayerwisePolicyTest(unittest.TestCase):
                     "critic_only"
                 ],
             )
+
+    def test_production_shared_network_keeps_pre_ablation_parameter_count(self):
+        from blb_stage2_rl.sequential_policy import BLBStage2SequentialPolicy
+
+        policy = BLBStage2SequentialPolicy(self._config(
+            d_model=256,
+            n_heads=8,
+            n_layers=4,
+            d_ff=512,
+            dropout=0.1,
+        ))
+        summary = policy.network_parameter_summary()
+        self.assertEqual(summary["total"], 5_330_461)
+        self.assertEqual(summary["shared"], 5_295_160)
+
+    def test_each_network_variant_completes_factorized_ppo_with_diagnostics(self):
+        from blb_stage2_rl.sequential_policy import (
+            SequentialPPOConfig,
+            SequentialRolloutBuffer,
+            sequential_ppo_update,
+        )
+
+        for variant in (
+            "shared_gtrxl_v1",
+            "separate_critic_gtrxl_v1",
+            "separate_critic_mlp_v1",
+        ):
+            with self.subTest(variant=variant):
+                torch.manual_seed(20260721)
+                policy = self._policy(network_variant=variant, dropout=0.0)
+                policy.eval()
+                buffer = SequentialRolloutBuffer()
+                for step_idx in range(2):
+                    state = torch.zeros(policy.cfg.state_dim)
+                    state[4 + step_idx] = 1.0
+                    slot_mask = torch.ones(1, 6, dtype=torch.bool)
+                    levels = torch.tensor([[2, 6, 6, 6, 6, 6]])
+                    sample = policy.sample_action(
+                        state.unsqueeze(0),
+                        slot_mask,
+                        levels,
+                        generator=torch.Generator().manual_seed(100 + step_idx),
+                        return_per_slot_log_prob=True,
+                    )
+                    actions, log_prob, value, log_prob_per_slot = sample
+                    buffer.add(
+                        state=state.numpy(),
+                        action=actions[0].detach().numpy(),
+                        slot_mask=slot_mask[0].numpy(),
+                        per_slot_num_levels=levels[0].numpy(),
+                        log_prob=log_prob[0],
+                        log_prob_per_slot=log_prob_per_slot[0],
+                        value=value[0],
+                        reward=1.0 if step_idx == 1 else 0.0,
+                        done=step_idx == 1,
+                    )
+                    buffer.set_actor_shared_return_at(step_idx, 0.5 + step_idx)
+                    buffer.set_actor_cost_at(
+                        step_idx,
+                        np.linspace(0.01, 0.06, 6, dtype=np.float32),
+                    )
+
+                metrics = sequential_ppo_update(
+                    policy,
+                    torch.optim.Adam(policy.parameters(), lr=1.0e-4),
+                    buffer,
+                    SequentialPPOConfig(
+                        lr=1.0e-4,
+                        n_epochs=1,
+                        minibatch_size=2,
+                        ent_coef=0.0,
+                        normalize_returns=False,
+                        use_kl_early_stop=False,
+                        factorized_actor_clip=True,
+                        entropy_average_active_slots=True,
+                        entropy_normalize_active_slots=True,
+                    ),
+                    torch.device("cpu"),
+                )
+
+                self.assertEqual(metrics["n_samples"], 2)
+                self.assertEqual(len(metrics["entropy_per_slot"]), 6)
+                self.assertEqual(len(metrics["raw_advantage_snr_per_slot"]), 6)
+                self.assertIsNotNone(metrics["value_rmse_pre"])
+                self.assertIsNotNone(metrics["value_rmse_post"])
+                self.assertIsNotNone(metrics["preclip_grad_norm_mean"])
+                if variant == "shared_gtrxl_v1":
+                    self.assertGreater(metrics["shared_grad_parameter_count"], 0)
+                    self.assertIsNotNone(metrics["actor_shared_grad_norm"])
+                    self.assertIsNotNone(metrics["critic_shared_grad_norm"])
+                else:
+                    self.assertEqual(metrics["shared_grad_parameter_count"], 0)
+                    self.assertIsNone(metrics["actor_critic_shared_grad_cosine"])
 
     def test_explicit_schedule_indices_are_used_verbatim(self):
         layer_indices = tuple(range(12))

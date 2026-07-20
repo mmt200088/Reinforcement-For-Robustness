@@ -29,11 +29,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .network_variants import (
-    DEFAULT_POLICY_NETWORK_VARIANT,
-    normalize_policy_network_variant,
-    policy_network_variant_spec,
-)
+try:
+    from .network_variants import (
+        DEFAULT_POLICY_NETWORK_VARIANT,
+        normalize_policy_network_variant,
+        policy_network_variant_spec,
+    )
+except ImportError:  # Standalone SourceFileLoader compatibility.
+    from blb_stage2_rl.network_variants import (
+        DEFAULT_POLICY_NETWORK_VARIANT,
+        normalize_policy_network_variant,
+        policy_network_variant_spec,
+    )
 
 # ---------------------------------------------------------------------------
 # Policy
