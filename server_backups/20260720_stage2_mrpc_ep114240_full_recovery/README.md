@@ -29,6 +29,10 @@ The bundle keeps the raw byte streams, not only plots or summaries:
   PPO stream and resume command;
 - the two-seed GLUE submission outputs, TSV files, submission zips, logs, source
   hashes, fixed boosted/fused action and runtime install audits;
+- `evidence/final_actual_installed_configuration.json`, a self-contained,
+  machine-readable export of the selected checkpoint action, decoded per-layer
+  choices, exact handler-installed configuration, every installed slot SF,
+  truncation K, fusion choice, provenance and verification hashes;
 - the five/six-profile SF audit result directories and the launch-wrapper result.
 - the server worktree status and original `LATEST_*`/lock pointer values needed
   to audit exactly which result paths were server-only before evacuation. The
@@ -86,7 +90,8 @@ Machine-readable details and original-stream hashes are in
 
 The two GLUE seeds installed byte-identical Block1/2/4/5 configs, and each run
 proved `decoded == supplied_to_bridge == installed_in_handler` by SHA-256. The
-actual config is rendered in
+raw source of truth is
+`evidence/final_actual_installed_configuration.json`; it is rendered in
 `reports/html_reports/20260720_stage2_mrpc_ep114240_actual_installed_sf_and_k.html`.
 
 Block3 is not present in either handler install audit. The runtime bridge explicitly

@@ -80,6 +80,8 @@
     "decoded_supplied_handler_hashes_match": true
   },
   "actual_install": {
+    "raw_config_artifact": "evidence/final_actual_installed_configuration.json",
+    "raw_config_artifact_sha256": "101a3b7bccae95a989fc88bf3db2ee1f5fa0ae8a737dc911ac68048f22ce8b45",
     "candidate_key": "b89b74a0b2e56e7931a8c1f1972348456451d2b9b64692573df8e28ac7366053",
     "installed_config_sha256": "c848eb9f972a221bdf9390742ffd85e80cb1521e49cea7291eadfabb7a5d3314",
     "action_config_sha256": "db8b4223b6d5edf0690ae29e59ae6c468261f36eaa5578a855693e561aaee117",
