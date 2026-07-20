@@ -13,6 +13,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class Stage2PersistentLauncherTest(unittest.TestCase):
+    @staticmethod
+    def _install_fake_flock(fakebin):
+        fake_flock = fakebin / "flock"
+        fake_flock.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        fake_flock.chmod(0o755)
+
     def test_python_public_decision_fields_reach_evaluator_constructor(self):
         tune_tree = ast.parse((REPO_ROOT / "rl_tune.py").read_text(encoding="utf-8"))
         train_fn = next(
@@ -22,6 +28,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         train_args = {arg.arg: ast.unparse(arg.annotation) for arg in train_fn.args.args}
         self.assertEqual(train_args["blb_v3_decision_granularity"], "str")
         self.assertEqual(train_args["blb_v3_reward_design"], "str")
+        self.assertEqual(train_args["blb_v3_policy_network_variant"], "str")
         evaluator_call = next(
             node for node in ast.walk(train_fn)
             if isinstance(node, ast.Call)
@@ -31,6 +38,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         forwarded = {keyword.arg for keyword in evaluator_call.keywords}
         self.assertIn("blb_v3_decision_granularity", forwarded)
         self.assertIn("blb_v3_reward_design", forwarded)
+        self.assertIn("blb_v3_policy_network_variant", forwarded)
 
         evaluator_tree = ast.parse(
             (REPO_ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
@@ -46,6 +54,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         init_args = {arg.arg for arg in init_fn.args.args}
         self.assertIn("blb_v3_decision_granularity", init_args)
         self.assertIn("blb_v3_reward_design", init_args)
+        self.assertIn("blb_v3_policy_network_variant", init_args)
         assigned_attrs = {
             target.attr
             for node in ast.walk(init_fn)
@@ -59,6 +68,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         }
         self.assertIn("blb_v3_decision_granularity", assigned_attrs)
         self.assertIn("blb_v3_reward_design", assigned_attrs)
+        self.assertIn("blb_v3_policy_network_variant", assigned_attrs)
 
     def test_python_robust_constraint_fields_reach_evaluator_constructor(self):
         expected = {
@@ -95,6 +105,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             capture = tmp / "python_argv.nul"
             fakebin = tmp / "fakebin"
             fakebin.mkdir()
+            self._install_fake_flock(fakebin)
             fake_python = fakebin / "python"
             fake_python.write_text(
                 textwrap.dedent(
@@ -154,6 +165,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             capture = tmp / "python_argv.nul"
             fakebin = tmp / "fakebin"
             fakebin.mkdir()
+            self._install_fake_flock(fakebin)
             fake_python = fakebin / "python"
             fake_python.write_text(
                 textwrap.dedent(
@@ -220,12 +232,20 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             default_argv[default_argv.index("--blb_v3_reward_design") + 1],
             "robust_constrained",
         )
+        self.assertEqual(
+            default_argv[
+                default_argv.index("--blb_v3_policy_network_variant") + 1
+            ],
+            "shared_gtrxl_v1",
+        )
 
         explicit_argv = self._capture_stage2_launcher_argv([
             "--blb-v3-decision-granularity",
             "layer",
             "--blb-v3-reward-design",
             "robust_constrained",
+            "--blb-v3-policy-network-variant",
+            "separate_critic_gtrxl_v1",
         ])
         self.assertEqual(
             explicit_argv[explicit_argv.index("--blb_v3_decision_granularity") + 1],
@@ -234,6 +254,12 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertEqual(
             explicit_argv[explicit_argv.index("--blb_v3_reward_design") + 1],
             "robust_constrained",
+        )
+        self.assertEqual(
+            explicit_argv[
+                explicit_argv.index("--blb_v3_policy_network_variant") + 1
+            ],
+            "separate_critic_gtrxl_v1",
         )
 
     def test_active_layerwise_robust_defaults_reach_python(self):
@@ -269,6 +295,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             tmp = Path(td)
             fakebin = tmp / "fakebin"
             fakebin.mkdir()
+            self._install_fake_flock(fakebin)
             fake_python = fakebin / "python"
             fake_python.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
             fake_python.chmod(0o755)
@@ -315,6 +342,9 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertNotIn("stage2_stability_tolerance", metadata)
         self.assertEqual(metadata["blb_v3_decision_granularity"], "layer")
         self.assertEqual(metadata["blb_v3_reward_design"], "robust_constrained")
+        self.assertEqual(
+            metadata["blb_v3_policy_network_variant"], "shared_gtrxl_v1"
+        )
 
     def test_block_stage1_aligned_rollback_persistence_uses_legacy_tolerance(self):
         slug, metadata = self._capture_persistent_slug_and_metadata([
@@ -336,7 +366,13 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
 
     def test_layerwise_resume_rejects_legacy_metadata_without_multiplier(self):
         with tempfile.TemporaryDirectory(prefix="stage2_legacy_metadata_") as td:
-            root = Path(td) / "persistent"
+            tmp = Path(td)
+            root = tmp / "persistent"
+            fakebin = tmp / "fakebin"
+            fakebin.mkdir()
+            self._install_fake_flock(fakebin)
+            env = os.environ.copy()
+            env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
             run_dir = (
                 root / "rl" / "bert-base" / "mrpc"
                 / "s1t0.001_s2t0.001_s2st2.0"
@@ -366,6 +402,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                     "170",
                 ],
                 cwd=REPO_ROOT,
+                env=env,
                 text=True,
                 capture_output=True,
                 check=False,
@@ -375,10 +412,63 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertIn("CONSTRAINT_MISMATCH", result.stdout + result.stderr)
         self.assertIn("stage2_stability_multiplier", result.stdout + result.stderr)
 
+    def test_layerwise_resume_rejects_different_policy_network_arm(self):
+        with tempfile.TemporaryDirectory(prefix="stage2_network_mismatch_") as td:
+            tmp = Path(td)
+            root = tmp / "persistent"
+            run_dir = (
+                root / "rl" / "bert-base" / "mrpc"
+                / "s1t0.001_s2t0.001_s2st2.0"
+            )
+            run_dir.mkdir(parents=True)
+            (run_dir / "metadata.json").write_text(
+                json.dumps({
+                    "stage1_accuracy_tolerance": 0.001,
+                    "stage2_limit_tolerance": 0.001,
+                    "stage2_stability_multiplier": 2.0,
+                    "blb_v3_policy_network_variant": "shared_gtrxl_v1",
+                }),
+                encoding="utf-8",
+            )
+            fakebin = tmp / "fakebin"
+            fakebin.mkdir()
+            self._install_fake_flock(fakebin)
+            env = os.environ.copy()
+            env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "llama_7B_LayerImportance.sh",
+                    "run",
+                    "rl",
+                    "--preset",
+                    "mrpc-blb-stage2-rl",
+                    "--mode",
+                    "stage2-only",
+                    "--persistent-root",
+                    str(root),
+                    "--stage2-search-episodes",
+                    "170",
+                    "--blb-v3-policy-network-variant",
+                    "separate_critic_gtrxl_v1",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        output = result.stdout + result.stderr
+        self.assertIn("CONSTRAINT_MISMATCH", output)
+        self.assertIn("blb_v3_policy_network_variant", output)
+
     def test_stage2_public_decision_and_reward_options_reject_unknown_values(self):
         for option, value in (
             ("--blb-v3-decision-granularity", "token"),
             ("--blb-v3-reward-design", "legacy_unknown"),
+            ("--blb-v3-policy-network-variant", "larger_maybe"),
         ):
             with self.subTest(option=option):
                 result = subprocess.run(
@@ -405,6 +495,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             capture = tmp / "python_argv.nul"
             fakebin = tmp / "fakebin"
             fakebin.mkdir()
+            self._install_fake_flock(fakebin)
             fake_python = fakebin / "python"
             fake_python.write_text(
                 textwrap.dedent(
@@ -472,6 +563,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             capture = tmp / "python_argv.nul"
             fakebin = tmp / "fakebin"
             fakebin.mkdir()
+            self._install_fake_flock(fakebin)
             fake_python = fakebin / "python"
             fake_python.write_text(
                 textwrap.dedent(
@@ -532,6 +624,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             capture = tmp / "python_argv.nul"
             fakebin = tmp / "fakebin"
             fakebin.mkdir()
+            self._install_fake_flock(fakebin)
             fake_python = fakebin / "python"
             fake_python.write_text(
                 textwrap.dedent(
@@ -623,6 +716,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             capture = tmp / "python_argv.nul"
             fakebin = tmp / "fakebin"
             fakebin.mkdir()
+            self._install_fake_flock(fakebin)
             fake_python = fakebin / "python"
             fake_python.write_text(
                 textwrap.dedent(
@@ -712,6 +806,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             capture = tmp / "python_argv.nul"
             fakebin = tmp / "fakebin"
             fakebin.mkdir()
+            self._install_fake_flock(fakebin)
             fake_python = fakebin / "python"
             fake_python.write_text(
                 textwrap.dedent(

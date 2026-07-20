@@ -297,6 +297,25 @@ class PPOUpdateStats:
     actor_clip_mode: str = "joint"
     actor_credit_mode: str = "scalar_gae"
     entropy_objective_mode: str = "joint_sum"
+    slot_labels: List[str] = field(default_factory=list)
+    entropy_per_slot: List[Optional[float]] = field(default_factory=list)
+    approx_kl_per_slot: List[Optional[float]] = field(default_factory=list)
+    clip_fraction_per_slot: List[Optional[float]] = field(default_factory=list)
+    raw_advantage_mean_per_slot: List[Optional[float]] = field(default_factory=list)
+    raw_advantage_std_per_slot: List[Optional[float]] = field(default_factory=list)
+    raw_advantage_snr_per_slot: List[Optional[float]] = field(default_factory=list)
+    value_explained_variance_pre: Optional[float] = None
+    value_explained_variance_post: Optional[float] = None
+    value_rmse_pre: Optional[float] = None
+    value_rmse_post: Optional[float] = None
+    value_bias_pre: Optional[float] = None
+    value_bias_post: Optional[float] = None
+    shared_grad_parameter_count: int = 0
+    actor_shared_grad_norm: Optional[float] = None
+    critic_shared_grad_norm: Optional[float] = None
+    actor_critic_shared_grad_cosine: Optional[float] = None
+    preclip_grad_norm_mean: Optional[float] = None
+    preclip_grad_norm_max: Optional[float] = None
     timestamp: float = field(default_factory=time.time)
 
 
@@ -532,6 +551,7 @@ class RLDiagnosticsRecorder:
                         "baseline_trials_per_group", "constraint_bootstrap_samples",
                         "constraint_probabilities", "constraint_limits",
                         "gamma", "gae_lambda", "rollout_size", "ppo_lr",
+                        "policy_network_variant", "policy_network",
                 ):
                     if key in self._meta:
                         manifest_payload[key] = self._meta[key]

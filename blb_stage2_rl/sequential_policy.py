@@ -29,6 +29,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .network_variants import (
+    DEFAULT_POLICY_NETWORK_VARIANT,
+    normalize_policy_network_variant,
+    policy_network_variant_spec,
+)
+
 # ---------------------------------------------------------------------------
 # Policy
 # ---------------------------------------------------------------------------
@@ -74,6 +80,7 @@ class SequentialPolicyConfig:
     cont_proj_dim: int = 64
     actor_dim: int = 64
     critic_dim: int = 64
+    network_variant: str = DEFAULT_POLICY_NETWORK_VARIANT
     default_prior_scale: float = 0.0
     metadata_width: int = 6
     signal_width: int = 3
@@ -91,6 +98,9 @@ class SequentialPolicyConfig:
             raise ValueError("signal_width must be positive")
         self.metadata_width = int(self.metadata_width)
         self.signal_width = int(self.signal_width)
+        self.network_variant = normalize_policy_network_variant(
+            self.network_variant
+        )
         if self.step_layer_indices is None:
             return
         layer_indices = tuple(int(value) for value in self.step_layer_indices)
@@ -250,6 +260,9 @@ class BLBStage2SequentialPolicy(nn.Module):
     def __init__(self, cfg: SequentialPolicyConfig):
         super().__init__()
         self.cfg = cfg
+        self.network_variant_spec = policy_network_variant_spec(
+            cfg.network_variant
+        )
         self.embed_step = nn.Embedding(cfg.horizon, cfg.step_embed_dim)
         self.embed_layer = nn.Embedding(cfg.num_layers, cfg.layer_embed_dim)
         self.embed_block = nn.Embedding(cfg.block_count, cfg.block_embed_dim)
@@ -363,6 +376,7 @@ class BLBStage2SequentialPolicy(nn.Module):
         self._slot_exploration_enabled = False
         self._causal_mask_cache: Dict[Tuple[int, torch.device], torch.Tensor] = {}
         self._init_weights()
+        self._init_independent_critic()
 
     @property
     def slot_heads(self) -> Tuple[_SlotHeadView, ...]:
@@ -400,6 +414,193 @@ class BLBStage2SequentialPolicy(nn.Module):
         for slot_idx in range(int(self.cfg.max_step_dim)):
             nn.init.orthogonal_(self.slot_head_weight[slot_idx], gain=0.01)
         nn.init.constant_(self.slot_head_bias, 0.0)
+
+    def _init_independent_critic(self) -> None:
+        critic_kind = str(self.network_variant_spec.critic_kind)
+        if critic_kind == "shared_gtrxl":
+            return
+
+        # Keep actor initialization and the subsequent rollout RNG stream
+        # exactly matched across ablation arms. The critic receives a stable,
+        # variant-specific initialization in a forked RNG scope.
+        seed_offset = sum(
+            (idx + 1) * ord(char)
+            for idx, char in enumerate(self.network_variant_spec.name)
+        )
+        critic_seed = (int(torch.initial_seed()) + seed_offset) % (2**63 - 1)
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(critic_seed)
+            if critic_kind == "gtrxl":
+                self._build_independent_gtrxl_critic()
+                self._initialize_independent_gtrxl_critic()
+            elif critic_kind == "mlp":
+                self.critic_state_encoder = nn.Sequential(
+                    nn.Linear(self.cfg.state_dim, 512),
+                    nn.Tanh(),
+                    nn.Linear(512, 512),
+                    nn.Tanh(),
+                    nn.Linear(512, self.cfg.d_model),
+                    nn.Tanh(),
+                )
+                for layer in self.critic_state_encoder:
+                    if isinstance(layer, nn.Linear):
+                        nn.init.xavier_uniform_(
+                            layer.weight, gain=float(np.sqrt(2))
+                        )
+                        nn.init.constant_(layer.bias, 0.0)
+            else:  # pragma: no cover - registry validation prevents this
+                raise RuntimeError(f"unsupported critic kind {critic_kind!r}")
+
+    def _build_independent_gtrxl_critic(self) -> None:
+        cfg = self.cfg
+        self.critic_embed_step = nn.Embedding(cfg.horizon, cfg.step_embed_dim)
+        self.critic_embed_layer = nn.Embedding(cfg.num_layers, cfg.layer_embed_dim)
+        self.critic_embed_block = nn.Embedding(cfg.block_count, cfg.block_embed_dim)
+        self.critic_prev_action_embedding = nn.Embedding(
+            cfg.max_step_dim * cfg.max_num_levels,
+            cfg.prev_action_embed_dim,
+        )
+        self.critic_fc_continuous = nn.Sequential(
+            nn.Linear(4 + cfg.signal_width + 1, cfg.cont_proj_dim),
+            nn.LayerNorm(cfg.cont_proj_dim),
+            nn.SiLU(),
+        )
+        token_input_dim = (
+            cfg.step_embed_dim
+            + cfg.layer_embed_dim
+            + cfg.block_embed_dim
+            + cfg.max_step_dim * cfg.prev_action_embed_dim
+            + cfg.cont_proj_dim
+        )
+        self.critic_input_proj = (
+            nn.Identity()
+            if token_input_dim == cfg.d_model
+            else nn.Linear(token_input_dim, cfg.d_model)
+        )
+        self.critic_gtrxl_blocks = nn.ModuleList([
+            SequentialGTrXLBlock(
+                cfg.d_model,
+                cfg.n_heads,
+                cfg.d_ff,
+                cfg.dropout,
+            )
+            for _ in range(cfg.n_layers)
+        ])
+        self.critic_ln_final = nn.LayerNorm(cfg.d_model)
+
+    def _initialize_independent_gtrxl_critic(self) -> None:
+        def init_linear(layer: nn.Linear, gain: float) -> None:
+            nn.init.xavier_uniform_(layer.weight, gain=float(gain))
+            if layer.bias is not None:
+                nn.init.constant_(layer.bias, 0.0)
+
+        for layer in self.critic_fc_continuous:
+            if isinstance(layer, nn.Linear):
+                init_linear(layer, float(np.sqrt(2)))
+        if isinstance(self.critic_input_proj, nn.Linear):
+            init_linear(self.critic_input_proj, 1.0)
+        for block in self.critic_gtrxl_blocks:
+            nn.init.xavier_uniform_(block.attn.in_proj_weight, gain=1.0)
+            if block.attn.in_proj_bias is not None:
+                nn.init.constant_(block.attn.in_proj_bias, 0.0)
+            init_linear(block.attn.out_proj, 1.0)
+            for layer in list(block.ff) + [
+                    block.gate1.linear_r,
+                    block.gate1.linear_z,
+                    block.gate1.linear_h,
+                    block.gate2.linear_r,
+                    block.gate2.linear_z,
+                    block.gate2.linear_h,
+            ]:
+                if isinstance(layer, nn.Linear):
+                    init_linear(layer, float(np.sqrt(2)))
+        nn.init.normal_(
+            self.critic_prev_action_embedding.weight,
+            mean=0.0,
+            std=0.02,
+        )
+
+    @staticmethod
+    def _module_parameters(*modules: nn.Module) -> Tuple[nn.Parameter, ...]:
+        params: List[nn.Parameter] = []
+        seen: set[int] = set()
+        for module in modules:
+            for parameter in module.parameters():
+                if id(parameter) not in seen:
+                    params.append(parameter)
+                    seen.add(id(parameter))
+        return tuple(params)
+
+    def _actor_trunk_parameters(self) -> Tuple[nn.Parameter, ...]:
+        return self._module_parameters(
+            self.embed_step,
+            self.embed_layer,
+            self.embed_block,
+            self.prev_action_embedding,
+            self.fc_continuous,
+            self.input_proj,
+            self.gtrxl_blocks,
+            self.ln_final,
+        )
+
+    def shared_actor_critic_parameters(self) -> Tuple[nn.Parameter, ...]:
+        if not bool(self.network_variant_spec.shares_actor_trunk):
+            return ()
+        return self._actor_trunk_parameters()
+
+    def _critic_trunk_parameters(self) -> Tuple[nn.Parameter, ...]:
+        critic_kind = str(self.network_variant_spec.critic_kind)
+        if critic_kind == "shared_gtrxl":
+            return self._actor_trunk_parameters()
+        if critic_kind == "gtrxl":
+            return self._module_parameters(
+                self.critic_embed_step,
+                self.critic_embed_layer,
+                self.critic_embed_block,
+                self.critic_prev_action_embedding,
+                self.critic_fc_continuous,
+                self.critic_input_proj,
+                self.critic_gtrxl_blocks,
+                self.critic_ln_final,
+            )
+        return self._module_parameters(self.critic_state_encoder)
+
+    def network_parameter_summary(self) -> Dict[str, Any]:
+        actor_head = self._module_parameters(self.actor_head)
+        actor_head_count = sum(parameter.numel() for parameter in actor_head)
+        actor_head_count += int(self.slot_head_weight.numel())
+        actor_head_count += int(self.slot_head_bias.numel())
+        value_head_count = sum(
+            parameter.numel() for parameter in self.value_head.parameters()
+        )
+        actor_trunk_count = sum(
+            parameter.numel() for parameter in self._actor_trunk_parameters()
+        )
+        critic_trunk_count = sum(
+            parameter.numel() for parameter in self._critic_trunk_parameters()
+        )
+        if bool(self.network_variant_spec.shares_actor_trunk):
+            shared = actor_trunk_count
+            actor_only = actor_head_count
+            critic_only = value_head_count
+        else:
+            shared = 0
+            actor_only = actor_trunk_count + actor_head_count
+            critic_only = critic_trunk_count + value_head_count
+        total = sum(parameter.numel() for parameter in self.parameters())
+        if total != shared + actor_only + critic_only:
+            raise RuntimeError("policy network parameter partition is incomplete")
+        return {
+            "variant": self.network_variant_spec.name,
+            "critic_kind": self.network_variant_spec.critic_kind,
+            "shares_actor_trunk": bool(
+                self.network_variant_spec.shares_actor_trunk
+            ),
+            "total": int(total),
+            "shared": int(shared),
+            "actor_only": int(actor_only),
+            "critic_only": int(critic_only),
+        }
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -528,6 +729,85 @@ class BLBStage2SequentialPolicy(nn.Module):
         token_input = torch.cat([step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1)
         return self.input_proj(token_input), current_step
 
+    def _build_independent_critic_tokens(
+            self,
+            state: torch.Tensor,
+            *,
+            truncate_to_current: bool = False,
+            truncate_seq_len: Optional[int] = None,
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+        static, current_step, prev_actions, prev_signals = self._parse_state(
+            state,
+            truncate_to_current=bool(truncate_to_current),
+            truncate_seq_len=truncate_seq_len,
+        )
+        batch_size = int(state.shape[0])
+        device = state.device
+        seq_len = int(prev_actions.shape[1])
+        steps, layers, blocks = self._step_layer_block_indices()
+        steps = steps[:seq_len]
+        layers = layers[:seq_len]
+        blocks = blocks[:seq_len]
+        step_emb = self.critic_embed_step(steps).unsqueeze(0).expand(
+            batch_size, -1, -1
+        )
+        layer_emb = self.critic_embed_layer(layers).unsqueeze(0).expand(
+            batch_size, -1, -1
+        )
+        block_emb = self.critic_embed_block(blocks).unsqueeze(0).expand(
+            batch_size, -1, -1
+        )
+        slot_offsets = self._prev_action_slot_offsets[: self.cfg.max_step_dim]
+        prev_action_indices = prev_actions + slot_offsets.view(1, 1, -1)
+        prev_emb = self.critic_prev_action_embedding(prev_action_indices).reshape(
+            batch_size,
+            seq_len,
+            self.cfg.max_step_dim * self.cfg.prev_action_embed_dim,
+        )
+        static_rep = static.unsqueeze(1).expand(-1, seq_len, -1)
+        is_current = F.one_hot(
+            current_step.clamp(0, seq_len - 1), num_classes=seq_len
+        ).to(dtype=state.dtype, device=device).unsqueeze(-1)
+        cont = torch.cat([static_rep, prev_signals, is_current], dim=-1)
+        cont_proj = self.critic_fc_continuous(cont)
+        token_input = torch.cat(
+            [step_emb, layer_emb, block_emb, prev_emb, cont_proj], dim=-1
+        )
+        return self.critic_input_proj(token_input), current_step
+
+    def _critic_value(
+            self,
+            state: torch.Tensor,
+            shared_hidden: torch.Tensor,
+            *,
+            truncate_to_current: bool,
+            truncate_seq_len: Optional[int],
+            ) -> torch.Tensor:
+        critic_kind = str(self.network_variant_spec.critic_kind)
+        if critic_kind == "shared_gtrxl":
+            hidden = shared_hidden
+        elif critic_kind == "gtrxl":
+            tokens, current_step = self._build_independent_critic_tokens(
+                state,
+                truncate_to_current=bool(truncate_to_current),
+                truncate_seq_len=truncate_seq_len,
+            )
+            causal_mask = self._get_causal_mask(tokens.size(1), tokens.device)
+            hidden_sequence = tokens
+            for block in self.critic_gtrxl_blocks:
+                hidden_sequence = block(hidden_sequence, attn_mask=causal_mask)
+            hidden_sequence = self.critic_ln_final(hidden_sequence)
+            batch_idx = torch.arange(
+                hidden_sequence.shape[0], device=hidden_sequence.device
+            )
+            hidden = hidden_sequence[
+                batch_idx,
+                current_step.clamp(0, hidden_sequence.size(1) - 1),
+            ]
+        else:
+            hidden = self.critic_state_encoder(state)
+        return self.value_head(hidden).squeeze(-1)
+
     def _coerce_prior_scale(
             self,
             baseline_prior_scale: Optional[Any],
@@ -616,7 +896,12 @@ class BLBStage2SequentialPolicy(nn.Module):
             dtype=logits.dtype,
             baseline_prior_scale=baseline_prior_scale,
         )
-        value = self.value_head(h).squeeze(-1)
+        value = self._critic_value(
+            state,
+            h,
+            truncate_to_current=bool(truncate_to_current),
+            truncate_seq_len=truncate_seq_len,
+        )
         return logits, value
 
     # ------------------------------------------------------------------
@@ -1549,6 +1834,116 @@ def _apply_adaptive_kl_lr(
     return lr, float(policy._ppo_lr_scale)
 
 
+def _value_fit_diagnostics(
+        predictions: torch.Tensor,
+        targets: torch.Tensor,
+        ) -> Dict[str, Optional[float]]:
+    pred = predictions.detach().float().reshape(-1)
+    target = targets.detach().float().reshape(-1)
+    if pred.numel() != target.numel() or pred.numel() == 0:
+        return {"explained_variance": None, "rmse": None, "bias": None}
+    residual = target - pred
+    target_var = torch.var(target, unbiased=False)
+    explained_variance: Optional[float] = None
+    if bool(torch.isfinite(target_var).item()) and float(target_var.item()) > 1.0e-12:
+        residual_var = torch.var(residual, unbiased=False)
+        explained_variance = float((1.0 - residual_var / target_var).item())
+    return {
+        "explained_variance": explained_variance,
+        "rmse": float(torch.sqrt(torch.mean(residual.square())).item()),
+        "bias": float(torch.mean(pred - target).item()),
+    }
+
+
+def _shared_gradient_diagnostics(
+        policy: BLBStage2SequentialPolicy,
+        actor_loss: torch.Tensor,
+        critic_loss: torch.Tensor,
+        ) -> Dict[str, Optional[float]]:
+    parameter_getter = getattr(policy, "shared_actor_critic_parameters", None)
+    if not callable(parameter_getter):
+        return {
+            "shared_parameter_count": 0,
+            "actor_grad_norm": None,
+            "critic_grad_norm": None,
+            "cosine": None,
+        }
+    parameters = tuple(
+        parameter for parameter in parameter_getter()
+        if bool(getattr(parameter, "requires_grad", False))
+    )
+    if not parameters:
+        return {
+            "shared_parameter_count": 0,
+            "actor_grad_norm": None,
+            "critic_grad_norm": None,
+            "cosine": None,
+        }
+    actor_grads = torch.autograd.grad(
+        actor_loss,
+        parameters,
+        retain_graph=True,
+        allow_unused=True,
+    )
+    critic_grads = torch.autograd.grad(
+        critic_loss,
+        parameters,
+        retain_graph=True,
+        allow_unused=True,
+    )
+    dot = torch.zeros((), device=actor_loss.device)
+    actor_sq = torch.zeros((), device=actor_loss.device)
+    critic_sq = torch.zeros((), device=actor_loss.device)
+    for actor_grad, critic_grad in zip(actor_grads, critic_grads):
+        if actor_grad is not None:
+            actor_sq = actor_sq + actor_grad.detach().float().square().sum()
+        if critic_grad is not None:
+            critic_sq = critic_sq + critic_grad.detach().float().square().sum()
+        if actor_grad is not None and critic_grad is not None:
+            dot = dot + (
+                actor_grad.detach().float() * critic_grad.detach().float()
+            ).sum()
+    actor_norm = torch.sqrt(actor_sq)
+    critic_norm = torch.sqrt(critic_sq)
+    cosine: Optional[float] = None
+    denominator = actor_norm * critic_norm
+    if bool(torch.isfinite(denominator).item()) and float(denominator.item()) > 1.0e-20:
+        cosine = float((dot / denominator).item())
+    return {
+        "shared_parameter_count": int(sum(p.numel() for p in parameters)),
+        "actor_grad_norm": float(actor_norm.item()),
+        "critic_grad_norm": float(critic_norm.item()),
+        "cosine": cosine,
+    }
+
+
+def _raw_per_slot_advantage_diagnostics(
+        values: Optional[torch.Tensor],
+        active_slots: torch.Tensor,
+        ) -> Dict[str, List[Optional[float]]]:
+    slot_count = int(active_slots.shape[1])
+    result: Dict[str, List[Optional[float]]] = {
+        "mean": [None] * slot_count,
+        "std": [None] * slot_count,
+        "snr": [None] * slot_count,
+    }
+    if values is None:
+        return result
+    raw = values.detach().float()
+    for slot_idx in range(slot_count):
+        selected = raw[active_slots[:, slot_idx], slot_idx]
+        if selected.numel() == 0:
+            continue
+        mean = torch.mean(selected)
+        std = torch.std(selected, unbiased=False)
+        result["mean"][slot_idx] = float(mean.item())
+        result["std"][slot_idx] = float(std.item())
+        result["snr"][slot_idx] = float(
+            (torch.abs(mean) / torch.clamp(std, min=1.0e-8)).item()
+        )
+    return result
+
+
 def sequential_ppo_update(
         policy: BLBStage2SequentialPolicy,
         optimizer: torch.optim.Optimizer,
@@ -1568,6 +1963,8 @@ def sequential_ppo_update(
     diffuse to land near baseline once sampling started).
     """
     if len(buffer) == 0:
+        slot_count = int(getattr(getattr(policy, "cfg", None), "max_step_dim", 0))
+        empty_slots: List[Optional[float]] = [None] * slot_count
         return {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
                 "clip_fraction": 0.0, "n_samples": 0, "ent_coef": 0.0,
                 "approx_kl": 0.0, "kl_early_stop": False,
@@ -1579,7 +1976,26 @@ def sequential_ppo_update(
                     if bool(getattr(cfg, "factorized_actor_clip", False)) else "joint"
                 ),
                 "actor_credit_mode": "scalar_gae",
-                "entropy_objective_mode": "joint_sum"}
+                "entropy_objective_mode": "joint_sum",
+                "slot_labels": [],
+                "entropy_per_slot": empty_slots,
+                "approx_kl_per_slot": empty_slots,
+                "clip_fraction_per_slot": empty_slots,
+                "raw_advantage_mean_per_slot": empty_slots,
+                "raw_advantage_std_per_slot": empty_slots,
+                "raw_advantage_snr_per_slot": empty_slots,
+                "value_explained_variance_pre": None,
+                "value_explained_variance_post": None,
+                "value_rmse_pre": None,
+                "value_rmse_post": None,
+                "value_bias_pre": None,
+                "value_bias_post": None,
+                "shared_grad_parameter_count": 0,
+                "actor_shared_grad_norm": None,
+                "critic_shared_grad_norm": None,
+                "actor_critic_shared_grad_cosine": None,
+                "preclip_grad_norm_mean": None,
+                "preclip_grad_norm_max": None}
     effective_ent_coef = (
         float(cfg.ent_coef) if ent_coef_override is None else float(ent_coef_override)
     )
@@ -1606,10 +2022,20 @@ def sequential_ppo_update(
     normalize_returns = bool(getattr(cfg, "normalize_returns", True)) and return_normalizer is not None
     if normalize_returns:
         return_normalizer.update(returns)
+    value_fit_pre = _value_fit_diagnostics(old_values, returns)
     factorized_actor_clip = bool(getattr(cfg, "factorized_actor_clip", False))
     factorized_actor_advantages = (
         buffer.factorized_actor_advantages(advantages, device)
         if factorized_actor_clip else None
+    )
+    raw_factorized_actor_advantages = (
+        None
+        if factorized_actor_advantages is None
+        else factorized_actor_advantages.detach().clone()
+    )
+    raw_advantage_diagnostics = _raw_per_slot_advantage_diagnostics(
+        raw_factorized_actor_advantages,
+        slot_masks,
     )
     robust_advantage_norm = bool(getattr(cfg, "robust_advantage_norm", True))
     if factorized_actor_advantages is not None:
@@ -1673,6 +2099,19 @@ def sequential_ppo_update(
     n_minibatches = 0
     kl_early_stop = False
     nonfinite_minibatches = 0
+    slot_count = int(slot_masks.shape[1])
+    slot_entropy_sum = torch.zeros(slot_count, device=device)
+    slot_kl_sum = torch.zeros(slot_count, device=device)
+    slot_clip_sum = torch.zeros(slot_count, device=device)
+    slot_observation_count = torch.zeros(slot_count, device=device)
+    shared_gradient_diagnostics: Dict[str, Optional[float]] = {
+        "shared_parameter_count": 0,
+        "actor_grad_norm": None,
+        "critic_grad_norm": None,
+        "cosine": None,
+    }
+    shared_gradient_measured = False
+    preclip_grad_norms: List[float] = []
 
     def _backoff_after_nonfinite() -> None:
         nonlocal current_lr, lr_scale
@@ -1844,6 +2283,13 @@ def sequential_ppo_update(
                 _backoff_after_nonfinite()
                 break
             optimizer.zero_grad(set_to_none=True)
+            if not shared_gradient_measured:
+                shared_gradient_diagnostics = _shared_gradient_diagnostics(
+                    policy,
+                    policy_loss,
+                    float(cfg.value_coef) * value_loss,
+                )
+                shared_gradient_measured = True
             loss.backward()
             if cfg.max_grad_norm is not None and cfg.max_grad_norm > 0:
                 grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), cfg.max_grad_norm)
@@ -1853,6 +2299,16 @@ def sequential_ppo_update(
                     optimizer.zero_grad(set_to_none=True)
                     _backoff_after_nonfinite()
                     break
+                preclip_grad_norms.append(float(grad_norm.item()))
+            else:
+                finite_grads = [
+                    parameter.grad.detach().float()
+                    for parameter in policy.parameters()
+                    if parameter.grad is not None
+                ]
+                if finite_grads:
+                    grad_sq = sum(grad.square().sum() for grad in finite_grads)
+                    preclip_grad_norms.append(float(torch.sqrt(grad_sq).item()))
             optimizer.step()
             with torch.no_grad():
                 if factorized_actor_clip:
@@ -1871,6 +2327,16 @@ def sequential_ppo_update(
                     )
                 else:
                     approx_kl_t = (old_lp - new_log_probs).mean()
+                active_float = mb_slot_masks.float()
+                slot_observation_count += active_float.sum(dim=0)
+                slot_entropy_sum += (entropy_per_slot * active_float).sum(dim=0)
+                if factorized_actor_clip:
+                    slot_delta = (old_lp_per_slot - new_log_probs_per_slot) * active_float
+                    slot_kl_sum += slot_delta.sum(dim=0)
+                    slot_clip_sum += (
+                        (torch.abs(ratio - 1.0) > cfg.clip_range).float()
+                        * active_float
+                    ).sum(dim=0)
             metrics_sum_t["policy_loss"] += policy_loss.detach()
             metrics_sum_t["value_loss"] += value_loss.detach()
             metrics_sum_t["entropy"] += entropy_mean.detach()
@@ -1893,6 +2359,37 @@ def sequential_ppo_update(
     avg_kl_t = metrics_sum_t["approx_kl"] / float(n_mb)
     avg_kl = float(avg_kl_t.item())
     policy._ppo_last_avg_kl = float(avg_kl)
+    was_training = bool(policy.training)
+    post_values: List[torch.Tensor] = []
+    policy.eval()
+    with torch.no_grad():
+        eval_batch_size = max(1, int(cfg.minibatch_size))
+        for start in range(0, int(n), eval_batch_size):
+            end = min(int(n), start + eval_batch_size)
+            eval_out = policy.evaluate_action(
+                states[start:end],
+                actions[start:end],
+                slot_masks[start:end],
+                levels[start:end],
+                action_level_mask=(
+                    None if level_masks is None else level_masks[start:end]
+                ),
+                baseline_prior_scale=prior_scales[start:end],
+            )
+            post_values.append(eval_out[2].detach())
+    policy.train(was_training)
+    value_fit_post = _value_fit_diagnostics(torch.cat(post_values), returns)
+
+    def _slot_averages(total: torch.Tensor) -> List[Optional[float]]:
+        rows: List[Optional[float]] = []
+        for idx in range(slot_count):
+            count = float(slot_observation_count[idx].item())
+            rows.append(None if count <= 0.0 else float((total[idx] / count).item()))
+        return rows
+
+    slot_labels = ["block4_fusion", "block1_k", "block2_k", "block3_k", "block4_k", "block5_k"]
+    if slot_count != len(slot_labels):
+        slot_labels = [f"slot_{idx}" for idx in range(slot_count)]
     return {
         "policy_loss": float((metrics_sum_t["policy_loss"] / n_mb).item()),
         "value_loss": float((metrics_sum_t["value_loss"] / n_mb).item()),
@@ -1929,6 +2426,37 @@ def sequential_ppo_update(
                 and bool(getattr(cfg, "entropy_average_active_slots", False))
                 else "joint_sum"
             )
+        ),
+        "slot_labels": slot_labels,
+        "entropy_per_slot": _slot_averages(slot_entropy_sum),
+        "approx_kl_per_slot": (
+            _slot_averages(slot_kl_sum)
+            if factorized_actor_clip else [None] * slot_count
+        ),
+        "clip_fraction_per_slot": (
+            _slot_averages(slot_clip_sum)
+            if factorized_actor_clip else [None] * slot_count
+        ),
+        "raw_advantage_mean_per_slot": raw_advantage_diagnostics["mean"],
+        "raw_advantage_std_per_slot": raw_advantage_diagnostics["std"],
+        "raw_advantage_snr_per_slot": raw_advantage_diagnostics["snr"],
+        "value_explained_variance_pre": value_fit_pre["explained_variance"],
+        "value_explained_variance_post": value_fit_post["explained_variance"],
+        "value_rmse_pre": value_fit_pre["rmse"],
+        "value_rmse_post": value_fit_post["rmse"],
+        "value_bias_pre": value_fit_pre["bias"],
+        "value_bias_post": value_fit_post["bias"],
+        "shared_grad_parameter_count": int(
+            shared_gradient_diagnostics["shared_parameter_count"] or 0
+        ),
+        "actor_shared_grad_norm": shared_gradient_diagnostics["actor_grad_norm"],
+        "critic_shared_grad_norm": shared_gradient_diagnostics["critic_grad_norm"],
+        "actor_critic_shared_grad_cosine": shared_gradient_diagnostics["cosine"],
+        "preclip_grad_norm_mean": (
+            None if not preclip_grad_norms else float(np.mean(preclip_grad_norms))
+        ),
+        "preclip_grad_norm_max": (
+            None if not preclip_grad_norms else float(np.max(preclip_grad_norms))
         ),
     }
 
