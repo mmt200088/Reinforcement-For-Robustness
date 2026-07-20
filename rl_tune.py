@@ -632,6 +632,7 @@ def train(
         blb_v3_fusion_count_action: bool = True,
         blb_v3_decision_granularity: str = "layer",
         blb_v3_reward_design: str = "robust_constrained",
+        blb_v3_policy_network_variant: str = "shared_gtrxl_v1",
         blb_v3_fusion_neighbor_curriculum: bool = False,
         blb_v3_fusion_probe_interval: int = 0,
         blb_v3_fusion_exploration_epsilon: float = 0.0,
@@ -728,6 +729,10 @@ def train(
             "blb_v3_reward_design must be robust_constrained, stage1_aligned, "
             f"continuous, or tiered; got {blb_v3_reward_design!r}"
         )
+    from blb_stage2_rl.network_variants import normalize_policy_network_variant
+    blb_v3_policy_network_variant = normalize_policy_network_variant(
+        blb_v3_policy_network_variant
+    )
     stage2_stability_multiplier = float(stage2_stability_multiplier)
     if stage2_stability_multiplier <= 0.0:
         raise ValueError("stage2_stability_multiplier must be positive")
@@ -1370,6 +1375,7 @@ def train(
             blb_v3_fusion_count_action=blb_v3_fusion_count_action,
             blb_v3_decision_granularity=blb_v3_decision_granularity,
             blb_v3_reward_design=blb_v3_reward_design,
+            blb_v3_policy_network_variant=blb_v3_policy_network_variant,
             blb_v3_fusion_neighbor_curriculum=blb_v3_fusion_neighbor_curriculum,
             blb_v3_fusion_probe_interval=blb_v3_fusion_probe_interval,
             blb_v3_fusion_exploration_epsilon=blb_v3_fusion_exploration_epsilon,

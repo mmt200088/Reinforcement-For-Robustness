@@ -2385,6 +2385,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_fusion_count_action=True,
                   blb_v3_decision_granularity="layer",
                   blb_v3_reward_design="robust_constrained",
+                  blb_v3_policy_network_variant="shared_gtrxl_v1",
                   blb_v3_fusion_neighbor_curriculum=False,
                   blb_v3_fusion_probe_interval=0,
                   blb_v3_fusion_exploration_epsilon=0.0,
@@ -3201,6 +3202,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         self.blb_v3_reward_design = normalize_reward_design(
             blb_v3_reward_design
+        )
+        from blb_stage2_rl.network_variants import normalize_policy_network_variant
+        self.blb_v3_policy_network_variant = normalize_policy_network_variant(
+            blb_v3_policy_network_variant
         )
         if not self.skip_noise_rl and self.search_algorithm != "ga":
             validate_stage2_episode_limit_mode(

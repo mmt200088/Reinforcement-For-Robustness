@@ -3824,6 +3824,12 @@ def _run_layerwise_training_branch(
     from .candidate_store import CandidateStore, sha256_json
     from .layerwise_env import BLBStage2LayerwiseEnv
     from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
+    from .network_variants import (
+        LEGACY_SHARED_RL_VARIANT,
+        bind_policy_network_contract,
+        normalize_policy_network_variant,
+        validate_checkpoint_policy_network_variant,
+    )
     from .layerwise_action import (
         K_LEVELS as LAYERWISE_K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
@@ -3874,7 +3880,10 @@ def _run_layerwise_training_branch(
     if convergence_min_episodes < 0:
         raise ValueError("layerwise convergence minimum episodes must be nonnegative")
     algorithm_revision = "dual_resource_maxmin_shapley_three_bank_convergence_v10"
-    rl_variant = "blb_v3_layerwise_robust_gtrxl_v1"
+    policy_network_variant = normalize_policy_network_variant(
+        getattr(train_cfg, "policy_network_variant", None)
+    )
+    rl_variant = LEGACY_SHARED_RL_VARIANT
     layerwise_entropy_regularization = {
         "kind": "disabled",
         "coefficient": 0.0,
@@ -3942,6 +3951,7 @@ def _run_layerwise_training_branch(
         signal_width=4,
         step_layer_indices=tuple(range(12)),
         step_block_indices=(3,) * 12,
+        network_variant=policy_network_variant,
     )
     ppo = SequentialPPOConfig(
         lr=float(train_cfg.ppo.lr),
@@ -4028,6 +4038,25 @@ def _run_layerwise_training_branch(
         },
         "persistence_protocol": "stable_parent_lock_incremental_fingerprint_v2",
     }
+    algorithm_contract = bind_policy_network_contract(
+        algorithm_contract,
+        policy_network_variant,
+        policy_shape={
+            "state_dim": int(policy_cfg.state_dim),
+            "horizon": int(policy_cfg.horizon),
+            "max_step_dim": int(policy_cfg.max_step_dim),
+            "max_num_levels": int(policy_cfg.max_num_levels),
+            "d_model": int(policy_cfg.d_model),
+            "n_heads": int(policy_cfg.n_heads),
+            "n_layers": int(policy_cfg.n_layers),
+            "d_ff": int(policy_cfg.d_ff),
+            "dropout": float(policy_cfg.dropout),
+            "actor_dim": int(policy_cfg.actor_dim),
+            "critic_dim": int(policy_cfg.critic_dim),
+            "mlp_critic_hidden": [512, 512, int(policy_cfg.d_model)],
+        },
+    )
+    rl_variant = str(algorithm_contract["rl_variant"])
     algorithm_contract_hash = sha256_json(algorithm_contract)
     identity_context = _build_layerwise_candidate_identity_context(
         train_cfg=train_cfg,
@@ -4100,6 +4129,7 @@ def _run_layerwise_training_branch(
         "schema_version": "stage2_layerwise_robust_run_v5",
         "status": "running",
         "rl_variant": rl_variant,
+        "policy_network_variant": policy_network_variant,
         "algorithm_revision": algorithm_revision,
         "algorithm_contract": algorithm_contract,
         "algorithm_contract_hash": algorithm_contract_hash,
@@ -4126,6 +4156,15 @@ def _run_layerwise_training_branch(
     random.seed(int(train_cfg.seed))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
+    policy_network_summary = policy.network_parameter_summary()
+    run_manifest["policy_network"] = policy_network_summary
+    log(
+        f"  {bullet} Stage-2 policy network: {policy_network_variant} "
+        f"(total={policy_network_summary['total']:,}, "
+        f"shared={policy_network_summary['shared']:,}, "
+        f"actor_only={policy_network_summary['actor_only']:,}, "
+        f"critic_only={policy_network_summary['critic_only']:,})"
+    )
     initialize_layerwise_policy(policy)
     optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
     save_path = os.path.join(blb_progress_dir, "blb_stage2_rl_checkpoint_live.pt")
@@ -4152,6 +4191,9 @@ def _run_layerwise_training_branch(
             )
         except TypeError:
             checkpoint = torch.load(effective_resume_path, map_location=device)
+        validate_checkpoint_policy_network_variant(
+            checkpoint, policy_network_variant,
+        )
         validate_layerwise_checkpoint_metadata(
             checkpoint,
             rl_variant=rl_variant,
@@ -4400,6 +4442,8 @@ def _run_layerwise_training_branch(
         "fixed_label": "gelu_all4_softmax_all6",
         "fixed_source": "stage2_all4",
         "rl_variant": rl_variant,
+        "policy_network_variant": policy_network_variant,
+        "policy_network": policy_network_summary,
         "decision_granularity": "layer",
         "reward_design": "robust_constrained",
         "algorithm_revision": algorithm_revision,
@@ -4596,6 +4640,8 @@ def _run_layerwise_training_branch(
             "numpy_rng_state": np.random.get_state(),
             "python_rng_state": random.getstate(),
             "rl_variant": rl_variant,
+            "policy_network_variant": policy_network_variant,
+            "policy_network": policy_network_summary,
             "algorithm_revision": algorithm_revision,
             "algorithm_contract": algorithm_contract,
             "algorithm_contract_hash": algorithm_contract_hash,
@@ -4920,6 +4966,39 @@ def _run_layerwise_training_branch(
             entropy_objective_mode=str(
                 metrics.get("entropy_objective_mode", "joint_sum")
             ),
+            slot_labels=[str(value) for value in metrics.get("slot_labels", [])],
+            entropy_per_slot=list(metrics.get("entropy_per_slot", [])),
+            approx_kl_per_slot=list(metrics.get("approx_kl_per_slot", [])),
+            clip_fraction_per_slot=list(metrics.get("clip_fraction_per_slot", [])),
+            raw_advantage_mean_per_slot=list(
+                metrics.get("raw_advantage_mean_per_slot", [])
+            ),
+            raw_advantage_std_per_slot=list(
+                metrics.get("raw_advantage_std_per_slot", [])
+            ),
+            raw_advantage_snr_per_slot=list(
+                metrics.get("raw_advantage_snr_per_slot", [])
+            ),
+            value_explained_variance_pre=metrics.get(
+                "value_explained_variance_pre"
+            ),
+            value_explained_variance_post=metrics.get(
+                "value_explained_variance_post"
+            ),
+            value_rmse_pre=metrics.get("value_rmse_pre"),
+            value_rmse_post=metrics.get("value_rmse_post"),
+            value_bias_pre=metrics.get("value_bias_pre"),
+            value_bias_post=metrics.get("value_bias_post"),
+            shared_grad_parameter_count=int(
+                metrics.get("shared_grad_parameter_count", 0) or 0
+            ),
+            actor_shared_grad_norm=metrics.get("actor_shared_grad_norm"),
+            critic_shared_grad_norm=metrics.get("critic_shared_grad_norm"),
+            actor_critic_shared_grad_cosine=metrics.get(
+                "actor_critic_shared_grad_cosine"
+            ),
+            preclip_grad_norm_mean=metrics.get("preclip_grad_norm_mean"),
+            preclip_grad_norm_max=metrics.get("preclip_grad_norm_max"),
         )
         if int(completed) not in existing_diagnostic_updates:
             diag_recorder.record_ppo_update(update_stats)
@@ -4948,6 +5027,17 @@ def _run_layerwise_training_branch(
                 "convergence_update_counted": update_stats.convergence_update_counted,
                 "return_mean": update_stats.return_mean,
                 "return_std": update_stats.return_std,
+                "value_explained_variance_post": (
+                    update_stats.value_explained_variance_post
+                ),
+                "value_rmse_post": update_stats.value_rmse_post,
+                "actor_critic_shared_grad_cosine": (
+                    update_stats.actor_critic_shared_grad_cosine
+                ),
+                "preclip_grad_norm_mean": update_stats.preclip_grad_norm_mean,
+                "entropy_per_slot": update_stats.entropy_per_slot,
+                "approx_kl_per_slot": update_stats.approx_kl_per_slot,
+                "clip_fraction_per_slot": update_stats.clip_fraction_per_slot,
                 "window_mean_return": float(update_stats.window_mean_return),
                 "window_max_return": float(update_stats.window_max_return),
                 "window_min_return": float(update_stats.window_min_return),
@@ -5122,6 +5212,8 @@ def _run_layerwise_training_branch(
         "schema_version": "stage2_layerwise_robust_summary_v5",
         "status": completion_status,
         "rl_variant": rl_variant,
+        "policy_network_variant": policy_network_variant,
+        "policy_network": policy_network_summary,
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,
         "run_context_hash": run_context_hash,
@@ -5309,7 +5401,9 @@ def _run_layerwise_training_branch(
         "blb_v3_profile": str(train_cfg.profile),
         "blb_v3_fusion_count_action": True,
         "blb_v3_total_episodes": int(summary.get("completed_episodes", 0)),
-        "rl_variant": "blb_v3_layerwise_robust_gtrxl_v1",
+        "rl_variant": rl_variant,
+        "policy_network_variant": policy_network_variant,
+        "policy_network": policy_network_summary,
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,
         "run_context_hash": run_context_hash,

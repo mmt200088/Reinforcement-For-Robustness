@@ -40,6 +40,56 @@ class LayerwisePolicyTest(unittest.TestCase):
 
         return BLBStage2SequentialPolicy(self._config(**overrides))
 
+    def test_network_variants_keep_actor_initialization_matched_and_partition_parameters(self):
+        state = torch.zeros(3, self._config().state_dim)
+        state[:, 4] = 1.0
+        policies = {}
+        for variant in (
+            "shared_gtrxl_v1",
+            "separate_critic_gtrxl_v1",
+            "separate_critic_mlp_v1",
+        ):
+            torch.manual_seed(20260721)
+            policy = self._policy(network_variant=variant)
+            policy.eval()
+            policies[variant] = policy
+
+        baseline_logits = policies["shared_gtrxl_v1"](state)[0]
+        for name, policy in policies.items():
+            logits, value = policy(state)
+            torch.testing.assert_close(logits, baseline_logits, rtol=0.0, atol=0.0)
+            self.assertEqual(value.shape, (3,), msg=name)
+            summary = policy.network_parameter_summary()
+            self.assertEqual(
+                summary["total"], sum(p.numel() for p in policy.parameters())
+            )
+            self.assertEqual(
+                summary["total"],
+                summary["shared"] + summary["actor_only"] + summary["critic_only"],
+            )
+
+        self.assertGreater(
+            policies["shared_gtrxl_v1"].network_parameter_summary()["shared"], 0
+        )
+        self.assertEqual(
+            policies["shared_gtrxl_v1"].network_parameter_summary()["total"],
+            5_330_461,
+        )
+        self.assertEqual(
+            policies["shared_gtrxl_v1"].network_parameter_summary()["shared"],
+            5_295_160,
+        )
+        for name in ("separate_critic_gtrxl_v1", "separate_critic_mlp_v1"):
+            self.assertEqual(
+                policies[name].network_parameter_summary()["shared"], 0
+            )
+            self.assertGreater(
+                policies[name].network_parameter_summary()["critic_only"],
+                policies["shared_gtrxl_v1"].network_parameter_summary()[
+                    "critic_only"
+                ],
+            )
+
     def test_explicit_schedule_indices_are_used_verbatim(self):
         layer_indices = tuple(range(12))
         block_indices = (4, 2, 0, 3, 1, 4, 2, 0, 3, 1, 4, 2)
@@ -673,6 +723,16 @@ class LayerwisePolicyTest(unittest.TestCase):
 
         self.assertEqual(metrics["actor_clip_mode"], "factorized_per_slot")
         self.assertAlmostEqual(metrics["approx_kl"], 0.75, places=6)
+        self.assertEqual(metrics["slot_labels"], ["slot_0", "slot_1"])
+        self.assertEqual(len(metrics["entropy_per_slot"]), 2)
+        self.assertEqual(len(metrics["approx_kl_per_slot"]), 2)
+        self.assertEqual(len(metrics["clip_fraction_per_slot"]), 2)
+        self.assertEqual(len(metrics["raw_advantage_snr_per_slot"]), 2)
+        self.assertAlmostEqual(metrics["value_rmse_pre"], 1.0, places=6)
+        self.assertIsNotNone(metrics["value_rmse_post"])
+        self.assertEqual(metrics["shared_grad_parameter_count"], 0)
+        self.assertIsNone(metrics["actor_critic_shared_grad_cosine"])
+        self.assertIsNotNone(metrics["preclip_grad_norm_mean"])
 
     def test_factorized_ppo_rejects_missing_behavior_log_probability_per_slot(self):
         from blb_stage2_rl.sequential_policy import (

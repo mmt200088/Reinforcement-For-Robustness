@@ -138,6 +138,8 @@ GA / Greedy：
   --stage1-search-lr FLOAT
   --stage2-search-lr FLOAT
   --stage2-rl-variant blb_v3|legacy_v2    Stage-2 RL 实现；默认 blb_v3，legacy_v2 可复现实验旧路径
+  --blb-v3-policy-network-variant NAME    Stage-2 actor-critic 网络；默认 shared_gtrxl_v1
+                                          可选 separate_critic_gtrxl_v1、separate_critic_mlp_v1
   --stage2-rollout-size N                 BLB v3 PPO rollout 大小；默认跟随 --ppo-update-interval
   --stage2-save-interval N                BLB v3 live checkpoint 保存间隔
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
@@ -524,6 +526,7 @@ STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
 BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT="Rescale_optimizer"
 BLB_V3_SEED=""; S_BLB_V3_SEED="false"
+BLB_V3_POLICY_NETWORK_VARIANT="shared_gtrxl_v1"; S_BLB_V3_POLICY_NETWORK_VARIANT="false"
 BLB_V3_REWARD_DEVICES=""; S_BLB_V3_REWARD_DEVICES="false"
 STAGE1_RL_DEVICES=""; S_STAGE1_RL_DEVICES="false"
 STAGE2_RL_DEVICES=""; S_STAGE2_RL_DEVICES="false"
@@ -758,6 +761,7 @@ while [ "$#" -gt 0 ]; do
     --stage2-rl-variant) needv "$@"; STAGE2_RL_VARIANT="$2"; S_STAGE2_RL_VARIANT="true"; shift 2 ;;
     --stage2-rollout-size|--blb-v3-rollout-size) needv "$@"; BLB_V3_ROLLOUT_SIZE="$2"; S_BLB_V3_ROLLOUT_SIZE="true"; shift 2 ;;
     --blb-v3-seed) needv "$@"; BLB_V3_SEED="$2"; S_BLB_V3_SEED="true"; shift 2 ;;
+    --blb-v3-policy-network-variant) needv "$@"; BLB_V3_POLICY_NETWORK_VARIANT="$2"; S_BLB_V3_POLICY_NETWORK_VARIANT="true"; shift 2 ;;
     --blb-v3-reward-devices) needv "$@"; BLB_V3_REWARD_DEVICES="$2"; S_BLB_V3_REWARD_DEVICES="true"; shift 2 ;;
     --stage1-rl-devices) needv "$@"; STAGE1_RL_DEVICES="$2"; S_STAGE1_RL_DEVICES="true"; shift 2 ;;
     --stage2-rl-devices) needv "$@"; STAGE2_RL_DEVICES="$2"; S_STAGE2_RL_DEVICES="true"; shift 2 ;;
@@ -851,6 +855,7 @@ RL_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$RL_COMPARE_FINAL_EVAL_SOURCE" | tr
 GA_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$GA_COMPARE_FINAL_EVAL_SOURCE" | tr '[:upper:]' '[:lower:]')"
 COMPARE_CONFIG_MODE="$(printf '%s' "$COMPARE_CONFIG_MODE" | tr '[:upper:]' '[:lower:]')"
 STAGE2_RL_VARIANT="$(printf '%s' "$STAGE2_RL_VARIANT" | tr '[:upper:]' '[:lower:]')"
+BLB_V3_POLICY_NETWORK_VARIANT="$(printf '%s' "$BLB_V3_POLICY_NETWORK_VARIANT" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
 BLB_V3_ACTION_MASK_MODE="$(printf '%s' "$BLB_V3_ACTION_MASK_MODE" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
 BLB_V3_DECISION_GRANULARITY="$(printf '%s' "$BLB_V3_DECISION_GRANULARITY" | tr '[:upper:]' '[:lower:]')"
 BLB_V3_REWARD_DESIGN="$(printf '%s' "$BLB_V3_REWARD_DESIGN" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
@@ -877,6 +882,11 @@ case "$STAGE2_RL_VARIANT" in
   blb_v3|blb|v3|blb_stage2_rl|default|"") STAGE2_RL_VARIANT="blb_v3" ;;
   legacy_v2|legacy|v2|noise_rl_module_v2|old) STAGE2_RL_VARIANT="legacy_v2" ;;
   *) err "--stage2-rl-variant 只支持 blb_v3 或 legacy_v2。" ;;
+esac
+
+case "$BLB_V3_POLICY_NETWORK_VARIANT" in
+  shared_gtrxl_v1|separate_critic_gtrxl_v1|separate_critic_mlp_v1) ;;
+  *) err "--blb-v3-policy-network-variant 只支持 shared_gtrxl_v1、separate_critic_gtrxl_v1 或 separate_critic_mlp_v1。" ;;
 esac
 
 case "$RUN_MODE" in
@@ -1696,6 +1706,7 @@ METAEOF
   "$_STAGE2_PERSISTED_STABILITY_KEY": $_STAGE2_PERSISTED_STABILITY_VALUE,
   "blb_v3_decision_granularity": "$BLB_V3_DECISION_GRANULARITY",
   "blb_v3_reward_design": "$BLB_V3_REWARD_DESIGN",
+  "blb_v3_policy_network_variant": "$BLB_V3_POLICY_NETWORK_VARIANT",
   "stage2_k_trials": $STAGE2_K_TRIALS,
   "stage2_probe_size": $STAGE2_PROBE_SIZE,
   "created_at": "$(date -Iseconds)",
@@ -1713,22 +1724,26 @@ METAEOF
   else
     # RL 续训练：先做约束一致性守卫（不同约束不静默续训练），再更新时间戳/计数。
     if [ "$SEARCH_ALGORITHM" = "rl" ] && command -v python3 &>/dev/null; then
-      python3 - "$_META_FILE" "$STAGE1_ACCURACY_TOLERANCE" "$STAGE2_LIMIT_TOLERANCE" "$_STAGE2_PERSISTED_STABILITY_KEY" "$_STAGE2_PERSISTED_STABILITY_VALUE" <<'PYGUARD' || err "检测到当前约束与已持久化工作目录的 metadata 不一致（见上方 CONSTRAINT_MISMATCH）。不同约束不会静默续训练，请加 --fresh 重开该 stage，或改回原约束。工作目录：$PERSISTENT_DIR"
+      python3 - "$_META_FILE" "$STAGE1_ACCURACY_TOLERANCE" "$STAGE2_LIMIT_TOLERANCE" "$_STAGE2_PERSISTED_STABILITY_KEY" "$_STAGE2_PERSISTED_STABILITY_VALUE" "$BLB_V3_POLICY_NETWORK_VARIANT" <<'PYGUARD' || err "检测到当前约束或 policy network 与已持久化工作目录的 metadata 不一致（见上方 CONSTRAINT_MISMATCH）。不同实验臂不会静默续训练，请加 --fresh 重开该 stage，或改回原配置。工作目录：$PERSISTENT_DIR"
 import json, sys
-meta_path, s1, s2, stability_key, stability_value = sys.argv[1:]
+meta_path, s1, s2, stability_key, stability_value, network_variant = sys.argv[1:]
 with open(meta_path) as f:
     m = json.load(f)
 cur = {
     "stage1_accuracy_tolerance": float(s1),
     "stage2_limit_tolerance": float(s2),
     stability_key: float(stability_value),
+    "blb_v3_policy_network_variant": str(network_variant),
 }
 mismatches = []
 for key, current_value in cur.items():
     persisted_value = m.get(key)
     if persisted_value is None:
-        mismatches.append(f"{key}: 已持久化缺失 当前={current_value}")
-        continue
+        if key == "blb_v3_policy_network_variant" and current_value == "shared_gtrxl_v1":
+            persisted_value = "shared_gtrxl_v1"
+        else:
+            mismatches.append(f"{key}: 已持久化缺失 当前={current_value}")
+            continue
     try:
         matches = abs(float(persisted_value) - current_value) <= 1e-9
     except (TypeError, ValueError):
@@ -1794,6 +1809,7 @@ else
     if [ -n "$BLB_V3_SEED" ]; then
       CMD+=(--blb_v3_seed "$BLB_V3_SEED")
     fi
+    CMD+=(--blb_v3_policy_network_variant "$BLB_V3_POLICY_NETWORK_VARIANT")
     # Two-GPU reward probe parallelism (--blb-v3-reward-devices "0,1")
     if [ -n "$BLB_V3_REWARD_DEVICES" ]; then
       CMD+=(--blb_v3_reward_devices "$BLB_V3_REWARD_DEVICES")
@@ -1933,6 +1949,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
   show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
   show "Stage-2 回合数" "$STAGE2_EPISODES" "$S_STAGE2_EPISODES"
   show "Stage-2 RL 实现" "$STAGE2_RL_VARIANT" "$S_STAGE2_RL_VARIANT"
+  show "Stage-2 policy network" "$BLB_V3_POLICY_NETWORK_VARIANT" "$S_BLB_V3_POLICY_NETWORK_VARIANT"
   if [ -n "$BLB_V3_WARMSTART_ANCHOR_EPISODES" ]; then show "BLB v3 warmstart anchor episodes" "$BLB_V3_WARMSTART_ANCHOR_EPISODES" "$S_BLB_V3_WARMSTART_ANCHOR_EPISODES"; fi
   show "BLB v3 action mask" "$(boolzh "$BLB_V3_ACTION_MASK_ENABLED")" "$S_BLB_V3_ACTION_MASK_ENABLED"
   show "BLB v3 action mask 模式" "$BLB_V3_ACTION_MASK_MODE" "$S_BLB_V3_ACTION_MASK_MODE"
