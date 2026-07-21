@@ -11,8 +11,12 @@ rather than enumerating complete configurations.
 The current shared actor-critic uses `d_model=256`, four GTrXL blocks, eight
 attention heads, and `d_ff=512`, totaling 5,330,461 parameters. Two long runs
 reached 114,240 and 231,960 episodes without satisfying strict convergence.
-This does not prove that model size is the only cause, but the network is large
-relative to the 136-dimensional state, 12-step horizon, and factorized heads.
+Those results do not establish any causal link between network size and the
+lack of convergence. The reason for reducing the network is narrower: if this
+task does not need 5.33M policy/value parameters, their additional forward,
+backward, optimizer, checkpoint, and synchronization cost is avoidable training
+time. Network downsizing is therefore a runtime-efficiency hypothesis, not a
+convergence fix.
 
 ## Decision
 
@@ -78,6 +82,58 @@ size alone is not claimed to guarantee convergence. Failure to stabilize by
 that point should trigger analysis of reward identifiability, equivalent K
 actions, stochastic terminal evidence, and actor-credit quality rather than an
 unbounded increase in episode count.
+
+## Network-Size Decision Rule
+
+Run the new small shared network first and compare it with the retained large
+shared-network evidence under the same evaluation contract. Network size must
+be selected from result quality and wall-clock cost, not from an assumption
+that the large model caused non-convergence.
+
+1. If the small network is not materially worse on strict-feasible success,
+   robust objective quality, convergence evidence, or final evaluation, use
+   the small architecture as the base for later network/reward ablations. Do
+   not repeat the ablation matrix with the large architecture.
+2. If the small network is materially worse, test one intermediate-size GTrXL
+   architecture under the same contract. Its exact dimensions require a
+   separate controlled design; they are not implicitly selected here.
+3. If the intermediate network is acceptable, use it as the base for later
+   ablations. Keep the large network and its tags only for reproducibility and
+   rollback rather than as the intended production choice.
+
+"Materially worse" must be judged using matched seeds and evaluation budgets;
+a single run or a small reward difference is not enough to trigger a larger
+network.
+
+## Follow-Up Experiment Backlog
+
+These are retained candidate improvements, not mandatory changes to the
+current implementation. Each experiment must change one factor at a time.
+
+1. Add diagnostics before changing reward: critic explained variance,
+   held-out value error, actor/critic gradient cosine, per-action-head advantage
+   SNR, KL/clip/entropy, and P1/P2/P3 plus reward-component distributions.
+2. After choosing the small or intermediate base size, compare its shared
+   actor-critic against the same-size actor with an independent critic. Test a
+   wider network only if the independent critic still provides evidence of
+   underfitting.
+3. If reward still plateaus, keep v10 as the control and separately test either
+   a conservative-confidence-bound dense constraint signal or primal-dual
+   constrained PPO. Do not combine these changes in the first experiment.
+4. Screen with `3 seeds x 30k episodes`; do not draw final conclusions from the
+   screening stage. Promote candidates to at least five seeds and train to the
+   predefined convergence condition or a 150k maximum budget.
+5. For publication-level comparison at matched evaluation budget, compare PPO
+   with random search, greedy/local search, or CEM. Report strict-feasible
+   success rate, robust floor, sample efficiency, wall time, IQM, and 95%
+   bootstrap confidence intervals.
+6. Validate finalists on the real system rather than only fusion-count/K
+   surrogates: measure compute latency, communication bytes, end-to-end time
+   under multiple network conditions, and the resulting Pareto frontier.
+
+The earlier 200k cap applies only to the first one-off small-network assessment.
+The formal multi-seed ablation protocol uses the 150k maximum above so its
+comparison cost remains controlled.
 
 ## Non-Goals
 

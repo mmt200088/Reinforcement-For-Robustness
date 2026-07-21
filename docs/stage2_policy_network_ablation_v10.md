@@ -45,6 +45,11 @@ Fresh Stage-2 launches default to `shared_gtrxl_small_v1`. Always pass
 `--blb-v3-policy-network-variant shared_gtrxl_v1` when intentionally starting
 or resuming the historical large shared network.
 
+The small default is a runtime-efficiency choice. Existing non-convergence does
+not demonstrate that the large network caused the problem; the large network
+is being retired from normal use because its extra training cost is unnecessary
+unless smaller models produce materially worse results.
+
 Every arm and seed must have a distinct `--run-tag`. The launcher persists the
 network variant in `metadata.json`; the runner also writes it into the run
 manifest, checkpoint, diagnostics manifest, and final summary. Cross-arm resume
@@ -67,6 +72,22 @@ initial actor seed, and evaluation seed banks fixed. Change only
    throughput.
 4. Promote promising arms to the same long-run seed protocol. Do not select an
    arm from a single short run.
+
+Use the selected network size for later ablations. Start with the small shared
+network; if it is not materially worse than the large reference, replace all
+planned large-network ablation arms with same-size small-network arms. If it is
+materially worse, test one controlled intermediate-size network and use that
+size for later ablations if acceptable. The large implementation remains only
+for reproducibility and rollback.
+
+The retained follow-up backlog is: richer critic/gradient/action-head
+diagnostics before reward changes; same-size independent-critic ablation;
+single-factor conservative-confidence-bound or primal-dual reward experiments
+only if reward plateaus; `3 seeds x 30k` screening followed by at least five
+seeds up to convergence or 150k; matched-budget PPO versus random,
+greedy/local-search, or CEM comparisons with IQM and 95% bootstrap intervals;
+and final real-system latency, communication-byte, network-condition, and
+Pareto-frontier measurements.
 
 The reward, action mapping, constraints, candidate promotion, and final
 selection logic are intentionally unchanged by this ablation.
