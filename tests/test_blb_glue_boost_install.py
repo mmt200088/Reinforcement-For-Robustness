@@ -28,6 +28,50 @@ for _p in (str(_REPO), str(_REPO / "blb_stage2_rl"), str(_REPO / "Rescale_optimi
     "torch required for the GLUE BLB decode helper",
 )
 class GlueBoostInstallTest(unittest.TestCase):
+    def test_calibrated_baseline_slots_round_trip_ineffective_block1_k(self):
+        import numpy as np
+
+        from blb_stage2_rl.action_io import (
+            action_vec_to_slots_list,
+            slots_list_to_action_vec,
+        )
+        from blb_stage2_rl.baseline_bootstrap import (
+            load_calibrated_stage2_action_context,
+        )
+
+        num_layers = 12
+        gelu = [4] * num_layers
+        softmax = [6] * num_layers
+        context = load_calibrated_stage2_action_context(
+            rescale_optimizer_root="Rescale_optimizer",
+            dataset="mrpc",
+            num_layers=num_layers,
+            gelu_per_layer=gelu,
+            softmax_per_layer=softmax,
+            snap_sf_to_noise_table=False,
+        )
+        action = np.asarray(context.baseline_action_vec, dtype=int)
+        slots = action_vec_to_slots_list(
+            action,
+            max_sfs=context.max_sfs,
+            num_layers=num_layers,
+            gelu_degree=gelu,
+            attn_degree=softmax,
+            profile="mrpc",
+        )
+
+        round_trip, notes = slots_list_to_action_vec(
+            slots,
+            max_sfs=context.max_sfs,
+            num_layers=num_layers,
+            gelu_degree=gelu,
+            attn_degree=softmax,
+            base_action_vec=action,
+        )
+
+        np.testing.assert_array_equal(round_trip, action)
+        self.assertEqual(notes, [])
+
     def test_decode_helper_installs_boosted_block2_output(self):
         import numpy as np
 

@@ -468,6 +468,8 @@ def slots_list_to_action_vec(
                 raise ValueError(
                     f"slot {label}: K (truncation) slot requires field 'truncation_bits'"
                 )
+            if entry["truncation_bits"] is None and entry.get("effective") is False:
+                continue
             new_idx = _coerce_action_index_from_k(int(entry["truncation_bits"]))
             old_idx = int(vec[global_index])
             vec[global_index] = int(new_idx)
