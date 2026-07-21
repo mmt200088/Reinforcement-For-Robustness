@@ -577,7 +577,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
     def test_action_candidate_skips_model_forward_when_optimizer_invalid(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
-        from blb_stage2_rl.action_space import make_all_max_action_vector
+        from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
 
         class FakeEvaluator:
             total_layers = 1
