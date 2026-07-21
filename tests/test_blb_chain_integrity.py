@@ -24,9 +24,11 @@ try:
     import torch
     from function_handler import (
         NoisePoint,
+        _make_block3_approximation_exponential,
         _sample_gaussian_for_point,
         make_block1_default_config,
         make_block2_default_config,
+        make_block3_default_config,
     )
     from rescale_optimizer_bridge import (
         apply_optimizer_output_to_cfg,
@@ -49,6 +51,8 @@ except Exception as _exc:  # torch / transformers / function_handler missing
     _sample_gaussian_for_point = None  # type: ignore
     make_block1_default_config = None  # type: ignore
     make_block2_default_config = None  # type: ignore
+    make_block3_default_config = None  # type: ignore
+    _make_block3_approximation_exponential = None  # type: ignore
     apply_optimizer_output_to_cfg = None  # type: ignore
     sync_block2_qk_binding = None  # type: ignore
     apply_optimizer_outputs_to_cfgs = None  # type: ignore
@@ -512,6 +516,66 @@ class ApplyOptimizerOutputsToCfgsSharedHelperTest(unittest.TestCase):
         self.assertTrue(diag["model_uses_replan_config"], diag)
         self.assertEqual(cfg.x_centered_fresh.scaling_factor, 32)
         self.assertEqual(cfg.inv_std_fresh.scaling_factor, 32)
+
+    def test_shared_helper_preserves_block3_k_while_writing_sf(self):
+        cfg = make_block3_default_config(
+            degree=2,
+            N=8192,
+            x_fresh_sf=20,
+            inv_2n_sf=18,
+            square_rescale_sfs=(16, 14),
+            output_truncation_k=8,
+        )
+        raw = {
+            "new_compact_config": {
+                "cut_point_sf": [
+                    {"i": 0, "name": "x", "type": "SOURCE", "sf": 30},
+                ],
+                "propagation_deltas": [],
+                "effective_rotations": [],
+            },
+            "result": {"valid": True},
+        }
+        diag = apply_optimizer_outputs_to_cfgs(
+            profile="mrpc",
+            cfgs_dict={"block3": {0: cfg}},
+            opt_outputs={"block3_exp_n2_L0": self._out(raw)},
+            invoker_baselines={"block3_exp_n2": ([0, 2, 3, 4], [], [])},
+        )
+
+        self.assertTrue(diag["model_uses_replan_config"], diag)
+        self.assertEqual(cfg.x_fresh.scaling_factor, 30)
+        self.assertEqual(cfg.output_truncation_k, 8)
+
+
+@unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
+class Block3TruncationExecutionTest(unittest.TestCase):
+    def test_block3_k_changes_post_polynomial_output(self):
+        import function_handler as fh
+
+        common = dict(
+            degree=2,
+            N=8192,
+            x_fresh_sf=30,
+            inv_2n_sf=22,
+            square_rescale_sfs=(None, None),
+        )
+        no_k = make_block3_default_config(**common, output_truncation_k=None)
+        k8 = make_block3_default_config(**common, output_truncation_k=8)
+        k13 = make_block3_default_config(**common, output_truncation_k=13)
+        x = torch.tensor([0.17391, -0.28137], dtype=torch.float64)
+        original_sampler = fh._sample_gaussian_for_point
+        fh._sample_gaussian_for_point = lambda reference, _point: torch.zeros_like(reference)
+        try:
+            raw = _make_block3_approximation_exponential(no_k)(x)
+            out8 = _make_block3_approximation_exponential(k8)(x)
+            out13 = _make_block3_approximation_exponential(k13)(x)
+        finally:
+            fh._sample_gaussian_for_point = original_sampler
+
+        torch.testing.assert_close(out8, torch.trunc(raw * (2 ** 8)) / (2 ** 8))
+        torch.testing.assert_close(out13, torch.trunc(raw * (2 ** 13)) / (2 ** 13))
+        self.assertFalse(torch.equal(out8, out13))
 
 
 # ---------------------------------------------------------------------------

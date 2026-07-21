@@ -609,8 +609,9 @@ def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
 #
 # Total horizon for L layers = 3 + (L-1)*4
 # For L=12 -> horizon = 47 (was 59 when block 3 was decided).
-# Block 3's slots remain in the legacy full action vector (frozen at the
-# static_skeletons baseline); only the decided schedule drops them.
+# Block3's SF slots remain in the legacy full action vector and are frozen at
+# the static_skeletons baseline. The active layerwise policy writes only its K
+# slot; this retired blockwise schedule still has no separate Block3 step.
 #
 # first_input fresh is a deprecated legacy tail slot. It still occupies its old
 # position in the full action vector for compatibility, but no sequential RL
@@ -650,10 +651,9 @@ class BlockStepSpec:
 
 
 # layer 0 lives without block 1 -- the layer-0 input goes straight into block 2.
-# C (2026-05-30): block 3 (softmax exp approx) is no longer an RL decision, so it is
-# excluded from the decided schedule (no block_idx==3 step). The legacy full action
-# vector still KEEPS block 3's slots, frozen at the static_skeletons baseline;
-# _BLOCK3_FIELDS / build_block3_cfg_from_action stay defined but unused by the schedule.
+# C (2026-05-30): Block3 has no standalone legacy blockwise step. Its SF/fusion
+# values stay baseline-owned; the active layerwise policy independently selects
+# Block3 K and the terminal decoder installs the resulting Block3 cfg.
 _LAYER0_BLOCK_ORDER: Tuple[int, ...] = (2, 4, 5)
 _LAYER_GE_1_BLOCK_ORDER: Tuple[int, ...] = (1, 2, 4, 5)
 
@@ -2109,12 +2109,6 @@ def build_optimizer_requests(
         try:
             block_idx = int(str(block_name)[5:])
         except ValueError:
-            continue
-        if int(block_idx) == 3:
-            # block 3 (softmax exp approx) is frozen and fully excluded (2026-06-03):
-            # not RL-decided, not installed (bridge skips it), and not sent to
-            # Rescale_optimizer so the baseline (which also drops block 3) and the
-            # action cost stay consistent without it.
             continue
         for layer_idx, cfg in layer_cfgs.items():
             if int(block_idx) == 1 and int(layer_idx) == 0:

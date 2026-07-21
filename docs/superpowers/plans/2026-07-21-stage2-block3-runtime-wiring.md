@@ -66,13 +66,17 @@ Run the Task 1 command and require zero failures.
 ### Task 3: Prove baseline SF ownership and K passthrough
 
 **Files:**
+- Modify: `blb_stage2_rl/baseline_bootstrap.py`
+- Modify: `blb_stage2_rl/layerwise_env.py`
+- Modify: `blb_stage2_rl/sequential_runner.py`
 - Modify: `tests/test_blb_chain_integrity.py`
 - Modify: `tests/test_blb_block3_removed_schedule.py`
 
 - [ ] **Step 1: Add a failing baseline/K chain test**
 
-Construct two layerwise actions that differ only in Block3 K. Assert their
-Block3 SF fields are identical and baseline-derived, while
+Require the baseline loader to include Block3 and require layerwise reset to
+consume the exact calibrated `ss_action_vec`. Construct two layerwise actions
+that differ only in Block3 K. Assert their Block3 SF fields are identical and baseline-derived, while
 `output_truncation_k` differs.
 
 - [ ] **Step 2: Add a failing replan preservation test**
@@ -139,4 +143,3 @@ Commit only the scoped source, tests, and documentation.
 Run the same focused tests with torch/model support, then execute a narrow
 Block3 action replay that records baseline SFs, selected K, replan status,
 installed Block3 config, and output difference between two K values.
-

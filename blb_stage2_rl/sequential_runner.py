@@ -3745,6 +3745,7 @@ def _run_layerwise_training_branch(
         authoritative_validation_banks: Any,
         authoritative_validation_example_count: int,
         static_skeletons_baseline: Any,
+        baseline_action_vec: Sequence[int],
         fixed_gelu: np.ndarray,
         fixed_softmax: np.ndarray,
         blb_progress_dir: str,
@@ -3870,6 +3871,7 @@ def _run_layerwise_training_branch(
     layerwise_env = BLBStage2LayerwiseEnv(
         base_env=base_env,
         fusion_map=fusion_map,
+        baseline_action_vec=baseline_action_vec,
         profile=str(train_cfg.profile),
     )
     online_probe_example_count = sum(
@@ -6136,6 +6138,7 @@ def _run_sequential_via_runner_locked(
                 authoritative_validation_example_count
             ),
             static_skeletons_baseline=ss_baseline_obj,
+            baseline_action_vec=ss_action_vec,
             fixed_gelu=fixed_gelu,
             fixed_softmax=fixed_softmax,
             blb_progress_dir=blb_progress_dir,

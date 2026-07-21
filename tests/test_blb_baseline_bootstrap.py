@@ -227,6 +227,9 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
             gelu_per_layer=gelu,
             softmax_per_layer=softmax,
         )
+        self.assertEqual(baseline.aggregate_valid_block_count, 9)
+        self.assertIn((3, 0), baseline.per_block_layer)
+        self.assertIn((3, 1), baseline.per_block_layer)
         action_vec, max_sfs, _stats, _diag = static_skeletons_baseline_to_action(
             baseline,
             snap_sf_to_noise_table=False,

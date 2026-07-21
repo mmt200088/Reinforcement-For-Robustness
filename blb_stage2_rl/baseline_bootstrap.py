@@ -847,12 +847,9 @@ def load_static_skeletons_baseline(
     for layer_idx in range(int(num_layers)):
         gelu_deg = int(gelu_per_layer[layer_idx])
         softmax_deg = int(softmax_per_layer[layer_idx])
-        # block 3 (softmax exp approx) is no longer part of the baseline (2026-06-03):
-        # it is frozen, excluded from the RL schedule, never installed by the bridge,
-        # and excluded from the optimizer requests — so it must NOT be read from the
-        # archive here either (otherwise a fixed softmax degree whose block3_exp_n<d>
-        # is invalid, e.g. the regenerated n6, would block the whole baseline handoff).
-        for block_idx in (1, 2, 4, 5):
+        # Block3 SF/fusion is baseline-owned: it is read from the same RO archive
+        # as every other block even though the policy only chooses its truncation K.
+        for block_idx in (1, 2, 3, 4, 5):
             # 语义对齐：layer-0 block 1 不安装噪声，跳过抽取
             if int(layer_idx) == 0 and int(block_idx) == 1:
                 continue

@@ -1131,10 +1131,11 @@ class BLBActionFinalEvaluationModule:
         expected = {
             # Mirror BLBNoiseRLBridge.apply semantics:
             #   * layer-0 block1 is intentionally absent,
-            #   * block3 and first_input noise are deprecated/frozen and not installed.
+            #   * Block3 baseline SF plus selected K is installed on every layer,
+            #   * first_input noise remains deprecated and absent.
             "block1": set(range(1, total_layers)),
             "block2": expected_all,
-            "block3": set(),
+            "block3": expected_all,
             "block4": expected_all,
             "block5": expected_all,
             "first_input": set(),

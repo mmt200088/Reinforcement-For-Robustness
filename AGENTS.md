@@ -1522,6 +1522,15 @@ experiment reproduction.
    record / final-eval must carry the Stage-1 config it was built on, and any
    cost-matched Stage-2 sampling holds that Stage-1 config fixed (only Stage-2
    cost varies).
+10. Block3 has no fusion-count or SF policy action. Its fresh/encode/rescale
+    fields are loaded from the Rescale Optimizer static-skeleton baseline and
+    the layerwise environment resets from that exact calibrated action vector.
+    The policy owns only Block3 truncation K. Terminal evaluation sends the
+    Block3 baseline cfg through RO SF replan/write-back without changing K,
+    then installs it on every layer through `replace_layer_block3_noise`; the
+    model truncates after the Block3 polynomial exponential. Training probes,
+    promotion/final evaluation, fixed-action evaluation, and GLUE generation
+    must all use this same decode/replan/bridge path.
 
 ## Current BLB Action Space
 

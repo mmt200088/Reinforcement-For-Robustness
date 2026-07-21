@@ -32,17 +32,22 @@ Rescale Optimizer baseline.
 
 ## Data Flow
 
-1. The layerwise policy selects Block3 K in slot 3 of each layer action.
-2. `apply_layer_action` writes only that K index into Block3's legacy vector
+1. `load_static_skeletons_baseline` reads Block3 and
+   `static_skeletons_baseline_to_action` emits the exact calibrated
+   `ss_action_vec`.
+2. `BLBStage2LayerwiseEnv` resets from that vector instead of reconstructing a
+   generic all-max approximation.
+3. The layerwise policy selects Block3 K in slot 3 of each layer action.
+4. `apply_layer_action` writes only that K index into Block3's legacy vector
    slice; the remaining Block3 indices stay at the RO baseline.
-3. `action_vector_to_cfgs` builds `Block3NoiseConfig` from baseline SF values
+5. `action_vector_to_cfgs` builds `Block3NoiseConfig` from baseline SF values
    plus the selected K.
-4. `build_optimizer_requests` includes Block3 instead of discarding it.
-5. Rescale Optimizer evaluates/replans the Block3 SF chain.
-6. `apply_optimizer_outputs_to_cfgs` writes final SFs back into the same
+6. `build_optimizer_requests` includes Block3 instead of discarding it.
+7. Rescale Optimizer evaluates/replans the Block3 SF chain.
+8. `apply_optimizer_outputs_to_cfgs` writes final SFs back into the same
    `Block3NoiseConfig`, preserving K.
-7. `BLBNoiseRLBridge.apply` installs the per-layer Block3 configs.
-8. The model applies Block3 noise and truncation, produces metrics, and those
+9. `BLBNoiseRLBridge.apply` installs the per-layer Block3 configs.
+10. The model applies Block3 noise and truncation, produces metrics, and those
    metrics determine the reward and PPO update.
 
 ## Failure Handling
@@ -65,4 +70,3 @@ Rescale Optimizer baseline.
   for different K values, proving real truncation execution.
 - Server test: run the narrow Block3 chain gate with torch/model support and
   capture the installed config plus forward evidence.
-

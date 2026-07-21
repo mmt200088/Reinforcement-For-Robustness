@@ -154,6 +154,7 @@ class BLBStage2LayerwiseEnv:
             *,
             base_env: Any,
             fusion_map: Any,
+            baseline_action_vec: Sequence[int],
             env_cfg: Optional[LayerwiseEnvConfig] = None,
             profile: Optional[str] = None,
             ):
@@ -173,9 +174,16 @@ class BLBStage2LayerwiseEnv:
         self._attn_degrees: List[int] = []
         self._rebuild_schedule()
 
-        self._pending_full_vec = np.asarray(
+        expected_size = np.asarray(
             make_all_max_action_vector(self.num_layers), dtype=int,
-        ).reshape(-1).copy()
+        ).reshape(-1).size
+        baseline = np.asarray(baseline_action_vec, dtype=int).reshape(-1)
+        if baseline.size != expected_size:
+            raise ValueError(
+                f"baseline_action_vec has {baseline.size} slots, expected {expected_size}"
+            )
+        self._baseline_action_vec = baseline.copy()
+        self._pending_full_vec = self._baseline_action_vec.copy()
         self._step_idx = 0
         self._has_reset = False
         self._done = False
@@ -241,9 +249,7 @@ class BLBStage2LayerwiseEnv:
     def reset(self, *, seed: Optional[int] = None) -> np.ndarray:
         self.base.reset(seed=seed)
         self._rebuild_schedule()
-        self._pending_full_vec = np.asarray(
-            make_all_max_action_vector(self.num_layers), dtype=int,
-        ).reshape(-1).copy()
+        self._pending_full_vec = self._baseline_action_vec.copy()
         self._step_idx = 0
         self._has_reset = True
         self._done = False

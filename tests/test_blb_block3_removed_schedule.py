@@ -1,10 +1,10 @@
-"""C (2026-05-30): Stage-2 block 3 removed from the *decided* RL schedule.
+"""Stage-2 Block3 keeps baseline SFs while exposing a real truncation-K action.
 
 Two layers of checks:
 
-* ``Block3RemovedSourceTest`` -- torch-free source-text guarantees (always run,
-  locally + CI). These pin the structural decisions of change C.
-* ``Block3RemovedBehaviorTest`` -- behavioral checks that import
+* ``Block3RuntimeSourceTest`` -- torch-free source-text guarantees (always run,
+  locally + CI).
+* ``Block3RuntimeBehaviorTest`` -- behavioral checks that import
   ``blb_stage2_rl.action_space``. The package ``__init__`` imports torch, so
   these run in CI / on the server (torch installed) and skip cleanly on a
   torch-free dev box.
@@ -22,8 +22,8 @@ def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
-class Block3RemovedSourceTest(unittest.TestCase):
-    """Static (torch-free) guarantees about the block-3-removed schedule."""
+class Block3RuntimeSourceTest(unittest.TestCase):
+    """Static guarantees for baseline-owned SFs plus runtime-owned K."""
 
     def test_block_order_tuples_exclude_block3(self):
         text = _read(ACTION_SPACE)
@@ -51,15 +51,20 @@ class Block3RemovedSourceTest(unittest.TestCase):
         self.assertIn("make_all_max_action_vector(self.num_layers)", text)
         self.assertNotIn("empty_full_action_vec(self.num_layers)", text)
 
-    def test_bridge_never_installs_block3_noise(self):
+    def test_optimizer_requests_do_not_skip_block3(self):
+        text = _read(ACTION_SPACE)
+        start = text.index("def build_optimizer_requests(")
+        end = text.index("\n    return out", start) + len("\n    return out")
+        body = text[start:end]
+        self.assertNotIn("if int(block_idx) == 3:", body)
+
+    def test_bridge_installs_block3_noise(self):
         text = _read(BRIDGE)
-        # The install *call* must be gone (method name may survive only in a
-        # comment). block3_cfgs stays in the signature for API compatibility.
-        self.assertNotIn("self.handler.replace_layer_block3_noise(", text)
-        self.assertIn("block3_cfgs", text)
+        self.assertIn("self.handler.replace_layer_block3_noise(", text)
+        self.assertIn('add("block3")', text)
 
 
-class Block3RemovedBehaviorTest(unittest.TestCase):
+class Block3RuntimeBehaviorTest(unittest.TestCase):
     """Behavioral checks; need torch (blb_stage2_rl.__init__ imports it)."""
 
     def setUp(self):
@@ -85,6 +90,55 @@ class Block3RemovedBehaviorTest(unittest.TestCase):
         dims = self.A.action_dims_for_config(12)
         vec = self.A.make_all_max_action_vector(12)
         self.assertEqual(len(vec), len(dims))
+
+    def test_optimizer_requests_include_every_block3_layer(self):
+        layers = 2
+        decoded = self.A.action_vector_to_cfgs(
+            self.A.make_all_max_action_vector(layers),
+            self.A.load_max_sfs("mrpc"),
+            num_layers=layers,
+            gelu_degree=[4] * layers,
+            attn_degree=[6] * layers,
+        )
+        requests = self.A.build_optimizer_requests("mrpc", decoded.cfgs_dict())
+        block3_names = sorted(
+            name for name, (block_name, _cfg) in requests.items()
+            if block_name == "block3"
+        )
+        self.assertEqual(block3_names, ["block3_exp_n6_L0", "block3_exp_n6_L1"])
+
+    def test_bridge_installs_and_restores_block3_per_layer(self):
+        from blb_rl_bridge import BLBNoiseRLBridge
+
+        class Handler:
+            def __init__(self):
+                self.install_calls = []
+                self.restore_calls = []
+
+            def replace_layer_block3_noise(self, **kwargs):
+                self.install_calls.append(kwargs)
+
+            def restore_layer_block3_noise(self, **kwargs):
+                self.restore_calls.append(kwargs)
+
+            def __getattr__(self, name):
+                if name.startswith(("replace_layer_block", "restore_layer_block")):
+                    return lambda **_kwargs: None
+                raise AttributeError(name)
+
+        handler = Handler()
+        bridge = BLBNoiseRLBridge(handler)
+        cfgs = {0: object(), 1: object()}
+
+        bridge.apply(block3_cfgs=cfgs)
+
+        self.assertEqual(len(handler.install_calls), 1)
+        self.assertEqual(handler.install_calls[0]["layer_indices"], [0, 1])
+        self.assertEqual(handler.install_calls[0]["cfg_per_layer"], cfgs)
+        self.assertEqual(bridge.installed_layers(), {0: {"block3"}, 1: {"block3"}})
+
+        bridge.clear()
+        self.assertEqual(handler.restore_calls[0]["layer_indices"], [0, 1])
 
 
 if __name__ == "__main__":

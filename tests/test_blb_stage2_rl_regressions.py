@@ -552,7 +552,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
             def __init__(self, decoded):
                 self.block1_cfg_per_layer = {1: decoded.block1_cfgs[1]}
                 self.block2_cfg_per_layer = dict(decoded.block2_cfgs)
-                self.block3_cfg_per_layer = {}
+                self.block3_cfg_per_layer = dict(decoded.block3_cfgs)
                 self.block4_cfg_per_layer = dict(decoded.block4_cfgs)
                 self.block5_cfg_per_layer = dict(decoded.block5_cfgs)
 
@@ -560,7 +560,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
                 return {
                     "block1": {1},
                     "block2": {0, 1},
-                    "block3": set(),
+                    "block3": {0, 1},
                     "block4": {0, 1},
                     "block5": {0, 1},
                     "first_input": set(),
@@ -569,8 +569,8 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         class FakeBridge:
             def installed_layers(self):
                 return {
-                    0: {"block2", "block4", "block5"},
-                    1: {"block1", "block2", "block4", "block5"},
+                    0: {"block2", "block3", "block4", "block5"},
+                    1: {"block1", "block2", "block3", "block4", "block5"},
                 }
 
         decoded = FakeDecoded()
@@ -594,7 +594,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
         self.assertTrue(result["model_will_use_selected_cfg"])
         self.assertEqual(result["expected_active_layers"]["block1"], [1])
-        self.assertEqual(result["expected_active_layers"]["block3"], [])
+        self.assertEqual(result["expected_active_layers"]["block3"], [0, 1])
         self.assertEqual(result["expected_active_layers"]["first_input"], [])
 
     def test_action_candidate_skips_model_forward_when_optimizer_invalid(self):
@@ -1505,11 +1505,9 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             model=TinyModel(),
             probe_batches=[probe],
             rescale_bridge=bridge,
-            # 3 blocks (block2/4/5) * 100 bits each — layer-0 block1 is not installed
-            # (first HE config is lossless) AND block 3 is removed (frozen, excluded
-            # from baseline + cost, 2026-06-03), so the all-max baseline reports 3
-            # valid blocks. Matches build_optimizer_requests, which now skips block 3.
-            baseline=BaselineCostStats(total_bits_sum=300, total_fusion_count=0, avg_k=13.0),
+            # 4 blocks (block2/3/4/5) * 100 bits each. Layer-0 block1 is absent
+            # because the first HE configuration is treated as lossless.
+            baseline=BaselineCostStats(total_bits_sum=400, total_fusion_count=0, avg_k=13.0),
             reward_weights=RewardWeights(),
             acc_threshold=0.5,
             stab_threshold=10.0,
@@ -1652,9 +1650,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        # 4 blocks * 12 layers - 1 = 47 (block 3 removed from baseline+cost, 2026-06-03;
-        # layer-0 block 1 is not installed — the first HE config is treated as lossless).
-        self.assertEqual(signals.valid_block_count, 47)
+        # 5 blocks * 12 layers - 1 = 59; layer-0 block1 is intentionally absent.
+        self.assertEqual(signals.valid_block_count, 59)
         self.assertEqual(signals.invalid_block_count, 0)
 
     def test_real_mrpc_all_max_cfg_derived_optimizer_outputs_are_valid(self):
@@ -1689,9 +1686,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        # 4 blocks * 12 layers - 1 = 47 (block 3 removed from baseline+cost, 2026-06-03;
-        # layer-0 block 1 is not installed — the first HE config is treated as lossless).
-        self.assertEqual(signals.valid_block_count, 47)
+        # 5 blocks * 12 layers - 1 = 59; layer-0 block1 is intentionally absent.
+        self.assertEqual(signals.valid_block_count, 59)
         self.assertEqual(signals.invalid_block_count, 0)
         self.assertEqual(
             outputs["block4_L0"].raw["delta_overrides"]["ctct_rot_softmax_mul_v"],

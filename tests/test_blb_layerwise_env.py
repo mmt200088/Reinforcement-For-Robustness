@@ -88,6 +88,10 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.base = self._FakeBase()
         self.runtime_calls = []
         self.invalid_key = None
+        self.baseline_action_vec = self.mod.make_all_max_action_vector(12)
+        for layer_idx in range(12):
+            block3_start = layer_idx * 73 + 32
+            self.baseline_action_vec[block3_start:block3_start + 7] = np.arange(1, 8)
 
         def evaluate(**kwargs):
             self.runtime_calls.append({
@@ -118,7 +122,9 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
 
         self.mod.evaluate_block_from_full_vector = evaluate
         self.env = self.mod.BLBStage2LayerwiseEnv(
-            base_env=self.base, fusion_map=self.fusion_map,
+            base_env=self.base,
+            fusion_map=self.fusion_map,
+            baseline_action_vec=self.baseline_action_vec,
         )
 
     class _FakeBase:
@@ -156,6 +162,9 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         exposed = self.env.pending_full_vector
         exposed[0] = -1
         self.assertNotEqual(self.env.pending_full_vector[0], -1)
+        np.testing.assert_array_equal(
+            self.env.pending_full_vector[32:39], np.arange(1, 8),
+        )
 
     def test_evaluates_four_then_five_blocks_and_records_one_row(self):
         self.env.reset()
@@ -267,8 +276,8 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(info["pending_full_vector"], terminal_vector.tolist())
         json.dumps(info)
 
-        # Block3 keeps baseline SF indices but carries the policy's K index.
-        self.assertTrue(np.all(terminal_vector[32:39] == 14))
+        # Block3 keeps the exact RO-baseline SF indices but carries policy K.
+        np.testing.assert_array_equal(terminal_vector[32:39], np.arange(1, 8))
         self.assertEqual(terminal_vector[39], 2)
 
     def test_invalid_block_is_aggregated_without_early_termination(self):
@@ -616,7 +625,9 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
             step=lambda *args, **kwargs: self.fail("terminal base step must not run at layer 0"),
         )
         env = self.layerwise_env.BLBStage2LayerwiseEnv(
-            base_env=base, fusion_map=self.fusion_map,
+            base_env=base,
+            fusion_map=self.fusion_map,
+            baseline_action_vec=self.layerwise_env.make_all_max_action_vector(12),
         )
         self.assertIs(
             self.layerwise_env.evaluate_block_from_full_vector,
