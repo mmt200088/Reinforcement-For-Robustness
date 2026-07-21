@@ -46,4 +46,4 @@ backend selected by explicit Stage-2 configuration.
 - [x] Capture route parity, all-block K, fail-closed, legacy parity, stochastic
       statistics, and Gaussian-RNG-isolation evidence.
 - [x] Pull compact evidence locally.
-- [ ] Commit/push the evidence and verify local/remote synchronization.
+- [x] Commit/push the evidence and verify local/remote synchronization.
