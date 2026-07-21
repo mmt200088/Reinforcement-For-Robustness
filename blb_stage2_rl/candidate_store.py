@@ -395,11 +395,15 @@ class CandidateStore:
         self._promotion_state_by_candidate_key: Optional[
             Dict[str, Tuple[bool, str]]
         ] = None
+        self._latest_promotion_by_candidate_key: Optional[
+            Dict[str, Tuple[str, Dict[str, Any]]]
+        ] = None
 
     def _reset_trial_indices(self) -> None:
         self._trial_offsets_by_candidate_key = None
         self._trial_seeds_by_candidate_key = None
         self._promotion_state_by_candidate_key = None
+        self._latest_promotion_by_candidate_key = None
 
     def _invalidate_recovery_layout(self) -> None:
         self._recovery_layout_size = None
@@ -698,6 +702,7 @@ class CandidateStore:
                 self._trial_offsets_by_candidate_key is None
                 or self._trial_seeds_by_candidate_key is None
                 or self._promotion_state_by_candidate_key is None
+                or self._latest_promotion_by_candidate_key is None
         ):
             return
         key = str(record.get("candidate_key", ""))
@@ -708,6 +713,11 @@ class CandidateStore:
             key, (False, ""),
         )
         if record_type == "candidate_promotion_status_v1":
+            metadata = record.get("promotion_metadata")
+            self._latest_promotion_by_candidate_key[key] = (
+                str(record.get("promotion_status", status)),
+                dict(metadata) if isinstance(metadata, Mapping) else {},
+            )
             self._promotion_state_by_candidate_key[key] = (
                 True, str(record.get("promotion_status", status)),
             )
@@ -738,11 +748,13 @@ class CandidateStore:
                 self._trial_offsets_by_candidate_key is not None
                 and self._trial_seeds_by_candidate_key is not None
                 and self._promotion_state_by_candidate_key is not None
+                and self._latest_promotion_by_candidate_key is not None
         ):
             return
         self._trial_offsets_by_candidate_key = {}
         self._trial_seeds_by_candidate_key = {}
         self._promotion_state_by_candidate_key = {}
+        self._latest_promotion_by_candidate_key = {}
         for offset, record in self._iter_active_records():
             if record.get("record_type") not in (
                     "candidate_trial_group_v1", "candidate_promotion_status_v1",
@@ -938,6 +950,22 @@ class CandidateStore:
         wanted_key = candidate_key(normalized_action, identity_context)
         self._ensure_trial_indices()
         return len(self._trial_seeds_by_candidate_key.get(wanted_key, {}))
+
+    def latest_promotion_status_for_action(
+            self,
+            action_indices: Any,
+            identity_context: Mapping[str, Any],
+            ) -> Tuple[str, Dict[str, Any]]:
+        """Return the latest explicit promotion status from the candidate index."""
+        if not isinstance(identity_context, Mapping):
+            raise TypeError("identity_context must be a mapping")
+        normalized_action = normalize_action_indices(action_indices)
+        wanted_key = candidate_key(normalized_action, identity_context)
+        self._ensure_trial_indices()
+        status, metadata = self._latest_promotion_by_candidate_key.get(
+            wanted_key, ("", {}),
+        )
+        return status, dict(metadata)
 
     def best_for_action(
             self,

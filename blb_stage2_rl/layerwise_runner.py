@@ -1894,17 +1894,9 @@ def _latest_promotion_status(
         action_indices: Sequence[int],
         identity_context: Mapping[str, Any],
         ) -> tuple[str, dict[str, Any]]:
-    wanted_key = candidate_key(action_indices, identity_context)
-    latest_status = ""
-    latest_metadata: dict[str, Any] = {}
-    for record in candidate_store.iter_active_records():
-        if record.get("record_type") != "candidate_promotion_status_v1":
-            continue
-        if str(record.get("candidate_key", "")) != wanted_key:
-            continue
-        latest_status = str(record.get("promotion_status", ""))
-        latest_metadata = dict(record.get("promotion_metadata") or {})
-    return latest_status, latest_metadata
+    return candidate_store.latest_promotion_status_for_action(
+        action_indices, identity_context,
+    )
 
 
 def _validation_bank_prefix(
