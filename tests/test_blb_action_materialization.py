@@ -181,6 +181,46 @@ class ActionMaterializationTests(unittest.TestCase):
                 source_fractional_bits=8,
             )
 
+    def test_real_mrpc_all_max_materializes_all_blocks_and_preserves_block3_k(self):
+        from blb_stage2_rl.action_space import (
+            load_max_sfs,
+            make_all_max_action_vector,
+        )
+        from blb_stage2_rl.optimizer_cost import materialize_action_for_model
+        from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+
+        invoker = InProcessInvoker.from_profile(
+            rescale_optimizer_root="Rescale_optimizer",
+            profile="mrpc",
+        )
+        result = materialize_action_for_model(
+            make_all_max_action_vector(num_layers=12),
+            profile="mrpc",
+            num_layers=12,
+            max_sfs=load_max_sfs("mrpc"),
+            rescale_bridge=RescaleOptimizerBridge(invoker=invoker),
+            gelu_degree=4,
+            attn_degree=4,
+            invoker_baselines=invoker.baselines,
+        )
+
+        self.assertTrue(result.model_ready, result.replan_application)
+        self.assertFalse(result.optimizer_invalid)
+        self.assertIsNone(result.failure_reason)
+        self.assertEqual(result.replan_application["expected_config_count"], 59)
+        self.assertEqual(result.replan_application["applied_config_count"], 59)
+        self.assertTrue(result.replan_application["model_uses_replan_config"])
+        self.assertEqual(len(result.decoded.block3_cfgs), 12)
+        self.assertEqual(
+            {cfg.output_truncation_k for cfg in result.decoded.block3_cfgs.values()},
+            {13},
+        )
+        self.assertEqual(
+            sum(name.startswith("block3_exp_n4_L") for name in result.outputs),
+            12,
+        )
+        self.assertRegex(result.final_config_fingerprint, r"^[0-9a-f]{64}$")
+
 
 if __name__ == "__main__":
     unittest.main()
