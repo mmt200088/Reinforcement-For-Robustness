@@ -3847,6 +3847,55 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
         return store
 
+    def test_latest_promotion_status_reuses_warmed_candidate_index(self):
+        from blb_stage2_rl.layerwise_runner import (
+            _latest_promotion_status,
+            evidence_identity_context,
+        )
+
+        action = list(range(20))
+        context = evidence_identity_context(
+            {"action_space_version": "layerwise-v1"}, "F4",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = self._store_with_five(td)
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": context,
+                "promotion_status": "bank_a_point_failed",
+                "promotion_metadata": {"generation": 1},
+            })
+            store.trial_count_for_action(action, context)
+            store.append({
+                "record_type": "candidate_promotion_status_v1",
+                "action_indices": action,
+                "effective_action_indices": action,
+                "identity_context": context,
+                "promotion_status": "promoted",
+                "promotion_metadata": {"generation": 2},
+            })
+
+            with (
+                mock.patch.object(
+                    store,
+                    "iter_active_records",
+                    side_effect=AssertionError("hot lookup must not scan JSONL"),
+                ),
+                mock.patch.object(
+                    store,
+                    "_iter_active_records",
+                    side_effect=AssertionError("hot lookup must reuse the index"),
+                ),
+            ):
+                status, metadata = _latest_promotion_status(
+                    store, action, context,
+                )
+
+        self.assertEqual(status, "promoted")
+        self.assertEqual(metadata, {"generation": 2})
+
     def test_promotion_tops_up_five_to_25_through_real_chain_once(self):
         from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
