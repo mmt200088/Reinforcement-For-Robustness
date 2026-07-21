@@ -27,6 +27,10 @@ backend selected by explicit Stage-2 configuration.
 - [x] Migrate online/prepared RL, sequential evaluation, and Paean to it.
 - [x] Change persistent model-install caching to final-config identity.
 - [x] Persist materialization diagnostics and fingerprint in evaluation output.
+- [x] Centralize optimizer rotation-name translation for all model-evaluation
+      routes and fail closed on unmapped or malformed effective rotations.
+- [x] Preserve optimizer rotation counts and execute one independent Gaussian
+      draw for each concrete runtime rotation.
 
 ### Task 3: Optional stochastic-ring truncation
 
@@ -47,3 +51,6 @@ backend selected by explicit Stage-2 configuration.
       statistics, and Gaussian-RNG-isolation evidence.
 - [x] Pull compact evidence locally.
 - [x] Commit/push the evidence and verify local/remote synchronization.
+- [x] Re-run the expanded exact-snapshot server suite after rotation repair:
+      357 unittest tests passed (2 GPU-only skips) and 49 robust reward tests
+      passed.

@@ -1,0 +1,57 @@
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+test_block2_shared_rotation_enables_all_qkv_model_branches (tests.test_blb_chain_integrity.DefaultOptimizerRotationBindingTest.test_block2_shared_rotation_enables_all_qkv_model_branches) ... FAIL
+test_block4_rotation_count_three_is_preserved_for_runtime (tests.test_blb_chain_integrity.DefaultOptimizerRotationBindingTest.test_block4_rotation_count_three_is_preserved_for_runtime) ... FAIL
+test_unknown_effective_rotation_fails_closed_instead_of_disappearing (tests.test_blb_chain_integrity.DefaultOptimizerRotationBindingTest.test_unknown_effective_rotation_fails_closed_instead_of_disappearing) ... FAIL
+test_rotation_repeat_count_executes_independent_noise_for_every_rotation (tests.test_blb_truncation_backends.TruncationBackendTests.test_rotation_repeat_count_executes_independent_noise_for_every_rotation) ... ERROR
+test_real_mrpc_all_max_materializes_all_blocks_and_preserves_block3_k (tests.test_blb_action_materialization.ActionMaterializationTests.test_real_mrpc_all_max_materializes_all_blocks_and_preserves_block3_k) ... FAIL
+
+======================================================================
+ERROR: test_rotation_repeat_count_executes_independent_noise_for_every_rotation (tests.test_blb_truncation_backends.TruncationBackendTests.test_rotation_repeat_count_executes_independent_noise_for_every_rotation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/stage2_rotation_red_ae7f1d8b_20260721_215547/src/tests/test_blb_truncation_backends.py", line 76, in test_rotation_repeat_count_executes_independent_noise_for_every_rotation
+    actual = fh._apply_rotation_noise(
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'function_handler' has no attribute '_apply_rotation_noise'
+
+======================================================================
+FAIL: test_block2_shared_rotation_enables_all_qkv_model_branches (tests.test_blb_chain_integrity.DefaultOptimizerRotationBindingTest.test_block2_shared_rotation_enables_all_qkv_model_branches)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/stage2_rotation_red_ae7f1d8b_20260721_215547/src/tests/test_blb_chain_integrity.py", line 387, in test_block2_shared_rotation_enables_all_qkv_model_branches
+    self.assertTrue(getattr(cfg, flag), flag)
+AssertionError: False is not true : rotation_after_wq_rescale
+
+======================================================================
+FAIL: test_block4_rotation_count_three_is_preserved_for_runtime (tests.test_blb_chain_integrity.DefaultOptimizerRotationBindingTest.test_block4_rotation_count_three_is_preserved_for_runtime)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/stage2_rotation_red_ae7f1d8b_20260721_215547/src/tests/test_blb_chain_integrity.py", line 404, in test_block4_rotation_count_three_is_preserved_for_runtime
+    self.assertTrue(getattr(cfg, flag))
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_unknown_effective_rotation_fails_closed_instead_of_disappearing (tests.test_blb_chain_integrity.DefaultOptimizerRotationBindingTest.test_unknown_effective_rotation_fails_closed_instead_of_disappearing)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/stage2_rotation_red_ae7f1d8b_20260721_215547/src/tests/test_blb_chain_integrity.py", line 409, in test_unknown_effective_rotation_fails_closed_instead_of_disappearing
+    with self.assertRaisesRegex(ValueError, "unmapped effective rotation"):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_real_mrpc_all_max_materializes_all_blocks_and_preserves_block3_k (tests.test_blb_action_materialization.ActionMaterializationTests.test_real_mrpc_all_max_materializes_all_blocks_and_preserves_block3_k)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/hy-tmp/stage2_rotation_red_ae7f1d8b_20260721_215547/src/tests/test_blb_action_materialization.py", line 241, in test_real_mrpc_all_max_materializes_all_blocks_and_preserves_block3_k
+    self.assertTrue(enabled_rotation_flags)
+AssertionError: [] is not true
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.046s
+
+FAILED (failures=4, errors=1)

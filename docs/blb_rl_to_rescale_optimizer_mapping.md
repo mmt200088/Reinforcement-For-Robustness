@@ -231,10 +231,38 @@ block5_n4:         i=0 x_centered_fresh      i=1 normalize_result_rescale i=3 wf
    面紧邻的 fresh / rescale。
 2. **rotation 是可选的**：cfg 上的 `rotation_after_*: bool` 决定是否插入；最终是否
    插入由 `Rescale_optimizer.new_compact_config.effective_rotations` 决定，由
-   `apply_rotation_flags_to_cfg` 反写到 cfg。
+   canonical materialization 通过
+   `DEFAULT_ROTATION_NAME_MAP_BY_BLOCK` + `apply_rotation_flags_to_cfg` 反写到 cfg。
+   未知 rotation 名、非法目标字段或非法 `count` 必须在模型推理前 fail closed，不能
+   静默丢失。
 3. **rotation 紧跟其前一个 fresh / rescale**：若该 rescale 没被选 / 没被执行，紧邻它
    的 rotation 也不应注入。
 4. **block 3 没有 rotation**。
+5. **`count` 不能压扁成 bool**：每个 optimizer rotation 的正整数 `count` 写入
+   `cfg.rotation_repeat_counts`；运行时为每次真实 rotation 独立采样一次高斯噪声。
+   仅手工构造且没有 repeat-count 元数据的旧 cfg，`True` 向后兼容为 `count=1`。
+
+当前权威映射如下；一个 graph rotation 可以对应多个实际模型分支：
+
+| Block | Rescale Optimizer rotation | 模型 cfg flag |
+|---:|---|---|
+| 1 | `bs_rot_in_mul` | `rotation_after_gelu_out_fresh` |
+| 1 | `gs_rot_in_mul` | `rotation_after_wffn2_rescale_a` |
+| 1 | `rot_sum1` | `rotation_after_wffn2_rescale_b` |
+| 1 | `rot_sum2` | `rotation_after_square_rescale` |
+| 2 | `bs_rot` | `rotation_after_gamma_rescale` |
+| 2 | `gs_rot` | `rotation_after_wq_rescale`, `rotation_after_wk_rescale`, `rotation_after_wv_rescale` |
+| 2 | `bs_rot_step1` | `rotation_after_q_mask1_rescale`, `rotation_after_kt_mask1_rescale` |
+| 2 | `gs_rot_step1` | `rotation_after_q_mask2_rescale`, `rotation_after_kt_mask2_rescale` |
+| 2 | `gs_rot_step3` | `rotation_after_qkt_matmul_rescale` |
+| 4 | `rot_gs_step2` | `rotation_after_softmax_out_mask_rescale`, `rotation_after_v_mask_rescale` |
+| 4 | `rot_st3` | `rotation_after_softmax_v_matmul_rescale` |
+| 4 | `rot_ct_wo` | `rotation_after_softmax_v_mask_rescale` |
+| 4 | `rot_pre_ctpt_invd_1` | `rotation_after_wo_rescale` |
+| 4 | `rot_pre_ctpt_invd_2` | `rotation_after_ln_square_rescale` |
+| 5 | `rot_bs_wffn1` | `rotation_after_gamma_rescale` |
+| 5 | `rot_gs_wffn1` | `rotation_after_wffn1_rescale` |
+| 5 | `rot_gs_after_wffn1` | `rotation_after_wffn1_rescale` |
 
 ---
 

@@ -30,6 +30,29 @@ parallel probes, promotion/revalidation, Paean final evaluation, fixed-action
 experiments, and GLUE generation must use this object instead of reimplementing
 decode/replan/write-back logic.
 
+## Rotation Materialization Invariants
+
+- `Rescale_optimizer.new_compact_config.effective_rotations` is authoritative.
+  Rotation decisions are not inferred from the pre-replan action config.
+- The optimizer graph name to model tensor-boundary mapping is centralized in
+  `rescale_optimizer_bridge.DEFAULT_ROTATION_NAME_MAP_BY_BLOCK`. Every canonical
+  materialization caller receives the same default mapping; an optional caller
+  mapping may only overlay it.
+- One graph rotation may fan out to multiple concrete model branches. For
+  example, Block2 `gs_rot` enables the Q, K, and V projection boundaries, and
+  Block4 `rot_gs_step2` enables both mask branches.
+- The optimizer-provided positive integer `count` is preserved in
+  `rotation_repeat_counts`. Runtime applies one independent Gaussian draw per
+  actual rotation, rather than collapsing repeated rotations into one boolean
+  draw.
+- A malformed entry, unknown graph rotation, invalid target flag, empty target
+  list, or non-positive count fails materialization before model inference.
+- Boolean flags remain for backward compatibility with hand-built configs. An
+  enabled flag without an explicit repeat count means exactly one rotation.
+- Rotation repeat counts are part of the final materialized config and its
+  fingerprint, so install caching cannot alias one and multiple rotations.
+- Block3 has no optimizer or model rotation boundary.
+
 ## Failure Semantics
 
 - A genuinely optimizer-invalid action remains a normal invalid RL action. It
@@ -127,6 +150,9 @@ change Gaussian samples. Legacy backends consume no truncation RNG.
 - Truncation draws do not change Gaussian samples.
 - All five block K settings alter their actual installed runtime outputs.
 - Block3 K changes while its baseline SF chain remains identical.
+- Optimizer rotation graph names map to the expected model tensor boundaries.
+- Repeated optimizer rotations produce the same number of independent runtime
+  noise draws, and unknown rotations fail closed before inference.
 - Valid-but-incomplete replan write-back prevents every forward path.
 - Boosted and unboosted final configs cannot share an install fingerprint.
 - Production RL, Paean/final evaluation, fixed-action evaluation, and GLUE
