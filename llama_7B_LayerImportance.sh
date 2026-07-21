@@ -138,8 +138,8 @@ GA / Greedy：
   --stage1-search-lr FLOAT
   --stage2-search-lr FLOAT
   --stage2-rl-variant blb_v3|legacy_v2    Stage-2 RL 实现；默认 blb_v3，legacy_v2 可复现实验旧路径
-  --blb-v3-policy-network-variant NAME    Stage-2 actor-critic 网络；默认 shared_gtrxl_v1
-                                          可选 separate_critic_gtrxl_v1、separate_critic_mlp_v1
+  --blb-v3-policy-network-variant NAME    Stage-2 actor-critic 网络；默认 shared_gtrxl_small_v1
+                                          可选 shared_gtrxl_v1、separate_critic_gtrxl_v1、separate_critic_mlp_v1
   --stage2-rollout-size N                 BLB v3 PPO rollout 大小；默认跟随 --ppo-update-interval
   --stage2-save-interval N                BLB v3 live checkpoint 保存间隔
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
@@ -526,7 +526,7 @@ STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
 BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT="Rescale_optimizer"
 BLB_V3_SEED=""; S_BLB_V3_SEED="false"
-BLB_V3_POLICY_NETWORK_VARIANT="shared_gtrxl_v1"; S_BLB_V3_POLICY_NETWORK_VARIANT="false"
+BLB_V3_POLICY_NETWORK_VARIANT="shared_gtrxl_small_v1"; S_BLB_V3_POLICY_NETWORK_VARIANT="false"
 BLB_V3_REWARD_DEVICES=""; S_BLB_V3_REWARD_DEVICES="false"
 STAGE1_RL_DEVICES=""; S_STAGE1_RL_DEVICES="false"
 STAGE2_RL_DEVICES=""; S_STAGE2_RL_DEVICES="false"
@@ -885,8 +885,8 @@ case "$STAGE2_RL_VARIANT" in
 esac
 
 case "$BLB_V3_POLICY_NETWORK_VARIANT" in
-  shared_gtrxl_v1|separate_critic_gtrxl_v1|separate_critic_mlp_v1) ;;
-  *) err "--blb-v3-policy-network-variant 只支持 shared_gtrxl_v1、separate_critic_gtrxl_v1 或 separate_critic_mlp_v1。" ;;
+  shared_gtrxl_small_v1|shared_gtrxl_v1|separate_critic_gtrxl_v1|separate_critic_mlp_v1) ;;
+  *) err "--blb-v3-policy-network-variant 只支持 shared_gtrxl_small_v1、shared_gtrxl_v1、separate_critic_gtrxl_v1 或 separate_critic_mlp_v1。" ;;
 esac
 
 case "$RUN_MODE" in

@@ -236,7 +236,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             default_argv[
                 default_argv.index("--blb_v3_policy_network_variant") + 1
             ],
-            "shared_gtrxl_v1",
+            "shared_gtrxl_small_v1",
         )
 
         explicit_argv = self._capture_stage2_launcher_argv([
@@ -343,7 +343,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         self.assertEqual(metadata["blb_v3_decision_granularity"], "layer")
         self.assertEqual(metadata["blb_v3_reward_design"], "robust_constrained")
         self.assertEqual(
-            metadata["blb_v3_policy_network_variant"], "shared_gtrxl_v1"
+            metadata["blb_v3_policy_network_variant"], "shared_gtrxl_small_v1"
         )
 
     def test_block_stage1_aligned_rollback_persistence_uses_legacy_tolerance(self):

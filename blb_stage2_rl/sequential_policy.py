@@ -33,12 +33,14 @@ try:
     from .network_variants import (
         DEFAULT_POLICY_NETWORK_VARIANT,
         normalize_policy_network_variant,
+        policy_network_architecture,
         policy_network_variant_spec,
     )
 except ImportError:  # Standalone SourceFileLoader compatibility.
     from blb_stage2_rl.network_variants import (
         DEFAULT_POLICY_NETWORK_VARIANT,
         normalize_policy_network_variant,
+        policy_network_architecture,
         policy_network_variant_spec,
     )
 
@@ -88,6 +90,7 @@ class SequentialPolicyConfig:
     actor_dim: int = 64
     critic_dim: int = 64
     network_variant: str = DEFAULT_POLICY_NETWORK_VARIANT
+    allow_custom_architecture: bool = False
     default_prior_scale: float = 0.0
     metadata_width: int = 6
     signal_width: int = 3
@@ -108,6 +111,10 @@ class SequentialPolicyConfig:
         self.network_variant = normalize_policy_network_variant(
             self.network_variant
         )
+        if not bool(self.allow_custom_architecture):
+            for key, value in policy_network_architecture(
+                    self.network_variant).items():
+                setattr(self, key, int(value))
         if self.step_layer_indices is None:
             return
         layer_indices = tuple(int(value) for value in self.step_layer_indices)
