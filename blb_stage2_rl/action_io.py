@@ -457,6 +457,8 @@ def slots_list_to_action_vec(
             block_idx = int(label.split(".")[1][1:])
 
         if label == "L0.first_input.F" or field_name == "first_input_sf":
+            if entry.get("effective") is False:
+                continue
             raise ValueError(
                 f"slot {label}: first_input is deprecated and is not selectable; "
                 "the first HE config is treated as lossless and no first_input "
