@@ -590,7 +590,7 @@ class BLBStage2TrainConfig:
     stab_threshold: float = float("inf")
     # PPO
     ppo: PPOConfig = field(default_factory=PPOConfig)
-    policy_network_variant: str = "shared_gtrxl_v1"
+    policy_network_variant: str = "shared_gtrxl_small_v1"
     # PPO-only. Legacy fields remain so old checkpoints/presets deserialize,
     # but any non-PPO value is rejected at construction and runner handoff.
     rl_algo: str = "ppo"

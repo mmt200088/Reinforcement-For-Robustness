@@ -31,6 +31,7 @@ class LayerwisePolicyTest(unittest.TestCase):
             "dropout": 0.0,
             "metadata_width": 0,
             "signal_width": 4,
+            "allow_custom_architecture": True,
         }
         values.update(overrides)
         return SequentialPolicyConfig(**values)
@@ -86,6 +87,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         from blb_stage2_rl.sequential_policy import BLBStage2SequentialPolicy
 
         policy = BLBStage2SequentialPolicy(self._config(
+            network_variant="shared_gtrxl_v1",
             d_model=256,
             n_heads=8,
             n_layers=4,
@@ -96,6 +98,31 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertEqual(summary["total"], 5_330_461)
         self.assertEqual(summary["shared"], 5_295_160)
 
+    def test_production_small_shared_network_has_agreed_architecture_and_size(self):
+        from blb_stage2_rl.sequential_policy import (
+            BLBStage2SequentialPolicy,
+            SequentialPolicyConfig,
+        )
+
+        policy = BLBStage2SequentialPolicy(SequentialPolicyConfig(
+            state_dim=4 + 12 + 12 * 6 + 12 * 4,
+            max_step_dim=6,
+            max_num_levels=6,
+            horizon=12,
+            num_layers=12,
+            block_count=5,
+            metadata_width=0,
+            signal_width=4,
+            network_variant="shared_gtrxl_small_v1",
+        ))
+        summary = policy.network_parameter_summary()
+        self.assertEqual(policy.cfg.d_model, 128)
+        self.assertEqual(policy.cfg.n_heads, 4)
+        self.assertEqual(policy.cfg.n_layers, 2)
+        self.assertEqual(policy.cfg.d_ff, 256)
+        self.assertEqual(summary["total"], 680_221)
+        self.assertEqual(summary["shared"], 661_304)
+
     def test_each_network_variant_completes_factorized_ppo_with_diagnostics(self):
         from blb_stage2_rl.sequential_policy import (
             SequentialPPOConfig,
@@ -104,6 +131,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         )
 
         for variant in (
+            "shared_gtrxl_small_v1",
             "shared_gtrxl_v1",
             "separate_critic_gtrxl_v1",
             "separate_critic_mlp_v1",
@@ -167,7 +195,10 @@ class LayerwisePolicyTest(unittest.TestCase):
                 self.assertIsNotNone(metrics["value_rmse_pre"])
                 self.assertIsNotNone(metrics["value_rmse_post"])
                 self.assertIsNotNone(metrics["preclip_grad_norm_mean"])
-                if variant == "shared_gtrxl_v1":
+                if variant in (
+                    "shared_gtrxl_small_v1",
+                    "shared_gtrxl_v1",
+                ):
                     self.assertGreater(metrics["shared_grad_parameter_count"], 0)
                     self.assertIsNotNone(metrics["actor_shared_grad_norm"])
                     self.assertIsNotNone(metrics["critic_shared_grad_norm"])

@@ -2385,7 +2385,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_fusion_count_action=True,
                   blb_v3_decision_granularity="layer",
                   blb_v3_reward_design="robust_constrained",
-                  blb_v3_policy_network_variant="shared_gtrxl_v1",
+                  blb_v3_policy_network_variant="shared_gtrxl_small_v1",
                   blb_v3_fusion_neighbor_curriculum=False,
                   blb_v3_fusion_probe_interval=0,
                   blb_v3_fusion_exploration_epsilon=0.0,

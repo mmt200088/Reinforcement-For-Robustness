@@ -3778,6 +3778,7 @@ def _run_layerwise_training_branch(
     from .network_variants import (
         LEGACY_SHARED_RL_VARIANT,
         bind_policy_network_contract,
+        policy_network_architecture,
         normalize_policy_network_variant,
         validate_checkpoint_policy_network_variant,
     )
@@ -3834,6 +3835,7 @@ def _run_layerwise_training_branch(
     policy_network_variant = normalize_policy_network_variant(
         getattr(train_cfg, "policy_network_variant", None)
     )
+    policy_architecture = policy_network_architecture(policy_network_variant)
     rl_variant = LEGACY_SHARED_RL_VARIANT
     layerwise_entropy_regularization = {
         "kind": "disabled",
@@ -3902,6 +3904,7 @@ def _run_layerwise_training_branch(
         step_layer_indices=tuple(range(12)),
         step_block_indices=(3,) * 12,
         network_variant=policy_network_variant,
+        **policy_architecture,
     )
     ppo = SequentialPPOConfig(
         lr=float(train_cfg.ppo.lr),
@@ -6307,6 +6310,7 @@ def _run_sequential_via_runner_locked(
         max_num_levels=(max(6, int(fusion_map.max_num_options())) if fusion_map is not None else 6),
         horizon=int(seq_env.horizon),
         num_layers=int(ev.total_layers),
+        network_variant=getattr(train_cfg, "policy_network_variant", None),
     )
     policy = BLBStage2SequentialPolicy(policy_cfg).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=float(train_cfg.ppo.lr))
