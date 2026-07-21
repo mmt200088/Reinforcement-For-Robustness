@@ -799,6 +799,7 @@ class Block1NoiseConfig:
     rotation_after_wffn2_rescale_a: bool = False
     rotation_after_wffn2_rescale_b: bool = False
     rotation_after_square_rescale: bool = False  # "binary" / "decimal"
+    rotation_repeat_counts: dict = field(default_factory=dict)
 
 
 def make_block1_default_config(
@@ -889,6 +890,39 @@ def _sample_gaussian_for_point(reference: Tensor, point: Optional[NoisePoint]) -
         return torch.zeros_like(reference)
     std = math.sqrt(variance)
     return _sample_independent_gaussian(reference, std)
+
+
+def _rotation_repeat_count(cfg, flag_name: str) -> int:
+    """Resolve one installed rotation flag to its optimizer-provided count."""
+    if cfg is None or not bool(getattr(cfg, flag_name, False)):
+        return 0
+    counts = getattr(cfg, "rotation_repeat_counts", {}) or {}
+    raw_count = counts.get(flag_name, 1) if hasattr(counts, "get") else 1
+    if isinstance(raw_count, bool):
+        raw_count = int(raw_count)
+    count = int(raw_count)
+    if count <= 0:
+        raise ValueError(
+            f"enabled rotation flag {flag_name!r} has invalid count {raw_count!r}"
+        )
+    return count
+
+
+def _apply_rotation_noise(
+        value: Tensor,
+        source: Optional[NoisePoint],
+        repeat_count: int = 1,
+        ) -> Tensor:
+    """Apply one independent Gaussian draw for every effective rotation."""
+    count = int(repeat_count)
+    if count < 0:
+        raise ValueError(f"rotation repeat_count must be non-negative, got {count}")
+    if source is None or count == 0:
+        return value
+    point = _make_rotation_point(source)
+    for _ in range(count):
+        value = value + _sample_gaussian_for_point(value, point)
+    return value
 
 
 # ============================================================================
@@ -996,6 +1030,7 @@ class Block2NoiseConfig:
     rotation_after_q_mask2_rescale: bool = False
     rotation_after_kt_mask2_rescale: bool = False
     rotation_after_qkt_matmul_rescale: bool = False
+    rotation_repeat_counts: dict = field(default_factory=dict)
 
 
 def make_block2_default_config(
@@ -1110,8 +1145,11 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
         # 1. fresh on Gelu_out
         x = hidden_states + _sample_gaussian_for_point(hidden_states, cfg.gelu_out_fresh)
         # 1b. rotation #1：紧跟 gelu_out fresh 之后；SF 继承自 gelu_out_fresh
-        if cfg.rotation_after_gelu_out_fresh:
-            x = x + _sample_gaussian_for_point(x, _make_rotation_point(cfg.gelu_out_fresh))
+        x = _apply_rotation_noise(
+            x,
+            cfg.gelu_out_fresh,
+            _rotation_repeat_count(cfg, "rotation_after_gelu_out_fresh"),
+        )
         # 2. encode on W_ffn2
         weight = linear_module.weight
         noisy_weight = weight + _sample_gaussian_for_point(weight, cfg.wffn2_encode)
@@ -1125,11 +1163,17 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
         if cfg.wffn2_result_rescale is not None:
             out = out + _sample_gaussian_for_point(out, cfg.wffn2_result_rescale)
             # 4b. rotation #2：紧跟 W_ffn2 rescale 之后；SF 继承自 wffn2_result_rescale
-            if cfg.rotation_after_wffn2_rescale_a:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(cfg.wffn2_result_rescale))
+            out = _apply_rotation_noise(
+                out,
+                cfg.wffn2_result_rescale,
+                _rotation_repeat_count(cfg, "rotation_after_wffn2_rescale_a"),
+            )
             # 4c. rotation #3：紧跟 #2 之后；SF 同样来自 wffn2_result_rescale
-            if cfg.rotation_after_wffn2_rescale_b:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(cfg.wffn2_result_rescale))
+            out = _apply_rotation_noise(
+                out,
+                cfg.wffn2_result_rescale,
+                _rotation_repeat_count(cfg, "rotation_after_wffn2_rescale_b"),
+            )
         return out
     return block1_ffn2_forward
 
@@ -1207,8 +1251,11 @@ class NoisyBlock1LayerNorm(nn.Module):
         if cfg is not None and cfg.square_result_rescale is not None:
             sq = sq + _sample_gaussian_for_point(sq, cfg.square_result_rescale)
             # Block 1 rotation #4：紧跟 (X−μ)² rescale 之后；SF 继承自 square_result_rescale
-            if cfg.rotation_after_square_rescale:
-                sq = sq + _sample_gaussian_for_point(sq, _make_rotation_point(cfg.square_result_rescale))
+            sq = _apply_rotation_noise(
+                sq,
+                cfg.square_result_rescale,
+                _rotation_repeat_count(cfg, "rotation_after_square_rescale"),
+            )
 
         # ===== variance = sum_sq · (1/D) =====
         sum_sq = sq.sum(dim=-1, keepdim=True)                          # [B, S, 1]
@@ -1253,8 +1300,11 @@ class NoisyBlock1LayerNorm(nn.Module):
             if cfg2.gamma_result_rescale is not None:
                 gamma_mul = gamma_mul + _sample_gaussian_for_point(gamma_mul, cfg2.gamma_result_rescale)
                 # Block 2 rotation #1：紧跟 γ rescale 之后；SF 继承自 gamma_result_rescale
-                if cfg2.rotation_after_gamma_rescale:
-                    gamma_mul = gamma_mul + _sample_gaussian_for_point(gamma_mul, _make_rotation_point(cfg2.gamma_result_rescale))
+                gamma_mul = _apply_rotation_noise(
+                    gamma_mul,
+                    cfg2.gamma_result_rescale,
+                    _rotation_repeat_count(cfg2, "rotation_after_gamma_rescale"),
+                )
             # +β 是 ctpt 加法，非乘法 → 不加噪
             out = gamma_mul + self.bias
         else:
@@ -1268,7 +1318,7 @@ def _make_block2_qk_proj_forward(
         linear_module: nn.Linear,
         encode_point: NoisePoint,
         rescale_point: Optional[NoisePoint],
-        rotation_after_rescale: bool = False,
+        rotation_after_rescale: int = 0,
         ):
     """Wq / Wk / Wv 投影包装：encode on W (matmulcp 操作数侧) + 可选 rescale on result
     + 可选 rotation 噪声（紧跟 rescale 之后；SF 继承自 rescale_point）。
@@ -1294,8 +1344,9 @@ def _make_block2_qk_proj_forward(
         if rescale_point is not None:
             out = out + _sample_gaussian_for_point(out, rescale_point)
             # rotation：紧跟 rescale 之后；SF 继承自 rescale_point
-            if rotation_after_rescale:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(rescale_point))
+            out = _apply_rotation_noise(
+                out, rescale_point, rotation_after_rescale,
+            )
         return out
     return block2_qk_forward
 
@@ -1305,7 +1356,7 @@ def _make_block2_qkt_merge_hook(
         merge_mask_encode: NoisePoint,
         merge_mask_rescale: Optional[NoisePoint],
         truncation_cfg: Optional[Block2NoiseConfig] = None,
-        rotation_after_qkt_matmul_rescale: bool = False,
+        rotation_after_qkt_matmul_rescale: int = 0,
         ):
     """构造 Q·K^T matmul **之后**、softmax **之前**的 "合并 Q,K" 噪声 hook。
 
@@ -1324,8 +1375,11 @@ def _make_block2_qkt_merge_hook(
         if qkt_matmul_rescale is not None:
             qkt_result = qkt_result + _sample_gaussian_for_point(qkt_result, qkt_matmul_rescale)
             # Block 2 rotation #5：紧跟 Q·K^T matmul rescale 之后
-            if rotation_after_qkt_matmul_rescale:
-                qkt_result = qkt_result + _sample_gaussian_for_point(qkt_result, _make_rotation_point(qkt_matmul_rescale))
+            qkt_result = _apply_rotation_noise(
+                qkt_result,
+                qkt_matmul_rescale,
+                rotation_after_qkt_matmul_rescale,
+            )
         # 2. ⊙ ones-mask（CKKS ewmulcp）
         noisy_mask = _sample_gaussian_for_point(qkt_result, merge_mask_encode)
         noisy_mask.add_(1.0)
@@ -1476,8 +1530,8 @@ def _make_block2_bsgs_mask_hook(
         mask1_rescale: Optional[NoisePoint],
         mask2_encode: NoisePoint,
         mask2_rescale: Optional[NoisePoint],
-        rotation_after_mask1_rescale: bool = False,
-        rotation_after_mask2_rescale: bool = False,
+        rotation_after_mask1_rescale: int = 0,
+        rotation_after_mask2_rescale: int = 0,
         ):
     """构造 K^T / Q 在 Q·K^T 之前的两步 "BSGS mask 模拟" hook。
 
@@ -1498,16 +1552,18 @@ def _make_block2_bsgs_mask_hook(
         out = tensor * noisy_mask1
         if mask1_rescale is not None:
             out = out + _sample_gaussian_for_point(out, mask1_rescale)
-            if rotation_after_mask1_rescale:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(mask1_rescale))
+            out = _apply_rotation_noise(
+                out, mask1_rescale, rotation_after_mask1_rescale,
+            )
         # ----- 第 2 步：out ⊙ (ones + ε_enc2) -----
         noisy_mask2 = _sample_gaussian_for_point(out, mask2_encode)
         noisy_mask2.add_(1.0)
         out = out * noisy_mask2
         if mask2_rescale is not None:
             out = out + _sample_gaussian_for_point(out, mask2_rescale)
-            if rotation_after_mask2_rescale:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(mask2_rescale))
+            out = _apply_rotation_noise(
+                out, mask2_rescale, rotation_after_mask2_rescale,
+            )
         return out
     return hook
 
@@ -1620,6 +1676,7 @@ class Block4NoiseConfig:
     rotation_after_softmax_v_mask_rescale: bool = False
     rotation_after_wo_rescale: bool = False
     rotation_after_ln_square_rescale: bool = False
+    rotation_repeat_counts: dict = field(default_factory=dict)
 
 
 def make_block4_default_config(
@@ -1699,7 +1756,7 @@ def _make_block4_input_mask_hook(
         fresh_point: NoisePoint,
         mask_encode_point: NoisePoint,
         mask_rescale_point: Optional[NoisePoint],
-        rotation_after_mask_rescale: bool = False,
+        rotation_after_mask_rescale: int = 0,
         ):
     """softmax 输出 / V 共用：fresh on tensor → ⊙ ones-mask (encode) → optional rescale。
 
@@ -1715,8 +1772,9 @@ def _make_block4_input_mask_hook(
         # 3. optional rescale + optional rotation
         if mask_rescale_point is not None:
             out = out + _sample_gaussian_for_point(out, mask_rescale_point)
-            if rotation_after_mask_rescale:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(mask_rescale_point))
+            out = _apply_rotation_noise(
+                out, mask_rescale_point, rotation_after_mask_rescale,
+            )
         return out
     return hook
 
@@ -1725,8 +1783,8 @@ def _make_block4_softmax_v_hook(
         matmul_rescale: Optional[NoisePoint],
         mask_encode: NoisePoint,
         mask_rescale: Optional[NoisePoint],
-        rotation_after_matmul_rescale: bool = False,
-        rotation_after_mask_rescale: bool = False,
+        rotation_after_matmul_rescale: int = 0,
+        rotation_after_mask_rescale: int = 0,
         ):
     """softmax×V matmul 之后：optional rescale on matmul → ⊙ ones-mask (encode) → optional rescale。
 
@@ -1736,8 +1794,9 @@ def _make_block4_softmax_v_hook(
         # 1. optional rescale on matmul 结果 + optional rotation
         if matmul_rescale is not None:
             tensor = tensor + _sample_gaussian_for_point(tensor, matmul_rescale)
-            if rotation_after_matmul_rescale:
-                tensor = tensor + _sample_gaussian_for_point(tensor, _make_rotation_point(matmul_rescale))
+            tensor = _apply_rotation_noise(
+                tensor, matmul_rescale, rotation_after_matmul_rescale,
+            )
         # 2. ⊙ ones-mask
         noisy_mask = _sample_gaussian_for_point(tensor, mask_encode)
         noisy_mask.add_(1.0)
@@ -1745,8 +1804,9 @@ def _make_block4_softmax_v_hook(
         # 3. optional rescale + optional rotation
         if mask_rescale is not None:
             out = out + _sample_gaussian_for_point(out, mask_rescale)
-            if rotation_after_mask_rescale:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(mask_rescale))
+            out = _apply_rotation_noise(
+                out, mask_rescale, rotation_after_mask_rescale,
+            )
         return out
     return hook
 
@@ -1755,7 +1815,7 @@ def _make_block4_wo_forward(
         linear_module: nn.Linear,
         encode_point: NoisePoint,
         rescale_point: Optional[NoisePoint],
-        rotation_after_rescale: bool = False,
+        rotation_after_rescale: int = 0,
         ):
     """Wo 投影包装：encode on W_o + 可选 rescale on Att = X·W_o 结果。
 
@@ -1773,8 +1833,9 @@ def _make_block4_wo_forward(
         out = nn.functional.linear(hidden_states, noisy_weight, bias)
         if rescale_point is not None:
             out = out + _sample_gaussian_for_point(out, rescale_point)
-            if rotation_after_rescale:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(rescale_point))
+            out = _apply_rotation_noise(
+                out, rescale_point, rotation_after_rescale,
+            )
         return out
     return block4_wo_forward
 
@@ -1839,8 +1900,11 @@ class NoisyBlock4LayerNorm(nn.Module):
         if cfg4 is not None and cfg4.ln_square_result_rescale is not None:
             sq = sq + _sample_gaussian_for_point(sq, cfg4.ln_square_result_rescale)
             # Block 4 rotation #6：紧跟 (X−μ)² rescale 之后；SF 继承自 ln_square_result_rescale
-            if cfg4.rotation_after_ln_square_rescale:
-                sq = sq + _sample_gaussian_for_point(sq, _make_rotation_point(cfg4.ln_square_result_rescale))
+            sq = _apply_rotation_noise(
+                sq,
+                cfg4.ln_square_result_rescale,
+                _rotation_repeat_count(cfg4, "rotation_after_ln_square_rescale"),
+            )
 
         sum_sq = sq.sum(dim=-1, keepdim=True)
         if cfg4 is not None:
@@ -1879,8 +1943,11 @@ class NoisyBlock4LayerNorm(nn.Module):
             if cfg5.gamma_result_rescale is not None:
                 gamma_mul = gamma_mul + _sample_gaussian_for_point(gamma_mul, cfg5.gamma_result_rescale)
                 # Block 5 rotation #1：紧跟 γ rescale 之后；SF 继承自 gamma_result_rescale
-                if cfg5.rotation_after_gamma_rescale:
-                    gamma_mul = gamma_mul + _sample_gaussian_for_point(gamma_mul, _make_rotation_point(cfg5.gamma_result_rescale))
+                gamma_mul = _apply_rotation_noise(
+                    gamma_mul,
+                    cfg5.gamma_result_rescale,
+                    _rotation_repeat_count(cfg5, "rotation_after_gamma_rescale"),
+                )
             out = gamma_mul + self.bias
         else:
             normalized = x_centered * inv_std
@@ -1978,6 +2045,7 @@ class Block5NoiseConfig:
     #   #2 W_ffn1·X rescale 之后        （绑定 wffn1_result_rescale）
     rotation_after_gamma_rescale: bool = False
     rotation_after_wffn1_rescale: bool = False
+    rotation_repeat_counts: dict = field(default_factory=dict)
 
 
 def make_block5_default_config(
@@ -2100,7 +2168,7 @@ def _make_block5_wffn1_forward(
         linear_module: nn.Linear,
         encode_point: NoisePoint,
         rescale_point: Optional[NoisePoint],
-        rotation_after_rescale: bool = False,
+        rotation_after_rescale: int = 0,
         ):
     """Wffn1 投影包装：encode on W_ffn1 + 可选 rescale on result（GELU 输入 x）
     + 可选 rotation 紧跟 rescale 之后（SF 继承自 rescale_point）。
@@ -2118,8 +2186,9 @@ def _make_block5_wffn1_forward(
         if rescale_point is not None:
             out = out + _sample_gaussian_for_point(out, rescale_point)
             # Block 5 rotation #2：紧跟 W_ffn1·X rescale 之后
-            if rotation_after_rescale:
-                out = out + _sample_gaussian_for_point(out, _make_rotation_point(rescale_point))
+            out = _apply_rotation_noise(
+                out, rescale_point, rotation_after_rescale,
+            )
         return out
     return block5_wffn1_forward
 
@@ -3724,7 +3793,9 @@ class ReversibleLayerHandler:
                 self.original_block2_qproj[i] = q_module.forward
             q_module.forward = _make_block2_qk_proj_forward(
                 q_module, cfg.wq_encode, cfg.wq_result_rescale,
-                rotation_after_rescale=cfg.rotation_after_wq_rescale,
+                rotation_after_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_wq_rescale",
+                ),
             )
 
             k_module = attn_self.key
@@ -3732,7 +3803,9 @@ class ReversibleLayerHandler:
                 self.original_block2_kproj[i] = k_module.forward
             k_module.forward = _make_block2_qk_proj_forward(
                 k_module, cfg.wk_encode, cfg.wk_result_rescale,
-                rotation_after_rescale=cfg.rotation_after_wk_rescale,
+                rotation_after_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_wk_rescale",
+                ),
             )
 
             v_module = attn_self.value
@@ -3740,21 +3813,31 @@ class ReversibleLayerHandler:
                 self.original_block2_vproj[i] = v_module.forward
             v_module.forward = _make_block2_qk_proj_forward(
                 v_module, cfg.wv_encode, cfg.wv_result_rescale,
-                rotation_after_rescale=cfg.rotation_after_wv_rescale,
+                rotation_after_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_wv_rescale",
+                ),
             )
 
             # ---- 3. Q / K^T BSGS hooks ----
             attn_self._block2_q_bsgs_hook = _make_block2_bsgs_mask_hook(
                 cfg.q_mask1_encode, cfg.q_mask1_result_rescale,
                 cfg.q_mask2_encode, cfg.q_mask2_result_rescale,
-                rotation_after_mask1_rescale=cfg.rotation_after_q_mask1_rescale,
-                rotation_after_mask2_rescale=cfg.rotation_after_q_mask2_rescale,
+                rotation_after_mask1_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_q_mask1_rescale",
+                ),
+                rotation_after_mask2_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_q_mask2_rescale",
+                ),
             )
             attn_self._block2_kt_bsgs_hook = _make_block2_bsgs_mask_hook(
                 cfg.kt_mask1_encode, cfg.kt_mask1_result_rescale,
                 cfg.kt_mask2_encode, cfg.kt_mask2_result_rescale,
-                rotation_after_mask1_rescale=cfg.rotation_after_kt_mask1_rescale,
-                rotation_after_mask2_rescale=cfg.rotation_after_kt_mask2_rescale,
+                rotation_after_mask1_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_kt_mask1_rescale",
+                ),
+                rotation_after_mask2_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_kt_mask2_rescale",
+                ),
             )
 
             # ---- 4. Q·K^T merge hook（含 Block 2 末尾 truncation 与 rotation #5） ----
@@ -3762,7 +3845,9 @@ class ReversibleLayerHandler:
                 cfg.qkt_matmul_result_rescale,
                 cfg.qkt_merge_mask_encode, cfg.qkt_merge_mask_result_rescale,
                 truncation_cfg=cfg,
-                rotation_after_qkt_matmul_rescale=cfg.rotation_after_qkt_matmul_rescale,
+                rotation_after_qkt_matmul_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_qkt_matmul_rescale",
+                ),
             )
 
             # ---- 5. 记录 cfg ----
@@ -4048,16 +4133,24 @@ class ReversibleLayerHandler:
             # ---- 1. softmax 输出 / V / softmax×V hooks ----
             attn_self._block4_softmax_out_hook = _make_block4_input_mask_hook(
                 cfg.softmax_out_fresh, cfg.softmax_out_mask_encode, cfg.softmax_out_mask_rescale,
-                rotation_after_mask_rescale=cfg.rotation_after_softmax_out_mask_rescale,
+                rotation_after_mask_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_softmax_out_mask_rescale",
+                ),
             )
             attn_self._block4_v_hook = _make_block4_input_mask_hook(
                 cfg.v_fresh, cfg.v_mask_encode, cfg.v_mask_rescale,
-                rotation_after_mask_rescale=cfg.rotation_after_v_mask_rescale,
+                rotation_after_mask_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_v_mask_rescale",
+                ),
             )
             attn_self._block4_softmax_v_hook = _make_block4_softmax_v_hook(
                 cfg.softmax_v_matmul_rescale, cfg.softmax_v_mask_encode, cfg.softmax_v_mask_rescale,
-                rotation_after_matmul_rescale=cfg.rotation_after_softmax_v_matmul_rescale,
-                rotation_after_mask_rescale=cfg.rotation_after_softmax_v_mask_rescale,
+                rotation_after_matmul_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_softmax_v_matmul_rescale",
+                ),
+                rotation_after_mask_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_softmax_v_mask_rescale",
+                ),
             )
 
             # ---- 2. Wo 投影包装：encode on W_o + 可选 rescale on Att ----
@@ -4067,7 +4160,9 @@ class ReversibleLayerHandler:
                 self.original_block4_wo[i] = wo_module.forward
             wo_module.forward = _make_block4_wo_forward(
                 wo_module, cfg.wo_encode, cfg.wo_result_rescale,
-                rotation_after_rescale=cfg.rotation_after_wo_rescale,
+                rotation_after_rescale=_rotation_repeat_count(
+                    cfg, "rotation_after_wo_rescale",
+                ),
             )
 
             # ---- 3. post-attn LN：替换为 NoisyBlock4LayerNorm ----
@@ -4283,7 +4378,9 @@ class ReversibleLayerHandler:
                 self.original_block5_wffn1[i] = wffn1_module.forward
             wffn1_module.forward = _make_block5_wffn1_forward(
                 wffn1_module, this_cfg.wffn1_encode, this_cfg.wffn1_result_rescale,
-                rotation_after_rescale=this_cfg.rotation_after_wffn1_rescale,
+                rotation_after_rescale=_rotation_repeat_count(
+                    this_cfg, "rotation_after_wffn1_rescale",
+                ),
             )
 
             # ---- 3. GELU 多项式：替换 forward ----

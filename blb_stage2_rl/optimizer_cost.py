@@ -12,6 +12,7 @@ from rescale_optimizer_bridge import (
     _strip_layer_suffix,
     aggregate_optimizer_signals,
     apply_optimizer_output_to_cfg,
+    default_rotation_name_map,
     sync_block2_aux_fresh_binding,
     sync_block2_qk_binding,
     sync_block4_v_mask_binding,
@@ -165,7 +166,7 @@ def apply_optimizer_outputs_to_cfgs(
         cfgs_dict: Mapping[str, Mapping[int, object]],
         opt_outputs: Mapping[str, Any],
         invoker_baselines: Optional[Mapping[str, Any]] = None,
-        rotation_name_map_provider: Optional[Callable[[int, str], Mapping[str, str]]] = None,
+        rotation_name_map_provider: Optional[Callable[[int, str], Mapping[str, Any]]] = None,
         skip_on_any_invalid: bool = True,
         ) -> Dict[str, Any]:
     """Apply Rescale_optimizer/replan outputs to decoded cfg objects in place.
@@ -179,11 +180,14 @@ def apply_optimizer_outputs_to_cfgs(
     """
     invoker_baselines = invoker_baselines or {}
 
-    def rotation_map(block_idx: int) -> Mapping[str, str]:
+    def rotation_map(block_idx: int) -> Mapping[str, Any]:
+        resolved = dict(default_rotation_name_map(int(block_idx)))
         if rotation_name_map_provider is None:
-            return {}
+            return resolved
         raw = rotation_name_map_provider(int(block_idx), str(profile))
-        return raw if isinstance(raw, Mapping) else {}
+        if isinstance(raw, Mapping):
+            resolved.update(raw)
+        return resolved
 
     per_config: Dict[str, Dict[str, Any]] = {}
     legacy_overrides: Dict[str, List[Tuple[str, str, Any, Any]]] = {}
@@ -354,7 +358,7 @@ def materialize_decoded_action(
         signals: Any,
         profile: str,
         invoker_baselines: Optional[Mapping[str, Any]] = None,
-        rotation_name_map_provider: Optional[Callable[[int, str], Mapping[str, str]]] = None,
+        rotation_name_map_provider: Optional[Callable[[int, str], Mapping[str, Any]]] = None,
         expected_config_names: Optional[Sequence[str]] = None,
         truncation_backend: str = "binary",
         truncation_ring_bits: int = 43,
@@ -461,7 +465,7 @@ def materialize_action_for_model(
         attn_degree: Any = 4,
         boosted_overrides: "Mapping[Tuple[int, int], Mapping[str, int]] | None" = None,
         invoker_baselines: Optional[Mapping[str, Any]] = None,
-        rotation_name_map_provider: Optional[Callable[[int, str], Mapping[str, str]]] = None,
+        rotation_name_map_provider: Optional[Callable[[int, str], Mapping[str, Any]]] = None,
         truncation_backend: str = "binary",
         truncation_ring_bits: int = 43,
         truncation_source_fractional_bits: int = 24,

@@ -1280,6 +1280,62 @@ def apply_rotation_flags_to_cfg(cfg: Any, rotation_flag_names) -> None:
             setattr(cfg, name, name in enable)
 
 
+# Rescale_optimizer names rotations by graph stage, while the plaintext model
+# injects their noise at concrete tensor boundaries. Keep that translation in
+# this bridge so every materialization caller (RL, final eval, fixed action, and
+# GLUE export) uses the same authoritative mapping.
+DEFAULT_ROTATION_NAME_MAP_BY_BLOCK: Mapping[
+    int, Mapping[str, Tuple[str, ...]]
+] = {
+    1: {
+        "bs_rot_in_mul": ("rotation_after_gelu_out_fresh",),
+        "gs_rot_in_mul": ("rotation_after_wffn2_rescale_a",),
+        "rot_sum1": ("rotation_after_wffn2_rescale_b",),
+        "rot_sum2": ("rotation_after_square_rescale",),
+    },
+    2: {
+        "bs_rot": ("rotation_after_gamma_rescale",),
+        "gs_rot": (
+            "rotation_after_wq_rescale",
+            "rotation_after_wk_rescale",
+            "rotation_after_wv_rescale",
+        ),
+        "bs_rot_step1": (
+            "rotation_after_q_mask1_rescale",
+            "rotation_after_kt_mask1_rescale",
+        ),
+        "gs_rot_step1": (
+            "rotation_after_q_mask2_rescale",
+            "rotation_after_kt_mask2_rescale",
+        ),
+        "gs_rot_step3": ("rotation_after_qkt_matmul_rescale",),
+    },
+    3: {},
+    4: {
+        "rot_gs_step2": (
+            "rotation_after_softmax_out_mask_rescale",
+            "rotation_after_v_mask_rescale",
+        ),
+        "rot_st3": ("rotation_after_softmax_v_matmul_rescale",),
+        "rot_ct_wo": ("rotation_after_softmax_v_mask_rescale",),
+        "rot_pre_ctpt_invd_1": ("rotation_after_wo_rescale",),
+        "rot_pre_ctpt_invd_2": ("rotation_after_ln_square_rescale",),
+    },
+    5: {
+        "rot_bs_wffn1": ("rotation_after_gamma_rescale",),
+        "rot_gs_wffn1": ("rotation_after_wffn1_rescale",),
+        "rot_gs_after_wffn1": ("rotation_after_wffn1_rescale",),
+    },
+}
+
+
+def default_rotation_name_map(
+        block_idx: int,
+        ) -> Mapping[str, Tuple[str, ...]]:
+    """Return the canonical optimizer-node to model-flag mapping for a block."""
+    return DEFAULT_ROTATION_NAME_MAP_BY_BLOCK.get(int(block_idx), {})
+
+
 # Block 2 Q/K binding: action_space._build_block2_action sets ``wq_sf == wk_sf``
 # (and equivalently for ``q_mask{1,2}`` ↔ ``kt_mask{1,2}``). After the optimizer
 # rewrites cfg via ``apply_optimizer_output_to_cfg``, only ``wk_encode`` /
@@ -1518,7 +1574,7 @@ def apply_optimizer_output_to_cfg(
         graph_key: str,
         baseline_skeleton: Sequence[int],
         cfg_to_t_new_table: Optional[Mapping[str, Sequence[_SkelEntry]]] = None,
-        rotation_name_map: Optional[Mapping[str, str]] = None,
+        rotation_name_map: Optional[Mapping[str, Union[str, Sequence[str]]]] = None,
         ) -> List[CfgOverrideEntry]:
     """Rewrite ``cfg`` in place to match the optimizer's replan output.
 
@@ -1535,9 +1591,8 @@ def apply_optimizer_output_to_cfg(
                              positions).
         cfg_to_t_new_table:  per-graph skel-position -> _SkelEntry mapping;
                              defaults to ``DEFAULT_CFG_TO_T_NEW_MAP``.
-        rotation_name_map:   ``{src_rotation_node_name: cfg_rotation_flag_name}``
-                             — typically pulled from
-                             ``BLBStage2EnvConfig.rotation_name_map[(block, profile)]``.
+        rotation_name_map:   optional overrides for the canonical
+                             ``{optimizer_rotation: cfg flag(s)}`` mapping.
 
     Returns:
         Ordered list of ``CfgOverrideEntry`` describing every change made.
@@ -1669,19 +1724,49 @@ def apply_optimizer_output_to_cfg(
                 old_value=old, new_value=new,
             ))
 
-    # Effective rotations: reset all rotation_after_* flags then enable those
-    # the optimizer chose. rotation_name_map translates graph rotation node
-    # names to cfg flag names.
+    # Effective rotations: reset every model flag, then enable exactly the
+    # rotations retained by replan. Counts are preserved because graph entries
+    # such as Block 4's pre-inv-d rotation represent three independent
+    # rotations, not one boolean event.
     eff_rotations = compact.get("effective_rotations", []) or []
     enabled_flags: List[str] = []
+    repeat_counts: Dict[str, int] = {}
+    resolved_rotation_map: Dict[str, Union[str, Sequence[str]]] = dict(
+        default_rotation_name_map(int(block_idx))
+    )
     if rotation_name_map:
-        for entry in eff_rotations:
-            if not isinstance(entry, Mapping):
-                continue
-            src = str(entry.get("name", ""))
-            flag = rotation_name_map.get(src)
-            if flag:
-                enabled_flags.append(flag)
+        resolved_rotation_map.update(rotation_name_map)
+
+    for entry in eff_rotations:
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"malformed effective rotation entry: {entry!r}")
+        src = str(entry.get("name", ""))
+        mapped = resolved_rotation_map.get(src)
+        if mapped is None:
+            raise ValueError(
+                f"unmapped effective rotation {src!r} for block {int(block_idx)}"
+            )
+        raw_count = entry.get("count", 1)
+        if isinstance(raw_count, bool) or not isinstance(raw_count, int) or raw_count <= 0:
+            raise ValueError(
+                f"invalid effective rotation count for {src!r}: {raw_count!r}"
+            )
+        flags = (mapped,) if isinstance(mapped, str) else tuple(mapped)
+        if not flags:
+            raise ValueError(
+                f"effective rotation {src!r} maps to no model flag"
+            )
+        for flag in flags:
+            flag_name = str(flag)
+            if not flag_name.startswith("rotation_after_") or not hasattr(cfg, flag_name):
+                raise ValueError(
+                    f"effective rotation {src!r} maps to invalid cfg flag "
+                    f"{flag_name!r}"
+                )
+            enabled_flags.append(flag_name)
+            repeat_counts[flag_name] = (
+                repeat_counts.get(flag_name, 0) + int(raw_count)
+            )
 
     # Capture state before reset so we can report which flags changed.
     pre_flags = {
@@ -1689,7 +1774,9 @@ def apply_optimizer_output_to_cfg(
         for n in vars(cfg).keys()
         if n.startswith("rotation_after_")
     }
+    pre_repeat_counts = dict(getattr(cfg, "rotation_repeat_counts", {}) or {})
     apply_rotation_flags_to_cfg(cfg, enabled_flags)
+    setattr(cfg, "rotation_repeat_counts", dict(sorted(repeat_counts.items())))
     post_flags = {
         n: bool(getattr(cfg, n))
         for n in vars(cfg).keys()
@@ -1704,6 +1791,18 @@ def apply_optimizer_output_to_cfg(
                 graph_node=None,
                 source="rotation_flag",
                 old_value=before, new_value=after,
+            ))
+    post_repeat_counts = dict(getattr(cfg, "rotation_repeat_counts", {}) or {})
+    for flag_name in sorted(set(pre_repeat_counts) | set(post_repeat_counts)):
+        before = int(pre_repeat_counts.get(flag_name, 0))
+        after = int(post_repeat_counts.get(flag_name, 0))
+        if before != after:
+            overrides.append(CfgOverrideEntry(
+                cfg_attr=f"rotation_repeat_counts.{flag_name}",
+                graph_node=None,
+                source="rotation_count",
+                old_value=before,
+                new_value=after,
             ))
 
     return overrides
