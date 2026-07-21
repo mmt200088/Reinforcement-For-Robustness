@@ -3867,6 +3867,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 "promotion_status": "bank_a_point_failed",
                 "promotion_metadata": {"generation": 1},
             })
+            store = type(store)(store.path)
             store.trial_count_for_action(action, context)
             store.append({
                 "record_type": "candidate_promotion_status_v1",
