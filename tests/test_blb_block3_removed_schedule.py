@@ -9,29 +9,21 @@ Two layers of checks:
   these run in CI / on the server (torch installed) and skip cleanly on a
   torch-free dev box.
 """
-from pathlib import Path
 import unittest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-ACTION_SPACE = REPO_ROOT / "blb_stage2_rl" / "action_space.py"
-SEQ_ENV = REPO_ROOT / "blb_stage2_rl" / "sequential_env.py"
-BRIDGE = REPO_ROOT / "blb_rl_bridge.py"
-
-
-def _read(p: Path) -> str:
-    return p.read_text(encoding="utf-8")
+from tests.source_inspection_utils import source_text
 
 
 class Block3RuntimeSourceTest(unittest.TestCase):
     """Static guarantees for baseline-owned SFs plus runtime-owned K."""
 
     def test_block_order_tuples_exclude_block3(self):
-        text = _read(ACTION_SPACE)
+        text = source_text("blb_stage2_rl/action_space.py")
         self.assertIn("_LAYER0_BLOCK_ORDER: Tuple[int, ...] = (2, 4, 5)", text)
         self.assertIn("_LAYER_GE_1_BLOCK_ORDER: Tuple[int, ...] = (1, 2, 4, 5)", text)
 
     def test_horizon_formula_drops_block3(self):
-        text = _read(ACTION_SPACE)
+        text = source_text("blb_stage2_rl/action_space.py")
         # 3 (layer 0: B2,B4,B5) + (L-1)*4 (B1,B2,B4,B5) -> 47 for L=12.
         self.assertIn("return 3 + (L - 1) * 4", text)
         self.assertNotIn("return 4 + (L - 1) * 5", text)
@@ -39,27 +31,24 @@ class Block3RuntimeSourceTest(unittest.TestCase):
     def test_block3_field_table_still_defined(self):
         # The legacy full action vector KEEPS block 3's slots (frozen at baseline);
         # only the decided schedule drops them. _BLOCK3_FIELDS must stay wired.
-        text = _read(ACTION_SPACE)
+        text = source_text("blb_stage2_rl/action_space.py")
         self.assertIn("_BLOCK3_FIELDS", text)
         self.assertIn("3: _BLOCK3_FIELDS", text)
 
-    def test_sequential_env_freezes_block3_at_baseline(self):
-        text = _read(SEQ_ENV)
-        # _pending_full_vec is seeded with the all-max (== static_skeletons
-        # baseline) vector so block 3 -- never written by a decided step -- stays
-        # frozen at baseline. The old all-min seed must be gone.
-        self.assertIn("make_all_max_action_vector(self.num_layers)", text)
-        self.assertNotIn("empty_full_action_vec(self.num_layers)", text)
+    def test_layerwise_env_owns_and_resets_the_exact_ro_baseline(self):
+        text = source_text("blb_stage2_rl/layerwise_env.py")
+        self.assertIn("self._baseline_action_vec = baseline.copy()", text)
+        self.assertIn("self._pending_full_vec = self._baseline_action_vec.copy()", text)
 
     def test_optimizer_requests_do_not_skip_block3(self):
-        text = _read(ACTION_SPACE)
+        text = source_text("blb_stage2_rl/action_space.py")
         start = text.index("def build_optimizer_requests(")
         end = text.index("\n    return out", start) + len("\n    return out")
         body = text[start:end]
         self.assertNotIn("if int(block_idx) == 3:", body)
 
     def test_bridge_installs_block3_noise(self):
-        text = _read(BRIDGE)
+        text = source_text("blb_rl_bridge.py")
         self.assertIn("self.handler.replace_layer_block3_noise(", text)
         self.assertIn('add("block3")', text)
 
