@@ -1,0 +1,27 @@
+{
+  "active_records": 6923,
+  "all_candidate_parity": true,
+  "all_candidate_parity_seconds": 0.0758686529006809,
+  "candidate_store": "/hy-tmp/rfr_runtime_optimization/Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__small_gtrxl_full_seed20260721_20260721_184747/stage2_noise/progress/candidate_store.jsonl",
+  "cold_index_and_lookup_seconds": 2.4572953479364514,
+  "file_bytes": 181239315,
+  "hot_lookup_median_seconds_per_call": 0.00022169493651017546,
+  "hot_lookup_seconds_per_call": [
+    0.00022155760100577026,
+    0.0002215399065753445,
+    0.00022265197755768896,
+    0.00022169493651017546,
+    0.00022213877155445515
+  ],
+  "hot_lookup_speedup_vs_old_median": 9312.886679014808,
+  "indexed_candidate_count": 152,
+  "inventory_scan_seconds": 2.296722734812647,
+  "latest_promotion_candidates": 152,
+  "mismatch_count": 0,
+  "old_lookup_median_seconds": 2.0646198210306466,
+  "old_lookup_seconds": [
+    2.082891430007294,
+    2.0602727020159364,
+    2.0646198210306466
+  ]
+}
