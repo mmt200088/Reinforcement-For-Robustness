@@ -219,6 +219,27 @@ class ActionMaterializationTests(unittest.TestCase):
             sum(name.startswith("block3_exp_n4_L") for name in result.outputs),
             12,
         )
+        effective_rotation_count = sum(
+            int(entry.get("count", 1) or 1)
+            for output in result.outputs.values()
+            for entry in (
+                output.raw.get("new_compact_config", {}).get(
+                    "effective_rotations", [],
+                )
+            )
+        )
+        enabled_rotation_flags = [
+            (block_name, layer_idx, flag, int(count))
+            for block_name, layer_cfgs in result.cfgs_dict.items()
+            for layer_idx, cfg in layer_cfgs.items()
+            for flag, count in getattr(
+                cfg, "rotation_repeat_counts", {},
+            ).items()
+            if bool(getattr(cfg, flag, False))
+        ]
+        self.assertGreater(effective_rotation_count, 0)
+        self.assertTrue(enabled_rotation_flags)
+        self.assertTrue(any(count == 3 for *_, count in enabled_rotation_flags))
         self.assertRegex(result.final_config_fingerprint, r"^[0-9a-f]{64}$")
 
 

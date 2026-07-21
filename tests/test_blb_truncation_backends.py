@@ -60,6 +60,31 @@ class TruncationBackendTests(unittest.TestCase):
         actual = _apply_truncation(x, 8, "binary")
         self.assertTrue(torch.equal(actual, expected))
 
+    def test_rotation_repeat_count_executes_independent_noise_for_every_rotation(self):
+        import function_handler as fh
+
+        source = make_block1_default_config().gelu_out_fresh
+        original_sampler = fh._sample_gaussian_for_point
+        calls = []
+
+        def unit_noise(reference, point):
+            calls.append(point)
+            return torch.ones_like(reference)
+
+        fh._sample_gaussian_for_point = unit_noise
+        try:
+            actual = fh._apply_rotation_noise(
+                torch.zeros(4, dtype=torch.float64),
+                source,
+                repeat_count=3,
+            )
+        finally:
+            fh._sample_gaussian_for_point = original_sampler
+
+        self.assertTrue(torch.equal(actual, torch.full((4,), 3.0, dtype=torch.float64)))
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(point.distribution == "rotation" for point in calls))
+
     def test_none_k_is_identity_for_every_backend(self):
         x = torch.tensor([-1.25, 0.75], dtype=torch.float64)
         self.assertIs(_apply_truncation(x, None, "binary"), x)

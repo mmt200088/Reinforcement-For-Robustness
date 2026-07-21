@@ -29,6 +29,7 @@ try:
         make_block1_default_config,
         make_block2_default_config,
         make_block3_default_config,
+        make_block4_default_config,
     )
     from rescale_optimizer_bridge import (
         apply_optimizer_output_to_cfg,
@@ -52,6 +53,7 @@ except Exception as _exc:  # torch / transformers / function_handler missing
     make_block1_default_config = None  # type: ignore
     make_block2_default_config = None  # type: ignore
     make_block3_default_config = None  # type: ignore
+    make_block4_default_config = None  # type: ignore
     _make_block3_approximation_exponential = None  # type: ignore
     apply_optimizer_output_to_cfg = None  # type: ignore
     sync_block2_qk_binding = None  # type: ignore
@@ -346,6 +348,72 @@ class ApplyOptimizerOutputBlock2RotationTest(unittest.TestCase):
             and o.old_value is True and o.new_value is False
             for o in overrides
         ), f"expected rotation flag reset override; got {overrides}")
+
+
+@unittest.skipUnless(_TORCH_AVAILABLE, _SKIP_REASON)
+class DefaultOptimizerRotationBindingTest(unittest.TestCase):
+    """Production materialization must not require an injected name map."""
+
+    @staticmethod
+    def _raw(*rotations):
+        return {
+            "new_compact_config": {
+                "cut_point_sf": [],
+                "propagation_deltas": [],
+                "effective_rotations": list(rotations),
+            },
+            "result": {"valid": True},
+        }
+
+    def test_block2_shared_rotation_enables_all_qkv_model_branches(self):
+        cfg = make_block2_default_config(
+            wq_rescale_sf=30,
+            wk_rescale_sf=30,
+            wv_rescale_sf=30,
+        )
+        apply_optimizer_output_to_cfg(
+            cfg,
+            output_raw=self._raw({"name": "gs_rot", "count": 1}),
+            block_idx=2,
+            graph_key="block2_mrpc",
+            baseline_skeleton=[0, 1, 2, 3],
+        )
+
+        for flag in (
+            "rotation_after_wq_rescale",
+            "rotation_after_wk_rescale",
+            "rotation_after_wv_rescale",
+        ):
+            self.assertTrue(getattr(cfg, flag), flag)
+            self.assertEqual(cfg.rotation_repeat_counts[flag], 1)
+
+    def test_block4_rotation_count_three_is_preserved_for_runtime(self):
+        cfg = make_block4_default_config(ln_square_rescale_sf=31)
+        apply_optimizer_output_to_cfg(
+            cfg,
+            output_raw=self._raw({
+                "name": "rot_pre_ctpt_invd_2",
+                "count": 3,
+            }),
+            block_idx=4,
+            graph_key="block4",
+            baseline_skeleton=[0, 1, 2, 3],
+        )
+
+        flag = "rotation_after_ln_square_rescale"
+        self.assertTrue(getattr(cfg, flag))
+        self.assertEqual(cfg.rotation_repeat_counts[flag], 3)
+
+    def test_unknown_effective_rotation_fails_closed_instead_of_disappearing(self):
+        cfg = make_block4_default_config()
+        with self.assertRaisesRegex(ValueError, "unmapped effective rotation"):
+            apply_optimizer_output_to_cfg(
+                cfg,
+                output_raw=self._raw({"name": "future_rotation", "count": 1}),
+                block_idx=4,
+                graph_key="block4",
+                baseline_skeleton=[0, 1, 2, 3],
+            )
 
 
 # ---------------------------------------------------------------------------
