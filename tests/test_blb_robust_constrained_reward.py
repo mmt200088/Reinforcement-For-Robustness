@@ -559,7 +559,12 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
 
     env = _runtime_env(env_module, reward_module, statistical_constraints)
     env.total_action_dim = 3
-    env.env_cfg = SimpleNamespace(profile="mrpc")
+    env.env_cfg = SimpleNamespace(
+        profile="mrpc",
+        truncation_backend="binary",
+        truncation_ring_bits=43,
+        truncation_source_fractional_bits=24,
+    )
     env.max_sfs = object()
     env.rescale_bridge = SimpleNamespace(invoker=SimpleNamespace(baselines={}))
     env.gelu_degree = 4
@@ -633,6 +638,8 @@ def test_normal_terminal_runtime_assesses_trials_and_threads_external_cost():
     env.total_action_dim = 3
     env.env_cfg = SimpleNamespace(
         profile="mrpc", num_trials_per_step=5, persistent_probe_install=False,
+        truncation_backend="binary", truncation_ring_bits=43,
+        truncation_source_fractional_bits=24,
     )
     env.max_sfs = object()
     env.rescale_bridge = SimpleNamespace(invoker=SimpleNamespace(baselines={}))
@@ -765,6 +772,8 @@ def test_normal_terminal_eval_failure_is_minus_five_without_reference():
     env.total_action_dim = 3
     env.env_cfg = SimpleNamespace(
         profile="mrpc", num_trials_per_step=5, persistent_probe_install=False,
+        truncation_backend="binary", truncation_ring_bits=43,
+        truncation_source_fractional_bits=24,
     )
     env.max_sfs = object()
     env.rescale_bridge = SimpleNamespace(invoker=SimpleNamespace(baselines={}))
