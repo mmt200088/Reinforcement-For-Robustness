@@ -294,7 +294,7 @@ def test_collection_does_not_bypass_unknown_reward_design():
     assert env.reward_weights.reward_design == "robust-constrained"
 
 
-def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate(monkeypatch):
+def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate():
     from blb_stage2_rl import env as env_module
     from blb_stage2_rl.action_space import make_all_max_action_vector
     from blb_stage2_rl.env import BLBStage2Env
@@ -351,10 +351,22 @@ def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate(m
         valid_block_count=1,
         total_block_count=1,
     )
-    cost_eval = SimpleNamespace(
-        decoded=decoded, cfgs_dict={}, outputs={}, signals=signals, optimizer_eval_mode="fake",
+    materialized = SimpleNamespace(
+        decoded=decoded,
+        cfgs_dict={},
+        outputs={},
+        signals=signals,
+        optimizer_eval_mode="fake",
+        optimizer_invalid=False,
+        model_ready=True,
+        failure_reason=None,
+        final_config_fingerprint="test-materialized-baseline",
+        replan_application={
+            "model_uses_replan_config": True,
+            "optimizer_cfg_overrides": {},
+        },
     )
-    monkeypatch.setattr(env_module, "evaluate_action_for_cost", lambda *_args, **_kwargs: cost_eval)
+    env._materialize_action = lambda *_args, **_kwargs: materialized
 
     reference, _summary = _collect_robust_baseline_reference(
         base_env=env,

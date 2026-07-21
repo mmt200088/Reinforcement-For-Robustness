@@ -425,6 +425,7 @@ def _runtime_modules():
         "optimizer_cfg_overrides": {},
     }
     optimizer_cost.evaluate_action_for_cost = lambda *_args, **_kwargs: None
+    optimizer_cost.materialize_action_for_model = lambda *_args, **_kwargs: None
     probe_runner = types.ModuleType(f"{package_name}.probe_runner")
     probe_runner.ProbeRunner = type("ProbeRunner", (), {})
     probe_runner.diagnostics_payload = lambda _diag: {}
@@ -503,6 +504,24 @@ def _runtime_env(env_module, reward_module, statistical_constraints):
     return env
 
 
+def _runtime_materialized(decoded, signals):
+    return SimpleNamespace(
+        decoded=decoded,
+        cfgs_dict={},
+        outputs={},
+        signals=signals,
+        optimizer_eval_mode="fake",
+        optimizer_invalid=False,
+        model_ready=True,
+        failure_reason=None,
+        final_config_fingerprint="test-materialized-action",
+        replan_application={
+            "model_uses_replan_config": True,
+            "optimizer_cfg_overrides": {},
+        },
+    )
+
+
 def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads_cost():
     env_module, reward_module, statistical_constraints = _runtime_modules()
 
@@ -549,11 +568,9 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
     decoded = SimpleNamespace(
         block1_cfgs=[], block2_cfgs=[], block3_cfgs=[], block4_cfgs=[], block5_cfgs=[],
     )
-    cost_eval = SimpleNamespace(
-        decoded=decoded, cfgs_dict={}, outputs={}, signals=signals, optimizer_eval_mode="fake",
-    )
+    materialized = _runtime_materialized(decoded, signals)
     with mock.patch.object(env_module, "make_all_max_action_vector", return_value=np.asarray([9, 9, 9])), \
-            mock.patch.object(env_module, "evaluate_action_for_cost", return_value=cost_eval):
+            mock.patch.object(env_module, "materialize_action_for_model", return_value=materialized):
         prepared = env.prepare_action_for_terminal_probe(
             np.asarray([3, 1, 4]),
             external_cost_score=variable_cost,
@@ -633,16 +650,10 @@ def test_normal_terminal_runtime_assesses_trials_and_threads_external_cost():
         block1_cfgs=[], block2_cfgs=[], block3_cfgs=[], block4_cfgs=[], block5_cfgs=[],
     )
     signals = SimpleNamespace(any_invalid=False, total_bits_sum=100.0, total_fusion_count=0.0)
-    cost_eval = SimpleNamespace(
-        decoded=decoded,
-        cfgs_dict={},
-        outputs={},
-        signals=signals,
-        optimizer_eval_mode="fake",
-    )
+    materialized = _runtime_materialized(decoded, signals)
 
     with mock.patch.object(env_module, "make_all_max_action_vector", return_value=np.asarray([9, 9, 9])), \
-            mock.patch.object(env_module, "evaluate_action_for_cost", return_value=cost_eval), \
+            mock.patch.object(env_module, "materialize_action_for_model", return_value=materialized), \
             mock.patch.object(env_module, "avg_truncation_k_in_action", return_value=13.0):
         _state, terminal_reward, done, info = env.step(
             np.asarray([3, 1, 4]), external_cost_score=0.6, external_cost_rank=0.6,
@@ -769,11 +780,9 @@ def test_normal_terminal_eval_failure_is_minus_five_without_reference():
         block1_cfgs=[], block2_cfgs=[], block3_cfgs=[], block4_cfgs=[], block5_cfgs=[],
     )
     signals = SimpleNamespace(any_invalid=False, total_bits_sum=100.0, total_fusion_count=0.0)
-    cost_eval = SimpleNamespace(
-        decoded=decoded, cfgs_dict={}, outputs={}, signals=signals, optimizer_eval_mode="fake",
-    )
+    materialized = _runtime_materialized(decoded, signals)
     with mock.patch.object(env_module, "make_all_max_action_vector", return_value=np.asarray([9, 9, 9])), \
-            mock.patch.object(env_module, "evaluate_action_for_cost", return_value=cost_eval), \
+            mock.patch.object(env_module, "materialize_action_for_model", return_value=materialized), \
             mock.patch.object(env_module, "avg_truncation_k_in_action", return_value=13.0):
         _state, terminal_reward, done, info = env.step(
             np.asarray([3, 1, 4]), external_cost_score=1.0,
