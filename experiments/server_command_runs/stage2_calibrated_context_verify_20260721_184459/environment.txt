@@ -1,0 +1,8 @@
+timestamp=2026-07-21T18:54:16+08:00
+hostname=I29d99ecd500020146c
+source_sync_commit=c3d78b449aed1b92c7387513c0dcc9694e1b3f0e
+source_status_lines=0
+torch=2.9.1+cu128
+cuda_available=True
+cuda_device_count=5
+gpu_names=NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 5090,NVIDIA GeForce RTX 5090
