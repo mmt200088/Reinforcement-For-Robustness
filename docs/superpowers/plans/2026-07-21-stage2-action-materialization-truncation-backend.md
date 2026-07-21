@@ -40,8 +40,10 @@ backend selected by explicit Stage-2 configuration.
 ### Task 4: Verification and delivery
 
 - [x] Run focused static/torch-free checks locally where available.
-- [ ] Commit and push source from the clean worktree.
-- [ ] Run Torch/GPU tests on the server from the exact pushed commit.
-- [ ] Capture route parity, all-block K, fail-closed, legacy parity, stochastic
+- [x] Commit and push source from the clean worktree.
+- [x] Run Torch-backed tests on the server from the exact pushed commit while
+      keeping the GPUs isolated from the active training job.
+- [x] Capture route parity, all-block K, fail-closed, legacy parity, stochastic
       statistics, and Gaussian-RNG-isolation evidence.
-- [ ] Pull compact evidence locally, commit/push it, and verify synchronization.
+- [x] Pull compact evidence locally.
+- [ ] Commit/push the evidence and verify local/remote synchronization.
