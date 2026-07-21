@@ -952,7 +952,7 @@ class BlockRuntimeHelperTest(unittest.TestCase):
         reward.stage1_dense_cost_reward = lambda *args, **kwargs: 0.0
         sys.modules[reward.__name__] = reward
         optimizer = types.ModuleType(f"{pkg_name}.optimizer_cost")
-        optimizer.apply_optimizer_outputs_to_cfgs = cls._apply_optimizer
+        optimizer.materialize_decoded_action = cls._materialize
         sys.modules[optimizer.__name__] = optimizer
 
         loader = importlib.machinery.SourceFileLoader(
@@ -981,9 +981,11 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             marker="decoded", block_idx=block_idx, layer_idx=layer_idx,
             vector=np.asarray(vector, dtype=int).copy(),
         )
-        return types.SimpleNamespace(
+        decoded = types.SimpleNamespace(
             cfgs_dict=lambda: {f"block{block_idx}": {layer_idx: cfg}},
         )
+        setattr(decoded, f"block{block_idx}_cfgs", {layer_idx: cfg})
+        return decoded
 
     @staticmethod
     def _apply_optimizer(**kwargs):
@@ -994,6 +996,31 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             "model_uses_replan_config": True,
             "optimizer_cfg_overrides": {config_name: [{"cfg_attr": "marker"}]},
         }
+
+    @classmethod
+    def _materialize(cls, **kwargs):
+        output = next(iter(kwargs["outputs"].values()))
+        if not bool(output.valid):
+            return types.SimpleNamespace(
+                cfgs_dict=kwargs["cfgs_dict"],
+                replan_application={},
+                optimizer_invalid=True,
+                model_ready=False,
+                failure_reason="optimizer_invalid_chain",
+                final_config_fingerprint="",
+            )
+        application = cls._apply_optimizer(
+            cfgs_dict=kwargs["cfgs_dict"],
+            opt_outputs=kwargs["outputs"],
+        )
+        return types.SimpleNamespace(
+            cfgs_dict=kwargs["cfgs_dict"],
+            replan_application=application,
+            optimizer_invalid=False,
+            model_ready=True,
+            failure_reason=None,
+            final_config_fingerprint="materialized-test-config",
+        )
 
     def _base(self, bridge):
         return types.SimpleNamespace(
@@ -1161,14 +1188,14 @@ class BlockRuntimeHelperTest(unittest.TestCase):
         self.assertEqual(result.replan_application, {})
 
     def test_helper_propagates_bridge_contract_defects_without_optimizer_apply(self):
-        original_apply = self.mod.apply_optimizer_outputs_to_cfgs
-        apply_calls = []
+        original_materialize = self.mod.materialize_decoded_action
+        materialize_calls = []
 
-        def unexpected_apply(**kwargs):
-            apply_calls.append(kwargs)
-            raise AssertionError("optimizer apply must not run")
+        def unexpected_materialize(**kwargs):
+            materialize_calls.append(kwargs)
+            raise AssertionError("materializer must not run")
 
-        self.mod.apply_optimizer_outputs_to_cfgs = unexpected_apply
+        self.mod.materialize_decoded_action = unexpected_materialize
         try:
             for error_type in (TypeError, AttributeError, AssertionError):
                 with self.subTest(error_type=error_type.__name__):
@@ -1187,9 +1214,9 @@ class BlockRuntimeHelperTest(unittest.TestCase):
                             graph_key="block2_mrpc",
                         )
         finally:
-            self.mod.apply_optimizer_outputs_to_cfgs = original_apply
+            self.mod.materialize_decoded_action = original_materialize
 
-        self.assertEqual(apply_calls, [])
+        self.assertEqual(materialize_calls, [])
 
     def test_helper_preserves_optimizer_invalid_result(self):
         output = types.SimpleNamespace(
@@ -1225,15 +1252,15 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             invoker=types.SimpleNamespace(baselines={}),
             evaluate=lambda **kwargs: output,
         )
-        apply_count = 0
-        original_apply = self.mod.apply_optimizer_outputs_to_cfgs
+        materialize_count = 0
+        original_materialize = self.mod.materialize_decoded_action
 
-        def counted_apply(**kwargs):
-            nonlocal apply_count
-            apply_count += 1
-            return original_apply(**kwargs)
+        def counted_materialize(**kwargs):
+            nonlocal materialize_count
+            materialize_count += 1
+            return original_materialize(**kwargs)
 
-        self.mod.apply_optimizer_outputs_to_cfgs = counted_apply
+        self.mod.materialize_decoded_action = counted_materialize
         try:
             spec = self.FakeSpec()
             env = self.mod.BLBStage2SequentialEnv.__new__(self.mod.BLBStage2SequentialEnv)
@@ -1255,9 +1282,9 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             eval_info = env.evaluate_step([0])
             _obs, reward, done, commit_info = env.commit_step(eval_info)
         finally:
-            self.mod.apply_optimizer_outputs_to_cfgs = original_apply
+            self.mod.materialize_decoded_action = original_materialize
 
-        self.assertEqual(apply_count, 1)
+        self.assertEqual(materialize_count, 1)
         self.assertEqual(reward, 0.0)
         self.assertFalse(done)
         self.assertTrue(commit_info["replan_application"]["model_uses_replan_config"])

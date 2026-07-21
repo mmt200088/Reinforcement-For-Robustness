@@ -1140,6 +1140,9 @@ class EpisodeRecord:
     fusion_count_b2: int = 0
     fusion_count_b4: int = 0
     fusion_count_b5: int = 0
+    terminal_final_config_fingerprint: str = ""
+    terminal_materialization_failure_reason: str = ""
+    terminal_model_uses_replan_config: bool = False
     first_invalid_step: Optional[int] = None
     first_invalid_block: Optional[int] = None
     first_invalid_layer: Optional[int] = None
@@ -1412,6 +1415,17 @@ def _apply_terminal_info_to_record(
     """Populate an EpisodeRecord from the base env terminal info dict."""
     record.terminal_reward = float(terminal_reward)
     record.total_reward = float(record.per_step_reward_sum + float(terminal_reward))
+    record.terminal_final_config_fingerprint = str(
+        term_info_dict.get("final_config_fingerprint", "") or ""
+    )
+    record.terminal_materialization_failure_reason = str(
+        term_info_dict.get("materialization_failure_reason", "") or ""
+    )
+    replan_application = term_info_dict.get("replan_application") or {}
+    record.terminal_model_uses_replan_config = bool(
+        isinstance(replan_application, Mapping)
+        and replan_application.get("model_uses_replan_config", False)
+    )
     # 2026-06-13: per-block-type fusion split (sequential_env mirrors it into
     # terminal_info). Diagnostic only; absent on non-fusion/legacy paths.
     if "fusion_count_b2" in term_info_dict:
@@ -2221,6 +2235,9 @@ def train_sequential(
         # 0 / 0.0 means the episode never produced a terminal reward (e.g.,
         # early_terminate_on_invalid fired before the last step).
         terminal_priority_int = 0
+        terminal_final_config_fingerprint_val = ""
+        terminal_materialization_failure_reason_val = ""
+        terminal_model_uses_replan_config_val = False
         terminal_loss_mean_val = 0.0
         terminal_loss_std_val = 0.0
         terminal_metric1_val = 0.0
@@ -2643,6 +2660,17 @@ def train_sequential(
                 if "terminal_reward" in info:
                     terminal_reward = float(info["terminal_reward"])
                 term_info_dict = info.get("terminal_info") or {}
+                terminal_final_config_fingerprint_val = str(
+                    term_info_dict.get("final_config_fingerprint", "") or ""
+                )
+                terminal_materialization_failure_reason_val = str(
+                    term_info_dict.get("materialization_failure_reason", "") or ""
+                )
+                _terminal_replan = term_info_dict.get("replan_application") or {}
+                terminal_model_uses_replan_config_val = bool(
+                    isinstance(_terminal_replan, Mapping)
+                    and _terminal_replan.get("model_uses_replan_config", False)
+                )
                 term_breakdown = term_info_dict.get("reward_breakdown")
                 term_metrics = term_info_dict.get("metrics")
                 term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
@@ -2975,6 +3003,17 @@ def train_sequential(
             # not the terminal step or when the base env short-circuited (any
             # invalid → no compute_reward call).
             term_info_dict = info.get("terminal_info") or {}
+            terminal_final_config_fingerprint_val = str(
+                term_info_dict.get("final_config_fingerprint", "") or ""
+            )
+            terminal_materialization_failure_reason_val = str(
+                term_info_dict.get("materialization_failure_reason", "") or ""
+            )
+            _terminal_replan = term_info_dict.get("replan_application") or {}
+            terminal_model_uses_replan_config_val = bool(
+                isinstance(_terminal_replan, Mapping)
+                and _terminal_replan.get("model_uses_replan_config", False)
+            )
             term_breakdown = term_info_dict.get("reward_breakdown")
             term_metrics = term_info_dict.get("metrics")
             term_probe_diag = term_info_dict.get("probe_diagnostics") or {}
@@ -3086,6 +3125,15 @@ def train_sequential(
             first_invalid_layer=(int(first_invalid["layer_idx"]) if first_invalid else None),
             step_infos=captured_step_infos,
             invalid_block_details=invalid_block_details,
+            terminal_final_config_fingerprint=str(
+                terminal_final_config_fingerprint_val
+            ),
+            terminal_materialization_failure_reason=str(
+                terminal_materialization_failure_reason_val
+            ),
+            terminal_model_uses_replan_config=bool(
+                terminal_model_uses_replan_config_val
+            ),
             terminal_priority=int(terminal_priority_int),
             terminal_loss_mean=float(terminal_loss_mean_val),
             terminal_loss_std=float(terminal_loss_std_val),
@@ -3396,7 +3444,7 @@ def _build_authoritative_validation_env(
     promotion_env.reward_weights = copy.deepcopy(base_env.reward_weights)
     promotion_env.statistical_reference = None
     promotion_env.probe_noise_seed = None
-    promotion_env._installed_action_hash = None
+    promotion_env._installed_config_fingerprint = None
     promotion_env._last_probe_diagnostics = {}
 
     devices = [int(value) for value in reward_devices]
@@ -4677,6 +4725,15 @@ def _run_layerwise_training_branch(
                 fusion_count_b2=12,
                 fusion_count_b4=b4_count,
                 fusion_count_b5=12,
+                terminal_final_config_fingerprint=str(
+                    record.final_config_fingerprint
+                ),
+                terminal_materialization_failure_reason=str(
+                    record.materialization_failure_reason
+                ),
+                terminal_model_uses_replan_config=bool(
+                    record.model_uses_replan_config
+                ),
                 terminal_priority=int(record.priority),
                 terminal_loss_mean=float(fresh_metrics.get("loss_mean", 0.0)),
                 terminal_loss_std=float(fresh_metrics.get("loss_std", 0.0)),
@@ -5543,6 +5600,11 @@ def _run_sequential_via_runner_locked(
             profile=train_cfg.profile,
             num_trials_per_step=train_cfg.num_trials_per_step,
             probe_batch_count=train_cfg.probe_batch_count,
+            truncation_backend=train_cfg.truncation_backend,
+            truncation_ring_bits=train_cfg.truncation_ring_bits,
+            truncation_source_fractional_bits=(
+                train_cfg.truncation_source_fractional_bits
+            ),
             borderline_retest_enabled=False,
             borderline_retest_trials_multiplier=1,
         ),
@@ -7132,6 +7194,15 @@ def _run_sequential_via_runner_locked(
                     fusion_count_b2=int(record.fusion_count_b2),
                     fusion_count_b4=int(record.fusion_count_b4),
                     fusion_count_b5=int(record.fusion_count_b5),
+                    terminal_final_config_fingerprint=str(
+                        record.terminal_final_config_fingerprint
+                    ),
+                    terminal_materialization_failure_reason=str(
+                        record.terminal_materialization_failure_reason
+                    ),
+                    terminal_model_uses_replan_config=bool(
+                        record.terminal_model_uses_replan_config
+                    ),
                     first_invalid_step=(
                         int(record.first_invalid_step)
                         if record.first_invalid_step is not None else None

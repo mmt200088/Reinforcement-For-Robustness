@@ -1051,6 +1051,16 @@ def main():
                              "Required when --blb_action_config is set.")
     parser.add_argument("--blb_seed", type=int, default=42,
                         help="Random seed for reproducible BLB-noise sampling (default: 42).")
+    parser.add_argument(
+        "--blb_truncation_backend",
+        choices=("binary", "decimal", "stochastic_ring"),
+        default="binary",
+        help="BLB truncation simulator (default: binary; stochastic_ring is opt-in).",
+    )
+    parser.add_argument("--blb_truncation_ring_bits", type=int, default=43)
+    parser.add_argument(
+        "--blb_truncation_source_fractional_bits", type=int, default=24,
+    )
     parser.add_argument("--output_dir", type=str, default="run",
                         help="Output sub-directory name; final path will be "
                              "glue_submission/<output_dir> (default: run)")
@@ -1111,6 +1121,11 @@ def main():
             allow_cpu=bool(args.allow_cpu),
             max_length=int(args.max_length),
             batch_size=int(args.batch_size),
+            truncation_backend=str(args.blb_truncation_backend),
+            truncation_ring_bits=int(args.blb_truncation_ring_bits),
+            truncation_source_fractional_bits=int(
+                args.blb_truncation_source_fractional_bits
+            ),
         )
         print(json.dumps({k: v for k, v in summary.items() if k != "failures"}, indent=2))
         if summary.get("failures"):
@@ -1347,6 +1362,9 @@ def _decode_blb_action_for_glue(
         gelu_degrees,
         softmax_degrees,
         max_sfs,
+        truncation_backend: str = "binary",
+        truncation_ring_bits: int = 43,
+        truncation_source_fractional_bits: int = 24,
         ):
     """Decode a Stage-2 action into installable BLB cfgs for GLUE submission,
     REPLAYING the precision boost and applying the Rescale_optimizer override.
@@ -1360,23 +1378,14 @@ def _decode_blb_action_for_glue(
     use) guarantees byte-for-byte agreement with final eval + the training probe —
     no second, drift-prone copy of the install pipeline.
 
-    ``fusion_metadata is None`` ⇒ legacy per-slot / non-fusion path (index decode,
-    no override), preserved for back-compat.
+    ``fusion_metadata is None`` still uses the same optimizer materialization;
+    only the fusion-map metadata replay step is absent.
     """
     import numpy as _np
 
-    if fusion_metadata is None:
-        from blb_stage2_rl.action_space import action_vector_to_cfgs as _avc
-        return _avc(
-            action_vec=_np.asarray(action_vec, dtype=int),
-            max_sfs=max_sfs,
-            num_layers=int(len(gelu_degrees)),
-            gelu_degree=_np.asarray(gelu_degrees, dtype=int),
-            attn_degree=_np.asarray(softmax_degrees, dtype=int),
-        )
-
     from Paean.blb_action_eval import BLBActionFinalEvaluationModule
     from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+    from types import SimpleNamespace
 
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Rescale_optimizer")
     invoker = InProcessInvoker.from_profile(rescale_optimizer_root=root, profile=str(profile))
@@ -1387,7 +1396,13 @@ def _decode_blb_action_for_glue(
     # the rotation-name-map resolver (evaluator=None ⇒ {} rotation map, matching a
     # final-eval evaluator that has no rotation map configured).
     shim = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
-    shim.evaluator = None
+    shim.evaluator = SimpleNamespace(
+        blb_v3_truncation_backend=str(truncation_backend),
+        blb_v3_truncation_ring_bits=int(truncation_ring_bits),
+        blb_v3_truncation_source_fractional_bits=int(
+            truncation_source_fractional_bits
+        ),
+    )
     shim.rescale_bridge = bridge
     shim.rescale_invoker_kind = "in_process"
     shim.rescale_optimizer_root = root
@@ -1395,7 +1410,7 @@ def _decode_blb_action_for_glue(
     num_layers = int(len(gelu_degrees))
     decoded = shim._decode_action_candidate(
         action_vec=_np.asarray(action_vec, dtype=int),
-        metadata=fusion_metadata,
+        metadata=dict(fusion_metadata or {}),
         max_sfs=max_sfs,
         num_layers=num_layers,
         gelu=_np.asarray(gelu_degrees, dtype=int),
@@ -1403,14 +1418,24 @@ def _decode_blb_action_for_glue(
         profile=str(profile),
     )
     cfgs_dict = decoded.cfgs_dict()
-    opt_outputs, _opt_signals = shim._optimizer_outputs(str(profile), cfgs_dict)
-    shim._apply_optimizer_outputs_to_decoded(
+    opt_outputs, opt_signals = shim._optimizer_outputs(str(profile), cfgs_dict)
+    materialized = shim._materialize_decoded_action(
         profile=str(profile),
+        action_vec=_np.asarray(action_vec, dtype=int),
         decoded=decoded,
         cfgs_dict=cfgs_dict,
         opt_outputs=opt_outputs,
+        opt_signals=opt_signals,
     )
-    return decoded
+    if not materialized.model_ready:
+        raise RuntimeError(
+            "GLUE BLB action cannot reach model: "
+            f"{materialized.failure_reason}; "
+            f"replan={materialized.replan_application}"
+        )
+    decoded.final_config_fingerprint = materialized.final_config_fingerprint
+    decoded.replan_application = materialized.replan_application
+    return materialized.decoded
 
 
 def _process_blb_task(
@@ -1427,7 +1452,10 @@ def _process_blb_task(
         batch_size: int = 16,
         fusion_metadata=None,
         max_sfs=None,
-        ) -> None:
+        truncation_backend: str = "binary",
+        truncation_ring_bits: int = 43,
+        truncation_source_fractional_bits: int = 24,
+        ) -> dict:
     """Mirror of ``process_task`` for BLB action vectors.
 
     Installs BLB Stage-2 noise via :class:`BLBNoiseRLBridge` after running
@@ -1497,7 +1525,8 @@ def _process_blb_task(
     # fusion run, exactly like Paean.blb_action_eval's validation-set final eval and
     # the training terminal probe. The fusion path reuses the final-eval methods
     # (single source of truth) so the submitted config == the RL-selected config.
-    # Non-fusion (fusion_metadata None) keeps the legacy index decode.
+    # Non-fusion (fusion_metadata None) skips only map replay; it still uses the
+    # same optimizer materialization and fail-closed install contract.
     decoded = _decode_blb_action_for_glue(
         action_vec=np.asarray(action_vec, dtype=int),
         fusion_metadata=fusion_metadata,
@@ -1505,6 +1534,11 @@ def _process_blb_task(
         gelu_degrees=gelu_degrees,
         softmax_degrees=softmax_degrees,
         max_sfs=max_sfs,
+        truncation_backend=truncation_backend,
+        truncation_ring_bits=truncation_ring_bits,
+        truncation_source_fractional_bits=(
+            truncation_source_fractional_bits
+        ),
     )
     noise_bridge = BLBNoiseRLBridge(handler, layers_attribute="model." + layers_attr)
     noise_bridge.apply(
@@ -1568,6 +1602,28 @@ def _process_blb_task(
         _gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+    replan_application = getattr(decoded, "replan_application", {}) or {}
+    return {
+        "model_ready": True,
+        "final_config_fingerprint": str(
+            getattr(decoded, "final_config_fingerprint", "") or ""
+        ),
+        "model_uses_replan_config": bool(
+            replan_application.get("model_uses_replan_config", False)
+        ),
+        "expected_config_count": int(
+            replan_application.get("expected_config_count", 0) or 0
+        ),
+        "applied_config_count": int(
+            replan_application.get("applied_config_count", 0) or 0
+        ),
+        "optimizer_output_set_matches": bool(
+            replan_application.get("optimizer_output_set_matches", False)
+        ),
+        "missing_baseline_skeletons": list(
+            replan_application.get("missing_baseline_skeletons", []) or []
+        ),
+    }
 
 
 def generate_blb_glue_submission(
@@ -1584,6 +1640,9 @@ def generate_blb_glue_submission(
         allow_cpu: bool = False,
         max_length: int = 128,
         batch_size: int = 16,
+        truncation_backend: str = "binary",
+        truncation_ring_bits: int = 43,
+        truncation_source_fractional_bits: int = 24,
         log_fn=None,
         calibrated_action_context=None,
         ) -> dict:
@@ -1754,6 +1813,7 @@ def generate_blb_glue_submission(
 
     failures = []
     skips = []
+    blb_materialization = {}
     # 1) Inference on the BLB-trained task with the BLB action installed.
     blb_cfg = dict(TASK_REGISTRY[blb_task])
     if model_type == "bert-large" and blb_task in BERT_LARGE_MODEL_NAMES:
@@ -1761,7 +1821,7 @@ def generate_blb_glue_submission(
     elif model_type == "gpt-2" and blb_task in GPT2_MODEL_NAMES:
         blb_cfg['model_name'] = GPT2_MODEL_NAMES[blb_task]
     try:
-        _process_blb_task(
+        blb_materialization = _process_blb_task(
             task_name=blb_task,
             task_config=blb_cfg,
             action_vec=action_vec,
@@ -1774,7 +1834,12 @@ def generate_blb_glue_submission(
             batch_size=int(batch_size),
             fusion_metadata=fusion_metadata,
             max_sfs=action_context.max_sfs,
-        )
+            truncation_backend=truncation_backend,
+            truncation_ring_bits=truncation_ring_bits,
+            truncation_source_fractional_bits=(
+                truncation_source_fractional_bits
+            ),
+        ) or {}
     except Exception as exc:
         failures.append((blb_task, type(exc).__name__, str(exc)))
         log_fn(f"[Error] BLB task '{blb_task}' failed: {type(exc).__name__}: {exc}")
@@ -1828,6 +1893,11 @@ def generate_blb_glue_submission(
         "model_type": model_type,
         "profile": str(profile),
         "seed": int(seed),
+        "truncation_backend": str(truncation_backend),
+        "truncation_ring_bits": int(truncation_ring_bits),
+        "truncation_source_fractional_bits": int(
+            truncation_source_fractional_bits
+        ),
         "failures": [
             {"task": name, "exc_type": etype, "message": msg}
             for name, etype, msg in failures
@@ -1836,6 +1906,7 @@ def generate_blb_glue_submission(
         "placeholder_files": list(sorted(placeholder_files or [])),
         "verify_ok": bool(ok),
         "calibrated_action_context": dict(action_context.provenance),
+        "blb_materialization": blb_materialization,
     }
     return summary
 

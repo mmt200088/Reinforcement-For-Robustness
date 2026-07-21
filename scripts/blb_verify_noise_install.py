@@ -375,12 +375,12 @@ def run_full(args: argparse.Namespace) -> Path:
             make_all_max_action_vector,
             parse_config_name,
         )
+        from blb_stage2_rl.optimizer_cost import materialize_decoded_action
         from rescale_optimizer_bridge import (
             InProcessInvoker,
             RescaleOptimizerBridge,
             _strip_layer_suffix,
             aggregate_optimizer_signals,
-            apply_optimizer_output_to_cfg,
         )
     except ImportError as exc:
         raise RuntimeError(
@@ -424,6 +424,24 @@ def run_full(args: argparse.Namespace) -> Path:
     signals = aggregate_optimizer_signals(outputs)
 
     invoker_baselines = invoker.baselines
+    materialized = materialize_decoded_action(
+        action_indices=action_vec,
+        decoded=decoded,
+        cfgs_dict=cfgs_dict,
+        outputs=outputs,
+        signals=signals,
+        profile=profile,
+        invoker_baselines=invoker_baselines,
+        expected_config_names=list(requests),
+    )
+    if not materialized.model_ready:
+        raise RuntimeError(
+            "action cannot reach model: "
+            f"{materialized.failure_reason}; "
+            f"replan={materialized.replan_application}"
+        )
+    cfgs_dict = materialized.cfgs_dict
+    replan_per_config = materialized.replan_application.get("per_config", {})
     noise_table = load_noise_variance_table()
     per_config_records: List[Dict[str, Any]] = []
     for cn, out in outputs.items():
@@ -435,15 +453,8 @@ def run_full(args: argparse.Namespace) -> Path:
             continue
         target_cfg = cfgs_dict[f"block{block_idx}"][int(layer_idx)]
         graph_key, _ = _strip_layer_suffix(cn)
-        baseline_entry = invoker_baselines.get(graph_key)
-        baseline_skel = list(baseline_entry[0]) if baseline_entry else []
-        overrides = apply_optimizer_output_to_cfg(
-            target_cfg,
-            output_raw=out.raw,
-            block_idx=int(block_idx),
-            graph_key=graph_key,
-            baseline_skeleton=baseline_skel,
-            rotation_name_map=None,  # rotation map is provided by env at runtime; ignore here
+        overrides = list(
+            (replan_per_config.get(str(cn), {}) or {}).get("overrides", [])
         )
 
         noise_points = _enumerate_cfg_noise_points(target_cfg, noise_table=noise_table)
@@ -592,11 +603,11 @@ def write_full_html(
                 ["cfg_attr", "graph_node", "source", "old", "new"],
                 [
                     [
-                        f"<code>{_html_escape(ov.cfg_attr)}</code>",
-                        f"<code>{_html_escape(ov.graph_node or '')}</code>",
-                        _html_escape(ov.source),
-                        _html_escape(ov.old_value),
-                        _html_escape(ov.new_value),
+                        f"<code>{_html_escape(ov.get('cfg_attr', ''))}</code>",
+                        f"<code>{_html_escape(ov.get('graph_node') or '')}</code>",
+                        _html_escape(ov.get('source', '')),
+                        _html_escape(ov.get('old_value')),
+                        _html_escape(ov.get('new_value')),
                     ]
                     for ov in ovs
                 ],

@@ -41,7 +41,7 @@ from .action_space import (
 )
 from .candidate_store import action_hash
 from .inference_eval import run_installed_probe_trial
-from .optimizer_cost import apply_optimizer_outputs_to_cfgs, evaluate_action_for_cost
+from .optimizer_cost import materialize_action_for_model
 from .probe_runner import ProbeRunner, diagnostics_payload
 from .reward import (
     BaselineCostStats,
@@ -128,6 +128,9 @@ class BLBStage2EnvConfig:
     deterministic_eval: bool = False
     rotation_name_map: Optional[Mapping[Tuple[int, str], Mapping[str, str]]] = None
     persistent_probe_install: bool = False
+    truncation_backend: str = "binary"
+    truncation_ring_bits: int = 43
+    truncation_source_fractional_bits: int = 24
     """Keep BLB wrappers installed across episodes and update cfgs in-place.
 
     Multi-GPU reward probes otherwise pay a full clear + reinstall on every
@@ -218,7 +221,7 @@ class BLBStage2Env:
         # runs leave this None and the existing path runs bitwise-unchanged.
         self.probe_runner = probe_runner
         self._last_probe_diagnostics: Dict[str, Any] = {}
-        self._installed_action_hash: Optional[str] = None
+        self._installed_config_fingerprint: Optional[str] = None
         self.pareto_cost_archive = None
         # Counter for derive_probe_base_seed; bumped every action eval so two
         # consecutive actions in the same episode get different seed streams.
@@ -267,7 +270,45 @@ class BLBStage2Env:
             self.probe_runner.clear()
         else:
             self.bridge.clear()
-        self._installed_action_hash = None
+        self._installed_config_fingerprint = None
+
+    def _materialize_action(
+            self,
+            action_vec: Sequence[int],
+            *,
+            boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
+            ):
+        """Run the one canonical action -> replan -> installable-cfg path."""
+        bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
+        invoker_baselines: Mapping[str, Any] = (
+            getattr(bridge_invoker, "baselines", {}) or {}
+        )
+
+        def rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
+            return (self.env_cfg.rotation_name_map or {}).get(
+                (int(block_idx), str(profile)), {}
+            )
+
+        # apply_optimizer_outputs_to_cfgs remains an implementation detail of
+        # materialize_action_for_model; executable env paths do not write back
+        # optimizer results independently.
+        return materialize_action_for_model(
+            action_vec,
+            profile=self.env_cfg.profile,
+            num_layers=self.num_layers,
+            max_sfs=self.max_sfs,
+            rescale_bridge=self.rescale_bridge,
+            gelu_degree=self.gelu_degree,
+            attn_degree=self.attn_degree,
+            boosted_overrides=boosted_overrides,
+            invoker_baselines=invoker_baselines,
+            rotation_name_map_provider=rotation_provider,
+            truncation_backend=self.env_cfg.truncation_backend,
+            truncation_ring_bits=self.env_cfg.truncation_ring_bits,
+            truncation_source_fractional_bits=(
+                self.env_cfg.truncation_source_fractional_bits
+            ),
+        )
 
     def _normalize_degree_vector(self, degrees, *, default: int, name: str):
         if degrees is None:
@@ -565,41 +606,19 @@ class BLBStage2Env:
         degree_sync = self.sync_degree_vectors_from_model()
         timing: Dict[str, float] = {}
         cost_t0 = time.perf_counter()
-        cost_eval = evaluate_action_for_cost(
-            action_vec,
-            profile=self.env_cfg.profile,
-            num_layers=self.num_layers,
-            max_sfs=self.max_sfs,
-            rescale_bridge=self.rescale_bridge,
-            gelu_degree=self.gelu_degree,
-            attn_degree=self.attn_degree,
-            boosted_overrides=boosted_overrides,
+        materialized = self._materialize_action(
+            action_vec, boosted_overrides=boosted_overrides,
         )
         timing["cost_eval_wall_seconds"] = float(time.perf_counter() - cost_t0)
-        decoded = cost_eval.decoded
-        cfgs_dict = cost_eval.cfgs_dict
-        opt_outputs = cost_eval.outputs
-        opt_signals = cost_eval.signals
-        any_invalid = bool(opt_signals.any_invalid)
+        decoded = materialized.decoded
+        opt_outputs = materialized.outputs
+        opt_signals = materialized.signals
+        any_invalid = not bool(materialized.model_ready)
         optimizer_invalid_summary = (
-            summarize_optimizer_invalid_outputs(opt_outputs) if any_invalid else ""
+            summarize_optimizer_invalid_outputs(opt_outputs)
+            if materialized.optimizer_invalid else ""
         )
-
-        bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
-        invoker_baselines: Mapping[str, Any] = getattr(bridge_invoker, "baselines", {}) or {}
-
-        def _rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
-            return (self.env_cfg.rotation_name_map or {}).get(
-                (int(block_idx), str(profile)), {}
-            )
-
-        replan_application = apply_optimizer_outputs_to_cfgs(
-            profile=str(self.env_cfg.profile),
-            cfgs_dict=cfgs_dict,
-            opt_outputs=opt_outputs,
-            invoker_baselines=invoker_baselines,
-            rotation_name_map_provider=_rotation_provider,
-        )
+        replan_application = materialized.replan_application
         per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
 
         info: Dict[str, Any] = {
@@ -611,7 +630,9 @@ class BLBStage2Env:
             "eval_failed": False,
             "forward_ran": False,
             "optimizer_baseline_action": bool(is_optimizer_baseline_action),
-            "optimizer_eval_mode": cost_eval.optimizer_eval_mode,
+            "optimizer_eval_mode": materialized.optimizer_eval_mode,
+            "materialization_failure_reason": materialized.failure_reason,
+            "final_config_fingerprint": materialized.final_config_fingerprint,
             "timing": timing,
         }
         if optimizer_invalid_summary:
@@ -621,6 +642,8 @@ class BLBStage2Env:
         if per_config_overrides:
             info["optimizer_cfg_overrides"] = per_config_overrides
         info["replan_application"] = replan_application
+        if not materialized.model_ready:
+            info["forward_skipped_reason"] = str(materialized.failure_reason)
 
         prepared = {
             "action_vec": action_vec,
@@ -628,7 +651,8 @@ class BLBStage2Env:
             "decoded": decoded,
             "opt_signals": opt_signals,
             "any_invalid": any_invalid,
-            "requires_forward": not any_invalid,
+            "requires_forward": bool(materialized.model_ready),
+            "final_config_fingerprint": materialized.final_config_fingerprint,
             "info": info,
             "timing": timing,
         }
@@ -852,16 +876,21 @@ class BLBStage2Env:
                 item = prepared_items[item_idx]
                 timing = dict((item.get("info") or {}).get("timing") or {})
                 decoded = item["decoded"]
-                action_vec_hash = str(item["action_hash"])
+                config_fingerprint = str(item["final_config_fingerprint"])
                 persistent_install = bool(getattr(self.env_cfg, "persistent_probe_install", False))
                 install_skipped = False
                 install_t0 = time.perf_counter()
                 try:
-                    if persistent_install and self._installed_action_hash == action_vec_hash:
+                    if (
+                            persistent_install
+                            and self._installed_config_fingerprint == config_fingerprint
+                    ):
                         install_skipped = True
                     elif self.probe_runner is not None:
                         self.probe_runner.install_action(decoded)
-                        self._installed_action_hash = action_vec_hash if persistent_install else None
+                        self._installed_config_fingerprint = (
+                            config_fingerprint if persistent_install else None
+                        )
                     else:
                         self.bridge.apply(
                             block1_cfgs=decoded.block1_cfgs,
@@ -870,7 +899,9 @@ class BLBStage2Env:
                             block4_cfgs=decoded.block4_cfgs,
                             block5_cfgs=decoded.block5_cfgs,
                         )
-                        self._installed_action_hash = action_vec_hash if persistent_install else None
+                        self._installed_config_fingerprint = (
+                            config_fingerprint if persistent_install else None
+                        )
                     timing["probe_install_wall_seconds"] = float(time.perf_counter() - install_t0)
                     timing["probe_install_skipped"] = float(1.0 if install_skipped else 0.0)
                     metrics = self._eval_on_probe(k)
@@ -947,50 +978,25 @@ class BLBStage2Env:
         degree_sync = self.sync_degree_vectors_from_model()
         timing: Dict[str, float] = {}
         cost_t0 = time.perf_counter()
-        cost_eval = evaluate_action_for_cost(
-            action_vec,
-            profile=self.env_cfg.profile,
-            num_layers=self.num_layers,
-            max_sfs=self.max_sfs,
-            rescale_bridge=self.rescale_bridge,
-            gelu_degree=self.gelu_degree,
-            attn_degree=self.attn_degree,
-            boosted_overrides=boosted_overrides,
+        materialized = self._materialize_action(
+            action_vec, boosted_overrides=boosted_overrides,
         )
         timing["cost_eval_wall_seconds"] = float(time.perf_counter() - cost_t0)
-        decoded = cost_eval.decoded
+        decoded = materialized.decoded
 
         # 1) 调 Rescale_optimizer 拿 cost 信号
-        cfgs_dict = cost_eval.cfgs_dict
-
-        opt_outputs = cost_eval.outputs
-        opt_signals = cost_eval.signals
-        any_invalid = bool(opt_signals.any_invalid)
+        opt_outputs = materialized.outputs
+        opt_signals = materialized.signals
+        any_invalid = not bool(materialized.model_ready)
         optimizer_invalid_summary = (
-            summarize_optimizer_invalid_outputs(opt_outputs) if any_invalid else ""
+            summarize_optimizer_invalid_outputs(opt_outputs)
+            if materialized.optimizer_invalid else ""
         )
-
-        # 2) Optimizer-driven cfg override through the canonical write-back path.
-        bridge_invoker = getattr(self.rescale_bridge, "invoker", None)
-        invoker_baselines: Mapping[str, Any] = getattr(bridge_invoker, "baselines", {}) or {}
-
-        def _rotation_provider(block_idx: int, profile: str) -> Mapping[str, str]:
-            return (self.env_cfg.rotation_name_map or {}).get(
-                (int(block_idx), str(profile)), {}
-            )
-
-        replan_application = apply_optimizer_outputs_to_cfgs(
-            profile=str(self.env_cfg.profile),
-            cfgs_dict=cfgs_dict,
-            opt_outputs=opt_outputs,
-            invoker_baselines=invoker_baselines,
-            rotation_name_map_provider=_rotation_provider,
-        )
+        replan_application = materialized.replan_application
         per_config_overrides = replan_application.get("optimizer_cfg_overrides", {})
 
-        # 3) 基础诊断信息。Rescale_optimizer 的 invalid 是成本/可行性信号，
-        #    但不能再作为跳过模型 forward 的理由；终端 reward 必须看到
-        #    实际安装后的 probe metrics / stability。
+        # 3) 基础诊断信息。只有完整物化的配置可以进入模型；optimizer-invalid
+        #    动作与有效但不完整的 write-back 都在下方 fail closed，不执行 forward。
         info: Dict[str, Any] = {
             "decoded": decoded,
             "opt_signals": opt_signals,
@@ -1000,7 +1006,9 @@ class BLBStage2Env:
             "eval_failed": False,
             "forward_ran": False,
             "optimizer_baseline_action": bool(is_optimizer_baseline_action),
-            "optimizer_eval_mode": cost_eval.optimizer_eval_mode,
+            "optimizer_eval_mode": materialized.optimizer_eval_mode,
+            "materialization_failure_reason": materialized.failure_reason,
+            "final_config_fingerprint": materialized.final_config_fingerprint,
             "timing": timing,
         }
         if optimizer_invalid_summary:
@@ -1068,7 +1076,7 @@ class BLBStage2Env:
             info["action_hash"] = action_vec_hash
             info["metrics"] = metrics
             info["forward_ran"] = False
-            info["forward_skipped_reason"] = "any_invalid_chain"
+            info["forward_skipped_reason"] = str(materialized.failure_reason)
             info["invalid"] = True
             self._step_idx += 1
             self._last_invalid_rate = 1.0
@@ -1085,14 +1093,20 @@ class BLBStage2Env:
         # When probe_runner is set (multi-GPU), install on every worker so each
         # GPU's model carries the same BLB cfg before its trial subset runs.
         persistent_install = bool(getattr(self.env_cfg, "persistent_probe_install", False))
+        config_fingerprint = materialized.final_config_fingerprint
         install_skipped = False
         install_t0 = time.perf_counter()
         try:
-            if persistent_install and self._installed_action_hash == action_vec_hash:
+            if (
+                    persistent_install
+                    and self._installed_config_fingerprint == config_fingerprint
+            ):
                 install_skipped = True
             elif self.probe_runner is not None:
                 self.probe_runner.install_action(decoded)
-                self._installed_action_hash = action_vec_hash if persistent_install else None
+                self._installed_config_fingerprint = (
+                    config_fingerprint if persistent_install else None
+                )
             else:
                 self.bridge.apply(
                     block1_cfgs=decoded.block1_cfgs,
@@ -1101,7 +1115,9 @@ class BLBStage2Env:
                     block4_cfgs=decoded.block4_cfgs,
                     block5_cfgs=decoded.block5_cfgs,
                 )
-                self._installed_action_hash = action_vec_hash if persistent_install else None
+                self._installed_config_fingerprint = (
+                    config_fingerprint if persistent_install else None
+                )
         except Exception as exc:
             try:
                 self.clear_installed_blb()
@@ -1667,17 +1683,9 @@ def estimate_baseline_cost_stats(
         random_action = np.array(
             [rng.integers(0, d) for d in env.action_dims], dtype=int,
         )
-        rd_eval = evaluate_action_for_cost(
-            random_action,
-            profile=env.env_cfg.profile,
-            num_layers=env.num_layers,
-            max_sfs=env.max_sfs,
-            rescale_bridge=env.rescale_bridge,
-            gelu_degree=env.gelu_degree,
-            attn_degree=env.attn_degree,
-        )
-        rd_signals = rd_eval.signals
-        if rd_signals.any_invalid:
+        materialized = env._materialize_action(random_action)
+        rd_signals = materialized.signals
+        if not materialized.model_ready:
             continue
         bits_drops.append(float(baseline_total_bits) - float(rd_signals.total_bits_sum))
         fusion_counts.append(float(rd_signals.total_fusion_count))

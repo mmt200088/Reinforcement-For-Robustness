@@ -6,6 +6,129 @@ import unittest
 
 
 class Stage2EvalSinglePathStaticTest(unittest.TestCase):
+    def test_model_eval_routes_use_canonical_action_materialization(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
+        sequential = (repo / "blb_stage2_rl" / "sequential_env.py").read_text(
+            encoding="utf-8"
+        )
+        paean = (repo / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
+        glue = (repo / "generate_glue_submission.py").read_text(encoding="utf-8")
+
+        self.assertIn("materialize_action_for_model", env)
+        self.assertNotIn("evaluate_action_for_cost(", env)
+        self.assertNotIn("apply_optimizer_outputs_to_cfgs(", env)
+        self.assertIn("materialize_decoded_action", sequential)
+        self.assertNotIn("apply_optimizer_outputs_to_cfgs(", sequential)
+        self.assertIn("materialize_decoded_action", paean)
+        self.assertNotIn("apply_optimizer_outputs_to_cfgs(", paean)
+        self.assertIn("materialize_decoded_action", glue)
+        self.assertNotIn("_apply_optimizer_outputs_to_decoded(", glue)
+
+    def test_install_auditors_consume_the_canonical_materialized_config(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        for relative in (
+            "scripts/blb_verify_noise_install.py",
+            "scripts/blb_verify_boosted_install.py",
+        ):
+            text = (repo / relative).read_text(encoding="utf-8")
+            self.assertIn("materialize_decoded_action", text, relative)
+            self.assertNotIn("apply_optimizer_output_to_cfg(", text, relative)
+
+    def test_install_cache_uses_final_config_fingerprint_not_flat_action_hash(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        env = (repo / "blb_stage2_rl" / "env.py").read_text(encoding="utf-8")
+
+        self.assertIn("_installed_config_fingerprint", env)
+        self.assertNotIn("_installed_action_hash", env)
+        self.assertIn("final_config_fingerprint", env)
+
+    def test_training_diagnostics_persist_post_replan_install_identity(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        diagnostics = (repo / "blb_stage2_rl" / "diagnostics.py").read_text(
+            encoding="utf-8"
+        )
+        sequential = (repo / "blb_stage2_rl" / "sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        layerwise = (repo / "blb_stage2_rl" / "layerwise_runner.py").read_text(
+            encoding="utf-8"
+        )
+        for field in (
+            "terminal_final_config_fingerprint",
+            "terminal_materialization_failure_reason",
+            "terminal_model_uses_replan_config",
+        ):
+            self.assertIn(field, diagnostics)
+            self.assertIn(field, sequential)
+        self.assertIn("final_config_fingerprint", layerwise)
+        self.assertIn("materialization_failure_reason", layerwise)
+        self.assertIn("model_uses_replan_config", layerwise)
+
+    def test_all_five_blocks_use_the_shared_configured_truncation_executor(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        handler = (repo / "function_handler.py").read_text(encoding="utf-8")
+
+        self.assertIn("def _apply_configured_truncation(", handler)
+        self.assertEqual(
+            handler.count("= _apply_configured_truncation("),
+            5,
+            "Blocks 1-5 must each execute K through the same backend dispatcher",
+        )
+
+    def test_block2_hook_receives_the_materialized_config_it_executes(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        handler = (repo / "function_handler.py").read_text(encoding="utf-8")
+        start = handler.index("def _make_block2_qkt_merge_hook(")
+        end = handler.index("):", start)
+        signature = handler[start:end]
+
+        self.assertIn("truncation_cfg", signature)
+        self.assertNotIn("output_truncation_k", signature)
+        self.assertNotIn("output_truncation_mode", signature)
+
+    def test_block2_config_builder_exposes_k_and_backend_fields(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        handler = (repo / "function_handler.py").read_text(encoding="utf-8")
+        start = handler.index("def make_block2_default_config(")
+        end = handler.index(") -> \"Block2NoiseConfig\":", start)
+        signature = handler[start:end]
+
+        self.assertIn("output_truncation_k", signature)
+        self.assertIn("output_truncation_mode", signature)
+        self.assertNotIn("truncation_cfg", signature)
+
+    def test_truncation_backend_is_explicitly_wired_and_defaults_to_binary(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        launcher = (repo / "llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
+        evaluator = (repo / "layer_importance_evaluator.py").read_text(encoding="utf-8")
+        runner = (repo / "blb_stage2_rl" / "runner.py").read_text(encoding="utf-8")
+        sequential = (repo / "blb_stage2_rl" / "sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        substage = (repo / "blb_stage2_rl" / "substage_runner.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('BLB_V3_TRUNCATION_BACKEND="binary"', launcher)
+        self.assertIn("--blb-v3-truncation-backend)", launcher)
+        self.assertIn("--blb_v3_truncation_backend", launcher)
+        self.assertIn("blb_v3_truncation_backend='binary'", evaluator)
+        self.assertIn("self.blb_v3_truncation_backend", evaluator)
+        self.assertIn('truncation_backend: str = "binary"', runner)
+        for text in (runner, sequential, substage):
+            self.assertIn("truncation_backend=train_cfg.truncation_backend", text)
+            self.assertIn("truncation_ring_bits=train_cfg.truncation_ring_bits", text)
+            self.assertIn(
+                "truncation_source_fractional_bits=(\n",
+                text,
+            )
+
+        glue = (repo / "generate_glue_submission.py").read_text(encoding="utf-8")
+        self.assertIn('--blb_truncation_backend', glue)
+        self.assertIn('truncation_backend: str = "binary"', glue)
+        self.assertIn("truncation_backend=truncation_backend", glue)
+
     def test_executable_eval_paths_use_shared_optimizer_writeback_helper(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         checked = [

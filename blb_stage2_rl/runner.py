@@ -665,6 +665,11 @@ class BLBStage2TrainConfig:
     # wall-time. See diagnostics_summary.md (s1t0.005 run) for the symptom.
     num_trials_per_step: int = 5
     probe_batch_count: int = 4
+    # Keep the historical deterministic simulator as the default. The
+    # ring-aware stochastic backend is enabled only by an explicit flag.
+    truncation_backend: str = "binary"
+    truncation_ring_bits: int = 43
+    truncation_source_fractional_bits: int = 24
     # 自动校准
     calibrate_baseline_samples: int = 8
     # Real Rescale_optimizer parameters. BLB Stage-2 RL intentionally has no
@@ -1037,6 +1042,11 @@ class BLBStage2RLRunner:
                 profile=train_cfg.profile,
                 num_trials_per_step=train_cfg.num_trials_per_step,
                 probe_batch_count=train_cfg.probe_batch_count,
+                truncation_backend=train_cfg.truncation_backend,
+                truncation_ring_bits=train_cfg.truncation_ring_bits,
+                truncation_source_fractional_bits=(
+                    train_cfg.truncation_source_fractional_bits
+                ),
             ),
         )
         degree_sync = env.sync_degree_vectors_from_model()
@@ -2779,6 +2789,20 @@ class BLBStage2RLRunner:
             cfg.num_trials_per_step = int(getattr(ev, "stage2_k_trials", cfg.num_trials_per_step))
         except Exception:
             pass
+        cfg.truncation_backend = str(
+            getattr(ev, "blb_v3_truncation_backend", cfg.truncation_backend)
+            or cfg.truncation_backend
+        ).strip().lower()
+        cfg.truncation_ring_bits = int(
+            getattr(ev, "blb_v3_truncation_ring_bits", cfg.truncation_ring_bits)
+        )
+        cfg.truncation_source_fractional_bits = int(
+            getattr(
+                ev,
+                "blb_v3_truncation_source_fractional_bits",
+                cfg.truncation_source_fractional_bits,
+            )
+        )
         # 4b) reward_devices: --blb-v3-reward-devices "0,1" arrives as a string
         # on the evaluator. Parse here so train_cfg holds a List[int]; empty /
         # 1-device → ProbeRunner stays disabled.
@@ -3102,6 +3126,28 @@ class BLBStage2RLRunner:
             1, int(cfg.guarded_radius2_min_radius1_successes),
         )
         cfg.online_num_trials_per_step = max(1, int(cfg.online_num_trials_per_step))
+        cfg.truncation_backend = str(cfg.truncation_backend).strip().lower()
+        if cfg.truncation_backend not in {"binary", "decimal", "stochastic_ring"}:
+            raise ValueError(
+                "truncation_backend must be one of binary, decimal, stochastic_ring"
+            )
+        cfg.truncation_ring_bits = int(cfg.truncation_ring_bits)
+        if not 2 <= cfg.truncation_ring_bits <= 62:
+            raise ValueError("truncation_ring_bits must be in [2, 62]")
+        cfg.truncation_source_fractional_bits = int(
+            cfg.truncation_source_fractional_bits
+        )
+        if cfg.truncation_source_fractional_bits < 0:
+            raise ValueError(
+                "truncation_source_fractional_bits must be non-negative"
+            )
+        if (
+                cfg.truncation_backend == "stochastic_ring"
+                and cfg.truncation_source_fractional_bits >= cfg.truncation_ring_bits
+        ):
+            raise ValueError(
+                "stochastic_ring source_fractional_bits must be smaller than ring_bits"
+            )
         cfg.terminal_eval_batch_size = max(1, int(cfg.terminal_eval_batch_size))
         cfg.promotion_validation_trials = max(1, int(cfg.promotion_validation_trials))
         cfg.final_selection_top_n = max(1, int(cfg.final_selection_top_n))

@@ -635,6 +635,9 @@ def train(
         blb_v3_fusion_neighbor_curriculum: bool = False,
         blb_v3_fusion_probe_interval: int = 0,
         blb_v3_fusion_exploration_epsilon: float = 0.0,
+        blb_v3_truncation_backend: str = "binary",
+        blb_v3_truncation_ring_bits: int = 43,
+        blb_v3_truncation_source_fractional_bits: int = 24,
         stage2_workers_per_device: int = 1,
         blb_v3_substage_block_order: str = "1,2,4,5",
         blb_v3_substage_frozen_blocks: str = "3",
@@ -1370,6 +1373,11 @@ def train(
             blb_v3_fusion_neighbor_curriculum=blb_v3_fusion_neighbor_curriculum,
             blb_v3_fusion_probe_interval=blb_v3_fusion_probe_interval,
             blb_v3_fusion_exploration_epsilon=blb_v3_fusion_exploration_epsilon,
+            blb_v3_truncation_backend=blb_v3_truncation_backend,
+            blb_v3_truncation_ring_bits=blb_v3_truncation_ring_bits,
+            blb_v3_truncation_source_fractional_bits=(
+                blb_v3_truncation_source_fractional_bits
+            ),
             stage2_workers_per_device=stage2_workers_per_device,
             blb_v3_substage_block_order=blb_v3_substage_block_order,
             blb_v3_substage_frozen_blocks=blb_v3_substage_frozen_blocks,

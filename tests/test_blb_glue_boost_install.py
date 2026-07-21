@@ -127,6 +127,11 @@ class GlueBoostInstallTest(unittest.TestCase):
             softmax_degrees=softmax,
             max_sfs=action_context.max_sfs,
         )
+        self.assertRegex(decoded.final_config_fingerprint, r"^[0-9a-f]{64}$")
+        self.assertTrue(
+            decoded.replan_application["model_uses_replan_config"],
+            decoded.replan_application,
+        )
 
         # The installed block2 layer-1 cfg must carry a BOOSTED SF (above the grid
         # baseline). The boost raises an encode/output SF beyond what the flat

@@ -9,12 +9,12 @@ precision-boost SERVER_COMMAND) does NOT:
   Q2. Has that installed action group's rescale undergone modulus-chain fusion
       processing (the fused rescale nulled so it installs NO noise)?
 
-It drives the EXACT runtime path ``BLBStage2Env.step`` uses on each committed
-map's boosted fusion option:
+It drives the canonical materialization path ``BLBStage2Env.step`` uses on each
+committed map's boosted fusion option:
 
     evaluate_action_for_cost(boosted_overrides=...)   # SF-direct rebuild + replan
-      -> apply_optimizer_output_to_cfg(...) + sync_block*   # optimizer write-back
-                                                             # (incl. fused-rescale nulling)
+      -> materialize_decoded_action(...)              # optimizer write-back,
+                                                       # binding sync, fingerprint
 
 then inspects the resulting cfg — the one ``bridge.apply`` installs noise from.
 
@@ -64,18 +64,13 @@ def _load_runtime_deps() -> dict[str, object]:
         from action_space import parse_config_name
         import fusion_enum
         import numpy as np
-        from optimizer_cost import evaluate_action_for_cost
+        from optimizer_cost import evaluate_action_for_cost, materialize_decoded_action
         from optimizer_output_introspect import fused_skeleton_positions
 
         from rescale_optimizer_bridge import (
             _extract_sf_from_cfg,
             _SkelEntry,
             _strip_layer_suffix,
-            apply_optimizer_output_to_cfg,
-            sync_block2_aux_fresh_binding,
-            sync_block2_qk_binding,
-            sync_block4_v_mask_binding,
-            sync_block5_aux_fresh_binding,
         )
 
         _RUNTIME_DEPS = {
@@ -83,15 +78,11 @@ def _load_runtime_deps() -> dict[str, object]:
             "fusion_enum": fusion_enum,
             "np": np,
             "evaluate_action_for_cost": evaluate_action_for_cost,
+            "materialize_decoded_action": materialize_decoded_action,
             "fused_skeleton_positions": fused_skeleton_positions,
             "_extract_sf_from_cfg": _extract_sf_from_cfg,
             "_SkelEntry": _SkelEntry,
             "_strip_layer_suffix": _strip_layer_suffix,
-            "apply_optimizer_output_to_cfg": apply_optimizer_output_to_cfg,
-            "sync_block2_aux_fresh_binding": sync_block2_aux_fresh_binding,
-            "sync_block2_qk_binding": sync_block2_qk_binding,
-            "sync_block4_v_mask_binding": sync_block4_v_mask_binding,
-            "sync_block5_aux_fresh_binding": sync_block5_aux_fresh_binding,
         }
     return _RUNTIME_DEPS
 
@@ -147,7 +138,7 @@ def _cfg_sf_projection(cfg) -> dict:
 
 
 def _install_and_inspect(ev, ctx):
-    """Run env.step's optimizer write-back loop on the target (block, layer) and
+    """Materialize the target through the same write-back used by env.step and
     return ``(installed_cfg, override_entries, fused_still_installed)``. Faithful to
     BLBStage2Env.step. ``fused_still_installed`` = the cfg attrs at FUSED skeleton
     rescale positions that STILL carry an installed noise point after the write-back
@@ -158,14 +149,28 @@ def _install_and_inspect(ev, ctx):
     _extract_sf_from_cfg = deps["_extract_sf_from_cfg"]
     _SkelEntry = deps["_SkelEntry"]
     _strip_layer_suffix = deps["_strip_layer_suffix"]
-    apply_optimizer_output_to_cfg = deps["apply_optimizer_output_to_cfg"]
-    sync_block2_aux_fresh_binding = deps["sync_block2_aux_fresh_binding"]
-    sync_block2_qk_binding = deps["sync_block2_qk_binding"]
-    sync_block4_v_mask_binding = deps["sync_block4_v_mask_binding"]
-    sync_block5_aux_fresh_binding = deps["sync_block5_aux_fresh_binding"]
+    materialize_decoded_action = deps["materialize_decoded_action"]
 
     invoker = getattr(ctx.bridge, "invoker", None)
     invoker_baselines = getattr(invoker, "baselines", {}) or {}
+    materialized = materialize_decoded_action(
+        action_indices=ev.action_indices,
+        decoded=ev.decoded,
+        cfgs_dict=ev.cfgs_dict,
+        outputs=ev.outputs,
+        signals=ev.signals,
+        profile=ctx.profile,
+        invoker_baselines=invoker_baselines,
+        expected_config_names=list(ev.requests),
+    )
+    if not materialized.model_ready:
+        raise RuntimeError(
+            "boosted install verifier refused an unmaterialized action: "
+            f"{materialized.failure_reason}; "
+            f"replan={materialized.replan_application}"
+        )
+
+    per_config = materialized.replan_application.get("per_config", {})
     target_cfg = None
     overrides: list = []
     fused_still_installed: list = []
@@ -173,24 +178,11 @@ def _install_and_inspect(ev, ctx):
         block_idx, _profile, layer_idx = parse_config_name(cn)
         if layer_idx < 0 or block_idx != int(ctx.block_idx) or layer_idx != int(ctx.ref_layer):
             continue
-        cfg = ev.cfgs_dict[f"block{block_idx}"][int(layer_idx)]
+        cfg = materialized.cfgs_dict[f"block{block_idx}"][int(layer_idx)]
         graph_key, _ = _strip_layer_suffix(cn)
         baseline_entry = invoker_baselines.get(graph_key)
         baseline_skeleton = list(baseline_entry[0]) if baseline_entry else []
-        ov = apply_optimizer_output_to_cfg(
-            cfg,
-            output_raw=out.raw,
-            block_idx=int(block_idx),
-            graph_key=graph_key,
-            baseline_skeleton=baseline_skeleton,
-            rotation_name_map={},  # rotations don't affect Q1 (output SF) / Q2 (fused rescale)
-        )
-        if int(block_idx) == 2:
-            ov = list(ov) + sync_block2_qk_binding(cfg) + sync_block2_aux_fresh_binding(cfg)
-        elif int(block_idx) == 4:
-            ov = list(ov) + sync_block4_v_mask_binding(cfg)
-        elif int(block_idx) == 5:
-            ov = list(ov) + sync_block5_aux_fresh_binding(cfg)
+        ov = list((per_config.get(str(cn), {}) or {}).get("overrides", []))
         # Q2 invariant (direct): every rescale the optimizer FUSED AWAY must install
         # NO noise. apply_optimizer_output_to_cfg already nulls them; verify it held
         # by checking the cfg field at each fused skeleton position is None. This
@@ -205,7 +197,7 @@ def _install_and_inspect(ev, ctx):
                 fused_still_installed.append(
                     cfg_field if tuple_index is None else f"{cfg_field}[{tuple_index}]"
                 )
-        target_cfg, overrides = cfg, list(ov)
+        target_cfg, overrides = cfg, ov
     return target_cfg, overrides, fused_still_installed
 
 
@@ -292,7 +284,7 @@ def verify_map(
         # noise). A genuine regression (a fused rescale left installed) populates
         # ``fused_still_installed`` → still caught. ``fused`` overrides are kept for
         # the [OK] diagnostic only.
-        fused = [e for e in ov_b if getattr(e, "source", "") == "rescale_fused_away"]
+        fused = [e for e in ov_b if e.get("source", "") == "rescale_fused_away"]
         q2 = (fc < 1) or (len(fused_still_installed) == 0)
 
         if not q1:
@@ -306,7 +298,8 @@ def verify_map(
         if q1 and q2:
             print(f"[OK] {graph_key} opt{oid}: Q1 boosted-install sum {sum_p}->{sum_b} "
                   f"(+{sum_b - sum_p}); Q2 no fused rescale installs noise "
-                  f"(nulled overrides={len(fused)}: {', '.join(e.cfg_attr for e in fused) or 'n/a'})")
+                  f"(nulled overrides={len(fused)}: "
+                  f"{', '.join(str(e.get('cfg_attr', '')) for e in fused) or 'n/a'})")
         checked += 1
     return checked, problems
 

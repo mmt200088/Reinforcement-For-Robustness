@@ -6,6 +6,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from json_utils import stable_json_hash
+
 from rescale_optimizer_bridge import (
     _strip_layer_suffix,
     aggregate_optimizer_signals,
@@ -43,6 +45,99 @@ class ActionCostEvaluation:
     outputs: Mapping[str, Any]
     signals: Any
     optimizer_eval_mode: str = "evaluate_blocks_cfg_path"
+
+
+@dataclass
+class MaterializedStage2Action:
+    """One fully resolved Stage-2 action that is safe to install in a model."""
+
+    action_indices: Sequence[int]
+    decoded: Any
+    cfgs_dict: Dict[str, Mapping[int, object]]
+    requests: Dict[str, Tuple[str, object]]
+    outputs: Mapping[str, Any]
+    signals: Any
+    replan_application: Dict[str, Any]
+    optimizer_invalid: bool
+    model_ready: bool
+    failure_reason: Optional[str]
+    final_config_fingerprint: str
+    optimizer_eval_mode: str = "evaluate_blocks_cfg_path"
+
+
+_TRUNCATION_BACKENDS = frozenset({"binary", "decimal", "stochastic_ring"})
+
+
+def configure_truncation_backend(
+        cfgs_dict: Mapping[str, Mapping[int, object]],
+        *,
+        backend: str = "binary",
+        ring_bits: int = 43,
+        source_fractional_bits: int = 24,
+        ) -> None:
+    """Attach one explicit truncation backend contract to every block cfg."""
+    normalized = str(backend).strip().lower()
+    if normalized not in _TRUNCATION_BACKENDS:
+        raise ValueError(f"unsupported truncation backend: {backend!r}")
+    if normalized == "stochastic_ring":
+        if not 2 <= int(ring_bits) <= 62:
+            raise ValueError("truncation ring_bits must be in [2, 62]")
+        if not 0 <= int(source_fractional_bits) < int(ring_bits):
+            raise ValueError(
+                "truncation source_fractional_bits must be non-negative and "
+                "smaller than ring_bits"
+            )
+
+    cfgs = [
+        cfg
+        for layer_cfgs in cfgs_dict.values()
+        if isinstance(layer_cfgs, Mapping)
+        for cfg in layer_cfgs.values()
+    ]
+    if normalized == "stochastic_ring":
+        invalid_targets = sorted({
+            int(target_k)
+            for cfg in cfgs
+            for target_k in (getattr(cfg, "output_truncation_k", None),)
+            if target_k is not None
+            and not 0 <= int(target_k) <= int(source_fractional_bits)
+        })
+        if invalid_targets:
+            raise ValueError(
+                "stochastic_ring target truncation K must be in "
+                f"[0, {int(source_fractional_bits)}], got {invalid_targets}"
+            )
+
+    for cfg in cfgs:
+        setattr(cfg, "output_truncation_mode", normalized)
+        setattr(cfg, "output_truncation_ring_bits", int(ring_bits))
+        setattr(
+            cfg,
+            "output_truncation_source_fractional_bits",
+            int(source_fractional_bits),
+        )
+
+
+def materialized_config_fingerprint(
+        cfgs_dict: Mapping[str, Mapping[int, object]],
+        ) -> str:
+    """Hash the exact post-replan configuration that will be installed."""
+    canonical = {
+        "schema": "blb_stage2_materialized_config_v1",
+        "blocks": {
+            str(block_name): {
+                str(int(layer_idx)): cfg
+                for layer_idx, cfg in sorted(
+                    layer_cfgs.items(), key=lambda item: int(item[0]),
+                )
+            }
+            for block_name, layer_cfgs in sorted(
+                cfgs_dict.items(), key=lambda item: str(item[0]),
+            )
+            if isinstance(layer_cfgs, Mapping)
+        },
+    }
+    return stable_json_hash(canonical)
 
 
 def _override_entry_dict(entry: Any) -> Dict[str, Any]:
@@ -248,6 +343,155 @@ def apply_optimizer_outputs_to_cfgs(
         "per_config": per_config,
         "optimizer_cfg_overrides": legacy_overrides,
     }
+
+
+def materialize_decoded_action(
+        *,
+        action_indices: Sequence[int],
+        decoded: Any,
+        cfgs_dict: Mapping[str, Mapping[int, object]],
+        outputs: Mapping[str, Any],
+        signals: Any,
+        profile: str,
+        invoker_baselines: Optional[Mapping[str, Any]] = None,
+        rotation_name_map_provider: Optional[Callable[[int, str], Mapping[str, str]]] = None,
+        expected_config_names: Optional[Sequence[str]] = None,
+        truncation_backend: str = "binary",
+        truncation_ring_bits: int = 43,
+        truncation_source_fractional_bits: int = 24,
+        optimizer_eval_mode: str = "evaluate_blocks_cfg_path",
+        ) -> MaterializedStage2Action:
+    """Resolve optimizer outputs into the only cfg set allowed to reach a model.
+
+    Optimizer-invalid chains are normal invalid actions.  A valid optimizer
+    response that is missing, extra, or cannot be written back completely is a
+    plumbing failure and therefore fails closed before model inference.
+    """
+    mutable_cfgs = dict(cfgs_dict)
+    configure_truncation_backend(
+        mutable_cfgs,
+        backend=truncation_backend,
+        ring_bits=int(truncation_ring_bits),
+        source_fractional_bits=int(truncation_source_fractional_bits),
+    )
+    requests = build_optimizer_requests(str(profile), mutable_cfgs)
+    expected_names = {
+        str(name)
+        for name in (
+            expected_config_names
+            if expected_config_names is not None
+            else requests.keys()
+        )
+    }
+    output_names = {str(name) for name in (outputs or {}).keys()}
+    missing_outputs = sorted(expected_names - output_names)
+    unexpected_outputs = sorted(output_names - expected_names)
+
+    optimizer_invalid = bool(getattr(signals, "any_invalid", False)) or any(
+        not bool(getattr(out, "valid", False))
+        for out in (outputs or {}).values()
+    )
+    replan_application = apply_optimizer_outputs_to_cfgs(
+        profile=str(profile),
+        cfgs_dict=mutable_cfgs,
+        opt_outputs=outputs,
+        invoker_baselines=invoker_baselines,
+        rotation_name_map_provider=rotation_name_map_provider,
+        skip_on_any_invalid=True,
+    )
+    replan_application["expected_output_names"] = sorted(expected_names)
+    replan_application["actual_output_names"] = sorted(output_names)
+    replan_application["missing_optimizer_outputs"] = missing_outputs
+    replan_application["unexpected_optimizer_outputs"] = unexpected_outputs
+    replan_application["optimizer_output_set_matches"] = bool(
+        not missing_outputs and not unexpected_outputs
+    )
+    missing_baseline_skeletons = sorted(
+        str(name)
+        for name in expected_names
+        if not bool(
+            (
+                (invoker_baselines or {}).get(_strip_layer_suffix(str(name))[0])
+                or ([], [], [])
+            )[0]
+        )
+    )
+    replan_application["missing_baseline_skeletons"] = missing_baseline_skeletons
+    replan_application["all_baseline_skeletons_available"] = bool(
+        not missing_baseline_skeletons
+    )
+    if missing_baseline_skeletons:
+        replan_application["model_uses_replan_config"] = False
+
+    failure_reason: Optional[str] = None
+    if optimizer_invalid:
+        failure_reason = "optimizer_invalid_chain"
+    elif missing_outputs or unexpected_outputs:
+        failure_reason = "optimizer_output_set_mismatch"
+    elif not bool(replan_application.get("model_uses_replan_config", False)):
+        failure_reason = "replan_config_not_fully_applied"
+
+    model_ready = failure_reason is None
+    return MaterializedStage2Action(
+        action_indices=[int(value) for value in action_indices],
+        decoded=decoded,
+        cfgs_dict=mutable_cfgs,
+        requests=requests,
+        outputs=outputs,
+        signals=signals,
+        replan_application=replan_application,
+        optimizer_invalid=bool(optimizer_invalid),
+        model_ready=bool(model_ready),
+        failure_reason=failure_reason,
+        final_config_fingerprint=(
+            materialized_config_fingerprint(mutable_cfgs) if model_ready else ""
+        ),
+        optimizer_eval_mode=str(optimizer_eval_mode),
+    )
+
+
+def materialize_action_for_model(
+        action_vec: Sequence[int],
+        *,
+        profile: str,
+        num_layers: int,
+        max_sfs: MaxSFsTable,
+        rescale_bridge: Any,
+        gelu_degree: Any = 4,
+        attn_degree: Any = 4,
+        boosted_overrides: "Mapping[Tuple[int, int], Mapping[str, int]] | None" = None,
+        invoker_baselines: Optional[Mapping[str, Any]] = None,
+        rotation_name_map_provider: Optional[Callable[[int, str], Mapping[str, str]]] = None,
+        truncation_backend: str = "binary",
+        truncation_ring_bits: int = 43,
+        truncation_source_fractional_bits: int = 24,
+        ) -> MaterializedStage2Action:
+    """Decode, replan, write back, and fingerprint one executable action."""
+    evaluated = evaluate_action_for_cost(
+        action_vec,
+        profile=str(profile),
+        num_layers=int(num_layers),
+        max_sfs=max_sfs,
+        rescale_bridge=rescale_bridge,
+        gelu_degree=gelu_degree,
+        attn_degree=attn_degree,
+        boosted_overrides=boosted_overrides,
+    )
+    return materialize_decoded_action(
+        action_indices=evaluated.action_indices,
+        decoded=evaluated.decoded,
+        cfgs_dict=evaluated.cfgs_dict,
+        outputs=evaluated.outputs,
+        signals=evaluated.signals,
+        profile=str(profile),
+        invoker_baselines=invoker_baselines,
+        rotation_name_map_provider=rotation_name_map_provider,
+        expected_config_names=list(evaluated.requests),
+        truncation_backend=truncation_backend,
+        truncation_ring_bits=int(truncation_ring_bits),
+        truncation_source_fractional_bits=int(truncation_source_fractional_bits),
+        optimizer_eval_mode=evaluated.optimizer_eval_mode,
+    )
 
 
 def evaluate_action_for_cost(

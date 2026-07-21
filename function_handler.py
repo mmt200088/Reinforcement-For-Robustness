@@ -1,5 +1,6 @@
 import math
 import os as _os
+import hashlib as _hashlib
 import threading as _threading
 from contextlib import contextmanager
 import torch
@@ -47,6 +48,7 @@ def _print_blb_install(message: str) -> None:
 # ---------------------------------------------------------------------------
 
 _NOISE_GENERATORS: dict = {}     # str(device) -> torch.Generator
+_TRUNCATION_GENERATORS: dict = {}  # same key space, independent RNG domain
 _NOISE_RNG_SEED_MODE: str = "os"  # "os" / "fixed"
 _NOISE_RNG_FIXED_SEED: Optional[int] = None
 _NOISE_RNG_LOCAL = _threading.local()
@@ -113,6 +115,25 @@ def _get_noise_generator(device) -> torch.Generator:
     return g
 
 
+def _derive_truncation_seed(seed: int) -> int:
+    payload = f"blb-truncation-v1:{int(seed)}".encode("ascii")
+    return int.from_bytes(_hashlib.sha256(payload).digest()[:8], "little")
+
+
+def _get_truncation_generator(device) -> torch.Generator:
+    """Return the truncation RNG without consuming Gaussian noise state."""
+    key = _noise_generator_key(device)
+    generator = _TRUNCATION_GENERATORS.get(key)
+    if generator is None:
+        generator = torch.Generator(device=device)
+        if _NOISE_RNG_SEED_MODE == "fixed" and _NOISE_RNG_FIXED_SEED is not None:
+            generator.manual_seed(_derive_truncation_seed(_NOISE_RNG_FIXED_SEED))
+        else:
+            generator.manual_seed(_fresh_os_seed())
+        _TRUNCATION_GENERATORS[key] = generator
+    return generator
+
+
 def _sample_independent_gaussian(reference: Tensor, std: float) -> Tensor:
     """从独立噪声 RNG 采样与 ``reference`` 同形状的 N(0, std²) 张量。
 
@@ -128,8 +149,8 @@ def _sample_independent_gaussian(reference: Tensor, std: float) -> Tensor:
 # Truncation (PPTI 模拟：MPC ↔ HE 转换时的小数截断)
 # ---------------------------------------------------------------------------
 # 用法：在每个 BLB Block 的"最终输出"上调用 ``_apply_truncation(x, k, mode)``
-# 模拟 MPC/HE 互转之前对结果保留 k 位小数（默认按二进制位，符合 CKKS scaling
-# factor 语义）。数学：
+# 模拟 MPC/HE 互转之前对结果保留 k 位小数。默认 binary 保留历史行为；
+# stochastic_ring 是显式启用的备选数值模拟。数学：
 #   binary：trunc(x · 2^k) / 2^k         （保留 k 位二进制小数；CKKS 默认）
 #   decimal：trunc(x · 10^k) / 10^k      （保留 k 位十进制小数）
 # k=None  → 不截断（用于"首层 Block 1 不存在"等需要跳过的位置）。
@@ -138,20 +159,80 @@ def _apply_truncation(
         x: Tensor,
         k: Optional[int],
         mode: str = "binary",
+        *,
+        ring_bits: int = 43,
+        source_fractional_bits: int = 24,
         ) -> Tensor:
-    """Truncate ``x`` to ``k`` fractional bits (binary) or digits (decimal)。
+    """Apply the selected plaintext truncation simulation to ``x``.
 
     - ``k is None``：no-op，原样返回。
     - mode="binary"：``trunc(x · 2^k) / 2^k``（PPTI / CKKS 默认）
     - mode="decimal"：``trunc(x · 10^k) / 10^k``（普通"保留 k 位小数"）
-
-    使用 ``torch.trunc``（朝零取整）保证正负对称。
+    - mode="stochastic_ring"：signed ring encode + probabilistic right shift；
+      仅作协议数值语义近似，不实现秘密共享或安全通信。
     """
     if k is None:
         return x
-    base = 2.0 if str(mode).lower() == "binary" else 10.0
-    scale = base ** int(k)
-    return torch.trunc(x * scale) / scale
+    normalized_mode = str(mode).strip().lower()
+    if normalized_mode == "binary":
+        scale = 2.0 ** int(k)
+        return torch.trunc(x * scale) / scale
+    if normalized_mode == "decimal":
+        scale = 10.0 ** int(k)
+        return torch.trunc(x * scale) / scale
+    if normalized_mode != "stochastic_ring":
+        raise ValueError(f"unsupported truncation mode: {mode!r}")
+
+    ring = int(ring_bits)
+    source_bits = int(source_fractional_bits)
+    target_bits = int(k)
+    if not 2 <= ring <= 62:
+        raise ValueError("ring_bits must be in [2, 62]")
+    if source_bits < 0 or source_bits >= ring:
+        raise ValueError(
+            "source_fractional_bits must be non-negative and smaller than ring_bits"
+        )
+    if target_bits < 0 or target_bits > source_bits:
+        raise ValueError(
+            "source_fractional_bits must be non-negative and >= target k"
+        )
+
+    source_scale = 1 << source_bits
+    modulus = 1 << ring
+    half_modulus = 1 << (ring - 1)
+    encoded = torch.round(x.to(dtype=torch.float64) * float(source_scale)).to(torch.int64)
+    wrapped = torch.remainder(encoded, modulus)
+    signed = torch.where(wrapped >= half_modulus, wrapped - modulus, wrapped)
+
+    shift = source_bits - target_bits
+    if shift == 0:
+        rounded = signed
+    else:
+        divisor = 1 << shift
+        quotient = torch.div(signed, divisor, rounding_mode="floor")
+        remainder = signed - quotient * divisor
+        probability = remainder.to(torch.float64) / float(divisor)
+        draws = torch.empty_like(probability).uniform_(
+            0.0, 1.0, generator=_get_truncation_generator(x.device),
+        )
+        rounded = quotient + (draws < probability).to(torch.int64)
+    decoded = rounded.to(torch.float64) / float(1 << target_bits)
+    return decoded.to(dtype=x.dtype)
+
+
+def _apply_configured_truncation(x: Tensor, cfg) -> Tensor:
+    """Apply the backend carried by one final, materialized block config."""
+    if cfg is None:
+        return x
+    return _apply_truncation(
+        x,
+        getattr(cfg, "output_truncation_k", None),
+        getattr(cfg, "output_truncation_mode", "binary"),
+        ring_bits=int(getattr(cfg, "output_truncation_ring_bits", 43)),
+        source_fractional_bits=int(
+            getattr(cfg, "output_truncation_source_fractional_bits", 24)
+        ),
+    )
 
 
 def reseed_noise_rng(seed: Optional[int] = None) -> None:
@@ -171,11 +252,16 @@ def reseed_noise_rng(seed: Optional[int] = None) -> None:
         _NOISE_RNG_FIXED_SEED = None
         for g in _NOISE_GENERATORS.values():
             g.manual_seed(_fresh_os_seed())
+        for g in _TRUNCATION_GENERATORS.values():
+            g.manual_seed(_fresh_os_seed())
     else:
         _NOISE_RNG_SEED_MODE = "fixed"
         _NOISE_RNG_FIXED_SEED = int(seed)
         for g in _NOISE_GENERATORS.values():
             g.manual_seed(int(seed))
+        truncation_seed = _derive_truncation_seed(int(seed))
+        for g in _TRUNCATION_GENERATORS.values():
+            g.manual_seed(truncation_seed)
 
 
 def reseed_noise_rng_for_device(
@@ -197,6 +283,11 @@ def reseed_noise_rng_for_device(
         g = torch.Generator(device=device)
         _NOISE_GENERATORS[key] = g
     g.manual_seed(int(seed))
+    truncation_generator = _TRUNCATION_GENERATORS.get(key)
+    if truncation_generator is None:
+        truncation_generator = torch.Generator(device=device)
+        _TRUNCATION_GENERATORS[key] = truncation_generator
+    truncation_generator.manual_seed(_derive_truncation_seed(int(seed)))
 
 
 # ---------------------------------------------------------------------------
@@ -695,6 +786,8 @@ class Block1NoiseConfig:
     # k=None ⇒ 不截断（可用于"首层 Block 1 缺失"的语义）。
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
+    output_truncation_ring_bits: int = 43
+    output_truncation_source_fractional_bits: int = 24
     # Rotation (KS / galois automorphism) 噪声候选点：
     #   #1 紧跟 gelu_out fresh 之后（绑定 fresh 的 SF）
     #   #2 紧跟 W_ffn2·X 的 rescale 之后（绑定 wffn2_result_rescale 的 SF）
@@ -886,6 +979,8 @@ class Block2NoiseConfig:
     # 即便首层 Block 2 前半部分缺失，本截断仍照常应用（Q·K^T 输出存在）。
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
+    output_truncation_ring_bits: int = 43
+    output_truncation_source_fractional_bits: int = 24
     # Rotation 候选点（共 5 个位置 / 9 个 sub-slot）：
     #   #1 γ·((X−μ)/std) rescale 之后                         （绑定 gamma_result_rescale）
     #   #2 Wq/Wk/Wv·X rescale 之后（3 个独立分支）             （绑定各自的 *_result_rescale）
@@ -1127,8 +1222,8 @@ class NoisyBlock1LayerNorm(nn.Module):
             var = sum_sq / float(D)
 
         # Block 1 末尾：PPTI MPC↔HE 截断（var = Block 1 输出，rsqrt 之前）
-        if cfg is not None and cfg.output_truncation_k is not None:
-            var = _apply_truncation(var, cfg.output_truncation_k, cfg.output_truncation_mode)
+        if cfg is not None:
+            var = _apply_configured_truncation(var, cfg)
 
         # ===== Block 1 / Block 2 边界：rsqrt 非线性，无噪 =====
         # 若 Block 1 已启用 → var 是 [B, S, H]，inv_std 也 [B, S, H]
@@ -1209,8 +1304,7 @@ def _make_block2_qkt_merge_hook(
         qkt_matmul_rescale: Optional[NoisePoint],
         merge_mask_encode: NoisePoint,
         merge_mask_rescale: Optional[NoisePoint],
-        output_truncation_k: Optional[int] = None,
-        output_truncation_mode: str = "binary",
+        truncation_cfg: Optional[Block2NoiseConfig] = None,
         rotation_after_qkt_matmul_rescale: bool = False,
         ):
     """构造 Q·K^T matmul **之后**、softmax **之前**的 "合并 Q,K" 噪声 hook。
@@ -1221,7 +1315,7 @@ def _make_block2_qkt_merge_hook(
                                                   SF 继承自 qkt_matmul_rescale)
         2. ⊙ ones-mask: noisy_ones = 1 + ε_enc; out = qkt_result · noisy_ones
         3. rescale on mask 乘法结果              (merge_mask_rescale, 可选)
-        4. PPTI MPC↔HE 截断 (output_truncation_k, 可选)：Block 2 输出末尾
+        4. PPTI MPC↔HE 截断（由 materialized Block2 cfg 选择后端与 K）
 
     返回 ``hook(attention_scores) -> attention_scores`` 形状 [B, A, S, S]。
     """
@@ -1240,8 +1334,7 @@ def _make_block2_qkt_merge_hook(
         if merge_mask_rescale is not None:
             out = out + _sample_gaussian_for_point(out, merge_mask_rescale)
         # 4. Block 2 末尾 truncation
-        if output_truncation_k is not None:
-            out = _apply_truncation(out, output_truncation_k, output_truncation_mode)
+        out = _apply_configured_truncation(out, truncation_cfg)
         return out
     return hook
 
@@ -1279,6 +1372,8 @@ class Block3NoiseConfig:
     # PPTI MPC↔HE 截断：Block 3 末尾（最后一次 squaring 之后，softmax mask/norm_div 之前）
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
+    output_truncation_ring_bits: int = 43
+    output_truncation_source_fractional_bits: int = 24
 
 
 def make_block3_default_config(
@@ -1370,8 +1465,7 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
             if rs is not None:
                 y = y + _sample_gaussian_for_point(y, rs)
         # 6. Block 3 末尾 truncation
-        if cfg.output_truncation_k is not None:
-            y = _apply_truncation(y, cfg.output_truncation_k, cfg.output_truncation_mode)
+        y = _apply_configured_truncation(y, cfg)
         return y
 
     return block3_approx_exp
@@ -1511,6 +1605,8 @@ class Block4NoiseConfig:
     # PPTI MPC↔HE 截断：Block 4 末尾（post-attn LN var, rsqrt 之前）
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
+    output_truncation_ring_bits: int = 43
+    output_truncation_source_fractional_bits: int = 24
     # Rotation 候选点（共 6 个）：
     #   #1 softmax 输出·mask rescale 后  （绑定 softmax_out_mask_rescale）
     #   #2 V·mask rescale 后             （绑定 v_mask_rescale）
@@ -1757,8 +1853,8 @@ class NoisyBlock4LayerNorm(nn.Module):
             var = sum_sq / float(D)
 
         # Block 4 末尾：PPTI MPC↔HE 截断（var = Block 4 输出，rsqrt 之前）
-        if cfg4 is not None and cfg4.output_truncation_k is not None:
-            var = _apply_truncation(var, cfg4.output_truncation_k, cfg4.output_truncation_mode)
+        if cfg4 is not None:
+            var = _apply_configured_truncation(var, cfg4)
 
         # ===== Block 4 / Block 5 边界：rsqrt 非线性，无噪 =====
         inv_std = torch.rsqrt(var + self.eps)
@@ -1875,6 +1971,8 @@ class Block5NoiseConfig:
     # PPTI MPC↔HE 截断：Block 5 末尾（GELU 多项式输出之后）
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
+    output_truncation_ring_bits: int = 43
+    output_truncation_source_fractional_bits: int = 24
     # Rotation 候选点（共 2 个）：
     #   #1 γ·((X−μ)/std) rescale 之后  （绑定 gamma_result_rescale）
     #   #2 W_ffn1·X rescale 之后        （绑定 wffn1_result_rescale）
@@ -2113,8 +2211,7 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
         y2 = _compute_polynomial(powers, coeff_dict[0], x)   # [0, 2.7]
         out = _select_piecewise_gelu_output(x, y1, y2)
         # Block 5 末尾 truncation（GELU 输出之后）
-        if cfg5.output_truncation_k is not None:
-            out = _apply_truncation(out, cfg5.output_truncation_k, cfg5.output_truncation_mode)
+        out = _apply_configured_truncation(out, cfg5)
         return out
 
     return block5_gelu_forward
@@ -3664,8 +3761,7 @@ class ReversibleLayerHandler:
             attn_self._block2_qkt_merge_hook = _make_block2_qkt_merge_hook(
                 cfg.qkt_matmul_result_rescale,
                 cfg.qkt_merge_mask_encode, cfg.qkt_merge_mask_result_rescale,
-                output_truncation_k=cfg.output_truncation_k,
-                output_truncation_mode=cfg.output_truncation_mode,
+                truncation_cfg=cfg,
                 rotation_after_qkt_matmul_rescale=cfg.rotation_after_qkt_matmul_rescale,
             )
 

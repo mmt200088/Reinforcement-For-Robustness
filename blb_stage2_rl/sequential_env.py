@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import time
+from types import SimpleNamespace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -49,7 +50,7 @@ from .action_space import (
 )
 from .env import BLBStage2Env
 from .fusion_cost import BlockChoice, compute_fusion_cost_saving
-from .optimizer_cost import apply_optimizer_outputs_to_cfgs
+from .optimizer_cost import materialize_decoded_action
 from .reward import (
     FUSION_COST_BUDGET_FRACTION,
     FUSION_COST_W,
@@ -121,6 +122,8 @@ class BlockRuntimeResult:
     boosted_field_values: Optional[Dict[str, int]] = None
     replan_application: Dict[str, Any] = field(default_factory=dict)
     optimizer_cfg_overrides: List[Any] = field(default_factory=list)
+    materialization_failure_reason: Optional[str] = None
+    final_config_fingerprint: str = ""
 
 
 def evaluate_block_from_full_vector(
@@ -177,6 +180,7 @@ def evaluate_block_from_full_vector(
             gelu_degree=deg_g,
             attn_degree=deg_a,
         )
+        getattr(decoded, f"block{block}_cfgs")[layer] = block_cfg
 
     config_name = f"{graph_key}_L{layer}"
     optimizer_t0 = time.perf_counter()
@@ -203,36 +207,57 @@ def evaluate_block_from_full_vector(
         )
     optimizer_wall = float(time.perf_counter() - optimizer_t0)
 
-    replan_application: Dict[str, Any] = {}
+    invoker_baselines: Mapping[str, Any] = (
+        getattr(base_env.rescale_bridge.invoker, "baselines", {}) or {}
+    )
+
+    def _rotation_provider(runtime_block_idx: int, profile: str) -> Mapping[str, str]:
+        return (base_env.env_cfg.rotation_name_map or {}).get(
+            (int(runtime_block_idx), str(profile)), {}
+        )
+
+    # apply_optimizer_outputs_to_cfgs is intentionally reachable only through
+    # the shared materializer so this per-block path cannot diverge from final eval.
+    materialized = materialize_decoded_action(
+        action_indices=vector,
+        decoded=decoded,
+        cfgs_dict={f"block{block}": {layer: block_cfg}},
+        outputs={config_name: output},
+        signals=SimpleNamespace(any_invalid=not bool(output.valid)),
+        profile=str(base_env.env_cfg.profile),
+        invoker_baselines=invoker_baselines,
+        rotation_name_map_provider=_rotation_provider,
+        expected_config_names=[config_name],
+        truncation_backend=getattr(
+            base_env.env_cfg, "truncation_backend", "binary",
+        ),
+        truncation_ring_bits=int(getattr(
+            base_env.env_cfg, "truncation_ring_bits", 43,
+        )),
+        truncation_source_fractional_bits=int(getattr(
+            base_env.env_cfg, "truncation_source_fractional_bits", 24,
+        )),
+    )
+    block_cfg = materialized.cfgs_dict[f"block{block}"][layer]
+    replan_application = materialized.replan_application
     optimizer_cfg_overrides: List[Any] = []
-    if bool(output.valid):
-        invoker_baselines: Mapping[str, Any] = (
-            getattr(base_env.rescale_bridge.invoker, "baselines", {}) or {}
-        )
-
-        def _rotation_provider(runtime_block_idx: int, profile: str) -> Mapping[str, str]:
-            return (base_env.env_cfg.rotation_name_map or {}).get(
-                (int(runtime_block_idx), str(profile)), {}
-            )
-
-        replan_application = apply_optimizer_outputs_to_cfgs(
-            profile=str(base_env.env_cfg.profile),
-            cfgs_dict={f"block{block}": {layer: block_cfg}},
-            opt_outputs={config_name: output},
-            invoker_baselines=invoker_baselines,
-            rotation_name_map_provider=_rotation_provider,
-        )
-        per_config = replan_application.get("optimizer_cfg_overrides", {})
-        if per_config:
-            optimizer_cfg_overrides = list(per_config.get(config_name, []))
+    per_config = replan_application.get("optimizer_cfg_overrides", {})
+    if per_config:
+        optimizer_cfg_overrides = list(per_config.get(config_name, []))
+    invalid_chain = output.invalid_chain
+    if not materialized.model_ready and not materialized.optimizer_invalid:
+        invalid_chain = {
+            "reason": str(materialized.failure_reason),
+            "replan_application": replan_application,
+        }
 
     return BlockRuntimeResult(
         block_cfg=block_cfg,
         optimizer_output=output,
-        valid=bool(output.valid),
+        valid=bool(materialized.model_ready),
         total_bits=int(output.total_bits),
         fusion_count=int(output.fusion_count),
-        invalid_chain=output.invalid_chain,
+        invalid_chain=invalid_chain,
         bridge_error=None,
         bridge_error_type=None,
         config_name=config_name,
@@ -241,6 +266,8 @@ def evaluate_block_from_full_vector(
         boosted_field_values=boosted_copy,
         replan_application=replan_application,
         optimizer_cfg_overrides=optimizer_cfg_overrides,
+        materialization_failure_reason=materialized.failure_reason,
+        final_config_fingerprint=materialized.final_config_fingerprint,
     )
 
 
@@ -487,6 +514,8 @@ class BLBStage2SequentialEnv:
             "boosted_field_values": runtime.boosted_field_values,
             "replan_application": runtime.replan_application,
             "optimizer_cfg_overrides": runtime.optimizer_cfg_overrides,
+            "materialization_failure_reason": runtime.materialization_failure_reason,
+            "final_config_fingerprint": runtime.final_config_fingerprint,
         }
 
     def commit_step(
@@ -596,6 +625,12 @@ class BLBStage2SequentialEnv:
             "policy_option_index": eval_info.get("policy_option_index"),
             "map_option_id": eval_info.get("map_option_id"),
             "invalid_chain": eval_info.get("invalid_chain"),
+            "materialization_failure_reason": eval_info.get(
+                "materialization_failure_reason"
+            ),
+            "final_config_fingerprint": str(
+                eval_info.get("final_config_fingerprint", "") or ""
+            ),
             "optimizer_wall_seconds": float(eval_info.get("optimizer_wall_seconds", 0.0) or 0.0),
         }
 

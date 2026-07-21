@@ -134,6 +134,10 @@ class EpisodeStats:
     fusion_count_b2: int = 0
     fusion_count_b4: int = 0
     fusion_count_b5: int = 0
+    # Exact post-replan configuration evidence for this terminal evaluation.
+    terminal_final_config_fingerprint: str = ""
+    terminal_materialization_failure_reason: str = ""
+    terminal_model_uses_replan_config: bool = False
     terminal_priority: int = 0
     terminal_loss_mean: float = 0.0
     terminal_loss_std: float = 0.0

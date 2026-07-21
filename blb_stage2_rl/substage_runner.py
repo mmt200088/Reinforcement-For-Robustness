@@ -364,6 +364,11 @@ def run_substage_via_runner(
             profile=train_cfg.profile,
             num_trials_per_step=train_cfg.num_trials_per_step,
             probe_batch_count=train_cfg.probe_batch_count,
+            truncation_backend=train_cfg.truncation_backend,
+            truncation_ring_bits=train_cfg.truncation_ring_bits,
+            truncation_source_fractional_bits=(
+                train_cfg.truncation_source_fractional_bits
+            ),
         ),
     )
     base_env.pareto_cost_archive = None

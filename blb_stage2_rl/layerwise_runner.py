@@ -1407,6 +1407,9 @@ class LayerwiseEpisodeRecord:
     metrics: Mapping[str, float]
     pooled_metrics: Optional[Mapping[str, float]]
     probe_diagnostics: Mapping[str, Any]
+    final_config_fingerprint: str
+    materialization_failure_reason: str
+    model_uses_replan_config: bool
     promoted_trial_count: int
     promotion_status: str
     promotion_candidate_key: Optional[str]
@@ -1989,7 +1992,7 @@ def _collect_fixed_validation_bank(
     online_clear = getattr(env.base, "clear_installed_blb", None)
     if full_base_env is not env.base and callable(online_clear):
         online_clear()
-        env.base._installed_action_hash = None
+        env.base._installed_config_fingerprint = None
     previous_probe_seed = getattr(full_base_env, "probe_noise_seed", None)
     fresh_count = 0
     try:
@@ -2071,7 +2074,7 @@ def _collect_fixed_validation_bank(
                 full_clear()
             if callable(online_clear):
                 online_clear()
-            env.base._installed_action_hash = None
+            env.base._installed_config_fingerprint = None
 
     evidence = candidate_store.trial_evidence_for_action(
         action_indices, full_identity_context, max_trials=target_count,
@@ -2479,7 +2482,7 @@ def promote_candidate_if_eligible(
             online_clear = getattr(env.base, "clear_installed_blb", None)
             if full_base_env is not env.base and callable(online_clear):
                 online_clear()
-                env.base._installed_action_hash = None
+                env.base._installed_config_fingerprint = None
             previous_probe_seed = getattr(full_base_env, "probe_noise_seed", None)
             full_base_env.probe_noise_seed = promotion_probe_seed
             try:
@@ -2503,7 +2506,7 @@ def promote_candidate_if_eligible(
                         full_clear()
                     if callable(online_clear):
                         online_clear()
-                    env.base._installed_action_hash = None
+                    env.base._installed_config_fingerprint = None
             if len(evaluated) != 1:
                 raise RuntimeError(
                     f"promotion expected one terminal result, received {len(evaluated)}"
@@ -3837,6 +3840,17 @@ def train_layerwise(
             pooled_metrics=pooled_metrics,
             probe_diagnostics=_to_plain_mapping(
                 runtime_info.get("probe_diagnostics")
+            ),
+            final_config_fingerprint=str(
+                runtime_info.get("final_config_fingerprint", "") or ""
+            ),
+            materialization_failure_reason=str(
+                runtime_info.get("materialization_failure_reason", "") or ""
+            ),
+            model_uses_replan_config=bool(
+                _to_plain_mapping(runtime_info.get("replan_application")).get(
+                    "model_uses_replan_config", False
+                )
             ),
             promoted_trial_count=int(promotion.trial_count),
             promotion_status=str(promotion.status),

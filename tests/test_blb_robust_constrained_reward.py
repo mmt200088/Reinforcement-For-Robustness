@@ -625,7 +625,7 @@ def test_normal_terminal_runtime_assesses_trials_and_threads_external_cost():
     env.probe_runner = None
     env.bridge = SimpleNamespace(apply=lambda **_kwargs: None)
     env.clear_installed_blb = lambda: None
-    env._installed_action_hash = None
+    env._installed_config_fingerprint = None
     env._eval_on_probe = lambda _k: _runtime_metrics(reward_module)
     env._maybe_borderline_retest = lambda metrics, _info: metrics
     env._last_probe_diagnostics = {}
@@ -763,7 +763,7 @@ def test_normal_terminal_eval_failure_is_minus_five_without_reference():
     env.probe_runner = None
     env.bridge = SimpleNamespace(apply=lambda **_kwargs: None)
     env.clear_installed_blb = lambda: None
-    env._installed_action_hash = None
+    env._installed_config_fingerprint = None
     env._eval_on_probe = lambda _k: (_ for _ in ()).throw(RuntimeError("probe failed"))
     decoded = SimpleNamespace(
         block1_cfgs=[], block2_cfgs=[], block3_cfgs=[], block4_cfgs=[], block5_cfgs=[],

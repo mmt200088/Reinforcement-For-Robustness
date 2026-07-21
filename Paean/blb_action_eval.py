@@ -29,7 +29,7 @@ from blb_stage2_rl.baseline_bootstrap import (
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
 from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
 from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
-from blb_stage2_rl.optimizer_cost import apply_optimizer_outputs_to_cfgs
+from blb_stage2_rl.optimizer_cost import materialize_decoded_action
 from final_evaluation_module import UnifiedFinalEvaluationModule
 from json_utils import read_json_file, to_jsonable
 from rescale_optimizer_bridge import (
@@ -581,17 +581,24 @@ class BLBActionFinalEvaluationModule:
 
         cfgs_dict = decoded.cfgs_dict()
         opt_outputs, opt_signals = self._optimizer_outputs(profile, cfgs_dict)
-        replan_application = self._apply_optimizer_outputs_to_decoded(
+        materialized = self._materialize_decoded_action(
             profile=profile,
+            action_vec=action_vec,
             decoded=decoded,
             cfgs_dict=cfgs_dict,
             opt_outputs=opt_outputs,
+            opt_signals=opt_signals,
         )
-        skip_reason = ""
-        if bool(opt_signals.any_invalid):
-            skip_reason = "optimizer_invalid_chain"
-        elif not bool(replan_application.get("model_uses_replan_config", False)):
-            skip_reason = "replan_config_not_fully_applied"
+        decoded = materialized.decoded
+        replan_application = materialized.replan_application
+        skip_reason = str(materialized.failure_reason or "")
+        if skip_reason not in {
+                "",
+                "optimizer_invalid_chain",
+                "optimizer_output_set_mismatch",
+                "replan_config_not_fully_applied",
+        }:
+            raise RuntimeError(f"unexpected action materialization failure: {skip_reason}")
         skipped_forward = bool(skip_reason)
         if skipped_forward:
             single = {
@@ -646,6 +653,7 @@ class BLBActionFinalEvaluationModule:
             "action_vec": np.asarray(action_vec, dtype=int).copy(),
             "config_details": self._config_details(decoded, action_vec, overrides, opt_outputs),
             "replan_application": replan_application,
+            "final_config_fingerprint": materialized.final_config_fingerprint,
             "rescale_optimizer": {
                 "invoker_kind": str(getattr(self, "rescale_invoker_kind", "unknown")),
                 "root": str(getattr(self, "rescale_optimizer_root", "") or ""),
@@ -688,10 +696,10 @@ class BLBActionFinalEvaluationModule:
         feasibility = self._build_feasibility_report(
             result=result,
             report_constraints=report_constraints,
-            optimizer_valid=not bool(opt_signals.any_invalid),
+            optimizer_valid=not bool(materialized.optimizer_invalid),
             decode_ok=True,
             apply_ok=bool(replan_application.get("model_uses_replan_config", False)),
-            eval_ok=True,
+            eval_ok=not bool(skipped_forward),
         )
         result["final_eval_feasibility"] = feasibility
         result["feasible"] = feasibility.get("feasible")
@@ -955,14 +963,16 @@ class BLBActionFinalEvaluationModule:
             getattr(decoded, f"block{block_idx}_cfgs")[layer_idx] = block_cfg
         return decoded
 
-    def _apply_optimizer_outputs_to_decoded(
+    def _materialize_decoded_action(
             self,
             *,
             profile: str,
+            action_vec,
             decoded,
             cfgs_dict,
             opt_outputs,
-            ) -> Dict[str, Any]:
+            opt_signals,
+            ):
         """Apply Rescale_optimizer/replan results to cfgs before model forward.
 
         The executable Stage-2 cfg is the optimizer's ``new_compact_config``
@@ -973,12 +983,34 @@ class BLBActionFinalEvaluationModule:
         bridge = getattr(self, "rescale_bridge", None)
         invoker = getattr(bridge, "invoker", None)
         invoker_baselines: Mapping[str, Any] = getattr(invoker, "baselines", {}) or {}
-        return apply_optimizer_outputs_to_cfgs(
+        backend = str(
+            getattr(self.evaluator, "blb_v3_truncation_backend", "binary")
+            or "binary"
+        )
+        ring_bits = int(
+            getattr(self.evaluator, "blb_v3_truncation_ring_bits", 43) or 43
+        )
+        source_fractional_bits = int(
+            getattr(
+                self.evaluator,
+                "blb_v3_truncation_source_fractional_bits",
+                24,
+            ) or 24
+        )
+        # apply_optimizer_outputs_to_cfgs is intentionally invoked only inside
+        # materialize_decoded_action so final eval shares the online RL seam.
+        return materialize_decoded_action(
+            action_indices=np.asarray(action_vec, dtype=int).reshape(-1).tolist(),
+            decoded=decoded,
             profile=str(profile),
             cfgs_dict=cfgs_dict,
-            opt_outputs=opt_outputs,
+            outputs=opt_outputs,
+            signals=opt_signals,
             invoker_baselines=invoker_baselines,
             rotation_name_map_provider=self._rotation_name_map_for,
+            truncation_backend=backend,
+            truncation_ring_bits=ring_bits,
+            truncation_source_fractional_bits=source_fractional_bits,
         )
 
     def _rotation_name_map_for(self, block_idx: int, profile: str) -> Mapping[str, str]:

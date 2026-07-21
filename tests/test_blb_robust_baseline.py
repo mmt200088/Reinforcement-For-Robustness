@@ -325,7 +325,7 @@ def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate(m
     env.bridge = SimpleNamespace(apply=lambda **_kwargs: None)
     env.clear_installed_blb = lambda: None
     env.reset = lambda *, seed: np.asarray([0.0], dtype=np.float32)
-    env._installed_action_hash = None
+    env._installed_config_fingerprint = None
     env._last_probe_diagnostics = {}
     env._step_idx = 0
     env._last_invalid_rate = 0.0

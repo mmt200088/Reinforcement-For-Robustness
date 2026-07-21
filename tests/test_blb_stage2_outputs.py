@@ -1329,6 +1329,9 @@ class PersistedDebugFieldsTest(unittest.TestCase):
                     first_invalid_step=None, first_invalid_block=None,
                     first_invalid_layer=None, early_terminated=False,
                     fusion_count_b2=ep, fusion_count_b4=ep, fusion_count_b5=ep,
+                    terminal_final_config_fingerprint=f"cfg-{ep}",
+                    terminal_materialization_failure_reason="",
+                    terminal_model_uses_replan_config=True,
                     terminal_priority=(3 if ep < 2 else 1),
                     terminal_worst_signed_margin=0.5 - 0.2 * ep,
                     terminal_acc_barrier_sat=-0.1 * ep, terminal_acc_barrier_vio=0.0,
@@ -1345,8 +1348,13 @@ class PersistedDebugFieldsTest(unittest.TestCase):
             for k in ("terminal_worst_signed_margin", "terminal_acc_barrier_sat",
                       "terminal_acc_barrier_vio", "terminal_near_miss",
                       "terminal_margin_m1", "terminal_margin_m2",
-                      "terminal_fusion_norm_raw", "terminal_fusion_norm_saturated"):
+                      "terminal_fusion_norm_raw", "terminal_fusion_norm_saturated",
+                      "terminal_final_config_fingerprint",
+                      "terminal_materialization_failure_reason",
+                      "terminal_model_uses_replan_config"):
                 self.assertIn(k, j, f"episodes.jsonl missing {k}")
+            self.assertEqual(j["terminal_final_config_fingerprint"], "cfg-3")
+            self.assertTrue(j["terminal_model_uses_replan_config"])
             # rolling-health log written with the expected columns.
             hp = os.path.join(d, "diagnostics", "blb_stage2_health.log")
             self.assertTrue(_nonempty_file(hp))

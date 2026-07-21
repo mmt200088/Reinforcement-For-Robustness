@@ -490,9 +490,20 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
                 layer_idx=int(layer_idx),
                 block_idx=int(block_idx),
             )
-            return types.SimpleNamespace(
-                cfgs_dict=lambda: {f"block{int(block_idx)}": {int(layer_idx): cfg}},
+            decoded = types.SimpleNamespace()
+            setattr(
+                decoded,
+                f"block{int(block_idx)}_cfgs",
+                {int(layer_idx): cfg},
             )
+            decoded.cfgs_dict = lambda: {
+                f"block{int(block_idx)}": {
+                    int(layer_idx): getattr(
+                        decoded, f"block{int(block_idx)}_cfgs",
+                    )[int(layer_idx)],
+                },
+            }
+            return decoded
 
         def build(block_idx, layer_idx, values, **kwargs):
             cls.events.append(("build", int(layer_idx), int(block_idx), dict(values)))
@@ -530,18 +541,26 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
         sys.modules[reward.__name__] = reward
         optimizer = types.ModuleType(f"{pkg_name}.optimizer_cost")
 
-        def apply_optimizer(**kwargs):
-            config_name = next(iter(kwargs["opt_outputs"]))
+        def materialize_optimizer(**kwargs):
+            config_name = next(iter(kwargs["outputs"]))
             cfg = next(iter(next(iter(kwargs["cfgs_dict"].values())).values()))
             cls.events.append(("apply", config_name, cfg.marker))
             cfg.marker = f"{cfg.marker}:applied"
             overrides = [{"cfg_attr": "marker", "new_value": cfg.marker}]
-            return {
+            replan = {
                 "model_uses_replan_config": True,
                 "optimizer_cfg_overrides": {config_name: overrides},
             }
+            return types.SimpleNamespace(
+                cfgs_dict=kwargs["cfgs_dict"],
+                replan_application=replan,
+                model_ready=True,
+                optimizer_invalid=False,
+                failure_reason=None,
+                final_config_fingerprint="test-fingerprint",
+            )
 
-        optimizer.apply_optimizer_outputs_to_cfgs = apply_optimizer
+        optimizer.materialize_decoded_action = materialize_optimizer
         sys.modules[optimizer.__name__] = optimizer
 
         cls.sequential = load(
@@ -619,7 +638,13 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
             attn_degree=[6] * 12,
             gelu_degree_state=4,
             attn_degree_state=6,
-            env_cfg=types.SimpleNamespace(profile="mrpc", rotation_name_map={}),
+            env_cfg=types.SimpleNamespace(
+                profile="mrpc",
+                rotation_name_map={},
+                truncation_backend="binary",
+                truncation_ring_bits=43,
+                truncation_source_fractional_bits=24,
+            ),
             rescale_bridge=Bridge(),
             reset=lambda **kwargs: np.zeros(1, dtype=np.float32),
             step=lambda *args, **kwargs: self.fail("terminal base step must not run at layer 0"),

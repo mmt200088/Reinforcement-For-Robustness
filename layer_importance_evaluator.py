@@ -2388,6 +2388,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_fusion_neighbor_curriculum=False,
                   blb_v3_fusion_probe_interval=0,
                   blb_v3_fusion_exploration_epsilon=0.0,
+                  blb_v3_truncation_backend='binary',
+                  blb_v3_truncation_ring_bits=43,
+                  blb_v3_truncation_source_fractional_bits=24,
                   stage2_workers_per_device=1,
                   blb_v3_osr_results_path="",
                   blb_v3_osr_scan_only=False,
@@ -3220,6 +3223,34 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.blb_v3_fusion_exploration_epsilon = float(blb_v3_fusion_exploration_epsilon)
         except Exception:
             self.blb_v3_fusion_exploration_epsilon = 0.0
+        self.blb_v3_truncation_backend = str(
+            blb_v3_truncation_backend or "binary"
+        ).strip().lower()
+        if self.blb_v3_truncation_backend not in {
+            "binary", "decimal", "stochastic_ring",
+        }:
+            raise ValueError(
+                "blb_v3_truncation_backend must be one of "
+                "binary, decimal, stochastic_ring"
+            )
+        self.blb_v3_truncation_ring_bits = int(blb_v3_truncation_ring_bits)
+        if not 2 <= self.blb_v3_truncation_ring_bits <= 62:
+            raise ValueError("blb_v3_truncation_ring_bits must be in [2, 62]")
+        self.blb_v3_truncation_source_fractional_bits = int(
+            blb_v3_truncation_source_fractional_bits
+        )
+        if self.blb_v3_truncation_source_fractional_bits < 0:
+            raise ValueError(
+                "blb_v3_truncation_source_fractional_bits must be non-negative"
+            )
+        if (
+                self.blb_v3_truncation_backend == "stochastic_ring"
+                and self.blb_v3_truncation_source_fractional_bits
+                >= self.blb_v3_truncation_ring_bits
+        ):
+            raise ValueError(
+                "stochastic_ring source fractional bits must be smaller than ring bits"
+            )
         try:
             self.stage2_workers_per_device = max(1, int(stage2_workers_per_device))
         except Exception:
