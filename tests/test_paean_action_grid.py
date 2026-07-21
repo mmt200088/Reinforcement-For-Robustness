@@ -1,4 +1,5 @@
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import sys
@@ -341,6 +342,73 @@ class PaeanActionGridTest(unittest.TestCase):
                 sys.modules["blb_stage2_rl.action_io"] = previous_action_io
 
         self.assertEqual(load_calls, 1)
+
+    def test_candidate_loading_uses_explicit_calibrated_max_sfs_without_fallback(self):
+        action_grid = _load_action_grid_module()
+        self.assertIn(
+            "max_sfs",
+            inspect.signature(action_grid.build_action_candidates).parameters,
+            "candidate builder cannot receive the calibrated table",
+        )
+        action_grid.action_dims_for_config = lambda _num_layers: [2]
+        sentinel_max_sfs = object()
+
+        def forbidden_profile_load(_profile):
+            raise AssertionError("profile-only max_sfs fallback must not run")
+
+        action_grid.load_max_sfs = forbidden_profile_load
+        action_io_stub = types.ModuleType("blb_stage2_rl.action_io")
+
+        def slots_payload_to_action_vec(
+                payload,
+                *,
+                max_sfs,
+                num_layers,
+                gelu_degree,
+                attn_degree,
+                ):
+            self.assertIs(max_sfs, sentinel_max_sfs)
+            self.assertEqual(int(num_layers), 1)
+            self.assertEqual(list(gelu_degree), [4])
+            self.assertEqual(list(attn_degree), [6])
+            return [0], []
+
+        action_io_stub.slots_payload_to_action_vec = slots_payload_to_action_vec
+        previous_action_io = sys.modules.get("blb_stage2_rl.action_io")
+        sys.modules["blb_stage2_rl.action_io"] = action_io_stub
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                path = Path(td) / "candidate.json"
+                path.write_text(
+                    json.dumps({
+                        "schema_version": "blb_v3_slots_human_v1",
+                        "num_layers": 1,
+                        "profile": "mrpc",
+                        "slots": [
+                            {
+                                "label": "L00.B2.W.wffn1",
+                                "scaling_factor": 30,
+                            }
+                        ],
+                    }),
+                    encoding="utf-8",
+                )
+                candidates = action_grid.build_action_candidates(
+                    num_layers=1,
+                    profile="mrpc",
+                    action_config_path=str(path),
+                    max_sfs=sentinel_max_sfs,
+                    gelu_degree=[4],
+                    attn_degree=[6],
+                )
+        finally:
+            if previous_action_io is None:
+                sys.modules.pop("blb_stage2_rl.action_io", None)
+            else:
+                sys.modules["blb_stage2_rl.action_io"] = previous_action_io
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].action_vec.tolist(), [0])
 
 
 if __name__ == "__main__":

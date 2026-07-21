@@ -20,9 +20,11 @@ from blb_stage2_rl.action_space import (
     avg_truncation_k_in_action,
     build_block_cfg_from_field_values,
     build_optimizer_requests,
-    load_max_sfs,
     step_schedule,
     sum_truncation_k_in_action,
+)
+from blb_stage2_rl.baseline_bootstrap import (
+    load_calibrated_stage2_action_context,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
 from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
@@ -100,17 +102,6 @@ class BLBActionFinalEvaluationModule:
         self.action_ranges = coerce_spec_list(action_ranges)
         self.action_fixed = coerce_spec_list(action_fixed)
         self.rescale_optimizer_mode = self._load_rescale_optimizer_mode()
-        self._max_sfs_cache: Dict[str, Any] = {}
-
-    def _load_max_sfs(self, profile: str):
-        key = str(profile or "default")
-        cache = getattr(self, "_max_sfs_cache", None)
-        if cache is None:
-            cache = {}
-            self._max_sfs_cache = cache
-        if key not in cache:
-            cache[key] = load_max_sfs(key)
-        return cache[key]
 
     @staticmethod
     def _render_plots_enabled() -> bool:
@@ -192,6 +183,14 @@ class BLBActionFinalEvaluationModule:
         )
         opt_gelu = np.asarray(opt_gelu, dtype=int)
         opt_softmax = np.asarray(opt_softmax, dtype=int)
+        action_context = load_calibrated_stage2_action_context(
+            rescale_optimizer_root=self.rescale_optimizer_root,
+            dataset=profile,
+            num_layers=total_layers,
+            gelu_per_layer=opt_gelu,
+            softmax_per_layer=opt_softmax,
+            snap_sf_to_noise_table=False,
+        )
 
         base_action = self._resolve_base_action(search_best_stage2)
         # Always build the "selected" candidate first via the grid/config path —
@@ -203,6 +202,9 @@ class BLBActionFinalEvaluationModule:
             fixed_specs=self.action_fixed,
             range_specs=self.action_ranges,
             action_config_path=self.action_config_path,
+            max_sfs=action_context.max_sfs,
+            gelu_degree=opt_gelu,
+            attn_degree=opt_softmax,
         )
 
         # 加大精度 handoff: in fusion-count mode the trained best is a flat grid-index
@@ -302,6 +304,7 @@ class BLBActionFinalEvaluationModule:
                     gelu=opt_gelu,
                     softmax=opt_softmax,
                     report_constraints=report_constraints,
+                    max_sfs=action_context.max_sfs,
                 )
             finally:
                 if isolate_noise_rng:
@@ -332,7 +335,6 @@ class BLBActionFinalEvaluationModule:
                 f"  target: {self.cost_match_count} matched configs, "
                 f"max {self.cost_match_max_attempts} attempts"
             )
-            max_sfs_table = self._load_max_sfs(profile)
             random_candidates, cost_match_diagnostics = (
                 build_cost_matched_random_action_candidates(
                     num_layers=total_layers,
@@ -342,7 +344,7 @@ class BLBActionFinalEvaluationModule:
                     selected_total_fusion=target_total_fusion,
                     selected_sum_k=target_sum_k,
                     bridge=self.rescale_bridge,
-                    max_sfs=max_sfs_table,
+                    max_sfs=action_context.max_sfs,
                     gelu_degree=opt_gelu,
                     attn_degree=opt_softmax,
                     seed=self.random_seed,
@@ -365,6 +367,7 @@ class BLBActionFinalEvaluationModule:
                     gelu=opt_gelu,
                     softmax=opt_softmax,
                     report_constraints=report_constraints,
+                    max_sfs=action_context.max_sfs,
                 )
                 random_results.append(result)
                 ev.log(
@@ -398,6 +401,7 @@ class BLBActionFinalEvaluationModule:
             },
             comparison_summary=comparison_summary,
             cost_match_diagnostics=cost_match_payload,
+            action_context_provenance=action_context.provenance,
         )
         text_path = self._save_results_markdown(
             json_path=summary_path,
@@ -433,6 +437,7 @@ class BLBActionFinalEvaluationModule:
             opt_gelu=opt_gelu,
             opt_softmax=opt_softmax,
             profile=profile,
+            action_context=action_context,
         )
 
         ev.apply_configuration(opt_gelu, opt_softmax)
@@ -450,6 +455,7 @@ class BLBActionFinalEvaluationModule:
             "random_results": random_results,
             "random_summary": comparison_summary or {},
             "cost_match_diagnostics": cost_match_payload,
+            "calibrated_action_context": to_jsonable(action_context.provenance),
             "summary_path": summary_path,
             "text_report_path": text_path,
             "plot_path": plot_path,
@@ -556,12 +562,12 @@ class BLBActionFinalEvaluationModule:
             gelu,
             softmax,
             report_constraints,
+            max_sfs,
             metadata=None,
             ):
         ev = self.evaluator
         total_layers = int(ev.total_layers)
         profile = str(getattr(ev, "dataset_key", "default") or "default")
-        max_sfs = self._load_max_sfs(profile)
         metadata = dict(metadata or {})
         decoded = self._decode_action_candidate(
             action_vec=action_vec,
@@ -1752,6 +1758,7 @@ class BLBActionFinalEvaluationModule:
         selection_constraints,
         comparison_summary: Optional[Dict[str, Any]] = None,
         cost_match_diagnostics: Optional[Dict[str, Any]] = None,
+        action_context_provenance: Optional[Mapping[str, Any]] = None,
     ):
         output = {
             "dataset": self.evaluator.dataset_key,
@@ -1769,6 +1776,9 @@ class BLBActionFinalEvaluationModule:
             "candidate_results": [to_jsonable(r) for r in candidate_results],
             "comparison_summary": to_jsonable(comparison_summary or {}),
             "cost_match_diagnostics": to_jsonable(cost_match_diagnostics or {}),
+            "calibrated_action_context": to_jsonable(
+                action_context_provenance or {}
+            ),
             "evaluation_protocol": {
                 "version": 2,
                 "mode": "blb_action_grid_cost_matched",
@@ -2095,6 +2105,7 @@ class BLBActionFinalEvaluationModule:
             opt_gelu: np.ndarray,
             opt_softmax: np.ndarray,
             profile: str,
+            action_context,
             ) -> Dict[str, Any]:
         if not self.glue_submission_enabled:
             return {"enabled": False, "skipped_reason": "disabled_by_settings"}
@@ -2128,6 +2139,9 @@ class BLBActionFinalEvaluationModule:
                 "gelu_degree": np.asarray(opt_gelu, dtype=int).tolist(),
                 "attn_degree": np.asarray(opt_softmax, dtype=int).tolist(),
                 "group": cand_meta.get("group"),
+                "calibrated_action_context": to_jsonable(
+                    action_context.provenance
+                ),
             }
             with open(action_json_path, "w", encoding="utf-8") as _fh:
                 json.dump(fusion_fixed_cfg, _fh, ensure_ascii=False, indent=2)
@@ -2141,6 +2155,8 @@ class BLBActionFinalEvaluationModule:
                 opt_gelu=opt_gelu,
                 opt_softmax=opt_softmax,
                 anchor_name=str(selected_candidate.name),
+                max_sfs=action_context.max_sfs,
+                action_context_provenance=action_context.provenance,
             )
 
         try:
@@ -2153,6 +2169,7 @@ class BLBActionFinalEvaluationModule:
                 profile=profile,
                 gelu_degree=np.asarray(opt_gelu, dtype=int).tolist(),
                 softmax_degree=np.asarray(opt_softmax, dtype=int).tolist(),
+                calibrated_action_context=action_context,
                 log_fn=self.evaluator.log,
             )
         except Exception as exc:
@@ -2180,13 +2197,14 @@ class BLBActionFinalEvaluationModule:
             opt_gelu: np.ndarray,
             opt_softmax: np.ndarray,
             anchor_name: str,
+            max_sfs,
+            action_context_provenance: Mapping[str, Any],
             ) -> None:
         try:
             from blb_stage2_rl.action_io import action_vec_to_slots_list
             from blb_stage2_rl.action_space import describe_action_vector
         except ImportError:
             return
-        max_sfs = self._load_max_sfs(profile)
         num_layers = int(self.evaluator.total_layers)
         slots = action_vec_to_slots_list(
             np.asarray(action_vec, dtype=int),
@@ -2217,6 +2235,9 @@ class BLBActionFinalEvaluationModule:
             "action_vec": np.asarray(action_vec, dtype=int).tolist(),
             "slots": slots,
             "records": description.get("records", []),
+            "calibrated_action_context": to_jsonable(
+                action_context_provenance
+            ),
         }
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2, ensure_ascii=False)

@@ -357,30 +357,10 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertEqual(repeat["stats"]["n"], 3)
         self.assertEqual(single["install_verification"], {"ok": True})
 
-    def test_max_sfs_table_is_cached_per_final_eval_module_profile(self):
-        import Paean.blb_action_eval as mod
+    def test_final_eval_has_no_profile_only_max_sfs_loader(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
 
-        old_load_max_sfs = mod.load_max_sfs
-        calls = []
-        try:
-            def fake_load_max_sfs(profile):
-                calls.append(str(profile))
-                return {"profile": str(profile)}
-
-            mod.load_max_sfs = fake_load_max_sfs
-            runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
-
-            first = runner._load_max_sfs("mrpc")
-            second = runner._load_max_sfs("mrpc")
-            third = runner._load_max_sfs("rte")
-        finally:
-            mod.load_max_sfs = old_load_max_sfs
-
-        self.assertIs(first, second)
-        self.assertEqual(first, {"profile": "mrpc"})
-        self.assertEqual(third, {"profile": "rte"})
-        self.assertEqual(calls, ["mrpc", "rte"])
+        self.assertFalse(hasattr(BLBActionFinalEvaluationModule, "_load_max_sfs"))
 
     def test_resolve_base_action_accepts_numpy_arrays_without_truthiness(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
@@ -456,12 +436,10 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         }
 
         old_action_vector_to_cfgs = mod.action_vector_to_cfgs
-        old_load_max_sfs = mod.load_max_sfs
         old_apply_optimizer_outputs_to_cfgs = mod.apply_optimizer_outputs_to_cfgs
         old_avg_truncation_k_in_action = mod.avg_truncation_k_in_action
         try:
             mod.action_vector_to_cfgs = lambda **_kwargs: fake_decoded
-            mod.load_max_sfs = lambda _profile: {}
             mod.avg_truncation_k_in_action = lambda *_args, **_kwargs: 13.0
 
             def fake_apply_optimizer_outputs_to_cfgs(*, cfgs_dict, opt_outputs, **_kwargs):
@@ -530,10 +508,10 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
                 gelu=np.ones(1, dtype=int),
                 softmax=np.ones(1, dtype=int) * 2,
                 report_constraints={},
+                max_sfs={},
             )
         finally:
             mod.action_vector_to_cfgs = old_action_vector_to_cfgs
-            mod.load_max_sfs = old_load_max_sfs
             mod.apply_optimizer_outputs_to_cfgs = old_apply_optimizer_outputs_to_cfgs
             mod.avg_truncation_k_in_action = old_avg_truncation_k_in_action
 
@@ -638,6 +616,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
             gelu=np.ones(1, dtype=int),
             softmax=np.ones(1, dtype=int) * 2,
             report_constraints={},
+            max_sfs=load_max_sfs("mrpc"),
         )
 
         self.assertTrue(result["any_invalid"])

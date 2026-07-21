@@ -99,6 +99,7 @@ def load_action_grid_config(
         profile: str = "default",
         gelu_degree: object = 4,
         attn_degree: object = 4,
+        max_sfs: Any = None,
         _payload: Optional[Mapping[str, Any]] = None,
         ) -> ActionGridConfig:
     """Load an action-config JSON file. Accepts four schemas:
@@ -178,7 +179,9 @@ def load_action_grid_config(
         cfg_profile = str(payload.get("profile") or profile or "default")
         cfg_gelu = payload.get("gelu_degree", gelu_degree)
         cfg_attn = payload.get("attn_degree", attn_degree)
-        max_sfs = _load_max_sfs_cached(cfg_profile)
+        decode_max_sfs = (
+            max_sfs if max_sfs is not None else _load_max_sfs_cached(cfg_profile)
+        )
         slot_payload = dict(payload)
         if "base" not in slot_payload:
             for base_key in ("base_action_vec", "base_action"):
@@ -194,7 +197,7 @@ def load_action_grid_config(
             slot_payload.pop(stale_key, None)
         vec, coercion_notes = slots_payload_to_action_vec(
             slot_payload,
-            max_sfs=max_sfs,
+            max_sfs=decode_max_sfs,
             num_layers=int(num_layers),
             gelu_degree=cfg_gelu,
             attn_degree=cfg_attn,
@@ -241,6 +244,9 @@ def _build_batch_action_candidates(
         payload: Mapping[str, Any],
         num_layers: int,
         profile: str,
+        max_sfs: Any = None,
+        gelu_degree: object = 4,
+        attn_degree: object = 4,
         ) -> List[ActionCandidate]:
     entries = payload.get("candidates")
     if not isinstance(entries, list) or not entries:
@@ -270,6 +276,9 @@ def _build_batch_action_candidates(
             num_layers=num_layers,
             profile=profile,
             action_config_path=str(action_path),
+            max_sfs=max_sfs,
+            gelu_degree=gelu_degree,
+            attn_degree=attn_degree,
         )
         if len(nested) != 1:
             raise ValueError(
@@ -332,6 +341,9 @@ def build_action_candidates(
     fixed_specs: Sequence[str] = (),
     range_specs: Sequence[str] = (),
     action_config_path: str = "",
+    max_sfs: Any = None,
+    gelu_degree: object = 4,
+    attn_degree: object = 4,
 ) -> List[ActionCandidate]:
     num_layers = int(num_layers)
     if num_layers <= 0:
@@ -358,11 +370,17 @@ def build_action_candidates(
                 payload=payload,
                 num_layers=num_layers,
                 profile=profile,
+                max_sfs=max_sfs,
+                gelu_degree=gelu_degree,
+                attn_degree=attn_degree,
             )
         config = load_action_grid_config(
             action_config_path,
             num_layers_hint=num_layers,
             profile=profile,
+            gelu_degree=gelu_degree,
+            attn_degree=attn_degree,
+            max_sfs=max_sfs,
             _payload=payload,
         )
 
@@ -375,12 +393,12 @@ def build_action_candidates(
         base_action_vec = config.base_action_vec
     base = _normalize_base_action(base_action_vec, num_layers)
 
-    max_sfs = _load_max_sfs_cached(profile)
+    decode_max_sfs = max_sfs if max_sfs is not None else _load_max_sfs_cached(profile)
     for spec in fixed:
         selector, values = parse_action_spec(spec)
         if len(values) != 1:
             raise ValueError(f"fixed action spec must contain exactly one value: {spec!r}")
-        _set_selector_value(base, num_layers, max_sfs, selector, int(values[0]))
+        _set_selector_value(base, num_layers, decode_max_sfs, selector, int(values[0]))
 
     if not ranges:
         return [
@@ -404,7 +422,7 @@ def build_action_candidates(
         vec = base.copy()
         overrides: Dict[str, int] = {}
         for (selector, _values), value in zip(parsed_ranges, values):
-            _set_selector_value(vec, num_layers, max_sfs, selector, int(value))
+            _set_selector_value(vec, num_layers, decode_max_sfs, selector, int(value))
             overrides[_canonical_selector_name(selector)] = int(value)
         label = "ActionGrid_" + "_".join(f"{k}{v}" for k, v in overrides.items())
         if len(label) > 96:

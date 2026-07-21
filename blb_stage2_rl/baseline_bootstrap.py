@@ -28,6 +28,7 @@ RL 一侧逐层挑出每层对应的 entry（block3/block5 按 stage-1 degree �
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -671,6 +672,18 @@ class StaticSkeletonsBaseline:
     missing_block_layer: List[Tuple[int, int]] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class Stage2CalibratedActionContext:
+    """Exact Stage-2 baseline inputs shared by training and replay surfaces."""
+
+    baseline: StaticSkeletonsBaseline
+    baseline_action_vec: Any
+    max_sfs: Any
+    cost_stats: BaselineCostStats
+    diagnostics: Mapping[str, Any]
+    provenance: Mapping[str, Any]
+
+
 # ---------------------------------------------------------------------------
 # 主抽取函数
 # ---------------------------------------------------------------------------
@@ -1047,3 +1060,109 @@ def static_skeletons_baseline_to_action(
     )
 
     return action_vec, calibrated, cost_stats, diagnostics
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_calibrated_stage2_action_context(
+        *,
+        rescale_optimizer_root: str,
+        dataset: str,
+        num_layers: int,
+        gelu_per_layer: Sequence[int],
+        softmax_per_layer: Sequence[int],
+        snap_sf_to_noise_table: bool = False,
+        ) -> Stage2CalibratedActionContext:
+    """Load the one static-skeleton-calibrated action context for Stage-2.
+
+    Exact replay deliberately defaults to ``snap_sf_to_noise_table=False``,
+    matching the production Stage-2 runner. Callers must pass this context's
+    ``max_sfs`` through every action decode instead of reloading the generic
+    profile-only table.
+    """
+    layer_count = int(num_layers)
+    gelu = tuple(int(value) for value in gelu_per_layer)
+    softmax = tuple(int(value) for value in softmax_per_layer)
+    baseline = load_static_skeletons_baseline(
+        rescale_optimizer_root=str(rescale_optimizer_root),
+        dataset=str(dataset),
+        num_layers=layer_count,
+        gelu_per_layer=gelu,
+        softmax_per_layer=softmax,
+    )
+    action_vec, max_sfs, cost_stats, diagnostics = (
+        static_skeletons_baseline_to_action(
+            baseline,
+            snap_sf_to_noise_table=bool(snap_sf_to_noise_table),
+        )
+    )
+    archive_path = os.path.abspath(str(baseline.archive_path))
+    provenance = {
+        "schema_version": "stage2_calibrated_action_context_v1",
+        "dataset": str(dataset),
+        "num_layers": layer_count,
+        "gelu_per_layer": list(gelu),
+        "softmax_per_layer": list(softmax),
+        "rescale_optimizer_root": os.path.abspath(str(rescale_optimizer_root)),
+        "archive_path": archive_path,
+        "archive_sha256": _sha256_file(archive_path),
+        "snap_sf_to_noise_table": bool(snap_sf_to_noise_table),
+    }
+    return Stage2CalibratedActionContext(
+        baseline=baseline,
+        baseline_action_vec=action_vec,
+        max_sfs=max_sfs,
+        cost_stats=cost_stats,
+        diagnostics=diagnostics,
+        provenance=provenance,
+    )
+
+
+def validate_calibrated_stage2_action_context(
+        context: Stage2CalibratedActionContext,
+        *,
+        dataset: str,
+        num_layers: int,
+        gelu_per_layer: Sequence[int],
+        softmax_per_layer: Sequence[int],
+        snap_sf_to_noise_table: bool = False,
+        ) -> None:
+    """Reject a calibrated context that does not match the requested replay."""
+    provenance = dict(context.provenance)
+    expected = {
+        "schema_version": "stage2_calibrated_action_context_v1",
+        "dataset": str(dataset),
+        "num_layers": int(num_layers),
+        "gelu_per_layer": [int(value) for value in gelu_per_layer],
+        "softmax_per_layer": [int(value) for value in softmax_per_layer],
+        "snap_sf_to_noise_table": bool(snap_sf_to_noise_table),
+    }
+    mismatches = {
+        key: {"expected": value, "actual": provenance.get(key)}
+        for key, value in expected.items()
+        if provenance.get(key) != value
+    }
+    archive_path = os.path.abspath(str(provenance.get("archive_path") or ""))
+    if not archive_path or not os.path.isfile(archive_path):
+        mismatches["archive_path"] = {
+            "expected": "existing calibrated static-skeleton archive",
+            "actual": archive_path,
+        }
+    else:
+        current_sha256 = _sha256_file(archive_path)
+        if current_sha256 != provenance.get("archive_sha256"):
+            mismatches["archive_sha256"] = {
+                "expected": provenance.get("archive_sha256"),
+                "actual": current_sha256,
+            }
+    if mismatches:
+        raise ValueError(
+            "calibrated Stage-2 action context mismatch: "
+            + json.dumps(mismatches, sort_keys=True)
+        )

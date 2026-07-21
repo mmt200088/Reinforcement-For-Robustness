@@ -49,6 +49,23 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         self.assertNotIn('"action_ranges": list(self.action_ranges),', text)
         self.assertNotIn('"action_fixed": list(self.action_fixed),', text)
 
+    def test_final_eval_uses_one_calibrated_context_for_every_decode_surface(self):
+        text = source_text("Paean/blb_action_eval.py")
+
+        self.assertIn("load_calibrated_stage2_action_context", text)
+        self.assertNotIn("def _load_max_sfs(", text)
+        self.assertNotIn("cache[key] = load_max_sfs(key)", text)
+        self.assertIn("max_sfs=action_context.max_sfs", text)
+        self.assertIn("calibrated_action_context=action_context", text)
+
+    def test_glue_submission_builds_or_receives_calibrated_context(self):
+        text = source_text("generate_glue_submission.py")
+
+        self.assertIn("load_calibrated_stage2_action_context", text)
+        self.assertIn("calibrated_action_context=None", text)
+        self.assertNotIn("max_sfs = _load_max_sfs(str(profile))", text)
+        self.assertIn("max_sfs=action_context.max_sfs", text)
+
 
 if __name__ == "__main__":
     unittest.main()

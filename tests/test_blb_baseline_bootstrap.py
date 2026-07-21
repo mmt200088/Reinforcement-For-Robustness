@@ -1,7 +1,10 @@
+import hashlib
+import importlib.util
 import json
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 from blb_stage2_rl.baseline_bootstrap import (
     BaselineHandoverError,
@@ -19,6 +22,127 @@ from blb_stage2_rl.baseline_bootstrap import (
 
 
 class BLBBaselineBootstrapTests(unittest.TestCase):
+    def test_calibrated_action_context_wraps_static_baseline_with_provenance(self):
+        import blb_stage2_rl.baseline_bootstrap as bootstrap
+
+        self.assertTrue(
+            hasattr(bootstrap, "load_calibrated_stage2_action_context"),
+            "shared calibrated action-context loader is missing",
+        )
+        load_context = bootstrap.load_calibrated_stage2_action_context
+
+        with tempfile.TemporaryDirectory() as td:
+            archive = pathlib.Path(td) / "static_skeletons_mrpc.json"
+            archive.write_bytes(b'{"fixture":true}\n')
+            baseline = StaticSkeletonsBaseline(
+                dataset="mrpc",
+                num_layers=2,
+                gelu_per_layer=[4, 4],
+                softmax_per_layer=[6, 6],
+                archive_path=str(archive),
+            )
+            action_vec = object()
+            max_sfs = object()
+            cost_stats = object()
+            diagnostics = {"calibrated": True}
+
+            with mock.patch.object(
+                bootstrap,
+                "load_static_skeletons_baseline",
+                return_value=baseline,
+            ) as load_baseline, mock.patch.object(
+                bootstrap,
+                "static_skeletons_baseline_to_action",
+                return_value=(action_vec, max_sfs, cost_stats, diagnostics),
+            ) as convert:
+                context = load_context(
+                    rescale_optimizer_root="/repo/Rescale_optimizer",
+                    dataset="mrpc",
+                    num_layers=2,
+                    gelu_per_layer=[4, 4],
+                    softmax_per_layer=[6, 6],
+                    snap_sf_to_noise_table=False,
+                )
+            bootstrap.validate_calibrated_stage2_action_context(
+                context,
+                dataset="mrpc",
+                num_layers=2,
+                gelu_per_layer=[4, 4],
+                softmax_per_layer=[6, 6],
+                snap_sf_to_noise_table=False,
+            )
+            archive.write_bytes(b'{"fixture":false}\n')
+            with self.assertRaisesRegex(ValueError, "archive_sha256"):
+                bootstrap.validate_calibrated_stage2_action_context(
+                    context,
+                    dataset="mrpc",
+                    num_layers=2,
+                    gelu_per_layer=[4, 4],
+                    softmax_per_layer=[6, 6],
+                    snap_sf_to_noise_table=False,
+                )
+
+        load_baseline.assert_called_once_with(
+            rescale_optimizer_root="/repo/Rescale_optimizer",
+            dataset="mrpc",
+            num_layers=2,
+            gelu_per_layer=(4, 4),
+            softmax_per_layer=(6, 6),
+        )
+        convert.assert_called_once_with(
+            baseline,
+            snap_sf_to_noise_table=False,
+        )
+        self.assertIs(context.baseline, baseline)
+        self.assertIs(context.baseline_action_vec, action_vec)
+        self.assertIs(context.max_sfs, max_sfs)
+        self.assertIs(context.cost_stats, cost_stats)
+        self.assertIs(context.diagnostics, diagnostics)
+        self.assertEqual(context.provenance["dataset"], "mrpc")
+        self.assertEqual(context.provenance["gelu_per_layer"], [4, 4])
+        self.assertEqual(context.provenance["softmax_per_layer"], [6, 6])
+        self.assertEqual(
+            context.provenance["archive_sha256"],
+            hashlib.sha256(b'{"fixture":true}\n').hexdigest(),
+        )
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("torch") is not None,
+        "torch required for calibrated action decode",
+    )
+    def test_calibrated_action_context_matches_mrpc_block3_static_baseline(self):
+        from blb_stage2_rl.action_space import action_vector_to_cfgs
+        from blb_stage2_rl.baseline_bootstrap import (
+            load_calibrated_stage2_action_context,
+        )
+
+        num_layers = 12
+        gelu = [4] * num_layers
+        softmax = [6] * num_layers
+        context = load_calibrated_stage2_action_context(
+            rescale_optimizer_root="Rescale_optimizer",
+            dataset="mrpc",
+            num_layers=num_layers,
+            gelu_per_layer=gelu,
+            softmax_per_layer=softmax,
+            snap_sf_to_noise_table=False,
+        )
+        decoded = action_vector_to_cfgs(
+            action_vec=context.baseline_action_vec,
+            max_sfs=context.max_sfs,
+            num_layers=num_layers,
+            gelu_degree=gelu,
+            attn_degree=softmax,
+        )
+        cfg = decoded.block3_cfgs[0]
+
+        self.assertEqual(cfg.x_fresh.scaling_factor, 31)
+        self.assertEqual(cfg.inv_2n_encode.scaling_factor, 15)
+        self.assertEqual(
+            [entry.scaling_factor for entry in cfg.square_rescales],
+            [35] * 6,
+        )
+
     def _write_response(
             self,
             repo_root,

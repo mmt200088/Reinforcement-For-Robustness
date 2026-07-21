@@ -1426,6 +1426,7 @@ def _process_blb_task(
         max_length: int = 128,
         batch_size: int = 16,
         fusion_metadata=None,
+        max_sfs=None,
         ) -> None:
     """Mirror of ``process_task`` for BLB action vectors.
 
@@ -1443,7 +1444,11 @@ def _process_blb_task(
         ) from _TRANSFORMERS_IMPORT_ERROR
 
     from blb_rl_bridge import BLBNoiseRLBridge
-    from blb_stage2_rl.action_space import load_max_sfs as _load_max_sfs
+
+    if max_sfs is None:
+        raise ValueError(
+            "BLB GLUE submission requires the calibrated Stage-2 max_sfs table"
+        )
 
     print(f"\n{'=' * 60}")
     print(f"Task: {task_name.upper()} (BLB action path)")
@@ -1493,7 +1498,6 @@ def _process_blb_task(
     # the training terminal probe. The fusion path reuses the final-eval methods
     # (single source of truth) so the submitted config == the RL-selected config.
     # Non-fusion (fusion_metadata None) keeps the legacy index decode.
-    max_sfs = _load_max_sfs(str(profile))
     decoded = _decode_blb_action_for_glue(
         action_vec=np.asarray(action_vec, dtype=int),
         fusion_metadata=fusion_metadata,
@@ -1581,6 +1585,7 @@ def generate_blb_glue_submission(
         max_length: int = 128,
         batch_size: int = 16,
         log_fn=None,
+        calibrated_action_context=None,
         ) -> dict:
     """Generate a GLUE submission zip for a BLB Stage-2 action.
 
@@ -1627,12 +1632,63 @@ def generate_blb_glue_submission(
     # base+overrides, and flat action_vec schemas).
     from Paean.action_grid import load_action_grid_config
     num_layers_hint = int(payload.get("num_layers") or len(gelu_list))
+    from blb_stage2_rl.baseline_bootstrap import (
+        load_calibrated_stage2_action_context,
+        validate_calibrated_stage2_action_context,
+    )
+    action_context = calibrated_action_context
+    if action_context is None:
+        action_context = load_calibrated_stage2_action_context(
+            rescale_optimizer_root=os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "Rescale_optimizer",
+            ),
+            dataset=str(profile),
+            num_layers=num_layers_hint,
+            gelu_per_layer=gelu_list,
+            softmax_per_layer=softmax_list,
+            snap_sf_to_noise_table=False,
+        )
+    validate_calibrated_stage2_action_context(
+        action_context,
+        dataset=str(profile),
+        num_layers=num_layers_hint,
+        gelu_per_layer=gelu_list,
+        softmax_per_layer=softmax_list,
+        snap_sf_to_noise_table=False,
+    )
+    embedded_context = payload.get("calibrated_action_context")
+    if isinstance(embedded_context, dict):
+        comparable_keys = (
+            "schema_version",
+            "dataset",
+            "num_layers",
+            "gelu_per_layer",
+            "softmax_per_layer",
+            "archive_sha256",
+            "snap_sf_to_noise_table",
+        )
+        provenance = dict(action_context.provenance)
+        mismatches = {
+            key: {
+                "action_config": embedded_context.get(key),
+                "current_context": provenance.get(key),
+            }
+            for key in comparable_keys
+            if embedded_context.get(key) != provenance.get(key)
+        }
+        if mismatches:
+            raise ValueError(
+                "BLB action config calibrated context mismatch: "
+                + json.dumps(mismatches, sort_keys=True)
+            )
     grid_cfg = load_action_grid_config(
         action_config_path,
         num_layers_hint=num_layers_hint,
         profile=str(profile),
         gelu_degree=gelu_list,
         attn_degree=softmax_list,
+        max_sfs=action_context.max_sfs,
     )
     if grid_cfg.base_action_vec is None:
         raise ValueError(
@@ -1717,6 +1773,7 @@ def generate_blb_glue_submission(
             max_length=int(max_length),
             batch_size=int(batch_size),
             fusion_metadata=fusion_metadata,
+            max_sfs=action_context.max_sfs,
         )
     except Exception as exc:
         failures.append((blb_task, type(exc).__name__, str(exc)))
@@ -1778,6 +1835,7 @@ def generate_blb_glue_submission(
         "skipped": [{"task": name, "reason": reason} for name, reason in skips],
         "placeholder_files": list(sorted(placeholder_files or [])),
         "verify_ok": bool(ok),
+        "calibrated_action_context": dict(action_context.provenance),
     }
     return summary
 

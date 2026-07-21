@@ -31,7 +31,10 @@ class GlueBoostInstallTest(unittest.TestCase):
     def test_decode_helper_installs_boosted_block2_output(self):
         import numpy as np
 
-        from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
+        from blb_stage2_rl.action_space import make_all_max_action_vector
+        from blb_stage2_rl.baseline_bootstrap import (
+            load_calibrated_stage2_action_context,
+        )
         from blb_stage2_rl.fusion_count_map import FusionCountMap
         from blb_stage2_rl.fusion_fixed_action import build_fusion_fixed_config
         from generate_glue_submission import _decode_blb_action_for_glue
@@ -40,6 +43,14 @@ class GlueBoostInstallTest(unittest.TestCase):
         gelu = [4] * num_layers
         softmax = [6] * num_layers
         fusion_map = FusionCountMap.load("mrpc")
+        action_context = load_calibrated_stage2_action_context(
+            rescale_optimizer_root="Rescale_optimizer",
+            dataset="mrpc",
+            num_layers=num_layers,
+            gelu_per_layer=gelu,
+            softmax_per_layer=softmax,
+            snap_sf_to_noise_table=False,
+        )
 
         # Pick block2's boosted fusion option (option 1) and splice it into a
         # baseline action vector so the flat vec carries its (pre-boost) indices.
@@ -70,7 +81,7 @@ class GlueBoostInstallTest(unittest.TestCase):
             profile="mrpc",
             gelu_degrees=gelu,
             softmax_degrees=softmax,
-            max_sfs=load_max_sfs("mrpc"),
+            max_sfs=action_context.max_sfs,
         )
 
         # The installed block2 layer-1 cfg must carry a BOOSTED SF (above the grid
@@ -80,7 +91,7 @@ class GlueBoostInstallTest(unittest.TestCase):
 
         preboost = action_vector_to_cfgs(
             action_vec=np.asarray(action_vec, dtype=int),
-            max_sfs=load_max_sfs("mrpc"),
+            max_sfs=action_context.max_sfs,
             num_layers=num_layers,
             gelu_degree=np.asarray(gelu, dtype=int),
             attn_degree=np.asarray(softmax, dtype=int),
@@ -111,6 +122,13 @@ class GlueBoostInstallTest(unittest.TestCase):
         self.assertIsNone(
             getattr(decoded_block2.gamma_result_rescale, "scaling_factor", None),
             "GLUE decode did not preserve fused-away block2 gamma rescale",
+        )
+        block3 = decoded.block3_cfgs[0]
+        self.assertEqual(block3.x_fresh.scaling_factor, 31)
+        self.assertEqual(block3.inv_2n_encode.scaling_factor, 15)
+        self.assertEqual(
+            [entry.scaling_factor for entry in block3.square_rescales],
+            [35] * 6,
         )
 
 
