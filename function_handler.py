@@ -2307,8 +2307,8 @@ def _try_block5_fused_cuda(
     coefficient_rescales = tuple(
         getattr(cfg, "gelu_coeff_mul_rescales", ()) or ()
     )
-    negative_coefficients = tuple(coeff_dict.get(1, ()))
-    positive_coefficients = tuple(coeff_dict.get(0, ()))
+    negative_coefficients = tuple(coeff_dict[1])
+    positive_coefficients = tuple(coeff_dict[0])
     if (
             not _BLOCK5_FUSED_CUDA_ENABLED
             or int(getattr(cfg, "gelu_degree", 0)) != 4
