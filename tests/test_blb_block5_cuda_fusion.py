@@ -21,10 +21,10 @@ class Block5CudaFusionTest(unittest.TestCase):
         )
         x = torch.empty((2, 3, 17), device="cuda", dtype=torch.float32)
         try:
-            first = handler._get_block5_fused_cuda_noise_workspace(x, 21)
-            second = handler._get_block5_fused_cuda_noise_workspace(x, 21)
+            first = handler._get_block5_fused_cuda_noise_workspace(x, 7)
+            second = handler._get_block5_fused_cuda_noise_workspace(x, 7)
             self.assertEqual(first.data_ptr(), second.data_ptr())
-            self.assertEqual(tuple(second.shape), (21, *x.shape))
+            self.assertEqual(tuple(second.shape), (7, *x.shape))
         finally:
             handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
 
@@ -65,6 +65,7 @@ class Block5CudaFusionTest(unittest.TestCase):
                 ).reshape(shape)
                 for seed in (0, 987654):
                     handler.reseed_noise_rng_for_device(x.device, seed)
+                    handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
                     with mock.patch.object(
                         handler,
                         "_try_block5_fused_cuda",
@@ -97,6 +98,12 @@ class Block5CudaFusionTest(unittest.TestCase):
                         used_fast_path,
                         [True],
                         (power_sfs, coefficient_sfs, shape, seed),
+                    )
+                    self.assertEqual(
+                        [workspace.numel() for workspace in
+                         handler._BLOCK5_FUSED_CUDA_WORKSPACES.values()],
+                        [7 * x.numel()],
+                        ("workspace footprint", power_sfs, coefficient_sfs),
                     )
                     self.assertTrue(
                         torch.equal(actual, expected),
