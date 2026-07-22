@@ -8,6 +8,26 @@ import unittest
 
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
 class Block5CudaFusionTest(unittest.TestCase):
+    def test_noise_workspace_reuses_storage_on_the_same_cuda_stream(self):
+        import torch
+
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA unavailable")
+
+        import function_handler as handler
+
+        self.assertTrue(
+            hasattr(handler, "_get_block5_fused_cuda_noise_workspace")
+        )
+        x = torch.empty((2, 3, 17), device="cuda", dtype=torch.float32)
+        try:
+            first = handler._get_block5_fused_cuda_noise_workspace(x, 21)
+            second = handler._get_block5_fused_cuda_noise_workspace(x, 21)
+            self.assertEqual(first.data_ptr(), second.data_ptr())
+            self.assertEqual(tuple(second.shape), (21, *x.shape))
+        finally:
+            handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
+
     def test_degree4_cuda_fast_path_matches_eager_and_rng_state_bitwise(self):
         import torch
 
