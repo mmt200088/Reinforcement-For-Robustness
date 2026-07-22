@@ -2278,6 +2278,34 @@ _BLOCK5_FUSED_CUDA_ENABLED = str(
 ).strip().lower() not in {"0", "false", "no", "off"}
 _BLOCK5_FUSED_CUDA_IMPL = None
 _BLOCK5_FUSED_CUDA_RESOLVED = False
+_BLOCK5_FUSED_CUDA_WORKSPACES = {}
+
+
+def _get_block5_fused_cuda_noise_workspace(
+        x: Tensor,
+        point_count: int,
+        ) -> Tensor:
+    """Reuse noise storage for sequential Block5 calls on one thread/stream."""
+    count = int(point_count)
+    if count <= 0:
+        raise ValueError(f"point_count must be positive, got {count}")
+    stream = torch.cuda.current_stream(x.device)
+    key = (
+        int(_threading.get_ident()),
+        str(x.device),
+        int(stream.cuda_stream),
+        x.dtype,
+    )
+    required = count * int(x.numel())
+    workspace = _BLOCK5_FUSED_CUDA_WORKSPACES.get(key)
+    if workspace is None or int(workspace.numel()) < required:
+        workspace = torch.empty(
+            required,
+            device=x.device,
+            dtype=x.dtype,
+        )
+        _BLOCK5_FUSED_CUDA_WORKSPACES[key] = workspace
+    return workspace[:required].view(count, *x.shape)
 
 
 def _resolve_block5_fused_cuda_impl():
@@ -2366,10 +2394,9 @@ def _try_block5_fused_cuda(
         stds.append(math.sqrt(variance))
 
     try:
-        noise_slab = torch.empty(
-            (len(points), *x.shape),
-            device=x.device,
-            dtype=x.dtype,
+        noise_slab = _get_block5_fused_cuda_noise_workspace(
+            x,
+            len(points),
         )
     except torch.cuda.OutOfMemoryError:
         return None
