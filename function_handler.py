@@ -1485,6 +1485,76 @@ def make_block3_default_config(
     return cfg
 
 
+_BLOCK3_FUSED_CUDA_ENABLED = str(
+    _os.environ.get("BLB_STAGE2_BLOCK3_FUSED_CUDA", "1")
+).strip().lower() not in {"0", "false", "no", "off"}
+_BLOCK3_FUSED_CUDA_IMPL = None
+_BLOCK3_FUSED_CUDA_RESOLVED = False
+
+
+def _resolve_block3_fused_cuda_impl():
+    global _BLOCK3_FUSED_CUDA_IMPL, _BLOCK3_FUSED_CUDA_RESOLVED
+    if not _BLOCK3_FUSED_CUDA_RESOLVED:
+        _BLOCK3_FUSED_CUDA_RESOLVED = True
+        try:
+            from blb_stage2_rl.block3_fused_cuda import (
+                block3_degree4_cuda,
+                is_available,
+            )
+
+            if is_available():
+                _BLOCK3_FUSED_CUDA_IMPL = block3_degree4_cuda
+        except (ImportError, ModuleNotFoundError):
+            _BLOCK3_FUSED_CUDA_IMPL = None
+    return _BLOCK3_FUSED_CUDA_IMPL
+
+
+def _try_block3_fused_cuda(x: Tensor, cfg: Block3NoiseConfig) -> Optional[Tensor]:
+    """Run the exact degree-4 CUDA specialization, or return ``None``."""
+    square_rescales = tuple(getattr(cfg, "square_rescales", ()) or ())
+    if (
+            not _BLOCK3_FUSED_CUDA_ENABLED
+            or int(getattr(cfg, "degree", 0)) != 4
+            or getattr(cfg, "x_inv_2n_result_rescale", None) is not None
+            or len(square_rescales) != 4
+            or any(point is None for point in square_rescales)
+            or not x.is_cuda
+            or x.dtype != torch.float32
+            or x.requires_grad
+            or not x.is_contiguous()
+    ):
+        return None
+
+    implementation = _resolve_block3_fused_cuda_impl()
+    if implementation is None:
+        return None
+
+    points = (cfg.x_fresh, cfg.inv_2n_encode, *square_rescales)
+    stds = []
+    for point in points:
+        variance = get_input_noise_variance_by_N(
+            scaling_factor=int(point.scaling_factor),
+            distribution=str(point.distribution).lower(),
+            N=int(point.N),
+        )
+        if variance <= 0.0:
+            return None
+        stds.append(math.sqrt(variance))
+
+    noise_slab = torch.empty(
+        (len(points), *x.shape),
+        device=x.device,
+        dtype=x.dtype,
+    )
+    generator = _get_noise_generator(x.device)
+    noises = []
+    for index, std in enumerate(stds):
+        noise = noise_slab[index]
+        noise.normal_(0.0, float(std), generator=generator)
+        noises.append(noise)
+    return implementation(x, noises)
+
+
 def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
     """构造 BLB Block 3 噪声版的 ``approximation_exponential``。
 
@@ -1501,6 +1571,9 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
     sq_rescales = cfg.square_rescales  # tuple len == degree
 
     def block3_approx_exp(x: Tensor) -> Tensor:
+        fused = _try_block3_fused_cuda(x, cfg)
+        if fused is not None:
+            return _apply_configured_truncation(fused, cfg)
         # 1. fresh on softmax 输入 x
         x = x + _sample_gaussian_for_point(x, cfg.x_fresh)
         # 2. encode on 1/2^n（CKKS smulcp 的 plaintext-side 噪声；按 1/D / γ 同方式 per-slot）

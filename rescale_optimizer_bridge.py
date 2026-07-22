@@ -225,6 +225,21 @@ _BASELINE_ARCHIVE_CACHE: Dict[
 ] = {}
 
 
+def _clone_optimizer_payload(value: Any) -> Any:
+    """Clone JSON-like optimizer output without generic deepcopy bookkeeping."""
+    if isinstance(value, dict):
+        return {key: _clone_optimizer_payload(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clone_optimizer_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_clone_optimizer_payload(item) for item in value)
+    if isinstance(value, set):
+        return {_clone_optimizer_payload(item) for item in value}
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return copy.deepcopy(value)
+
+
 def _clone_baseline_archive(
         cached: Mapping[str, Tuple[Tuple[int, ...], Tuple[int, ...], Tuple[int, ...]]],
 ) -> Dict[str, Tuple[List[int], List[int], List[int]]]:
@@ -1144,7 +1159,7 @@ class RescaleOptimizerBridge:
             self.cache_hits += 1
             cached = self._eval_cache.pop(cache_key)
             self._eval_cache[cache_key] = cached
-            raw = copy.deepcopy(cached)
+            raw = _clone_optimizer_payload(cached)
             raw["_optimizer_cache_hit"] = True
         else:
             self.cache_misses += 1
@@ -1156,7 +1171,7 @@ class RescaleOptimizerBridge:
                 delta_overrides=deltas,
             )
             if self.cache_max_entries > 0 and isinstance(raw, dict):
-                self._eval_cache[cache_key] = copy.deepcopy(raw)
+                self._eval_cache[cache_key] = _clone_optimizer_payload(raw)
                 while len(self._eval_cache) > self.cache_max_entries:
                     self._eval_cache.popitem(last=False)
             if isinstance(raw, dict):

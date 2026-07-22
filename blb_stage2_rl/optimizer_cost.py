@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from json_utils import stable_json_hash
+from json_utils import bounded_stable_json_hash
 
 from rescale_optimizer_bridge import (
     _strip_layer_suffix,
@@ -138,7 +138,7 @@ def materialized_config_fingerprint(
             if isinstance(layer_cfgs, Mapping)
         },
     }
-    return stable_json_hash(canonical)
+    return bounded_stable_json_hash(canonical)
 
 
 def _override_entry_dict(entry: Any) -> Dict[str, Any]:

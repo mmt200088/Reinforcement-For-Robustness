@@ -296,7 +296,6 @@ def probe_batch_to_model_kwargs(batch: Any) -> dict:
     kwargs = {
         "input_ids": batch.input_ids,
         "attention_mask": batch.attention_mask,
-        "labels": batch.labels,
     }
     token_type_ids = getattr(batch, "token_type_ids", None)
     if token_type_ids is not None:

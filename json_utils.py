@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, is_dataclass
+from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -93,11 +93,14 @@ def to_jsonable(
             for v in value
         ]
     if is_dataclass(value) and not isinstance(value, type):
-        return to_jsonable(
-            asdict(value),
-            stringify_unknown=stringify_unknown,
-            preserve_native=preserve_native,
-        )
+        return {
+            item.name: to_jsonable(
+                getattr(value, item.name),
+                stringify_unknown=stringify_unknown,
+                preserve_native=preserve_native,
+            )
+            for item in fields(value)
+        }
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, np.ndarray):
@@ -139,6 +142,11 @@ def stable_json_hash(value: Any) -> str:
     for chunk in _STABLE_JSON_ENCODER.iterencode(to_jsonable(value, preserve_native=True)):
         h.update(chunk.encode("utf-8"))
     return h.hexdigest()
+
+
+def bounded_stable_json_hash(value: Any) -> str:
+    """Hash a known-small payload without per-token ``sha256.update`` calls."""
+    return hashlib.sha256(stable_json_key(value).encode("utf-8")).hexdigest()
 
 
 def write_json_file(
