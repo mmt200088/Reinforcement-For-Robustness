@@ -2394,21 +2394,21 @@ def _try_block5_fused_cuda(
         stds.append(math.sqrt(variance))
 
     try:
-        noise_slab = _get_block5_fused_cuda_noise_workspace(
+        workspace = _get_block5_fused_cuda_noise_workspace(
             x,
-            len(points),
+            7,
         )
     except torch.cuda.OutOfMemoryError:
         return None
     generator = _get_noise_generator(x.device)
-    for index, std in enumerate(stds):
-        noise_slab[index].normal_(0.0, float(std), generator=generator)
     return implementation(
         x,
-        noise_slab,
+        workspace,
         indices,
+        stds,
         negative_coefficients,
         positive_coefficients,
+        generator,
     )
 
 

@@ -39,193 +39,94 @@ if triton is not None:
 
 
     @triton.jit
-    def _load_noise(noise_ptr, offsets, mask, numel, index: tl.constexpr):
-        return tl.load(noise_ptr + index * numel + offsets, mask=mask)
-
-
-    @triton.jit
-    def _block5_degree4_kernel(
-            x_ptr,
+    def _power_kernel(
+            left_ptr,
+            right_ptr,
             noise_ptr,
             out_ptr,
             numel,
-            neg_c0,
-            neg_c1,
-            neg_c2,
-            neg_c3,
-            neg_c4,
-            pos_c0,
-            pos_c1,
-            pos_c2,
-            pos_c3,
-            pos_c4,
-            POWER2_IDX: tl.constexpr,
-            POWER3_IDX: tl.constexpr,
-            POWER4_IDX: tl.constexpr,
-            NEG_C0_IDX: tl.constexpr,
-            NEG_C1_IDX: tl.constexpr,
-            NEG_C2_IDX: tl.constexpr,
-            NEG_C3_IDX: tl.constexpr,
-            NEG_C4_IDX: tl.constexpr,
-            NEG_R1_IDX: tl.constexpr,
-            NEG_R2_IDX: tl.constexpr,
-            NEG_R3_IDX: tl.constexpr,
-            NEG_R4_IDX: tl.constexpr,
-            POS_C0_IDX: tl.constexpr,
-            POS_C1_IDX: tl.constexpr,
-            POS_C2_IDX: tl.constexpr,
-            POS_C3_IDX: tl.constexpr,
-            POS_C4_IDX: tl.constexpr,
-            POS_R1_IDX: tl.constexpr,
-            POS_R2_IDX: tl.constexpr,
-            POS_R3_IDX: tl.constexpr,
-            POS_R4_IDX: tl.constexpr,
+            HAS_NOISE: tl.constexpr,
+            BLOCK_SIZE: tl.constexpr,
+            ):
+        offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < numel
+        value = _mul_rn_f32(
+            tl.load(left_ptr + offsets, mask=mask),
+            tl.load(right_ptr + offsets, mask=mask),
+        )
+        if HAS_NOISE:
+            value = _add_rn_f32(
+                value,
+                tl.load(noise_ptr + offsets, mask=mask),
+            )
+        tl.store(out_ptr + offsets, value, mask=mask)
+
+
+    @triton.jit
+    def _initialize_piece_kernel(
+            noise_ptr,
+            out_ptr,
+            numel,
+            coefficient,
+            BLOCK_SIZE: tl.constexpr,
+            ):
+        offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < numel
+        value = _add_rn_f32(
+            tl.load(noise_ptr + offsets, mask=mask),
+            coefficient,
+        )
+        tl.store(out_ptr + offsets, value, mask=mask)
+
+
+    @triton.jit
+    def _accumulate_piece_kernel(
+            power_ptr,
+            coefficient_noise_ptr,
+            rescale_noise_ptr,
+            accumulator_ptr,
+            numel,
+            coefficient,
+            HAS_RESCALE_NOISE: tl.constexpr,
+            BLOCK_SIZE: tl.constexpr,
+            ):
+        offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < numel
+        noisy_coefficient = _add_rn_f32(
+            tl.load(coefficient_noise_ptr + offsets, mask=mask),
+            coefficient,
+        )
+        term = _mul_rn_f32(
+            tl.load(power_ptr + offsets, mask=mask),
+            noisy_coefficient,
+        )
+        if HAS_RESCALE_NOISE:
+            term = _add_rn_f32(
+                term,
+                tl.load(rescale_noise_ptr + offsets, mask=mask),
+            )
+        result = _add_rn_f32(
+            tl.load(accumulator_ptr + offsets, mask=mask),
+            term,
+        )
+        tl.store(accumulator_ptr + offsets, result, mask=mask)
+
+
+    @triton.jit
+    def _select_piece_kernel(
+            x_ptr,
+            negative_ptr,
+            positive_ptr,
+            out_ptr,
+            numel,
             BLOCK_SIZE: tl.constexpr,
             ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < numel
         x = tl.load(x_ptr + offsets, mask=mask)
-
-        x2 = _mul_rn_f32(x, x)
-        if POWER2_IDX >= 0:
-            x2 = _add_rn_f32(
-                x2,
-                _load_noise(noise_ptr, offsets, mask, numel, POWER2_IDX),
-            )
-        x3 = _mul_rn_f32(x2, x)
-        if POWER3_IDX >= 0:
-            x3 = _add_rn_f32(
-                x3,
-                _load_noise(noise_ptr, offsets, mask, numel, POWER3_IDX),
-            )
-        x4 = _mul_rn_f32(x2, x2)
-        if POWER4_IDX >= 0:
-            x4 = _add_rn_f32(
-                x4,
-                _load_noise(noise_ptr, offsets, mask, numel, POWER4_IDX),
-            )
-
-        y_neg = _add_rn_f32(
-            _load_noise(noise_ptr, offsets, mask, numel, NEG_C0_IDX),
-            neg_c0,
-        )
-        neg_term1 = _mul_rn_f32(
-            x,
-            _add_rn_f32(
-                _load_noise(noise_ptr, offsets, mask, numel, NEG_C1_IDX),
-                neg_c1,
-            ),
-        )
-        if NEG_R1_IDX >= 0:
-            neg_term1 = _add_rn_f32(
-                neg_term1,
-                _load_noise(noise_ptr, offsets, mask, numel, NEG_R1_IDX),
-            )
-        y_neg = _add_rn_f32(y_neg, neg_term1)
-
-        neg_term2 = _mul_rn_f32(
-            x2,
-            _add_rn_f32(
-                _load_noise(noise_ptr, offsets, mask, numel, NEG_C2_IDX),
-                neg_c2,
-            ),
-        )
-        if NEG_R2_IDX >= 0:
-            neg_term2 = _add_rn_f32(
-                neg_term2,
-                _load_noise(noise_ptr, offsets, mask, numel, NEG_R2_IDX),
-            )
-        y_neg = _add_rn_f32(y_neg, neg_term2)
-
-        neg_term3 = _mul_rn_f32(
-            x3,
-            _add_rn_f32(
-                _load_noise(noise_ptr, offsets, mask, numel, NEG_C3_IDX),
-                neg_c3,
-            ),
-        )
-        if NEG_R3_IDX >= 0:
-            neg_term3 = _add_rn_f32(
-                neg_term3,
-                _load_noise(noise_ptr, offsets, mask, numel, NEG_R3_IDX),
-            )
-        y_neg = _add_rn_f32(y_neg, neg_term3)
-
-        neg_term4 = _mul_rn_f32(
-            x4,
-            _add_rn_f32(
-                _load_noise(noise_ptr, offsets, mask, numel, NEG_C4_IDX),
-                neg_c4,
-            ),
-        )
-        if NEG_R4_IDX >= 0:
-            neg_term4 = _add_rn_f32(
-                neg_term4,
-                _load_noise(noise_ptr, offsets, mask, numel, NEG_R4_IDX),
-            )
-        y_neg = _add_rn_f32(y_neg, neg_term4)
-
-        y_pos = _add_rn_f32(
-            _load_noise(noise_ptr, offsets, mask, numel, POS_C0_IDX),
-            pos_c0,
-        )
-        pos_term1 = _mul_rn_f32(
-            x,
-            _add_rn_f32(
-                _load_noise(noise_ptr, offsets, mask, numel, POS_C1_IDX),
-                pos_c1,
-            ),
-        )
-        if POS_R1_IDX >= 0:
-            pos_term1 = _add_rn_f32(
-                pos_term1,
-                _load_noise(noise_ptr, offsets, mask, numel, POS_R1_IDX),
-            )
-        y_pos = _add_rn_f32(y_pos, pos_term1)
-
-        pos_term2 = _mul_rn_f32(
-            x2,
-            _add_rn_f32(
-                _load_noise(noise_ptr, offsets, mask, numel, POS_C2_IDX),
-                pos_c2,
-            ),
-        )
-        if POS_R2_IDX >= 0:
-            pos_term2 = _add_rn_f32(
-                pos_term2,
-                _load_noise(noise_ptr, offsets, mask, numel, POS_R2_IDX),
-            )
-        y_pos = _add_rn_f32(y_pos, pos_term2)
-
-        pos_term3 = _mul_rn_f32(
-            x3,
-            _add_rn_f32(
-                _load_noise(noise_ptr, offsets, mask, numel, POS_C3_IDX),
-                pos_c3,
-            ),
-        )
-        if POS_R3_IDX >= 0:
-            pos_term3 = _add_rn_f32(
-                pos_term3,
-                _load_noise(noise_ptr, offsets, mask, numel, POS_R3_IDX),
-            )
-        y_pos = _add_rn_f32(y_pos, pos_term3)
-
-        pos_term4 = _mul_rn_f32(
-            x4,
-            _add_rn_f32(
-                _load_noise(noise_ptr, offsets, mask, numel, POS_C4_IDX),
-                pos_c4,
-            ),
-        )
-        if POS_R4_IDX >= 0:
-            pos_term4 = _add_rn_f32(
-                pos_term4,
-                _load_noise(noise_ptr, offsets, mask, numel, POS_R4_IDX),
-            )
-        y_pos = _add_rn_f32(y_pos, pos_term4)
-
-        out = tl.where(x < 0.0, y_neg, y_pos)
+        negative = tl.load(negative_ptr + offsets, mask=mask)
+        positive = tl.load(positive_ptr + offsets, mask=mask)
+        out = tl.where(x < 0.0, negative, positive)
         out = tl.where(x >= -2.7, out, 0.0)
         out = tl.where(x > 2.7, x, out)
         tl.store(out_ptr + offsets, out, mask=mask)
@@ -237,52 +138,102 @@ def is_available() -> bool:
 
 def block5_degree4_cuda(
         x: torch.Tensor,
-        noise_slab: torch.Tensor,
+        workspace: torch.Tensor,
         noise_indices: Sequence[int],
+        noise_stds: Sequence[float],
         negative_coefficients: Sequence[float],
         positive_coefficients: Sequence[float],
+        generator: torch.Generator,
         ) -> torch.Tensor:
-    """Apply exact eager-order degree-4 GELU arithmetic to sampled noises."""
+    """Run eager-order noise sampling with staged exact-FP32 arithmetic."""
     if triton is None:
         raise RuntimeError("Triton is unavailable")
     if len(noise_indices) != 21:
         raise ValueError(f"expected 21 noise indices, got {len(noise_indices)}")
     if len(negative_coefficients) != 5 or len(positive_coefficients) != 5:
         raise ValueError("degree-4 GELU requires five coefficients per piece")
+    if workspace.dim() != x.dim() + 1 or tuple(workspace.shape[1:]) != tuple(x.shape):
+        raise ValueError("workspace trailing dimensions must match x")
+    if int(workspace.shape[0]) < 7:
+        raise ValueError("degree-4 GELU requires seven workspace rows")
 
-    out = torch.empty_like(x)
-    numel = int(x.numel())
     indices = tuple(int(value) for value in noise_indices)
+    stds = tuple(float(value) for value in noise_stds)
     negative = tuple(float(value) for value in negative_coefficients)
     positive = tuple(float(value) for value in positive_coefficients)
-    _block5_degree4_kernel[(triton.cdiv(numel, 256),)](
+    for index in indices:
+        if index >= len(stds):
+            raise ValueError(f"noise index {index} exceeds {len(stds)} stds")
+
+    noise0, noise1 = workspace[0], workspace[1]
+    powers = (None, x, workspace[2], workspace[3], workspace[4])
+    negative_out, positive_out = workspace[5], workspace[6]
+    numel = int(x.numel())
+    grid = (triton.cdiv(numel, 256),)
+
+    def sample(slot: int, target: torch.Tensor) -> bool:
+        index = indices[slot]
+        if index < 0:
+            return False
+        target.normal_(0.0, stds[index], generator=generator)
+        return True
+
+    for slot, left, right, out in (
+            (0, x, x, powers[2]),
+            (1, powers[2], x, powers[3]),
+            (2, powers[2], powers[2], powers[4]),
+            ):
+        has_noise = sample(slot, noise0)
+        _power_kernel[grid](
+            left,
+            right,
+            noise0,
+            out,
+            numel,
+            HAS_NOISE=has_noise,
+            BLOCK_SIZE=256,
+        )
+
+    def compute_piece(
+            coefficients: Sequence[float],
+            coefficient_slot: int,
+            rescale_slot: int,
+            accumulator: torch.Tensor,
+            ) -> None:
+        if not sample(coefficient_slot, noise0):
+            raise RuntimeError("coefficient encode noise is required")
+        _initialize_piece_kernel[grid](
+            noise0,
+            accumulator,
+            numel,
+            coefficients[0],
+            BLOCK_SIZE=256,
+        )
+        for degree_index in range(1, 5):
+            if not sample(coefficient_slot + degree_index, noise0):
+                raise RuntimeError("coefficient encode noise is required")
+            has_rescale = sample(rescale_slot + degree_index - 1, noise1)
+            _accumulate_piece_kernel[grid](
+                powers[degree_index],
+                noise0,
+                noise1,
+                accumulator,
+                numel,
+                coefficients[degree_index],
+                HAS_RESCALE_NOISE=has_rescale,
+                BLOCK_SIZE=256,
+            )
+
+    compute_piece(negative, 3, 8, negative_out)
+    compute_piece(positive, 12, 17, positive_out)
+
+    out = torch.empty_like(x)
+    _select_piece_kernel[grid](
         x,
-        noise_slab,
+        negative_out,
+        positive_out,
         out,
         numel,
-        *negative,
-        *positive,
-        POWER2_IDX=indices[0],
-        POWER3_IDX=indices[1],
-        POWER4_IDX=indices[2],
-        NEG_C0_IDX=indices[3],
-        NEG_C1_IDX=indices[4],
-        NEG_C2_IDX=indices[5],
-        NEG_C3_IDX=indices[6],
-        NEG_C4_IDX=indices[7],
-        NEG_R1_IDX=indices[8],
-        NEG_R2_IDX=indices[9],
-        NEG_R3_IDX=indices[10],
-        NEG_R4_IDX=indices[11],
-        POS_C0_IDX=indices[12],
-        POS_C1_IDX=indices[13],
-        POS_C2_IDX=indices[14],
-        POS_C3_IDX=indices[15],
-        POS_C4_IDX=indices[16],
-        POS_R1_IDX=indices[17],
-        POS_R2_IDX=indices[18],
-        POS_R3_IDX=indices[19],
-        POS_R4_IDX=indices[20],
         BLOCK_SIZE=256,
     )
     return out
