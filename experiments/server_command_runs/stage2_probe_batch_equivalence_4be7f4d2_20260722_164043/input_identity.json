@@ -1,0 +1,68 @@
+{
+  "rows": [
+    {
+      "batch_shapes": [
+        [
+          64,
+          128
+        ],
+        [
+          64,
+          128
+        ],
+        [
+          64,
+          128
+        ],
+        [
+          64,
+          128
+        ]
+      ],
+      "batch_size": 64,
+      "canonical_input_sha256": "fdb3e8e3f4b4bd7ba649f647dd2837ea16e578afc65d1bff0b3079310b7eb2e1",
+      "field_sha256": {
+        "attention_mask": "a64fdef9fb0a7157884fda07c27b44e163198a8d96d2d4daf5974ba8ecb385a9",
+        "input_ids": "95dc9edbd1456f1532d1b26543d3ff8b16e3b4df1a27b5ac756620b011aa6325",
+        "labels": "5348ea88639b0a785bcaab0ccdf0f3a1b277144fcddd59b8ba554d83b63a84f1",
+        "token_type_ids": "bc60e1f24b08001b6dabc24c01983bcdb1a62dfb73dd465fe226bde658a7d543"
+      }
+    },
+    {
+      "batch_shapes": [
+        [
+          128,
+          128
+        ],
+        [
+          128,
+          128
+        ]
+      ],
+      "batch_size": 128,
+      "canonical_input_sha256": "fdb3e8e3f4b4bd7ba649f647dd2837ea16e578afc65d1bff0b3079310b7eb2e1",
+      "field_sha256": {
+        "attention_mask": "a64fdef9fb0a7157884fda07c27b44e163198a8d96d2d4daf5974ba8ecb385a9",
+        "input_ids": "95dc9edbd1456f1532d1b26543d3ff8b16e3b4df1a27b5ac756620b011aa6325",
+        "labels": "5348ea88639b0a785bcaab0ccdf0f3a1b277144fcddd59b8ba554d83b63a84f1",
+        "token_type_ids": "bc60e1f24b08001b6dabc24c01983bcdb1a62dfb73dd465fe226bde658a7d543"
+      }
+    },
+    {
+      "batch_shapes": [
+        [
+          256,
+          128
+        ]
+      ],
+      "batch_size": 256,
+      "canonical_input_sha256": "fdb3e8e3f4b4bd7ba649f647dd2837ea16e578afc65d1bff0b3079310b7eb2e1",
+      "field_sha256": {
+        "attention_mask": "a64fdef9fb0a7157884fda07c27b44e163198a8d96d2d4daf5974ba8ecb385a9",
+        "input_ids": "95dc9edbd1456f1532d1b26543d3ff8b16e3b4df1a27b5ac756620b011aa6325",
+        "labels": "5348ea88639b0a785bcaab0ccdf0f3a1b277144fcddd59b8ba554d83b63a84f1",
+        "token_type_ids": "bc60e1f24b08001b6dabc24c01983bcdb1a62dfb73dd465fe226bde658a7d543"
+      }
+    }
+  ]
+}

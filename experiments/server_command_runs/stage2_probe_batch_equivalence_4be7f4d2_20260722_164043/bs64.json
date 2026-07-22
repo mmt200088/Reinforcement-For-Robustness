@@ -1,0 +1,48 @@
+{
+  "action_episode": 67919,
+  "allocated_before_bytes": 1895160832,
+  "batch_size": 64,
+  "logits_sha256": "c7446af6ab24cc4120fbd40ecb764a001737c3b02de754710855476dfad835cf",
+  "logits_shape": [
+    256,
+    2
+  ],
+  "median_s": 0.9374629219528288,
+  "metrics": [
+    0.3272819072008133,
+    0.8671875,
+    0.8634599142411643
+  ],
+  "next_rng_sha256": "d2940fa382043b4edf9bfb6fd7a093d650ff8b6b5bb938a593b033f657705e96",
+  "peak_allocated_bytes": 2448908800,
+  "probe_batch_shapes": [
+    [
+      64,
+      128
+    ],
+    [
+      64,
+      128
+    ],
+    [
+      64,
+      128
+    ],
+    [
+      64,
+      128
+    ]
+  ],
+  "probe_batches": 4,
+  "probe_examples": 256,
+  "probe_inputs_partitioned_sha256": "7845105cd4cf3e10f75afe984fe78c69e15df4302289ae61676a29277c37cee2",
+  "rounds_s": [
+    1.0589976091869175,
+    0.9374629219528288,
+    0.8672257799189538,
+    1.1315802501048893,
+    0.8743939080741256
+  ],
+  "source_commit": "4be7f4d2b373f0f10314bd9d5a500027e1cea479",
+  "warmup_s": 1.2844979870133102
+}

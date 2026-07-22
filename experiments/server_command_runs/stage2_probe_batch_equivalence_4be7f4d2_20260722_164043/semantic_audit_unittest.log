@@ -1,0 +1,23 @@
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/usr/local/lib/python3.11/dist-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+../usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmp_1tt327j/points/stage2/bert-base/mrpc/backfill/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmp_1tt327j/progress/diagnostics/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpljs2zv87/points/stage2/bert-base/mrpc/reconcile/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpqp_edujs/points/stage2/bert-base/mrpc/conflict/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+........................................................................................................................................
+----------------------------------------------------------------------
+Ran 140 tests in 2.193s
+
+OK

@@ -1,0 +1,77 @@
+{
+  "action_episode": 67919,
+  "baseline_batch_size": 64,
+  "concurrent_training_pid": 61069,
+  "concurrent_training_source_commit": "97079f6e4bf5cc2ece62b9d7fcb371b3da7168a3",
+  "probe_examples": 256,
+  "rows": [
+    {
+      "batch_size": 64,
+      "logits_bitwise_equal_to_bs64": true,
+      "logits_differing_elements": 0,
+      "logits_max_abs_difference": 0.0,
+      "logits_sha256": "c7446af6ab24cc4120fbd40ecb764a001737c3b02de754710855476dfad835cf",
+      "median_s": 0.9374629219528288,
+      "metrics": [
+        0.3272819072008133,
+        0.8671875,
+        0.8634599142411643
+      ],
+      "metrics_exact_equal_to_bs64": true,
+      "peak_allocated_bytes": 2448908800,
+      "post_probe_rng_equal_to_bs64": true,
+      "post_probe_rng_sha256": "d2940fa382043b4edf9bfb6fd7a093d650ff8b6b5bb938a593b033f657705e96",
+      "predictions_differing": 0,
+      "probe_batches": 4,
+      "relative_throughput_vs_bs64": 1.0
+    },
+    {
+      "batch_size": 128,
+      "logits_bitwise_equal_to_bs64": false,
+      "logits_differing_elements": 512,
+      "logits_max_abs_difference": 1.3343255519866943,
+      "logits_sha256": "3c4cc6e086224ebdd9bcdb80e1db4a7c698de65647ea80b176652210cb7b144f",
+      "median_s": 1.0231614760123193,
+      "metrics": [
+        0.33116061985492706,
+        0.87109375,
+        0.8677785616229408
+      ],
+      "metrics_exact_equal_to_bs64": false,
+      "peak_allocated_bytes": 4009287680,
+      "post_probe_rng_equal_to_bs64": false,
+      "post_probe_rng_sha256": "9d3a5e67a3faaf115486c1ab40c38f09fc1dafa374904ee0715a503b0c558c80",
+      "predictions_differing": 9,
+      "probe_batches": 2,
+      "relative_throughput_vs_bs64": 0.9162414183208959
+    },
+    {
+      "batch_size": 256,
+      "logits_bitwise_equal_to_bs64": false,
+      "logits_differing_elements": 512,
+      "logits_max_abs_difference": 1.274916648864746,
+      "logits_sha256": "1ddf51b310d3bee59c5f4e6c3d2c8aedf79255f8686e4cc8e34b4fa9a6684d5c",
+      "median_s": 1.061993229901418,
+      "metrics": [
+        0.31842100620269775,
+        0.875,
+        0.8708829253686653
+      ],
+      "metrics_exact_equal_to_bs64": false,
+      "peak_allocated_bytes": 7130045440,
+      "post_probe_rng_equal_to_bs64": false,
+      "post_probe_rng_sha256": "b06dfd2c2dd76878002c6257bb32400617d6921acfc16b0daedefbfd6ce5aa0d",
+      "predictions_differing": 6,
+      "probe_batches": 1,
+      "relative_throughput_vs_bs64": 0.8827390755022524
+    }
+  ],
+  "schema": "stage2_probe_batch_size_equivalence_v1",
+  "source_commit": "4be7f4d2b373f0f10314bd9d5a500027e1cea479",
+  "verdict": {
+    "adopt_larger_batch": false,
+    "larger_batch_is_faster_in_median": false,
+    "larger_batch_preserves_exact_results": false,
+    "reason": "batch partition changes layer-wise noise assignment and RNG consumption; observed metrics/logits/RNG differ, while median runtime and memory also regress"
+  }
+}

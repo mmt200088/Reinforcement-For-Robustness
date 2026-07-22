@@ -1,0 +1,7 @@
+{
+  "fast_path_hit_all": true,
+  "optional_rescale_patterns_checked": 128,
+  "output_bitwise_equal_all": true,
+  "post_call_rng_equal_all": true,
+  "source_commit": "4be7f4d2b373f0f10314bd9d5a500027e1cea479"
+}
