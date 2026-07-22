@@ -8,6 +8,26 @@ import unittest
 
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
 class Block3CudaFusionTest(unittest.TestCase):
+    def test_noise_workspace_reuses_storage_on_the_same_cuda_stream(self):
+        import torch
+
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA unavailable")
+
+        import function_handler as handler
+
+        self.assertTrue(
+            hasattr(handler, "_get_block3_fused_cuda_noise_workspace")
+        )
+        x = torch.empty((1, 2, 5, 7), device="cuda", dtype=torch.float32)
+        try:
+            first = handler._get_block3_fused_cuda_noise_workspace(x, 6)
+            second = handler._get_block3_fused_cuda_noise_workspace(x, 6)
+            self.assertEqual(first.data_ptr(), second.data_ptr())
+            self.assertEqual(tuple(second.shape), (6, *x.shape))
+        finally:
+            handler._BLOCK3_FUSED_CUDA_WORKSPACES.clear()
+
     @unittest.skipUnless(
         importlib.util.find_spec("torch") is not None,
         "torch unavailable",
@@ -60,6 +80,7 @@ class Block3CudaFusionTest(unittest.TestCase):
                     return result
 
                 handler.reseed_noise_rng_for_device(x.device, seed)
+                handler._BLOCK3_FUSED_CUDA_WORKSPACES.clear()
                 with mock.patch.object(
                     handler,
                     "_try_block3_fused_cuda",
@@ -71,6 +92,12 @@ class Block3CudaFusionTest(unittest.TestCase):
                     )
 
                 self.assertEqual(used_fast_path, [True])
+                self.assertEqual(
+                    [workspace.numel() for workspace in
+                     handler._BLOCK3_FUSED_CUDA_WORKSPACES.values()],
+                    [6 * x.numel()],
+                    ("workspace footprint", shape, seed),
+                )
                 self.assertTrue(torch.equal(actual, expected), (shape, seed))
                 self.assertTrue(
                     torch.equal(actual_next, expected_next),
