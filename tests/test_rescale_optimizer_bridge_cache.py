@@ -70,6 +70,40 @@ class RescaleOptimizerBridgeCacheTest(unittest.TestCase):
         self.assertTrue(second.raw["_optimizer_cache_hit"])
         self.assertEqual(second.total_bits, 123)
 
+    def test_cache_hit_clones_nested_payload_without_generic_deepcopy(self):
+        invoker = CountingInvoker()
+        bridge = RescaleOptimizerBridge(
+            invoker=invoker,
+            auto_t_new_from_cfg=False,
+            cache_max_entries=8,
+        )
+        cfg = SimpleNamespace(
+            wffn2_encode=_point(40),
+            mean_inv_d_encode=_point(40),
+            var_inv_d_encode=_point(40),
+        )
+
+        first = bridge.evaluate(
+            config_name="block1_mrpc_L1",
+            block_name="block1",
+            cfg=cfg,
+        )
+        first.raw["result"]["chain"]["total_bits"] = 999
+        with mock.patch.object(
+            bridge_mod.copy,
+            "deepcopy",
+            side_effect=AssertionError("primitive optimizer payload should use the fast clone"),
+        ):
+            second = bridge.evaluate(
+                config_name="block1_mrpc_L7",
+                block_name="block1",
+                cfg=cfg,
+            )
+
+        self.assertEqual(invoker.calls, 1)
+        self.assertEqual(second.raw["result"]["chain"]["total_bits"], 123)
+        self.assertIsNot(first.raw["result"], second.raw["result"])
+
 
 @unittest.skipIf(bridge_mod is None, "torch unavailable")
 class BaselineArchiveCacheTest(unittest.TestCase):

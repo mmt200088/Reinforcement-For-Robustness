@@ -463,6 +463,23 @@ class RLDataPointWriterTest(unittest.TestCase):
             {"path": "reports/out.html", "value": 7},
         )
 
+    def test_to_jsonable_does_not_deepcopy_dataclass_leaves(self):
+        class OpaqueValue:
+            def __deepcopy__(self, _memo):
+                raise AssertionError("dataclass JSON normalization must not deepcopy leaves")
+
+            def __str__(self):
+                return "opaque"
+
+        @dataclass
+        class Payload:
+            value: object
+
+        self.assertEqual(
+            shared_to_jsonable(Payload(OpaqueValue()), stringify_unknown=True),
+            {"value": "opaque"},
+        )
+
     def test_json_default_is_shared_json_dump_adapter(self):
         payload = {"array": np.array([1, 2]), "scalar": np.float32(1.25), "path": Path("x/y")}
         encoded = json.dumps(payload, default=json_default, sort_keys=True)
@@ -489,6 +506,19 @@ class RLDataPointWriterTest(unittest.TestCase):
             side_effect=AssertionError("stable_json_hash should stream canonical JSON"),
         ):
             self.assertEqual(json_utils.stable_json_hash(payload), expected)
+
+    def test_bounded_stable_json_hash_matches_streaming_hash(self):
+        import json_utils
+
+        payload = {
+            "path": Path("reports/out.html"),
+            "nested": [np.int64(7), {"flag": True}],
+        }
+        self.assertTrue(hasattr(json_utils, "bounded_stable_json_hash"))
+        self.assertEqual(
+            json_utils.bounded_stable_json_hash(payload),
+            json_utils.stable_json_hash(payload),
+        )
 
     def test_write_json_file_creates_parent_and_normalizes_payload(self):
         with tempfile.TemporaryDirectory() as td:

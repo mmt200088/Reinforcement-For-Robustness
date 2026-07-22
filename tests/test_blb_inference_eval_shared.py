@@ -100,6 +100,36 @@ class InstalledInferenceEvalSourceTest(unittest.TestCase):
 
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
 class SharedInstalledInferenceEvalTest(unittest.TestCase):
+    def test_probe_forward_omits_labels_to_avoid_unused_model_loss(self):
+        import torch
+
+        from blb_stage2_rl.inference_eval import run_installed_probe_trial
+
+        seen_labels = []
+
+        class RecordingModel(torch.nn.Module):
+            def forward(self, input_ids, attention_mask=None, labels=None, token_type_ids=None):
+                del attention_mask, token_type_ids
+                seen_labels.append(labels)
+                return types.SimpleNamespace(loss=None, logits=input_ids.float())
+
+        batch = types.SimpleNamespace(
+            input_ids=torch.tensor([[3.0, 0.0], [0.0, 3.0]]),
+            attention_mask=torch.ones(2, 2, dtype=torch.long),
+            labels=torch.tensor([0, 1], dtype=torch.long),
+            token_type_ids=None,
+        )
+
+        result = run_installed_probe_trial(
+            RecordingModel(),
+            [batch],
+            is_regression=False,
+            metric_profile="sst2",
+        )
+
+        self.assertEqual(seen_labels, [None])
+        self.assertEqual(result[1:], (1.0, 1.0))
+
     def test_probe_trial_and_full_eval_share_metric_semantics(self):
         import torch
         import torch.nn.functional as F
