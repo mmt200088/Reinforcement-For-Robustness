@@ -2273,6 +2273,118 @@ def _select_piecewise_gelu_output(x: Tensor, y_neg: Tensor, y_pos: Tensor) -> Te
     return torch.where(x > 2.7, x, out)
 
 
+_BLOCK5_FUSED_CUDA_ENABLED = str(
+    _os.environ.get("BLB_STAGE2_BLOCK5_FUSED_CUDA", "1")
+).strip().lower() not in {"0", "false", "no", "off"}
+_BLOCK5_FUSED_CUDA_IMPL = None
+_BLOCK5_FUSED_CUDA_RESOLVED = False
+
+
+def _resolve_block5_fused_cuda_impl():
+    global _BLOCK5_FUSED_CUDA_IMPL, _BLOCK5_FUSED_CUDA_RESOLVED
+    if not _BLOCK5_FUSED_CUDA_RESOLVED:
+        _BLOCK5_FUSED_CUDA_RESOLVED = True
+        try:
+            from blb_stage2_rl.block5_fused_cuda import (
+                block5_degree4_cuda,
+                is_available,
+            )
+
+            if is_available():
+                _BLOCK5_FUSED_CUDA_IMPL = block5_degree4_cuda
+        except (ImportError, ModuleNotFoundError):
+            _BLOCK5_FUSED_CUDA_IMPL = None
+    return _BLOCK5_FUSED_CUDA_IMPL
+
+
+def _try_block5_fused_cuda(
+        x: Tensor,
+        cfg: Block5NoiseConfig,
+        coeff_dict,
+        ) -> Optional[Tensor]:
+    """Run the exact degree-4 CUDA specialization, or return ``None``."""
+    power_rescales = tuple(getattr(cfg, "gelu_power_rescales", ()) or ())
+    coefficient_rescales = tuple(
+        getattr(cfg, "gelu_coeff_mul_rescales", ()) or ()
+    )
+    negative_coefficients = tuple(coeff_dict.get(1, ()))
+    positive_coefficients = tuple(coeff_dict.get(0, ()))
+    if (
+            not _BLOCK5_FUSED_CUDA_ENABLED
+            or int(getattr(cfg, "gelu_degree", 0)) != 4
+            or len(power_rescales) != 3
+            or len(coefficient_rescales) != 4
+            or len(negative_coefficients) != 5
+            or len(positive_coefficients) != 5
+            or not x.is_cuda
+            or x.dtype != torch.float32
+            or x.requires_grad
+            or not x.is_contiguous()
+    ):
+        return None
+
+    implementation = _resolve_block5_fused_cuda_impl()
+    if implementation is None:
+        return None
+
+    points = []
+    indices = [-1] * 21
+
+    def append_point(slot: int, point: Optional[NoisePoint]) -> None:
+        if point is None:
+            return
+        indices[slot] = len(points)
+        points.append(point)
+
+    for slot, point in enumerate(power_rescales):
+        append_point(slot, point)
+
+    def append_piece(
+            coefficient_slot: int,
+            rescale_slot: int,
+            ) -> None:
+        for degree_index in range(5):
+            append_point(coefficient_slot + degree_index, cfg.gelu_coeff_encode)
+            if degree_index > 0:
+                append_point(
+                    rescale_slot + degree_index - 1,
+                    coefficient_rescales[degree_index - 1],
+                )
+
+    append_piece(3, 8)
+    append_piece(12, 17)
+
+    stds = []
+    for point in points:
+        variance = get_input_noise_variance_by_N(
+            scaling_factor=int(point.scaling_factor),
+            distribution=str(point.distribution).lower(),
+            N=int(point.N),
+        )
+        if variance <= 0.0:
+            return None
+        stds.append(math.sqrt(variance))
+
+    try:
+        noise_slab = torch.empty(
+            (len(points), *x.shape),
+            device=x.device,
+            dtype=x.dtype,
+        )
+    except torch.cuda.OutOfMemoryError:
+        return None
+    generator = _get_noise_generator(x.device)
+    for index, std in enumerate(stds):
+        noise_slab[index].normal_(0.0, float(std), generator=generator)
+    return implementation(
+        x,
+        noise_slab,
+        indices,
+        negative_coefficients,
+        positive_coefficients,
+    )
+
+
 def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
     """构造 BLB Block 5 噪声版的 ``PolynomialGELU.forward``。
 
@@ -2347,6 +2459,9 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
         return result
 
     def block5_gelu_forward(x: Tensor) -> Tensor:
+        fused = _try_block5_fused_cuda(x, cfg5, coeff_dict)
+        if fused is not None:
+            return _apply_configured_truncation(fused, cfg5)
         powers = _compute_powers(x)
         # 两段多项式（共享 powers）：负段 sign=1，正段 sign=0
         y1 = _compute_polynomial(powers, coeff_dict[1], x)   # [-2.7, 0)
