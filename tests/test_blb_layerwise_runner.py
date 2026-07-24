@@ -484,7 +484,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             )
             return ast.get_source_segment(source, node)
 
-        def trial_append_source(function_name, fidelity):
+        def trial_append_source(function_name, fidelity=None):
             function = function_source(function_name)
             return next(
                 ast.get_source_segment(function, node)
@@ -492,8 +492,11 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 if isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
                 and node.func.attr == "append_trial_group"
-                and f'"fidelity": "{fidelity}"' in ast.get_source_segment(
-                    function, node,
+                and (
+                    fidelity is None
+                    or f'"fidelity": "{fidelity}"' in ast.get_source_segment(
+                        function, node,
+                    )
                 )
             )
 
@@ -501,7 +504,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         promotion_f4_call = trial_append_source(
             "promote_candidate_if_eligible", "F4",
         )
-        bank_f4_call = trial_append_source("_collect_fixed_validation_bank", "F4")
+        bank_f4_call = trial_append_source("_collect_fixed_validation_bank")
 
         self.assertIn("compact=True", f1_call)
         self.assertIn("boosted_overrides_hash", f1_call)
