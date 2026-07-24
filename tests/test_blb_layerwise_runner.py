@@ -1358,6 +1358,21 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertAlmostEqual(rewards[-1], layer_resources[-1] + 1.75)
         self.assertAlmostEqual(sum(rewards), 1.75 + resource_score)
 
+    def test_p3_resource_score_supports_all_24_bert_large_layers(self):
+        from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
+
+        layer_resources = (0.01,) * 24
+        rewards = redistribute_layerwise_rewards(
+            terminal_reward=2.0,
+            priority=3,
+            ppo_resource_score=sum(layer_resources),
+            layer_resource_rewards=layer_resources,
+        )
+
+        self.assertEqual(len(rewards), 24)
+        self.assertEqual(rewards[:-1], layer_resources[:-1])
+        self.assertAlmostEqual(sum(rewards), 2.0)
+
     def test_p1_and_p2_never_receive_cost_credit(self):
         from blb_stage2_rl.layerwise_runner import redistribute_layerwise_rewards
 
@@ -1439,6 +1454,93 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                         fixed_label="test",
                         fixed_source="test",
                     )
+
+    def test_layerwise_branch_derives_policy_and_identity_from_model_depth(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn(
+            "layerwise_horizon = int(layerwise_env.horizon)",
+            branch_source,
+        )
+        self.assertIn("horizon=layerwise_horizon", branch_source)
+        self.assertIn("num_layers=layerwise_horizon", branch_source)
+        self.assertIn(
+            "step_layer_indices=tuple(range(layerwise_horizon))",
+            branch_source,
+        )
+        self.assertIn("layerwise_action_space_version(", branch_source)
+        self.assertIn("max_compute_saving_units(", branch_source)
+        self.assertIn("max_communication_saving_units(", branch_source)
+        self.assertGreaterEqual(branch_source.count("layerwise_horizon"), 8)
+        self.assertIn(
+            "num_layers=int(evaluator.total_layers)",
+            branch_source,
+        )
+        self.assertIn(
+            "model_type=layerwise_model_type",
+            branch_source,
+        )
+        self.assertIn(
+            "fusion_count=2 * layerwise_horizon + b4_count",
+            branch_source,
+        )
+        self.assertIn(
+            "fusion_count_b2=layerwise_horizon",
+            branch_source,
+        )
+        self.assertIn(
+            "fusion_count_b5=layerwise_horizon",
+            branch_source,
+        )
+        self.assertNotIn("valid_steps=12", branch_source)
+        self.assertNotIn("steps_taken=12", branch_source)
+        self.assertNotIn("fusion_count=24", branch_source)
+        self.assertNotIn("fusion_count_b2=12", branch_source)
+        self.assertNotIn("fusion_count_b5=12", branch_source)
+        self.assertNotIn("/ 12.0", branch_source)
+        self.assertNotIn("horizon=12", branch_source)
+        self.assertNotIn("num_layers=12", branch_source)
+
+    def test_stage2_runner_uses_shared_calibrated_action_context(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        runner = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_sequential_via_runner_locked"
+        )
+        runner_source = ast.get_source_segment(source, runner)
+
+        self.assertIn(
+            "load_calibrated_stage2_action_context(",
+            runner_source,
+        )
+        self.assertIn(
+            "validate_calibrated_stage2_action_context(",
+            runner_source,
+        )
+        self.assertIn(
+            "baseline.typical_fusion_count = float(base_env.num_layers)",
+            runner_source,
+        )
+        self.assertIn(
+            "stage2_model_type = resolve_stage2_model_type(",
+            runner_source,
+        )
+        self.assertIn("model_type=stage2_model_type", runner_source)
+        self.assertNotIn("load_static_skeletons_baseline(", runner_source)
+        self.assertNotIn("static_skeletons_baseline_to_action(", runner_source)
 
     def test_layerwise_candidate_identity_binds_k_level_order(self):
         from blb_stage2_rl.candidate_store import candidate_key
@@ -2450,7 +2552,14 @@ class _FakeLayerwiseEnv:
     max_step_dim = 6
     state_dim = 4
 
-    def __init__(self, probabilities=0.7, evidence_mode="valid", invalid=False):
+    def __init__(
+            self,
+            probabilities=0.7,
+            evidence_mode="valid",
+            invalid=False,
+            num_layers=12,
+    ):
+        self.horizon = int(num_layers)
         self._step = 0
         self.actions = []
         self.boosted_overrides = {(4, 3): {"v_mask_rescale_sf": 47}}
@@ -2483,7 +2592,7 @@ class _FakeLayerwiseEnv:
     def step(self, action):
         self.actions.append([int(value) for value in action])
         self._step += 1
-        done = self._step == 12
+        done = self._step == self.horizon
         if not done:
             return np.full(4, self._step, dtype=np.float32), 123.0, False, {
                 "layer_summary": {"all_valid": True},
@@ -2559,7 +2668,7 @@ class _FakeLayerwiseEnv:
             "resource_objective": resource_objective,
             "variable_cost": dict(resource_objective),
             "layer_summaries": [
-                {"all_valid": True} for _ in range(12)
+                {"all_valid": True} for _ in range(self.horizon)
             ],
         }
 
@@ -2749,6 +2858,42 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(summary["episode_rewards"], [7.5])
         self.assertIn("best_action", summary)
         self.assertIsNone(summary["best_action"])
+
+    def test_train_collects_all_24_bert_large_transitions(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        env = _FakeLayerwiseEnv(probabilities=0.7, num_layers=24)
+        policy = _FakePolicy()
+        buffer = _FakeBuffer()
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=env,
+                policy=policy,
+                train_cfg=self._train_cfg(),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-24-v1"},
+                optimizer=object(),
+                rollout_buffer=buffer,
+                ppo_update_fn=lambda *_args, **_kwargs: {
+                    "entropy": 0.0,
+                    "n_samples": len(buffer),
+                },
+                assess_candidate_fn=lambda trials, *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(len(buffer.transitions), 24)
+        self.assertEqual(
+            [row["done"] for row in buffer.transitions],
+            [False] * 23 + [True],
+        )
+        self.assertEqual(len(summary["episode_records"][0].action_matrix), 24)
+        self.assertEqual(summary["episode_records"][0].step_count, 24)
 
     def test_max_episode_cap_still_runs_bank_c_and_keeps_resumable_result(self):
         from blb_stage2_rl.candidate_store import CandidateStore

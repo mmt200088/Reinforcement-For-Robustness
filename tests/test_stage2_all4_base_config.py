@@ -43,6 +43,29 @@ def _bare_evaluator(source: str) -> LayerImportanceEvaluator:
 
 
 class Stage2All4BaseConfigTest(unittest.TestCase):
+    def test_large_mrpc_stage1_record_resolves_through_production_stage2_path(self):
+        ev = _bare_evaluator("stage1_result")
+        ev.total_layers = 24
+        ev.decoupled_layout = True
+        ev.run_output_dir = str(
+            REPO_ROOT / "Parting Chapter" / "stage2" / "bert large mrpc"
+        )
+        ev.stage1_run_id = ""
+        ev._build_stage2_fixed_config_resolver = lambda: object()
+
+        gelu, softmax, label, source = ev._resolve_stage2_fixed_stage1_config()
+
+        self.assertEqual(
+            gelu.tolist(),
+            [
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            ],
+        )
+        self.assertEqual(softmax.tolist(), [6] * 24)
+        self.assertIn("stage1_record:bert large mrpc", source)
+        self.assertIn("softmax fixed deg6", label)
+
     def test_all4_source_resolves_without_final_eval_fallback(self):
         ev = _bare_evaluator("all4")
 

@@ -1,4 +1,4 @@
-"""Torch-free codec for the canonical 12-step Stage-2 layerwise policy.
+"""Torch-free codec for the canonical Stage-2 layerwise policy.
 
 The legacy full action vector remains the runtime interchange format.  This
 module owns only the compact policy action: one Block4 fusion choice and five
@@ -65,8 +65,35 @@ _BLOCK_STARTS = {1: 0, 2: 9, 3: 32, 4: 40, 5: 57}
 _LAYER_WIDTH = sum(_BLOCK_SLOT_COUNTS.values())
 _BLOCK_ORDER = (1, 2, 3, 4, 5)
 
-MAX_COMPUTE_SAVING_UNITS = 12.0
-MAX_COMMUNICATION_SAVING_UNITS = 59.0 * (13.0 - 8.0)
+
+def _validated_num_layers(num_layers: int) -> int:
+    layers = int(num_layers)
+    if layers < 1:
+        raise ValueError(f"num_layers must be >= 1, got {layers}")
+    return layers
+
+
+def layerwise_action_space_version(num_layers: int) -> str:
+    """Return the persisted action-space identity for one model depth."""
+    layers = _validated_num_layers(num_layers)
+    return f"stage2_layerwise_{layers}x{len(LAYERWISE_SLOT_NAMES)}_v1"
+
+
+def max_compute_saving_units(num_layers: int) -> float:
+    """Maximum learnable Block4 fusion count for the model depth."""
+    return float(_validated_num_layers(num_layers))
+
+
+def max_communication_saving_units(num_layers: int) -> float:
+    """Maximum removed K bits across all active per-block K slots."""
+    layers = _validated_num_layers(num_layers)
+    return float(5 * layers - 1) * (13.0 - 8.0)
+
+
+# Backward-compatible BERT-base constants. New callers with a model instance
+# must use the layer-count helpers above.
+MAX_COMPUTE_SAVING_UNITS = max_compute_saving_units(12)
+MAX_COMMUNICATION_SAVING_UNITS = max_communication_saving_units(12)
 RESOURCE_SECONDARY_EPSILON = 1.0e-4
 LAYERWISE_COST_MODEL_REVISION = "dual_resource_maxmin_shapley_v1"
 
@@ -266,6 +293,11 @@ def _validate_graph_options(graph_key: str, graph: Any, expected_slots: int) -> 
 
 def _validate_graphs(spec: LayerwiseStepSpec, fusion_map: Any) -> None:
     for block_idx, graph_key in spec.graph_keys_by_block:
+        # Block 1 has no RL-selectable fusion dimension. Its SF chain stays on
+        # the calibrated RO baseline and only its K slot is changed, exactly
+        # like Block 3. Large-profile map bundles therefore need no Block 1 map.
+        if block_idx == 1:
+            continue
         if graph_key not in fusion_map.graphs:
             raise KeyError(f"fusion map has no graph {graph_key!r} for block {block_idx}")
         graph = fusion_map.graphs[graph_key]
@@ -382,7 +414,7 @@ def apply_layer_action(
     fusion_option_ids: dict[int, int] = {}
     boosted_values: dict[int, Mapping[str, int]] = {}
 
-    choices = ((1, 0), (2, 1), (4, action[0]), (5, 1))
+    choices = ((2, 1), (4, action[0]), (5, 1))
     for block_idx, fusion_count in choices:
         if block_idx not in active_blocks:
             continue
@@ -398,8 +430,13 @@ def apply_layer_action(
             values["output_truncation_k"] = k_by_block[block_idx]
             boosted_values[block_idx] = values
 
-    block3_k_offset = _block_offsets(step_spec.layer_idx, 3).stop - 1
-    result[block3_k_offset] = k_indices[3]
+    for baseline_owned_block in (1, 3):
+        if baseline_owned_block not in active_blocks:
+            continue
+        k_offset = _block_offsets(
+            step_spec.layer_idx, baseline_owned_block,
+        ).stop - 1
+        result[k_offset] = k_indices[baseline_owned_block]
     return LayerActionApplication(
         full_vector=result,
         decoded=LayerwiseDecodedAction(block4_fusion=int(action[0]), k_by_block=k_by_block),
@@ -411,8 +448,12 @@ def apply_layer_action(
 def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> VariableCost:
     """Compute independent compute/communication savings from decoded actions."""
     _validate_k_levels()
-    if len(actions) != 12:
-        raise ValueError(f"variable cost requires 12 layer actions, got {len(actions)}")
+    num_layers = len(actions)
+    if num_layers < 1:
+        raise ValueError("variable cost requires at least one layer action")
+    compute_denominator = max_compute_saving_units(num_layers)
+    active_k_slots = 5 * num_layers - 1
+    communication_denominator = max_communication_saving_units(num_layers)
     fusion_values = []
     k_values = []
     raw_slot_contributions = []
@@ -433,22 +474,25 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
                 raise ValueError(f"layer {layer_idx} block {block_idx} has unsupported K={k}")
             k_values.append(k)
         current_slot_contributions = [
-            float(fusion) / MAX_COMPUTE_SAVING_UNITS,
+            float(fusion) / compute_denominator,
         ]
         current_slot_contributions.extend(
             (13.0 - float(action.k_by_block[block_idx]))
-            / MAX_COMMUNICATION_SAVING_UNITS
+            / communication_denominator
             if block_idx in action.k_by_block else 0.0
             for block_idx in _BLOCK_ORDER
         )
         raw_slot_contributions.append(current_slot_contributions)
-    if len(k_values) != 59:
-        raise RuntimeError(f"BERT-base layer actions yielded {len(k_values)} active K values, expected 59")
+    if len(k_values) != active_k_slots:
+        raise RuntimeError(
+            f"{num_layers}-layer actions yielded {len(k_values)} active K values, "
+            f"expected {active_k_slots}"
+        )
     fusion_count = int(sum(fusion_values))
     removed_k_bits = int(sum(13 - k for k in k_values))
-    compute_saving = float(fusion_count) / MAX_COMPUTE_SAVING_UNITS
+    compute_saving = float(fusion_count) / compute_denominator
     communication_saving = (
-        float(removed_k_bits) / MAX_COMMUNICATION_SAVING_UNITS
+        float(removed_k_bits) / communication_denominator
     )
     robust_floor, secondary_progress, ppo_resource_score = dual_resource_score(
         compute_saving, communication_saving,
@@ -496,11 +540,11 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
 def compute_variable_cost_from_action_matrix(
         action_matrix: Sequence[Sequence[int]],
         ) -> VariableCost:
-    """Decode the canonical 12x6 policy action and compute its variable cost."""
+    """Decode a canonical ``num_layers x 6`` policy action and compute its cost."""
     levels = _validate_k_levels()
     rows = [tuple(int(value) for value in row) for row in action_matrix]
-    if len(rows) != 12 or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
-        raise ValueError("action_matrix must have shape 12x6")
+    if not rows or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
+        raise ValueError("action_matrix must have shape num_layers x 6")
     decoded = []
     for layer_idx, row in enumerate(rows):
         fusion = int(row[0])
@@ -523,11 +567,11 @@ def compute_variable_cost_from_action_matrix(
 
 
 def one_coordinate_neighbors(action_matrix: Sequence[Sequence[int]]) -> Iterator[list[list[int]]]:
-    """Yield every legal one-coordinate alternative for a 12x6 policy action."""
+    """Yield every legal one-coordinate alternative for a layerwise policy action."""
     levels = _validate_k_levels()
     rows = [list(map(int, row)) for row in action_matrix]
-    if len(rows) != 12 or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
-        raise ValueError("action_matrix must have shape 12x6")
+    if not rows or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
+        raise ValueError("action_matrix must have shape num_layers x 6")
     dims = (2,) + (len(levels),) * 5
     for layer_idx, row in enumerate(rows):
         for slot_idx, value in enumerate(row):

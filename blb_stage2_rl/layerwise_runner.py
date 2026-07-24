@@ -997,7 +997,7 @@ def redistribute_layerwise_rewards(
         ppo_resource_score: float,
         layer_resource_rewards: Sequence[float],
         ) -> tuple[float, ...]:
-    """Move P3 resource credit to its twelve source layer transitions.
+    """Move P3 resource credit to its source layer transitions.
 
     The returned rewards always sum to ``terminal_reward``. Precision/stability
     failures retain terminal-only credit, so resources cannot leak into P1/P2.
@@ -1008,11 +1008,8 @@ def redistribute_layerwise_rewards(
         _finite(value, name=f"layer_resource_rewards[{index}]")
         for index, value in enumerate(layer_resource_rewards)
     )
-    if len(layer_resources) != 12:
-        raise ValueError(
-            "layer_resource_rewards must contain 12 values, got "
-            f"{len(layer_resources)}"
-        )
+    if not layer_resources:
+        raise ValueError("layer_resource_rewards must contain at least one value")
     if resource_score < 0.0 or resource_score > 1.0:
         raise ValueError(
             f"ppo_resource_score must be in [0, 1], got {resource_score}"
@@ -1025,7 +1022,7 @@ def redistribute_layerwise_rewards(
             f"{sum(layer_resources)} != {resource_score}"
         )
     if int(priority) != 3:
-        return (0.0,) * 11 + (reward,)
+        return (0.0,) * (len(layer_resources) - 1) + (reward,)
 
     redistributed = list(layer_resources)
     redistributed[-1] += reward - resource_score
@@ -1722,8 +1719,10 @@ def _restore_three_bank_candidates(
             tuple(int(value) for value in row)
             for row in metadata["action_matrix"]
         )
-        if len(action_matrix) != 12 or any(len(row) != 6 for row in action_matrix):
-            raise ValueError("persisted layerwise action_matrix must be 12x6")
+        if not action_matrix or any(len(row) != 6 for row in action_matrix):
+            raise ValueError(
+                "persisted layerwise action_matrix must be a nonempty Nx6 matrix"
+            )
         assessment = assess_candidate_fn(
             evidence.trials,
             reference,
@@ -1876,8 +1875,10 @@ def restore_promoted_candidates(
             tuple(int(value) for value in row)
             for row in metadata["action_matrix"]
         )
-        if len(action_matrix) != 12 or any(len(row) != 6 for row in action_matrix):
-            raise ValueError("persisted layerwise action_matrix must be 12x6")
+        if not action_matrix or any(len(row) != 6 for row in action_matrix):
+            raise ValueError(
+                "persisted layerwise action_matrix must be a nonempty Nx6 matrix"
+            )
         resource = _resource_fields_from_action_matrix(action_matrix)
         reward = metadata.get("episode_reward")
         restored_metrics = _metrics_from_trials(evidence.trials)
@@ -2989,13 +2990,16 @@ def train_layerwise(
         step_adapter_fn: Optional[Callable[[Any, int, int], tuple[np.ndarray, np.ndarray]]] = None,
         retain_history: bool = True,
         ) -> dict[str, Any]:
-    """Collect 12-step layerwise episodes and update the shared PPO policy."""
+    """Collect layerwise episodes and update the shared PPO policy."""
     if identity_context is None:
         raise ValueError("layerwise training requires a CandidateStore identity_context")
     probe_identity_context = evidence_identity_context(identity_context, "F1")
     authoritative_base_env = promotion_base_env or env.base
-    if int(getattr(env, "horizon", 0)) != 12 or int(getattr(env, "max_step_dim", 0)) != 6:
-        raise ValueError("layerwise training requires horizon=12 and max_step_dim=6")
+    horizon = int(getattr(env, "horizon", 0))
+    if horizon <= 0 or int(getattr(env, "max_step_dim", 0)) != 6:
+        raise ValueError(
+            "layerwise training requires a positive horizon and max_step_dim=6"
+        )
     if device is None:
         try:
             device = next(policy.parameters()).device
@@ -3207,7 +3211,7 @@ def train_layerwise(
         transition_indices: list[int] = []
         terminal_info: Optional[Mapping[str, Any]] = None
         episode_reward = 0.0
-        for step_idx in range(12):
+        for step_idx in range(horizon):
             spec = env.current_spec()
             slot_mask, levels = step_adapter_fn(spec, 6, 6)
             state_np = np.asarray(state, dtype=np.float32)
@@ -3234,7 +3238,7 @@ def train_layerwise(
                 else np.asarray(log_prob_per_slot_raw, dtype=np.float32).reshape(-1)
             )
             next_state, reward, done, info = env.step(action.tolist())
-            expected_done = step_idx == 11
+            expected_done = step_idx == horizon - 1
             if bool(done) != expected_done:
                 raise RuntimeError(
                     f"layerwise episode termination mismatch at step {step_idx}: done={done}"
@@ -3273,8 +3277,13 @@ def train_layerwise(
             tuple(int(value) for value in row)
             for row in terminal_info.get("policy_actions", ())
         )
-        if len(action_matrix) != 12 or any(len(row) != 6 for row in action_matrix):
-            raise RuntimeError("layerwise terminal policy_actions must be a 12x6 matrix")
+        if len(action_matrix) != horizon or any(
+                len(row) != 6 for row in action_matrix
+        ):
+            raise RuntimeError(
+                "layerwise terminal policy_actions must match the "
+                f"{horizon}x6 environment contract"
+            )
         full_vector = tuple(
             int(value) for value in terminal_info.get("pending_full_vector", ())
         )
@@ -3308,15 +3317,17 @@ def train_layerwise(
                 (),
             )
         )
-        if len(layer_resource_rewards) != 12:
+        if len(layer_resource_rewards) != horizon:
             raise RuntimeError(
-                "layerwise terminal layer_resource_rewards must contain 12 values"
+                "layerwise terminal layer_resource_rewards must contain "
+                f"{horizon} values"
             )
-        if len(slot_resource_rewards) != 12 or any(
+        if len(slot_resource_rewards) != horizon or any(
                 len(row) != 6 for row in slot_resource_rewards
         ):
             raise RuntimeError(
-                "layerwise terminal slot_resource_rewards must be a 12x6 matrix"
+                "layerwise terminal slot_resource_rewards must match the "
+                f"{horizon}x6 environment contract"
             )
         for layer_idx, (layer_resource, slot_resources) in enumerate(zip(
                 layer_resource_rewards, slot_resource_rewards,
@@ -3394,7 +3405,7 @@ def train_layerwise(
             ppo_resource_score=ppo_resource_score,
             layer_resource_rewards=layer_resource_rewards,
         )
-        zero_slot_resources = ((0.0,) * 6,) * 12
+        zero_slot_resources = ((0.0,) * 6,) * horizon
         actor_slot_resources = (
             slot_resource_rewards if reward_priority == 3 else zero_slot_resources
         )
@@ -3922,7 +3933,7 @@ def train_layerwise(
                 else dict(promotion.metrics)
             ),
             invalid_steps=int(invalid_steps),
-            step_count=12,
+            step_count=horizon,
             block4_entropy=entropy_snapshot["block4"],
             k_entropy=entropy_snapshot["k"],
             stall_update_windows=int(convergence_state.stall_update_windows),

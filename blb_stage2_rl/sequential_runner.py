@@ -43,6 +43,7 @@ from .action_mask import (
     StaticInvalidLevelMask,
 )
 from .action_space import K_LEVELS, _baseline_k_index_for_block
+from .baseline_bootstrap import resolve_stage2_model_type
 from .fusion_curriculum import (
     FUSION_NEIGHBOR_RAMP_FRACTION,
     build_fusion_step_level_mask,
@@ -3708,13 +3709,18 @@ def _build_layerwise_candidate_identity_context(
         ) -> Dict[str, Any]:
     """Bind layerwise raw evidence to the complete effective run context."""
     from .candidate_store import build_candidate_identity_context, sha256_json
-    from .layerwise_action import K_LEVELS, LAYERWISE_COST_MODEL_REVISION
+    from .layerwise_action import (
+        K_LEVELS,
+        LAYERWISE_COST_MODEL_REVISION,
+        layerwise_action_space_version,
+    )
     from .layerwise_runner import bind_layerwise_candidate_identity
 
     stage1_degrees = {
         "gelu": [int(value) for value in fixed_gelu.reshape(-1)],
         "softmax": [int(value) for value in fixed_softmax.reshape(-1)],
     }
+    num_layers = len(stage1_degrees["gelu"])
     def reference_payload(reference: Any) -> Dict[str, Any]:
         return {
             "precision_tolerance": float(reference.precision_tolerance),
@@ -3768,8 +3774,12 @@ def _build_layerwise_candidate_identity_context(
         },
     }
     rescale_root = os.path.realpath(str(train_cfg.inproc_rescale_optimizer_root))
+    model_type = resolve_stage2_model_type(
+        str(getattr(evaluator, "model_type", "") or ""),
+        num_layers=num_layers,
+    )
     context = build_candidate_identity_context(
-        action_space_version="stage2_layerwise_12x6_v1",
+        action_space_version=layerwise_action_space_version(num_layers),
         registry_hash=sha256_json(fusion_map),
         max_sfs_hash=sha256_json(max_sfs),
         stage1_config_content_hash=sha256_json(stage1_degrees),
@@ -3784,7 +3794,7 @@ def _build_layerwise_candidate_identity_context(
         }),
         decode_version="layerwise_action_v1",
         dataset=str(train_cfg.profile),
-        model=str(getattr(evaluator, "model_type", "bert-base") or "bert-base"),
+        model=model_type,
         metric_policy_version="robust_bootstrap_5x5_v1",
         threshold_policy_hash=sha256_json(threshold_policy),
         mask_schedule_hash=sha256_json(schedule),
@@ -3831,6 +3841,8 @@ def _run_layerwise_training_branch(
         baseline_action_vec: Sequence[int],
         fixed_gelu: np.ndarray,
         fixed_softmax: np.ndarray,
+        fixed_label: str,
+        fixed_source: str,
         blb_progress_dir: str,
         baseline_preflight_metrics: Mapping[str, Any],
         status: Any,
@@ -3869,9 +3881,10 @@ def _run_layerwise_training_branch(
     from .layerwise_action import (
         K_LEVELS as LAYERWISE_K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
-        MAX_COMMUNICATION_SAVING_UNITS,
-        MAX_COMPUTE_SAVING_UNITS,
         RESOURCE_SECONDARY_EPSILON,
+        layerwise_action_space_version,
+        max_communication_saving_units,
+        max_compute_saving_units,
     )
     from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_runner import (
@@ -3968,6 +3981,12 @@ def _run_layerwise_training_branch(
         baseline_action_vec=baseline_action_vec,
         profile=str(train_cfg.profile),
     )
+    layerwise_horizon = int(layerwise_env.horizon)
+    if layerwise_horizon != int(evaluator.total_layers):
+        raise RuntimeError(
+            "layerwise environment/model depth mismatch: "
+            f"{layerwise_horizon} != {int(evaluator.total_layers)}"
+        )
     online_probe_example_count = sum(
         int(batch.labels.numel()) for batch in base_env.probe_batches
     )
@@ -3982,12 +4001,12 @@ def _run_layerwise_training_branch(
         state_dim=int(layerwise_env.state_dim),
         max_step_dim=6,
         max_num_levels=6,
-        horizon=12,
-        num_layers=12,
+        horizon=layerwise_horizon,
+        num_layers=layerwise_horizon,
         metadata_width=0,
         signal_width=4,
-        step_layer_indices=tuple(range(12)),
-        step_block_indices=(3,) * 12,
+        step_layer_indices=tuple(range(layerwise_horizon)),
+        step_block_indices=(3,) * layerwise_horizon,
         network_variant=policy_network_variant,
         **policy_architecture,
     )
@@ -4010,14 +4029,18 @@ def _run_layerwise_training_branch(
         "schema_version": "stage2_layerwise_algorithm_contract_v5",
         "algorithm_revision": algorithm_revision,
         "rl_variant": rl_variant,
-        "action_space_version": "stage2_layerwise_12x6_v1",
+        "action_space_version": layerwise_action_space_version(
+            layerwise_horizon
+        ),
         "decode_version": "layerwise_action_v1",
         "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
         "k_levels": [int(value) for value in LAYERWISE_K_LEVELS],
         "resource_secondary_epsilon": float(RESOURCE_SECONDARY_EPSILON),
-        "compute_axis_denominator": int(MAX_COMPUTE_SAVING_UNITS),
+        "compute_axis_denominator": int(
+            max_compute_saving_units(layerwise_horizon)
+        ),
         "communication_axis_denominator": int(
-            MAX_COMMUNICATION_SAVING_UNITS
+            max_communication_saving_units(layerwise_horizon)
         ),
         "resource_credit_mode": "two_family_shapley_per_slot_v1",
         "strict_resource_order": ["robust_floor", "secondary_progress"],
@@ -4178,6 +4201,8 @@ def _run_layerwise_training_branch(
         "reward_design": "robust_constrained",
         "fixed_gelu": [int(value) for value in np.asarray(fixed_gelu).reshape(-1)],
         "fixed_softmax": [int(value) for value in np.asarray(fixed_softmax).reshape(-1)],
+        "fixed_label": str(fixed_label),
+        "fixed_source": str(fixed_source),
         "planned_episodes": layerwise_termination["episode_limit"],
         "entropy_regularization": layerwise_entropy_regularization,
         "termination": layerwise_termination,
@@ -4343,11 +4368,15 @@ def _run_layerwise_training_branch(
         with open(marker_tmp, "w", encoding="utf-8") as handle:
             handle.write(structured_run_id + "\n")
         os.replace(marker_tmp, run_id_marker)
+    layerwise_model_type = resolve_stage2_model_type(
+        str(getattr(evaluator, "model_type", "") or ""),
+        num_layers=layerwise_horizon,
+    )
     stage2_data_writer = RLDataPointWriter(
         root_dir=os.path.join(repo_root, "rl_training_data_points"),
         run_id=structured_run_id,
         stage="stage2",
-        model_type=str(getattr(evaluator, "model_type", "bert-base") or "bert-base"),
+        model_type=layerwise_model_type,
         dataset=str(train_cfg.profile),
     )
 
@@ -4365,7 +4394,7 @@ def _run_layerwise_training_branch(
 
     diag_recorder = RLDiagnosticsRecorder(
         output_dir=blb_progress_dir,
-        num_layers=12,
+        num_layers=int(evaluator.total_layers),
         num_action_slots=int(getattr(base_env, "total_action_dim", 0) or 0),
         max_action_levels=64,
         top_k=20,
@@ -4489,8 +4518,8 @@ def _run_layerwise_training_branch(
     }
     diag_recorder.set_meta({
         "profile": str(train_cfg.profile),
-        "fixed_label": "gelu_all4_softmax_all6",
-        "fixed_source": "stage2_all4",
+        "fixed_label": str(fixed_label),
+        "fixed_source": str(fixed_source),
         "rl_variant": rl_variant,
         "policy_network_variant": policy_network_variant,
         "policy_network": policy_network_summary,
@@ -4502,9 +4531,11 @@ def _run_layerwise_training_branch(
         "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
         "resource_objective": dict(algorithm_contract["resource_objective"]),
         "resource_secondary_epsilon": float(RESOURCE_SECONDARY_EPSILON),
-        "compute_axis_denominator": int(MAX_COMPUTE_SAVING_UNITS),
+        "compute_axis_denominator": int(
+            algorithm_contract["compute_axis_denominator"]
+        ),
         "communication_axis_denominator": int(
-            MAX_COMMUNICATION_SAVING_UNITS
+            algorithm_contract["communication_axis_denominator"]
         ),
         "resource_credit_mode": algorithm_contract["resource_credit_mode"],
         "strict_resource_order": list(
@@ -4599,18 +4630,18 @@ def _run_layerwise_training_branch(
                 total_reward=reward,
                 terminal_reward=reward,
                 per_step_sum=0.0,
-                valid_steps=12,
+                valid_steps=layerwise_horizon,
                 invalid_steps=0,
-                steps_taken=12,
+                steps_taken=layerwise_horizon,
                 total_bits=0,
-                fusion_count=24 + b4_count,
+                fusion_count=2 * layerwise_horizon + b4_count,
                 first_invalid_step=None,
                 first_invalid_block=None,
                 first_invalid_layer=None,
                 early_terminated=False,
-                fusion_count_b2=12,
+                fusion_count_b2=layerwise_horizon,
                 fusion_count_b4=b4_count,
-                fusion_count_b5=12,
+                fusion_count_b5=layerwise_horizon,
                 terminal_priority=3,
                 terminal_loss_mean=float(metrics.get("loss_mean", 0.0)),
                 terminal_loss_std=float(metrics.get("loss_std", 0.0)),
@@ -4827,18 +4858,18 @@ def _run_layerwise_training_branch(
                 total_reward=float(record.reward),
                 terminal_reward=float(record.reward),
                 per_step_sum=0.0,
-                valid_steps=12 - int(record.invalid_steps),
+                valid_steps=layerwise_horizon - int(record.invalid_steps),
                 invalid_steps=int(record.invalid_steps),
-                steps_taken=12,
+                steps_taken=layerwise_horizon,
                 total_bits=0,
-                fusion_count=24 + b4_count,
+                fusion_count=2 * layerwise_horizon + b4_count,
                 first_invalid_step=None,
                 first_invalid_block=None,
                 first_invalid_layer=None,
                 early_terminated=False,
-                fusion_count_b2=12,
+                fusion_count_b2=layerwise_horizon,
                 fusion_count_b4=b4_count,
-                fusion_count_b5=12,
+                fusion_count_b5=layerwise_horizon,
                 terminal_final_config_fingerprint=str(
                     record.final_config_fingerprint
                 ),
@@ -4856,7 +4887,9 @@ def _run_layerwise_training_branch(
                 terminal_metric2_mean=float(fresh_metrics.get("metric2_mean", 0.0)),
                 terminal_metric2_std=float(fresh_metrics.get("metric2_std", 0.0)),
                 terminal_k_gain=13.0 - avg_k,
-                terminal_fusion_gain=float(b4_count) / 12.0,
+                terminal_fusion_gain=(
+                    float(b4_count) / float(layerwise_horizon)
+                ),
                 terminal_cost_score=float(record.variable_cost),
                 terminal_cost_rank_score=float(record.variable_cost),
                 terminal_probe_wall_seconds=float(
@@ -4985,7 +5018,9 @@ def _run_layerwise_training_branch(
             value_loss=float(metrics.get("value_loss", 0.0)),
             entropy=float(metrics.get("entropy", 0.0)),
             clip_fraction=float(metrics.get("clip_fraction", 0.0)),
-            n_samples=int(metrics.get("n_samples", len(recent) * 12)),
+            n_samples=int(
+                metrics.get("n_samples", len(recent) * layerwise_horizon)
+            ),
             window_mean_return=float(np.mean(recent_rewards)),
             window_max_return=float(np.max(recent_rewards)),
             window_min_return=float(np.min(recent_rewards)),
@@ -5178,7 +5213,9 @@ def _run_layerwise_training_branch(
             )
         if int(completed) % max(1, int(train_cfg.save_interval)) == 0:
             diag_recorder.flush_periodic()
-    status.set_phase("PPO training (12-step layerwise robust)")
+    status.set_phase(
+        f"PPO training ({layerwise_horizon}-step layerwise robust)"
+    )
     training_completed = False
     completion_status = "failed"
     summary: Dict[str, Any]
@@ -5522,7 +5559,7 @@ def _run_layerwise_training_branch(
             "final_evidence": compact_summary["final_evidence"],
         },
         "sequential_diagnostics": {
-            "horizon": 12,
+            "horizon": layerwise_horizon,
             "max_step_dim": 6,
             "state_dim": int(layerwise_env.state_dim),
             "episode_count": int(summary.get(
@@ -5645,8 +5682,8 @@ def _run_sequential_via_runner_locked(
     train_cfg.grpo_kl_beta = 0.0
 
     from .baseline_bootstrap import (
-        load_static_skeletons_baseline,
-        static_skeletons_baseline_to_action,
+        load_calibrated_stage2_action_context,
+        validate_calibrated_stage2_action_context,
     )
     from .diagnostics import (
         EpisodeStats,
@@ -5674,6 +5711,10 @@ def _run_sequential_via_runner_locked(
     # Keep baseline and reward-probe kernels in the same mode for every GPU count.
     enable_cuda_reward_probe_fast_math()
     ev = runner.evaluator
+    stage2_model_type = resolve_stage2_model_type(
+        str(getattr(ev, "model_type", "") or ""),
+        num_layers=int(ev.total_layers),
+    )
     robust_mode = (
         str(getattr(train_cfg, "reward_design", "")).strip().lower()
         == "robust_constrained"
@@ -5704,7 +5745,8 @@ def _run_sequential_via_runner_locked(
     _seq_log_major_rule(
         log,
         (
-            "阶段 5 · 二阶段噪声强化学习（BLB v3 · 12-step layerwise robust）"
+            "阶段 5 · 二阶段噪声强化学习"
+            f"（BLB v3 · {int(ev.total_layers)}-step layerwise robust）"
             if decision_path == "layerwise"
             else "阶段 5 · 二阶段噪声强化学习（BLB v3 · per-block sequential）"
         ),
@@ -5712,7 +5754,7 @@ def _run_sequential_via_runner_locked(
     log(
         f"  {bullet} 模式（mode）："
         + (
-            "horizon=12 layerwise，max_step_dim=6"
+            f"horizon={int(ev.total_layers)} layerwise，max_step_dim=6"
             if decision_path == "layerwise"
             else "horizon=59 per-block sequential"
         )
@@ -5793,19 +5835,33 @@ def _run_sequential_via_runner_locked(
 
     rescale_bridge = runner._build_rescale_bridge(train_cfg, log=log)
 
-    ss_baseline_obj = load_static_skeletons_baseline(
+    calibrated_action_context = load_calibrated_stage2_action_context(
         rescale_optimizer_root=str(train_cfg.inproc_rescale_optimizer_root),
         dataset=str(train_cfg.profile),
         num_layers=int(ev.total_layers),
         gelu_per_layer=[int(x) for x in fixed_gelu.reshape(-1)],
         softmax_per_layer=[int(x) for x in fixed_softmax.reshape(-1)],
-    )
-    ss_action_vec, max_sfs, ss_cost_stats, _ss_diag = static_skeletons_baseline_to_action(
-        ss_baseline_obj,
         snap_sf_to_noise_table=False,
     )
+    validate_calibrated_stage2_action_context(
+        calibrated_action_context,
+        dataset=str(train_cfg.profile),
+        num_layers=int(ev.total_layers),
+        gelu_per_layer=[int(x) for x in fixed_gelu.reshape(-1)],
+        softmax_per_layer=[int(x) for x in fixed_softmax.reshape(-1)],
+        snap_sf_to_noise_table=False,
+    )
+    ss_baseline_obj = calibrated_action_context.baseline
+    ss_action_vec = calibrated_action_context.baseline_action_vec
+    max_sfs = calibrated_action_context.max_sfs
+    ss_cost_stats = calibrated_action_context.cost_stats
+    _ss_diag = calibrated_action_context.diagnostics
     baseline_action_vec = np.asarray(ss_action_vec, dtype=np.int64).reshape(-1)
-    log(f"  {bullet} static_skeletons baseline loaded from {ss_baseline_obj.archive_path}")
+    log(
+        f"  {bullet} calibrated static_skeletons baseline loaded from "
+        f"{ss_baseline_obj.archive_path} "
+        f"(sha256={calibrated_action_context.provenance['archive_sha256']})"
+    )
 
     # ---------- 3) base env ----------
     base_env = BLBStage2Env(
@@ -5900,7 +5956,7 @@ def _run_sequential_via_runner_locked(
     baseline.typical_bits_drop = float(
         max(baseline.total_bits_sum / max(int(base_env.num_layers), 1), 1.0)
     )
-    baseline.typical_fusion_count = 12.0
+    baseline.typical_fusion_count = float(base_env.num_layers)
     baseline.typical_k_drop = 5.0
 
     # Now baseline is fully populated; calibrate reward weights (v2-style
@@ -6436,6 +6492,8 @@ def _run_sequential_via_runner_locked(
             baseline_action_vec=ss_action_vec,
             fixed_gelu=fixed_gelu,
             fixed_softmax=fixed_softmax,
+            fixed_label=fixed_label,
+            fixed_source=fixed_source,
             blb_progress_dir=blb_progress_dir,
             baseline_preflight_metrics=baseline_preflight_metrics,
             status=status,
@@ -6896,7 +6954,7 @@ def _run_sequential_via_runner_locked(
         root_dir=os.path.join(_repo_root, "rl_training_data_points"),
         run_id=_stage2_run_id,
         stage="stage2",
-        model_type=str(getattr(ev, "model_type", "bert-base") or "bert-base"),
+        model_type=stage2_model_type,
         dataset=str(train_cfg.profile),
     )
     log(f"  {bullet} [data-points] Stage-2 structured RL data → {stage2_data_writer.run_dir}")
@@ -8403,7 +8461,7 @@ def _run_sequential_via_runner_locked(
     _register_run_in_experiments_log(
         run_basename=run_basename,
         profile=str(train_cfg.profile),
-        model_type=str(getattr(ev, "model_type", "bert-base")),
+        model_type=stage2_model_type,
         preset_label=str(fixed_label or ""),
         seed=int(train_cfg.seed),
         elapsed_sec=float(elapsed),
@@ -8648,7 +8706,7 @@ def _run_sequential_via_runner_locked(
                             _existing = {}
                     _now = _dt.datetime.now().isoformat()
                     _existing.setdefault("algorithm", "rl")
-                    _existing.setdefault("model_type", str(getattr(ev, "model_type", "bert-base")))
+                    _existing.setdefault("model_type", stage2_model_type)
                     _existing.setdefault("dataset", str(train_cfg.profile))
                     _existing.setdefault("created_at", _now)
                     _existing.setdefault("run_count", 1)

@@ -1133,7 +1133,7 @@ class BLBStage2RLRunner:
         baseline.typical_bits_drop = float(
             max(baseline.total_bits_sum / max(int(env.num_layers), 1), 1.0)
         )
-        baseline.typical_fusion_count = 12.0
+        baseline.typical_fusion_count = float(env.num_layers)
         baseline.typical_k_drop = 5.0
 
         # baseline 完全 populated 后再校准 reward weights（v3 把 baseline_metric1
@@ -2788,11 +2788,18 @@ class BLBStage2RLRunner:
             cfg.ppo.lr = float(getattr(ev, "stage2_ppo_lr_initial", cfg.ppo.lr))
         except Exception:
             pass
-        # 3) profile：从 dataset_key（数据集名）推断
+        # 3) profile：同时绑定数据集、模型规格和层数，避免 BERT-large
+        # 误读 base 模型的 RO archive / fusion map。
         try:
-            cfg.profile = str(ev.dataset_key)
+            from .baseline_bootstrap import resolve_stage2_profile
+
+            cfg.profile = resolve_stage2_profile(
+                str(ev.dataset_key),
+                model_type=str(getattr(ev, "model_type", "")),
+                num_layers=int(ev.total_layers),
+            )
         except Exception:
-            pass
+            raise
         # 4) num_trials_per_step / probe_batch_count
         try:
             cfg.num_trials_per_step = int(getattr(ev, "stage2_k_trials", cfg.num_trials_per_step))

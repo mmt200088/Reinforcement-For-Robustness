@@ -1,4 +1,4 @@
-"""Torch-free contract tests for the 12-step layerwise Stage-2 codec."""
+"""Torch-free contract tests for the layerwise Stage-2 codec."""
 
 from __future__ import annotations
 
@@ -153,8 +153,12 @@ class LayerwiseApplicationTest(unittest.TestCase):
                 np.testing.assert_array_equal(full[layer_base:layer_base + 9], baseline[layer_base:layer_base + 9])
                 self.assertNotIn(1, result.fusion_option_ids)
             else:
-                block1 = _option(self.map.graphs["block1_mrpc"], 0)
-                self.assertEqual(result.fusion_option_ids[1], block1.option_id)
+                block1_start = layer_base + _BLOCK_OFFSETS[1]
+                np.testing.assert_array_equal(
+                    full[block1_start:block1_start + _BLOCK_SLOT_COUNTS[1] - 1],
+                    baseline[block1_start:block1_start + _BLOCK_SLOT_COUNTS[1] - 1],
+                )
+                self.assertNotIn(1, result.fusion_option_ids)
 
             for block_idx, graph_key, count in ((2, "block2_mrpc", 1), (4, "block4", spec.layer_idx % 2), (5, "block5_n4", 1)):
                 option = _option(self.map.graphs[graph_key], count)
@@ -182,7 +186,7 @@ class LayerwiseApplicationTest(unittest.TestCase):
             fusion_map.expand("block2_mrpc", 88, 0)
         spec = layerwise.layerwise_schedule(12, fusion_map)[1]
         result = layerwise.apply_layer_action(_legacy_all_max(), [1, 0, 0, 0, 0, 0], spec, fusion_map)
-        self.assertEqual(result.fusion_option_ids, {1: 10, 2: 88, 4: 88, 5: 88})
+        self.assertEqual(result.fusion_option_ids, {2: 88, 4: 88, 5: 88})
         layer_base = _LAYER_WIDTH
         self.assertEqual(int(result.full_vector[layer_base + _BLOCK_OFFSETS[2]]), 9)
         self.assertEqual(int(result.full_vector[layer_base + _BLOCK_OFFSETS[4]]), 8)
@@ -307,6 +311,91 @@ class VariableCostTest(unittest.TestCase):
         actions[0] = layerwise.LayerwiseDecodedAction(0, {2: 8, 3: 8, 4: 8, 5: 8, 1: 8})
         with self.assertRaises(ValueError):
             layerwise.compute_variable_cost(actions)
+
+    def test_bert_large_uses_all_24_layers_and_dynamic_resource_denominators(self):
+        actions = []
+        for layer_idx in range(24):
+            blocks = {2: 8, 3: 8, 4: 8, 5: 8}
+            if layer_idx:
+                blocks[1] = 8
+            actions.append(layerwise.LayerwiseDecodedAction(1, blocks))
+
+        result = layerwise.compute_variable_cost(actions)
+
+        self.assertEqual(result.fusion_count, 24)
+        self.assertEqual(result.removed_k_bits, (5 * 24 - 1) * (13 - 8))
+        self.assertEqual(result.compute_saving, 1.0)
+        self.assertEqual(result.communication_saving, 1.0)
+        self.assertEqual(result.ppo_resource_score, 1.0)
+        self.assertEqual(len(result.layer_resource_rewards), 24)
+        self.assertEqual(len(result.slot_resource_rewards), 24)
+
+        matrix = [[1, 0, 0, 0, 0, 0] for _ in range(24)]
+        matrix[0][1] = 0
+        decoded = layerwise.compute_variable_cost_from_action_matrix(matrix)
+        self.assertEqual(decoded.fusion_count, 24)
+        self.assertEqual(len(decoded.layer_resource_rewards), 24)
+
+    def test_layer_count_is_bound_into_identity_and_resource_denominators(self):
+        self.assertEqual(
+            layerwise.layerwise_action_space_version(12),
+            "stage2_layerwise_12x6_v1",
+        )
+        self.assertEqual(
+            layerwise.layerwise_action_space_version(24),
+            "stage2_layerwise_24x6_v1",
+        )
+        self.assertEqual(layerwise.max_compute_saving_units(12), 12.0)
+        self.assertEqual(layerwise.max_compute_saving_units(24), 24.0)
+        self.assertEqual(layerwise.max_communication_saving_units(12), 295.0)
+        self.assertEqual(layerwise.max_communication_saving_units(24), 595.0)
+
+        for helper in (
+            layerwise.layerwise_action_space_version,
+            layerwise.max_compute_saving_units,
+            layerwise.max_communication_saving_units,
+        ):
+            with self.subTest(helper=helper.__name__):
+                with self.assertRaises(ValueError):
+                    helper(0)
+
+
+class BertLargeLayerwiseScheduleTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.map = fcm.FusionCountMap.load("mrpc_large")
+
+    def test_24_layer_schedule_does_not_require_a_block1_fusion_map(self):
+        gelu = [1, 2] * 12
+
+        specs = layerwise.layerwise_schedule(
+            24,
+            self.map,
+            profile="mrpc_large",
+            gelu_degrees=gelu,
+        )
+
+        self.assertEqual(len(specs), 24)
+        self.assertEqual([spec.layer_idx for spec in specs], list(range(24)))
+        self.assertEqual([spec.terminal for spec in specs], [False] * 23 + [True])
+        self.assertEqual(dict(specs[0].graph_keys_by_block)[5], "block5_n1")
+        self.assertEqual(dict(specs[1].graph_keys_by_block)[5], "block5_n2")
+
+        baseline = _legacy_all_max(24)
+        block1_before = baseline[_LAYER_WIDTH:_LAYER_WIDTH + _BLOCK_SLOT_COUNTS[1] - 1].copy()
+        applied = layerwise.apply_layer_action(
+            baseline,
+            [1, 0, 1, 2, 3, 4],
+            specs[1],
+            self.map,
+        )
+        np.testing.assert_array_equal(
+            applied.full_vector[
+                _LAYER_WIDTH:_LAYER_WIDTH + _BLOCK_SLOT_COUNTS[1] - 1
+            ],
+            block1_before,
+        )
+        self.assertNotIn(1, applied.fusion_option_ids)
 
 
 class KLevelsContractTest(unittest.TestCase):
@@ -433,7 +522,7 @@ class LayerwiseValidationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             layerwise.apply_layer_action(_legacy_all_max(), [2, 0, 0, 0, 0, 0], self.spec, self.map)
         with self.assertRaises(ValueError):
-            list(layerwise.one_coordinate_neighbors([[0] * 6 for _ in range(11)]))
+            list(layerwise.one_coordinate_neighbors([]))
 
     def test_duplicate_fixed_fusion_options_fail_loudly(self):
         duplicate = fcm.FusionCountMap.load("mrpc")
@@ -453,7 +542,6 @@ class LayerwiseValidationTest(unittest.TestCase):
         cases.append(("missing graph", missing_graph, KeyError, "block4"))
 
         for graph_key, fusion_count in (
-            ("block1_mrpc", 0),
             ("block2_mrpc", 1),
             ("block4", 0),
             ("block4", 1),
@@ -483,7 +571,7 @@ class LayerwiseValidationTest(unittest.TestCase):
         cases.append(("duplicate option id", duplicate_id, ValueError, "duplicate option_id"))
 
         malformed_vector = _non_contiguous_fusion_map()
-        malformed_vector.graphs["block1_mrpc"].options[0].action_indices.pop()
+        malformed_vector.graphs["block2_mrpc"].options[0].action_indices.pop()
         cases.append(("malformed action vector", malformed_vector, ValueError, "action_indices"))
 
         invalid_k_slot = _non_contiguous_fusion_map()
