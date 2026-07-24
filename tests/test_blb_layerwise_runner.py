@@ -510,9 +510,13 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertIn("boosted_overrides_hash", f1_call)
         self.assertIn("boosted_overrides_provenance", f1_call)
         self.assertNotIn('"boosted_overrides":', f1_call)
-        for f4_call in (promotion_f4_call, bank_f4_call):
-            self.assertIn("compact=True", f4_call)
-            self.assertIn('"boosted_overrides":', f4_call)
+        self.assertIn("compact=True", promotion_f4_call)
+        self.assertIn('"boosted_overrides":', promotion_f4_call)
+        self.assertIn("compact=True", bank_f4_call)
+        self.assertIn(
+            '"boosted_overrides":',
+            function_source("_collect_fixed_validation_bank"),
+        )
         self.assertIn(
             '"boosted_overrides": _serialize_boosted_overrides(',
             function_source("_record_final_revalidation_outcome"),
