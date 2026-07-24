@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import asdict
 import shutil
 import hashlib
 import inspect
@@ -100,6 +101,52 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertLess(strict_rank_key(candidates["b"]), strict_rank_key(candidates["a"]))
         frontier = strict_resource_pareto_frontier(candidates)
         self.assertEqual(list(frontier), ["c", "a"])
+
+    def test_identical_online_evidence_retargets_existing_assessment(self):
+        from blb_stage2_rl.layerwise_runner import (
+            _assess_pooled_online_trials,
+        )
+        from blb_stage2_rl.statistical_constraints import (
+            ConstraintAssessment,
+            TrialSeries,
+            assess_candidate,
+        )
+
+        trials = TrialSeries(
+            loss=[0.30, 0.31, 0.29, 0.305, 0.295],
+            metric1=[0.90, 0.89, 0.91, 0.895, 0.905],
+            metric2=[0.80, 0.79, 0.81, 0.795, 0.805],
+            seeds=[11, 12, 13, 14, 15],
+        )
+        fresh = ConstraintAssessment(
+            loss_precision_probability=0.91,
+            metric1_precision_probability=0.92,
+            metric2_precision_probability=0.93,
+            loss_stability_probability=0.81,
+            metric1_stability_probability=0.82,
+            metric2_stability_probability=0.83,
+            precision_probability=0.91,
+            stability_probability=0.81,
+            gate_probability=0.50,
+            online_precision_pass=True,
+            online_stability_pass=True,
+        )
+
+        result = _assess_pooled_online_trials(
+            raw_trials=trials,
+            pooled_trials=trials,
+            fresh_assessment={**asdict(fresh), "bootstrap_seed": 77},
+            reference=object(),
+            gate_probability=0.80,
+            bootstrap_seed=77,
+            assess_candidate_fn=assess_candidate,
+        )
+
+        self.assertEqual(result.precision_probability, 0.91)
+        self.assertEqual(result.stability_probability, 0.81)
+        self.assertEqual(result.gate_probability, 0.80)
+        self.assertTrue(result.online_precision_pass)
+        self.assertTrue(result.online_stability_pass)
 
     def test_convergence_resets_on_exact_resource_objective_improvement(self):
         from blb_stage2_rl.layerwise_runner import LayerwiseConvergenceTracker

@@ -9,6 +9,7 @@ from blb_stage2_rl.statistical_constraints import (
     TrialSeries,
     assess_candidate,
     build_baseline_reference,
+    retarget_constraint_assessment,
 )
 
 
@@ -282,6 +283,31 @@ def test_assessment_uses_independent_candidate_rows_and_rowwise_thresholds():
 
     assert assessment.loss_precision_probability == rowwise_precision
     assert assessment.loss_stability_probability == rowwise_stability
+
+
+def test_retarget_assessment_matches_fresh_bootstrap_at_new_gate():
+    reference = _reference()
+    candidate = _candidate()
+    original = assess_candidate(
+        candidate,
+        reference,
+        gate_probability=0.5,
+        bootstrap_seed=29,
+    )
+
+    retargeted = retarget_constraint_assessment(
+        original,
+        gate_probability=0.8,
+    )
+    recomputed = assess_candidate(
+        candidate,
+        reference,
+        gate_probability=0.8,
+        bootstrap_seed=29,
+    )
+
+    assert retargeted == recomputed
+    assert retargeted.gate_probability == 0.8
 
 
 @pytest.mark.parametrize(

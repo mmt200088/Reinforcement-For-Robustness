@@ -166,6 +166,22 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
             self.env.pending_full_vector[32:39], np.arange(1, 8),
         )
 
+    def test_reset_reuses_fixed_schedule_until_degree_vectors_change(self):
+        initial_schedule = self.env._schedule
+        initial_static_prefix = self.env._static_obs_prefix
+
+        self.env.reset(seed=17)
+
+        self.assertIs(self.env._schedule, initial_schedule)
+        self.assertIs(self.env._static_obs_prefix, initial_static_prefix)
+
+        self.base.gelu_degree = [2] + [4] * 11
+        self.env.reset(seed=18)
+
+        self.assertIsNot(self.env._schedule, initial_schedule)
+        self.assertIsNot(self.env._static_obs_prefix, initial_static_prefix)
+        self.assertEqual(self.env._gelu_degrees[0], 2)
+
     def test_evaluates_four_then_five_blocks_and_records_one_row(self):
         self.env.reset()
         next_obs, reward, done, info = self.env.step([1, 5, 0, 1, 2, 3])
@@ -175,6 +191,11 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertFalse(done)
         self.assertEqual(info["layer_summary"]["active_block_count"], 4)
         self.assertEqual(len(self.env.layer_summaries), 1)
+        info["layer_summary"]["blocks"][0]["replan_application"]["mutated"] = True
+        self.assertNotIn(
+            "mutated",
+            self.env.layer_summaries[0]["blocks"][0]["replan_application"],
+        )
         self.assertEqual(next_obs.shape, (self.env.state_dim,))
         self.assertEqual(len(self.base.step_calls), 0)
 
