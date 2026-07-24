@@ -466,6 +466,84 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         self.assertIsNone(base["fidelity"])
         self.assertNotEqual(candidate_key(action, probe), candidate_key(action, full))
 
+    def test_layerwise_compact_candidate_store_wiring_preserves_f1_and_f4_payload_rules(self):
+        source_path = (
+            Path(__file__).resolve().parents[1]
+            / "blb_stage2_rl"
+            / "layerwise_runner.py"
+        )
+        source = source_path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        def function_source(name):
+            node = next(
+                candidate
+                for candidate in ast.walk(tree)
+                if isinstance(candidate, ast.FunctionDef)
+                and candidate.name == name
+            )
+            return ast.get_source_segment(source, node)
+
+        def trial_append_source(function_name, fidelity):
+            function = function_source(function_name)
+            return next(
+                ast.get_source_segment(function, node)
+                for node in ast.walk(ast.parse(function))
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "append_trial_group"
+                and f'"fidelity": "{fidelity}"' in ast.get_source_segment(
+                    function, node,
+                )
+            )
+
+        f1_call = trial_append_source("train_layerwise", "F1")
+        promotion_f4_call = trial_append_source(
+            "promote_candidate_if_eligible", "F4",
+        )
+        bank_f4_call = trial_append_source("_collect_fixed_validation_bank", "F4")
+
+        self.assertIn("compact=True", f1_call)
+        self.assertIn("boosted_overrides_hash", f1_call)
+        self.assertIn("boosted_overrides_provenance", f1_call)
+        self.assertNotIn('"boosted_overrides":', f1_call)
+        for f4_call in (promotion_f4_call, bank_f4_call):
+            self.assertIn("compact=True", f4_call)
+            self.assertIn('"boosted_overrides":', f4_call)
+        self.assertIn(
+            '"boosted_overrides": _serialize_boosted_overrides(',
+            function_source("_record_final_revalidation_outcome"),
+        )
+
+    def test_compact_promotion_status_helper_delegates_to_candidate_store_api(self):
+        from blb_stage2_rl.layerwise_runner import _append_promotion_status
+
+        append = mock.Mock()
+        append_promotion_status = mock.Mock()
+        store = types.SimpleNamespace(
+            append=append,
+            append_promotion_status=append_promotion_status,
+        )
+        action = [1, 2, 3]
+        context = {"action_space_version": "layerwise-v1", "fidelity": "F4"}
+        metadata = {"boosted_overrides": [{"block_idx": 4, "layer_idx": 3}]}
+
+        _append_promotion_status(
+            store,
+            action,
+            context,
+            status="promoted",
+            metadata=metadata,
+        )
+
+        append.assert_not_called()
+        append_promotion_status.assert_called_once_with(
+            action,
+            context,
+            status="promoted",
+            metadata=metadata,
+        )
+
     def test_full_validation_loader_is_uncapped_and_does_not_use_probe_subset(self):
         source_path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "runner.py"
         tree = ast.parse(source_path.read_text(encoding="utf-8"))
@@ -4276,14 +4354,12 @@ class LayerwisePromotionTests(unittest.TestCase):
             })
             store = type(store)(store.path)
             store.trial_count_for_action(action, context)
-            store.append({
-                "record_type": "candidate_promotion_status_v1",
-                "action_indices": action,
-                "effective_action_indices": action,
-                "identity_context": context,
-                "promotion_status": "promoted",
-                "promotion_metadata": {"generation": 2},
-            })
+            store.append_promotion_status(
+                action,
+                context,
+                status="promoted",
+                metadata={"generation": 2},
+            )
 
             with (
                 mock.patch.object(
@@ -4794,7 +4870,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             )
             status_rows = [
                 row for row in store.iter_active_records()
-                if row.get("record_type") == "candidate_promotion_status_v1"
+                if row.get("record_type") == "candidate_promotion_status_v2"
             ]
 
         self.assertEqual(result.status, "failed_probability_gate")

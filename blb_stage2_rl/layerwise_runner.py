@@ -1505,16 +1505,12 @@ def _append_promotion_status(
         status: str,
         metadata: Optional[Mapping[str, Any]] = None,
         ) -> None:
-    store.append({
-        "record_type": "candidate_promotion_status_v1",
-        "action_indices": list(action_indices),
-        "effective_action_indices": list(action_indices),
-        "identity_context": dict(identity_context),
-        "fidelity": "F4",
-        "valid": status in ("promoted", _FINAL_REVALIDATION_PASSED),
-        "promotion_status": str(status),
-        "promotion_metadata": dict(metadata or {}),
-    })
+    store.append_promotion_status(
+        action_indices,
+        identity_context,
+        status=status,
+        metadata=dict(metadata or {}),
+    )
 
 
 def _serialize_boosted_overrides(overrides: Mapping[Any, Any]) -> list[dict[str, Any]]:
@@ -1612,7 +1608,10 @@ def _restore_three_bank_candidates(
         str, tuple[str, tuple[int, ...], dict[str, Any]]
     ] = {}
     for record in candidate_store.iter_active_records():
-        if record.get("record_type") != "candidate_promotion_status_v1":
+        if record.get("record_type") not in (
+                "candidate_promotion_status_v1",
+                "candidate_promotion_status_v2",
+        ):
             continue
         if str(record.get("identity_context_hash", "")) != wanted_context_hash:
             continue
@@ -1744,7 +1743,10 @@ def restore_promoted_candidates(
     ] = {}
     wanted_context_hash = sha256_json(full_identity_context)
     for record in candidate_store.iter_active_records():
-        if record.get("record_type") != "candidate_promotion_status_v1":
+        if record.get("record_type") not in (
+                "candidate_promotion_status_v1",
+                "candidate_promotion_status_v2",
+        ):
             continue
         if str(record.get("identity_context_hash", "")) != wanted_context_hash:
             continue
@@ -2057,6 +2059,7 @@ def _collect_fixed_validation_bank(
                 metadata["episode_reward"] = float(episode_reward)
             candidate_store.append_trial_group(
                 action_indices, fresh_trials, metadata,
+                compact=True,
             )
             fresh_count += len(fresh_trials.loss)
     finally:
@@ -2540,6 +2543,7 @@ def promote_candidate_if_eligible(
                     "promotion_marker": "fresh_top_up",
                     "promotion_status": "pending_reassessment",
                 },
+                compact=True,
             )
         evidence = candidate_store.trial_evidence_for_action(
             action_indices, full_identity_context,
@@ -3393,14 +3397,12 @@ def train_layerwise(
                     "boosted_overrides_hash": sha256_json(
                         getattr(env, "boosted_overrides", {})
                     ),
-                    "boosted_overrides": _serialize_boosted_overrides(
-                        getattr(env, "boosted_overrides", {})
-                    ),
                     "boosted_overrides_provenance": "layerwise_env",
                     "assessment_bootstrap_seed": int(bootstrap_seed),
                     "episode_reward": float(episode_reward),
                     "promotion_marker": "online_group",
                 },
+                compact=True,
             )
             evidence = candidate_store.trial_evidence_for_action(
                 full_vector, probe_identity_context,
