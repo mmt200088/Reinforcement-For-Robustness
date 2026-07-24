@@ -745,8 +745,6 @@ class RLDiagnosticsRecorder:
         return {
             "episodes": self.episode_count,
             "ppo_updates": self.ppo_update_count,
-            "episode_high_water": self.episode_high_water,
-            "ppo_update_high_water": self.ppo_update_high_water,
         }
 
     @staticmethod

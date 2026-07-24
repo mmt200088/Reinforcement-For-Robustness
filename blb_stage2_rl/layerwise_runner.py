@@ -1985,6 +1985,7 @@ def _collect_fixed_validation_bank(
     if full_base_env is not env.base and callable(online_clear):
         online_clear()
         env.base._installed_config_fingerprint = None
+        env.base._installed_action_hash = None
     previous_probe_seed = getattr(full_base_env, "probe_noise_seed", None)
     fresh_count = 0
     try:
@@ -2064,9 +2065,12 @@ def _collect_fixed_validation_bank(
             full_clear = getattr(full_base_env, "clear_installed_blb", None)
             if callable(full_clear):
                 full_clear()
+            full_base_env._installed_config_fingerprint = None
+            full_base_env._installed_action_hash = None
             if callable(online_clear):
                 online_clear()
             env.base._installed_config_fingerprint = None
+            env.base._installed_action_hash = None
 
     evidence = candidate_store.trial_evidence_for_action(
         action_indices, full_identity_context, max_trials=target_count,
@@ -2475,6 +2479,7 @@ def promote_candidate_if_eligible(
             if full_base_env is not env.base and callable(online_clear):
                 online_clear()
                 env.base._installed_config_fingerprint = None
+                env.base._installed_action_hash = None
             previous_probe_seed = getattr(full_base_env, "probe_noise_seed", None)
             full_base_env.probe_noise_seed = promotion_probe_seed
             try:
@@ -2496,9 +2501,12 @@ def promote_candidate_if_eligible(
                     full_clear = getattr(full_base_env, "clear_installed_blb", None)
                     if callable(full_clear):
                         full_clear()
+                    full_base_env._installed_config_fingerprint = None
+                    full_base_env._installed_action_hash = None
                     if callable(online_clear):
                         online_clear()
                     env.base._installed_config_fingerprint = None
+                    env.base._installed_action_hash = None
             if len(evaluated) != 1:
                 raise RuntimeError(
                     f"promotion expected one terminal result, received {len(evaluated)}"

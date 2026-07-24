@@ -3463,6 +3463,7 @@ def _build_authoritative_validation_env(
     promotion_env.statistical_reference = None
     promotion_env.probe_noise_seed = None
     promotion_env._installed_config_fingerprint = None
+    promotion_env._installed_action_hash = None
     promotion_env._last_probe_diagnostics = {}
 
     devices = [int(value) for value in reward_devices]
@@ -4452,26 +4453,26 @@ def _run_layerwise_training_branch(
     expected_episode_high_water = int(start_episode) - 1
     if (
             int(restored_diagnostics["episodes"]) != int(start_episode)
-            or int(restored_diagnostics["episode_high_water"])
+            or int(diag_recorder.episode_high_water)
             != expected_episode_high_water
     ):
         raise RuntimeError(
             "layerwise checkpoint episode diagnostics mismatch: "
             f"checkpoint_count={start_episode}, "
             f"restored_count={restored_diagnostics['episodes']}, "
-            f"restored_high_water={restored_diagnostics['episode_high_water']}"
+            f"restored_high_water={diag_recorder.episode_high_water}"
         )
     if (
             int(restored_diagnostics["ppo_updates"])
             != int(resumed_ppo_update_count)
-            or int(restored_diagnostics["ppo_update_high_water"])
+            or int(diag_recorder.ppo_update_high_water)
             != int(resumed_ppo_update_count)
     ):
         raise RuntimeError(
             "layerwise checkpoint PPO diagnostics mismatch: "
             f"checkpoint_count={resumed_ppo_update_count}, "
             f"restored_count={restored_diagnostics['ppo_updates']}, "
-            f"restored_high_water={restored_diagnostics['ppo_update_high_water']}"
+            f"restored_high_water={diag_recorder.ppo_update_high_water}"
         )
     probability_thresholds = {
         "online": float(getattr(train_cfg, "online_constraint_probability", 0.50)),

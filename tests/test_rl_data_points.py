@@ -1,3 +1,4 @@
+from collections import Counter
 from dataclasses import dataclass
 import hashlib
 import importlib.util
@@ -1357,8 +1358,6 @@ class RLDataPointWriterTest(unittest.TestCase):
             self.assertEqual(restored, {
                 "episodes": episode_count,
                 "ppo_updates": ppo_update_count,
-                "episode_high_water": episode_count - 1,
-                "ppo_update_high_water": ppo_update_count,
             })
             assert_exact_state(resumed)
             self.assertEqual(len(episode_path.read_text().splitlines()), episode_count)
@@ -1454,8 +1453,6 @@ class RLDataPointWriterTest(unittest.TestCase):
                 self.assertEqual(restored, {
                     "episodes": expected_episodes,
                     "ppo_updates": expected_updates,
-                    "episode_high_water": episode_high_water,
-                    "ppo_update_high_water": ppo_high_water,
                 })
                 self.assertEqual(recorder.episode_count, expected_episodes)
                 self.assertEqual(recorder.ppo_update_count, expected_updates)
