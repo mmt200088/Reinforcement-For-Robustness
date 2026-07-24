@@ -469,6 +469,7 @@ def materialize_action_for_model(
         truncation_backend: str = "binary",
         truncation_ring_bits: int = 43,
         truncation_source_fractional_bits: int = 24,
+        borrow_cached_optimizer_payloads: bool = False,
         ) -> MaterializedStage2Action:
     """Decode, replan, write back, and fingerprint one executable action."""
     evaluated = evaluate_action_for_cost(
@@ -480,6 +481,7 @@ def materialize_action_for_model(
         gelu_degree=gelu_degree,
         attn_degree=attn_degree,
         boosted_overrides=boosted_overrides,
+        borrow_cached_optimizer_payloads=borrow_cached_optimizer_payloads,
     )
     return materialize_decoded_action(
         action_indices=evaluated.action_indices,
@@ -508,6 +510,7 @@ def evaluate_action_for_cost(
         gelu_degree: Any = 4,
         attn_degree: Any = 4,
         boosted_overrides: "Mapping[Tuple[int, int], Mapping[str, int]] | None" = None,
+        borrow_cached_optimizer_payloads: bool = False,
         ) -> ActionCostEvaluation:
     """Evaluate every action through the same cfg-derived optimizer path.
 
@@ -557,7 +560,13 @@ def evaluate_action_for_cost(
     cfgs_dict = decoded.cfgs_dict()
     requests = build_optimizer_requests(profile, cfgs_dict)
 
-    outputs = rescale_bridge.evaluate_blocks(requests)
+    readonly_batch_eval = getattr(
+        rescale_bridge, "evaluate_blocks_readonly", None,
+    )
+    if borrow_cached_optimizer_payloads and callable(readonly_batch_eval):
+        outputs = readonly_batch_eval(requests)
+    else:
+        outputs = rescale_bridge.evaluate_blocks(requests)
 
     return ActionCostEvaluation(
         action_indices=[int(x) for x in action_arr.tolist()],

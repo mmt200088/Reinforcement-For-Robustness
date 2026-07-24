@@ -1099,6 +1099,7 @@ class RescaleOptimizerBridge:
             cfg: Any,
             t_new: Optional[List[int]] = None,
             extra_overrides: Optional[Mapping[str, Union[int, str]]] = None,
+            _borrow_cached_payload: bool = False,
             ) -> RescaleOptimizerOutput:
         """对单个 (config, block, cfg) 三元组跑一次优化器。
 
@@ -1159,7 +1160,11 @@ class RescaleOptimizerBridge:
             self.cache_hits += 1
             cached = self._eval_cache.pop(cache_key)
             self._eval_cache[cache_key] = cached
-            raw = _clone_optimizer_payload(cached)
+            raw = (
+                dict(cached)
+                if _borrow_cached_payload
+                else _clone_optimizer_payload(cached)
+            )
             raw["_optimizer_cache_hit"] = True
         else:
             self.cache_misses += 1
@@ -1195,6 +1200,32 @@ class RescaleOptimizerBridge:
 
         # 解析时保留原始 config_name（带 _L<i>），让上层能按层归并
         return _parse_optimizer_raw(raw, config_name=config_name)
+
+    def evaluate_readonly(
+            self,
+            *,
+            config_name: str,
+            block_name: str,
+            cfg: Any,
+            t_new: Optional[List[int]] = None,
+            extra_overrides: Optional[Mapping[str, Union[int, str]]] = None,
+            ) -> RescaleOptimizerOutput:
+        """Evaluate for an internal consumer that treats ``output.raw`` as read-only.
+
+        Public :meth:`evaluate` returns a recursively isolated cache payload
+        because callers may mutate nested diagnostics. Canonical Stage-2
+        materialization only reads those diagnostics, so it can avoid cloning
+        the same large JSON tree on every cache hit. A fresh top-level mapping
+        still carries the exact per-call cache counters and hit marker.
+        """
+        return self.evaluate(
+            config_name=config_name,
+            block_name=block_name,
+            cfg=cfg,
+            t_new=t_new,
+            extra_overrides=extra_overrides,
+            _borrow_cached_payload=True,
+        )
 
     def evaluate_baseline(
             self,
@@ -1248,6 +1279,27 @@ class RescaleOptimizerBridge:
             xtra = (extra_overrides or {}).get(config_name)
             t_new = (t_new_per_config or {}).get(config_name)
             outputs[config_name] = self.evaluate(
+                config_name=config_name,
+                block_name=block_name,
+                cfg=cfg,
+                t_new=t_new,
+                extra_overrides=xtra,
+            )
+        return outputs
+
+    def evaluate_blocks_readonly(
+            self,
+            requests: Mapping[str, Tuple[str, Any]],
+            *,
+            t_new_per_config: Optional[Mapping[str, List[int]]] = None,
+            extra_overrides: Optional[Mapping[str, Mapping[str, Union[int, str]]]] = None,
+            ) -> Dict[str, RescaleOptimizerOutput]:
+        """Read-only counterpart of :meth:`evaluate_blocks` for materialization."""
+        outputs: Dict[str, RescaleOptimizerOutput] = {}
+        for config_name, (block_name, cfg) in requests.items():
+            xtra = (extra_overrides or {}).get(config_name)
+            t_new = (t_new_per_config or {}).get(config_name)
+            outputs[config_name] = self.evaluate_readonly(
                 config_name=config_name,
                 block_name=block_name,
                 cfg=cfg,

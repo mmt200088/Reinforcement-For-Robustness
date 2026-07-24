@@ -132,6 +132,11 @@ class RescaleOptimizerBridgeCacheTest(unittest.TestCase):
                 block_name="block1",
                 cfg=cfg,
             )
+            third = bridge.evaluate_readonly(
+                config_name="block1_mrpc_L9",
+                block_name="block1",
+                cfg=cfg,
+            )
 
         self.assertEqual(invoker.calls, 1)
         self.assertFalse(first.raw["_optimizer_cache_hit"])
@@ -140,7 +145,8 @@ class RescaleOptimizerBridgeCacheTest(unittest.TestCase):
         self.assertEqual(second.raw["_optimizer_cache_misses"], 1)
         self.assertEqual(second.total_bits, 123)
         self.assertIsNot(first.raw, second.raw)
-        self.assertIs(first.raw["result"], second.raw["result"])
+        self.assertIsNot(second.raw, third.raw)
+        self.assertIs(second.raw["result"], third.raw["result"])
 
     def test_readonly_and_public_cache_hits_have_identical_values_and_counters(self):
         cfg = SimpleNamespace(

@@ -308,6 +308,7 @@ class BLBStage2Env:
             truncation_source_fractional_bits=(
                 self.env_cfg.truncation_source_fractional_bits
             ),
+            borrow_cached_optimizer_payloads=True,
         )
 
     def _normalize_degree_vector(self, degrees, *, default: int, name: str):

@@ -185,7 +185,12 @@ def evaluate_block_from_full_vector(
     config_name = f"{graph_key}_L{layer}"
     optimizer_t0 = time.perf_counter()
     try:
-        output = base_env.rescale_bridge.evaluate(
+        evaluate_optimizer = getattr(
+            base_env.rescale_bridge,
+            "evaluate_readonly",
+            base_env.rescale_bridge.evaluate,
+        )
+        output = evaluate_optimizer(
             config_name=config_name,
             block_name=f"block{block}",
             cfg=block_cfg,
