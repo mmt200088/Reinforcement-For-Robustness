@@ -104,6 +104,79 @@ class RescaleOptimizerBridgeCacheTest(unittest.TestCase):
         self.assertEqual(second.raw["result"]["chain"]["total_bits"], 123)
         self.assertIsNot(first.raw["result"], second.raw["result"])
 
+    def test_readonly_cache_hit_borrows_nested_payload_without_recursive_clone(self):
+        invoker = CountingInvoker()
+        bridge = RescaleOptimizerBridge(
+            invoker=invoker,
+            auto_t_new_from_cfg=False,
+            cache_max_entries=8,
+        )
+        cfg = SimpleNamespace(
+            wffn2_encode=_point(40),
+            mean_inv_d_encode=_point(40),
+            var_inv_d_encode=_point(40),
+        )
+
+        first = bridge.evaluate_readonly(
+            config_name="block1_mrpc_L1",
+            block_name="block1",
+            cfg=cfg,
+        )
+        with mock.patch.object(
+            bridge_mod,
+            "_clone_optimizer_payload",
+            side_effect=AssertionError("read-only cache hit must not clone nested JSON"),
+        ):
+            second = bridge.evaluate_readonly(
+                config_name="block1_mrpc_L7",
+                block_name="block1",
+                cfg=cfg,
+            )
+
+        self.assertEqual(invoker.calls, 1)
+        self.assertFalse(first.raw["_optimizer_cache_hit"])
+        self.assertTrue(second.raw["_optimizer_cache_hit"])
+        self.assertEqual(second.raw["_optimizer_cache_hits"], 1)
+        self.assertEqual(second.raw["_optimizer_cache_misses"], 1)
+        self.assertEqual(second.total_bits, 123)
+        self.assertIsNot(first.raw, second.raw)
+        self.assertIs(first.raw["result"], second.raw["result"])
+
+    def test_readonly_and_public_cache_hits_have_identical_values_and_counters(self):
+        cfg = SimpleNamespace(
+            wffn2_encode=_point(40),
+            mean_inv_d_encode=_point(40),
+            var_inv_d_encode=_point(40),
+        )
+        public_bridge = RescaleOptimizerBridge(
+            invoker=CountingInvoker(),
+            auto_t_new_from_cfg=False,
+            cache_max_entries=8,
+        )
+        readonly_bridge = RescaleOptimizerBridge(
+            invoker=CountingInvoker(),
+            auto_t_new_from_cfg=False,
+            cache_max_entries=8,
+        )
+
+        public_bridge.evaluate(
+            config_name="block1_mrpc_L1", block_name="block1", cfg=cfg,
+        )
+        readonly_bridge.evaluate_readonly(
+            config_name="block1_mrpc_L1", block_name="block1", cfg=cfg,
+        )
+        public_hit = public_bridge.evaluate(
+            config_name="block1_mrpc_L7", block_name="block1", cfg=cfg,
+        )
+        readonly_hit = readonly_bridge.evaluate_readonly(
+            config_name="block1_mrpc_L7", block_name="block1", cfg=cfg,
+        )
+
+        self.assertEqual(public_hit.to_signal_dict(), readonly_hit.to_signal_dict())
+        self.assertEqual(public_hit.raw, readonly_hit.raw)
+        self.assertEqual(public_bridge.cache_hits, readonly_bridge.cache_hits)
+        self.assertEqual(public_bridge.cache_misses, readonly_bridge.cache_misses)
+
 
 @unittest.skipIf(bridge_mod is None, "torch unavailable")
 class BaselineArchiveCacheTest(unittest.TestCase):
