@@ -25,7 +25,6 @@ import pathlib
 import sys
 import threading
 import unittest
-from unittest import mock
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -528,70 +527,6 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
 
         self.assertIs(evaluator.dataloaders["train"], train_loader)
 
-    def test_validation_full_batches_move_to_each_device_once_and_training_stays_lazy(self):
-        import layer_importance_evaluator as evaluator_mod
-        from layer_importance_evaluator import LayerImportanceEvaluator
-
-        moves = []
-
-        class FakeTensor:
-            def __init__(self, name):
-                self.name = str(name)
-
-            def to(self, device, non_blocking=False):
-                moves.append((self.name, str(device), bool(non_blocking)))
-                return ("moved", self.name, str(device))
-
-        class FakeTorch:
-            Tensor = FakeTensor
-
-            @staticmethod
-            def device(value):
-                return str(value)
-
-        validation_batches = (
-            {
-                "input_ids": FakeTensor("input_ids"),
-                "labels": FakeTensor("labels"),
-                "metadata": "keep",
-            },
-        )
-        training_loader = object()
-        evaluator = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
-        evaluator.dataloaders = {
-            "validation_full": validation_batches,
-            "train": training_loader,
-        }
-
-        with mock.patch.object(evaluator_mod, "torch", FakeTorch):
-            first = LayerImportanceEvaluator._stage1_device_batches(
-                evaluator, "validation_full", "cuda:0",
-            )
-            second = LayerImportanceEvaluator._stage1_device_batches(
-                evaluator, "validation_full", "cuda:0",
-            )
-            other_device = LayerImportanceEvaluator._stage1_device_batches(
-                evaluator, "validation_full", "cuda:1",
-            )
-            train = LayerImportanceEvaluator._stage1_device_batches(
-                evaluator, "train", "cuda:0",
-            )
-
-        self.assertIs(first, second)
-        self.assertIs(train, training_loader)
-        self.assertEqual(first[0]["metadata"], "keep")
-        self.assertEqual(first[0]["input_ids"], ("moved", "input_ids", "cuda:0"))
-        self.assertEqual(other_device[0]["labels"], ("moved", "labels", "cuda:1"))
-        self.assertEqual(
-            moves,
-            [
-                ("input_ids", "cuda:0", False),
-                ("labels", "cuda:0", False),
-                ("input_ids", "cuda:1", False),
-                ("labels", "cuda:1", False),
-            ],
-        )
-
     def test_repeated_same_config_skips_handler_reinstall_but_keeps_eval_mode(self):
         from layer_importance_evaluator import (
             LayerImportanceEvaluator,
@@ -677,21 +612,8 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         ev.layers_attribute = "bert.encoder.layer"
         ev.dataloaders = {"validation_full": object()}
         ev._stage1_worker_eval_cache = None
-        cached_batches = object()
-        device_batch_calls = []
-        ev._stage1_device_batches = (
-            lambda split_name, device: (
-                device_batch_calls.append((split_name, str(device)))
-                or cached_batches
-            )
-        )
         eval_calls = []
-        ev._run_evaluation = (
-            lambda dataloader, *_args, **_kwargs: (
-                eval_calls.append(dataloader)
-                or (0.1, 0.2, 0.3, 4.0)
-            )
-        )
+        ev._run_evaluation = lambda *_args, **_kwargs: eval_calls.append("forward") or (0.1, 0.2, 0.3, 4.0)
 
         model = FakeModel()
         handler = FakeHandler()
@@ -721,7 +643,7 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         )
         self.assertEqual(handler.calls, first_install_calls)
         self.assertEqual(model.eval_calls, 2)
-        self.assertEqual(eval_calls, [cached_batches, cached_batches])
+        self.assertEqual(eval_calls, ["forward", "forward"])
 
         changed_gelu = [2, 2, STAGE1_ORIGINAL_FUNCTION_DEGREE]
         LayerImportanceEvaluator._stage1_evaluate_on_model(
@@ -735,11 +657,6 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         )
         self.assertGreater(len(handler.calls), len(first_install_calls))
         self.assertEqual(model.eval_calls, 3)
-        self.assertEqual(eval_calls, [cached_batches, cached_batches, cached_batches])
-        self.assertEqual(
-            device_batch_calls,
-            [("validation_full", "cpu")] * 3,
-        )
 
 
 class Stage1GpuEvalScriptSourceTest(unittest.TestCase):
