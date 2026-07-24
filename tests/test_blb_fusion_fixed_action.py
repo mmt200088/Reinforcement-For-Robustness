@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import pathlib
 import sys
+import types
 import unittest
+from unittest import mock
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _BLB_DIR = _REPO_ROOT / "blb_stage2_rl"
@@ -156,6 +158,76 @@ class SelectFusionEvalMetadataTest(unittest.TestCase):
     def test_no_base_action_untouched(self):
         md = self._call(base_action=None)
         self.assertNotIn("schema_version", md)
+
+
+class ReconstructFusionGroupBaselineOwnedBlocksTest(unittest.TestCase):
+    @staticmethod
+    def _step(step_idx, block_idx, graph_key, offsets):
+        return types.SimpleNamespace(
+            step_idx=step_idx,
+            layer_idx=0,
+            block_idx=block_idx,
+            graph_key_suffix=graph_key,
+            full_vec_offsets=tuple(offsets),
+            slot_dims=(15, 2),
+        )
+
+    @staticmethod
+    def _graph():
+        option = types.SimpleNamespace(
+            option_id=1,
+            action_indices=(7, 0),
+            fusion_count=1,
+            boosted=True,
+        )
+        return types.SimpleNamespace(k_slot_index=1, options=[option])
+
+    def test_missing_block1_and_block3_maps_do_not_block_fusion_reconstruction(self):
+        schedule = [
+            self._step(0, 1, "block1_mrpc_large", (0, 1)),
+            self._step(1, 2, "block2_mrpc_large", (2, 3)),
+            self._step(2, 3, "block3_exp_n6", (4, 5)),
+        ]
+        fake_action_space = types.SimpleNamespace(
+            K_LEVELS=(13, 11),
+            step_schedule=lambda *_args, **_kwargs: schedule,
+        )
+        fusion_map = types.SimpleNamespace(
+            graphs={"block2_mrpc_large": self._graph()},
+        )
+
+        with mock.patch.dict(sys.modules, {"action_space": fake_action_space}):
+            result = ffa.reconstruct_fusion_group(
+                [0, 0, 7, 1, 0, 0],
+                fusion_map=fusion_map,
+                num_layers=1,
+                profile="mrpc_large",
+                gelu=[1],
+                softmax=[6],
+            )
+
+        self.assertEqual(result["option_by_step"], {"1": 1})
+        self.assertEqual(result["summary"]["step_count"], 3)
+        self.assertEqual(result["summary"]["total_fusion_count"], 1)
+        self.assertEqual(result["summary"]["k_values"], [11])
+
+    def test_missing_fusion_managed_block_map_still_fails_loudly(self):
+        schedule = [self._step(0, 4, "block4", (0, 1))]
+        fake_action_space = types.SimpleNamespace(
+            K_LEVELS=(13, 11),
+            step_schedule=lambda *_args, **_kwargs: schedule,
+        )
+
+        with mock.patch.dict(sys.modules, {"action_space": fake_action_space}):
+            with self.assertRaisesRegex(KeyError, "block4"):
+                ffa.reconstruct_fusion_group(
+                    [7, 1],
+                    fusion_map=types.SimpleNamespace(graphs={}),
+                    num_layers=1,
+                    profile="mrpc_large",
+                    gelu=[1],
+                    softmax=[6],
+                )
 
 
 if __name__ == "__main__":

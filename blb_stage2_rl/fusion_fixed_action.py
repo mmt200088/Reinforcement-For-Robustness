@@ -134,6 +134,11 @@ def reconstruct_fusion_group(
         graph_key = str(step.graph_key_suffix)
         graph = fusion_map.graphs.get(graph_key)
         if graph is None:
+            # Layerwise Stage-2 owns only K for Blocks 1 and 3. Their SF chain
+            # stays on the calibrated baseline, so large-profile map bundles
+            # intentionally omit these non-fusion graphs.
+            if int(step.block_idx) in (1, 3):
+                continue
             raise KeyError(f"fusion map missing graph {graph_key!r}")
         action_slice = action_arr[list(step.full_vec_offsets)]
         option_id = match_option_id(
