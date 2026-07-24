@@ -28,6 +28,21 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   than leaving them idle. Do this within the active objective only: do not start
   unapproved experiments, do not interfere with running jobs, and report back
   when the next useful server action needs user direction.
+- Multi-agent aggregate deployment protocol, added 2026-07-24: a local source
+  change is not complete when only its agent branch reaches Git. Before every
+  server source update, fetch all remote heads and integrate every completed,
+  non-superseded agent result into one clean aggregate commit; do not deploy an
+  individual agent branch as the server's current source. Perform a final
+  all-head refresh immediately before push/deployment and repeat integration if
+  a current agent branch advanced. Push the aggregate commit, make the server
+  obtain that exact commit only through Git (pull/fetch or a verified Git
+  bundle), and verify matching local, remote, and server commit and tree IDs.
+  Canonical edits remain local only: never patch, format, or commit project
+  source on the server. Dirty worktrees, unfinished experiments, rejected
+  variants, and superseded branches must not be merged mechanically; record
+  their disposition in the aggregate manifest. Server-generated results return
+  through Git. Until aggregate parity is verified, the source change remains
+  incomplete and no server run should start from it.
 - Current Codex role in this project, added 2026-07-02: focus on runtime
   efficiency optimization across code produced by the other agents. This means
   profiling, reducing wall-clock time, improving CPU/GPU parallelism, reducing
