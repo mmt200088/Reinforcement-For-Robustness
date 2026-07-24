@@ -1,4 +1,4 @@
-"""Twelve-step Stage-2 environment with one policy action per BERT layer."""
+"""Stage-2 environment with one policy action per BERT layer."""
 
 from __future__ import annotations
 
@@ -162,9 +162,9 @@ class BLBStage2LayerwiseEnv:
         self.fusion_map = fusion_map
         self.cfg = env_cfg or LayerwiseEnvConfig()
         self.num_layers = int(base_env.num_layers)
-        if self.num_layers != 12:
+        if self.num_layers < 1:
             raise ValueError(
-                f"BLBStage2LayerwiseEnv requires 12 BERT layers, got {self.num_layers}"
+                f"BLBStage2LayerwiseEnv requires at least one layer, got {self.num_layers}"
             )
         self.profile = str(profile or base_env.env_cfg.profile)
         self.horizon = self.num_layers

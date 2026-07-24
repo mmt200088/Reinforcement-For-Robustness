@@ -61,6 +61,67 @@ ALLOWED_GELU_DEGREES = (1, 2, 4)
 ALLOWED_SOFTMAX_DEGREES = (2, 3, 4, 5, 6)
 
 
+def resolve_stage2_model_type(
+        model_type: str,
+        *,
+        num_layers: int,
+        ) -> str:
+    """Return the canonical BERT model identity for a Stage-2 depth."""
+    layers = int(num_layers)
+    expected = {
+        12: "bert-base",
+        24: "bert-large",
+    }.get(layers)
+    if expected is None:
+        raise ValueError(
+            f"Stage-2 currently supports 12 or 24 Transformer layers, got {layers}"
+        )
+
+    raw_model = str(model_type or "").strip().lower()
+    normalized = raw_model.replace("_", "-").replace(" ", "-")
+    if not normalized:
+        return expected
+    if "large" in normalized and layers != 24:
+        raise ValueError(
+            f"inconsistent Stage-2 model/depth: model_type={model_type!r}, "
+            f"num_layers={layers}"
+        )
+    if "base" in normalized and layers != 12:
+        raise ValueError(
+            f"inconsistent Stage-2 model/depth: model_type={model_type!r}, "
+            f"num_layers={layers}"
+        )
+    if "large" in normalized or "base" in normalized:
+        return expected
+    return normalized
+
+
+def resolve_stage2_profile(
+        dataset: str,
+        *,
+        model_type: str,
+        num_layers: int,
+        ) -> str:
+    """Resolve the model-aware RO/fusion-map profile used by Stage-2."""
+    raw_dataset = str(dataset or "").strip().lower()
+    if not raw_dataset:
+        raise ValueError("dataset must be nonempty")
+    layers = int(num_layers)
+    resolve_stage2_model_type(model_type, num_layers=layers)
+
+    dataset_declares_large = raw_dataset.endswith("_large")
+    if dataset_declares_large and layers != 24:
+        raise ValueError(
+            f"inconsistent Stage-2 profile/depth: dataset={dataset!r}, "
+            f"num_layers={layers}"
+        )
+    base_dataset = (
+        raw_dataset[:-len("_large")]
+        if dataset_declares_large else raw_dataset
+    )
+    return f"{base_dataset}_large" if layers == 24 else base_dataset
+
+
 # ---------------------------------------------------------------------------
 # 路径辅助
 # ---------------------------------------------------------------------------

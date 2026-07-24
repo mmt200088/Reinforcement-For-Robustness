@@ -1,4 +1,4 @@
-"""Torch-free behavior tests for the 12-step Stage-2 layerwise environment."""
+"""Torch-free behavior tests for the Stage-2 layerwise environment."""
 
 from __future__ import annotations
 
@@ -250,6 +250,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertTrue(all(
             len(row) == 6 for row in objective["slot_resource_rewards"]
         ))
+
         for layer_cost, slot_costs in zip(
                 objective["layer_resource_rewards"],
                 objective["slot_resource_rewards"],
@@ -300,6 +301,37 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         # Block3 keeps the exact RO-baseline SF indices but carries policy K.
         np.testing.assert_array_equal(terminal_vector[32:39], np.arange(1, 8))
         self.assertEqual(terminal_vector[39], 2)
+
+    def test_bert_large_runs_all_24_layers_through_the_same_terminal_path(self):
+        base = self._FakeBase()
+        base.num_layers = 24
+        base.env_cfg = types.SimpleNamespace(profile="mrpc_large")
+        base.gelu_degree = [1, 2] * 12
+        base.attn_degree = [6] * 24
+        fusion_map = self.fcm.FusionCountMap.load(
+            "mrpc_large", root=str(BLB_DIR),
+        )
+        baseline = self.mod.make_all_max_action_vector(24)
+        for layer_idx in range(24):
+            block3_start = layer_idx * 73 + 32
+            baseline[block3_start:block3_start + 7] = np.arange(1, 8)
+        env = self.mod.BLBStage2LayerwiseEnv(
+            base_env=base,
+            fusion_map=fusion_map,
+            baseline_action_vec=baseline,
+        )
+
+        env.reset(seed=24)
+        for layer_idx in range(24):
+            _obs, reward, done, info = env.step([layer_idx % 2, 0, 1, 2, 3, 4])
+            self.assertEqual(done, layer_idx == 23)
+            self.assertEqual(reward, 7.25 if done else 0.0)
+
+        self.assertEqual(env.horizon, 24)
+        self.assertEqual(len(env.action_history), 24)
+        self.assertEqual(len(base.step_calls), 1)
+        self.assertEqual(len(info["resource_objective"]["layer_resource_rewards"]), 24)
+        self.assertEqual(len(info["resource_objective"]["slot_resource_rewards"]), 24)
 
     def test_invalid_block_is_aggregated_without_early_termination(self):
         self.invalid_key = (0, 2)

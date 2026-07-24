@@ -22,6 +22,47 @@ from blb_stage2_rl.baseline_bootstrap import (
 
 
 class BLBBaselineBootstrapTests(unittest.TestCase):
+    def test_stage2_profile_resolution_binds_dataset_model_and_depth(self):
+        from blb_stage2_rl.baseline_bootstrap import (
+            resolve_stage2_model_type,
+            resolve_stage2_profile,
+        )
+
+        self.assertEqual(
+            resolve_stage2_model_type("", num_layers=12),
+            "bert-base",
+        )
+        self.assertEqual(
+            resolve_stage2_model_type("", num_layers=24),
+            "bert-large",
+        )
+        self.assertEqual(
+            resolve_stage2_model_type("bert_large", num_layers=24),
+            "bert-large",
+        )
+        self.assertEqual(
+            resolve_stage2_profile("mrpc", model_type="bert-base", num_layers=12),
+            "mrpc",
+        )
+        self.assertEqual(
+            resolve_stage2_profile("mrpc", model_type="bert-large", num_layers=24),
+            "mrpc_large",
+        )
+        self.assertEqual(
+            resolve_stage2_profile(
+                "mrpc_large", model_type="bert-large", num_layers=24,
+            ),
+            "mrpc_large",
+        )
+        with self.assertRaisesRegex(ValueError, "inconsistent"):
+            resolve_stage2_profile(
+                "mrpc", model_type="bert-large", num_layers=12,
+            )
+        with self.assertRaisesRegex(ValueError, "12 or 24"):
+            resolve_stage2_profile(
+                "mrpc", model_type="custom", num_layers=18,
+            )
+
     def test_calibrated_action_context_wraps_static_baseline_with_provenance(self):
         import blb_stage2_rl.baseline_bootstrap as bootstrap
 
@@ -339,6 +380,10 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
                     request_id="bad-softmax",
                 )
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("torch") is not None,
+        "torch required for action-vector decode",
+    )
     def test_static_skeletons_mixed_degree_baseline_decodes_per_layer_sfs(self):
         from blb_stage2_rl.action_space import describe_action_vector
 
@@ -395,6 +440,10 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         ]
         self.assertGreater(len(inactive_rescale), 0)
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("torch") is not None,
+        "torch required for action-vector decode",
+    )
     def test_static_skeletons_block4_wo_rescale_uses_rl_field_name(self):
         from blb_stage2_rl.action_space import describe_action_vector
 

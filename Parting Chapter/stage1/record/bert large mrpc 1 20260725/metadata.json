@@ -1,0 +1,17 @@
+{
+  "stage": 1,
+  "combo": "bert large mrpc",
+  "data_path": "mrpc",
+  "adopted_for_stage2_at": "2026-07-25",
+  "source_run": "bert-large-mrpc-stage1-ppo-entropy0p1-20260626",
+  "source_server_head": "4269109bf5570eff5ad614026d4112ce29512892",
+  "source_config_commit": "237314146003f68c82830abfa886cf2ef7086baf",
+  "ppo_update_interval": 120,
+  "learning_rate": 2e-05,
+  "validation_full_size": 408,
+  "selection_protocol": "stage1_ppo_entropy_converged_best",
+  "source_config": "Model_analysis/configs/approx_per_dataset.json#mrpc_large.stage1",
+  "source_validation_report": "bert_large_stage1_validation_4configs_glue_submission_report.html",
+  "source_validation_report_sha256": "e9fab28cdc4ae68eb5b9031030108a7bcd6faf40c387245f72ee171b01434271",
+  "stage2_softmax_contract": "fixed_degree_6"
+}
