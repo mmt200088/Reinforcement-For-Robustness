@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 import operator
 from types import MappingProxyType
@@ -436,6 +436,25 @@ def assess_candidate(
     )
 
 
+def retarget_constraint_assessment(
+    assessment: ConstraintAssessment,
+    *,
+    gate_probability: float,
+) -> ConstraintAssessment:
+    """Apply a new gate to already-computed bootstrap probabilities."""
+    if not isinstance(assessment, ConstraintAssessment):
+        raise TypeError("assessment must be a ConstraintAssessment")
+    gate = _finite_float("gate_probability", gate_probability)
+    if not 0.0 < gate <= 1.0:
+        raise ValueError("gate_probability must be in (0, 1]")
+    return replace(
+        assessment,
+        gate_probability=gate,
+        online_precision_pass=assessment.precision_probability >= gate,
+        online_stability_pass=assessment.stability_probability >= gate,
+    )
+
+
 __all__ = [
     "BaselineReference",
     "ConstraintAssessment",
@@ -444,4 +463,5 @@ __all__ = [
     "TrialSeries",
     "assess_candidate",
     "build_baseline_reference",
+    "retarget_constraint_assessment",
 ]

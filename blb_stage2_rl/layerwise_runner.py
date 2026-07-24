@@ -22,8 +22,10 @@ from .candidate_store import (
 )
 from .layerwise_action import compute_variable_cost_from_action_matrix
 from .statistical_constraints import (
+    ConstraintAssessment,
     TrialSeries,
     assess_candidate,
+    retarget_constraint_assessment,
 )
 
 
@@ -1442,6 +1444,51 @@ def _to_plain_mapping(value: Any) -> dict[str, Any]:
     if hasattr(value, "__dict__"):
         return dict(vars(value))
     return {}
+
+
+def _constraint_assessment_from_mapping(
+        value: Any,
+        ) -> Optional[ConstraintAssessment]:
+    mapping = _to_plain_mapping(value)
+    field_names = tuple(ConstraintAssessment.__dataclass_fields__)
+    if any(name not in mapping for name in field_names):
+        return None
+    try:
+        return ConstraintAssessment(**{
+            name: mapping[name] for name in field_names
+        })
+    except (TypeError, ValueError):
+        return None
+
+
+def _assess_pooled_online_trials(
+        *,
+        raw_trials: TrialSeries,
+        pooled_trials: TrialSeries,
+        fresh_assessment: Any,
+        reference: Any,
+        gate_probability: float,
+        bootstrap_seed: int,
+        assess_candidate_fn: Callable[..., Any],
+        ) -> Any:
+    assessment_mapping = _to_plain_mapping(fresh_assessment)
+    if (
+            assess_candidate_fn is assess_candidate
+            and pooled_trials == raw_trials
+            and assessment_mapping.get("bootstrap_seed") == int(bootstrap_seed)
+    ):
+        normalized = _constraint_assessment_from_mapping(assessment_mapping)
+        if normalized is not None:
+            return retarget_constraint_assessment(
+                normalized,
+                gate_probability=float(gate_probability),
+            )
+    return assess_candidate_fn(
+        pooled_trials,
+        reference,
+        gate_probability=float(gate_probability),
+        bootstrap_seed=int(bootstrap_seed),
+    )
 
 
 def _trial_series_from_info(
@@ -3410,11 +3457,14 @@ def train_layerwise(
             )
             if evidence is None:
                 raise RuntimeError("candidate evidence append was not readable")
-            pooled_assessment = assess_candidate_fn(
-                evidence.trials,
-                env.base.statistical_reference,
+            pooled_assessment = _assess_pooled_online_trials(
+                raw_trials=raw_trials,
+                pooled_trials=evidence.trials,
+                fresh_assessment=fresh_assessment,
+                reference=env.base.statistical_reference,
                 gate_probability=promotion_probability,
                 bootstrap_seed=bootstrap_seed,
+                assess_candidate_fn=assess_candidate_fn,
             )
             pooled_metrics = _metrics_from_trials(evidence.trials)
             pooled_trials = evidence.trials

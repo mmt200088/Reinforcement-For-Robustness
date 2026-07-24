@@ -172,6 +172,10 @@ class BLBStage2LayerwiseEnv:
         self._schedule: List[LayerwiseStepSpec] = []
         self._gelu_degrees: List[int] = []
         self._attn_degrees: List[int] = []
+        self._schedule_degree_fingerprint: Optional[
+            Tuple[Tuple[int, ...], Tuple[int, ...]]
+        ] = None
+        self._static_obs_prefix = np.zeros(4, dtype=np.float32)
         self._rebuild_schedule()
 
         expected_size = np.asarray(
@@ -259,8 +263,8 @@ class BLBStage2LayerwiseEnv:
         self._fusion_option_ids = []
         self._layer_summaries = []
         self._boosted_overrides = {}
-        self._action_obs = np.zeros((self.horizon, self._max_step_dim), dtype=np.float32)
-        self._signal_obs = np.zeros((self.horizon, 4), dtype=np.float32)
+        self._action_obs.fill(0.0)
+        self._signal_obs.fill(0.0)
         return self._build_obs()
 
     def step(
@@ -318,7 +322,7 @@ class BLBStage2LayerwiseEnv:
         self._action_history.append(owned_action[:])
         self._decoded_actions.append(application.decoded)
         self._fusion_option_ids.append(dict(application.fusion_option_ids))
-        self._layer_summaries.append(copy.deepcopy(layer_summary))
+        self._layer_summaries.append(layer_summary)
         for block_idx, values in application.boosted_field_values_by_block.items():
             self._boosted_overrides[(int(block_idx), int(spec.layer_idx))] = {
                 str(name): int(value) for name, value in values.items()
@@ -367,18 +371,33 @@ class BLBStage2LayerwiseEnv:
         return self._build_obs(), float(terminal_reward), True, info
 
     def _rebuild_schedule(self) -> None:
-        self._gelu_degrees = _degree_vector(
+        gelu_degrees = _degree_vector(
             self.base.gelu_degree, num_layers=self.num_layers, default=4,
         )
-        self._attn_degrees = _degree_vector(
+        attn_degrees = _degree_vector(
             self.base.attn_degree, num_layers=self.num_layers, default=6,
         )
+        degree_fingerprint = (
+            tuple(gelu_degrees),
+            tuple(attn_degrees),
+        )
+        if degree_fingerprint == self._schedule_degree_fingerprint:
+            return
+        self._gelu_degrees = gelu_degrees
+        self._attn_degrees = attn_degrees
         self._schedule = layerwise_schedule(
             self.num_layers,
             self.fusion_map,
             profile=self.profile,
             gelu_degrees=self._gelu_degrees,
         )
+        self._static_obs_prefix = np.asarray([
+            float(self.num_layers) / 24.0,
+            float(np.mean(self._attn_degrees)) / 8.0,
+            float(np.mean(self._gelu_degrees)) / 8.0,
+            float(self.horizon) / 12.0,
+        ], dtype=np.float32)
+        self._schedule_degree_fingerprint = degree_fingerprint
 
     def _record_observation_row(
             self,
@@ -402,16 +421,10 @@ class BLBStage2LayerwiseEnv:
     def _build_obs(self) -> np.ndarray:
         if self._done or self._step_idx >= self.horizon:
             return np.zeros(self.state_dim, dtype=np.float32)
-        static = np.asarray([
-            float(self.num_layers) / 24.0,
-            float(np.mean(self._attn_degrees)) / 8.0,
-            float(np.mean(self._gelu_degrees)) / 8.0,
-            float(self.horizon) / 12.0,
-        ], dtype=np.float32)
         layer_identity = np.zeros(self.horizon, dtype=np.float32)
         layer_identity[self._step_idx] = 1.0
         return np.concatenate((
-            static,
+            self._static_obs_prefix,
             layer_identity,
             self._action_obs.reshape(-1),
             self._signal_obs.reshape(-1),
