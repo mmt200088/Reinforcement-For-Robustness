@@ -118,4 +118,3 @@ All source changes are made and tested in the local isolated worktree, then
 committed and pushed. The GPU server checks out the exact verified snapshot and
 only runs tests/evaluation and produces artifacts. Compact results are copied
 back, verified, committed, pushed, and copied to the Desktop.
-

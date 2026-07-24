@@ -213,4 +213,3 @@ SHA-256 manifest entries.
 Copy compact artifacts locally, create the repository report copy, commit and
 push them from the local worktree, then copy the verified HTML to the Desktop
 path specified in the design.
-
