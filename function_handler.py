@@ -3,6 +3,7 @@ import os as _os
 import hashlib as _hashlib
 import threading as _threading
 from contextlib import contextmanager
+from functools import lru_cache
 import torch
 import torch.nn as nn
 from transformers import AutoModel
@@ -872,6 +873,21 @@ def _make_rotation_point(source: Optional[NoisePoint]) -> Optional[NoisePoint]:
     return NoisePoint("rotation", int(source.scaling_factor), int(source.N))
 
 
+@lru_cache(maxsize=256)
+def _noise_std_for_values(
+        distribution: str,
+        scaling_factor: int,
+        N: int,
+        ) -> float:
+    """Resolve one immutable noise-table standard deviation."""
+    variance = get_input_noise_variance_by_N(
+        scaling_factor=int(scaling_factor),
+        distribution=str(distribution).lower(),
+        N=int(N),
+    )
+    return math.sqrt(variance) if variance > 0.0 else 0.0
+
+
 def _sample_gaussian_for_point(reference: Tensor, point: Optional[NoisePoint]) -> Tensor:
     """根据 NoisePoint 的 (distribution, scaling_factor, N) 三元组，
     返回与 ``reference`` 同形状（同 device/dtype）的 N(0, σ²) 噪声张量。
@@ -881,15 +897,34 @@ def _sample_gaussian_for_point(reference: Tensor, point: Optional[NoisePoint]) -
     """
     if point is None:
         return torch.zeros_like(reference)
-    variance = get_input_noise_variance_by_N(
-        scaling_factor=int(point.scaling_factor),
-        distribution=str(point.distribution).lower(),
-        N=int(point.N),
+    std = _noise_std_for_values(
+        str(point.distribution).lower(),
+        int(point.scaling_factor),
+        int(point.N),
     )
-    if variance <= 0.0:
+    if std <= 0.0:
         return torch.zeros_like(reference)
-    std = math.sqrt(variance)
     return _sample_independent_gaussian(reference, std)
+
+
+_BLB_INFERENCE_NOISE_ADD_ENABLED = str(
+    _os.environ.get("BLB_STAGE2_INFERENCE_NOISE_ADD", "1")
+).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _sample_and_add_gaussian_for_point(
+        reference: Tensor,
+        point: Optional[NoisePoint],
+        ) -> Tensor:
+    """Add one noise sample while reusing its storage during inference."""
+    noise = _sample_gaussian_for_point(reference, point)
+    if (
+            _BLB_INFERENCE_NOISE_ADD_ENABLED
+            and torch.is_inference_mode_enabled()
+    ):
+        torch.add(reference, noise, out=noise)
+        return noise
+    return reference + noise
 
 
 def _rotation_repeat_count(cfg, flag_name: str) -> int:
@@ -921,7 +956,7 @@ def _apply_rotation_noise(
         return value
     point = _make_rotation_point(source)
     for _ in range(count):
-        value = value + _sample_gaussian_for_point(value, point)
+        value = _sample_and_add_gaussian_for_point(value, point)
     return value
 
 
@@ -1143,7 +1178,9 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
         if hidden_states is None:
             return hidden_states
         # 1. fresh on Gelu_out
-        x = hidden_states + _sample_gaussian_for_point(hidden_states, cfg.gelu_out_fresh)
+        x = _sample_and_add_gaussian_for_point(
+            hidden_states, cfg.gelu_out_fresh,
+        )
         # 1b. rotation #1：紧跟 gelu_out fresh 之后；SF 继承自 gelu_out_fresh
         x = _apply_rotation_noise(
             x,
@@ -1152,7 +1189,9 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
         )
         # 2. encode on W_ffn2
         weight = linear_module.weight
-        noisy_weight = weight + _sample_gaussian_for_point(weight, cfg.wffn2_encode)
+        noisy_weight = _sample_and_add_gaussian_for_point(
+            weight, cfg.wffn2_encode,
+        )
         noisy_weight = noisy_weight.to(device=x.device, dtype=x.dtype)
         bias = linear_module.bias
         if bias is not None:
@@ -1161,7 +1200,9 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
         out = nn.functional.linear(x, noisy_weight, bias)
         # 4. rescale on result (optional)
         if cfg.wffn2_result_rescale is not None:
-            out = out + _sample_gaussian_for_point(out, cfg.wffn2_result_rescale)
+            out = _sample_and_add_gaussian_for_point(
+                out, cfg.wffn2_result_rescale,
+            )
             # 4b. rotation #2：紧跟 W_ffn2 rescale 之后；SF 继承自 wffn2_result_rescale
             out = _apply_rotation_noise(
                 out,
@@ -1238,7 +1279,9 @@ class NoisyBlock1LayerNorm(nn.Module):
             noisy_inv_d.add_(1.0 / D)
             mean = sum_x * noisy_inv_d                                 # [B, S, H]，每 slot 独立噪声
             if cfg.mean_result_rescale is not None:
-                mean = mean + _sample_gaussian_for_point(mean, cfg.mean_result_rescale)
+                mean = _sample_and_add_gaussian_for_point(
+                    mean, cfg.mean_result_rescale,
+                )
         else:
             # Block 1 未启用：clean LN head
             mean = sum_x / float(D)
@@ -1249,7 +1292,9 @@ class NoisyBlock1LayerNorm(nn.Module):
         # ===== squaring =====
         sq = x_centered * x_centered                                   # ct*ct: (x − μ)²，[B, S, H]
         if cfg is not None and cfg.square_result_rescale is not None:
-            sq = sq + _sample_gaussian_for_point(sq, cfg.square_result_rescale)
+            sq = _sample_and_add_gaussian_for_point(
+                sq, cfg.square_result_rescale,
+            )
             # Block 1 rotation #4：紧跟 (X−μ)² rescale 之后；SF 继承自 square_result_rescale
             sq = _apply_rotation_noise(
                 sq,
@@ -1264,7 +1309,9 @@ class NoisyBlock1LayerNorm(nn.Module):
             noisy_inv_d_var.add_(1.0 / D)
             var = sum_sq * noisy_inv_d_var                             # [B, S, H]，每 slot 独立噪声
             if cfg.var_result_rescale is not None:
-                var = var + _sample_gaussian_for_point(var, cfg.var_result_rescale)
+                var = _sample_and_add_gaussian_for_point(
+                    var, cfg.var_result_rescale,
+                )
         else:
             var = sum_sq / float(D)
 
@@ -1286,19 +1333,29 @@ class NoisyBlock1LayerNorm(nn.Module):
             #     需要先 expand 到 [B, S, H] 才能保证每 slot 独立 fresh 噪声。
             if inv_std.shape != x.shape:
                 inv_std = inv_std.expand_as(x).contiguous()
-            noisy_inv_std = inv_std + _sample_gaussian_for_point(inv_std, cfg2.inv_std_fresh)
-            noisy_x_centered = x_centered + _sample_gaussian_for_point(x_centered, cfg2.x_centered_fresh)
+            noisy_inv_std = _sample_and_add_gaussian_for_point(
+                inv_std, cfg2.inv_std_fresh,
+            )
+            noisy_x_centered = _sample_and_add_gaussian_for_point(
+                x_centered, cfg2.x_centered_fresh,
+            )
             normalized = noisy_x_centered * noisy_inv_std
             if cfg2.normalize_result_rescale is not None:
-                normalized = normalized + _sample_gaussian_for_point(normalized, cfg2.normalize_result_rescale)
+                normalized = _sample_and_add_gaussian_for_point(
+                    normalized, cfg2.normalize_result_rescale,
+                )
 
             # ----- (2) γ 标量乘法（CKKS smulcp，按 1/D 一样的 broadcast 加噪方式） -----
             # γ 形状 [H] → broadcast 到 [B, S, H]，每 slot 独立 encode 噪声后做 ewmulcp。
             gamma_broadcast = self.weight.expand_as(normalized)        # [B, S, H]，view-only
-            noisy_gamma = gamma_broadcast + _sample_gaussian_for_point(gamma_broadcast, cfg2.gamma_encode)
+            noisy_gamma = _sample_and_add_gaussian_for_point(
+                gamma_broadcast, cfg2.gamma_encode,
+            )
             gamma_mul = normalized * noisy_gamma
             if cfg2.gamma_result_rescale is not None:
-                gamma_mul = gamma_mul + _sample_gaussian_for_point(gamma_mul, cfg2.gamma_result_rescale)
+                gamma_mul = _sample_and_add_gaussian_for_point(
+                    gamma_mul, cfg2.gamma_result_rescale,
+                )
                 # Block 2 rotation #1：紧跟 γ rescale 之后；SF 继承自 gamma_result_rescale
                 gamma_mul = _apply_rotation_noise(
                     gamma_mul,
@@ -1335,14 +1392,16 @@ def _make_block2_qk_proj_forward(
         if hidden_states is None:
             return hidden_states
         weight = linear_module.weight
-        noisy_weight = weight + _sample_gaussian_for_point(weight, encode_point)
+        noisy_weight = _sample_and_add_gaussian_for_point(
+            weight, encode_point,
+        )
         noisy_weight = noisy_weight.to(device=hidden_states.device, dtype=hidden_states.dtype)
         bias = linear_module.bias
         if bias is not None:
             bias = bias.to(device=hidden_states.device, dtype=hidden_states.dtype)
         out = nn.functional.linear(hidden_states, noisy_weight, bias)
         if rescale_point is not None:
-            out = out + _sample_gaussian_for_point(out, rescale_point)
+            out = _sample_and_add_gaussian_for_point(out, rescale_point)
             # rotation：紧跟 rescale 之后；SF 继承自 rescale_point
             out = _apply_rotation_noise(
                 out, rescale_point, rotation_after_rescale,
@@ -1373,7 +1432,9 @@ def _make_block2_qkt_merge_hook(
     def hook(qkt_result: Tensor) -> Tensor:
         # 1. rescale on Q·K^T matmul 结果（可选）
         if qkt_matmul_rescale is not None:
-            qkt_result = qkt_result + _sample_gaussian_for_point(qkt_result, qkt_matmul_rescale)
+            qkt_result = _sample_and_add_gaussian_for_point(
+                qkt_result, qkt_matmul_rescale,
+            )
             # Block 2 rotation #5：紧跟 Q·K^T matmul rescale 之后
             qkt_result = _apply_rotation_noise(
                 qkt_result,
@@ -1386,7 +1447,9 @@ def _make_block2_qkt_merge_hook(
         out = qkt_result * noisy_mask
         # 3. rescale on mask 乘法结果（可选）
         if merge_mask_rescale is not None:
-            out = out + _sample_gaussian_for_point(out, merge_mask_rescale)
+            out = _sample_and_add_gaussian_for_point(
+                out, merge_mask_rescale,
+            )
         # 4. Block 2 末尾 truncation
         out = _apply_configured_truncation(out, truncation_cfg)
         return out
@@ -1560,14 +1623,14 @@ def _try_block3_fused_cuda(x: Tensor, cfg: Block3NoiseConfig) -> Optional[Tensor
     points = (cfg.x_fresh, cfg.inv_2n_encode, *square_rescales)
     stds = []
     for point in points:
-        variance = get_input_noise_variance_by_N(
-            scaling_factor=int(point.scaling_factor),
-            distribution=str(point.distribution).lower(),
-            N=int(point.N),
+        std = _noise_std_for_values(
+            str(point.distribution).lower(),
+            int(point.scaling_factor),
+            int(point.N),
         )
-        if variance <= 0.0:
+        if std <= 0.0:
             return None
-        stds.append(math.sqrt(variance))
+        stds.append(std)
 
     try:
         noise_slab = _get_block3_fused_cuda_noise_workspace(
@@ -1605,14 +1668,16 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
         if fused is not None:
             return _apply_configured_truncation(fused, cfg)
         # 1. fresh on softmax 输入 x
-        x = x + _sample_gaussian_for_point(x, cfg.x_fresh)
+        x = _sample_and_add_gaussian_for_point(x, cfg.x_fresh)
         # 2. encode on 1/2^n（CKKS smulcp 的 plaintext-side 噪声；按 1/D / γ 同方式 per-slot）
         noisy_inv_2n = _sample_gaussian_for_point(x, cfg.inv_2n_encode)
         noisy_inv_2n.add_(inv_2n_value)
         # 3. ewmulcp: x · (1/2^n)
         x_scaled = x * noisy_inv_2n
         if cfg.x_inv_2n_result_rescale is not None:
-            x_scaled = x_scaled + _sample_gaussian_for_point(x_scaled, cfg.x_inv_2n_result_rescale)
+            x_scaled = _sample_and_add_gaussian_for_point(
+                x_scaled, cfg.x_inv_2n_result_rescale,
+            )
         # 4. 1 + x · (1/2^n)：ctpt 加法（不加噪）
         y = 1.0 + x_scaled
         # 5. iterative squaring degree 次
@@ -1620,7 +1685,7 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
             y = y * y                                      # ewmulcc 自乘
             rs = sq_rescales[k] if k < len(sq_rescales) else None
             if rs is not None:
-                y = y + _sample_gaussian_for_point(y, rs)
+                y = _sample_and_add_gaussian_for_point(y, rs)
         # 6. Block 3 末尾 truncation
         y = _apply_configured_truncation(y, cfg)
         return y
@@ -1654,7 +1719,7 @@ def _make_block2_bsgs_mask_hook(
         noisy_mask1.add_(1.0)
         out = tensor * noisy_mask1
         if mask1_rescale is not None:
-            out = out + _sample_gaussian_for_point(out, mask1_rescale)
+            out = _sample_and_add_gaussian_for_point(out, mask1_rescale)
             out = _apply_rotation_noise(
                 out, mask1_rescale, rotation_after_mask1_rescale,
             )
@@ -1663,7 +1728,7 @@ def _make_block2_bsgs_mask_hook(
         noisy_mask2.add_(1.0)
         out = out * noisy_mask2
         if mask2_rescale is not None:
-            out = out + _sample_gaussian_for_point(out, mask2_rescale)
+            out = _sample_and_add_gaussian_for_point(out, mask2_rescale)
             out = _apply_rotation_noise(
                 out, mask2_rescale, rotation_after_mask2_rescale,
             )
@@ -1867,14 +1932,16 @@ def _make_block4_input_mask_hook(
     """
     def hook(tensor: Tensor) -> Tensor:
         # 1. fresh on tensor
-        out = tensor + _sample_gaussian_for_point(tensor, fresh_point)
+        out = _sample_and_add_gaussian_for_point(tensor, fresh_point)
         # 2. ⊙ ones-mask (CKKS ewmulcp)
         noisy_mask = _sample_gaussian_for_point(out, mask_encode_point)
         noisy_mask.add_(1.0)
         out = out * noisy_mask
         # 3. optional rescale + optional rotation
         if mask_rescale_point is not None:
-            out = out + _sample_gaussian_for_point(out, mask_rescale_point)
+            out = _sample_and_add_gaussian_for_point(
+                out, mask_rescale_point,
+            )
             out = _apply_rotation_noise(
                 out, mask_rescale_point, rotation_after_mask_rescale,
             )
@@ -1896,7 +1963,9 @@ def _make_block4_softmax_v_hook(
     def hook(tensor: Tensor) -> Tensor:
         # 1. optional rescale on matmul 结果 + optional rotation
         if matmul_rescale is not None:
-            tensor = tensor + _sample_gaussian_for_point(tensor, matmul_rescale)
+            tensor = _sample_and_add_gaussian_for_point(
+                tensor, matmul_rescale,
+            )
             tensor = _apply_rotation_noise(
                 tensor, matmul_rescale, rotation_after_matmul_rescale,
             )
@@ -1906,7 +1975,7 @@ def _make_block4_softmax_v_hook(
         out = tensor * noisy_mask
         # 3. optional rescale + optional rotation
         if mask_rescale is not None:
-            out = out + _sample_gaussian_for_point(out, mask_rescale)
+            out = _sample_and_add_gaussian_for_point(out, mask_rescale)
             out = _apply_rotation_noise(
                 out, mask_rescale, rotation_after_mask_rescale,
             )
@@ -1928,14 +1997,16 @@ def _make_block4_wo_forward(
         if hidden_states is None:
             return hidden_states
         weight = linear_module.weight
-        noisy_weight = weight + _sample_gaussian_for_point(weight, encode_point)
+        noisy_weight = _sample_and_add_gaussian_for_point(
+            weight, encode_point,
+        )
         noisy_weight = noisy_weight.to(device=hidden_states.device, dtype=hidden_states.dtype)
         bias = linear_module.bias
         if bias is not None:
             bias = bias.to(device=hidden_states.device, dtype=hidden_states.dtype)
         out = nn.functional.linear(hidden_states, noisy_weight, bias)
         if rescale_point is not None:
-            out = out + _sample_gaussian_for_point(out, rescale_point)
+            out = _sample_and_add_gaussian_for_point(out, rescale_point)
             out = _apply_rotation_noise(
                 out, rescale_point, rotation_after_rescale,
             )
@@ -1993,7 +2064,9 @@ class NoisyBlock4LayerNorm(nn.Module):
             noisy_inv_d.add_(1.0 / D)
             mean = sum_x * noisy_inv_d                                 # [B, S, H]
             if cfg4.ln_mean_result_rescale is not None:
-                mean = mean + _sample_gaussian_for_point(mean, cfg4.ln_mean_result_rescale)
+                mean = _sample_and_add_gaussian_for_point(
+                    mean, cfg4.ln_mean_result_rescale,
+                )
         else:
             mean = sum_x / float(D)
 
@@ -2001,7 +2074,9 @@ class NoisyBlock4LayerNorm(nn.Module):
 
         sq = x_centered * x_centered
         if cfg4 is not None and cfg4.ln_square_result_rescale is not None:
-            sq = sq + _sample_gaussian_for_point(sq, cfg4.ln_square_result_rescale)
+            sq = _sample_and_add_gaussian_for_point(
+                sq, cfg4.ln_square_result_rescale,
+            )
             # Block 4 rotation #6：紧跟 (X−μ)² rescale 之后；SF 继承自 ln_square_result_rescale
             sq = _apply_rotation_noise(
                 sq,
@@ -2015,7 +2090,9 @@ class NoisyBlock4LayerNorm(nn.Module):
             noisy_inv_d_var.add_(1.0 / D)
             var = sum_sq * noisy_inv_d_var
             if cfg4.ln_var_result_rescale is not None:
-                var = var + _sample_gaussian_for_point(var, cfg4.ln_var_result_rescale)
+                var = _sample_and_add_gaussian_for_point(
+                    var, cfg4.ln_var_result_rescale,
+                )
         else:
             var = sum_sq / float(D)
 
@@ -2035,16 +2112,26 @@ class NoisyBlock4LayerNorm(nn.Module):
         if cfg5 is not None:
             if inv_std.shape != x.shape:
                 inv_std = inv_std.expand_as(x).contiguous()
-            noisy_inv_std = inv_std + _sample_gaussian_for_point(inv_std, cfg5.inv_std_fresh)
-            noisy_x_centered = x_centered + _sample_gaussian_for_point(x_centered, cfg5.x_centered_fresh)
+            noisy_inv_std = _sample_and_add_gaussian_for_point(
+                inv_std, cfg5.inv_std_fresh,
+            )
+            noisy_x_centered = _sample_and_add_gaussian_for_point(
+                x_centered, cfg5.x_centered_fresh,
+            )
             normalized = noisy_x_centered * noisy_inv_std
             if cfg5.normalize_result_rescale is not None:
-                normalized = normalized + _sample_gaussian_for_point(normalized, cfg5.normalize_result_rescale)
+                normalized = _sample_and_add_gaussian_for_point(
+                    normalized, cfg5.normalize_result_rescale,
+                )
             gamma_broadcast = self.weight.expand_as(normalized)
-            noisy_gamma = gamma_broadcast + _sample_gaussian_for_point(gamma_broadcast, cfg5.gamma_encode)
+            noisy_gamma = _sample_and_add_gaussian_for_point(
+                gamma_broadcast, cfg5.gamma_encode,
+            )
             gamma_mul = normalized * noisy_gamma
             if cfg5.gamma_result_rescale is not None:
-                gamma_mul = gamma_mul + _sample_gaussian_for_point(gamma_mul, cfg5.gamma_result_rescale)
+                gamma_mul = _sample_and_add_gaussian_for_point(
+                    gamma_mul, cfg5.gamma_result_rescale,
+                )
                 # Block 5 rotation #1：紧跟 γ rescale 之后；SF 继承自 gamma_result_rescale
                 gamma_mul = _apply_rotation_noise(
                     gamma_mul,
@@ -2262,7 +2349,9 @@ def _make_blb_first_input_noise_forward(
     def noisy_forward(hidden_states, *args, **kwargs):
         if hidden_states is None:
             return original_forward(hidden_states, *args, **kwargs)
-        noisy_hidden_states = hidden_states + _sample_gaussian_for_point(hidden_states, point)
+        noisy_hidden_states = _sample_and_add_gaussian_for_point(
+            hidden_states, point,
+        )
         return original_forward(noisy_hidden_states, *args, **kwargs)
     return noisy_forward
 
@@ -2280,14 +2369,16 @@ def _make_block5_wffn1_forward(
         if hidden_states is None:
             return hidden_states
         weight = linear_module.weight
-        noisy_weight = weight + _sample_gaussian_for_point(weight, encode_point)
+        noisy_weight = _sample_and_add_gaussian_for_point(
+            weight, encode_point,
+        )
         noisy_weight = noisy_weight.to(device=hidden_states.device, dtype=hidden_states.dtype)
         bias = linear_module.bias
         if bias is not None:
             bias = bias.to(device=hidden_states.device, dtype=hidden_states.dtype)
         out = nn.functional.linear(hidden_states, noisy_weight, bias)
         if rescale_point is not None:
-            out = out + _sample_gaussian_for_point(out, rescale_point)
+            out = _sample_and_add_gaussian_for_point(out, rescale_point)
             # Block 5 rotation #2：紧跟 W_ffn1·X rescale 之后
             out = _apply_rotation_noise(
                 out, rescale_point, rotation_after_rescale,
@@ -2414,14 +2505,14 @@ def _try_block5_fused_cuda(
 
     stds = []
     for point in points:
-        variance = get_input_noise_variance_by_N(
-            scaling_factor=int(point.scaling_factor),
-            distribution=str(point.distribution).lower(),
-            N=int(point.N),
+        std = _noise_std_for_values(
+            str(point.distribution).lower(),
+            int(point.scaling_factor),
+            int(point.N),
         )
-        if variance <= 0.0:
+        if std <= 0.0:
             return None
-        stds.append(math.sqrt(variance))
+        stds.append(std)
 
     try:
         workspace = _get_block5_fused_cuda_noise_workspace(
@@ -2477,18 +2568,18 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
             x2 = x * x
             rs = pwr_rs[0] if len(pwr_rs) > 0 else None
             if rs is not None:
-                x2 = x2 + _sample_gaussian_for_point(x2, rs)
+                x2 = _sample_and_add_gaussian_for_point(x2, rs)
             powers[2] = x2
         if degree >= 4:
             x3 = powers[2] * x          # x^3 = x² · x
             rs = pwr_rs[1] if len(pwr_rs) > 1 else None
             if rs is not None:
-                x3 = x3 + _sample_gaussian_for_point(x3, rs)
+                x3 = _sample_and_add_gaussian_for_point(x3, rs)
             powers[3] = x3
             x4 = powers[2] * powers[2]  # x^4 = x² · x²
             rs = pwr_rs[2] if len(pwr_rs) > 2 else None
             if rs is not None:
-                x4 = x4 + _sample_gaussian_for_point(x4, rs)
+                x4 = _sample_and_add_gaussian_for_point(x4, rs)
             powers[4] = x4
         return powers
 
@@ -2511,7 +2602,7 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
                 term = powers[k] * noisy_coeff
                 rs = coeff_rs[k - 1] if (k - 1) < len(coeff_rs) else None
                 if rs is not None:
-                    term = term + _sample_gaussian_for_point(term, rs)
+                    term = _sample_and_add_gaussian_for_point(term, rs)
             result = term if result is None else result + term
         return result
 
