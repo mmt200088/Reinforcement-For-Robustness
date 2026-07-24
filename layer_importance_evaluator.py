@@ -2422,11 +2422,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         # 相同配置的重复评估可直接复用缓存结果，不会改变任何数值结果
         from stage1_rl.eval_cache import Stage1EvalCache
         self._eval_cache = Stage1EvalCache()
-        # validation_full is immutable for a run. Keep one device-resident
-        # copy per Stage-1 worker so repeated episodes do not recopy the same
-        # batches from host memory.
-        self._stage1_device_batch_cache = {}
-        self._stage1_device_batch_cache_lock = threading.Lock()
         # 多 GPU worker 路径的共享版缓存（带锁）：worker 的 Stage-1 明文评估同样是
         # (gelu, softmax, split) 的确定性函数，重复配置可整体跳过 install + forward。
         # 命中返回的是先前算出的同一组浮点数 → 对 rollout_sig / 1==N 完全透明。
@@ -3678,7 +3673,6 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
 
     def _register_dataset_split(self, split_name, dataset, dataset_mm=None):
-        self._invalidate_stage1_device_batches(split_name)
         if dataset is None:
             self.dataset_splits.pop(split_name, None)
             self.dataloaders.pop(split_name, None)
@@ -3700,54 +3694,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             self.dataloaders_mm[split_name] = (
                 tuple(dataloader_mm) if cache_eval_batches else dataloader_mm
             )
-
-    def _stage1_device_batch_cache_state(self):
-        cache = getattr(self, "_stage1_device_batch_cache", None)
-        lock = getattr(self, "_stage1_device_batch_cache_lock", None)
-        if cache is None or lock is None:
-            cache = {}
-            lock = threading.Lock()
-            self._stage1_device_batch_cache = cache
-            self._stage1_device_batch_cache_lock = lock
-        return cache, lock
-
-    def _invalidate_stage1_device_batches(self, split_name):
-        cache, lock = self._stage1_device_batch_cache_state()
-        with lock:
-            stale_keys = [
-                key for key in cache
-                if key[0] == str(split_name)
-            ]
-            for key in stale_keys:
-                del cache[key]
-
-    def _stage1_device_batches(self, split_name, device):
-        dataloader = self.dataloaders[split_name]
-        if split_name != "validation_full" or not isinstance(dataloader, tuple):
-            return dataloader
-
-        device = torch.device(device)
-        cache_key = (str(split_name), str(device))
-        cache, lock = self._stage1_device_batch_cache_state()
-        with lock:
-            cached = cache.get(cache_key)
-            if cached is not None:
-                return cached
-            device_batches = tuple(
-                {
-                    key: (
-                        value.to(device, non_blocking=False)
-                        if isinstance(value, torch.Tensor)
-                        else value
-                    )
-                    for key, value in batch.items()
-                }
-                if isinstance(batch, Mapping)
-                else batch
-                for batch in dataloader
-            )
-            cache[cache_key] = device_batches
-            return device_batches
 
     def has_dataset_split(self, split_name):
         return self.dataloaders.get(split_name) is not None
@@ -4849,7 +4795,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             handler._last_stage1_applied_config = cfg_sig
 
         # 2) Forward via the explicit-model/device variant of _run_evaluation.
-        dataloader = self._stage1_device_batches(split_name, device)
+        dataloader = self.dataloaders[split_name]
         _forward_t0 = time.time()
         result = self._run_evaluation(
             dataloader,
@@ -5811,7 +5757,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         if self._last_applied_config != cfg_sig:
             self.apply_configuration(gelu_degrees, softmax_degrees)
             self._last_applied_config = cfg_sig
-        dataloader = self._stage1_device_batches(split_name, self.device)
+        dataloader = self.dataloaders[split_name]
         result = self._run_evaluation(
             dataloader,
             use_train=(split_name == "train"),
