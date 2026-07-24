@@ -892,76 +892,6 @@ def _sample_gaussian_for_point(reference: Tensor, point: Optional[NoisePoint]) -
     return _sample_independent_gaussian(reference, std)
 
 
-_BLB_NOISY_WEIGHT_WORKSPACE_ENABLED = str(
-    _os.environ.get("BLB_STAGE2_NOISY_WEIGHT_WORKSPACE", "1")
-).strip().lower() not in {"0", "false", "no", "off"}
-_BLB_NOISY_WEIGHT_WORKSPACES = {}
-
-
-def _get_blb_noisy_weight_workspace(reference: Tensor) -> Tensor:
-    """Return reusable storage for one CUDA noisy-weight tensor."""
-    if not reference.is_cuda:
-        raise ValueError("noisy-weight workspace requires a CUDA tensor")
-    stream = torch.cuda.current_stream(reference.device)
-    key = (
-        int(_threading.get_ident()),
-        str(reference.device),
-        int(stream.cuda_stream),
-        reference.dtype,
-    )
-    required = int(reference.numel())
-    workspace = _BLB_NOISY_WEIGHT_WORKSPACES.get(key)
-    if workspace is None or int(workspace.numel()) < required:
-        workspace = torch.empty(
-            required,
-            device=reference.device,
-            dtype=reference.dtype,
-        )
-        _BLB_NOISY_WEIGHT_WORKSPACES[key] = workspace
-    return workspace[:required].view(reference.shape)
-
-
-def _noisy_weight_for_point(
-        weight: Tensor,
-        point: Optional[NoisePoint],
-        *,
-        reference: Tensor,
-        ) -> Tensor:
-    """Build one encoded weight, reusing storage on the probe CUDA stream."""
-    can_reuse = (
-        _BLB_NOISY_WEIGHT_WORKSPACE_ENABLED
-        and torch.is_inference_mode_enabled()
-        and weight.is_cuda
-        and reference.is_cuda
-        and weight.device == reference.device
-        and weight.dtype == reference.dtype
-        and weight.dtype == torch.float32
-        and weight.is_contiguous()
-    )
-    if can_reuse and point is not None:
-        variance = get_input_noise_variance_by_N(
-            scaling_factor=int(point.scaling_factor),
-            distribution=str(point.distribution).lower(),
-            N=int(point.N),
-        )
-        if variance > 0.0:
-            try:
-                noisy_weight = _get_blb_noisy_weight_workspace(weight)
-            except torch.cuda.OutOfMemoryError:
-                pass
-            else:
-                noisy_weight.normal_(
-                    0.0,
-                    float(math.sqrt(variance)),
-                    generator=_get_noise_generator(weight.device),
-                )
-                noisy_weight.add_(weight)
-                return noisy_weight
-
-    noisy_weight = weight + _sample_gaussian_for_point(weight, point)
-    return noisy_weight.to(device=reference.device, dtype=reference.dtype)
-
-
 def _rotation_repeat_count(cfg, flag_name: str) -> int:
     """Resolve one installed rotation flag to its optimizer-provided count."""
     if cfg is None or not bool(getattr(cfg, flag_name, False)):
@@ -1222,9 +1152,8 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
         )
         # 2. encode on W_ffn2
         weight = linear_module.weight
-        noisy_weight = _noisy_weight_for_point(
-            weight, cfg.wffn2_encode, reference=x,
-        )
+        noisy_weight = weight + _sample_gaussian_for_point(weight, cfg.wffn2_encode)
+        noisy_weight = noisy_weight.to(device=x.device, dtype=x.dtype)
         bias = linear_module.bias
         if bias is not None:
             bias = bias.to(device=x.device, dtype=x.dtype)
@@ -1406,9 +1335,8 @@ def _make_block2_qk_proj_forward(
         if hidden_states is None:
             return hidden_states
         weight = linear_module.weight
-        noisy_weight = _noisy_weight_for_point(
-            weight, encode_point, reference=hidden_states,
-        )
+        noisy_weight = weight + _sample_gaussian_for_point(weight, encode_point)
+        noisy_weight = noisy_weight.to(device=hidden_states.device, dtype=hidden_states.dtype)
         bias = linear_module.bias
         if bias is not None:
             bias = bias.to(device=hidden_states.device, dtype=hidden_states.dtype)
@@ -2000,9 +1928,8 @@ def _make_block4_wo_forward(
         if hidden_states is None:
             return hidden_states
         weight = linear_module.weight
-        noisy_weight = _noisy_weight_for_point(
-            weight, encode_point, reference=hidden_states,
-        )
+        noisy_weight = weight + _sample_gaussian_for_point(weight, encode_point)
+        noisy_weight = noisy_weight.to(device=hidden_states.device, dtype=hidden_states.dtype)
         bias = linear_module.bias
         if bias is not None:
             bias = bias.to(device=hidden_states.device, dtype=hidden_states.dtype)
@@ -2353,9 +2280,8 @@ def _make_block5_wffn1_forward(
         if hidden_states is None:
             return hidden_states
         weight = linear_module.weight
-        noisy_weight = _noisy_weight_for_point(
-            weight, encode_point, reference=hidden_states,
-        )
+        noisy_weight = weight + _sample_gaussian_for_point(weight, encode_point)
+        noisy_weight = noisy_weight.to(device=hidden_states.device, dtype=hidden_states.dtype)
         bias = linear_module.bias
         if bias is not None:
             bias = bias.to(device=hidden_states.device, dtype=hidden_states.dtype)
