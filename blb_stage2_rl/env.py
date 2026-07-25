@@ -588,6 +588,7 @@ class BLBStage2Env:
             external_cost_rank: Optional[float] = None,
             external_resource_objective: Optional[Mapping[str, Any]] = None,
             boosted_overrides: Optional[Mapping[Tuple[int, int], Mapping[str, int]]] = None,
+            probe_base_seed: Optional[int] = None,
             ) -> Dict[str, Any]:
         """Prepare optimizer-adjusted cfgs for a terminal reward probe.
 
@@ -656,7 +657,10 @@ class BLBStage2Env:
             "final_config_fingerprint": materialized.final_config_fingerprint,
             "info": info,
             "timing": timing,
+            "_step_idx_before_finish": int(self._step_idx),
         }
+        if probe_base_seed is not None:
+            prepared["probe_base_seed"] = int(probe_base_seed)
         if external_cost_score is not None:
             prepared["external_cost_score"] = float(external_cost_score)
         if external_cost_rank is not None:
@@ -811,6 +815,137 @@ class BLBStage2Env:
             i for i, item in enumerate(prepared_items)
             if bool(item.get("requires_forward", True))
         ]
+        grouped_probe_enabled = bool(
+            len(forward_indices) >= 2
+            and self.probe_runner is not None
+            and hasattr(self.probe_runner, "run_action_trial_groups")
+            and all(
+                item.get("probe_base_seed") is not None
+                for item in prepared_items
+                if bool(item.get("requires_forward", True))
+            )
+        )
+        if grouped_probe_enabled:
+            from .seed_utils import derive_probe_trial_seed
+
+            decoded_actions = [
+                prepared_items[index]["decoded"] for index in forward_indices
+            ]
+            base_seeds = [
+                int(prepared_items[index]["probe_base_seed"])
+                for index in forward_indices
+            ]
+            cpu_rng = torch.get_rng_state()
+            cuda_rng = (
+                torch.cuda.get_rng_state_all()
+                if torch.cuda.is_available() else None
+            )
+            np_rng = np.random.get_state()
+            try:
+                grouped_results = self.probe_runner.run_action_trial_groups(
+                    decoded_actions,
+                    base_seeds=base_seeds,
+                    k=k,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    "exact grouped terminal probe failed; refusing to "
+                    "change per-episode failure semantics"
+                ) from exc
+            finally:
+                torch.set_rng_state(cpu_rng)
+                if cuda_rng is not None:
+                    torch.cuda.set_rng_state_all(cuda_rng)
+                np.random.set_state(np_rng)
+            self._probe_eval_counter += len(forward_indices)
+            self._installed_config_fingerprint = None
+            diag_obj = self.probe_runner.last_diagnostics
+            group_diag = diagnostics_payload(diag_obj) if diag_obj is not None else {}
+            group_wall = float(group_diag.get("wall_seconds", 0.0) or 0.0)
+            action_count = len(forward_indices)
+            amortized_wall = group_wall / max(1, action_count)
+            group_worker_seconds = [
+                float(value)
+                for value in group_diag.get("per_worker_seconds", ())
+            ]
+            grouped_by_item = {
+                item_index: (local_index, grouped_results[local_index])
+                for local_index, item_index in enumerate(forward_indices)
+            }
+            for item_index, item in enumerate(prepared_items):
+                self._step_idx = int(item.get(
+                    "_step_idx_before_finish", self._step_idx,
+                ))
+                if item_index not in grouped_by_item:
+                    metrics = self._placeholder_metrics_for_invalid()
+                    out[item_index] = self._finish_prepared_terminal_probe(
+                        item,
+                        metrics,
+                        probe_diagnostics={
+                            "fast_reward_mode": True,
+                            "validation_required": bool(validation_required),
+                        },
+                        forward_ran=False,
+                    )
+                    continue
+                local_index, trial_results = grouped_by_item[item_index]
+                base_seed = base_seeds[local_index]
+                trial_seeds = [
+                    derive_probe_trial_seed(base_seed, trial_index)
+                    for trial_index in range(k)
+                ]
+                per_worker_indices = []
+                for tasks in getattr(
+                        diag_obj, "per_worker_action_trial_indices", (),
+                ):
+                    per_worker_indices.append([
+                        int(trial_index)
+                        for action_index, trial_index in tasks
+                        if int(action_index) == int(local_index)
+                    ])
+                per_worker_seeds = [
+                    [
+                        derive_probe_trial_seed(base_seed, trial_index)
+                        for trial_index in indices
+                    ]
+                    for indices in per_worker_indices
+                ]
+                diag = {
+                    **group_diag,
+                    "wall_seconds": float(amortized_wall),
+                    "group_wall_seconds": float(group_wall),
+                    "per_worker_seconds": [
+                        value / max(1, action_count)
+                        for value in group_worker_seconds
+                    ],
+                    "per_worker_trial_counts": [
+                        len(indices) for indices in per_worker_indices
+                    ],
+                    "per_worker_trial_indices": per_worker_indices,
+                    "per_worker_trial_seeds": per_worker_seeds,
+                    "fast_reward_mode": True,
+                    "online_num_trials_per_step": int(k),
+                    "terminal_eval_batch_size": int(action_count),
+                    "validation_required": bool(validation_required),
+                    "probe_install_wall_seconds": float(amortized_wall),
+                    "probe_install_skipped": False,
+                    "probe_clear_wall_seconds": 0.0,
+                    "probe_clear_skipped": True,
+                    "persistent_probe_install": True,
+                }
+                metrics = self._metrics_from_trial_results(
+                    trial_results,
+                    trial_seeds=trial_seeds,
+                )
+                self._last_probe_diagnostics = dict(diag)
+                out[item_index] = self._finish_prepared_terminal_probe(
+                    item,
+                    metrics,
+                    probe_diagnostics=diag,
+                    forward_ran=True,
+                )
+            return [result for result in out if result is not None]
+
         for i, item in enumerate(prepared_items):
             if i in forward_indices:
                 continue

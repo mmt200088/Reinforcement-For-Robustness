@@ -2937,6 +2937,166 @@ def _policy_input(value: np.ndarray, device: Any) -> Any:
     return torch.as_tensor(value, device=device)
 
 
+def resolve_exact_terminal_batch_size(
+        requested_batch_size: int,
+        trial_count: int,
+        worker_count: int,
+        ) -> int:
+    """Return the smallest useful exact cross-episode scheduling window."""
+    requested = max(1, int(requested_batch_size))
+    trials = max(1, int(trial_count))
+    workers = max(1, int(worker_count))
+    if requested == 1 or workers == 1 or trials % workers == 0:
+        return 1
+    balance_period = workers // math.gcd(trials, workers)
+    return min(requested, balance_period)
+
+
+@dataclass
+class _LayerwiseEpisodeDraft:
+    absolute_episode: int
+    terminal_info: Mapping[str, Any]
+    runtime_info: Mapping[str, Any]
+    episode_reward: float
+    step_infos: list[Mapping[str, Any]]
+    transition_indices: list[int]
+    boosted_overrides: Mapping[Any, Any]
+    prepared_terminal_probe: Optional[Mapping[str, Any]] = None
+
+
+def _collect_layerwise_episode(
+        *,
+        env: Any,
+        policy: Any,
+        rollout_buffer: Any,
+        entropy_samples: list[dict[str, np.ndarray]],
+        absolute_episode: int,
+        base_seed: Optional[int],
+        expected_online_trials: int,
+        horizon: int,
+        device: Any,
+        step_adapter_fn: Callable[
+            [Any, int, int], tuple[np.ndarray, np.ndarray]
+        ],
+        ) -> _LayerwiseEpisodeDraft:
+    state = env.reset(
+        seed=(
+            None if base_seed is None
+            else int(base_seed) + int(absolute_episode)
+        )
+    )
+    if base_seed is not None and hasattr(env, "base"):
+        from .seed_utils import derive_layerwise_episode_probe_seed
+
+        env.base.probe_noise_seed = derive_layerwise_episode_probe_seed(
+            int(base_seed),
+            int(absolute_episode),
+            trial_count=int(expected_online_trials),
+        )
+    step_infos: list[Mapping[str, Any]] = []
+    transition_indices: list[int] = []
+    terminal_info: Optional[Mapping[str, Any]] = None
+    episode_reward = 0.0
+    for step_idx in range(horizon):
+        spec = env.current_spec()
+        slot_mask, levels = step_adapter_fn(spec, 6, 6)
+        state_np = np.asarray(state, dtype=np.float32)
+        sample_out = policy.sample_action(
+            _policy_input(state_np[None, ...], device),
+            _policy_input(slot_mask[None, ...], device),
+            _policy_input(levels[None, ...], device),
+            deterministic=False,
+            baseline_prior_scale=0.0,
+            return_per_slot_log_prob=True,
+        )
+        if len(sample_out) != 4:
+            raise RuntimeError(
+                "layerwise factorized PPO requires sampling-time "
+                "per-slot log probabilities"
+            )
+        actions_raw, log_prob_raw, value_raw, log_prob_per_slot_raw = sample_out
+        action = _as_numpy(actions_raw).reshape(-1).astype(np.int64)
+        action[~slot_mask] = 0
+        log_prob = _first_detached_scalar(log_prob_raw)
+        value = _first_detached_scalar(value_raw)
+        log_prob_per_slot = (
+            log_prob_per_slot_raw.detach().reshape(-1)
+            if hasattr(log_prob_per_slot_raw, "detach")
+            else np.asarray(
+                log_prob_per_slot_raw, dtype=np.float32,
+            ).reshape(-1)
+        )
+        next_state, reward, done, info = env.step(action.tolist())
+        expected_done = step_idx == horizon - 1
+        if bool(done) != expected_done:
+            raise RuntimeError(
+                "layerwise episode termination mismatch at step "
+                f"{step_idx}: done={done}"
+            )
+        transition_index = rollout_buffer.add(
+            state=state_np,
+            action=action,
+            slot_mask=slot_mask,
+            per_slot_num_levels=levels,
+            action_level_mask=None,
+            log_prob=log_prob,
+            log_prob_per_slot=log_prob_per_slot,
+            value=value,
+            reward=0.0,
+            done=bool(done),
+            baseline_prior_scale=0.0,
+        )
+        transition_indices.append(int(transition_index))
+        entropy_samples.append({
+            "state": state_np.copy(),
+            "action": action.copy(),
+            "slot_mask": slot_mask.copy(),
+            "levels": levels.copy(),
+        })
+        step_infos.append(info if isinstance(info, Mapping) else {})
+        state = next_state
+        if expected_done:
+            terminal_info = info if isinstance(info, Mapping) else {}
+            episode_reward = float(reward)
+
+    if terminal_info is None:
+        raise RuntimeError("layerwise episode completed without terminal info")
+    pending_probe = getattr(env, "pending_terminal_probe", None)
+    prepared = None
+    if bool(terminal_info.get("terminal_probe_deferred", False)):
+        if not isinstance(pending_probe, Mapping):
+            raise RuntimeError(
+                "deferred layerwise terminal is missing its prepared probe"
+            )
+        prepared = pending_probe.get("prepared")
+        if not isinstance(prepared, Mapping):
+            raise RuntimeError(
+                "deferred layerwise terminal prepared probe is invalid"
+            )
+        runtime_info: Mapping[str, Any] = {}
+        boosted_overrides = copy.deepcopy(
+            pending_probe.get("boosted_overrides") or {}
+        )
+    else:
+        runtime_value = getattr(env, "runtime_terminal_info", None)
+        runtime_info = (
+            runtime_value if isinstance(runtime_value, Mapping) else {}
+        )
+        boosted_overrides = copy.deepcopy(
+            getattr(env, "boosted_overrides", {}) or {}
+        )
+    return _LayerwiseEpisodeDraft(
+        absolute_episode=int(absolute_episode),
+        terminal_info=terminal_info,
+        runtime_info=runtime_info,
+        episode_reward=float(episode_reward),
+        step_infos=step_infos,
+        transition_indices=transition_indices,
+        boosted_overrides=boosted_overrides,
+        prepared_terminal_probe=prepared,
+    )
+
+
 def _current_policy_entropy(
         policy: Any,
         samples: Sequence[Mapping[str, np.ndarray]],
@@ -3056,6 +3216,35 @@ def train_layerwise(
     )
     if expected_online_trials <= 0:
         raise ValueError("online_num_trials_per_step must be positive")
+    requested_terminal_batch_size = max(
+        1, int(getattr(train_cfg, "terminal_eval_batch_size", 1) or 1)
+    )
+    probe_runner = getattr(getattr(env, "base", None), "probe_runner", None)
+    probe_worker_count = int(
+        getattr(probe_runner, "num_workers", 1) or 1
+    )
+    exact_batch_capable = bool(
+        base_seed is not None
+        and probe_runner is not None
+        and hasattr(probe_runner, "run_action_trial_groups")
+        and hasattr(env, "configure_terminal_probe_deferral")
+        and hasattr(getattr(env, "base", None), "evaluate_prepared_terminal_batch")
+        and bool(getattr(
+            getattr(getattr(env, "base", None), "env_cfg", None),
+            "persistent_probe_install",
+            False,
+        ))
+    )
+    terminal_batch_size = (
+        resolve_exact_terminal_batch_size(
+            requested_terminal_batch_size,
+            expected_online_trials,
+            probe_worker_count,
+        )
+        if exact_batch_capable else 1
+    )
+    if hasattr(env, "configure_terminal_probe_deferral"):
+        env.configure_terminal_probe_deferral(terminal_batch_size > 1)
     online_probability = float(
         getattr(train_cfg, "online_constraint_probability", 0.50)
     )
@@ -3192,87 +3381,80 @@ def train_layerwise(
     entropy_samples: list[dict[str, np.ndarray]] = []
 
     local_episode = 0
+    finalized_drafts: list[_LayerwiseEpisodeDraft] = []
     while not convergence_state.converged and (
             unbounded_training or local_episode < total_episodes
     ):
-        absolute_episode = absolute_start + local_episode
-        state = env.reset(
-            seed=(None if base_seed is None else int(base_seed) + absolute_episode)
-        )
-        if base_seed is not None and hasattr(env, "base"):
-            from .seed_utils import derive_layerwise_episode_probe_seed
-
-            env.base.probe_noise_seed = derive_layerwise_episode_probe_seed(
-                int(base_seed),
-                absolute_episode,
-                trial_count=expected_online_trials,
+        if not finalized_drafts:
+            episodes_to_update = update_window - (
+                local_episode % update_window
             )
-        step_infos: list[Mapping[str, Any]] = []
-        transition_indices: list[int] = []
-        terminal_info: Optional[Mapping[str, Any]] = None
-        episode_reward = 0.0
-        for step_idx in range(horizon):
-            spec = env.current_spec()
-            slot_mask, levels = step_adapter_fn(spec, 6, 6)
-            state_np = np.asarray(state, dtype=np.float32)
-            sample_out = policy.sample_action(
-                _policy_input(state_np[None, ...], device),
-                _policy_input(slot_mask[None, ...], device),
-                _policy_input(levels[None, ...], device),
-                deterministic=False,
-                baseline_prior_scale=0.0,
-                return_per_slot_log_prob=True,
+            episodes_to_end = (
+                terminal_batch_size
+                if unbounded_training
+                else total_episodes - local_episode
             )
-            if len(sample_out) != 4:
-                raise RuntimeError(
-                    "layerwise factorized PPO requires sampling-time per-slot log probabilities"
+            collect_count = min(
+                terminal_batch_size,
+                episodes_to_update,
+                episodes_to_end,
+            )
+            collected = [
+                _collect_layerwise_episode(
+                    env=env,
+                    policy=policy,
+                    rollout_buffer=rollout_buffer,
+                    entropy_samples=entropy_samples,
+                    absolute_episode=(
+                        absolute_start + local_episode + batch_offset
+                    ),
+                    base_seed=base_seed,
+                    expected_online_trials=expected_online_trials,
+                    horizon=horizon,
+                    device=device,
+                    step_adapter_fn=step_adapter_fn,
                 )
-            actions_raw, log_prob_raw, value_raw, log_prob_per_slot_raw = sample_out
-            action = _as_numpy(actions_raw).reshape(-1).astype(np.int64)
-            action[~slot_mask] = 0
-            log_prob = _first_detached_scalar(log_prob_raw)
-            value = _first_detached_scalar(value_raw)
-            log_prob_per_slot = (
-                log_prob_per_slot_raw.detach().reshape(-1)
-                if hasattr(log_prob_per_slot_raw, "detach")
-                else np.asarray(log_prob_per_slot_raw, dtype=np.float32).reshape(-1)
-            )
-            next_state, reward, done, info = env.step(action.tolist())
-            expected_done = step_idx == horizon - 1
-            if bool(done) != expected_done:
-                raise RuntimeError(
-                    f"layerwise episode termination mismatch at step {step_idx}: done={done}"
+                for batch_offset in range(collect_count)
+            ]
+            if terminal_batch_size > 1:
+                prepared_batch = [
+                    draft.prepared_terminal_probe for draft in collected
+                ]
+                if any(item is None for item in prepared_batch):
+                    raise RuntimeError(
+                        "exact terminal scheduling collected an "
+                        "unprepared layerwise episode"
+                    )
+                terminal_results = env.base.evaluate_prepared_terminal_batch(
+                    prepared_batch,
+                    num_trials_per_action=expected_online_trials,
+                    validation_required=False,
                 )
-            transition_index = rollout_buffer.add(
-                state=state_np,
-                action=action,
-                slot_mask=slot_mask,
-                per_slot_num_levels=levels,
-                action_level_mask=None,
-                log_prob=log_prob,
-                log_prob_per_slot=log_prob_per_slot,
-                value=value,
-                reward=0.0,
-                done=bool(done),
-                baseline_prior_scale=0.0,
-            )
-            transition_indices.append(int(transition_index))
-            entropy_samples.append({
-                "state": state_np.copy(),
-                "action": action.copy(),
-                "slot_mask": slot_mask.copy(),
-                "levels": levels.copy(),
-            })
-            step_infos.append(info if isinstance(info, Mapping) else {})
-            state = next_state
-            if expected_done:
-                terminal_info = info
-                episode_reward = float(reward)
+                if len(terminal_results) != len(collected):
+                    raise RuntimeError(
+                        "exact terminal scheduling returned "
+                        f"{len(terminal_results)} results for "
+                        f"{len(collected)} episodes"
+                    )
+                for draft, result in zip(collected, terminal_results):
+                    _terminal_state, reward, done, runtime_info = result
+                    if not bool(done) or not isinstance(runtime_info, Mapping):
+                        raise RuntimeError(
+                            "exact terminal scheduling returned an invalid "
+                            "base-env terminal result"
+                        )
+                    draft.episode_reward = float(reward)
+                    draft.runtime_info = runtime_info
+            finalized_drafts.extend(collected)
 
-        if terminal_info is None:
-            raise RuntimeError("layerwise episode completed without terminal info")
-        runtime_info = getattr(env, "runtime_terminal_info", None)
-        runtime_info = runtime_info if isinstance(runtime_info, Mapping) else {}
+        draft = finalized_drafts.pop(0)
+        absolute_episode = int(draft.absolute_episode)
+        terminal_info = draft.terminal_info
+        runtime_info = draft.runtime_info
+        episode_reward = float(draft.episode_reward)
+        step_infos = draft.step_infos
+        transition_indices = draft.transition_indices
+        episode_boosted_overrides = draft.boosted_overrides
         action_matrix = tuple(
             tuple(int(value) for value in row)
             for row in terminal_info.get("policy_actions", ())
@@ -3453,7 +3635,7 @@ def train_layerwise(
                     "variable_cost": float(variable_cost),
                     "action_matrix": [list(row) for row in action_matrix],
                     "boosted_overrides_hash": sha256_json(
-                        getattr(env, "boosted_overrides", {})
+                        episode_boosted_overrides
                     ),
                     "boosted_overrides_provenance": "layerwise_env",
                     "assessment_bootstrap_seed": int(bootstrap_seed),
@@ -3491,7 +3673,7 @@ def train_layerwise(
                 variable_cost=variable_cost,
                 frontier_cost=None,
                 frontier_candidates=accepted_candidates,
-                boosted_overrides=getattr(env, "boosted_overrides", {}),
+                boosted_overrides=episode_boosted_overrides,
                 bootstrap_seed=bootstrap_seed,
                 episode_reward=episode_reward,
                 assess_candidate_fn=assess_candidate_fn,
@@ -3544,7 +3726,7 @@ def train_layerwise(
                     "action_matrix": action_matrix,
                     "full_vector": full_vector,
                     "boosted_overrides": copy.deepcopy(
-                        getattr(env, "boosted_overrides", {})
+                        episode_boosted_overrides
                     ),
                     "reward": (
                         float(existing_candidate["reward"])

@@ -192,6 +192,8 @@ class BLBStage2LayerwiseEnv:
         self._has_reset = False
         self._done = False
         self._runtime_terminal_info: Optional[Any] = None
+        self._defer_terminal_probe = False
+        self._pending_terminal_probe: Optional[Dict[str, Any]] = None
         self._action_history: List[List[int]] = []
         self._decoded_actions: List[LayerwiseDecodedAction] = []
         self._fusion_option_ids: List[Dict[int, int]] = []
@@ -245,6 +247,25 @@ class BLBStage2LayerwiseEnv:
         """Original base-env terminal payload for in-process runtime consumers."""
         return self._runtime_terminal_info
 
+    @property
+    def pending_terminal_probe(self) -> Optional[Dict[str, Any]]:
+        """Prepared base-env payload owned by the just-completed episode."""
+        if self._pending_terminal_probe is None:
+            return None
+        return {
+            "prepared": self._pending_terminal_probe["prepared"],
+            "boosted_overrides": copy.deepcopy(
+                self._pending_terminal_probe["boosted_overrides"]
+            ),
+        }
+
+    def configure_terminal_probe_deferral(self, enabled: bool) -> None:
+        if self._has_reset and not self._done and self._step_idx > 0:
+            raise RuntimeError(
+                "terminal probe deferral cannot change during an episode"
+            )
+        self._defer_terminal_probe = bool(enabled)
+
     def current_spec(self) -> LayerwiseStepSpec:
         if self._done or self._step_idx >= self.horizon:
             raise RuntimeError("episode terminated; call reset() before current_spec()")
@@ -258,6 +279,7 @@ class BLBStage2LayerwiseEnv:
         self._has_reset = True
         self._done = False
         self._runtime_terminal_info = None
+        self._pending_terminal_probe = None
         self._action_history = []
         self._decoded_actions = []
         self._fusion_option_ids = []
@@ -351,15 +373,51 @@ class BLBStage2LayerwiseEnv:
             raise RuntimeError(
                 f"layerwise normalized variable cost outside [0, 1]: {external_cost_score}"
             )
-        terminal_state, terminal_reward, _terminal_done, terminal_info = self.base.step(
-            self._pending_full_vec.copy(),
-            external_cost_score=external_cost_score,
-            external_cost_rank=external_cost_rank,
-            external_resource_objective=copy.deepcopy(resource_objective),
-            boosted_overrides=(copy.deepcopy(self._boosted_overrides) or None),
+        terminal_kwargs = {
+            "external_cost_score": external_cost_score,
+            "external_cost_rank": external_cost_rank,
+            "external_resource_objective": copy.deepcopy(resource_objective),
+            "boosted_overrides": (
+                copy.deepcopy(self._boosted_overrides) or None
+            ),
+        }
+        if self._defer_terminal_probe:
+            probe_base_seed = getattr(self.base, "probe_noise_seed", None)
+            if probe_base_seed is None:
+                raise RuntimeError(
+                    "exact terminal probe deferral requires an explicit "
+                    "episode probe seed"
+                )
+            prepared = self.base.prepare_action_for_terminal_probe(
+                self._pending_full_vec.copy(),
+                probe_base_seed=int(probe_base_seed),
+                **terminal_kwargs,
+            )
+            self._pending_terminal_probe = {
+                "prepared": prepared,
+                "boosted_overrides": copy.deepcopy(self._boosted_overrides),
+            }
+            self._runtime_terminal_info = None
+            self._done = True
+            info.update(self._terminal_handoff(
+                resource_objective,
+                0.0,
+                {},
+                external_cost_score=external_cost_score,
+                external_cost_rank=external_cost_rank,
+            ))
+            info["terminal_probe_deferred"] = True
+            return self._build_obs(), 0.0, True, info
+
+        terminal_state, terminal_reward, _terminal_done, terminal_info = (
+            self.base.step(
+                self._pending_full_vec.copy(),
+                **terminal_kwargs,
+            )
         )
         del terminal_state
         self._runtime_terminal_info = terminal_info
+        self._pending_terminal_probe = None
         self._done = True
         info.update(self._terminal_handoff(
             resource_objective,

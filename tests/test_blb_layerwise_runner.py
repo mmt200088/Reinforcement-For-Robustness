@@ -2679,6 +2679,13 @@ class _DeferredFakeLayerwiseEnv(_FakeLayerwiseEnv):
         self._deferred = False
         self._pending_terminal_probe = None
         self.grouped_calls = []
+        self.base.env_cfg = types.SimpleNamespace(
+            persistent_probe_install=True,
+        )
+        self.base.probe_runner = types.SimpleNamespace(
+            num_workers=4,
+            run_action_trial_groups=lambda *_args, **_kwargs: None,
+        )
         self.base.evaluate_prepared_terminal_batch = self._evaluate_prepared
 
     def configure_terminal_probe_deferral(self, enabled):

@@ -4310,6 +4310,7 @@ def _run_layerwise_training_branch(
         ppo=ppo,
         rl_algo="ppo",
         online_num_trials_per_step=int(train_cfg.num_trials_per_step),
+        terminal_eval_batch_size=int(train_cfg.terminal_eval_batch_size),
         promotion_validation_trials=int(
             getattr(train_cfg, "promotion_validation_trials", 25)
         ),

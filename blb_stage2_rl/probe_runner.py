@@ -161,6 +161,44 @@ def _split_round_robin(k: int, n_workers: int) -> List[List[int]]:
     return [list(trials) for trials in _split_round_robin_cached(k, n_workers)]
 
 
+@lru_cache(maxsize=64)
+def _split_action_trial_tasks_cached(
+        action_count: int,
+        k: int,
+        n_workers: int,
+        ) -> Tuple[Tuple[Tuple[int, int], ...], ...]:
+    """Assign action-major trial tasks round-robin across workers."""
+    action_count = max(0, int(action_count))
+    k = max(0, int(k))
+    n = max(1, int(n_workers))
+    out: List[List[Tuple[int, int]]] = [[] for _ in range(n)]
+    flat_index = 0
+    for action_index in range(action_count):
+        for trial_index in range(k):
+            out[flat_index % n].append((action_index, trial_index))
+            flat_index += 1
+    return tuple(tuple(tasks) for tasks in out)
+
+
+def _group_action_trial_tasks(
+        tasks: Sequence[Tuple[int, int]],
+        actions: Sequence[ActionDecodeResult],
+        base_seeds: Sequence[int],
+        ) -> List[Dict[str, Any]]:
+    """Build compact action groups for one worker's ordered task list."""
+    groups: List[Dict[str, Any]] = []
+    for action_index, trial_index in tasks:
+        if not groups or int(groups[-1]["action_index"]) != int(action_index):
+            groups.append({
+                "action_index": int(action_index),
+                "decoded": actions[int(action_index)],
+                "base_seed": int(base_seeds[int(action_index)]),
+                "trial_indices": [],
+            })
+        groups[-1]["trial_indices"].append(int(trial_index))
+    return groups
+
+
 # ---------------------------------------------------------------------------
 # Probe batch transfer (cheap one-time copy per worker)
 # ---------------------------------------------------------------------------
@@ -408,6 +446,23 @@ def _probe_process_main(
                         trial_idx, base_seed, batch_set_key,
                     ),
                 }
+            elif operation == "run_action_trial_groups":
+                batch_set_key = str(payload["batch_set_key"])
+                grouped_results = []
+                for group in payload["action_groups"]:
+                    action_index = int(group["action_index"])
+                    base_seed = int(group["base_seed"])
+                    worker.install(group["decoded"])
+                    for trial_idx in group["trial_indices"]:
+                        trial_index = int(trial_idx)
+                        grouped_results.append((
+                            action_index,
+                            trial_index,
+                            worker.run_trial(
+                                trial_index, base_seed, batch_set_key,
+                            ),
+                        ))
+                result = {"results": grouped_results}
             elif operation == "close":
                 try:
                     worker.clear()
@@ -591,6 +646,11 @@ class ProbeRunnerDiagnostics:
     per_worker_trial_seeds: List[List[int]] = field(default_factory=list)
     devices: List[str] = field(default_factory=list)
     multi_action: bool = False
+    action_count: int = 0
+    trials_per_action: int = 0
+    per_worker_action_trial_indices: List[
+        List[Tuple[int, int]]
+    ] = field(default_factory=list)
 
     @property
     def speedup_vs_sequential(self) -> float:
@@ -1223,6 +1283,243 @@ class ProbeRunner:
             ordered.append(result)
         return ordered
 
+    def _run_action_trial_groups_processes(
+            self,
+            actions: Sequence[ActionDecodeResult],
+            base_seeds: Sequence[int],
+            k: int,
+            batch_set_key: str,
+            ) -> List[List[Tuple[float, float, float]]]:
+        action_count = len(actions)
+        assignments = _split_action_trial_tasks_cached(
+            action_count, k, self.num_workers,
+        )
+        results: List[List[Optional[Tuple[float, float, float]]]] = [
+            [None] * k for _ in range(action_count)
+        ]
+        per_worker_seconds = [0.0] * self.num_workers
+        errors: List[Tuple[int, BaseException]] = []
+        submitted: List[Tuple[int, Any]] = []
+
+        wall_started = time.perf_counter()
+        for worker_index, worker in enumerate(self._process_workers, start=1):
+            tasks = assignments[worker_index]
+            if not tasks:
+                continue
+            try:
+                worker.submit("run_action_trial_groups", {
+                    "action_groups": _group_action_trial_tasks(
+                        tasks, actions, base_seeds,
+                    ),
+                    "batch_set_key": batch_set_key,
+                })
+                submitted.append((worker_index, worker))
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((worker_index, exc))
+
+        local_started = time.perf_counter()
+        try:
+            for group in _group_action_trial_tasks(
+                    assignments[0], actions, base_seeds,
+            ):
+                action_index = int(group["action_index"])
+                self.workers[0].install(group["decoded"])
+                for trial_index in group["trial_indices"]:
+                    results[action_index][int(trial_index)] = (
+                        self.workers[0].run_trial(
+                            int(trial_index),
+                            int(group["base_seed"]),
+                            batch_set_key,
+                        )
+                    )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append((0, exc))
+        finally:
+            per_worker_seconds[0] = time.perf_counter() - local_started
+
+        for worker_index, worker in submitted:
+            try:
+                payload = worker.receive("run_action_trial_groups")
+                per_worker_seconds[worker_index] = float(
+                    payload.get("wall_seconds", 0.0) or 0.0
+                )
+                for action_index, trial_index, result in payload.get("results", []):
+                    action_idx = int(action_index)
+                    trial_idx = int(trial_index)
+                    if (
+                            not 0 <= action_idx < action_count
+                            or not 0 <= trial_idx < k
+                            or results[action_idx][trial_idx] is not None
+                    ):
+                        raise RuntimeError(
+                            "probe-runner received duplicate or out-of-range "
+                            f"grouped task ({action_idx}, {trial_idx})"
+                        )
+                    results[action_idx][trial_idx] = tuple(result)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((worker_index, exc))
+        wall_elapsed = time.perf_counter() - wall_started
+        self._set_group_diagnostics(
+            assignments, base_seeds, k, per_worker_seconds, wall_elapsed,
+        )
+        if errors:
+            worker_index, exc = errors[0]
+            self._raise_process_error(
+                worker_index, "run_action_trial_groups", exc,
+            )
+        return self._ordered_group_results(results, assignments)
+
+    def _set_group_diagnostics(
+            self,
+            assignments: Sequence[Sequence[Tuple[int, int]]],
+            base_seeds: Sequence[int],
+            k: int,
+            per_worker_seconds: Sequence[float],
+            wall_seconds: float,
+            ) -> None:
+        self.last_diagnostics = ProbeRunnerDiagnostics(
+            k=len(base_seeds) * int(k),
+            wall_seconds=float(wall_seconds),
+            per_worker_seconds=[
+                float(value) for value in per_worker_seconds
+            ],
+            per_worker_trial_counts=[
+                len(tasks) for tasks in assignments
+            ],
+            per_worker_trial_indices=[
+                [int(action_index) * int(k) + int(trial_index)
+                 for action_index, trial_index in tasks]
+                for tasks in assignments
+            ],
+            per_worker_trial_seeds=[
+                [
+                    _trial_seed(base_seeds[int(action_index)], int(trial_index))
+                    for action_index, trial_index in tasks
+                ]
+                for tasks in assignments
+            ],
+            devices=[str(device) for device in self.devices],
+            multi_action=True,
+            action_count=len(base_seeds),
+            trials_per_action=int(k),
+            per_worker_action_trial_indices=[
+                [(int(action_index), int(trial_index))
+                 for action_index, trial_index in tasks]
+                for tasks in assignments
+            ],
+        )
+
+    @staticmethod
+    def _ordered_group_results(
+            results: Sequence[
+                Sequence[Optional[Tuple[float, float, float]]]
+            ],
+            assignments: Sequence[Sequence[Tuple[int, int]]],
+            ) -> List[List[Tuple[float, float, float]]]:
+        ordered: List[List[Tuple[float, float, float]]] = []
+        for action_index, action_results in enumerate(results):
+            ordered_action: List[Tuple[float, float, float]] = []
+            for trial_index, result in enumerate(action_results):
+                if result is None:
+                    raise RuntimeError(
+                        "probe-runner missing grouped task "
+                        f"({action_index}, {trial_index}); "
+                        f"assignments={assignments}"
+                    )
+                ordered_action.append(result)
+            ordered.append(ordered_action)
+        return ordered
+
+    def run_action_trial_groups(
+            self,
+            decoded_by_action: Sequence[ActionDecodeResult],
+            *,
+            base_seeds: Sequence[int],
+            k: int,
+            batch_set_key: str = "F1",
+            ) -> List[List[Tuple[float, float, float]]]:
+        """Run K exact seeded trials for each action and preserve both orders."""
+        self._require_open()
+        normalized_batch_set_key = self._require_batch_set(batch_set_key)
+        actions = list(decoded_by_action)
+        seeds = [int(seed) for seed in base_seeds]
+        if len(actions) != len(seeds):
+            raise ValueError(
+                "run_action_trial_groups requires one base seed per action"
+            )
+        k = max(0, int(k))
+        if not actions or k == 0:
+            assignments = _split_action_trial_tasks_cached(
+                len(actions), k, self.num_workers,
+            )
+            self._set_group_diagnostics(
+                assignments, seeds, k, [0.0] * self.num_workers, 0.0,
+            )
+            return [[] for _ in actions]
+        if self._process_workers:
+            return self._run_action_trial_groups_processes(
+                actions, seeds, k, normalized_batch_set_key,
+            )
+
+        assignments = _split_action_trial_tasks_cached(
+            len(actions), k, self.num_workers,
+        )
+        results: List[List[Optional[Tuple[float, float, float]]]] = [
+            [None] * k for _ in actions
+        ]
+        per_worker_seconds = [0.0] * self.num_workers
+        errors: List[Tuple[int, BaseException]] = []
+        lock = threading.Lock()
+
+        def task(worker_index: int) -> None:
+            worker = self.workers[worker_index]
+            started = time.perf_counter()
+            try:
+                for group in _group_action_trial_tasks(
+                        assignments[worker_index], actions, seeds,
+                ):
+                    action_index = int(group["action_index"])
+                    worker.install(group["decoded"])
+                    for trial_index in group["trial_indices"]:
+                        results[action_index][int(trial_index)] = (
+                            worker.run_trial(
+                                int(trial_index),
+                                int(group["base_seed"]),
+                                normalized_batch_set_key,
+                            )
+                        )
+            except BaseException as exc:  # noqa: BLE001
+                with lock:
+                    errors.append((worker_index, exc))
+            finally:
+                per_worker_seconds[worker_index] = (
+                    time.perf_counter() - started
+                )
+
+        wall_started = time.perf_counter()
+        if self.num_workers == 1:
+            task(0)
+        else:
+            threads = [
+                threading.Thread(target=task, args=(index,), daemon=True)
+                for index in range(self.num_workers)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        wall_elapsed = time.perf_counter() - wall_started
+        self._set_group_diagnostics(
+            assignments, seeds, k, per_worker_seconds, wall_elapsed,
+        )
+        if errors:
+            worker_index, exc = errors[0]
+            raise RuntimeError(
+                f"probe-runner grouped worker {worker_index} "
+                f"(device {self.workers[worker_index].device}) failed: {exc!r}"
+            ) from exc
+        return self._ordered_group_results(results, assignments)
+
 
 class ProbeRunnerView:
     """Non-owning fidelity view over one shared ProbeRunner."""
@@ -1272,6 +1569,20 @@ class ProbeRunnerView:
         return self._owner.run_action_trials_once(
             decoded_by_trial,
             base_seed,
+            batch_set_key=self.batch_set_key,
+        )
+
+    def run_action_trial_groups(
+            self,
+            decoded_by_action: Sequence[ActionDecodeResult],
+            *,
+            base_seeds: Sequence[int],
+            k: int,
+            ) -> List[List[Tuple[float, float, float]]]:
+        return self._owner.run_action_trial_groups(
+            decoded_by_action,
+            base_seeds=base_seeds,
+            k=k,
             batch_set_key=self.batch_set_key,
         )
 
@@ -1508,6 +1819,11 @@ def format_diagnostics_line(diag: ProbeRunnerDiagnostics) -> str:
         for dev, idxs in zip(diag.devices, diag.per_worker_trial_indices)
     )
     mode = " multi_action=1" if bool(getattr(diag, "multi_action", False)) else ""
+    if int(getattr(diag, "action_count", 0) or 0) > 0:
+        mode += (
+            f" actions={int(diag.action_count)}"
+            f" trials_per_action={int(diag.trials_per_action)}"
+        )
     return (
         f"[probe-runner]{mode} k={diag.k} split=[{counts}] devices=[{devs}]  "
         f"wall={diag.wall_seconds:.3f}s worker_seconds=[{ws}]  "
@@ -1534,4 +1850,14 @@ def diagnostics_payload(diag: ProbeRunnerDiagnostics) -> dict:
     }
     if bool(getattr(diag, "multi_action", False)):
         payload["multi_action"] = True
+    if int(getattr(diag, "action_count", 0) or 0) > 0:
+        payload.update({
+            "action_count": int(diag.action_count),
+            "trials_per_action": int(diag.trials_per_action),
+            "per_worker_action_trial_indices": [
+                [[int(action_index), int(trial_index)]
+                 for action_index, trial_index in tasks]
+                for tasks in diag.per_worker_action_trial_indices
+            ],
+        })
     return payload
