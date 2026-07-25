@@ -1,0 +1,4 @@
+candidate_store_semantic_equal=True
+active_record_count=11527
+excluded_fields=['created_at']
+diff_count=0

@@ -1,0 +1,40 @@
+{
+  "candidate_store_semantic_equality": true,
+  "checkpoint_end_episode": 11280,
+  "checkpoint_semantic_equality": true,
+  "checkpoint_start_episode": 10920,
+  "control_episodes_per_hour": 765.5923543670382,
+  "control_invalid_episode_count": 0,
+  "control_priority_counts": {
+    "1": 62,
+    "2": 5,
+    "3": 293
+  },
+  "control_process_wall_seconds": 1888.721290588379,
+  "control_terminal_cost_mean_seconds": 0.051888615990901596,
+  "control_terminal_probe_mean_seconds": 3.99078365962515,
+  "control_train_wall_seconds": 1692.8068737983704,
+  "edgefix_episodes_per_hour": 1129.3186575138425,
+  "edgefix_invalid_episode_count": 0,
+  "edgefix_priority_counts": {
+    "1": 62,
+    "2": 5,
+    "3": 293
+  },
+  "edgefix_process_wall_seconds": 1343.887591600418,
+  "edgefix_terminal_cost_mean_seconds": 0.047211531011594664,
+  "edgefix_terminal_probe_mean_seconds": 2.518363741327711,
+  "edgefix_train_wall_seconds": 1147.5946061611176,
+  "episodes_per_arm": 360,
+  "minimum_required_speedup": 1.2,
+  "ppo_update_equality": true,
+  "ppo_updates_per_arm": 3,
+  "process_speedup": 1.4054161243792165,
+  "quality_effect_equality": true,
+  "source_commit": "201611d27cf191d4a2953ae963fa64289cbbf9ab",
+  "source_tree": "a390f5c26746de23fcfbff598ac14e6e97c998cd",
+  "speedup_gate_passed": true,
+  "strict_diagnostic_equality": true,
+  "terminal_probe_speedup": 1.584673251974777,
+  "train_loop_speedup": 1.4750913473365588
+}
