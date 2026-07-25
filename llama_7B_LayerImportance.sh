@@ -190,6 +190,11 @@ GA / Greedy：
                                           在线 K=1、按 terminal batch 把不同 action 分配到多 GPU
   --blb-v3-online-k-trials N              fast reward mode 在线每 action trial 数（默认 5）
   --blb-v3-terminal-eval-batch-size N     fast reward mode 每批 terminal action 数
+  --blb-v3-protected-k1-enabled true|false
+                                          K=1 仅提前拒绝极端精度失败，其余保持精确 K=5
+  --blb-v3-protected-k1-guard-sigma FLOAT K=1 极端失败保护阈值（默认 4.0σ）
+  --blb-v3-protected-k1-audit-fraction FLOAT
+                                          K=1 拒绝样本的确定性 K=5 抽审比例（默认 0.02）
   --blb-v3-promotion-validation-trials N  边界/优秀候选的重复验证 trial 数
   --blb-v3-final-selection-top-n N        训练结束 final selector 复核的候选数
   --blb-v3-final-selection-validation-trials N
@@ -558,6 +563,9 @@ BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED=""; S_BLB_V3_STATIC_INVALID_LEVEL_MASK_
 BLB_V3_FAST_REWARD_MODE_ENABLED="false"; S_BLB_V3_FAST_REWARD_MODE_ENABLED="false"
 BLB_V3_ONLINE_K_TRIALS="5"; S_BLB_V3_ONLINE_K_TRIALS="false"
 BLB_V3_TERMINAL_EVAL_BATCH_SIZE="4"; S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE="false"
+BLB_V3_PROTECTED_K1_ENABLED="false"; S_BLB_V3_PROTECTED_K1_ENABLED="false"
+BLB_V3_PROTECTED_K1_GUARD_SIGMA="4.0"; S_BLB_V3_PROTECTED_K1_GUARD_SIGMA="false"
+BLB_V3_PROTECTED_K1_AUDIT_FRACTION="0.02"; S_BLB_V3_PROTECTED_K1_AUDIT_FRACTION="false"
 BLB_V3_PROMOTION_VALIDATION_TRIALS="25"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="false"
 BLB_V3_FINAL_SELECTION_TOP_N="20"; S_BLB_V3_FINAL_SELECTION_TOP_N="false"
 BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="25"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="false"
@@ -792,6 +800,9 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-fast-reward-mode-enabled) needv "$@"; BLB_V3_FAST_REWARD_MODE_ENABLED="$2"; S_BLB_V3_FAST_REWARD_MODE_ENABLED="true"; shift 2 ;;
     --blb-v3-online-k-trials) needv "$@"; BLB_V3_ONLINE_K_TRIALS="$2"; S_BLB_V3_ONLINE_K_TRIALS="true"; shift 2 ;;
     --blb-v3-terminal-eval-batch-size) needv "$@"; BLB_V3_TERMINAL_EVAL_BATCH_SIZE="$2"; S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE="true"; shift 2 ;;
+    --blb-v3-protected-k1-enabled) needv "$@"; BLB_V3_PROTECTED_K1_ENABLED="$2"; S_BLB_V3_PROTECTED_K1_ENABLED="true"; shift 2 ;;
+    --blb-v3-protected-k1-guard-sigma) needv "$@"; BLB_V3_PROTECTED_K1_GUARD_SIGMA="$2"; S_BLB_V3_PROTECTED_K1_GUARD_SIGMA="true"; shift 2 ;;
+    --blb-v3-protected-k1-audit-fraction) needv "$@"; BLB_V3_PROTECTED_K1_AUDIT_FRACTION="$2"; S_BLB_V3_PROTECTED_K1_AUDIT_FRACTION="true"; shift 2 ;;
     --blb-v3-promotion-validation-trials) needv "$@"; BLB_V3_PROMOTION_VALIDATION_TRIALS="$2"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="true"; shift 2 ;;
     --blb-v3-final-selection-top-n) needv "$@"; BLB_V3_FINAL_SELECTION_TOP_N="$2"; S_BLB_V3_FINAL_SELECTION_TOP_N="true"; shift 2 ;;
     --blb-v3-final-selection-validation-trials) needv "$@"; BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="$2"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="true"; shift 2 ;;
@@ -1064,6 +1075,10 @@ is_pos_int "$BLB_V3_ROLLOUT_SIZE" || err "--stage2-rollout-size 必须是正整�
 [ "$S_BLB_V3_FAST_REWARD_MODE_ENABLED" = "false" ] || is_bool "$BLB_V3_FAST_REWARD_MODE_ENABLED" || err "--blb-v3-fast-reward-mode-enabled 必须是 true/false"
 [ "$S_BLB_V3_ONLINE_K_TRIALS" = "false" ] || is_pos_int "$BLB_V3_ONLINE_K_TRIALS" || err "--blb-v3-online-k-trials 必须是正整数，当前为：$BLB_V3_ONLINE_K_TRIALS"
 [ "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE" = "false" ] || is_pos_int "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE" || err "--blb-v3-terminal-eval-batch-size 必须是正整数，当前为：$BLB_V3_TERMINAL_EVAL_BATCH_SIZE"
+[ "$S_BLB_V3_PROTECTED_K1_ENABLED" = "false" ] || is_bool "$BLB_V3_PROTECTED_K1_ENABLED" || err "--blb-v3-protected-k1-enabled 必须是 true/false"
+[ "$S_BLB_V3_PROTECTED_K1_GUARD_SIGMA" = "false" ] || is_pos_num "$BLB_V3_PROTECTED_K1_GUARD_SIGMA" || err "--blb-v3-protected-k1-guard-sigma 必须是正数"
+[ "$S_BLB_V3_PROTECTED_K1_AUDIT_FRACTION" = "false" ] || is_nonneg_num "$BLB_V3_PROTECTED_K1_AUDIT_FRACTION" || err "--blb-v3-protected-k1-audit-fraction 必须在 [0,1]"
+awk -v x="$BLB_V3_PROTECTED_K1_AUDIT_FRACTION" 'BEGIN { if ((x + 0) > 1) exit 1 }' || err "--blb-v3-protected-k1-audit-fraction 必须在 [0,1]"
 [ "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS" = "false" ] || is_pos_int "$BLB_V3_PROMOTION_VALIDATION_TRIALS" || err "--blb-v3-promotion-validation-trials 必须是正整数，当前为：$BLB_V3_PROMOTION_VALIDATION_TRIALS"
 [ "$S_BLB_V3_FINAL_SELECTION_TOP_N" = "false" ] || is_pos_int "$BLB_V3_FINAL_SELECTION_TOP_N" || err "--blb-v3-final-selection-top-n 必须是正整数，当前为：$BLB_V3_FINAL_SELECTION_TOP_N"
 [ "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" = "false" ] || is_pos_int "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" || err "--blb-v3-final-selection-validation-trials 必须是正整数，当前为：$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS"
@@ -1853,6 +1868,9 @@ else
     [ "$S_BLB_V3_FAST_REWARD_MODE_ENABLED" = "true" ] && CMD+=(--blb_v3_fast_reward_mode_enabled "$BLB_V3_FAST_REWARD_MODE_ENABLED")
     [ "$S_BLB_V3_ONLINE_K_TRIALS" = "true" ] && CMD+=(--blb_v3_online_k_trials "$BLB_V3_ONLINE_K_TRIALS")
     [ "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE" = "true" ] && CMD+=(--blb_v3_terminal_eval_batch_size "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE")
+    [ "$S_BLB_V3_PROTECTED_K1_ENABLED" = "true" ] && CMD+=(--blb_v3_protected_k1_enabled "$BLB_V3_PROTECTED_K1_ENABLED")
+    [ "$S_BLB_V3_PROTECTED_K1_GUARD_SIGMA" = "true" ] && CMD+=(--blb_v3_protected_k1_guard_sigma "$BLB_V3_PROTECTED_K1_GUARD_SIGMA")
+    [ "$S_BLB_V3_PROTECTED_K1_AUDIT_FRACTION" = "true" ] && CMD+=(--blb_v3_protected_k1_audit_fraction "$BLB_V3_PROTECTED_K1_AUDIT_FRACTION")
     [ "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS" = "true" ] && CMD+=(--blb_v3_promotion_validation_trials "$BLB_V3_PROMOTION_VALIDATION_TRIALS")
     [ "$S_BLB_V3_FINAL_SELECTION_TOP_N" = "true" ] && CMD+=(--blb_v3_final_selection_top_n "$BLB_V3_FINAL_SELECTION_TOP_N")
     [ "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" = "true" ] && CMD+=(--blb_v3_final_selection_validation_trials "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS")
@@ -1968,6 +1986,9 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     show "BLB fast reward mode" "$(boolzh "$BLB_V3_FAST_REWARD_MODE_ENABLED")" "$S_BLB_V3_FAST_REWARD_MODE_ENABLED"
     show "BLB online K trials" "$BLB_V3_ONLINE_K_TRIALS" "$S_BLB_V3_ONLINE_K_TRIALS"
     show "BLB terminal eval batch" "$BLB_V3_TERMINAL_EVAL_BATCH_SIZE" "$S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE"
+    show "BLB protected K1" "$(boolzh "$BLB_V3_PROTECTED_K1_ENABLED")" "$S_BLB_V3_PROTECTED_K1_ENABLED"
+    show "BLB protected K1 guard sigma" "$BLB_V3_PROTECTED_K1_GUARD_SIGMA" "$S_BLB_V3_PROTECTED_K1_GUARD_SIGMA"
+    show "BLB protected K1 audit" "$BLB_V3_PROTECTED_K1_AUDIT_FRACTION" "$S_BLB_V3_PROTECTED_K1_AUDIT_FRACTION"
     show "BLB promotion validation trials" "$BLB_V3_PROMOTION_VALIDATION_TRIALS" "$S_BLB_V3_PROMOTION_VALIDATION_TRIALS"
     show "BLB final selection top N" "$BLB_V3_FINAL_SELECTION_TOP_N" "$S_BLB_V3_FINAL_SELECTION_TOP_N"
     show "BLB final selection validation trials" "$BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS" "$S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS"

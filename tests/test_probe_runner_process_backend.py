@@ -259,6 +259,27 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             [[(0, 0), (0, 2), (1, 1)], [(0, 1), (1, 0), (1, 2)]],
         )
 
+    def test_grouped_action_trials_preserve_explicit_indices_on_process_backend(self):
+        events = []
+        runner, _remote = self._runner(events)
+        actions = [object(), object()]
+
+        results = runner.run_action_trial_groups_at_indices(
+            actions,
+            base_seeds=[70, 80],
+            trial_indices=[1, 3, 4],
+        )
+
+        self.assertEqual(results, [
+            [(1.0, 70.0, -1.0), (3.0, 70.0, 2.0), (4.0, 70.0, -1.0)],
+            [(1.0, 80.0, 2.0), (3.0, 80.0, -1.0), (4.0, 80.0, 2.0)],
+        ])
+        self.assertEqual(
+            runner.last_diagnostics.per_worker_action_trial_indices,
+            [[(0, 1), (0, 4), (1, 3)], [(0, 3), (1, 1), (1, 4)]],
+        )
+        self.assertEqual(runner.last_diagnostics.trials_per_action, 3)
+
     def test_install_submits_remote_before_installing_primary(self):
         events = []
         runner, _remote = self._runner(events)

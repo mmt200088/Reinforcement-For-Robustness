@@ -905,6 +905,108 @@ def strict_resource_pareto_frontier(
     return {identity: candidate for identity, candidate in frontier}
 
 
+def _can_expand_resource_frontier(
+        candidate_resource: Mapping[str, Any],
+        accepted_candidates: Mapping[str, Mapping[str, Any]],
+        ) -> bool:
+    """Return whether a candidate is not strictly resource-dominated.
+
+    Equal-resource actions remain protected because their constraint confidence
+    and safety margins can still improve the deterministic strict winner.
+    """
+    candidate = _candidate_resource_fields(candidate_resource)
+    for existing in accepted_candidates.values():
+        resource = _candidate_resource_fields(existing)
+        dominates = (
+            resource["compute_saving"]
+            >= candidate["compute_saving"] - 1.0e-12
+            and resource["communication_saving"]
+            >= candidate["communication_saving"] - 1.0e-12
+            and (
+                resource["compute_saving"]
+                > candidate["compute_saving"] + 1.0e-12
+                or resource["communication_saving"]
+                > candidate["communication_saving"] + 1.0e-12
+            )
+        )
+        if dominates:
+            return False
+    return True
+
+
+def _annotate_protected_k1_exact_results(
+        terminal_results: Sequence[Tuple[Any, float, bool, Mapping[str, Any]]],
+        *,
+        guard_sigma: float,
+        reason: str,
+        ) -> None:
+    """Mark direct K=5 results that bypassed the two-stage scheduler."""
+    for result in terminal_results:
+        if len(result) != 4 or not isinstance(result[3], dict):
+            raise RuntimeError(
+                "protected K=1 direct K=5 result must expose mutable runtime info"
+            )
+        runtime_info = result[3]
+        statistical_trials = _to_plain_mapping(
+            runtime_info.get("statistical_trials")
+        )
+        trials_executed = len(statistical_trials.get("loss", ()))
+        telemetry = {
+            "protected_k1_enabled": True,
+            "protected_k1_screened": False,
+            "protected_k1_audited": False,
+            "protected_k1_k1_only_reject": False,
+            "protected_k1_audit_precision_false_negative": False,
+            "protected_k1_audit_p3_false_negative": False,
+            "protected_k1_reason": str(reason),
+            "protected_k1_violating_channels": [],
+            "protected_k1_worst_precision_z": None,
+            "protected_k1_guard_sigma": float(guard_sigma),
+            "protected_k1_trials_executed": int(trials_executed),
+            "protected_k1_stability_measured": bool(trials_executed >= 2),
+        }
+        runtime_info.update(telemetry)
+        runtime_info.setdefault("probe_diagnostics", {}).update(telemetry)
+
+
+_PROTECTED_K1_COUNTER_DEFAULTS = {
+    "enabled_episodes": 0,
+    "screened_episodes": 0,
+    "k1_only_rejects": 0,
+    "audited_episodes": 0,
+    "audit_precision_false_negatives": 0,
+    "audit_p3_false_negatives": 0,
+    "trials_executed": 0,
+    "trials_saved_vs_k5": 0,
+}
+
+
+def _restore_protected_k1_runtime_state(
+        convergence_resume_state: Mapping[str, Any],
+        ) -> Tuple[Dict[str, int], Optional[int]]:
+    raw_state = convergence_resume_state.get("protected_k1", {})
+    if raw_state is None:
+        raw_state = {}
+    if not isinstance(raw_state, Mapping):
+        raise ValueError("protected K=1 checkpoint state must be a mapping")
+    counters = {}
+    for name, default in _PROTECTED_K1_COUNTER_DEFAULTS.items():
+        value = int(raw_state.get(name, default))
+        if value < 0:
+            raise ValueError(
+                f"protected K=1 checkpoint counter {name} must be nonnegative"
+            )
+        counters[name] = value
+    fail_open_episode = raw_state.get("fail_open_episode")
+    if fail_open_episode is not None:
+        fail_open_episode = int(fail_open_episode)
+        if fail_open_episode < 0:
+            raise ValueError(
+                "protected K=1 fail-open episode must be nonnegative"
+            )
+    return counters, fail_open_episode
+
+
 def _strict_best_snapshot(
         accepted_candidates: Mapping[str, Mapping[str, Any]],
         ) -> Optional[dict[str, Any]]:
@@ -1406,6 +1508,16 @@ class LayerwiseEpisodeRecord:
     metrics: Mapping[str, float]
     pooled_metrics: Optional[Mapping[str, float]]
     probe_diagnostics: Mapping[str, Any]
+    protected_k1_enabled: bool
+    protected_k1_screened: bool
+    protected_k1_audited: bool
+    protected_k1_k1_only_reject: bool
+    protected_k1_audit_precision_false_negative: bool
+    protected_k1_audit_p3_false_negative: bool
+    protected_k1_reason: str
+    protected_k1_guard_sigma: float
+    protected_k1_worst_precision_z: Optional[float]
+    protected_k1_trials_executed: int
     final_config_fingerprint: str
     materialization_failure_reason: str
     model_uses_replan_config: bool
@@ -3216,6 +3328,21 @@ def train_layerwise(
     )
     if expected_online_trials <= 0:
         raise ValueError("online_num_trials_per_step must be positive")
+    from .protected_k1 import ProtectedK1Config
+
+    protected_k1 = ProtectedK1Config(
+        enabled=bool(getattr(train_cfg, "protected_k1_enabled", False)),
+        guard_sigma=float(getattr(
+            train_cfg, "protected_k1_guard_sigma", 4.0,
+        )),
+        audit_fraction=float(getattr(
+            train_cfg, "protected_k1_audit_fraction", 0.02,
+        )),
+    )
+    if protected_k1.enabled and expected_online_trials != 5:
+        raise ValueError(
+            "protected K=1 currently requires online_num_trials_per_step=5"
+        )
     requested_terminal_batch_size = max(
         1, int(getattr(train_cfg, "terminal_eval_batch_size", 1) or 1)
     )
@@ -3235,6 +3362,18 @@ def train_layerwise(
             False,
         ))
     )
+    protected_k1_capable = bool(
+        exact_batch_capable
+        and hasattr(probe_runner, "run_action_trial_groups_at_indices")
+        and hasattr(
+            getattr(env, "base", None),
+            "evaluate_prepared_terminal_batch_protected_k1",
+        )
+    )
+    if protected_k1.enabled and not protected_k1_capable:
+        raise RuntimeError(
+            "protected K=1 requires deterministic exact terminal scheduling"
+        )
     terminal_batch_size = (
         resolve_exact_terminal_batch_size(
             requested_terminal_batch_size,
@@ -3244,7 +3383,9 @@ def train_layerwise(
         if exact_batch_capable else 1
     )
     if hasattr(env, "configure_terminal_probe_deferral"):
-        env.configure_terminal_probe_deferral(terminal_batch_size > 1)
+        env.configure_terminal_probe_deferral(
+            terminal_batch_size > 1 or protected_k1.enabled
+        )
     online_probability = float(
         getattr(train_cfg, "online_constraint_probability", 0.50)
     )
@@ -3379,6 +3520,10 @@ def train_layerwise(
         termination_reason=("converged" if restored_converged else "running"),
     )
     entropy_samples: list[dict[str, np.ndarray]] = []
+    (
+        protected_k1_counters,
+        protected_k1_fail_open_episode,
+    ) = _restore_protected_k1_runtime_state(convergence_resume_state)
 
     local_episode = 0
     finalized_drafts: list[_LayerwiseEpisodeDraft] = []
@@ -3416,7 +3561,7 @@ def train_layerwise(
                 )
                 for batch_offset in range(collect_count)
             ]
-            if terminal_batch_size > 1:
+            if terminal_batch_size > 1 or protected_k1.enabled:
                 prepared_batch = [
                     draft.prepared_terminal_probe for draft in collected
                 ]
@@ -3425,11 +3570,60 @@ def train_layerwise(
                         "exact terminal scheduling collected an "
                         "unprepared layerwise episode"
                     )
-                terminal_results = env.base.evaluate_prepared_terminal_batch(
-                    prepared_batch,
-                    num_trials_per_action=expected_online_trials,
-                    validation_required=False,
-                )
+                if (
+                        protected_k1.enabled
+                        and protected_k1_fail_open_episode is None
+                ):
+                    force_k5_mask = []
+                    for collected_draft in collected:
+                        resource = _field(
+                            collected_draft.terminal_info,
+                            "resource_objective",
+                            {},
+                        )
+                        force_k5_mask.append(_can_expand_resource_frontier(
+                            resource,
+                            accepted_candidates,
+                        ))
+                    if all(force_k5_mask):
+                        terminal_results = (
+                            env.base.evaluate_prepared_terminal_batch(
+                                prepared_batch,
+                                num_trials_per_action=expected_online_trials,
+                                validation_required=False,
+                            )
+                        )
+                        _annotate_protected_k1_exact_results(
+                            terminal_results,
+                            guard_sigma=protected_k1.guard_sigma,
+                            reason="protected_by_resource_frontier",
+                        )
+                    else:
+                        terminal_results = (
+                            env.base.evaluate_prepared_terminal_batch_protected_k1(
+                                prepared_batch,
+                                absolute_episodes=[
+                                    draft.absolute_episode for draft in collected
+                                ],
+                                force_k5_mask=force_k5_mask,
+                                guard_sigma=protected_k1.guard_sigma,
+                                audit_fraction=protected_k1.audit_fraction,
+                                audit_seed=int(base_seed or 0),
+                                validation_required=False,
+                            )
+                        )
+                else:
+                    terminal_results = env.base.evaluate_prepared_terminal_batch(
+                        prepared_batch,
+                        num_trials_per_action=expected_online_trials,
+                        validation_required=False,
+                    )
+                    if protected_k1.enabled:
+                        _annotate_protected_k1_exact_results(
+                            terminal_results,
+                            guard_sigma=protected_k1.guard_sigma,
+                            reason="fail_open_after_audit_false_negative",
+                        )
                 if len(terminal_results) != len(collected):
                     raise RuntimeError(
                         "exact terminal scheduling returned "
@@ -3576,6 +3770,51 @@ def train_layerwise(
         breakdown = runtime_info.get("reward_breakdown")
         priority = int(_field(breakdown, "priority", runtime_info.get("priority", 0)))
         invalid_terminal = bool(runtime_info.get("invalid", False))
+        k1_only_reject = bool(
+            runtime_info.get("protected_k1_k1_only_reject", False)
+        )
+        if bool(runtime_info.get("protected_k1_enabled", False)):
+            trials_executed = int(
+                runtime_info.get("protected_k1_trials_executed", 0) or 0
+            )
+            protected_k1_counters["enabled_episodes"] += 1
+            protected_k1_counters["screened_episodes"] += int(bool(
+                runtime_info.get("protected_k1_screened", False)
+            ))
+            protected_k1_counters["k1_only_rejects"] += int(k1_only_reject)
+            protected_k1_counters["audited_episodes"] += int(bool(
+                runtime_info.get("protected_k1_audited", False)
+            ))
+            protected_k1_counters["audit_precision_false_negatives"] += int(
+                bool(runtime_info.get(
+                    "protected_k1_audit_precision_false_negative", False,
+                ))
+            )
+            protected_k1_counters["audit_p3_false_negatives"] += int(bool(
+                runtime_info.get(
+                    "protected_k1_audit_p3_false_negative", False,
+                )
+            ))
+            protected_k1_counters["trials_executed"] += trials_executed
+            if bool(runtime_info.get("forward_ran", False)):
+                protected_k1_counters["trials_saved_vs_k5"] += max(
+                    0, expected_online_trials - trials_executed,
+                )
+            if (
+                    protected_k1_fail_open_episode is None
+                    and bool(runtime_info.get(
+                        "protected_k1_audit_precision_false_negative", False,
+                    ))
+            ):
+                protected_k1_fail_open_episode = int(absolute_episode)
+        if k1_only_reject and invalid_terminal:
+            raise RuntimeError(
+                "protected K=1 reject cannot also be an invalid terminal"
+            )
+        if k1_only_reject and priority != 1:
+            raise RuntimeError(
+                "protected K=1 reject must remain a precision-failed P1"
+            )
         if invalid_terminal and not math.isclose(episode_reward, -5.0, abs_tol=1.0e-9):
             raise RuntimeError(
                 f"invalid layerwise terminal reward must be -5, got {episode_reward}"
@@ -3609,10 +3848,16 @@ def train_layerwise(
             else _trial_series_from_info(
                 runtime_info,
                 required=True,
-                expected_count=expected_online_trials,
-                context="valid robust terminal",
+                expected_count=(
+                    1 if k1_only_reject else expected_online_trials
+                ),
+                context=(
+                    "protected K=1 precision reject"
+                    if k1_only_reject else "valid robust terminal"
+                ),
             )
         )
+        candidate_trials = None if k1_only_reject else raw_trials
         fresh_assessment = _to_plain_mapping(runtime_info.get("statistical_assessment"))
         metrics = _to_plain_mapping(runtime_info.get("metrics"))
         bootstrap_seed = int(fresh_assessment.get("bootstrap_seed", 0))
@@ -3620,13 +3865,19 @@ def train_layerwise(
         pooled_metrics = None
         pooled_trials = None
         promotion = PromotionResult(
-            "invalid_terminal" if invalid_terminal else "not_evaluated",
+            (
+                "invalid_terminal"
+                if invalid_terminal else (
+                    "protected_k1_screened"
+                    if k1_only_reject else "not_evaluated"
+                )
+            ),
             0, 0, None, None, None,
         )
-        if raw_trials is not None:
+        if candidate_trials is not None:
             candidate_store.append_trial_group(
                 full_vector,
-                raw_trials,
+                candidate_trials,
                 {
                     "identity_context": probe_identity_context,
                     "fidelity": "F1",
@@ -3651,7 +3902,7 @@ def train_layerwise(
             if evidence is None:
                 raise RuntimeError("candidate evidence append was not readable")
             pooled_assessment = _assess_pooled_online_trials(
-                raw_trials=raw_trials,
+                raw_trials=candidate_trials,
                 pooled_trials=evidence.trials,
                 fresh_assessment=fresh_assessment,
                 reference=env.base.statistical_reference,
@@ -4003,6 +4254,12 @@ def train_layerwise(
                 ),
                 "strict_revalidation_status": strict_revalidation_status,
                 "termination_reason": convergence_state.termination_reason,
+                **({
+                    "protected_k1": {
+                        "fail_open_episode": protected_k1_fail_open_episode,
+                        **protected_k1_counters,
+                    },
+                } if protected_k1.enabled else {}),
             }
             ppo_metrics.update({
                 "completed_episodes": absolute_start + completed,
@@ -4070,10 +4327,16 @@ def train_layerwise(
             pooled_trials=pooled_trials,
             fresh_trial_count=(0 if raw_trials is None else len(raw_trials.loss)),
             pooled_trial_count=(0 if pooled_trials is None else len(pooled_trials.loss)),
-            reward_evidence="fresh_trials",
+            reward_evidence=(
+                "protected_k1_precision_only"
+                if k1_only_reject else "fresh_trials"
+            ),
             ranking_evidence=(
-                "F4_validation_full"
-                if promotion.evidence is not None else "F1_prefilter_only"
+                "not_eligible_protected_k1"
+                if k1_only_reject else (
+                    "F4_validation_full"
+                    if promotion.evidence is not None else "F1_prefilter_only"
+                )
             ),
             fresh_assessment=fresh_assessment or None,
             assessment=pooled_assessment,
@@ -4088,6 +4351,43 @@ def train_layerwise(
             pooled_metrics=pooled_metrics,
             probe_diagnostics=_to_plain_mapping(
                 runtime_info.get("probe_diagnostics")
+            ),
+            protected_k1_enabled=bool(
+                runtime_info.get("protected_k1_enabled", False)
+            ),
+            protected_k1_screened=bool(
+                runtime_info.get("protected_k1_screened", False)
+            ),
+            protected_k1_audited=bool(
+                runtime_info.get("protected_k1_audited", False)
+            ),
+            protected_k1_k1_only_reject=k1_only_reject,
+            protected_k1_audit_precision_false_negative=bool(
+                runtime_info.get(
+                    "protected_k1_audit_precision_false_negative", False,
+                )
+            ),
+            protected_k1_audit_p3_false_negative=bool(
+                runtime_info.get(
+                    "protected_k1_audit_p3_false_negative", False,
+                )
+            ),
+            protected_k1_reason=str(
+                runtime_info.get("protected_k1_reason", "") or ""
+            ),
+            protected_k1_guard_sigma=float(
+                runtime_info.get("protected_k1_guard_sigma", 0.0) or 0.0
+            ),
+            protected_k1_worst_precision_z=(
+                None
+                if runtime_info.get("protected_k1_worst_precision_z") is None
+                else float(runtime_info["protected_k1_worst_precision_z"])
+            ),
+            protected_k1_trials_executed=int(
+                runtime_info.get(
+                    "protected_k1_trials_executed",
+                    0 if raw_trials is None else len(raw_trials.loss),
+                )
             ),
             final_config_fingerprint=str(
                 runtime_info.get("final_config_fingerprint", "") or ""
@@ -4242,6 +4542,13 @@ def train_layerwise(
         "strict_best": strict_best,
         "bank_b_best": bank_b_best,
         "strict_pareto_frontier": strict_pareto_frontier,
+        "protected_k1": {
+            "enabled": bool(protected_k1.enabled),
+            "guard_sigma": float(protected_k1.guard_sigma),
+            "audit_fraction": float(protected_k1.audit_fraction),
+            "fail_open_episode": protected_k1_fail_open_episode,
+            **protected_k1_counters,
+        },
         "convergence_state": final_convergence_state,
         "best_action": (
             list(strict_best["full_vector"]) if strict_best is not None else None

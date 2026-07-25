@@ -192,6 +192,16 @@ class EpisodeStats:
     terminal_probe_clear_wall_seconds: float = 0.0
     terminal_probe_install_skipped: bool = False
     terminal_probe_clear_skipped: bool = False
+    protected_k1_enabled: bool = False
+    protected_k1_screened: bool = False
+    protected_k1_audited: bool = False
+    protected_k1_k1_only_reject: bool = False
+    protected_k1_audit_precision_false_negative: bool = False
+    protected_k1_audit_p3_false_negative: bool = False
+    protected_k1_reason: str = ""
+    protected_k1_guard_sigma: float = 0.0
+    protected_k1_worst_precision_z: Optional[float] = None
+    protected_k1_trials_executed: int = 0
     safe_neighbor_active: bool = False
     safe_neighbor_mutation_count: int = 0
     safe_neighbor_radius: int = 0

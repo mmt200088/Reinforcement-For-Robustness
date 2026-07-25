@@ -184,6 +184,9 @@ class SequentialTrainConfig:
     fast_reward_mode_enabled: bool = False
     online_num_trials_per_step: int = 5
     terminal_eval_batch_size: int = 4
+    protected_k1_enabled: bool = False
+    protected_k1_guard_sigma: float = 4.0
+    protected_k1_audit_fraction: float = 0.02
     promotion_validation_trials: int = 25
     promotion_margin_window: float = 0.25
     final_selection_top_n: int = 20
@@ -3928,7 +3931,14 @@ def _run_layerwise_training_branch(
     ))
     if convergence_min_episodes < 0:
         raise ValueError("layerwise convergence minimum episodes must be nonnegative")
-    algorithm_revision = "dual_resource_maxmin_shapley_three_bank_convergence_v10"
+    protected_k1_enabled = bool(
+        getattr(train_cfg, "protected_k1_enabled", False)
+    )
+    algorithm_revision = (
+        "dual_resource_maxmin_shapley_three_bank_convergence_v11_protected_k1"
+        if protected_k1_enabled else
+        "dual_resource_maxmin_shapley_three_bank_convergence_v10"
+    )
     policy_network_variant = normalize_policy_network_variant(
         getattr(train_cfg, "policy_network_variant", None)
     )
@@ -4099,6 +4109,25 @@ def _run_layerwise_training_branch(
         },
         "persistence_protocol": "stable_parent_lock_incremental_fingerprint_v2",
     }
+    if protected_k1_enabled:
+        algorithm_contract["protected_k1"] = {
+            "role": "extreme_precision_reject_only",
+            "full_trial_count": 5,
+            "guard_sigma": float(
+                getattr(train_cfg, "protected_k1_guard_sigma", 4.0)
+            ),
+            "audit_fraction": float(
+                getattr(train_cfg, "protected_k1_audit_fraction", 0.02)
+            ),
+            "candidate_store_eligible": False,
+            "stability_measured": False,
+            "reward_p1_probability_ceiling": 0.5,
+            "frontier_protection": (
+                "compute_communication_nondominated_or_equal"
+            ),
+            "audit_false_negative_behavior": "fail_open_to_k5",
+            "fail_open_persistence": "checkpointed",
+        }
     algorithm_contract = bind_policy_network_contract(
         algorithm_contract,
         policy_network_variant,
@@ -4165,6 +4194,9 @@ def _run_layerwise_training_branch(
             ),
             "convergence_min_episodes": int(convergence_min_episodes),
             "convergence_patience_updates": int(convergence_patience_updates),
+            **({
+                "protected_k1": dict(algorithm_contract["protected_k1"])
+            } if protected_k1_enabled else {}),
             "validation_banks": authoritative_validation_banks.contract_payload(),
             "evidence_tiers": {
                 "F1": {
@@ -4311,6 +4343,15 @@ def _run_layerwise_training_branch(
         rl_algo="ppo",
         online_num_trials_per_step=int(train_cfg.num_trials_per_step),
         terminal_eval_batch_size=int(train_cfg.terminal_eval_batch_size),
+        protected_k1_enabled=bool(
+            getattr(train_cfg, "protected_k1_enabled", False)
+        ),
+        protected_k1_guard_sigma=float(
+            getattr(train_cfg, "protected_k1_guard_sigma", 4.0)
+        ),
+        protected_k1_audit_fraction=float(
+            getattr(train_cfg, "protected_k1_audit_fraction", 0.02)
+        ),
         promotion_validation_trials=int(
             getattr(train_cfg, "promotion_validation_trials", 25)
         ),
@@ -4926,6 +4967,28 @@ def _run_layerwise_training_branch(
                 terminal_probe_clear_skipped=bool(probe_diagnostics.get(
                     "probe_clear_skipped", False
                 )),
+                protected_k1_enabled=bool(record.protected_k1_enabled),
+                protected_k1_screened=bool(record.protected_k1_screened),
+                protected_k1_audited=bool(record.protected_k1_audited),
+                protected_k1_k1_only_reject=bool(
+                    record.protected_k1_k1_only_reject
+                ),
+                protected_k1_audit_precision_false_negative=bool(
+                    record.protected_k1_audit_precision_false_negative
+                ),
+                protected_k1_audit_p3_false_negative=bool(
+                    record.protected_k1_audit_p3_false_negative
+                ),
+                protected_k1_reason=str(record.protected_k1_reason),
+                protected_k1_guard_sigma=float(
+                    record.protected_k1_guard_sigma
+                ),
+                protected_k1_worst_precision_z=(
+                    record.protected_k1_worst_precision_z
+                ),
+                protected_k1_trials_executed=int(
+                    record.protected_k1_trials_executed
+                ),
                 raw_trials=fresh_trials,
                 constraint_probabilities=pooled_probabilities,
                 fresh_trials=fresh_trials,
@@ -5368,6 +5431,7 @@ def _run_layerwise_training_branch(
         "best_reward": summary.get("best_reward"),
         "best_promotion_evidence": summary.get("best_promotion_evidence"),
         "bank_b_best": bank_b_best or None,
+        "protected_k1": dict(summary.get("protected_k1") or {}),
         "final_evidence": {
             "status": (
                 "strict_revalidation_passed"
@@ -6903,6 +6967,15 @@ def _run_sequential_via_runner_locked(
             getattr(train_cfg, "num_trials_per_step", 5),
         )),
         terminal_eval_batch_size=int(getattr(train_cfg, "terminal_eval_batch_size", 4)),
+        protected_k1_enabled=bool(
+            getattr(train_cfg, "protected_k1_enabled", False)
+        ),
+        protected_k1_guard_sigma=float(
+            getattr(train_cfg, "protected_k1_guard_sigma", 4.0)
+        ),
+        protected_k1_audit_fraction=float(
+            getattr(train_cfg, "protected_k1_audit_fraction", 0.02)
+        ),
         promotion_validation_trials=int(getattr(train_cfg, "promotion_validation_trials", 4)),
         promotion_margin_window=float(getattr(train_cfg, "promotion_margin_window", 0.25)),
         final_selection_top_n=int(getattr(train_cfg, "final_selection_top_n", 20)),
@@ -7018,6 +7091,15 @@ def _run_sequential_via_runner_locked(
         "fast_reward_mode_enabled": bool(getattr(train_cfg, "fast_reward_mode_enabled", False)),
         "online_num_trials_per_step": int(getattr(train_cfg, "online_num_trials_per_step", 5)),
         "terminal_eval_batch_size": int(getattr(train_cfg, "terminal_eval_batch_size", 4)),
+        "protected_k1_enabled": bool(
+            getattr(train_cfg, "protected_k1_enabled", False)
+        ),
+        "protected_k1_guard_sigma": float(
+            getattr(train_cfg, "protected_k1_guard_sigma", 4.0)
+        ),
+        "protected_k1_audit_fraction": float(
+            getattr(train_cfg, "protected_k1_audit_fraction", 0.02)
+        ),
         "promotion_validation_trials": int(getattr(train_cfg, "promotion_validation_trials", 4)),
         "final_selection_top_n": int(getattr(train_cfg, "final_selection_top_n", 20)),
         "final_selection_validation_trials": int(
@@ -8902,6 +8984,15 @@ def _run_sequential_via_runner_locked(
                 getattr(train_cfg, "guarded_radius2_cooldown_episodes", 300)
             ),
             "k_trials": int(train_cfg.num_trials_per_step),
+            "protected_k1_enabled": bool(
+                getattr(train_cfg, "protected_k1_enabled", False)
+            ),
+            "protected_k1_guard_sigma": float(
+                getattr(train_cfg, "protected_k1_guard_sigma", 4.0)
+            ),
+            "protected_k1_audit_fraction": float(
+                getattr(train_cfg, "protected_k1_audit_fraction", 0.02)
+            ),
             "probe_size": int(getattr(ev, "stage2_probe_size", 256)),
             "baseline_preflight_trial_count": int(
                 baseline_preflight_metrics.get("trial_count", train_cfg.num_trials_per_step)

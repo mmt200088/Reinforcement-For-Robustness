@@ -767,6 +767,9 @@ class BLBStage2TrainConfig:
     fast_reward_mode_enabled: bool = False
     online_num_trials_per_step: int = 5
     terminal_eval_batch_size: int = 4
+    protected_k1_enabled: bool = False
+    protected_k1_guard_sigma: float = 4.0
+    protected_k1_audit_fraction: float = 0.02
     promotion_validation_trials: int = 25
     promotion_margin_window: float = 0.25
     final_selection_top_n: int = 20
@@ -2934,6 +2937,17 @@ class BLBStage2RLRunner:
             cfg.fast_reward_mode_enabled = str(v).strip().lower() in (
                 "1", "true", "yes", "on",
             )
+        v = getattr(ev, "blb_v3_protected_k1_enabled", None)
+        if v not in (None, ""):
+            cfg.protected_k1_enabled = str(v).strip().lower() in (
+                "1", "true", "yes", "on",
+            )
+        v = getattr(ev, "blb_v3_protected_k1_guard_sigma", None)
+        if v not in (None, ""):
+            cfg.protected_k1_guard_sigma = float(v)
+        v = getattr(ev, "blb_v3_protected_k1_audit_fraction", None)
+        if v not in (None, ""):
+            cfg.protected_k1_audit_fraction = float(v)
         v = getattr(ev, "blb_v3_guarded_radius2_episode_fraction", None)
         if v not in (None, ""):
             try:
@@ -3145,6 +3159,16 @@ class BLBStage2RLRunner:
             1, int(cfg.guarded_radius2_min_radius1_successes),
         )
         cfg.online_num_trials_per_step = max(1, int(cfg.online_num_trials_per_step))
+        from .protected_k1 import ProtectedK1Config
+
+        protected_k1 = ProtectedK1Config(
+            enabled=cfg.protected_k1_enabled,
+            guard_sigma=cfg.protected_k1_guard_sigma,
+            audit_fraction=cfg.protected_k1_audit_fraction,
+        )
+        cfg.protected_k1_enabled = protected_k1.enabled
+        cfg.protected_k1_guard_sigma = protected_k1.guard_sigma
+        cfg.protected_k1_audit_fraction = protected_k1.audit_fraction
         cfg.truncation_backend = str(cfg.truncation_backend).strip().lower()
         if cfg.truncation_backend not in {"binary", "decimal", "stochastic_ring"}:
             raise ValueError(

@@ -612,6 +612,9 @@ def train(
         blb_v3_fast_reward_mode_enabled: bool = False,
         blb_v3_online_k_trials: int = 5,
         blb_v3_terminal_eval_batch_size: int = 4,
+        blb_v3_protected_k1_enabled: bool = False,
+        blb_v3_protected_k1_guard_sigma: float = 4.0,
+        blb_v3_protected_k1_audit_fraction: float = 0.02,
         blb_v3_promotion_validation_trials: int = 25,
         blb_v3_final_selection_top_n: int = 20,
         blb_v3_final_selection_validation_trials: int = 25,
@@ -1357,6 +1360,11 @@ def train(
             blb_v3_fast_reward_mode_enabled=blb_v3_fast_reward_mode_enabled,
             blb_v3_online_k_trials=blb_v3_online_k_trials,
             blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,
+            blb_v3_protected_k1_enabled=blb_v3_protected_k1_enabled,
+            blb_v3_protected_k1_guard_sigma=blb_v3_protected_k1_guard_sigma,
+            blb_v3_protected_k1_audit_fraction=(
+                blb_v3_protected_k1_audit_fraction
+            ),
             blb_v3_promotion_validation_trials=blb_v3_promotion_validation_trials,
             blb_v3_final_selection_top_n=blb_v3_final_selection_top_n,
             blb_v3_final_selection_validation_trials=blb_v3_final_selection_validation_trials,
