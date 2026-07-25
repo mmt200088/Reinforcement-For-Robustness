@@ -657,7 +657,6 @@ class BLBStage2Env:
             "final_config_fingerprint": materialized.final_config_fingerprint,
             "info": info,
             "timing": timing,
-            "_step_idx_before_finish": int(self._step_idx),
         }
         if probe_base_seed is not None:
             prepared["probe_base_seed"] = int(probe_base_seed)
@@ -816,7 +815,7 @@ class BLBStage2Env:
             if bool(item.get("requires_forward", True))
         ]
         grouped_probe_enabled = bool(
-            len(forward_indices) >= 2
+            forward_indices
             and self.probe_runner is not None
             and hasattr(self.probe_runner, "run_action_trial_groups")
             and all(
@@ -857,14 +856,37 @@ class BLBStage2Env:
                 float(value)
                 for value in group_diag.get("per_worker_seconds", ())
             ]
+            group_metadata = {
+                "group_k": int(group_diag.get("k", action_count * k)),
+                "group_action_count": int(
+                    group_diag.get("action_count", action_count)
+                ),
+                "group_trials_per_action": int(
+                    group_diag.get("trials_per_action", k)
+                ),
+                "group_per_worker_seconds": list(group_worker_seconds),
+                "group_per_worker_trial_counts": list(
+                    group_diag.get("per_worker_trial_counts", ())
+                ),
+                "group_per_worker_trial_indices": copy.deepcopy(
+                    group_diag.get("per_worker_trial_indices", ())
+                ),
+                "group_per_worker_trial_seeds": copy.deepcopy(
+                    group_diag.get("per_worker_trial_seeds", ())
+                ),
+                "group_per_worker_action_trial_indices": copy.deepcopy(
+                    group_diag.get("per_worker_action_trial_indices", ())
+                ),
+                "group_line": str(group_diag.get("line", "")),
+                "group_multi_action": bool(
+                    group_diag.get("multi_action", False)
+                ),
+            }
             grouped_by_item = {
                 item_index: (local_index, grouped_results[local_index])
                 for local_index, item_index in enumerate(forward_indices)
             }
             for item_index, item in enumerate(prepared_items):
-                self._step_idx = int(item.get(
-                    "_step_idx_before_finish", self._step_idx,
-                ))
                 if item_index not in grouped_by_item:
                     metrics = self._placeholder_metrics_for_invalid()
                     out[item_index] = self._finish_prepared_terminal_probe(
@@ -901,6 +923,11 @@ class BLBStage2Env:
                 ]
                 diag = {
                     **group_diag,
+                    **group_metadata,
+                    "k": int(k),
+                    "action_count": 1,
+                    "trials_per_action": int(k),
+                    "multi_action": False,
                     "wall_seconds": float(amortized_wall),
                     "group_wall_seconds": float(group_wall),
                     "per_worker_seconds": [
@@ -912,6 +939,16 @@ class BLBStage2Env:
                     ],
                     "per_worker_trial_indices": per_worker_indices,
                     "per_worker_trial_seeds": per_worker_seeds,
+                    "per_worker_action_trial_indices": [
+                        [[0, int(trial_index)] for trial_index in indices]
+                        for indices in per_worker_indices
+                    ],
+                    "line": (
+                        "[probe-runner] grouped action="
+                        f"{int(local_index)} k={int(k)} "
+                        f"group_actions={int(action_count)} "
+                        f"group_wall={float(group_wall):.3f}s"
+                    ),
                     "fast_reward_mode": True,
                     "online_num_trials_per_step": int(k),
                     "terminal_eval_batch_size": int(action_count),
