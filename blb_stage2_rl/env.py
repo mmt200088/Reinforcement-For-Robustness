@@ -835,12 +835,6 @@ class BLBStage2Env:
                 int(prepared_items[index]["probe_base_seed"])
                 for index in forward_indices
             ]
-            cpu_rng = torch.get_rng_state()
-            cuda_rng = (
-                torch.cuda.get_rng_state_all()
-                if torch.cuda.is_available() else None
-            )
-            np_rng = np.random.get_state()
             try:
                 grouped_results = self.probe_runner.run_action_trial_groups(
                     decoded_actions,
@@ -852,11 +846,6 @@ class BLBStage2Env:
                     "exact grouped terminal probe failed; refusing to "
                     "change per-episode failure semantics"
                 ) from exc
-            finally:
-                torch.set_rng_state(cpu_rng)
-                if cuda_rng is not None:
-                    torch.cuda.set_rng_state_all(cuda_rng)
-                np.random.set_state(np_rng)
             self._probe_eval_counter += len(forward_indices)
             self._installed_config_fingerprint = None
             diag_obj = self.probe_runner.last_diagnostics
