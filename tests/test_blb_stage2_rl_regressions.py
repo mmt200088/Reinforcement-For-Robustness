@@ -195,8 +195,14 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         env._step_idx = 0
         env._last_probe_diagnostics = {}
         env._finish_prepared_terminal_probe = (
-            lambda item, metrics, **_kwargs: (
-                None, float(item["reward"]), True, {"metrics": metrics}
+            lambda item, metrics, **kwargs: (
+                None,
+                float(item["reward"]),
+                True,
+                {
+                    "metrics": metrics,
+                    "probe_diagnostics": kwargs.get("probe_diagnostics"),
+                },
             )
         )
         actions = [object(), object()]
@@ -238,6 +244,146 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
             results[1][3]["metrics"].metric1_trials,
             tuple(0.90 + trial / 100.0 for trial in range(5)),
         )
+        first_diag = results[0][3]["probe_diagnostics"]
+        self.assertEqual(first_diag["k"], 5)
+        self.assertEqual(first_diag["group_k"], 10)
+        self.assertEqual(first_diag["action_count"], 1)
+        self.assertEqual(first_diag["group_action_count"], 2)
+
+    def test_grouped_k5_mixed_batch_preserves_order_seed_and_step_index(self):
+        from blb_stage2_rl.env import BLBStage2Env
+        from blb_stage2_rl.reward import EpisodeMetrics
+        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+
+        class FakeProbeRunner:
+            num_workers = 4
+
+            def __init__(self):
+                self.grouped_calls = []
+                self.install_calls = []
+                self.last_diagnostics = SimpleNamespace(
+                    k=5,
+                    wall_seconds=0.4,
+                    per_worker_seconds=[0.4] * 4,
+                    per_worker_trial_counts=[2, 1, 1, 1],
+                    per_worker_trial_indices=[[0, 4], [1], [2], [3]],
+                    per_worker_trial_seeds=[[], [], [], []],
+                    per_worker_action_trial_indices=[
+                        [(0, 0), (0, 4)],
+                        [(0, 1)],
+                        [(0, 2)],
+                        [(0, 3)],
+                    ],
+                    devices=["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
+                    speedup_vs_sequential=3.0,
+                    multi_action=True,
+                    action_count=1,
+                    trials_per_action=5,
+                )
+
+            def run_action_trial_groups(self, decoded, *, base_seeds, k):
+                self.grouped_calls.append(
+                    (list(decoded), list(base_seeds), int(k))
+                )
+                return [[
+                    (30.0 + trial, 0.8, 0.7)
+                    for trial in range(int(k))
+                ]]
+
+            def install_action(self, decoded):
+                self.install_calls.append(decoded)
+
+        env = BLBStage2Env.__new__(BLBStage2Env)
+        env.probe_runner = FakeProbeRunner()
+        env.probe_noise_seed = 404
+        env._probe_eval_counter = 7
+        env._step_idx = 17
+        env._installed_config_fingerprint = None
+        env._last_probe_diagnostics = {}
+        env.env_cfg = SimpleNamespace(persistent_probe_install=True)
+        env._placeholder_metrics_for_invalid = lambda: EpisodeMetrics()
+        env._eval_on_probe = lambda k: EpisodeMetrics(
+            trial_seeds=tuple(999 for _ in range(int(k)))
+        )
+        finish_order = []
+
+        def finish(item, metrics, **kwargs):
+            finish_order.append((
+                item["label"],
+                int(env._step_idx),
+                bool(kwargs.get("forward_ran")),
+                tuple(metrics.trial_seeds),
+            ))
+            env._step_idx += 1
+            return (
+                None,
+                float(item["reward"]),
+                True,
+                {
+                    "metrics": metrics,
+                    "probe_diagnostics": kwargs.get("probe_diagnostics"),
+                },
+            )
+
+        env._finish_prepared_terminal_probe = finish
+        decoded = object()
+        prepared = [
+            {
+                "label": "invalid-0",
+                "reward": 0.0,
+                "requires_forward": False,
+                "_step_idx_before_finish": 17,
+            },
+            {
+                "label": "valid-1",
+                "reward": 1.0,
+                "requires_forward": True,
+                "decoded": decoded,
+                "probe_base_seed": 202,
+                "final_config_fingerprint": "valid-1",
+                "info": {"timing": {}},
+                "_step_idx_before_finish": 17,
+            },
+            {
+                "label": "invalid-2",
+                "reward": 2.0,
+                "requires_forward": False,
+                "_step_idx_before_finish": 17,
+            },
+            {
+                "label": "invalid-3",
+                "reward": 3.0,
+                "requires_forward": False,
+                "_step_idx_before_finish": 17,
+            },
+        ]
+
+        results = env.evaluate_prepared_terminal_batch(
+            prepared, num_trials_per_action=5,
+        )
+
+        self.assertEqual(
+            env.probe_runner.grouped_calls,
+            [([decoded], [202], 5)],
+        )
+        self.assertEqual(env.probe_runner.install_calls, [])
+        self.assertEqual(
+            [item[0] for item in finish_order],
+            ["invalid-0", "valid-1", "invalid-2", "invalid-3"],
+        )
+        self.assertEqual([item[1] for item in finish_order], [17, 18, 19, 20])
+        self.assertEqual(env._step_idx, 21)
+        expected_seeds = tuple(
+            derive_probe_trial_seed(202, trial)
+            for trial in range(5)
+        )
+        self.assertEqual(finish_order[1][3], expected_seeds)
+        self.assertEqual(results[1][3]["metrics"].trial_seeds, expected_seeds)
+        valid_diag = results[1][3]["probe_diagnostics"]
+        self.assertEqual(valid_diag["k"], 5)
+        self.assertEqual(valid_diag["group_k"], 5)
+        self.assertEqual(valid_diag["action_count"], 1)
+        self.assertEqual(valid_diag["group_action_count"], 1)
 
 
 @contextlib.contextmanager
