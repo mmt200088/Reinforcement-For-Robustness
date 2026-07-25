@@ -2673,6 +2673,59 @@ class _FakeLayerwiseEnv:
         }
 
 
+class _DeferredFakeLayerwiseEnv(_FakeLayerwiseEnv):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._deferred = False
+        self._pending_terminal_probe = None
+        self.grouped_calls = []
+        self.base.evaluate_prepared_terminal_batch = self._evaluate_prepared
+
+    def configure_terminal_probe_deferral(self, enabled):
+        self._deferred = bool(enabled)
+
+    @property
+    def pending_terminal_probe(self):
+        return self._pending_terminal_probe
+
+    def reset(self, *, seed=None):
+        self._pending_terminal_probe = None
+        return super().reset(seed=seed)
+
+    def step(self, action):
+        result = super().step(action)
+        state, reward, done, info = result
+        if not done or not self._deferred:
+            return result
+        prepared = {
+            "probe_base_seed": int(self.base.probe_noise_seed),
+            "runtime_info": self.runtime_terminal_info,
+            "terminal_reward": float(reward),
+        }
+        self._pending_terminal_probe = {
+            "prepared": prepared,
+            "boosted_overrides": dict(self.boosted_overrides),
+        }
+        self.runtime_terminal_info = None
+        return state, 0.0, True, {**info, "terminal_probe_deferred": True}
+
+    def _evaluate_prepared(self, prepared, **kwargs):
+        items = list(prepared)
+        self.grouped_calls.append((
+            [int(item["probe_base_seed"]) for item in items],
+            dict(kwargs),
+        ))
+        return [
+            (
+                np.zeros(4, dtype=np.float32),
+                float(item["terminal_reward"]),
+                True,
+                item["runtime_info"],
+            )
+            for item in items
+        ]
+
+
 def _assessment(probability):
     fields = {
         name: float(probability)
@@ -2764,6 +2817,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
             convergence_patience_updates=100,
             seed=42,
             online_num_trials_per_step=5,
+            terminal_eval_batch_size=1,
             promotion_validation_trials=25,
             final_selection_validation_trials=25,
             online_constraint_probability=0.50,
@@ -2777,6 +2831,70 @@ class LayerwiseRolloutTests(unittest.TestCase):
             ppo=types.SimpleNamespace(
                 lr=5e-5, gamma=0.99, gae_lambda=0.95, ent_coef=0.01,
             ),
+        )
+
+    def test_exact_terminal_batch_size_uses_only_the_cross_episode_imbalance(self):
+        from blb_stage2_rl.layerwise_runner import resolve_exact_terminal_batch_size
+
+        self.assertEqual(resolve_exact_terminal_batch_size(4, 5, 4), 4)
+        self.assertEqual(resolve_exact_terminal_batch_size(2, 5, 4), 2)
+        self.assertEqual(resolve_exact_terminal_batch_size(4, 5, 5), 1)
+        self.assertEqual(resolve_exact_terminal_batch_size(1, 5, 4), 1)
+
+    def test_grouped_terminal_probes_finalize_in_order_at_the_ppo_boundary(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from blb_stage2_rl.seed_utils import derive_layerwise_episode_probe_seed
+
+        env = _DeferredFakeLayerwiseEnv(probabilities=0.7)
+        config = self._train_cfg(total_episodes=4, update_every=4)
+        config.terminal_eval_batch_size = 4
+        buffer = _FakeBuffer()
+        completed = []
+        updates = []
+
+        def fake_update(_policy, _optimizer, rollout, _cfg, _device, **_kwargs):
+            updates.append(len(rollout))
+            return {"entropy": 0.0, "n_samples": len(rollout)}
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=env,
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=buffer,
+                ppo_update_fn=fake_update,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+                on_episode_end=lambda record: completed.append(record.episode_index),
+            )
+
+        expected_seeds = [
+            derive_layerwise_episode_probe_seed(42, episode, trial_count=5)
+            for episode in range(4)
+        ]
+        self.assertEqual(env.grouped_calls, [(
+            expected_seeds,
+            {"num_trials_per_action": 5, "validation_required": False},
+        )])
+        self.assertEqual(completed, [0, 1, 2, 3])
+        self.assertEqual(updates, [48])
+        self.assertEqual(summary["episode_rewards"], [7.5] * 4)
+        self.assertEqual([record.episode_index for record in summary["episode_records"]], [0, 1, 2, 3])
+
+    def test_layerwise_branch_propagates_runtime_terminal_batch_size(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "terminal_eval_batch_size=int(train_cfg.terminal_eval_batch_size)",
+            source,
         )
 
     def test_train_collects_exactly_12_terminal_credit_transitions(self):

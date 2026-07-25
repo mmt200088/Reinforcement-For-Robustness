@@ -153,6 +153,92 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         self.assertEqual(results[0][3]["metrics"].loss_trials, (0.2,))
         self.assertEqual(results[1][3]["metrics"].metric1_trials, (0.9,))
 
+    def test_grouped_k5_probe_preserves_each_episode_seed_and_trial_order(self):
+        from blb_stage2_rl.env import BLBStage2Env
+        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+
+        class FakeProbeRunner:
+            num_workers = 4
+
+            def __init__(self):
+                self.calls = []
+                self.last_diagnostics = SimpleNamespace(
+                    k=10,
+                    wall_seconds=0.8,
+                    per_worker_seconds=[0.8] * 4,
+                    per_worker_trial_counts=[3, 3, 2, 2],
+                    per_worker_trial_indices=[[0, 4, 8], [1, 5, 9], [2, 6], [3, 7]],
+                    per_worker_trial_seeds=[[], [], [], []],
+                    per_worker_action_trial_indices=[
+                        [(0, 0), (0, 4), (1, 3)],
+                        [(0, 1), (1, 0), (1, 4)],
+                        [(0, 2), (1, 1)],
+                        [(0, 3), (1, 2)],
+                    ],
+                    devices=["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
+                    speedup_vs_sequential=3.5,
+                    multi_action=True,
+                    action_count=2,
+                    trials_per_action=5,
+                )
+
+            def run_action_trial_groups(self, decoded, *, base_seeds, k):
+                self.calls.append((list(decoded), list(base_seeds), int(k)))
+                return [
+                    [(10.0 + trial, 0.80 + trial / 100.0, 0.70) for trial in range(k)],
+                    [(20.0 + trial, 0.90 + trial / 100.0, 0.75) for trial in range(k)],
+                ]
+
+        env = BLBStage2Env.__new__(BLBStage2Env)
+        env.probe_runner = FakeProbeRunner()
+        env._probe_eval_counter = 11
+        env._step_idx = 0
+        env._last_probe_diagnostics = {}
+        env._finish_prepared_terminal_probe = (
+            lambda item, metrics, **_kwargs: (
+                None, float(item["reward"]), True, {"metrics": metrics}
+            )
+        )
+        actions = [object(), object()]
+        prepared = [
+            {
+                "requires_forward": True,
+                "decoded": actions[0],
+                "probe_base_seed": 101,
+                "reward": 1.0,
+            },
+            {
+                "requires_forward": True,
+                "decoded": actions[1],
+                "probe_base_seed": 202,
+                "reward": 2.0,
+            },
+        ]
+
+        results = env.evaluate_prepared_terminal_batch(
+            prepared, num_trials_per_action=5,
+        )
+
+        self.assertEqual(env.probe_runner.calls, [(actions, [101, 202], 5)])
+        self.assertEqual(env._probe_eval_counter, 13)
+        self.assertEqual([result[1] for result in results], [1.0, 2.0])
+        self.assertEqual(
+            results[0][3]["metrics"].trial_seeds,
+            tuple(derive_probe_trial_seed(101, idx) for idx in range(5)),
+        )
+        self.assertEqual(
+            results[1][3]["metrics"].trial_seeds,
+            tuple(derive_probe_trial_seed(202, idx) for idx in range(5)),
+        )
+        self.assertEqual(
+            results[0][3]["metrics"].loss_trials,
+            (10.0, 11.0, 12.0, 13.0, 14.0),
+        )
+        self.assertEqual(
+            results[1][3]["metrics"].metric1_trials,
+            (0.90, 0.91, 0.92, 0.93, 0.94),
+        )
+
 
 @contextlib.contextmanager
 def _workspace_tempdir():

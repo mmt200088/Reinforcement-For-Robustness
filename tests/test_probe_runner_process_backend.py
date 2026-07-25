@@ -45,6 +45,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.events = events
             self.probe_batches = ("online-probe",)
             self.batch_sets = {"F1": self.probe_batches}
+            self.installed = None
 
         def register_batch_set(self, key, batches):
             normalized = str(key)
@@ -54,6 +55,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.events.append(("local-register", normalized, tuple(batches)))
 
         def install(self, decoded):
+            self.installed = decoded
             self.events.append(("local-install", decoded))
 
         def clear(self):
@@ -110,6 +112,16 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                     "result": (float(idx), float(payload["base_seed"]), 2.0),
                     "wall_seconds": 0.20,
                 }
+            if operation == "run_action_trial_groups":
+                results = []
+                for group in payload["action_groups"]:
+                    for idx in group["trial_indices"]:
+                        results.append((
+                            int(group["action_index"]),
+                            int(idx),
+                            (float(idx), float(group["base_seed"]), 2.0),
+                        ))
+                return {"results": results, "wall_seconds": 0.50}
             return {"wall_seconds": 0.01}
 
         def assert_pending(self, operation):
@@ -190,6 +202,62 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         )
         self.assertIs(events[0][2]["decoded"], action1)
         self.assertTrue(runner.last_diagnostics.multi_action)
+
+    def test_grouped_action_trials_balance_four_actions_by_five_trials(self):
+        assignments = _probe_runner._split_action_trial_tasks_cached(4, 5, 4)
+
+        self.assertEqual([len(tasks) for tasks in assignments], [5, 5, 5, 5])
+        self.assertEqual(
+            assignments[0],
+            ((0, 0), (0, 4), (1, 3), (2, 2), (3, 1)),
+        )
+        self.assertEqual(
+            sorted(task for tasks in assignments for task in tasks),
+            [(action_idx, trial_idx) for action_idx in range(4) for trial_idx in range(5)],
+        )
+
+    def test_grouped_action_trials_preserve_action_and_trial_order(self):
+        events = []
+        runner, _remote = self._runner(events)
+        actions = [object(), object()]
+
+        results = runner.run_action_trial_groups(
+            actions,
+            base_seeds=[70, 80],
+            k=3,
+        )
+
+        self.assertEqual(results, [
+            [(0.0, 70.0, -1.0), (1.0, 70.0, 2.0), (2.0, 70.0, -1.0)],
+            [(0.0, 80.0, 2.0), (1.0, 80.0, -1.0), (2.0, 80.0, 2.0)],
+        ])
+        self.assertEqual(events[0][:2], ("remote-submit", "run_action_trial_groups"))
+        self.assertEqual(
+            events[0][2]["action_groups"],
+            [
+                {
+                    "action_index": 0,
+                    "decoded": actions[0],
+                    "base_seed": 70,
+                    "trial_indices": [1],
+                },
+                {
+                    "action_index": 1,
+                    "decoded": actions[1],
+                    "base_seed": 80,
+                    "trial_indices": [0, 2],
+                },
+            ],
+        )
+        self.assertEqual(events[-1], ("remote-receive", "run_action_trial_groups"))
+        diag = runner.last_diagnostics
+        self.assertTrue(diag.multi_action)
+        self.assertEqual(diag.action_count, 2)
+        self.assertEqual(diag.trials_per_action, 3)
+        self.assertEqual(
+            diag.per_worker_action_trial_indices,
+            [[(0, 0), (0, 2), (1, 1)], [(0, 1), (1, 0), (1, 2)]],
+        )
 
     def test_install_submits_remote_before_installing_primary(self):
         events = []

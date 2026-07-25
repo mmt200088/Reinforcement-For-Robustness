@@ -137,7 +137,9 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
             self.attn_degree_state = 6
             self.reset_seeds = []
             self.step_calls = []
+            self.prepare_calls = []
             self.terminal_info = {"priority": 3}
+            self.probe_noise_seed = None
 
         def reset(self, *, seed=None):
             self.reset_seeds.append(seed)
@@ -146,6 +148,11 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         def step(self, action, **kwargs):
             self.step_calls.append((np.asarray(action, dtype=int).copy(), kwargs))
             return np.asarray([999.0], dtype=np.float32), 7.25, True, self.terminal_info
+
+        def prepare_action_for_terminal_probe(self, action, **kwargs):
+            owned = np.asarray(action, dtype=int).copy()
+            self.prepare_calls.append((owned, kwargs))
+            return {"action_vec": owned, "requires_forward": True, **kwargs}
 
     def test_reset_has_stable_geometry_and_owned_state(self):
         observation = self.env.reset(seed=17)
@@ -301,6 +308,38 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         # Block3 keeps the exact RO-baseline SF indices but carries policy K.
         np.testing.assert_array_equal(terminal_vector[32:39], np.arange(1, 8))
         self.assertEqual(terminal_vector[39], 2)
+
+    def test_deferred_terminal_prepares_exact_seed_without_running_base_step(self):
+        self.base.probe_noise_seed = 777
+        self.env.configure_terminal_probe_deferral(True)
+        self.env.reset(seed=17)
+
+        for layer_idx in range(12):
+            obs, reward, done, info = self.env.step(
+                [layer_idx % 2, 0, 1, 2, 3, 4],
+            )
+
+        self.assertTrue(done)
+        self.assertEqual(reward, 0.0)
+        self.assertEqual(obs.shape, (self.env.state_dim,))
+        self.assertEqual(self.base.step_calls, [])
+        self.assertEqual(len(self.base.prepare_calls), 1)
+        terminal_vector, kwargs = self.base.prepare_calls[0]
+        self.assertEqual(kwargs["probe_base_seed"], 777)
+        self.assertEqual(
+            kwargs["external_cost_score"],
+            info["resource_objective"]["ppo_resource_score"],
+        )
+        self.assertEqual(kwargs["external_resource_objective"], info["resource_objective"])
+        self.assertTrue(kwargs["boosted_overrides"])
+        pending = self.env.pending_terminal_probe
+        self.assertIs(pending["prepared"]["action_vec"], terminal_vector)
+        self.assertEqual(pending["boosted_overrides"], self.env.boosted_overrides)
+        self.assertTrue(info["terminal_probe_deferred"])
+        self.assertIsNone(self.env.runtime_terminal_info)
+
+        self.env.reset(seed=18)
+        self.assertIsNone(self.env.pending_terminal_probe)
 
     def test_bert_large_runs_all_24_layers_through_the_same_terminal_path(self):
         base = self._FakeBase()
