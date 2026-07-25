@@ -236,7 +236,7 @@ class BLBProbeTrialAggregationRegressionTests(unittest.TestCase):
         )
         self.assertEqual(
             results[1][3]["metrics"].metric1_trials,
-            (0.90, 0.91, 0.92, 0.93, 0.94),
+            tuple(0.90 + trial / 100.0 for trial in range(5)),
         )
 
 
