@@ -736,6 +736,80 @@ def _atomic_torch_save(obj, path):
         raise
 
 
+_STAGE1_DETAIL_PREFIX = "ppo_step_info_"
+_STAGE1_DETAIL_SUFFIX = ".txt"
+
+
+def _is_stage1_detail_filename(name):
+    return (
+        name.startswith(_STAGE1_DETAIL_PREFIX)
+        and name.endswith(_STAGE1_DETAIL_SUFFIX)
+    )
+
+
+def stage1_detail_file_sizes(details_dir):
+    """Return append boundaries for Stage-1 detail chunks."""
+    directory = os.fspath(details_dir)
+    if not os.path.isdir(directory):
+        return {}
+    sizes = {}
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if (
+                _is_stage1_detail_filename(entry.name)
+                and entry.is_file(follow_symlinks=False)
+            ):
+                sizes[entry.name] = int(entry.stat(follow_symlinks=False).st_size)
+    return dict(sorted(sizes.items()))
+
+
+def recover_stage1_detail_files(details_dir, committed_sizes):
+    """Roll Stage-1 detail chunks back to one checkpoint transaction."""
+    if committed_sizes is None:
+        return
+    directory = os.fspath(details_dir)
+    os.makedirs(directory, exist_ok=True)
+    normalized = {}
+    for raw_name, raw_size in dict(committed_sizes).items():
+        name = str(raw_name)
+        if os.path.basename(name) != name or not _is_stage1_detail_filename(name):
+            raise ValueError(f"invalid Stage-1 detail checkpoint name: {name!r}")
+        size = int(raw_size)
+        if size < 0:
+            raise ValueError(
+                f"invalid Stage-1 detail checkpoint size for {name!r}: {size}"
+            )
+        normalized[name] = size
+
+    with os.scandir(directory) as entries:
+        existing = {
+            entry.name
+            for entry in entries
+            if (
+                _is_stage1_detail_filename(entry.name)
+                and entry.is_file(follow_symlinks=False)
+            )
+        }
+    for name in existing - normalized.keys():
+        os.remove(os.path.join(directory, name))
+
+    for name, committed_size in normalized.items():
+        path = os.path.join(directory, name)
+        if not os.path.isfile(path):
+            raise RuntimeError(
+                f"Stage-1 detail file missing at checkpoint recovery: {path}"
+            )
+        current_size = os.path.getsize(path)
+        if current_size < committed_size:
+            raise RuntimeError(
+                f"Stage-1 detail file is shorter than checkpoint boundary: "
+                f"{path} ({current_size} < {committed_size})"
+            )
+        if current_size > committed_size:
+            with open(path, "r+b") as handle:
+                handle.truncate(committed_size)
+
+
 def save_noise_rl_checkpoint(
     path,
     noise_net,
@@ -841,10 +915,13 @@ def save_stage1_rl_checkpoint(
     ev_runtime_state,
     stage1_prev_avg_reward,
     stage1_warnings,
+    structured_run_id=None,
+    structured_jsonl_sizes=None,
+    detail_file_sizes=None,
 ):
     """保存 Stage-1 RL 的完整训练状态（checkpoint）。"""
     checkpoint = {
-        "version": 1,
+        "version": 2,
         "completed_episodes": episode + 1,
         "gtrxl_net_state_dict": gtrxl_net.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
@@ -865,6 +942,23 @@ def save_stage1_rl_checkpoint(
         "ev_runtime_state": ev_runtime_state,
         "stage1_prev_avg_reward": stage1_prev_avg_reward,
         "stage1_warnings": _serialize_numpy(stage1_warnings),
+        "structured_run_id": (
+            str(structured_run_id) if structured_run_id is not None else None
+        ),
+        "structured_jsonl_sizes": (
+            {
+                str(name): int(size)
+                for name, size in dict(structured_jsonl_sizes).items()
+            }
+            if structured_jsonl_sizes is not None else None
+        ),
+        "detail_file_sizes": (
+            {
+                str(name): int(size)
+                for name, size in dict(detail_file_sizes).items()
+            }
+            if detail_file_sizes is not None else None
+        ),
     }
     os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
     _atomic_torch_save(checkpoint, path)

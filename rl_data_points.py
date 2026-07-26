@@ -86,6 +86,12 @@ def make_unique_run_id(
 class RLDataPointWriter:
     """Append-only JSONL writer for one RL run."""
 
+    _CHECKPOINT_JSONL_NAMES = (
+        "steps.jsonl",
+        "episodes.jsonl",
+        "ppo_updates.jsonl",
+    )
+
     def __init__(
         self,
         *,
@@ -163,7 +169,7 @@ class RLDataPointWriter:
         self.flush()
         return {
             name: (self.jsonl_path(name).stat().st_size if self.jsonl_path(name).exists() else 0)
-            for name in ("episodes.jsonl", "ppo_updates.jsonl")
+            for name in self._CHECKPOINT_JSONL_NAMES
         }
 
     def recover_jsonl_files(self, committed_sizes: Optional[Dict[str, Any]]) -> None:
@@ -171,7 +177,7 @@ class RLDataPointWriter:
         if self._files:
             raise RuntimeError("cannot recover structured JSONL after opening writers")
         sizes = dict(committed_sizes or {})
-        for name in ("episodes.jsonl", "ppo_updates.jsonl"):
+        for name in self._CHECKPOINT_JSONL_NAMES:
             recover_jsonl_file(
                 self.jsonl_path(name),
                 committed_size=(sizes[name] if name in sizes else None),
