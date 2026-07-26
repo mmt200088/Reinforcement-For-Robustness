@@ -3064,6 +3064,16 @@ def resolve_exact_terminal_batch_size(
     return min(requested, balance_period)
 
 
+def _probe_pool_state(probe_runner: Any) -> tuple[int, int]:
+    generation = max(
+        0, int(getattr(probe_runner, "pool_generation", 0) or 0)
+    )
+    worker_count = max(
+        1, int(getattr(probe_runner, "num_workers", 1) or 1)
+    )
+    return generation, worker_count
+
+
 @dataclass
 class _LayerwiseEpisodeDraft:
     absolute_episode: int
@@ -3347,8 +3357,8 @@ def train_layerwise(
         1, int(getattr(train_cfg, "terminal_eval_batch_size", 1) or 1)
     )
     probe_runner = getattr(getattr(env, "base", None), "probe_runner", None)
-    probe_worker_count = int(
-        getattr(probe_runner, "num_workers", 1) or 1
+    probe_pool_generation, probe_worker_count = _probe_pool_state(
+        probe_runner
     )
     exact_batch_capable = bool(
         base_seed is not None
@@ -3386,6 +3396,12 @@ def train_layerwise(
         env.configure_terminal_probe_deferral(
             terminal_batch_size > 1 or protected_k1.enabled
         )
+    probe_pool_schedule = [{
+        "first_episode": int(absolute_start),
+        "pool_generation": int(probe_pool_generation),
+        "worker_count": int(probe_worker_count),
+        "terminal_batch_size": int(terminal_batch_size),
+    }]
     online_probability = float(
         getattr(train_cfg, "online_constraint_probability", 0.50)
     )
@@ -3531,6 +3547,35 @@ def train_layerwise(
             unbounded_training or local_episode < total_episodes
     ):
         if not finalized_drafts:
+            current_pool_generation, current_worker_count = (
+                _probe_pool_state(probe_runner)
+            )
+            if (
+                    exact_batch_capable
+                    and (
+                        current_pool_generation != probe_pool_generation
+                        or current_worker_count != probe_worker_count
+                    )
+            ):
+                probe_pool_generation = current_pool_generation
+                probe_worker_count = current_worker_count
+                terminal_batch_size = resolve_exact_terminal_batch_size(
+                    requested_terminal_batch_size,
+                    expected_online_trials,
+                    probe_worker_count,
+                )
+                if hasattr(env, "configure_terminal_probe_deferral"):
+                    env.configure_terminal_probe_deferral(
+                        terminal_batch_size > 1 or protected_k1.enabled
+                    )
+                probe_pool_schedule.append({
+                    "first_episode": int(
+                        absolute_start + local_episode
+                    ),
+                    "pool_generation": int(probe_pool_generation),
+                    "worker_count": int(probe_worker_count),
+                    "terminal_batch_size": int(terminal_batch_size),
+                })
             episodes_to_update = update_window - (
                 local_episode % update_window
             )
@@ -4604,6 +4649,7 @@ def train_layerwise(
         "episode_rewards": rewards,
         "ppo_metrics": ppo_diagnostics,
         "episode_records": records,
+        "probe_pool_schedule": probe_pool_schedule,
         "block4_entropy": convergence_state.block4_entropy,
         "k_entropy": convergence_state.k_entropy,
         "stall_update_windows": convergence_state.stall_update_windows,
