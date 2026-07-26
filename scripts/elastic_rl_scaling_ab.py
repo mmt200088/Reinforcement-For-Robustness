@@ -448,11 +448,16 @@ def discover_run_artifacts(
             stage=str(stage),
             run_id=structured_run_id,
         )
-        structured_steps = structured_dir / "steps.jsonl"
+        steps_path = structured_dir / "steps.jsonl"
+        if steps_path.is_file():
+            structured_steps = steps_path
+        elif str(stage).strip().lower() == "stage1":
+            raise FileNotFoundError(
+                f"structured training artifact is missing: {steps_path}"
+            )
         structured_episodes = structured_dir / "episodes.jsonl"
         structured_ppo = structured_dir / "ppo_updates.jsonl"
         for required in (
-            structured_steps,
             structured_episodes,
             structured_ppo,
         ):
@@ -612,11 +617,10 @@ def compare_runs(
                     max_diffs=max_diffs,
                 )
     if data_points_root is not None:
-        for required_label in (
-            "structured_steps",
-            "structured_episodes",
-            "structured_ppo",
-        ):
+        required_labels = ["structured_episodes", "structured_ppo"]
+        if stage_name == "stage1":
+            required_labels.insert(0, "structured_steps")
+        for required_label in required_labels:
             if int(compared.get(required_label, 0) or 0) <= 0:
                 _append_diff(
                     diffs,
