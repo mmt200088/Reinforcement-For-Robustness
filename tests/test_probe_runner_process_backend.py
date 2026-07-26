@@ -308,6 +308,26 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             ["remote-submit", "local-install", "remote-receive"],
         )
 
+    def test_install_quarantines_recoverable_replica_failure(self):
+        events = []
+        healthy = self._RemoteWorker(events, device_id=1)
+        failed = self._RemoteWorker(
+            events,
+            device_id=2,
+            fail_receive_once=True,
+        )
+        runner = ProbeRunner(
+            [self._LocalWorker(events)],
+            process_workers=[healthy, failed],
+        )
+
+        runner.install_action(object())
+
+        self.assertEqual(runner.num_workers, 2)
+        self.assertEqual(runner.pool_generation, 1)
+        self.assertTrue(failed.closed)
+        self.assertFalse(healthy.closed)
+
     def test_remote_failure_names_worker_and_device(self):
         events = []
         runner, _remote = self._runner(events, fail_receive=True)
@@ -371,6 +391,54 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         runner.close()
         self.assertEqual(failed.close_count, 1)
         self.assertEqual(healthy.close_count, 1)
+
+    def test_grouped_replica_failure_preserves_accepted_task_results(self):
+        events = []
+        healthy = self._RemoteWorker(events, device_id=1)
+        failed = self._RemoteWorker(
+            events,
+            device_id=2,
+            fail_receive_once=True,
+        )
+        runner = ProbeRunner(
+            [self._LocalWorker(events)],
+            process_workers=[healthy, failed],
+        )
+        actions = [object(), object()]
+
+        results = runner.run_action_trial_groups(
+            actions,
+            base_seeds=[70, 80],
+            k=3,
+        )
+
+        self.assertEqual(
+            results,
+            [
+                [(0.0, 70.0, -1.0), (1.0, 70.0, 2.0), (2.0, 70.0, -1.0)],
+                [(0.0, 80.0, -1.0), (1.0, 80.0, 2.0), (2.0, 80.0, 2.0)],
+            ],
+        )
+        self.assertEqual(runner.num_workers, 2)
+        self.assertEqual(runner.pool_generation, 1)
+        self.assertEqual(
+            runner.last_diagnostics.retried_action_trial_indices,
+            [(0, 2), (1, 2)],
+        )
+        view = runner.view("F1")
+        self.assertEqual(view.pool_generation, 1)
+        self.assertEqual(
+            view.quarantine_events,
+            runner.quarantine_events,
+        )
+
+        runner.run_trials(k=2, base_seed=90)
+        self.assertEqual(runner.last_diagnostics.pool_generation, 1)
+        payload = _probe_runner.diagnostics_payload(
+            runner.last_diagnostics
+        )
+        self.assertEqual(payload["pool_generation"], 1)
+        self.assertEqual(payload["retry_count"], 0)
 
     def test_remote_shape_error_remains_fatal(self):
         events = []
