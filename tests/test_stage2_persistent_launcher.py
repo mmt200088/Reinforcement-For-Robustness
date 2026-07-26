@@ -19,6 +19,29 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         fake_flock.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         fake_flock.chmod(0o755)
 
+    def test_layerwise_stage2_defaults_to_elastic_reward_devices(self):
+        source = (
+            REPO_ROOT / "llama_7B_LayerImportance.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("--elastic-gpu-mode", source)
+        self.assertIn("scripts/elastic_gpu_supervisor.py", source)
+        self.assertIn(
+            '[ "$RUN_MODE" = "stage2-only" ] && '
+            '[ "$S_BLB_V3_REWARD_DEVICES" = "false" ]',
+            source,
+        )
+        self.assertIn('BLB_V3_REWARD_DEVICES="auto"', source)
+        self.assertIn("--blb_v3_reward_devices", source)
+
+    def test_elastic_off_retains_direct_python_launch(self):
+        argv = self._capture_stage2_launcher_argv(
+            ["--elastic-gpu-mode", "off"]
+        )
+
+        self.assertEqual(argv[0], "rl_tune.py")
+        self.assertNotIn("scripts/elastic_gpu_supervisor.py", argv)
+
     def test_python_public_decision_fields_reach_evaluator_constructor(self):
         tune_tree = ast.parse((REPO_ROOT / "rl_tune.py").read_text(encoding="utf-8"))
         train_fn = next(

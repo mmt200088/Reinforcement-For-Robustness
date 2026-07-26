@@ -104,6 +104,33 @@ class LauncherGpuAuditTest(unittest.TestCase):
 
         self.assertEqual(warnings, [])
 
+    def test_auto_devices_mean_all_visible_gpus(self):
+        audit = _load_audit_module()
+
+        stage1_warnings = audit.audit_launch(
+            search_algorithm="rl",
+            run_mode="stage1-only",
+            stage2_rl_variant="blb_v3",
+            cuda_visible_devices="0,1,2,3",
+            stage1_rl_devices="auto",
+            stage2_rl_devices="",
+            blb_v3_reward_devices="",
+            stage2_k_trials=4,
+        )
+        stage2_warnings = audit.audit_launch(
+            search_algorithm="rl",
+            run_mode="stage2-only",
+            stage2_rl_variant="blb_v3",
+            cuda_visible_devices="0,1,2,3",
+            stage1_rl_devices="",
+            stage2_rl_devices="",
+            blb_v3_reward_devices="auto",
+            stage2_k_trials=4,
+        )
+
+        self.assertEqual(stage1_warnings, [])
+        self.assertEqual(stage2_warnings, [])
+
     def test_stage1_warns_when_stage1_devices_use_only_part_of_visible_gpus(self):
         audit = _load_audit_module()
 
