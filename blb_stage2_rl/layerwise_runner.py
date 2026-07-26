@@ -2158,20 +2158,48 @@ def _collect_fixed_validation_bank(
             external_resource_objective=resource,
             boosted_overrides=copy.deepcopy(dict(boosted_overrides)),
         )
-        for group_index in range(next_group, len(bank.probe_seeds)):
-            probe_seed = int(bank.probe_seeds[group_index])
-            full_base_env.probe_noise_seed = probe_seed
-            evaluated = full_base_env.evaluate_prepared_terminal_batch(
-                [prepared],
+        remaining_groups = [
+            (group_index, int(bank.probe_seeds[group_index]))
+            for group_index in range(next_group, len(bank.probe_seeds))
+        ]
+        probe_runner = getattr(full_base_env, "probe_runner", None)
+        grouped_bank_capable = bool(
+            len(remaining_groups) > 1
+            and probe_runner is not None
+            and hasattr(probe_runner, "run_action_trial_groups")
+        )
+        if grouped_bank_capable:
+            prepared_groups = []
+            for _group_index, probe_seed in remaining_groups:
+                prepared_group = dict(prepared)
+                prepared_group["probe_base_seed"] = int(probe_seed)
+                prepared_groups.append(prepared_group)
+            evaluated_groups = full_base_env.evaluate_prepared_terminal_batch(
+                prepared_groups,
                 num_trials_per_action=bank.trials_per_probe,
                 validation_required=True,
             )
-            if len(evaluated) != 1:
-                raise RuntimeError(
-                    f"Bank {bank.label} expected one terminal result, "
-                    f"received {len(evaluated)}"
+        else:
+            evaluated_groups = []
+            for _group_index, probe_seed in remaining_groups:
+                full_base_env.probe_noise_seed = int(probe_seed)
+                evaluated_groups.extend(
+                    full_base_env.evaluate_prepared_terminal_batch(
+                        [prepared],
+                        num_trials_per_action=bank.trials_per_probe,
+                        validation_required=True,
+                    )
                 )
-            terminal_info = evaluated[0][3]
+        if len(evaluated_groups) != len(remaining_groups):
+            raise RuntimeError(
+                f"Bank {bank.label} expected {len(remaining_groups)} "
+                f"terminal results, received {len(evaluated_groups)}"
+            )
+        for (
+                (group_index, probe_seed),
+                evaluated,
+        ) in zip(remaining_groups, evaluated_groups):
+            terminal_info = evaluated[3]
             if (
                     not isinstance(terminal_info, Mapping)
                     or bool(terminal_info.get("invalid", False))

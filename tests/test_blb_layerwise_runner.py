@@ -5007,6 +5007,9 @@ class _PromotionBase:
         self.evaluate_calls = []
         self.fresh_probability = fresh_probability
         self.probe_noise_seed = None
+        self.probe_runner = types.SimpleNamespace(
+            run_action_trial_groups=object(),
+        )
         self.clear_calls = 0
         self._installed_action_hash = "installed-action"
 
