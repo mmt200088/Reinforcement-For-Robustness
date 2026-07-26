@@ -17,6 +17,7 @@ import io
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import threading
@@ -209,6 +210,7 @@ def build_child_command(
     *,
     logical_device_spec: str,
     resume_run_dir: Optional[os.PathLike[str] | str],
+    original_to_current_logical: Optional[Mapping[str, str]] = None,
 ) -> list[str]:
     """Rewrite only known auto-device and resume arguments."""
     source = [str(value) for value in command]
@@ -219,6 +221,30 @@ def build_child_command(
         else None
     )
     saw_resume = False
+
+    def rewrite_device_value(value: str) -> str:
+        if value == "auto":
+            return logical_device_spec
+        if original_to_current_logical is None:
+            return value
+        mapped: list[str] = []
+        for raw_token in split_device_spec_tokens(value):
+            token = raw_token.lower()
+            if token.startswith("cuda:"):
+                token = token.split("cuda:", 1)[1].strip()
+            if not token.isdigit():
+                raise ValueError(
+                    f"GPU device flag contains a non-logical ID: {raw_token!r}"
+                )
+            current = original_to_current_logical.get(token)
+            if current is not None and current not in mapped:
+                mapped.append(current)
+        if not mapped:
+            raise RuntimeError(
+                f"all explicitly requested GPU devices are quarantined: {value}"
+            )
+        return ",".join(mapped)
+
     index = 0
     while index < len(source):
         token = source[index]
@@ -226,9 +252,7 @@ def build_child_command(
             if index + 1 >= len(source):
                 raise ValueError(f"{token} requires a value")
             value = source[index + 1]
-            rewritten.extend(
-                [token, logical_device_spec if value == "auto" else value]
-            )
+            rewritten.extend([token, rewrite_device_value(value)])
             index += 2
             continue
         auto_equals = next(
@@ -241,8 +265,9 @@ def build_child_command(
         )
         if auto_equals is not None:
             value = token.split("=", 1)[1]
-            if value == "auto":
-                token = f"{auto_equals}={logical_device_spec}"
+            rewritten_value = rewrite_device_value(value)
+            if rewritten_value != value:
+                token = f"{auto_equals}={rewritten_value}"
             rewritten.append(token)
             index += 1
             continue
@@ -416,6 +441,36 @@ def _consume_failure_record(path: Path) -> Optional[dict[str, object]]:
     return payload
 
 
+def run_child_foreground(
+    command: Sequence[str],
+    *,
+    env: Mapping[str, str],
+    check: bool,
+) -> subprocess.CompletedProcess[object]:
+    """Run the learner in front and forward launcher stop signals to it."""
+    child = subprocess.Popen(list(command), env=dict(env))
+    previous_handlers: dict[int, object] = {}
+
+    def forward(signum: int, _frame: object) -> None:
+        try:
+            child.send_signal(signum)
+        except ProcessLookupError:
+            pass
+
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, forward)
+    try:
+        return_code = child.wait()
+    finally:
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)
+    if check and return_code:
+        raise subprocess.CalledProcessError(return_code, list(command))
+    return subprocess.CompletedProcess(list(command), return_code)
+
+
 def run_supervised(
     *,
     child_command: Sequence[object],
@@ -424,9 +479,9 @@ def run_supervised(
     query_records: Callable[[], Sequence[GPUHealthRecord]] = (
         query_nvidia_smi_records
     ),
-    process_runner: Callable[..., subprocess.CompletedProcess[object]] = (
-        subprocess.run
-    ),
+    process_runner: Callable[
+        ..., subprocess.CompletedProcess[object]
+    ] = run_child_foreground,
     max_restarts: int = 8,
     recovery_interval: float = 60.0,
     canary: Callable[[str], bool] = isolated_cuda_canary,
@@ -481,10 +536,19 @@ def run_supervised(
         logical_spec = ",".join(
             str(index) for index in range(len(live_tokens))
         )
+        current_index = {
+            token: str(index) for index, token in enumerate(live_tokens)
+        }
+        original_to_current = {
+            str(original_index): current_index[token]
+            for original_index, token in enumerate(candidates)
+            if token in current_index
+        }
         launch_command = build_child_command(
             command,
             logical_device_spec=logical_spec,
             resume_run_dir=output_dir if should_resume else None,
+            original_to_current_logical=original_to_current,
         )
         child_env = os.environ.copy()
         child_env["CUDA_VISIBLE_DEVICES"] = ",".join(live_tokens)

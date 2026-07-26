@@ -78,6 +78,12 @@ def _device_set(devices: Sequence[str]) -> set[str]:
     return {str(device) for device in devices}
 
 
+def _requested_devices(raw: object, visible_count: int) -> List[str]:
+    if _normalise(raw).lower() == "auto":
+        return [str(index) for index in range(max(0, int(visible_count)))]
+    return parse_device_spec(raw)
+
+
 def _is_rl_stage(run_mode: str, stage_name: str) -> bool:
     return _normalise(run_mode).lower().replace("_", "-") == stage_name
 
@@ -105,7 +111,10 @@ def audit_launch(
     logical = _logical_device_list(visible_count)
     warnings: List[str] = []
     if _is_rl_stage(run_mode, "stage1-only"):
-        stage1_devices = parse_device_spec(stage1_rl_devices)
+        stage1_devices = _requested_devices(
+            stage1_rl_devices,
+            visible_count,
+        )
         if not stage1_devices:
             warnings.append(
                 f"{visible_count} GPUs are visible, but Stage-1 RL has no "
@@ -128,8 +137,11 @@ def audit_launch(
     if _normalise(stage2_rl_variant).lower() != "blb_v3":
         return warnings
 
-    stage2_devices = parse_device_spec(stage2_rl_devices)
-    reward_devices = parse_device_spec(blb_v3_reward_devices)
+    stage2_devices = _requested_devices(stage2_rl_devices, visible_count)
+    reward_devices = _requested_devices(
+        blb_v3_reward_devices,
+        visible_count,
+    )
     if not stage2_devices and not reward_devices:
         warnings.append(
             f"{visible_count} GPUs are visible, but Stage-2 BLB has neither "

@@ -80,9 +80,12 @@ GA / Greedy：
   --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束倍率（BLB-RL：阈值 = baseline 探针 std × 该值；默认 1.2 即 1.2×；可设 5.0 表示 5×/500% 的宽松门。GA/greedy 路径仍按 fraction 解释）
   --stage2-k-trials INT                Stage-2 稳定性评测噪声试验次数 K（默认 5；每次评测在同一份探针上跑 K 个独立噪声种子）
   --stage2-probe-size INT              Stage-2 稳定性评测探针子集大小（默认 256；用分层采样从验证集中抽取 K 次 trial 共用的固定子集）
-  --blb-v3-reward-devices STR          Stage-2 RL 奖励探针并行 GPU 列表（默认空 = 单卡；如 "0,1" → 把 K 次 trial 在两张卡上并行执行）
-  --stage1-rl-devices STR              Stage-1 RL 数据并行采样 GPU 列表（默认空 = 单卡；如 "0,1,2,3" → 4 张卡各采集 PPO_UPDATE_INTERVAL/4 个完整 episode 后再 PPO 更新）
+  --blb-v3-reward-devices STR          Stage-2 RL 奖励探针并行 GPU 列表（弹性模式默认 auto；如 "0,1" → 把 K 次 trial 在两张卡上并行执行）
+  --stage1-rl-devices STR              Stage-1 RL 数据并行采样 GPU 列表（弹性模式默认 auto；如 "0,1,2,3" → 4 张卡各采集 PPO_UPDATE_INTERVAL/4 个完整 episode 后再 PPO 更新）
   --stage2-rl-devices STR              Stage-2 RL episode 级并行 GPU 列表（仅 fusion-count 模式；默认空 = 旧串行循环；如 "0,1,2,3,4" → 每张卡各跑完整 episode、K 次试验在本卡串行；按全局 episode 播种，任意卡数结果一致；与 --blb-v3-reward-devices 互斥）
+  --elastic-gpu-mode auto|off          RL 启动前过滤故障 GPU，并在确定性 checkpoint 边界恢复（默认 auto）
+  --elastic-gpu-recovery-interval SEC  仅隔离卡的低频恢复检查间隔（默认 60 秒；0 表示不检查恢复）
+  --elastic-gpu-max-restarts N         单次 RL 运行允许的弹性重启次数（默认 8）
 
 持久化与续训练（rl / ga / greedy 可用）：
   --fresh-start                        从头开始训练（首次运行必须指定）
@@ -535,6 +538,9 @@ BLB_V3_POLICY_NETWORK_VARIANT="shared_gtrxl_small_v1"; S_BLB_V3_POLICY_NETWORK_V
 BLB_V3_REWARD_DEVICES=""; S_BLB_V3_REWARD_DEVICES="false"
 STAGE1_RL_DEVICES=""; S_STAGE1_RL_DEVICES="false"
 STAGE2_RL_DEVICES=""; S_STAGE2_RL_DEVICES="false"
+ELASTIC_GPU_MODE="auto"; S_ELASTIC_GPU_MODE="false"
+ELASTIC_GPU_RECOVERY_INTERVAL="60"; S_ELASTIC_GPU_RECOVERY_INTERVAL="false"
+ELASTIC_GPU_MAX_RESTARTS="8"; S_ELASTIC_GPU_MAX_RESTARTS="false"
 RUN_TAG=""; S_RUN_TAG="false"
 BLB_V3_ROLLOUT_SIZE=""; S_BLB_V3_ROLLOUT_SIZE="false"
 BLB_V3_EVAL_INTERVAL=""; S_BLB_V3_EVAL_INTERVAL="false"
@@ -773,6 +779,9 @@ while [ "$#" -gt 0 ]; do
     --blb-v3-reward-devices) needv "$@"; BLB_V3_REWARD_DEVICES="$2"; S_BLB_V3_REWARD_DEVICES="true"; shift 2 ;;
     --stage1-rl-devices) needv "$@"; STAGE1_RL_DEVICES="$2"; S_STAGE1_RL_DEVICES="true"; shift 2 ;;
     --stage2-rl-devices) needv "$@"; STAGE2_RL_DEVICES="$2"; S_STAGE2_RL_DEVICES="true"; shift 2 ;;
+    --elastic-gpu-mode) needv "$@"; ELASTIC_GPU_MODE="$2"; S_ELASTIC_GPU_MODE="true"; shift 2 ;;
+    --elastic-gpu-recovery-interval) needv "$@"; ELASTIC_GPU_RECOVERY_INTERVAL="$2"; S_ELASTIC_GPU_RECOVERY_INTERVAL="true"; shift 2 ;;
+    --elastic-gpu-max-restarts) needv "$@"; ELASTIC_GPU_MAX_RESTARTS="$2"; S_ELASTIC_GPU_MAX_RESTARTS="true"; shift 2 ;;
     --run-tag) needv "$@"; RUN_TAG="$2"; S_RUN_TAG="true"; shift 2 ;;
     --stage2-save-interval|--blb-v3-save-interval) needv "$@"; BLB_V3_SAVE_INTERVAL="$2"; S_BLB_V3_SAVE_INTERVAL="true"; shift 2 ;;
     --stage2-eval-interval|--blb-v3-eval-interval) needv "$@"; BLB_V3_EVAL_INTERVAL="$2"; S_BLB_V3_EVAL_INTERVAL="true"; shift 2 ;;
@@ -1036,6 +1045,15 @@ if [ "$S_STAGE2_GENERATIONS" = "false" ]; then
 fi
 
 is_pos_int "$BATCH_SIZE" || err "--batch-size 必须是正整数，当前为：$BATCH_SIZE"
+case "$ELASTIC_GPU_MODE" in
+  auto|off) ;;
+  *) err "--elastic-gpu-mode 只支持 auto 或 off，当前为：$ELASTIC_GPU_MODE" ;;
+esac
+is_nonneg_num "$ELASTIC_GPU_RECOVERY_INTERVAL" || err "--elastic-gpu-recovery-interval 必须是非负数，当前为：$ELASTIC_GPU_RECOVERY_INTERVAL"
+is_nonneg_int "$ELASTIC_GPU_MAX_RESTARTS" || err "--elastic-gpu-max-restarts 必须是非负整数，当前为：$ELASTIC_GPU_MAX_RESTARTS"
+if [ "$ELASTIC_GPU_MODE" = "off" ] && { [ "$STAGE1_RL_DEVICES" = "auto" ] || [ "$STAGE2_RL_DEVICES" = "auto" ] || [ "$BLB_V3_REWARD_DEVICES" = "auto" ]; }; then
+  err "--elastic-gpu-mode off 不能与 auto GPU 设备列表一起使用。"
+fi
 is_pos_int "$FINAL_EVAL_REPEAT" || err "--final-eval-repeat 必须是正整数，当前为：$FINAL_EVAL_REPEAT"
 is_nonneg_int "$PERM_TRIALS" || err "--perm-trials 必须是非负整数，当前为：$PERM_TRIALS"
 is_nonneg_int "$COST_TRIALS" || err "--cost-trials 必须是非负整数，当前为：$COST_TRIALS"
@@ -1157,6 +1175,25 @@ if [ "$SEARCH_ALGORITHM" != "rl" ]; then
 fi
 if [ "$SEARCH_ALGORITHM" != "general-rl" ] && [ "$S_GENERAL_ACCURACY_TOLERANCE_RANGE" = "true" ]; then
   err "当前搜索算法不是 general-rl，请不要使用 --general-rl-accuracy-tolerance-range。"
+fi
+
+ELASTIC_GPU_ACTIVE="false"
+if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$ELASTIC_GPU_MODE" = "auto" ]; then
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "警告：未找到 nvidia-smi；本次保持旧的直接启动路径。" >&2
+  elif [ "${CUDA_VISIBLE_DEVICES+x}" = "x" ] && [ -z "$CUDA_VISIBLE_DEVICES" ]; then
+    echo "警告：CUDA_VISIBLE_DEVICES 为空；本次保持旧的直接启动路径。" >&2
+  else
+    ELASTIC_GPU_ACTIVE="true"
+  fi
+fi
+if [ "$ELASTIC_GPU_ACTIVE" = "true" ]; then
+  if [ "$RUN_MODE" = "stage1-only" ] && [ "$S_STAGE1_RL_DEVICES" = "false" ]; then
+    STAGE1_RL_DEVICES="auto"
+  fi
+  if [ "$RUN_MODE" = "stage2-only" ] && [ "$S_BLB_V3_REWARD_DEVICES" = "false" ] && [ "$S_STAGE2_RL_DEVICES" = "false" ]; then
+    BLB_V3_REWARD_DEVICES="auto"
+  fi
 fi
 
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
@@ -1938,7 +1975,20 @@ if [ "$SEARCH_ALGORITHM" = "rl" ] && command -v python3 >/dev/null 2>&1 && [ -f 
   "${_GPU_AUDIT_ARGS[@]}" || err "GPU audit strict gate failed. Set the appropriate multi-GPU flags or unset RFR_GPU_AUDIT_STRICT."
 fi
 
-printf -v CMD_STR '%q ' "${CMD[@]}"
+LAUNCH_CMD=("${CMD[@]}")
+if [ "$ELASTIC_GPU_ACTIVE" = "true" ]; then
+  [ -f "scripts/elastic_gpu_supervisor.py" ] || err "缺少 scripts/elastic_gpu_supervisor.py"
+  LAUNCH_CMD=(
+    python3 scripts/elastic_gpu_supervisor.py
+    --run-dir "$RUN_ROOT"
+    --recovery-interval "$ELASTIC_GPU_RECOVERY_INTERVAL"
+    --max-restarts "$ELASTIC_GPU_MAX_RESTARTS"
+    --
+    "${CMD[@]}"
+  )
+fi
+
+printf -v CMD_STR '%q ' "${LAUNCH_CMD[@]}"
 echo "启动配置："
 show "搜索算法" "$(algzh "$SEARCH_ALGORITHM")" "$S_SEARCH_ALGORITHM"
 show "数据集" "$DATASET" "$S_DATASET"
@@ -1964,6 +2014,9 @@ if [ "$USE_PERSISTENT" = "true" ]; then
 fi
 
 if [ "$SEARCH_ALGORITHM" = "rl" ]; then
+  show "Elastic GPU 模式" "$ELASTIC_GPU_MODE" "$S_ELASTIC_GPU_MODE"
+  show "Elastic GPU 恢复间隔" "$ELASTIC_GPU_RECOVERY_INTERVAL" "$S_ELASTIC_GPU_RECOVERY_INTERVAL"
+  show "Elastic GPU 最大重启" "$ELASTIC_GPU_MAX_RESTARTS" "$S_ELASTIC_GPU_MAX_RESTARTS"
   show "Stage-1 回合数" "$STAGE1_EPISODES" "$S_STAGE1_EPISODES"
   show "Stage-2 回合数" "$STAGE2_EPISODES" "$S_STAGE2_EPISODES"
   show "Stage-2 RL 实现" "$STAGE2_RL_VARIANT" "$S_STAGE2_RL_VARIANT"
@@ -2078,7 +2131,7 @@ else
 fi
 echo "  实际执行命令（Command）：$CMD_STR"
 
-nohup "${CMD[@]}" > "$LOGFILE_PATH" 2>&1 &
+nohup "${LAUNCH_CMD[@]}" > "$LOGFILE_PATH" 2>&1 &
 JOB_PID=$!
 if [ "$SEARCH_ALGORITHM" = "rl-and-ga-compare" ]; then
   mkdir -p "${RUN_ROOT}/meta"
