@@ -599,6 +599,19 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 encoding="utf-8",
             )
             fake_python.chmod(0o755)
+            python3_capture = tmp / "python3_invocations.txt"
+            fake_python3 = fakebin / "python3"
+            fake_python3.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\n' "$*" >> {str(python3_capture)!r}
+                    exit 0
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_python3.chmod(0o755)
 
             env = os.environ.copy()
             env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
@@ -636,6 +649,22 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 result.returncode,
                 0,
                 msg=result.stdout + "\n" + result.stderr,
+            )
+            for _ in range(50):
+                if (
+                    python3_capture.is_file()
+                    and "scripts/elastic_gpu_supervisor.py"
+                    in python3_capture.read_text(encoding="utf-8")
+                ):
+                    break
+                import time
+
+                time.sleep(0.1)
+            self.assertTrue(
+                python3_capture.is_file()
+                and "scripts/elastic_gpu_supervisor.py"
+                in python3_capture.read_text(encoding="utf-8"),
+                msg="launcher did not invoke the intercepted elastic supervisor",
             )
             combined = result.stdout + "\n" + result.stderr
             self.assertNotIn("[gpu-audit][WARN]", combined)
