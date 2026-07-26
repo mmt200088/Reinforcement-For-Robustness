@@ -70,6 +70,11 @@ from noise_rl_module_v2 import (
     _log_rounded_box,
     _progress_bar,
 )
+from elastic_gpu import (
+    ElasticGPUFailure,
+    is_recoverable_gpu_failure,
+    raise_if_elastic_gpu_restart_requested,
+)
 from rl_data_points import RLDataPointWriter, make_unique_run_id
 import os
 import random
@@ -6647,7 +6652,24 @@ class LayerImportanceEvaluator(TrainerCallback):
                 _stage1_run_id_base = os.path.relpath(_stage1_run_source, os.getcwd())
             except ValueError:
                 _stage1_run_id_base = str(_stage1_run_source)
-            _stage1_run_id = make_unique_run_id(_stage1_run_id_base)
+            _stage1_resume_ckpt_path = self._get_stage1_resume_checkpoint_path()
+            _stage1_resume_metadata = None
+            if _stage1_resume_ckpt_path:
+                _stage1_resume_metadata = torch.load(
+                    _stage1_resume_ckpt_path,
+                    map_location="cpu",
+                    weights_only=False,
+                )
+            _stage1_resume_run_id = (
+                _stage1_resume_metadata.get("structured_run_id")
+                if isinstance(_stage1_resume_metadata, dict)
+                else None
+            )
+            _stage1_run_id = (
+                str(_stage1_resume_run_id)
+                if _stage1_resume_run_id
+                else make_unique_run_id(_stage1_run_id_base)
+            )
             stage1_data_writer = RLDataPointWriter(
                 root_dir="rl_training_data_points",
                 run_id=_stage1_run_id,
@@ -6772,6 +6794,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                 is_graceful_stop_requested,
                 uninstall_graceful_stop_handler,
                 consume_stop_flag_file,
+                recover_stage1_detail_files,
+                stage1_detail_file_sizes,
             )
             stage1_checkpoint_path = os.path.join(
                 os.path.dirname(self.stage1_step_info_file),
@@ -6790,7 +6814,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"触发安全停止（在下一回合边界保存 checkpoint 后退出）。"
             )
             stage1_resume_start_episode = 0
-            _stage1_resume_ckpt_path = self._get_stage1_resume_checkpoint_path()
             if _stage1_resume_ckpt_path:
                 _log_rounded_box(
                     self.log,
@@ -6804,9 +6827,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # softmax-bearing checkpoint is shape-incompatible. Detect the
                 # old head_s / embed_prev_s tensors and abort clearly instead of
                 # silently dropping/zero-filling them.
-                _peek_ckpt = torch.load(
-                    _stage1_resume_ckpt_path, map_location="cpu", weights_only=False,
-                )
+                _peek_ckpt = _stage1_resume_metadata
                 _peek_state = (
                     _peek_ckpt.get("net_state_dict", _peek_ckpt)
                     if isinstance(_peek_ckpt, dict) else _peek_ckpt
@@ -6815,7 +6836,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     k for k in (_peek_state or {})
                     if ("head_s" in k) or ("embed_prev_s" in k)
                 ]
-                del _peek_ckpt, _peek_state
+                del _peek_state
                 if _legacy_softmax_keys:
                     raise RuntimeError(
                         "Stage-1 resume checkpoint "
@@ -6828,6 +6849,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                 ckpt = load_stage1_rl_checkpoint(
                     _stage1_resume_ckpt_path, gtrxl_net, optimizer, device=self.device,
                 )
+                _checkpoint_run_id = ckpt.get("structured_run_id")
+                if (
+                    _checkpoint_run_id is not None
+                    and str(_checkpoint_run_id) != stage1_data_writer.run_id
+                ):
+                    raise RuntimeError(
+                        "Stage-1 checkpoint structured run-id mismatch: "
+                        f"{_checkpoint_run_id!r} != {stage1_data_writer.run_id!r}"
+                    )
+                stage1_data_writer.recover_jsonl_files(
+                    ckpt.get("structured_jsonl_sizes")
+                )
+                recover_stage1_detail_files(
+                    step_info_details_dir,
+                    ckpt.get("detail_file_sizes"),
+                )
+                del _stage1_resume_metadata, _peek_ckpt
                 stage1_resume_start_episode = int(ckpt["completed_episodes"])
                 gtrxl_ppo_update_count = int(ckpt["gtrxl_ppo_update_count"])
                 episode_rewards = list(ckpt["episode_rewards"])
@@ -7239,11 +7277,23 @@ class LayerImportanceEvaluator(TrainerCallback):
                 # GTrXL PPO 更新（因果自注意力 + GRU门控）
                 if (episode + 1) % PPO_UPDATE_INTERVAL == 0:
                     _stage1_ppo_update_t0 = time.time()
-                    policy_loss, value_loss, entropy = self.ppo_update_gtrxl(
-                        gtrxl_net, optimizer, buffer, self.device,
-                        entropy_coef=current_entropy,
-                        ppo_update_step=gtrxl_ppo_update_count
-                    )
+                    try:
+                        policy_loss, value_loss, entropy = self.ppo_update_gtrxl(
+                            gtrxl_net, optimizer, buffer, self.device,
+                            entropy_coef=current_entropy,
+                            ppo_update_step=gtrxl_ppo_update_count
+                        )
+                    except ElasticGPUFailure:
+                        raise
+                    except Exception as exc:
+                        if not is_recoverable_gpu_failure(exc):
+                            raise
+                        raise ElasticGPUFailure(
+                            device=self.device,
+                            role="learner-primary",
+                            operation="stage1_ppo_update",
+                            cause=exc,
+                        ) from exc
                     _stage1_ppo_update_seconds = time.time() - _stage1_ppo_update_t0
                     gtrxl_ppo_update_count += 1
                     buffer.clear()
@@ -7464,6 +7514,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                         env.current_episode_metrics = None
 
                     # 保存 Stage-1 checkpoint（断点续训用）
+                    if step_info_chunk_file[0] is not None:
+                        step_info_chunk_file[0].flush()
+                    _stage1_structured_jsonl_sizes = (
+                        stage1_data_writer.committed_jsonl_sizes()
+                    )
+                    _stage1_detail_file_sizes = stage1_detail_file_sizes(step_info_details_dir)
                     save_stage1_rl_checkpoint(
                         path=stage1_checkpoint_path,
                         gtrxl_net=gtrxl_net,
@@ -7494,7 +7550,21 @@ class LayerImportanceEvaluator(TrainerCallback):
                         },
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
+                        structured_run_id=stage1_data_writer.run_id,
+                        structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
+                        detail_file_sizes=_stage1_detail_file_sizes,
                     )
+                    if (
+                        not stage1_entropy_converged
+                        and not _stage1_reached_episode_cap
+                    ):
+                        if _stage1_parallel_runner is not None:
+                            _deferred_gpu_failure = (
+                                _stage1_parallel_runner.pop_deferred_gpu_failure()
+                            )
+                            if _deferred_gpu_failure is not None:
+                                raise _deferred_gpu_failure
+                        raise_if_elastic_gpu_restart_requested()
                     if (
                         self.stage1_entropy_stop_threshold is not None
                         and entropy <= self.stage1_entropy_stop_threshold
@@ -7523,6 +7593,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                         f"\n  [优雅停止] 已检测到停止请求，正在保存 Stage-1 checkpoint "
                         f"(episode={episode + 1}) ..."
                     )
+                    if step_info_chunk_file[0] is not None:
+                        step_info_chunk_file[0].flush()
+                    _stage1_structured_jsonl_sizes = (
+                        stage1_data_writer.committed_jsonl_sizes()
+                    )
+                    _stage1_detail_file_sizes = stage1_detail_file_sizes(
+                        step_info_details_dir
+                    )
                     save_stage1_rl_checkpoint(
                         path=stage1_checkpoint_path,
                         gtrxl_net=gtrxl_net,
@@ -7553,6 +7631,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                         },
                         stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                         stage1_warnings=stage1_warnings,
+                        structured_run_id=stage1_data_writer.run_id,
+                        structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
+                        detail_file_sizes=_stage1_detail_file_sizes,
                     )
                     consume_stop_flag_file(stage1_stop_flag_path)
                     stage1_data_writer.write_summary({
@@ -7597,6 +7678,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             # 训练结束保存最终 Stage-1 checkpoint
             _s1_final_ep = max(stage1_completed_episodes - 1, stage1_resume_start_episode - 1)
             if stage1_completed_episodes > stage1_resume_start_episode:
+                _stage1_structured_jsonl_sizes = (
+                    stage1_data_writer.committed_jsonl_sizes()
+                )
+                _stage1_detail_file_sizes = stage1_detail_file_sizes(
+                    step_info_details_dir
+                )
                 save_stage1_rl_checkpoint(
                     path=stage1_checkpoint_path,
                     gtrxl_net=gtrxl_net,
@@ -7627,6 +7714,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     },
                     stage1_prev_avg_reward=stage1_prev_avg_reward[0],
                     stage1_warnings=stage1_warnings,
+                    structured_run_id=stage1_data_writer.run_id,
+                    structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
+                    detail_file_sizes=_stage1_detail_file_sizes,
                 )
                 self.log(f"  [完成] Stage-1 最终 checkpoint 已保存 → {stage1_checkpoint_path}")
             if self.run_output_dir:
