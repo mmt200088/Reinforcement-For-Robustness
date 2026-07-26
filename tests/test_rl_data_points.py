@@ -26,6 +26,42 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class RLDataPointWriterTest(unittest.TestCase):
+    def test_checkpoint_recovery_rolls_back_all_stage1_jsonl_streams(self):
+        with tempfile.TemporaryDirectory() as td:
+            kwargs = {
+                "root_dir": td,
+                "run_id": "stage1-resume",
+                "stage": "stage1",
+                "model_type": "bert-base",
+                "dataset": "mrpc",
+            }
+            writer = RLDataPointWriter(**kwargs)
+            writer.write_step({"episode": 1, "step": 1})
+            writer.write_episode({"episode": 1})
+            writer.write_ppo_update({"update": 1})
+            committed = writer.committed_jsonl_sizes()
+
+            writer.write_step({"episode": 2, "step": 1})
+            writer.write_episode({"episode": 2})
+            writer.write_ppo_update({"update": 2})
+            writer.close()
+
+            resumed = RLDataPointWriter(**kwargs)
+            resumed.recover_jsonl_files(committed)
+
+            rows = {}
+            for name in ("steps.jsonl", "episodes.jsonl", "ppo_updates.jsonl"):
+                rows[name] = [
+                    json.loads(line)
+                    for line in resumed.jsonl_path(name)
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+
+        self.assertEqual(rows["steps.jsonl"], [{"episode": 1, "step": 1}])
+        self.assertEqual(rows["episodes.jsonl"], [{"episode": 1}])
+        self.assertEqual(rows["ppo_updates.jsonl"], [{"update": 1}])
+
     def test_diagnostics_restore_reconciles_primary_and_structured_mirror(self):
         spec = importlib.util.spec_from_file_location(
             "blb_stage2_diagnostics_reconcile_for_test",
