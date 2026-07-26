@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from scripts.elastic_gpu_supervisor import (
     build_child_command,
     parse_nvidia_smi_csv,
     resolve_health_snapshot,
+    run_child_foreground,
     run_supervised,
 )
 
@@ -84,6 +86,35 @@ class ChildCommandTest(unittest.TestCase):
         )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_foreground_child_preserves_inherited_stage2_lock_fd(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "stage2.lock"
+            lock_fd = os.open(
+                lock_path,
+                os.O_CREAT | os.O_APPEND | os.O_RDWR,
+                0o600,
+            )
+            try:
+                env = os.environ.copy()
+                env["BLB_STAGE2_RUN_LOCK_FD"] = str(lock_fd)
+                child_code = (
+                    "import os, sys; "
+                    "fd = int(os.environ['BLB_STAGE2_RUN_LOCK_FD']); "
+                    "held = os.fstat(fd); expected = os.stat(sys.argv[1]); "
+                    "sys.exit(0 if (held.st_dev, held.st_ino) == "
+                    "(expected.st_dev, expected.st_ino) else 7)"
+                )
+
+                completed = run_child_foreground(
+                    [sys.executable, "-c", child_code, str(lock_path)],
+                    env=env,
+                    check=False,
+                )
+            finally:
+                os.close(lock_fd)
+
+        self.assertEqual(completed.returncode, 0)
 
     def test_auto_device_flags_are_rewritten_to_dense_logical_ids(self):
         command = [

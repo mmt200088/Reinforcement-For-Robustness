@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -117,6 +120,29 @@ class ElasticRLScalingABTests(unittest.TestCase):
                 "elapsed_seconds": timestamp,
             }],
         )
+
+    def test_script_entrypoint_imports_project_modules_outside_repo(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key != "PYTHONPATH"
+        }
+
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts" / "elastic_rl_scaling_ab.py"),
+                "--help",
+            ],
+            cwd="/",
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_strict_comparison_ignores_only_efficiency_telemetry(self):
         from scripts.elastic_rl_scaling_ab import compare_runs
