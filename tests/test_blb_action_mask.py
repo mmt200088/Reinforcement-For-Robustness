@@ -287,6 +287,7 @@ class BLBActionMaskTests(unittest.TestCase):
         from blb_stage2_rl.runner import BLBStage2RLRunner
 
         ev = SimpleNamespace(
+            total_layers=12,
             stage2_rl_episodes=240,
             stage2_ppo_lr_initial=1e-4,
             dataset_key="mrpc",
@@ -311,6 +312,7 @@ class BLBActionMaskTests(unittest.TestCase):
         from blb_stage2_rl.runner import BLBStage2RLRunner
 
         layer_ev = SimpleNamespace(
+            total_layers=12,
             stage2_rl_episodes=240,
             stage2_ppo_lr_initial=1e-4,
             dataset_key="mrpc",
@@ -332,6 +334,7 @@ class BLBActionMaskTests(unittest.TestCase):
         )
 
         block_ev = SimpleNamespace(
+            total_layers=12,
             stage2_rl_episodes=240,
             stage2_ppo_lr_initial=1e-4,
             dataset_key="mrpc",

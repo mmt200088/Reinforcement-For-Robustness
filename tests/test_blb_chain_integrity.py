@@ -889,7 +889,7 @@ class ProbeRunnerTwoGPUTest(unittest.TestCase):
                 super().__init__()
                 self.proj = torch.nn.Linear(4, 2)
 
-            def forward(self, *, input_ids, attention_mask, labels, token_type_ids=None):
+            def forward(self, *, input_ids, attention_mask, labels=None, token_type_ids=None):
                 # Return logits in a shape compatible with cross_entropy
                 x = input_ids.float()                # [B, 4]
                 logits = self.proj(x)                # [B, 2]

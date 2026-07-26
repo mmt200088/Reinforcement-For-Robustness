@@ -589,12 +589,12 @@ class OutputHygieneRegressionTest(unittest.TestCase):
             "decision_path == \"layerwise\"",
             "BLBStage2SequentialEnv(",
             "train_sequential(",
-            "horizon=12",
+            "horizon=layerwise_horizon",
             "max_step_dim=6",
             "max_num_levels=6",
             "metadata_width=0",
             "signal_width=4",
-            "step_layer_indices=tuple(range(12))",
+            "step_layer_indices=tuple(range(layerwise_horizon))",
             "step_block_indices=(3,) * 12",
         ):
             self.assertIn(needle, runner_src)

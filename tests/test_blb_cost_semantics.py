@@ -21,7 +21,7 @@ class BLBCostSemanticsTests(unittest.TestCase):
 
         num_layers = 2
         action = action_space.make_all_max_action_vector(num_layers=num_layers)
-        expected_count = num_layers * 5 - 1
+        expected_count = num_layers * 5
         expected = action_space.sum_truncation_k_in_action(action, num_layers) / expected_count
 
         with mock.patch.object(action_space.np, "mean", side_effect=AssertionError("avg K should not call np.mean")):
@@ -34,7 +34,7 @@ class BLBCostSemanticsTests(unittest.TestCase):
 
         num_layers = 3
         action = action_space.make_all_min_action_vector(num_layers=num_layers)
-        expected_count = num_layers * 5 - 1
+        expected_count = num_layers * 5
         expected_sum = action_space.sum_truncation_k_in_action(action, num_layers)
         expected_avg = expected_sum / expected_count
 

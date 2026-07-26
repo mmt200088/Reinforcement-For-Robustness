@@ -439,7 +439,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         )
         self.assertTrue(layer0_block1_k["effective"])
         self.assertEqual(layer0_block1_k["value"], 13)
-        self.assertAlmostEqual(stats.avg_k, 11.8)
+        self.assertAlmostEqual(stats.avg_k, 13.0)
         inactive_rescale = [
             r for r in desc["records"]
             if (

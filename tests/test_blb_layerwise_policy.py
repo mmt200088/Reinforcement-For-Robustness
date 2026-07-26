@@ -494,7 +494,7 @@ class LayerwisePolicyTest(unittest.TestCase):
             levels,
         )
         changed_block1_action = sampled_actions.clone()
-        changed_block1_action[0, 1] = 5
+        changed_block1_action[0, 1] = (sampled_actions[0, 1] + 1) % 6
         changed_log_prob, changed_entropy, _ = policy.evaluate_action(
             state,
             changed_block1_action,

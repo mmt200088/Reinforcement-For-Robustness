@@ -30,10 +30,28 @@ class BLBRegistryArtifactConsistencyTests(unittest.TestCase):
             first_input = [row for row in full if row.get("block") == "first_input"]
             self.assertTrue(l0b1)
             self.assertTrue(first_input)
-            self.assertTrue(all(not row["is_effective"] for row in l0b1 + first_input))
+            l0b1_k = [
+                row for row in l0b1
+                if row.get("field") == "output_truncation_k"
+            ]
+            l0b1_rescale = [
+                row for row in l0b1
+                if row.get("field") != "output_truncation_k"
+            ]
+            self.assertEqual(len(l0b1_k), 1)
+            self.assertTrue(all(row["is_effective"] for row in l0b1_k))
+            self.assertTrue(
+                all(not row["is_effective"] for row in l0b1_rescale + first_input)
+            )
 
             effective_ids = {row["slot_id"] for row in effective}
-            self.assertFalse(any(row["slot_id"] in effective_ids for row in l0b1 + first_input))
+            self.assertTrue(all(row["slot_id"] in effective_ids for row in l0b1_k))
+            self.assertFalse(
+                any(
+                    row["slot_id"] in effective_ids
+                    for row in l0b1_rescale + first_input
+                )
+            )
 
     def test_registry_json_artifacts_stream_without_materializing_strings(self):
         import scripts.blb_export_action_registry as registry
