@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -64,6 +65,22 @@ class HealthResolverTest(unittest.TestCase):
 
 
 class ChildCommandTest(unittest.TestCase):
+    def test_script_entrypoint_imports_project_modules(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts" / "elastic_gpu_supervisor.py"),
+                "--help",
+            ],
+            cwd="/",
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_auto_device_flags_are_rewritten_to_dense_logical_ids(self):
         command = [
             "python",
