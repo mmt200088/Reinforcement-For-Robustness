@@ -34,7 +34,11 @@ import types
 import unittest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
-for p in (str(_REPO), str(_REPO / "blb_stage2_rl")):
+for p in (
+    str(_REPO),
+    str(_REPO / "blb_stage2_rl"),
+    str(_REPO / "Rescale_optimizer"),
+):
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -50,6 +54,7 @@ try:
         DEFAULT_CFG_TO_T_NEW_MAP,
         _SkelEntry,
         apply_optimizer_output_to_cfg,
+        default_rotation_name_map,
     )
     _BRIDGE_OK = True
 except Exception:  # torch / function_handler unavailable (torch-free CI / local)
@@ -192,7 +197,7 @@ class RealReplanTest(unittest.TestCase):
         return {k: int(v) for k, v in opt["explicit_field_values"].items()}
 
     @staticmethod
-    def _mock_cfg(graph_key):
+    def _mock_cfg(graph_key, block_idx):
         # Tuple-typed rescale fields use indices like [0] and [-1] (deepest coeff),
         # so size them generously — every referenced (pos or neg) index resolves;
         # untouched slots stay non-None and are never asserted on.
@@ -203,6 +208,10 @@ class RealReplanTest(unittest.TestCase):
                 setattr(cfg, se.cfg_field, _NP(99))
             else:
                 setattr(cfg, se.cfg_field, [_NP(99) for _ in range(16)])
+        for mapped in default_rotation_name_map(block_idx).values():
+            flags = (mapped,) if isinstance(mapped, str) else tuple(mapped)
+            for flag in flags:
+                setattr(cfg, str(flag), False)
         return cfg
 
     def test_fused_rescales_auto_detected_and_nulled(self):
@@ -237,7 +246,7 @@ class RealReplanTest(unittest.TestCase):
                      else expect_real).append((se.cfg_field, se.tuple_index, cpt))
                 self.assertTrue(expect_fused, f"{graph_key} fc=1 should fuse at least one rescale")
 
-                cfg = self._mock_cfg(graph_key)
+                cfg = self._mock_cfg(graph_key, block_idx)
                 apply_optimizer_output_to_cfg(
                     cfg, output_raw=raw, block_idx=block_idx, graph_key=graph_key,
                     baseline_skeleton=bsk,
@@ -270,7 +279,7 @@ class RealReplanTest(unittest.TestCase):
         }
         raw = self.S.replan("block4", t_new=t_new, delta_overrides=deltas, return_dict=True)
         bsk = list(self.inv.baselines["block4"][0])
-        cfg = self._mock_cfg("block4")
+        cfg = self._mock_cfg("block4", 4)
         apply_optimizer_output_to_cfg(
             cfg, output_raw=raw, block_idx=block_idx, graph_key="block4", baseline_skeleton=bsk,
         )
