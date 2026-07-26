@@ -1845,6 +1845,27 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertLess(diagnostics_commit, checkpoint_commit)
         self.assertLess(checkpoint_commit, restart_boundary)
 
+    def test_layerwise_training_wraps_primary_cuda_device_failures(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+
+        self.assertIn("except ElasticGPUFailure:", branch_source)
+        self.assertIn("is_recoverable_gpu_failure(exc)", branch_source)
+        self.assertIn(
+            'ElasticGPUFailure(\n'
+            '                    device="cuda:0",\n'
+            '                    role="learner-primary",',
+            branch_source,
+        )
+
     def test_layerwise_checkpoint_contract_fails_before_mutating_training_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
