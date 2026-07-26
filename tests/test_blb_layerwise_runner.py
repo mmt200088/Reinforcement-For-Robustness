@@ -2774,6 +2774,7 @@ class _DeferredFakeLayerwiseEnv(_FakeLayerwiseEnv):
         )
         self.base.probe_runner = types.SimpleNamespace(
             num_workers=4,
+            pool_generation=0,
             run_action_trial_groups=lambda *_args, **_kwargs: None,
         )
         self.base.evaluate_prepared_terminal_batch = self._evaluate_prepared
@@ -2984,6 +2985,99 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(updates, [48])
         self.assertEqual(summary["episode_rewards"], [7.5] * 4)
         self.assertEqual([record.episode_index for record in summary["episode_records"]], [0, 1, 2, 3])
+
+    def test_terminal_batch_rebalances_after_probe_pool_shrinks(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from blb_stage2_rl.seed_utils import derive_layerwise_episode_probe_seed
+
+        class ShrinkingProbeEnv(_DeferredFakeLayerwiseEnv):
+            def __init__(self):
+                super().__init__(probabilities=0.7)
+                self.base.probe_runner.num_workers = 5
+                self.defer_history = []
+                self.completed_terminal_episodes = 0
+
+            def configure_terminal_probe_deferral(self, enabled):
+                super().configure_terminal_probe_deferral(enabled)
+                self.defer_history.append(bool(enabled))
+
+            def step(self, action):
+                result = super().step(action)
+                if result[2]:
+                    self.completed_terminal_episodes += 1
+                    if self.completed_terminal_episodes == 1:
+                        self.base.probe_runner.num_workers = 4
+                        self.base.probe_runner.pool_generation = 1
+                return result
+
+        env = ShrinkingProbeEnv()
+        config = self._train_cfg(total_episodes=5, update_every=5)
+        config.terminal_eval_batch_size = 4
+        buffer = _FakeBuffer()
+        completed = []
+        updates = []
+
+        def fake_update(_policy, _optimizer, rollout, _cfg, _device, **_kwargs):
+            updates.append(len(rollout))
+            return {"entropy": 0.0, "n_samples": len(rollout)}
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=env,
+                policy=_FakePolicy(),
+                train_cfg=config,
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=buffer,
+                ppo_update_fn=fake_update,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+                on_episode_end=lambda record: completed.append(
+                    record.episode_index
+                ),
+            )
+
+        expected_grouped_seeds = [
+            derive_layerwise_episode_probe_seed(
+                42, episode, trial_count=5,
+            )
+            for episode in range(1, 5)
+        ]
+        self.assertEqual(env.defer_history, [False, True])
+        self.assertEqual(
+            env.grouped_calls,
+            [(
+                expected_grouped_seeds,
+                {
+                    "num_trials_per_action": 5,
+                    "validation_required": False,
+                },
+            )],
+        )
+        self.assertEqual(completed, [0, 1, 2, 3, 4])
+        self.assertEqual(updates, [60])
+        self.assertEqual(
+            summary["probe_pool_schedule"],
+            [
+                {
+                    "first_episode": 0,
+                    "pool_generation": 0,
+                    "worker_count": 5,
+                    "terminal_batch_size": 1,
+                },
+                {
+                    "first_episode": 1,
+                    "pool_generation": 1,
+                    "worker_count": 4,
+                    "terminal_batch_size": 4,
+                },
+            ],
+        )
 
     def test_protected_k1_reject_never_enters_candidate_store(self):
         from blb_stage2_rl.candidate_store import CandidateStore
