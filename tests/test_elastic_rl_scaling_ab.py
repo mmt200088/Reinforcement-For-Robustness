@@ -145,6 +145,24 @@ class ElasticRLScalingABTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_probe_cache_skip_flags_are_efficiency_telemetry(self):
+        from scripts.elastic_rl_scaling_ab import compare_scientific_values
+
+        diffs = compare_scientific_values(
+            {
+                "reward": 1.25,
+                "terminal_probe_install_skipped": False,
+                "terminal_probe_clear_skipped": False,
+            },
+            {
+                "reward": 1.25,
+                "terminal_probe_install_skipped": True,
+                "terminal_probe_clear_skipped": True,
+            },
+        )
+
+        self.assertEqual(diffs, ())
+
     def test_strict_comparison_ignores_only_efficiency_telemetry(self):
         from scripts.elastic_rl_scaling_ab import compare_runs
 
