@@ -686,6 +686,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
                     decoded=decoded,
                     failure_reason=None,
                     final_config_fingerprint="materialized-test-config",
+                    optimizer_invalid=False,
                     replan_application={
                         "applied_before_forward": True,
                         "model_uses_replan_config": True,
