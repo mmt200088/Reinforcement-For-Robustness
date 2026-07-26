@@ -5286,6 +5286,17 @@ def _run_layerwise_training_branch(
             strict_best=strict_best,
             convergence_state=metrics.get("convergence_state"),
         )
+        shared_probe_runner = getattr(
+            base_env,
+            "_shared_probe_runner_owner",
+            None,
+        )
+        if shared_probe_runner is not None:
+            deferred_gpu_failure = (
+                shared_probe_runner.pop_deferred_gpu_failure()
+            )
+            if deferred_gpu_failure is not None:
+                raise deferred_gpu_failure
         raise_if_elastic_gpu_restart_requested()
         status.update_after_ppo_update(
             int(ppo_update_counter),

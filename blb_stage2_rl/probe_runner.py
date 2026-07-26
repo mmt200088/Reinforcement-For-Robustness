@@ -724,6 +724,7 @@ class ProbeRunner:
         self._poisoned_reason: Optional[str] = None
         self.pool_generation = 0
         self._quarantine_events: List[Dict[str, Any]] = []
+        self._deferred_gpu_failures: List[ElasticGPUFailure] = []
         self._process_finalizer: Optional[weakref.finalize] = None
         self._refresh_process_finalizer()
 
@@ -766,6 +767,12 @@ class ProbeRunner:
     @property
     def quarantine_events(self) -> Tuple[Dict[str, Any], ...]:
         return tuple(dict(event) for event in self._quarantine_events)
+
+    def pop_deferred_gpu_failure(self) -> Optional[ElasticGPUFailure]:
+        """Return one recovered replica failure at the next PPO checkpoint."""
+        if not self._deferred_gpu_failures:
+            return None
+        return self._deferred_gpu_failures.pop(0)
 
     @property
     def num_workers(self) -> int:
@@ -892,11 +899,18 @@ class ProbeRunner:
                 f"worker {worker_index} is not a process replica"
             )
         device = str(worker.device)
+        failure = ElasticGPUFailure(
+            device=worker.device,
+            role="reward-probe-replica",
+            operation=operation,
+            cause=exc,
+        )
         self.workers.pop(worker_index)
         self._process_workers.remove(worker)
         try:
             worker.close()
         finally:
+            self._deferred_gpu_failures.append(failure)
             self.pool_generation += 1
             self._quarantine_events.append({
                 "pool_generation": int(self.pool_generation),
