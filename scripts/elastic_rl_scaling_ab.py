@@ -627,6 +627,130 @@ def compare_runs(
     )
 
 
+def summarize_scaling(
+    runs: Mapping[int, Tuple[Path | str, float]],
+    *,
+    stage: str,
+    data_points_root: Optional[Path | str] = None,
+    min_parallel_efficiency: float = 0.0,
+    max_diffs: int = 100,
+) -> Dict[str, Any]:
+    """Build an exact-equivalence and wall-throughput scaling verdict."""
+    normalized = {
+        int(gpu_count): (Path(path).expanduser().resolve(), float(wall_seconds))
+        for gpu_count, (path, wall_seconds) in runs.items()
+    }
+    if not normalized:
+        raise ValueError("at least one scaling run is required")
+    if any(gpu_count <= 0 for gpu_count in normalized):
+        raise ValueError("GPU counts must be positive")
+    if any(wall_seconds <= 0.0 for _path, wall_seconds in normalized.values()):
+        raise ValueError("wall seconds must be positive")
+    control_gpu_count = min(normalized)
+    control_path, control_wall = normalized[control_gpu_count]
+    control_artifacts = discover_run_artifacts(
+        control_path,
+        stage=stage,
+        data_points_root=data_points_root,
+    )
+    if control_artifacts.diagnostic_episodes is None:
+        raise FileNotFoundError(
+            f"control diagnostic episodes are missing: {control_path}"
+        )
+    control_episode_count = len(
+        _load_jsonl(control_artifacts.diagnostic_episodes)
+    )
+    if control_episode_count <= 0:
+        raise RuntimeError("control run has no diagnostic episodes")
+    control_throughput = (
+        float(control_episode_count) * 3600.0 / float(control_wall)
+    )
+
+    run_summaries: Dict[str, Any] = {}
+    exact_equivalence = True
+    throughput_sequence: List[float] = []
+    efficiency_pass = True
+    for gpu_count in sorted(normalized):
+        run_path, wall_seconds = normalized[gpu_count]
+        if gpu_count == control_gpu_count:
+            comparison = ComparisonResult(
+                equal=True,
+                diffs=(),
+                compared={},
+                control=str(control_path),
+                candidate=str(run_path),
+            )
+            episode_count = control_episode_count
+        else:
+            comparison = compare_runs(
+                control_path,
+                run_path,
+                stage=stage,
+                data_points_root=data_points_root,
+                max_diffs=max_diffs,
+            )
+            run_artifacts = discover_run_artifacts(
+                run_path,
+                stage=stage,
+                data_points_root=data_points_root,
+            )
+            if run_artifacts.diagnostic_episodes is None:
+                raise FileNotFoundError(
+                    f"diagnostic episodes are missing: {run_path}"
+                )
+            episode_count = len(
+                _load_jsonl(run_artifacts.diagnostic_episodes)
+            )
+        throughput = float(episode_count) * 3600.0 / float(wall_seconds)
+        speedup = throughput / control_throughput
+        theoretical = float(gpu_count) / float(control_gpu_count)
+        parallel_efficiency = speedup / theoretical
+        meets_efficiency = (
+            parallel_efficiency + 1.0e-12
+            >= float(min_parallel_efficiency)
+        )
+        exact_equivalence = exact_equivalence and comparison.equal
+        efficiency_pass = efficiency_pass and meets_efficiency
+        throughput_sequence.append(throughput)
+        run_summaries[str(gpu_count)] = {
+            "path": str(run_path),
+            "wall_seconds": float(wall_seconds),
+            "episodes": int(episode_count),
+            "episodes_per_hour": float(throughput),
+            "speedup": float(speedup),
+            "theoretical_speedup": float(theoretical),
+            "parallel_efficiency": float(parallel_efficiency),
+            "meets_parallel_efficiency": bool(meets_efficiency),
+            "exact_equivalence": bool(comparison.equal),
+            "diffs": list(comparison.diffs),
+            "compared": dict(comparison.compared),
+        }
+
+    monotonic_throughput = all(
+        current + 1.0e-12 >= previous
+        for previous, current in zip(
+            throughput_sequence,
+            throughput_sequence[1:],
+        )
+    )
+    passed = (
+        exact_equivalence
+        and monotonic_throughput
+        and efficiency_pass
+    )
+    return {
+        "record_type": "elastic_rl_scaling_verdict_v1",
+        "stage": str(stage),
+        "control_gpu_count": int(control_gpu_count),
+        "minimum_parallel_efficiency": float(min_parallel_efficiency),
+        "exact_equivalence": bool(exact_equivalence),
+        "monotonic_throughput": bool(monotonic_throughput),
+        "parallel_efficiency_pass": bool(efficiency_pass),
+        "passed": bool(passed),
+        "runs": run_summaries,
+    }
+
+
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.tmp")
@@ -651,6 +775,55 @@ def _compare_command(args: argparse.Namespace) -> int:
     return 0 if result.equal else 2
 
 
+def _parse_key_values(
+    values: Iterable[str],
+    *,
+    label: str,
+) -> Dict[int, str]:
+    parsed: Dict[int, str] = {}
+    for raw in values:
+        key_text, separator, value = str(raw).partition("=")
+        if not separator or not key_text.strip() or not value.strip():
+            raise ValueError(f"{label} must use GPU_COUNT=VALUE, got {raw!r}")
+        key = int(key_text)
+        if key in parsed:
+            raise ValueError(f"duplicate {label} GPU count: {key}")
+        parsed[key] = value
+    return parsed
+
+
+def _read_wall_value(value: str) -> float:
+    candidate = Path(str(value)).expanduser()
+    if candidate.is_file():
+        return float(candidate.read_text(encoding="utf-8").strip())
+    return float(value)
+
+
+def _scaling_command(args: argparse.Namespace) -> int:
+    run_paths = _parse_key_values(args.run, label="--run")
+    wall_values = _parse_key_values(args.wall, label="--wall")
+    if set(run_paths) != set(wall_values):
+        raise ValueError(
+            "--run and --wall GPU counts differ: "
+            f"{sorted(run_paths)} != {sorted(wall_values)}"
+        )
+    runs = {
+        gpu_count: (run_paths[gpu_count], _read_wall_value(wall_values[gpu_count]))
+        for gpu_count in run_paths
+    }
+    summary = summarize_scaling(
+        runs,
+        stage=args.stage,
+        data_points_root=args.data_points_root,
+        min_parallel_efficiency=args.min_parallel_efficiency,
+        max_diffs=args.max_diffs,
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    if args.output:
+        _write_json(Path(args.output), summary)
+    return 0 if summary["passed"] else 3
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -670,6 +843,37 @@ def _build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--max-diffs", type=int, default=100)
     compare_parser.add_argument("--output")
     compare_parser.set_defaults(handler=_compare_command)
+
+    scaling_parser = subparsers.add_parser(
+        "scaling",
+        help="compare matched GPU-count runs and calculate throughput scaling",
+    )
+    scaling_parser.add_argument(
+        "--run",
+        action="append",
+        required=True,
+        metavar="GPU_COUNT=RUN_DIR",
+    )
+    scaling_parser.add_argument(
+        "--wall",
+        action="append",
+        required=True,
+        metavar="GPU_COUNT=SECONDS_OR_FILE",
+    )
+    scaling_parser.add_argument(
+        "--stage",
+        required=True,
+        choices=("stage1", "stage2"),
+    )
+    scaling_parser.add_argument("--data-points-root")
+    scaling_parser.add_argument(
+        "--min-parallel-efficiency",
+        type=float,
+        default=0.80,
+    )
+    scaling_parser.add_argument("--max-diffs", type=int, default=100)
+    scaling_parser.add_argument("--output")
+    scaling_parser.set_defaults(handler=_scaling_command)
     return parser
 
 
