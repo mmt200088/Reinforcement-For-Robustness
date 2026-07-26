@@ -9,6 +9,8 @@ import types
 import unittest
 from unittest import mock
 
+from elastic_gpu import ElasticGPUFailure
+
 try:
     import torch
 
@@ -75,11 +77,17 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 device_id=1,
                 fail_submit=False,
                 fail_receive=False,
+                fail_receive_once=False,
+                receive_error=None,
+                duplicate_result=False,
                 ):
             self.device = torch.device(f"cuda:{int(device_id)}")
             self.events = events
             self.fail_submit = fail_submit
             self.fail_receive = fail_receive
+            self.fail_receive_once = fail_receive_once
+            self.receive_error = receive_error
+            self.duplicate_result = duplicate_result
             self.pending = None
             self.closed = False
             self.close_count = 0
@@ -94,15 +102,23 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.events.append(("remote-receive", operation))
             if self.fail_receive:
                 raise RuntimeError("child traceback marker")
+            if self.fail_receive_once:
+                self.fail_receive_once = False
+                raise BrokenPipeError("injected replica pipe loss")
+            if self.receive_error is not None:
+                raise self.receive_error
             self.assert_pending(operation)
             _, payload = self.pending
             self.pending = None
             if operation == "run_trials":
+                results = [
+                    (int(idx), (float(idx), float(payload["base_seed"]), 1.0))
+                    for idx in payload["trial_indices"]
+                ]
+                if self.duplicate_result and results:
+                    results.append(results[0])
                 return {
-                    "results": [
-                        (int(idx), (float(idx), float(payload["base_seed"]), 1.0))
-                        for idx in payload["trial_indices"]
-                    ],
+                    "results": results,
                     "wall_seconds": 0.25,
                 }
             if operation == "run_action_trial":
@@ -301,6 +317,112 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             r"worker 1 .*cuda:1.*child traceback marker",
         ):
             runner.run_trials(k=2, base_seed=1)
+
+    def test_recoverable_replica_failure_retries_only_missing_trials(self):
+        events = []
+        local = self._LocalWorker(events)
+
+        def canonical_local(
+                worker, trial_idx, base_seed, batch_set_key="F1",
+                ):
+            worker.events.append(
+                ("local-run", trial_idx, base_seed, str(batch_set_key))
+            )
+            return (float(trial_idx), float(base_seed), 1.0)
+
+        local.run_trial = types.MethodType(canonical_local, local)
+        healthy = self._RemoteWorker(events, device_id=1)
+        failed = self._RemoteWorker(
+            events,
+            device_id=2,
+            fail_receive_once=True,
+        )
+        runner = ProbeRunner(
+            [local],
+            process_workers=[healthy, failed],
+        )
+
+        results = runner.run_trials(k=6, base_seed=41)
+
+        self.assertEqual(
+            results,
+            [
+                (float(index), 41.0, 1.0)
+                for index in range(6)
+            ],
+        )
+        self.assertEqual(runner.num_workers, 2)
+        self.assertEqual(runner.pool_generation, 1)
+        self.assertEqual(
+            runner.last_diagnostics.retried_trial_indices,
+            [2, 5],
+        )
+        self.assertNotIn(
+            1,
+            runner.last_diagnostics.retried_trial_indices,
+        )
+        self.assertNotIn(
+            4,
+            runner.last_diagnostics.retried_trial_indices,
+        )
+        self.assertTrue(failed.closed)
+
+        runner.close()
+        runner.close()
+        self.assertEqual(failed.close_count, 1)
+        self.assertEqual(healthy.close_count, 1)
+
+    def test_remote_shape_error_remains_fatal(self):
+        events = []
+        remote = self._RemoteWorker(
+            events,
+            receive_error=RuntimeError("shape mismatch"),
+        )
+        runner = ProbeRunner(
+            [self._LocalWorker(events)],
+            process_workers=[remote],
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "shape mismatch"):
+            runner.run_trials(k=2, base_seed=41)
+
+        self.assertEqual(runner.pool_generation, 0)
+        self.assertFalse(remote.closed)
+
+    def test_primary_transport_failure_requests_supervisor_restart(self):
+        events = []
+        local = self._LocalWorker(events)
+
+        def fail_primary(
+                worker, trial_idx, base_seed, batch_set_key="F1",
+                ):
+            raise BrokenPipeError("learner CUDA context lost")
+
+        local.run_trial = types.MethodType(fail_primary, local)
+        runner = ProbeRunner(
+            [local],
+            process_workers=[self._RemoteWorker(events)],
+        )
+
+        with self.assertRaises(ElasticGPUFailure) as raised:
+            runner.run_trials(k=2, base_seed=41)
+
+        self.assertEqual(raised.exception.role, "learner-primary")
+        self.assertEqual(runner.pool_generation, 0)
+
+    def test_duplicate_trial_identity_fails_closed(self):
+        events = []
+        remote = self._RemoteWorker(events, duplicate_result=True)
+        runner = ProbeRunner(
+            [self._LocalWorker(events)],
+            process_workers=[remote],
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "duplicate"):
+            runner.run_trials(k=2, base_seed=41)
+
+        self.assertEqual(runner.pool_generation, 0)
+        self.assertFalse(remote.closed)
 
     def test_close_reaps_remote_worker(self):
         events = []
