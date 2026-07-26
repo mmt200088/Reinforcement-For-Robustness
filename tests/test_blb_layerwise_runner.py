@@ -1861,8 +1861,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("is_recoverable_gpu_failure(exc)", branch_source)
         self.assertIn(
             'ElasticGPUFailure(\n'
-            '                    device="cuda:0",\n'
-            '                    role="learner-primary",',
+            '            device="cuda:0",\n'
+            '            role="learner-primary",',
             branch_source,
         )
 

@@ -29,7 +29,11 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, 
 import numpy as np
 import torch
 
-from elastic_gpu import raise_if_elastic_gpu_restart_requested
+from elastic_gpu import (
+    ElasticGPUFailure,
+    is_recoverable_gpu_failure,
+    raise_if_elastic_gpu_restart_requested,
+)
 from report_format_utils import format_elapsed as _seq_fmt_elapsed
 from report_format_utils import progress_bar as _seq_progress_bar
 from rl_data_points import (
@@ -5439,6 +5443,17 @@ def _run_layerwise_training_branch(
                 "unbounded layerwise training stopped without strict convergence"
             )
         training_completed = True
+    except ElasticGPUFailure:
+        raise
+    except Exception as exc:
+        if not is_recoverable_gpu_failure(exc):
+            raise
+        raise ElasticGPUFailure(
+            device="cuda:0",
+            role="learner-primary",
+            operation="stage2_layerwise_training",
+            cause=exc,
+        ) from exc
     finally:
         try:
             if not training_completed:
