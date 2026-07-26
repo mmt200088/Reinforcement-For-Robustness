@@ -214,6 +214,38 @@ class ElasticRLScalingABTests(unittest.TestCase):
             result.diffs,
         )
 
+    def test_scaling_summary_requires_exact_monotonic_runs(self):
+        from scripts.elastic_rl_scaling_ab import summarize_scaling
+
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            data_root = base / "rl_training_data_points"
+            runs = {}
+            for gpu_count, wall_seconds in ((1, 40.0), (2, 20.5), (4, 10.5)):
+                run = base / f"run-{gpu_count}"
+                self._write_run(
+                    run,
+                    data_root,
+                    run_id=f"run-{gpu_count}",
+                    device=f"cuda:{gpu_count - 1}",
+                    timestamp=float(gpu_count),
+                )
+                runs[gpu_count] = (run, wall_seconds)
+
+            summary = summarize_scaling(
+                runs,
+                stage="stage2",
+                data_points_root=data_root,
+                min_parallel_efficiency=0.90,
+            )
+
+        self.assertTrue(summary["passed"], summary)
+        self.assertEqual(summary["control_gpu_count"], 1)
+        self.assertAlmostEqual(summary["runs"]["4"]["speedup"], 40.0 / 10.5)
+        self.assertGreater(summary["runs"]["4"]["parallel_efficiency"], 0.90)
+        self.assertTrue(summary["monotonic_throughput"])
+        self.assertTrue(summary["exact_equivalence"])
+
 
 if __name__ == "__main__":
     unittest.main()
