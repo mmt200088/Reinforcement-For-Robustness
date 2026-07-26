@@ -29,6 +29,8 @@ RUN_ID="${RUN_ID:-stage2_ngpu_speed_ab_${TS}}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-experiments/server_command_runs/${RUN_ID}}"
 RUN_STAGE2="${RUN_STAGE2:-${ARTIFACT_DIR}/stage2}"
 STAGE1_RECORD_SOURCE="${STAGE1_RECORD_SOURCE:-Parting Chapter/stage1/record}"
+MODEL_TYPE="${MODEL_TYPE:-bert-base}"
+MODEL_DIR_LABEL="${MODEL_TYPE//-/ }"
 EPISODES_AB="${EPISODES_AB:-600}"
 KTRIALS="${KTRIALS:-5}"
 PROBE_SIZE="${PROBE_SIZE:-256}"
@@ -67,6 +69,7 @@ mkdir -p "$ARTIFACT_DIR"
 exec > >(tee "${ARTIFACT_DIR}/stage2_ngpu_speed_ab_stdout.log") 2>&1
 
 echo "[ab] artifact_dir=${ARTIFACT_DIR}"
+echo "[ab] model_type=${MODEL_TYPE}"
 echo "[ab] episodes=${EPISODES_AB} rollout_size=${ROLLOUT_SIZE} ppo_update=${PPO_UPDATE_INTERVAL}"
 echo "[ab] one=${ONE_DEVS} wpd=${ONE_WORKERS_PER_DEVICE}; many=${MANY_DEVS} wpd=${MANY_WORKERS_PER_DEVICE}"
 echo "[ab] parallelism=layerwise reward-device K-split"
@@ -120,6 +123,7 @@ build_case_command() {
   CASE_COMMAND=(
     bash llama_7B_LayerImportance.sh run rl
     --preset mrpc-blb-stage2-rl
+    --model-type "$MODEL_TYPE"
     --persistent-root "$persistent_root"
     --stage2-fixed-config-source all4
     --blb-v3-fusion-count-action 1
@@ -337,7 +341,7 @@ run_case() {
   local persistent_root="${ARTIFACT_DIR}/persistent_${label}"
   local launch_log="${ARTIFACT_DIR}/${label}_launch.log"
   local gpu_sample_file="${ARTIFACT_DIR}/${label}_nvidia_smi.csv"
-  local latest_pid_file="${persistent_root}/rl/bert-base/mrpc/LATEST_PID"
+  local latest_pid_file="${persistent_root}/rl/${MODEL_TYPE}/mrpc/LATEST_PID"
   local wall_file="${ARTIFACT_DIR}/${label}_wall_seconds.txt"
   local episodes_out="${ARTIFACT_DIR}/${label}_episodes.jsonl"
   local ppo_out="${ARTIFACT_DIR}/${label}_ppo_updates.jsonl"
@@ -363,8 +367,8 @@ run_case() {
     local fallback_pid=""
     for pid_file in \
       "${RUN_STAGE2}/LATEST_PID" \
-      "${RUN_STAGE2}/bert base mrpc/run.pid" \
-      "${RUN_STAGE2}/bert base mrpc/rl.pid" \
+      "${RUN_STAGE2}/${MODEL_DIR_LABEL} mrpc/run.pid" \
+      "${RUN_STAGE2}/${MODEL_DIR_LABEL} mrpc/rl.pid" \
       "${CANON_STAGE2}/LATEST_PID"; do
       fallback_pid="$(cat "$pid_file" 2>/dev/null || true)"
       if background_pid_exists "$fallback_pid"; then
