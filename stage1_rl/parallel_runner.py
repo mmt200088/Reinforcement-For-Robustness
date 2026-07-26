@@ -33,6 +33,7 @@ Design (mirrors Stage-2 conventions where they fit):
 from __future__ import annotations
 
 import copy
+from collections import deque
 from dataclasses import dataclass, field
 import hashlib
 import threading
@@ -44,7 +45,8 @@ import torch
 import torch.nn as nn
 
 from device_utils import parse_device_ids
-from .seed_utils import assign_global_episodes, derive_episode_seed
+from elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
+from .seed_utils import derive_episode_seed
 
 # Defer the heavy import so this module is importable in torch-free CI without
 # pulling transformers / function_handler at module load.
@@ -152,6 +154,9 @@ class Stage1ParallelRunnerDiagnostics:
     devices: List[str] = field(default_factory=list)
     model_forward_seconds: float = 0.0
     model_forward_calls: int = 0
+    pool_generation: int = 0
+    retry_rounds: int = 0
+    quarantined_devices: List[str] = field(default_factory=list)
 
     @property
     def speedup_vs_sequential(self) -> float:
@@ -185,10 +190,83 @@ class Stage1ParallelRunner:
         self._collect_episode = collect_episode_fn
         self._log = log_fn or (lambda _msg: None)
         self.last_diagnostics: Optional[Stage1ParallelRunnerDiagnostics] = None
+        self.pool_generation = 0
+        self._quarantine_events: List[Dict[str, Any]] = []
+        self._deferred_gpu_failures: List[ElasticGPUFailure] = []
 
     @property
     def num_workers(self) -> int:
         return len(self.workers)
+
+    @property
+    def quarantine_events(self) -> Tuple[Dict[str, Any], ...]:
+        return tuple(dict(event) for event in self._quarantine_events)
+
+    def pop_deferred_gpu_failure(self) -> Optional[ElasticGPUFailure]:
+        """Return one replica failure after its window has been recovered."""
+        if not self._deferred_gpu_failures:
+            return None
+        return self._deferred_gpu_failures.pop(0)
+
+    def _handle_worker_errors(
+            self,
+            errors: Sequence[Tuple[Stage1RolloutWorker, BaseException]],
+            *,
+            operation: str,
+    ) -> List[str]:
+        for _worker, exc in errors:
+            if isinstance(exc, ElasticGPUFailure):
+                raise exc
+            if not is_recoverable_gpu_failure(exc):
+                raise exc
+
+        for worker, exc in errors:
+            if worker.role == "primary":
+                raise ElasticGPUFailure(
+                    device=worker.device,
+                    role="learner-primary",
+                    operation=operation,
+                    cause=exc,
+                ) from exc
+
+        quarantined: List[str] = []
+        seen_workers: set[int] = set()
+        for worker, exc in errors:
+            if id(worker) in seen_workers:
+                continue
+            seen_workers.add(id(worker))
+            if not any(candidate is worker for candidate in self.workers):
+                continue
+            self.workers[:] = [
+                candidate
+                for candidate in self.workers
+                if candidate is not worker
+            ]
+            self.pool_generation += 1
+            device = str(worker.device)
+            failure = ElasticGPUFailure(
+                device=worker.device,
+                role="rollout-replica",
+                operation=operation,
+                cause=exc,
+            )
+            self._deferred_gpu_failures.append(failure)
+            event = {
+                "pool_generation": int(self.pool_generation),
+                "worker_idx": int(worker.worker_idx),
+                "device": device,
+                "operation": str(operation),
+                "cause_type": type(exc).__name__,
+                "cause": str(exc),
+            }
+            self._quarantine_events.append(event)
+            quarantined.append(device)
+            self._log(
+                "[stage1-rollout] quarantined "
+                f"worker={worker.worker_idx} device={device}; "
+                f"remaining_workers={len(self.workers)}"
+            )
+        return quarantined
 
     def _sync_policy_replicas(self, gtrxl_net: nn.Module) -> None:
         """Give every worker its own eval-mode copy of the central policy on its
@@ -247,44 +325,90 @@ class Stage1ParallelRunner:
         # this window) so the rollout runs lock-free — one policy per GPU.
         self._sync_policy_replicas(gtrxl_net)
 
-        n_workers = len(self.workers)
-        assignments = assign_global_episodes(total_episodes, n_workers)
+        initial_workers = tuple(self.workers)
+        n_workers = len(initial_workers)
         results: List[Optional[EpisodeRollout]] = [None] * total_episodes
-        per_worker_wall: List[float] = [0.0] * n_workers
-        threads: List[threading.Thread] = []
-        errors: List[Tuple[int, BaseException]] = []
-        errors_lock = threading.Lock()
+        worker_wall = {id(worker): 0.0 for worker in initial_workers}
+        worker_episode_counts = {id(worker): 0 for worker in initial_workers}
         timing_before = self._timing_snapshot()
 
-        def worker_thread(w_idx: int) -> None:
-            worker = self.workers[w_idx]
-            t0 = time.time()
-            try:
-                for g in assignments[w_idx]:
-                    ep_seed = derive_episode_seed(base_seed, window_idx, g)
-                    rollout = self._collect_episode(
-                        worker=worker,
-                        episode_seed=ep_seed,
-                    )
-                    results[g] = rollout
-            except BaseException as exc:  # noqa: BLE001 — propagate any failure
-                with errors_lock:
-                    errors.append((w_idx, exc))
-            finally:
-                per_worker_wall[w_idx] = time.time() - t0
-
         wall_t0 = time.time()
-        for w_idx in range(n_workers):
-            t = threading.Thread(
-                target=worker_thread,
-                args=(w_idx,),
-                name=f"stage1-rollout-w{w_idx}",
-                daemon=False,
+        retry_rounds = 0
+        quarantined_devices: List[str] = []
+        while any(result is None for result in results):
+            pending = deque(
+                index
+                for index, result in enumerate(results)
+                if result is None
             )
-            threads.append(t)
-            t.start()
-        for t in threads:
-            t.join()
+            pending_lock = threading.Lock()
+            errors: List[Tuple[Stage1RolloutWorker, BaseException]] = []
+            errors_lock = threading.Lock()
+            active_workers = tuple(self.workers)
+            if not active_workers:
+                raise RuntimeError("Stage-1 rollout has no surviving workers")
+
+            def worker_thread(worker: Stage1RolloutWorker) -> None:
+                t0 = time.time()
+                completed = 0
+                try:
+                    while True:
+                        with pending_lock:
+                            if not pending:
+                                return
+                            global_episode = pending.popleft()
+                        episode_seed = derive_episode_seed(
+                            base_seed,
+                            window_idx,
+                            global_episode,
+                        )
+                        rollout = self._collect_episode(
+                            worker=worker,
+                            episode_seed=episode_seed,
+                        )
+                        results[global_episode] = rollout
+                        completed += 1
+                except BaseException as exc:  # noqa: BLE001 - preserve worker error
+                    with errors_lock:
+                        errors.append((worker, exc))
+                finally:
+                    worker_wall[id(worker)] = (
+                        worker_wall.get(id(worker), 0.0)
+                        + time.time() - t0
+                    )
+                    worker_episode_counts[id(worker)] = (
+                        worker_episode_counts.get(id(worker), 0)
+                        + completed
+                    )
+
+            threads = [
+                threading.Thread(
+                    target=worker_thread,
+                    args=(worker,),
+                    name=f"stage1-rollout-w{worker.worker_idx}",
+                    daemon=False,
+                )
+                for worker in active_workers
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            if errors:
+                retry_rounds += 1
+                quarantined_devices.extend(
+                    self._handle_worker_errors(
+                        errors,
+                        operation="stage1_rollout_window",
+                    )
+                )
+                continue
+            if any(result is None for result in results):
+                raise RuntimeError(
+                    "Stage-1 rollout workers stopped without completing "
+                    "the pending global episodes"
+                )
+
         wall_seconds = time.time() - wall_t0
         timing_after = self._timing_snapshot()
         model_forward_seconds = max(
@@ -297,12 +421,6 @@ class Stage1ParallelRunner:
             int(timing_after.get("model_forward_calls", 0))
             - int(timing_before.get("model_forward_calls", 0)),
         )
-
-        if errors:
-            # Re-raise the first error so the caller sees the same traceback
-            # path as a single-GPU failure would produce.
-            _, exc = errors[0]
-            raise exc
 
         flat: List[EpisodeRollout] = []
         for g, r in enumerate(results):
@@ -317,11 +435,20 @@ class Stage1ParallelRunner:
             window_idx=window_idx,
             episodes_per_worker=(total_episodes // n_workers if n_workers else 0),
             wall_seconds=wall_seconds,
-            per_worker_seconds=list(per_worker_wall),
-            per_worker_episode_counts=[len(a) for a in assignments],
-            devices=[str(w.device) for w in self.workers],
+            per_worker_seconds=[
+                float(worker_wall[id(worker)])
+                for worker in initial_workers
+            ],
+            per_worker_episode_counts=[
+                int(worker_episode_counts[id(worker)])
+                for worker in initial_workers
+            ],
+            devices=[str(worker.device) for worker in initial_workers],
             model_forward_seconds=model_forward_seconds,
             model_forward_calls=model_forward_calls,
+            pool_generation=int(self.pool_generation),
+            retry_rounds=int(retry_rounds),
+            quarantined_devices=list(quarantined_devices),
         )
 
         # Determinism signature over the window's rollouts in GLOBAL order: a hash
