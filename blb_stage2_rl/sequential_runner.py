@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, 
 import numpy as np
 import torch
 
+from elastic_gpu import raise_if_elastic_gpu_restart_requested
 from report_format_utils import format_elapsed as _seq_fmt_elapsed
 from report_format_utils import progress_bar as _seq_progress_bar
 from rl_data_points import (
@@ -63,6 +64,78 @@ from .sequential_policy import (
 
 if TYPE_CHECKING:
     from .statistical_constraints import BaselineReference
+
+
+CUDA_RNG_ROLE_REGISTRY_VERSION = 1
+
+
+def merge_cuda_rng_role_registry(
+        previous_registry: Optional[Sequence[Any]],
+        active_role_states: Sequence[Any],
+        ) -> List[Any]:
+    """Update active logical roles while retaining temporarily absent roles."""
+    registry = list(previous_registry or ())
+    for role_index, state in enumerate(active_role_states):
+        if role_index < len(registry):
+            registry[role_index] = state
+        else:
+            registry.append(state)
+    return registry
+
+
+def resolve_cuda_rng_role_registry(
+        checkpoint: Mapping[str, Any],
+        *,
+        active_role_count: int,
+        new_role_state_factory: Callable[[int], Any],
+        ) -> Tuple[List[Any], List[Any]]:
+    """Resolve active CUDA RNG streams without tying them to physical GPUs."""
+    current_count = int(active_role_count)
+    if current_count < 0:
+        raise ValueError("active CUDA RNG role count must be non-negative")
+
+    stored_registry = checkpoint.get("cuda_rng_state_by_role")
+    if stored_registry is None:
+        legacy_states = checkpoint.get("cuda_rng_state_all")
+        if legacy_states is None:
+            if current_count == 0:
+                return [], []
+            raise RuntimeError("layerwise checkpoint CUDA RNG state is missing")
+        registry = list(legacy_states)
+        if len(registry) != current_count:
+            raise RuntimeError(
+                "legacy layerwise checkpoint GPU count changed: "
+                f"checkpoint={len(registry)}, current={current_count}; "
+                "exact CUDA RNG role mapping is unavailable"
+            )
+        return registry, list(registry)
+
+    version = int(checkpoint.get("cuda_rng_role_registry_version", 0) or 0)
+    if version != CUDA_RNG_ROLE_REGISTRY_VERSION:
+        raise RuntimeError(
+            "unsupported layerwise checkpoint CUDA RNG role registry "
+            f"version: {version}"
+        )
+    registry = list(stored_registry)
+    saved_active_count = int(checkpoint.get(
+        "cuda_rng_active_role_count", len(registry),
+    ))
+    if saved_active_count < 0 or saved_active_count > len(registry):
+        raise RuntimeError(
+            "layerwise checkpoint CUDA RNG active role count is invalid"
+        )
+    if current_count == 0 and saved_active_count > 0:
+        raise RuntimeError(
+            "layerwise checkpoint requires CUDA but no healthy GPU is visible"
+        )
+    if current_count > 0 and saved_active_count == 0:
+        raise RuntimeError(
+            "layerwise checkpoint was created without CUDA; "
+            "changing the training backend cannot preserve exact results"
+        )
+    while len(registry) < current_count:
+        registry.append(new_role_state_factory(len(registry)))
+    return registry, list(registry[:current_count])
 
 
 def _normalize_supported_rl_algo(value: Any, *, context: str = "rl_algo") -> str:
@@ -4278,6 +4351,8 @@ def _run_layerwise_training_branch(
     resumed_structured_run_id: Optional[str] = None
     resumed_ppo_update_count = 0
     resume_checkpoint: Optional[Mapping[str, Any]] = None
+    cuda_rng_role_registry: List[Any] = []
+    resumed_active_cuda_rng_states: Optional[List[Any]] = None
     planned_total_episodes = requested_total_episodes
     if effective_resume_path and os.path.isfile(effective_resume_path):
         try:
@@ -4295,6 +4370,21 @@ def _run_layerwise_training_branch(
             algorithm_revision=algorithm_revision,
             algorithm_contract_hash=algorithm_contract_hash,
             run_context_hash=run_context_hash,
+        )
+        active_cuda_role_count = (
+            int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
+        )
+        cuda_rng_role_registry, resumed_active_cuda_rng_states = (
+            resolve_cuda_rng_role_registry(
+                checkpoint,
+                active_role_count=active_cuda_role_count,
+                new_role_state_factory=lambda role_index: (
+                    torch.Generator(device=f"cuda:{role_index}")
+                    .manual_seed(int(train_cfg.seed))
+                    .get_state()
+                    .cpu()
+                ),
+            )
         )
         resume_checkpoint = checkpoint
         start_episode = int(checkpoint.get("episode", 0))
@@ -4507,13 +4597,9 @@ def _run_layerwise_training_branch(
     if resume_checkpoint is not None:
         if resume_checkpoint.get("torch_rng_state") is not None:
             torch.set_rng_state(resume_checkpoint["torch_rng_state"].cpu())
-        if (
-                torch.cuda.is_available()
-                and resume_checkpoint.get("cuda_rng_state_all") is not None
-        ):
-            torch.cuda.set_rng_state_all([
-                state.cpu() for state in resume_checkpoint["cuda_rng_state_all"]
-            ])
+        if resumed_active_cuda_rng_states is not None:
+            for role_index, state in enumerate(resumed_active_cuda_rng_states):
+                torch.cuda.set_rng_state(state.cpu(), device=role_index)
         if resume_checkpoint.get("numpy_rng_state") is not None:
             np.random.set_state(resume_checkpoint["numpy_rng_state"])
         if resume_checkpoint.get("python_rng_state") is not None:
@@ -4730,6 +4816,7 @@ def _run_layerwise_training_branch(
             strict_best: Optional[Mapping[str, Any]],
             convergence_state: Optional[Mapping[str, Any]],
             ) -> None:
+        nonlocal cuda_rng_role_registry
         best_payload = dict(strict_best or {})
         checkpoint_best_action = best_payload.get("full_vector")
         checkpoint_best_group = build_reloadable_best_group(best_payload)
@@ -4740,6 +4827,18 @@ def _run_layerwise_training_branch(
         diagnostics_jsonl_sizes = diag_recorder.committed_jsonl_sizes()
         store_file_fingerprints = fingerprint_tracker.fingerprints(
             checkpoint_file_specs(candidate_store_size, diagnostics_jsonl_sizes)
+        )
+        active_cuda_rng_states = (
+            [
+                state.cpu()
+                for state in torch.cuda.get_rng_state_all()
+            ]
+            if torch.cuda.is_available()
+            else []
+        )
+        cuda_rng_role_registry = merge_cuda_rng_role_registry(
+            cuda_rng_role_registry,
+            active_cuda_rng_states,
         )
         checkpoint = {
             "policy": policy.state_dict(),
@@ -4761,9 +4860,10 @@ def _run_layerwise_training_branch(
             "structured_run_id": structured_run_id,
             "ppo_update_count": int(ppo_update_counter),
             "torch_rng_state": torch.get_rng_state(),
-            "cuda_rng_state_all": (
-                torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-            ),
+            "cuda_rng_state_all": active_cuda_rng_states or None,
+            "cuda_rng_role_registry_version": 1,
+            "cuda_rng_state_by_role": cuda_rng_role_registry,
+            "cuda_rng_active_role_count": len(active_cuda_rng_states),
             "numpy_rng_state": np.random.get_state(),
             "python_rng_state": random.getstate(),
             "rl_variant": rl_variant,
@@ -5182,6 +5282,7 @@ def _run_layerwise_training_branch(
             strict_best=strict_best,
             convergence_state=metrics.get("convergence_state"),
         )
+        raise_if_elastic_gpu_restart_requested()
         status.update_after_ppo_update(
             int(ppo_update_counter),
             {
