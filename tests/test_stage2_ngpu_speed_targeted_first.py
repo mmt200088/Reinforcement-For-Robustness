@@ -61,7 +61,13 @@ class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
 
         self.assertIn('RUN_STAGE2="${RUN_STAGE2:-${ARTIFACT_DIR}/stage2}"', script)
         self.assertIn('"${RUN_STAGE2}/LATEST_PID"', script)
-        self.assertIn('"${RUN_STAGE2}/bert base mrpc/run.pid"', script)
+        self.assertIn('MODEL_TYPE="${MODEL_TYPE:-bert-base}"', script)
+        self.assertIn('MODEL_DIR_LABEL="${MODEL_TYPE//-/ }"', script)
+        self.assertIn('"${RUN_STAGE2}/${MODEL_DIR_LABEL} mrpc/run.pid"', script)
+        self.assertIn(
+            '"${persistent_root}/rl/${MODEL_TYPE}/mrpc/LATEST_PID"',
+            script,
+        )
         self.assertIn('cat "${RUN_STAGE2}/LATEST_RUN_DIR"', script)
         self.assertIn(
             'STAGE1_RECORD_SOURCE="${STAGE1_RECORD_SOURCE:-Parting Chapter/stage1/record}"',
@@ -104,6 +110,7 @@ class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
                 "MANY_WORKERS_PER_DEVICE": "3",
                 "POLICY_DEVICE": "cpu",
                 "DYNAMIC_ASSIGNMENT": "0",
+                "MODEL_TYPE": "bert-large",
                 "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
             })
             proc = subprocess.run(
@@ -140,6 +147,7 @@ class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
         self.assertIn("--stage2-workers-per-device 3", many_command)
         for expected in (
             "--stage2-fixed-config-source all4",
+            "--model-type bert-large",
             "--blb-v3-decision-granularity layer",
             "--blb-v3-reward-design robust_constrained",
             "--batch-size 64",
