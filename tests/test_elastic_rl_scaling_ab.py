@@ -41,6 +41,7 @@ class ElasticRLScalingABTests(unittest.TestCase):
                 "episode": 0,
                 "total_reward": reward,
                 "terminal_probe_wall_seconds": timestamp,
+                "terminal_probe_speedup": timestamp,
                 "terminal_probe_devices": [device],
                 "terminal_probe_trial_indices": [[0, 1, 2, 3, 4]],
                 "fresh_trials": {
