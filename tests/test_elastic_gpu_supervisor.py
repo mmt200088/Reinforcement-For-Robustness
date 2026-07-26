@@ -33,6 +33,10 @@ class HealthResolverTest(unittest.TestCase):
         self.assertEqual(resolved.healthy_tokens, ("0", "1", "2", "4"))
         self.assertEqual(resolved.quarantined_tokens, ("3",))
         self.assertEqual(resolved.logical_device_spec, "0,1,2,3")
+        self.assertEqual(
+            resolved.healthy_visibility_tokens,
+            ("GPU-a", "GPU-b", "GPU-c", "GPU-e"),
+        )
 
     def test_explicit_index_subset_preserves_requested_order(self):
         resolved = resolve_health_snapshot(
@@ -182,7 +186,7 @@ class RecoveryMonitorTest(unittest.TestCase):
 
         monitor.poll_once()
 
-        self.assertEqual(canary_calls, ["4"])
+        self.assertEqual(canary_calls, ["GPU-e"])
         self.assertEqual(recovered, ["4"])
 
 
@@ -207,7 +211,7 @@ class SupervisorRestartTest(unittest.TestCase):
                 if result.returncode == ELASTIC_GPU_RESTART_EXIT_CODE:
                     (logs / "elastic_gpu_failure.json").write_text(
                         '{"record_type":"elastic_gpu_failure_v1",'
-                        '"physical_device":"1"}\n',
+                        '"physical_device":"GPU-b"}\n',
                         encoding="utf-8",
                     )
                 return result
@@ -231,11 +235,11 @@ class SupervisorRestartTest(unittest.TestCase):
         self.assertEqual(len(launches), 2)
         self.assertEqual(
             launches[0][1]["CUDA_VISIBLE_DEVICES"],
-            "0,1,2,4",
+            "GPU-a,GPU-b,GPU-c,GPU-e",
         )
         self.assertEqual(
             launches[1][1]["CUDA_VISIBLE_DEVICES"],
-            "0,2,4",
+            "GPU-a,GPU-c,GPU-e",
         )
         self.assertEqual(
             launches[1][0][-2:],
