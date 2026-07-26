@@ -228,8 +228,8 @@ class SumTruncationKHelperTests(unittest.TestCase):
                 vec = builder(num_layers=num_layers)
                 s = sum_truncation_k_in_action(vec, num_layers)
                 a = avg_truncation_k_in_action(vec, num_layers)
-                # 5 effective K slots per layer for L>=1; layer-0 block-1 K is excluded.
-                eff_count = num_layers * 5 - 1
+                # Every layer exposes the same five effective K slots.
+                eff_count = num_layers * 5
                 self.assertAlmostEqual(s / eff_count, a, places=6)
 
 

@@ -154,7 +154,7 @@ def _sample_independent_gaussian(reference: Tensor, std: float) -> Tensor:
 # stochastic_ring 是显式启用的备选数值模拟。数学：
 #   binary：trunc(x · 2^k) / 2^k         （保留 k 位二进制小数；CKKS 默认）
 #   decimal：trunc(x · 10^k) / 10^k      （保留 k 位十进制小数）
-# k=None  → 不截断（用于"首层 Block 1 不存在"等需要跳过的位置）。
+# k=None  → 不截断（仅用于明确关闭某个 truncation 点）。
 
 def _apply_truncation(
         x: Tensor,
@@ -783,8 +783,11 @@ class Block1NoiseConfig:
     mean_result_rescale: Optional[NoisePoint] = None
     square_result_rescale: Optional[NoisePoint] = None
     var_result_rescale: Optional[NoisePoint] = None
+    # False keeps the Block 1 arithmetic clean while retaining the same
+    # configurable truncation point.  Layer 0 uses this K-only mode.
+    noise_enabled: bool = True
     # PPTI MPC↔HE 转换的小数截断：施加在 Block 1 末尾（var, rsqrt 之前）。
-    # k=None ⇒ 不截断（可用于"首层 Block 1 缺失"的语义）。
+    # k=None ⇒ 不截断。
     output_truncation_k: Optional[int] = None
     output_truncation_mode: str = "binary"
     output_truncation_ring_bits: int = 43
@@ -814,6 +817,7 @@ def make_block1_default_config(
         mean_rescale_sf: Optional[int] = None,
         square_rescale_sf: Optional[int] = None,
         var_rescale_sf: Optional[int] = None,
+        noise_enabled: bool = True,
         output_truncation_k: Optional[int] = None,
         output_truncation_mode: str = "binary",
         rotation_after_gelu_out_fresh: bool = False,
@@ -829,13 +833,15 @@ def make_block1_default_config(
     默认 N=8192（BLB Block 1 推荐表）；也可以传 N=16384 等动态调整。
 
     ``output_truncation_k``：Block 1 末尾（var, rsqrt 之前）的 PPTI 截断位数。
-    None ⇒ 不截断（用于"首层 Block 1 缺失"的语义）。
+    None ⇒ 不截断。``noise_enabled=False`` 保留此截断但关闭全部 Block 1
+    Gaussian/rotation 噪声，用于 layer 0 的 K-only 配置。
     """
     cfg = Block1NoiseConfig(
         gelu_out_fresh=NoisePoint("fresh", int(gelu_out_sf), int(N)),
         wffn2_encode=NoisePoint("encoding", int(wffn2_sf), int(N)),
         mean_inv_d_encode=NoisePoint("encoding", int(mean_inv_d_sf), int(N)),
         var_inv_d_encode=NoisePoint("encoding", int(var_inv_d_sf), int(N)),
+        noise_enabled=bool(noise_enabled),
         output_truncation_k=(int(output_truncation_k) if output_truncation_k is not None else None),
         output_truncation_mode=str(output_truncation_mode),
         rotation_after_gelu_out_fresh=bool(rotation_after_gelu_out_fresh),
@@ -1177,6 +1183,12 @@ def _make_block1_ffn2_forward(linear_module: nn.Linear, cfg: Block1NoiseConfig):
     def block1_ffn2_forward(hidden_states):
         if hidden_states is None:
             return hidden_states
+        if not bool(getattr(cfg, "noise_enabled", True)):
+            return nn.functional.linear(
+                hidden_states,
+                linear_module.weight,
+                linear_module.bias,
+            )
         # 1. fresh on Gelu_out
         x = _sample_and_add_gaussian_for_point(
             hidden_states, cfg.gelu_out_fresh,
@@ -1266,11 +1278,14 @@ class NoisyBlock1LayerNorm(nn.Module):
         D = int(x.shape[-1])
         cfg = self.cfg
         cfg2 = self.cfg2
+        noise_enabled = (
+            cfg is not None and bool(getattr(cfg, "noise_enabled", True))
+        )
 
         # ===================== Block 1: head =====================
         # ===== mean = sum_x · (1/D) =====
         sum_x = x.sum(dim=-1, keepdim=True)                            # [B, S, 1]
-        if cfg is not None:
+        if noise_enabled:
             # encode on 1/D：模拟 CKKS 真实密文情况——
             # 以操作数矩阵 x 同形 [B, S, H] 采样 encode 噪声 ε_{b,s,h}，
             # 然后加标量 1/D（不再是同一个标量 ε）。
@@ -1291,7 +1306,7 @@ class NoisyBlock1LayerNorm(nn.Module):
 
         # ===== squaring =====
         sq = x_centered * x_centered                                   # ct*ct: (x − μ)²，[B, S, H]
-        if cfg is not None and cfg.square_result_rescale is not None:
+        if noise_enabled and cfg.square_result_rescale is not None:
             sq = _sample_and_add_gaussian_for_point(
                 sq, cfg.square_result_rescale,
             )
@@ -1304,7 +1319,7 @@ class NoisyBlock1LayerNorm(nn.Module):
 
         # ===== variance = sum_sq · (1/D) =====
         sum_sq = sq.sum(dim=-1, keepdim=True)                          # [B, S, 1]
-        if cfg is not None:
+        if noise_enabled:
             noisy_inv_d_var = _sample_gaussian_for_point(sq, cfg.var_inv_d_encode)
             noisy_inv_d_var.add_(1.0 / D)
             var = sum_sq * noisy_inv_d_var                             # [B, S, H]，每 slot 独立噪声
@@ -1320,8 +1335,8 @@ class NoisyBlock1LayerNorm(nn.Module):
             var = _apply_configured_truncation(var, cfg)
 
         # ===== Block 1 / Block 2 边界：rsqrt 非线性，无噪 =====
-        # 若 Block 1 已启用 → var 是 [B, S, H]，inv_std 也 [B, S, H]
-        # 若仅 Block 2 启用 → var 是 [B, S, 1]，inv_std 也 [B, S, 1]
+        # 若 Block 1 噪声启用 → var 是 [B, S, H]，inv_std 也 [B, S, H]
+        # 若仅启用 K 或 Block 2 → var 是 [B, S, 1]，inv_std 也 [B, S, 1]
         inv_std = torch.rsqrt(var + self.eps)
 
         # ===================== Block 2: tail =====================
@@ -3969,8 +3984,9 @@ class ReversibleLayerHandler:
             f"square={cfg.square_result_rescale.scaling_factor if cfg.square_result_rescale else 'off'}, "
             f"var={cfg.var_result_rescale.scaling_factor if cfg.var_result_rescale else 'off'}"
         )
+        mode_label = "噪声+截断" if bool(getattr(cfg, "noise_enabled", True)) else "仅截断"
         _print_blb_install(
-            f"已为 {len(selected)} 层启用 BLB Block 1 噪声 "
+            f"已为 {len(selected)} 层启用 BLB Block 1 {mode_label} "
             f"(N={cfg.gelu_out_fresh.N}, "
             f"fresh_gelu_out={cfg.gelu_out_fresh.scaling_factor}, "
             f"encode_wffn2={cfg.wffn2_encode.scaling_factor}, "

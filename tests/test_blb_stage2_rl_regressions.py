@@ -760,7 +760,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
         class FakeHandler:
             def __init__(self, decoded):
-                self.block1_cfg_per_layer = {1: decoded.block1_cfgs[1]}
+                self.block1_cfg_per_layer = dict(decoded.block1_cfgs)
                 self.block2_cfg_per_layer = dict(decoded.block2_cfgs)
                 self.block3_cfg_per_layer = dict(decoded.block3_cfgs)
                 self.block4_cfg_per_layer = dict(decoded.block4_cfgs)
@@ -768,7 +768,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
 
             def get_active_blb_noise_layers(self):
                 return {
-                    "block1": {1},
+                    "block1": {0, 1},
                     "block2": {0, 1},
                     "block3": {0, 1},
                     "block4": {0, 1},
@@ -779,12 +779,12 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         class FakeBridge:
             def installed_layers(self):
                 return {
-                    0: {"block2", "block3", "block4", "block5"},
+                    0: {"block1", "block2", "block3", "block4", "block5"},
                     1: {"block1", "block2", "block3", "block4", "block5"},
                 }
 
         decoded = FakeDecoded()
-        decoded.block1_cfgs = {1: object()}
+        decoded.block1_cfgs = {0: object(), 1: object()}
         decoded.block2_cfgs = {0: object(), 1: object()}
         decoded.block3_cfgs = {0: object(), 1: object()}
         decoded.block4_cfgs = {0: object(), 1: object()}
@@ -803,7 +803,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         result = runner._verify_model_installation(FakeBridge(), decoded)
 
         self.assertTrue(result["model_will_use_selected_cfg"])
-        self.assertEqual(result["expected_active_layers"]["block1"], [1])
+        self.assertEqual(result["expected_active_layers"]["block1"], [0, 1])
         self.assertEqual(result["expected_active_layers"]["block3"], [0, 1])
         self.assertEqual(result["expected_active_layers"]["first_input"], [])
 
@@ -1716,8 +1716,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             model=TinyModel(),
             probe_batches=[probe],
             rescale_bridge=bridge,
-            # 4 blocks (block2/3/4/5) * 100 bits each. Layer-0 block1 is absent
-            # because the first HE configuration is treated as lossless.
+            # RO still evaluates 4 SF/fusion blocks. Layer-0 Block1 K is
+            # model-side only and does not add a replan request.
             baseline=BaselineCostStats(total_bits_sum=400, total_fusion_count=0, avg_k=13.0),
             reward_weights=RewardWeights(),
             acc_threshold=0.5,
@@ -1861,7 +1861,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        # 5 blocks * 12 layers - 1 = 59; layer-0 block1 is intentionally absent.
+        # RO has 59 SF/fusion requests; model materialization separately
+        # contains all 60 K actions, including layer-0 Block1.
         self.assertEqual(signals.valid_block_count, 59)
         self.assertEqual(signals.invalid_block_count, 0)
 
@@ -1897,7 +1898,8 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         signals = aggregate_optimizer_signals(outputs)
 
         self.assertFalse(signals.any_invalid, signals.invalid_chains)
-        # 5 blocks * 12 layers - 1 = 59; layer-0 block1 is intentionally absent.
+        # RO has 59 SF/fusion requests; model materialization separately
+        # contains all 60 K actions, including layer-0 Block1.
         self.assertEqual(signals.valid_block_count, 59)
         self.assertEqual(signals.invalid_block_count, 0)
         self.assertEqual(

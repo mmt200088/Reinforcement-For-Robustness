@@ -44,10 +44,8 @@ class _Sig:
 
 def _layerwise_actions(*, block4_fusion=0, k=13):
     actions = []
-    for layer_idx in range(12):
-        k_by_block = {2: k, 3: k, 4: k, 5: k}
-        if layer_idx:
-            k_by_block[1] = k
+    for _layer_idx in range(12):
+        k_by_block = {1: k, 2: k, 3: k, 4: k, 5: k}
         actions.append(layerwise_action.LayerwiseDecodedAction(block4_fusion, k_by_block))
     return actions
 
@@ -92,7 +90,7 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
         self.assertAlmostEqual(fusion.compute_saving, 1.0 / 12.0)
         self.assertEqual(fusion.communication_saving, 0.0)
         self.assertEqual(communication.compute_saving, 0.0)
-        self.assertAlmostEqual(communication.communication_saving, 2.0 / 295.0)
+        self.assertAlmostEqual(communication.communication_saving, 2.0 / 300.0)
         self.assertEqual(fusion.robust_floor, 0.0)
         self.assertEqual(communication.robust_floor, 0.0)
         self.assertNotAlmostEqual(
@@ -134,7 +132,7 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
                     msg=f"layer={layer_idx} block={block_idx}",
                 )
                 changed += 1
-        self.assertEqual(changed, 59)
+        self.assertEqual(changed, 60)
 
     def test_actual_k_values_not_category_order_drive_cost(self):
         actions = _layerwise_actions(block4_fusion=0, k=8)

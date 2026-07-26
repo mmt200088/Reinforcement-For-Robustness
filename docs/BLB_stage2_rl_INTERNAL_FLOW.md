@@ -285,9 +285,14 @@ Block3 与 softmax/attention polynomial degree 有关。动作空间按最多 4 
 
 Block5 与 GELU polynomial degree 有关。当前只按 1、2、4 三类处理；如果传入其他值，会归到最接近的支持值。GELU power rescale 和 coeff mul rescale 的实际长度由 degree 决定。
 
-### 6.5 首层 Block1 的特殊处理
+### 6.5 首层 Block1 的处理
 
-首层 Block1 缺失输出 truncation 的语义，所以 layer 0 的 Block1 `output_truncation_k` 会被强制设成 `None`。动作向量里仍有这个槽位，但 decode 成 cfg 时不会作为有效 K 使用。计算平均 K 时也会跳过这个位置。
+Layer 0 的 Block1 SF/fusion 链仍不进入 Rescale_optimizer，但
+`output_truncation_k` 与其它层一样是有效 RL 动作。标准 decode 会物化
+`noise_enabled=False` 的 Block1 cfg；bridge 将其安装到 layer 0，模型不采样
+任何 Block1 Gaussian/rotation 噪声，只在 LayerNorm variance 进入 rsqrt 前
+调用统一的 configured-truncation executor。平均 K、通信成本和 PPO
+log-prob 均包含该位置。
 
 ### 6.6 解码结果
 
@@ -440,7 +445,7 @@ env 把 action vector 解码为每层 Block1-5 cfg 和 first-input SF。
 2. max_sfs 表 lookup 和 fallback。
 3. SF snap 到合法 noise variance table。
 4. Block3/Block5 degree-aware 截断。
-5. 首层 Block1 K 置空。
+5. 首层 Block1 SF 不进入 RO，但 K 物化为 truncation-only cfg。
 
 ### 10.4 构造 Rescale 请求
 

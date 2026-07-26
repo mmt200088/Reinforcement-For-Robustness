@@ -41,8 +41,9 @@ block：
 | 4     | softmax 输出 + V → softmax×V → merge mask → Wo → post-attn LN head     | `attention.output.LayerNorm` head             |
 | 5     | post-attn LN tail → Wffn1 → GELU 多项式                                | `attention.output.LayerNorm` tail + GELU      |
 
-首层（PyTorch layer 0 进入 attention 之前）没有 Block 1 / Block 2 前半部分；
-所以 Block 1 在那里没有 truncation；Block 2 末尾 Q·K^T 还是要 truncation。
+首层的 Block 1 不启用 SF/Gaussian/rotation 噪声，也不进入 RO replan；但其
+LayerNorm variance → rsqrt 边界存在，因此 Block 1 truncation K 与其它层一样
+由 RL 选择并真实执行。Block 2 末尾 Q·K^T 也照常 truncation。
 
 ### 1.2 CKKS 噪声四类
 
@@ -769,11 +770,9 @@ Local_program/
    后续优化重点是减少每个 episode 内重复 graph/config 调用，或让 `Rescale_optimizer`
    支持一次性 batch。
 
-2. **首层特殊情况**：Layer 0 没有 Block 1（`output_truncation_k` 必须置 None）。
-   action_space 上 layer 0 的 K dim 应该被屏蔽（或者强制 idx=K_LEVELS.index(13)
-   再不让它影响 reward）。**实现时建议**：layer 0 Block 1 部分仍出动作但
-   `build_block1_cfg_from_action` 时强制 `output_truncation_k=None`。这样
-   policy network 不需要变维度。
+2. **首层特殊情况**：Layer 0 Block 1 的 SF/noise 槽位无效，但
+   `output_truncation_k` 有效。实现物化 `noise_enabled=False` 的 K-only cfg，
+   由统一 bridge 安装，并在 variance → rsqrt 前调用与其它层相同的截断器。
 
 3. **rotation flags 是输出而非输入**：注意 §3.2 流程里 RL 出动作 → 调
    optimizer → 用 optimizer 输出反写 rotation flags → 装模型。如果你颠倒顺序

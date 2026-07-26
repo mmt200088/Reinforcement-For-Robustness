@@ -1168,10 +1168,10 @@ class BLBActionFinalEvaluationModule:
         expected_all = set(range(total_layers))
         expected = {
             # Mirror BLBNoiseRLBridge.apply semantics:
-            #   * layer-0 block1 is intentionally absent,
+            #   * layer-0 block1 is installed as truncation-only,
             #   * Block3 baseline SF plus selected K is installed on every layer,
             #   * first_input noise remains deprecated and absent.
-            "block1": set(range(1, total_layers)),
+            "block1": expected_all,
             "block2": expected_all,
             "block3": expected_all,
             "block4": expected_all,
@@ -1476,7 +1476,7 @@ class BLBActionFinalEvaluationModule:
         self._clear_legacy_noise()
         try:
             # NOTE: first_input fresh deprecated（layer-0 input 视为无损 HE 配置）；
-            # layer-0 block1 也不安装。decoded.block1_cfgs 已不含 layer 0；
+            # layer-0 block1 以 noise-disabled 的 K-only cfg 安装；
             # decoded.first_input_sf 仍为占位（=0），不传给 bridge。
             bridge.apply(
                 block1_cfgs=decoded.block1_cfgs,

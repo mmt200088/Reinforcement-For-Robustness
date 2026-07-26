@@ -436,14 +436,14 @@ def read_baseline_response(
             )
         results.append(_parse_entry(rec, idx))
 
-    # 语义更新（2026-05）：(block=1, layer=0) 不再发给 RO（layer-0 block1
-    # 噪声整体不安装；第一个 HE 配置视为无损）。期望 results 长度 = 5L - 1。
-    # 若 RO 仍然返回 (1, 0) 这条记录，不算错误——会被接受但忽略。
+    # (block=1, layer=0) 没有 SF/fusion replan request，因此 RO 结果长度仍为
+    # 5L-1。该位置的 model-side K-only cfg 不依赖此 handover。若 RO 仍返回
+    # (1, 0)，兼容接收但忽略。
     expected_n = 5 * num_layers - 1
     if len(results) not in (expected_n, expected_n + 1):
         raise BaselineHandoverError(
             f"baseline 响应 results 长度 {len(results)} != 期望 "
-            f"{expected_n}（5*num_layers - 1，已排除 layer-0 block1）"
+            f"{expected_n}（5*num_layers - 1，已排除 layer-0 block1 SF request）"
         )
 
     seen = set()
@@ -895,7 +895,8 @@ def load_static_skeletons_baseline(
 
     Returns:
         ``StaticSkeletonsBaseline``。``per_block_layer`` 不包含 (1, 0)
-        —— layer-0 block1 噪声整体不安装。
+        —— layer-0 Block1 没有 SF/fusion baseline；其 K-only model cfg 由
+        action decoder 独立物化。
 
     Raises:
         FileNotFoundError: archive 路径不存在
@@ -924,7 +925,7 @@ def load_static_skeletons_baseline(
         # Block3 SF/fusion is baseline-owned: it is read from the same RO archive
         # as every other block even though the policy only chooses its truncation K.
         for block_idx in (1, 2, 3, 4, 5):
-            # 语义对齐：layer-0 block 1 不安装噪声，跳过抽取
+            # Layer-0 Block1 没有 SF/fusion baseline，跳过 RO archive 抽取。
             if int(layer_idx) == 0 and int(block_idx) == 1:
                 continue
             graph_key = static_skeletons_graph_key(
@@ -1098,16 +1099,14 @@ def static_skeletons_baseline_to_action(
             if (li, int(block_idx), str(field_name)) not in active_rescale_slots:
                 action_vec[int(li * layer_dim + field_offset)] = 0
 
-    # BaselineCostStats（avg_k 反映 per-block baseline K：B1=13, B2=10, B3=13, B4=10, B5=13）。
-    # Layer 0 没有 block 1（首层无前置 FFN2），所以 K 槽位总数 = 4·L + (L-1) ≈ 5L-1。
-    # RO 不参与 K，所以 baseline avg_k 仅由 BASELINE_K_BY_BLOCK 决定。
+    # BaselineCostStats（avg_k 反映 per-block baseline K：B1=13, B2=10,
+    # B3=13, B4=10, B5=13）。RO 不参与 K；model/policy 侧每层都有五个
+    # K，包括 layer-0 Block1 的 truncation-only cfg。
     from .action_space import BASELINE_K_BY_BLOCK
     k_sum = 0.0
     k_count = 0
     for li in range(L):
         for b in (1, 2, 3, 4, 5):
-            if li == 0 and b == 1:
-                continue  # layer 0 block 1 K is forced None
             k_sum += float(BASELINE_K_BY_BLOCK.get(int(b), max(K_LEVELS)))
             k_count += 1
     baseline_avg_k = (k_sum / max(k_count, 1)) if k_count else float(max(K_LEVELS))

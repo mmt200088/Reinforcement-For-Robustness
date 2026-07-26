@@ -51,7 +51,7 @@ class GlueNoiseSeedWiringStaticTest(unittest.TestCase):
     "torch required for the GLUE BLB decode helper",
 )
 class GlueBoostInstallTest(unittest.TestCase):
-    def test_calibrated_baseline_slots_round_trip_ineffective_block1_k(self):
+    def test_calibrated_baseline_slots_round_trip_layer0_block1_k(self):
         import numpy as np
 
         from blb_stage2_rl.action_io import (

@@ -25,6 +25,24 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         self.assertIn("materialize_decoded_action", glue)
         self.assertNotIn("_apply_optimizer_outputs_to_decoded(", glue)
 
+    def test_layer0_block1_k_is_materialized_installed_and_verified(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        action_space = (
+            repo / "blb_stage2_rl" / "action_space.py"
+        ).read_text(encoding="utf-8")
+        bridge = (repo / "blb_rl_bridge.py").read_text(encoding="utf-8")
+        paean = (
+            repo / "Paean" / "blb_action_eval.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("noise_enabled=(li != 0)", action_space)
+        self.assertIn('"output_truncation_k":', action_space)
+        self.assertNotIn(
+            "li: cfg for li, cfg in block1_cfgs.items() if int(li) != 0",
+            bridge,
+        )
+        self.assertIn('"block1": expected_all', paean)
+
     def test_install_auditors_consume_the_canonical_materialized_config(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
         for relative in (

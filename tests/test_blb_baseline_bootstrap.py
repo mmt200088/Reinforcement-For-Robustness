@@ -399,7 +399,7 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
         self.assertEqual(baseline.aggregate_valid_block_count, 9)
         self.assertIn((3, 0), baseline.per_block_layer)
         self.assertIn((3, 1), baseline.per_block_layer)
-        action_vec, max_sfs, _stats, _diag = static_skeletons_baseline_to_action(
+        action_vec, max_sfs, stats, _diag = static_skeletons_baseline_to_action(
             baseline,
             snap_sf_to_noise_table=False,
         )
@@ -429,6 +429,17 @@ class BLBBaselineBootstrapTests(unittest.TestCase):
                     (layer_idx, block_idx, layer_block.graph_key, field_name),
                 )
         self.assertNotIn((0, 1, "gelu_out_sf"), values)
+        layer0_block1_k = next(
+            r for r in desc["records"]
+            if (
+                r.get("layer") == 0
+                and r.get("block_index") == 1
+                and r.get("field") == "output_truncation_k"
+            )
+        )
+        self.assertTrue(layer0_block1_k["effective"])
+        self.assertEqual(layer0_block1_k["value"], 13)
+        self.assertAlmostEqual(stats.avg_k, 11.8)
         inactive_rescale = [
             r for r in desc["records"]
             if (
