@@ -54,11 +54,15 @@ the production server mode.
 
 ## Low-Overhead Health Resolution
 
-Startup resolution performs one batched `nvidia-smi` query and launches one
-small CUDA allocation/kernel/synchronize canary per candidate device in
-parallel subprocesses. The slowest canary determines startup latency; devices
-are not checked serially. The resolved physical identifiers, logical remap,
-status, reason, and elapsed time are written to the run manifest.
+Startup resolution performs one batched `nvidia-smi` query for physical index,
+UUID, and `gpu_recovery_action`. A device whose recovery action is not `None`
+is excluded immediately; on the current server this identifies GPU 3 as
+`Reset` without initializing Torch or a CUDA context. A small isolated CUDA
+allocation/kernel/synchronize canary is reserved for ambiguous query results,
+an explicitly requested strict startup audit, and recovery admission. Multiple
+required canaries run in parallel rather than serially. The resolved physical
+identifiers, logical remap, status, reason, and elapsed time are written to the
+run manifest.
 
 There is no periodic health query in the episode, terminal-probe, validation,
 PPO, candidate, checkpoint, or report hot paths. Healthy workers are considered
@@ -72,10 +76,11 @@ status becomes eligible. The monitor never synchronizes a healthy training
 device. Recovery is communicated to the supervisor and applied at the next PPO
 transaction boundary.
 
-Startup health checks have a one-second target budget on the current five-GPU
-server. Background monitoring must add less than 0.5% to profile-off end-to-end
-wall time; otherwise the recovery monitor remains disabled while startup
-filtering and event-driven shrink stay enabled.
+The normal query-only startup check has a 0.5-second target budget on the
+current five-GPU server. Optional isolated canary time is reported separately
+and is never charged to episode throughput. Background monitoring must add less
+than 0.5% to profile-off end-to-end wall time; otherwise the recovery monitor
+remains disabled while startup filtering and event-driven shrink stay enabled.
 
 ## Stable Scientific Work
 
@@ -215,8 +220,8 @@ source. The change is enabled only after:
    restart and the same final state as the no-failure control.
 7. GPU 3 is excluded automatically while it requires reset, with no attempted
    training allocation on that device.
-8. Startup checking meets its one-second target and background monitoring adds
-   less than 0.5% end-to-end wall time.
+8. Query-only startup checking meets its 0.5-second target and background
+   monitoring adds less than 0.5% end-to-end wall time.
 9. Parallel evaluation throughput improves monotonically from one to two to
    four healthy GPUs. End-to-end speedup and parallel efficiency are reported
    against the one-GPU control and compared with the measured Amdahl limit.
