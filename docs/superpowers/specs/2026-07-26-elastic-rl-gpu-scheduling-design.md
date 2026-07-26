@@ -39,7 +39,8 @@ Use a layered, event-driven elastic design:
 
 1. Resolve the healthy device set once before the training process initializes
    CUDA.
-2. Isolate model-evaluation workers in per-device child processes.
+2. Keep one independent model/evaluator state per device and use process
+   isolation where the current implementation already provides it.
 3. Assign stable scientific task identities through a deterministic work
    queue, and restore canonical result order before any reduction or write.
 4. Quarantine a failed secondary worker and retry only unresolved identities.
@@ -137,16 +138,19 @@ scientific fields must remain byte-for-byte or numerically exact.
 
 ## Stage-1 Elastic Validation Pool
 
-Stage-1 moves GPU validation from threads sharing the learner CUDA process to
-persistent per-device worker processes. Absolute episode IDs, action sampling,
-and PPO order remain owned by the parent. Complete episode evaluations are
-dispatched by identity and returned in absolute episode order.
+Stage-1 retains its proven thread scheduler because every worker already owns a
+separate model, handler, environment, and policy replica on one device. Moving
+those objects behind process serialization would repeat BERT/dataset loading
+and could reduce throughput. Absolute episode IDs, action sampling, and PPO
+order remain owned by the parent.
 
-The same quarantine and unresolved-task retry rules apply. The active rollout
-window is capped at the next PPO boundary so a worker-count change cannot move
-an episode across an update. Worker creation, model loading, and validation
-dataset materialization happen outside timed episode execution and are reused
-across windows.
+If one worker reports a classified device failure, completed global episode
+identities from the window remain in memory, that worker is quarantined, and
+only missing episode identities are redistributed over the remaining workers.
+The active rollout window is capped at the next PPO boundary so a worker-count
+change cannot move an episode across an update. If a CUDA failure poisons the
+whole learner process rather than one thread, the supervisor performs the
+transactional restart described below.
 
 ## Learner Failure And Transactional Restart
 
