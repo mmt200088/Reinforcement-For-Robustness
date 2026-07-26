@@ -2230,6 +2230,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
         self.assertIn('"run_context_hash": run_context_hash', branch_source)
         self.assertIn("validate_layerwise_checkpoint_metadata(", branch_source)
+        self.assertIn('"decode_version": LAYERWISE_DECODE_VERSION', branch_source)
         self.assertIn('"cost_model_revision": LAYERWISE_COST_MODEL_REVISION', source)
         self.assertIn('"resource_secondary_epsilon":', branch_source)
         self.assertIn('"compute_axis_denominator":', branch_source)

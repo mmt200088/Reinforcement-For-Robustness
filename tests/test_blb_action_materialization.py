@@ -210,6 +210,16 @@ class ActionMaterializationTests(unittest.TestCase):
         self.assertEqual(result.replan_application["expected_config_count"], 59)
         self.assertEqual(result.replan_application["applied_config_count"], 59)
         self.assertTrue(result.replan_application["model_uses_replan_config"])
+        self.assertEqual(len(result.decoded.block1_cfgs), 12)
+        self.assertEqual(result.decoded.block1_cfgs[0].output_truncation_k, 13)
+        self.assertFalse(result.decoded.block1_cfgs[0].noise_enabled)
+        self.assertTrue(
+            all(
+                cfg.noise_enabled
+                for layer_idx, cfg in result.decoded.block1_cfgs.items()
+                if layer_idx > 0
+            )
+        )
         self.assertEqual(len(result.decoded.block3_cfgs), 12)
         self.assertEqual(
             {cfg.output_truncation_k for cfg in result.decoded.block3_cfgs.values()},

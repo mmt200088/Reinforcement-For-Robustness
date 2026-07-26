@@ -527,10 +527,8 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
 
     signals = SimpleNamespace(any_invalid=False, total_bits_sum=100.0, total_fusion_count=0.0)
     decoded_actions = []
-    for layer_idx in range(12):
-        k_by_block = {2: 13, 3: 13, 4: 13, 5: 13}
-        if layer_idx:
-            k_by_block[1] = 13
+    for _layer_idx in range(12):
+        k_by_block = {1: 13, 2: 13, 3: 13, 4: 13, 5: 13}
         decoded_actions.append(layerwise_action.LayerwiseDecodedAction(1, k_by_block))
     resource = layerwise_action.compute_variable_cost(decoded_actions)
     variable_cost = resource.ppo_resource_score

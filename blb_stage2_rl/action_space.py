@@ -159,7 +159,7 @@ class _BlockFieldSpec:
     fields: Tuple[Tuple[str, str, int], ...]
 
 
-# Block 1（不含首层 K 字段；首层会在 cfg build 时强制 truncation_k=None）
+# Block 1（所有层都包含 K；layer 0 的 SF/noise 字段无效，但 K 真实安装）
 # 2026-05-14 一度删过 ``wffn2_rescale_sf`` / ``square_rescale_sf`` 两个 rescale 槽，
 # 但 CLAUDE.md 的指引是“classify discrepancies as compat-extra/inactive rather than
 # deleting”，所以现在按 compat-extra 复位 —— 槽保留在 action vector 里、参与 registry
@@ -598,7 +598,7 @@ def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
 # Per-block sequential step schedule (for the sequential RL formulation).
 #
 # Episode order (C, 2026-05-30: block 3 excluded from the decided schedule):
-#   step 1:  layer 0, block 2                          -- layer 0 has no block 1
+#   step 1:  layer 0, block 2                          -- legacy schedule omits L0 B1
 #   step 2:  layer 0, block 4                           -- block 3 skipped
 #   step 3:  layer 0, block 5
 #   step 4:  layer 1, block 1
@@ -650,7 +650,8 @@ class BlockStepSpec:
     terminal: bool
 
 
-# layer 0 lives without block 1 -- the layer-0 input goes straight into block 2.
+# This retired blockwise schedule omits layer-0 Block1. The canonical layerwise
+# policy does not: it selects and installs layer-0 Block1 K through a K-only cfg.
 # C (2026-05-30): Block3 has no standalone legacy blockwise step. Its SF/fusion
 # values stay baseline-owned; the active layerwise policy independently selects
 # Block3 K and the terminal decoder installs the resulting Block3 cfg.
@@ -1018,13 +1019,15 @@ def _build_block1_action(
         ) -> Block1ActionSpec:
     """从单层 block1 字段值构建 ``Block1ActionSpec``。
 
-    首层（layer 0）Block 1 缺失（spec §12 风险 #2）→ 强制 truncation_k=None。
+    ``is_first_layer`` 仅保留为调用兼容参数；所有层的 truncation K 都生效。
+    layer 0 是否注入 Block 1 噪声由最终 cfg 的 ``noise_enabled`` 独立控制。
 
     精简后只保留 6 个 RL 槽：``gelu_out_sf / wffn2_sf / mean_inv_d_sf /
-    var_inv_d_sf / mean_rescale_sf / var_rescale_sf``，外加首层依赖的
+    var_inv_d_sf / mean_rescale_sf / var_rescale_sf``，外加每层都生效的
     ``output_truncation_k``。被删除的 ``wffn2_rescale_sf`` 和
     ``square_rescale_sf`` 对应 cfg 字段固定为 None（不安装该处 rescale 噪声）。
     """
+    del layer_idx, is_first_layer
     return Block1ActionSpec(
         gelu_out_sf=int(layer_field_values["gelu_out_sf"]),
         wffn2_sf=int(layer_field_values["wffn2_sf"]),
@@ -1032,7 +1035,7 @@ def _build_block1_action(
         var_inv_d_sf=int(layer_field_values["var_inv_d_sf"]),
         mean_rescale_sf=_optional_int(layer_field_values["mean_rescale_sf"]),
         var_rescale_sf=_optional_int(layer_field_values["var_rescale_sf"]),
-        output_truncation_k=(None if is_first_layer else int(layer_field_values["output_truncation_k"])),
+        output_truncation_k=int(layer_field_values["output_truncation_k"]),
     )
 
 
@@ -1410,17 +1413,23 @@ def action_vector_to_cfgs(
             )
         per_layer_values.append({f"block{b}": dict(v) for b, v in layer_block_values.items()})
 
-        # Block 1：首层 block1 不安装（用户语义：layer 0 没有上游 FFN2，第一个 HE
-        # 配置无损 —— 与 Rescale_optimizer 对齐）。保留 action 向量槽位但不构造 cfg，
-        # 这样下游 (bridge.apply / build_optimizer_requests) 自然跳过 layer 0 block1。
+        # Block 1：所有层都物化 cfg。layer 0 使用同一 truncation K 路径，但
+        # ``noise_enabled=False``，因此不启用历史上被排除的 Gaussian/SF 噪声。
         if only_block in (None, 1):
-            if li == 0:
-                pass  # block1_cfgs 故意不写 layer 0，下游用 .get(0) / dict-not-in 判断
-            else:
-                b1 = _build_block1_action(li, layer_block_values[1], is_first_layer=False)
-                block1_cfgs[li] = build_block1_cfg_from_action(
-                    b1, N=_block_default_N(1, gelu_degree=li_gelu_degree, attn_degree=li_attn_degree),
-                )
+            b1 = _build_block1_action(
+                li,
+                layer_block_values[1],
+                is_first_layer=(li == 0),
+            )
+            block1_cfgs[li] = build_block1_cfg_from_action(
+                b1,
+                N=_block_default_N(
+                    1,
+                    gelu_degree=li_gelu_degree,
+                    attn_degree=li_attn_degree,
+                ),
+                noise_enabled=(li != 0),
+            )
         # Block 2
         if only_block in (None, 2):
             b2 = _build_block2_action(li, layer_block_values[2])
@@ -1485,7 +1494,13 @@ def build_block_cfg_from_field_values(
     if b == 1:
         spec = _build_block1_action(int(layer_idx), fv, is_first_layer=(int(layer_idx) == 0))
         return build_block1_cfg_from_action(
-            spec, N=_block_default_N(1, gelu_degree=gelu_degree, attn_degree=attn_degree) if N is None else int(N),
+            spec,
+            N=_block_default_N(
+                1,
+                gelu_degree=gelu_degree,
+                attn_degree=attn_degree,
+            ) if N is None else int(N),
+            noise_enabled=(int(layer_idx) != 0),
         )
     if b == 2:
         spec = _build_block2_action(int(layer_idx), fv)
@@ -1738,15 +1753,14 @@ def _is_action_field_effective(
         gelu_degree: int,
         profile: str = "mrpc",
         ) -> Tuple[bool, str]:
-    # Layer 0 has no upstream FFN2 → block 1 noise is *not* installed at all,
-    # even though the action vector reserves slots for it (so the policy net
-    # shape stays uniform across layers). Mark every block-1 slot at layer 0
-    # as ineffective so logs / candidate descriptions reflect reality, and so
-    # downstream tooling (bridge.apply, build_optimizer_requests) can filter.
+    # Layer 0 keeps its historical no-noise semantics, but its K slot is now
+    # active and installed through a truncation-only Block 1 cfg.
     if int(layer_idx) == 0 and int(block_idx) == 1:
+        if str(field_name) == "output_truncation_k":
+            return True, ""
         return False, (
-            "layer 0 has no upstream FFN2; the first HE config is treated as "
-            "lossless so block1 noise is not installed (aligned with Rescale_optimizer)"
+            "layer 0 Block1 SF/noise fields remain inactive; only its "
+            "output_truncation_k is installed"
         )
     if str(field_name) in _COMPAT_EXTRA_FIELDS.get(int(block_idx), frozenset()):
         return False, (
@@ -1827,13 +1841,14 @@ def describe_action_vector(
                 gelu_degree=li_gelu_degree,
                 profile=str(profile),
             )
-            # Layer-0 block-1 noise is *not installed* (the first HE config is
-            # treated as lossless). The decoded ``value`` for these slots is a
-            # meaningless artifact of the default max-SF table — clear it so
-            # value-based queries (e.g. baseline-decode tests that build a
-            # ``{(layer, block, field): value}`` map and assert "L0B1 is not
-            # present") agree with the install-time semantics.
-            if int(li) == 0 and int(block_idx) == 1:
+            # Layer-0 Block1 SF/noise values remain inactive artifacts. Its K
+            # is different: it is effective and must remain visible in action
+            # export/report round-trips.
+            if (
+                    int(li) == 0
+                    and int(block_idx) == 1
+                    and str(field_name) != "output_truncation_k"
+            ):
                 value = None
             effective_value = value if effective else None
             operation = _operation_name(block_idx, field_name, kind)
@@ -1986,10 +2001,7 @@ def _sum_count_effective_k_values_in_action(
     total = 0
     count = 0
     for li in range(int(num_layers)):
-        # 首层 Block 1 K 被强制 None；其它 block 的 K 仍生效
-        for j, p in enumerate(_k_positions_in_layer()):
-            if li == 0 and j == 0:
-                continue
+        for p in _k_positions_in_layer():
             slot = li * layer_dim + p
             idx = int(arr[slot])
             total += int(K_LEVELS[idx])
@@ -2005,10 +2017,7 @@ def _gather_effective_k_values_in_action(
     layer_dim = len(layer_dims())
     ks: List[int] = []
     for li in range(int(num_layers)):
-        # 首层 Block 1 K 被强制 None；其它 block 的 K 仍生效
-        for j, p in enumerate(_k_positions_in_layer()):
-            if li == 0 and j == 0:
-                continue
+        for p in _k_positions_in_layer():
             slot = li * layer_dim + p
             idx = int(arr[slot])
             ks.append(int(K_LEVELS[idx]))
@@ -2097,10 +2106,9 @@ def build_optimizer_requests(
         ) -> Dict[str, Tuple[str, object]]:
     """``cfgs_dict["block1"][i]`` → ``{config_name: (block_name, cfg)}``。
 
-    NOTE: 不会发送 ``(block=1, layer=0)`` 给 Rescale_optimizer —— 该位置
-    的 block1 噪声整体不安装（语义：layer 0 没有上游 FFN2，第一个 HE 配置
-    无损）。``action_vector_to_cfgs`` 也不会把 layer 0 写入 ``block1_cfgs``，
-    所以这里的过滤是双保险。
+    NOTE: 不会发送 ``(block=1, layer=0)`` 给 Rescale_optimizer，因为该位置
+    没有可调 SF/fusion replan。它仍会出现在 ``block1_cfgs`` 中并由 bridge
+    安装为 K-only cfg；truncation K 不依赖 Rescale_optimizer。
     """
     out: Dict[str, Tuple[str, object]] = {}
     for block_name, layer_cfgs in cfgs_dict.items():
@@ -2112,7 +2120,7 @@ def build_optimizer_requests(
             continue
         for layer_idx, cfg in layer_cfgs.items():
             if int(block_idx) == 1 and int(layer_idx) == 0:
-                # 语义对齐：layer-0 block1 不发给 RO。
+                # Layer-0 Block1 只有 K，不发给 SF/fusion 的 RO。
                 continue
             cn = make_config_name(profile, block_idx, int(layer_idx), cfg=cfg)
             out[cn] = (str(block_name), cfg)

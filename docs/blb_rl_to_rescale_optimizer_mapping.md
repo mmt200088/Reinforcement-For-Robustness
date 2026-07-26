@@ -34,10 +34,11 @@
 **Graph 文件**：`block1_<profile>.json`（每个 dataset 一份图，与 GELU/Softmax degree 无关）。
 **RL 一侧 N 默认**：`8192`。**fixed-add**：1 fresh + 3 encode；**RL-selectable**：4 rescale + 1 K + 4 rotation flag。
 
-> **⚠ layer-0 不安装**：layer 0 没有上游 FFN2（X 直接来自 embedding 进 block 2 的
-> LayerNorm），所以**整个 block 1 噪声在 layer 0 整体不安装**，对应的
-> `block1_<dataset>_L0` 也不发给 Rescale_optimizer。下方表里 `L*` 应理解为
-> `L1..L11`；layer 0 的 9 个 block 1 槽位在动作向量里保留但 `effective=False`。
+> **Layer 0 特例仅限 SF/噪声**：layer 0 没有 Block1 SF/fusion replan，
+> `block1_<dataset>_L0` 不发给 Rescale_optimizer，Gaussian/rotation 也关闭。
+> 但其 `output_truncation_k` 与其它层一样由 RL 选择，并通过 K-only cfg 在
+> variance→rsqrt 边界执行。因此 layer 0 的 Block1 SF 槽位 `effective=False`，
+> K 槽位 `effective=True`。
 
 | RL field | slot_label | kind | RO node | skeleton i | 说明 |
 |---|---|---|---|---|---|

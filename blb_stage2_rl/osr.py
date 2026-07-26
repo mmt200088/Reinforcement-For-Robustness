@@ -364,8 +364,9 @@ def _enumerate_slot_layouts(
         ) -> List[_SlotLayout]:
     """Flatten the (block, layer) schedule into a list of slot layouts.
 
-    Block 3 is excluded by default. Block 1 skips layer 0 (no block 1 there)
-    naturally because :func:`step_schedule` does so.
+    Block 3 is excluded by default. This legacy blockwise scan also omits
+    layer-0 Block1 because :func:`step_schedule` has no K-only step; the
+    canonical layerwise policy still selects and installs that K.
     """
     from .action_space import step_schedule
 

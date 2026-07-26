@@ -1522,9 +1522,11 @@ experiment reproduction.
    optimizer feasibility diagnostics. `HeuristicStubInvoker` was deleted;
    training and promotable final evals must use real `replan_with_user_actions`
    through `InProcessInvoker` or an explicitly real subprocess path.
-8. The first HE config is treated as lossless. Layer 0 Block 1 is reserved in
-   the action vector but not installed; `first_input_sf` is a deprecated
-   compatibility tail slot and is not installed.
+8. Layer 0 Block 1 has no SF/fusion replan entry and keeps Gaussian/rotation
+   noise disabled, but its truncation K is a real RL action. It is installed as
+   a K-only cfg and executes on variance before rsqrt, exactly like later
+   Block 1 layers. `first_input_sf` remains a deprecated compatibility tail
+   slot and is not installed.
 9. Stage-2 config is strictly bound to one Stage-1 config. The Stage-1 GELU
    degree and Softmax degree chosen per layer fully determine the shape of
    Stage-2 Block 3 (softmax exp approximation, graph key `block3_exp_n<softmax>`)
@@ -1741,8 +1743,8 @@ Current sequential policy/search design as of 2026-05-21:
   `sequential_ppo_update`. Recomputing support or prior scale during PPO update
   breaks the PPO ratio.
 - Build mutable offsets from `describe_action_vector(...)` and exclude inactive
-  compatibility slots, layer-0 block-1 pseudo slots, first-input compatibility,
-  and single-level dimensions.
+  compatibility slots, layer-0 Block1 SF/noise pseudo slots, first-input
+  compatibility, and single-level dimensions. Layer-0 Block1 K is active.
 - The 2026-05-20 collapse at episode 121 was optimizer-valid but
   accuracy-catastrophic (`any_invalid=False`, `loss_mean=100`, P1(acc)), so the
   optimizer-invalid blacklist alone cannot protect terminal model-forward
@@ -1823,7 +1825,8 @@ BLB Stage 2 baseline must come from
 
 For each layer, graph keys are selected from Stage 1 degrees:
 
-- Block 1: `block1_<dataset>`; skipped for layer 0.
+- Block 1: `block1_<dataset>`; SF/fusion replan is skipped for layer 0, while
+  its model-side K-only cfg remains active.
 - Block 2: `block2_<dataset>`.
 - Block 3: `block3_exp_n<softmax_degree[layer]>`.
 - Block 4: `block4`.
@@ -2133,7 +2136,8 @@ in prose comments.
    numbers.
 2. Do not treat action masks as operation masks.
 3. Do not add freestanding rotation SF actions.
-4. Do not install layer 0 Block 1 or deprecated first-input noise.
+4. Do not install layer 0 Block 1 Gaussian/rotation noise or deprecated
+   first-input noise. Do install its RL-selected K-only cfg.
 5. Do not select a final best from raw PPO reward or one noise trial.
 6. Do not let final eval fall back to legacy all-max when a BLB best action
    exists.

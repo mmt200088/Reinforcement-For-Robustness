@@ -6,6 +6,7 @@ import unittest
 
 try:
     import torch
+    from blb_rl_bridge import BLBNoiseRLBridge
     from function_handler import (
         _apply_truncation,
         _make_block3_approximation_exponential,
@@ -24,6 +25,7 @@ try:
     _IMPORT_ERROR = None
 except Exception as exc:  # pragma: no cover - local macOS may be torch-free.
     torch = None  # type: ignore
+    BLBNoiseRLBridge = None  # type: ignore
     _apply_truncation = None  # type: ignore
     _make_block3_approximation_exponential = None  # type: ignore
     _make_block5_gelu_forward = None  # type: ignore
@@ -129,6 +131,72 @@ class TruncationBackendTests(unittest.TestCase):
         quantized = torch.trunc(variance * (2 ** 4)) / (2 ** 4)
         expected = centered * torch.rsqrt(quantized + original_ln.eps)
         self.assertTrue(torch.equal(actual, expected.expand_as(actual)))
+
+    def test_block1_truncation_only_executes_k_without_sampling_gaussian_noise(self):
+        import function_handler as fh
+
+        original_ln = torch.nn.LayerNorm(4, eps=1e-5, dtype=torch.float64)
+        cfg = make_block1_default_config(
+            output_truncation_k=4,
+            noise_enabled=False,
+        )
+        wrapped = NoisyBlock1LayerNorm(original_ln, cfg=cfg)
+        x = torch.tensor(
+            [[[1.2345, -0.7654, 0.4567, 2.3456]]], dtype=torch.float64,
+        )
+        original_sampler = fh._sample_gaussian_for_point
+        calls = []
+
+        def forbidden_sampler(reference, point):
+            calls.append((reference, point))
+            raise AssertionError("noise-disabled Block1 must not sample Gaussian noise")
+
+        fh._sample_gaussian_for_point = forbidden_sampler
+        try:
+            actual = wrapped(x)
+        finally:
+            fh._sample_gaussian_for_point = original_sampler
+
+        centered = x - x.mean(dim=-1, keepdim=True)
+        variance = (centered * centered).mean(dim=-1, keepdim=True)
+        quantized = torch.trunc(variance * (2 ** 4)) / (2 ** 4)
+        expected = centered * torch.rsqrt(quantized + original_ln.eps)
+        self.assertEqual(calls, [])
+        self.assertTrue(torch.equal(actual, expected))
+
+    def test_bridge_installs_layer0_block1_truncation_only_cfg(self):
+        class RecordingHandler:
+            def __init__(self):
+                self.calls = []
+
+            def replace_layer_block1_noise(self, **kwargs):
+                self.calls.append(kwargs)
+
+            def replace_layer_block2_noise(self, **_kwargs):
+                pass
+
+            def replace_layer_block4_noise(self, **_kwargs):
+                pass
+
+            def replace_layer_block3_noise(self, **_kwargs):
+                pass
+
+            def replace_layer_block5_noise(self, **_kwargs):
+                pass
+
+        cfg = make_block1_default_config(
+            output_truncation_k=9,
+            noise_enabled=False,
+        )
+        handler = RecordingHandler()
+        bridge = BLBNoiseRLBridge(handler, layers_attribute="model.layers")
+
+        bridge.apply(block1_cfgs={0: cfg})
+
+        self.assertEqual(len(handler.calls), 1)
+        self.assertEqual(handler.calls[0]["layer_indices"], [0])
+        self.assertIs(handler.calls[0]["cfg"], cfg)
+        self.assertEqual(bridge.installed_layers(), {0: {"block1"}})
 
     def test_block4_executes_k_on_variance_before_rsqrt(self):
         original_ln = torch.nn.LayerNorm(4, eps=1e-5, dtype=torch.float64)

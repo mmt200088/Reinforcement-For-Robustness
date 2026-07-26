@@ -1682,9 +1682,9 @@ class BLBStage2Env:
             return self._build_state(), float(breakdown.reward), True, info
 
         # 4) 装 BLB 噪声
-        # 语义更新（2026-05）：first_input fresh 噪声不再注入（"第一个 HE 配置
-        # 无损"），且 layer-0 block1 整体不安装。decoded.block1_cfgs 已不含
-        # layer 0；first_input_sf 字段保留为占位 0 不传给 bridge。
+        # first_input fresh 噪声不再注入。Layer-0 Block1 以 K-only cfg 安装：
+        # Gaussian/rotation 关闭，但 policy 选出的 truncation K 会真实执行。
+        # first_input_sf 字段只保留为占位 0，不传给 bridge。
         # When probe_runner is set (multi-GPU), install on every worker so each
         # GPU's model carries the same BLB cfg before its trial subset runs.
         persistent_install = bool(getattr(self.env_cfg, "persistent_probe_install", False))

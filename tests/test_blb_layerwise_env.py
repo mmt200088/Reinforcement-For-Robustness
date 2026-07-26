@@ -298,7 +298,22 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(len(info["decoded_actions"]), 12)
         self.assertEqual(len(info["layer_summaries"]), 12)
         self.assertEqual(len(info["block4_fusion_choices"]), 12)
-        self.assertEqual(len(info["k_choices"]), 59)
+        self.assertEqual(len(info["k_choices"]), 60)
+        self.assertEqual(
+            next(
+                row for row in info["k_choices"]
+                if row["layer_idx"] == 0 and row["block_idx"] == 1
+            )["k_value"],
+            8,
+        )
+        expected_removed = 12 * sum(
+            13 - int(self.layerwise.K_LEVELS[index]) for index in range(5)
+        )
+        self.assertEqual(objective["removed_k_bits"], expected_removed)
+        self.assertAlmostEqual(
+            objective["communication_saving"],
+            float(expected_removed) / 300.0,
+        )
         self.assertEqual(len(info["fusion_option_ids"]), 12)
         self.assertTrue(info["boosted_overrides"])
         self.assertIsInstance(info["pending_full_vector"], list)
@@ -752,7 +767,7 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
         )
 
         env.reset(seed=17)
-        _obs, reward, done, info = env.step([0, 99, 0, 0, 0, 0])
+        _obs, reward, done, info = env.step([0, 5, 0, 0, 0, 0])
 
         self.assertEqual((reward, done), (0.0, False))
         self.assertEqual([row["block_idx"] for row in info["layer_summary"]["blocks"]], [2, 3, 4, 5])

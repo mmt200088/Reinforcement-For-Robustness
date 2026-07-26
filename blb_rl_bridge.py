@@ -157,11 +157,10 @@ class BLBNoiseRLBridge:
                                站点兼容；任何非 None 取值会被忽略 + 警告。
             first_input_N:     与 ``first_input_sf`` 一同 deprecated。
             first_input_layers: 同上 deprecated。
-            block1_cfgs:       {layer_idx: Block1NoiseConfig}；**layer 0 即便存在
-                               也不会被安装**（用户语义：layer 0 没有上游 FFN2，
-                               block1 噪声整体不加；与 Rescale_optimizer 对齐）。
-                               ``action_vector_to_cfgs`` 已经不会把 layer 0 写进
-                               这个 dict，这里的过滤是双保险。
+            block1_cfgs:       {layer_idx: Block1NoiseConfig}。layer 0 使用
+                               ``noise_enabled=False`` 的 K-only 配置：不注入
+                               Block 1 Gaussian/rotation 噪声，但会在 variance
+                               进入 rsqrt 前执行与其它层相同的 truncation K。
             block2_cfgs..block5_cfgs 同上 layer 0 全部生效（block 2 完整存在）。
 
         每个 cfg 直接调用 ``handler.replace_layer_block*_noise`` 完成实际安装；
@@ -181,11 +180,6 @@ class BLBNoiseRLBridge:
             )
 
         # ---------- 2) Block 1 / 2 / 4：按 cfg 分组批量安装 ----------
-        # 双保险：剔除 layer 0 的 block1 cfg（即使 caller 误传也安全）。
-        if block1_cfgs:
-            block1_cfgs = {
-                li: cfg for li, cfg in block1_cfgs.items() if int(li) != 0
-            }
         for block_name, cfgs, install_method in (
                 ("block1", block1_cfgs, self.handler.replace_layer_block1_noise),
                 ("block2", block2_cfgs, self.handler.replace_layer_block2_noise),
@@ -343,8 +337,9 @@ class Block1ActionSpec:
     （``rotation_after_wffn2_rescale_a/b`` / ``rotation_after_square_rescale``）
     也一并移除。
 
-    ``output_truncation_k``：Block 1 末尾 PPTI 截断位数；None ⇒ 不截断
-    （**首层 Block 1 缺失**时直接传 None；其它层由 RL agent 选）。
+    ``output_truncation_k``：Block 1 末尾 PPTI 截断位数；None ⇒ 不截断。
+    所有层（包括 layer 0）都可由 RL 选择；layer 0 通过 cfg 的
+    ``noise_enabled=False`` 只执行截断而不注入 Block 1 噪声。
     """
     gelu_out_sf: int
     wffn2_sf: int
@@ -363,6 +358,8 @@ class Block1ActionSpec:
 def build_block1_cfg_from_action(
         action: Block1ActionSpec,
         N: int = 8192,
+        *,
+        noise_enabled: bool = True,
         ) -> Block1NoiseConfig:
     """``Block1ActionSpec`` → ``Block1NoiseConfig``。"""
     return make_block1_default_config(
@@ -371,6 +368,7 @@ def build_block1_cfg_from_action(
         wffn2_sf=int(action.wffn2_sf),
         mean_inv_d_sf=int(action.mean_inv_d_sf),
         var_inv_d_sf=int(action.var_inv_d_sf),
+        noise_enabled=bool(noise_enabled),
         # 被删的 wffn2_rescale_sf / square_rescale_sf 固定 None（不安装该处噪声）
         wffn2_rescale_sf=None,
         mean_rescale_sf=action.mean_rescale_sf,

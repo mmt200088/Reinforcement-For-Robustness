@@ -3792,6 +3792,7 @@ def _build_layerwise_candidate_identity_context(
     from .layerwise_action import (
         K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
+        LAYERWISE_DECODE_VERSION,
         layerwise_action_space_version,
     )
     from .layerwise_runner import bind_layerwise_candidate_identity
@@ -3872,7 +3873,7 @@ def _build_layerwise_candidate_identity_context(
             "root": rescale_root,
             "static_skeletons": static_skeletons_baseline,
         }),
-        decode_version="layerwise_action_v1",
+        decode_version=LAYERWISE_DECODE_VERSION,
         dataset=str(train_cfg.profile),
         model=model_type,
         metric_policy_version="robust_bootstrap_5x5_v1",
@@ -3961,6 +3962,7 @@ def _run_layerwise_training_branch(
     from .layerwise_action import (
         K_LEVELS as LAYERWISE_K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,
+        LAYERWISE_DECODE_VERSION,
         RESOURCE_SECONDARY_EPSILON,
         layerwise_action_space_version,
         max_communication_saving_units,
@@ -4119,7 +4121,7 @@ def _run_layerwise_training_branch(
         "action_space_version": layerwise_action_space_version(
             layerwise_horizon
         ),
-        "decode_version": "layerwise_action_v1",
+        "decode_version": LAYERWISE_DECODE_VERSION,
         "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
         "k_levels": [int(value) for value in LAYERWISE_K_LEVELS],
         "resource_secondary_epsilon": float(RESOURCE_SECONDARY_EPSILON),
@@ -4536,7 +4538,7 @@ def _run_layerwise_training_branch(
         top_k=20,
         log_fn=log,
         slots_view_builder=layerwise_slots_view,
-        schema_version="stage2_layerwise_action_v1",
+        schema_version="stage2_layerwise_action_v2",
         data_point_writer=stage2_data_writer,
         strict_writes=True,
         history_window=600,
@@ -4941,10 +4943,8 @@ def _run_layerwise_training_branch(
         }
         b4_count = sum(int(row[0]) for row in record.action_matrix)
         k_values = []
-        for layer_idx, row in enumerate(record.action_matrix):
+        for row in record.action_matrix:
             for slot_idx in range(1, 6):
-                if layer_idx == 0 and slot_idx == 1:
-                    continue
                 k_values.append(int(LAYERWISE_K_LEVELS[int(row[slot_idx])]))
         avg_k = float(np.mean(k_values)) if k_values else 13.0
         is_new_best = False

@@ -301,14 +301,14 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertTrue(torch.all(signals == 7.0))
         self.assertEqual(policy.fc_continuous[0].in_features, 8)
 
-    def test_layerwise_step_mask_preserves_inactive_block1_slot(self):
+    def test_layerwise_step_mask_activates_layer_zero_block1_slot(self):
         from blb_stage2_rl.sequential_policy import step_to_mask_and_levels
 
         layer0 = LayerwiseStepSpec(
             step_idx=0,
             layer_idx=0,
             slot_dims=(2, 6, 6, 6, 6, 6),
-            slot_mask=(True, False, True, True, True, True),
+            slot_mask=(True, True, True, True, True, True),
             terminal=False,
             num_layers=12,
             graph_keys_by_block=(),
@@ -326,7 +326,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         mask0, levels0 = step_to_mask_and_levels(layer0, 6, 6)
         mask1, levels1 = step_to_mask_and_levels(layer1, 6, 6)
 
-        self.assertEqual(mask0.tolist(), [True, False, True, True, True, True])
+        self.assertEqual(mask0.tolist(), [True, True, True, True, True, True])
         self.assertEqual(mask1.tolist(), [True, True, True, True, True, True])
         self.assertEqual(levels0.tolist(), [2, 6, 6, 6, 6, 6])
         self.assertEqual(levels1.tolist(), [2, 6, 6, 6, 6, 6])
@@ -463,7 +463,7 @@ class LayerwisePolicyTest(unittest.TestCase):
                     places=6,
                 )
 
-    def test_masked_block1_slot_contributes_no_log_probability_or_entropy(self):
+    def test_layer_zero_block1_slot_contributes_log_probability_and_entropy(self):
         policy = self._policy()
         fusion_probs = {0: 0.6, 1: 0.4}
         k_probs = {13: 0.5, 12: 0.2, 11: 0.12, 10: 0.08, 9: 0.06, 8: 0.04}
@@ -478,51 +478,35 @@ class LayerwisePolicyTest(unittest.TestCase):
         actions = torch.zeros((1, 6), dtype=torch.long)
         levels = torch.tensor([[2, 6, 6, 6, 6, 6]])
         full_mask = torch.ones((1, 6), dtype=torch.bool)
-        layer0_mask = full_mask.clone()
-        layer0_mask[0, 1] = False
-
         full_log_prob, full_entropy, _ = policy.evaluate_action(
             state, actions, full_mask, levels,
         )
-        masked_log_prob, masked_entropy, _ = policy.evaluate_action(
-            state, actions, layer0_mask, levels,
-        )
         sampled_actions, sampled_log_prob, _ = policy.sample_action(
             state,
-            layer0_mask,
+            full_mask,
             levels,
             deterministic=True,
         )
         replay_log_prob, _, _ = policy.evaluate_action(
             state,
             sampled_actions,
-            layer0_mask,
+            full_mask,
             levels,
         )
-        changed_masked_action = sampled_actions.clone()
-        changed_masked_action[0, 1] = 5
+        changed_block1_action = sampled_actions.clone()
+        changed_block1_action[0, 1] = 5
         changed_log_prob, changed_entropy, _ = policy.evaluate_action(
             state,
-            changed_masked_action,
-            layer0_mask,
+            changed_block1_action,
+            full_mask,
             levels,
         )
 
-        block1_prob = k_probs[k_values[0]]
-        block1_entropy = -sum(prob * np.log(prob) for prob in k_probs.values())
-        self.assertAlmostEqual(
-            float(full_log_prob - masked_log_prob),
-            float(np.log(block1_prob)),
-            places=6,
-        )
-        self.assertAlmostEqual(
-            float(full_entropy - masked_entropy),
-            block1_entropy,
-            places=6,
-        )
+        self.assertTrue(torch.isfinite(full_log_prob))
+        self.assertGreater(float(full_entropy), 0.0)
         torch.testing.assert_close(sampled_log_prob, replay_log_prob)
-        torch.testing.assert_close(changed_log_prob, replay_log_prob)
-        torch.testing.assert_close(changed_entropy, masked_entropy)
+        self.assertNotEqual(float(changed_log_prob), float(replay_log_prob))
+        torch.testing.assert_close(changed_entropy, full_entropy)
 
     def test_evaluate_action_exposes_factorized_log_probabilities(self):
         policy = self._policy()
@@ -1028,8 +1012,6 @@ class LayerwisePolicyTest(unittest.TestCase):
             for sample_idx in range(120):
                 layer_idx = sample_idx % 12
                 slot_mask = np.ones(6, dtype=bool)
-                if layer_idx == 0:
-                    slot_mask[1] = False
                 state = np.asarray([layer_idx], dtype=np.float32)
                 with torch.no_grad():
                     action, log_prob, value, log_prob_per_slot = policy.sample_action(

@@ -752,10 +752,10 @@ def _run_stage2_group(
             f"!= expected {expected_fusion}"
         )
     k_choices = list(terminal_info.get("k_choices") or [])
-    if len(k_choices) != 5 * NUM_LAYERS - 1:
+    if len(k_choices) != 5 * NUM_LAYERS:
         raise RuntimeError(
             f"{group.name}: got {len(k_choices)} active K choices, expected "
-            f"{5 * NUM_LAYERS - 1}"
+            f"{5 * NUM_LAYERS}"
         )
     if any(int(choice["k_value"]) != 13 for choice in k_choices):
         raise RuntimeError(f"{group.name}: at least one K choice is not 13")

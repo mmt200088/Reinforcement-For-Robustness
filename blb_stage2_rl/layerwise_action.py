@@ -76,7 +76,7 @@ def _validated_num_layers(num_layers: int) -> int:
 def layerwise_action_space_version(num_layers: int) -> str:
     """Return the persisted action-space identity for one model depth."""
     layers = _validated_num_layers(num_layers)
-    return f"stage2_layerwise_{layers}x{len(LAYERWISE_SLOT_NAMES)}_v1"
+    return f"stage2_layerwise_{layers}x{len(LAYERWISE_SLOT_NAMES)}_v2"
 
 
 def max_compute_saving_units(num_layers: int) -> float:
@@ -87,7 +87,7 @@ def max_compute_saving_units(num_layers: int) -> float:
 def max_communication_saving_units(num_layers: int) -> float:
     """Maximum removed K bits across all active per-block K slots."""
     layers = _validated_num_layers(num_layers)
-    return float(5 * layers - 1) * (13.0 - 8.0)
+    return float(5 * layers) * (13.0 - 8.0)
 
 
 # Backward-compatible BERT-base constants. New callers with a model instance
@@ -95,7 +95,8 @@ def max_communication_saving_units(num_layers: int) -> float:
 MAX_COMPUTE_SAVING_UNITS = max_compute_saving_units(12)
 MAX_COMMUNICATION_SAVING_UNITS = max_communication_saving_units(12)
 RESOURCE_SECONDARY_EPSILON = 1.0e-4
-LAYERWISE_COST_MODEL_REVISION = "dual_resource_maxmin_shapley_v1"
+LAYERWISE_DECODE_VERSION = "layerwise_action_v2"
+LAYERWISE_COST_MODEL_REVISION = "dual_resource_maxmin_shapley_v2"
 
 
 @dataclass(frozen=True)
@@ -337,7 +338,7 @@ def layerwise_schedule(
             step_idx=layer_idx,
             layer_idx=layer_idx,
             slot_dims=slot_dims,
-            slot_mask=(True, layer_idx != 0, True, True, True, True),
+            slot_mask=(True, True, True, True, True, True),
             terminal=(layer_idx == layers - 1),
             num_layers=layers,
             graph_keys_by_block=_graph_keys(layer_idx, str(profile), gelu_degree),
@@ -409,7 +410,7 @@ def apply_layer_action(
 
     graph_keys = dict(step_spec.graph_keys_by_block)
     k_indices = {1: action[1], 2: action[2], 3: action[3], 4: action[4], 5: action[5]}
-    active_blocks = (2, 3, 4, 5) if step_spec.layer_idx == 0 else _BLOCK_ORDER
+    active_blocks = _BLOCK_ORDER
     k_by_block = {block_idx: int(K_LEVELS[k_indices[block_idx]]) for block_idx in active_blocks}
     fusion_option_ids: dict[int, int] = {}
     boosted_values: dict[int, Mapping[str, int]] = {}
@@ -452,13 +453,13 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
     if num_layers < 1:
         raise ValueError("variable cost requires at least one layer action")
     compute_denominator = max_compute_saving_units(num_layers)
-    active_k_slots = 5 * num_layers - 1
+    active_k_slots = 5 * num_layers
     communication_denominator = max_communication_saving_units(num_layers)
     fusion_values = []
     k_values = []
     raw_slot_contributions = []
     for layer_idx, action in enumerate(actions):
-        expected_blocks = {2, 3, 4, 5} if layer_idx == 0 else {1, 2, 3, 4, 5}
+        expected_blocks = {1, 2, 3, 4, 5}
         actual_blocks = set(action.k_by_block)
         if actual_blocks != expected_blocks:
             raise ValueError(
@@ -552,7 +553,7 @@ def compute_variable_cost_from_action_matrix(
             raise ValueError(
                 f"action_matrix[{layer_idx}][0]={fusion} outside [0, 2)"
             )
-        active_blocks = (2, 3, 4, 5) if layer_idx == 0 else _BLOCK_ORDER
+        active_blocks = _BLOCK_ORDER
         k_by_block = {}
         for block_idx in active_blocks:
             k_index = int(row[block_idx])
@@ -575,8 +576,6 @@ def one_coordinate_neighbors(action_matrix: Sequence[Sequence[int]]) -> Iterator
     dims = (2,) + (len(levels),) * 5
     for layer_idx, row in enumerate(rows):
         for slot_idx, value in enumerate(row):
-            if layer_idx == 0 and slot_idx == 1:
-                continue
             if not 0 <= value < dims[slot_idx]:
                 raise ValueError(
                     f"action_matrix[{layer_idx}][{slot_idx}]={value} outside [0, {dims[slot_idx]})"
@@ -584,8 +583,6 @@ def one_coordinate_neighbors(action_matrix: Sequence[Sequence[int]]) -> Iterator
 
     for layer_idx, row in enumerate(rows):
         for slot_idx, value in enumerate(row):
-            if layer_idx == 0 and slot_idx == 1:
-                continue
             for alternative in range(dims[slot_idx]):
                 if alternative == value:
                     continue

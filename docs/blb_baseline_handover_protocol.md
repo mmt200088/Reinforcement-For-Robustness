@@ -72,8 +72,9 @@ RO 团队负责手工维护这份文件，每条 entry 是一个 (block, [degree
 | 4 | `block4` |
 | 5 | `block5_n<gelu_degree>` |
 
-**注意**：(block=1, layer=0) **跳过** —— layer-0 没有上游 FFN2，第一个 HE 配置无损，
-block 1 噪声整体不安装。所以 RL 实际取 `5 * num_layers - 1` 个 (block, layer) baseline。
+**注意**：(block=1, layer=0) 的 **SF/fusion baseline request 跳过**，所以 RO
+仍返回 `5 * num_layers - 1` 条结果；这不代表 K 无效。RL/model 侧会单独物化
+该位置的 truncation-only cfg，全部 `5 * num_layers` 个 K 都可选择并执行。
 
 ### 0.4 RL 一侧 API
 
@@ -360,7 +361,7 @@ block4 用 `block4.json`（共享所有 dataset）。
 | `ro_version` | str | 可选 | RO 端代码版本号；便于错误调查。 |
 | `static_skeletons_archive` | str | 可选 | RO 用了哪份 baseline 归档（相对路径）；用于调试一致性。 |
 | `completed_at` | str | 可选 | ISO-8601 时间戳。 |
-| `results` | list[dict] | ✓ | 每个 (block, layer) 一条记录，长度 `5 * num_layers - 1`。**注意：layer 0 的 block 1 整体不需要**（语义：layer-0 没有上游 FFN2，第一个 HE 配置无损，block1 噪声不安装）。所以 results 缺 (block=1, layer=0) 这一条；若 RO 仍返回它也兼容接收，但 RL 一侧不消费。 |
+| `results` | list[dict] | ✓ | 每个有 SF/fusion replan 的 (block, layer) 一条记录，长度 `5 * num_layers - 1`。Layer 0 Block 1 没有 RO 请求，但它的 K-only model cfg 仍生效。 |
 | `aggregate` | dict | ✓ | 跨 (block, layer) 聚合统计。 |
 | `warnings` | list[str] | 可选 | 非致命警告，RL 端只 log。 |
 
@@ -392,15 +393,15 @@ block4 用 `block4.json`（共享所有 dataset）。
 | `total_bits_sum` | ✓ | sum of `modulus_chain.total_bits` over all valid (block, layer)。 |
 | `total_fusion_count` | ✓ | sum of `fusion_count`。 |
 
-### 关于 (block=1, layer=0) 缺失
+### 关于 (block=1, layer=0) 的 RO 缺失
 
-RL 端不再为 layer 0 安装 block1 噪声（与 Rescale_optimizer 习惯一致）。因此：
+RL 端不为 layer 0 安装 Block1 Gaussian/rotation 噪声，但会安装 K-only cfg。因此：
 
 1. RL 不会发送 `block1_<dataset>_L0` 的请求。
-2. RO 计算 baseline 时**可选**：跳过 `(block=1, layer=0)`，或者返回但 RL 会忽略。
+2. RO 计算 SF baseline 时跳过 `(block=1, layer=0)`；K 不依赖该结果。
    推荐 RO 也跳过该位置，避免无意义的资源消耗。
-3. 对应的 RL action 槽位（layer 0 block1 的 9 个）仍存在于动作向量里以维持 policy
-   网络 shape，但被 `_is_action_field_effective` 标记为 `effective=False`。
+3. 对应的 SF 槽位仍是 inactive；`output_truncation_k` 是 active，且最终模型
+   真实执行。完整动作向量仍保留统一的每层 shape。
 4. 第一个 HE 配置（layer-0 input）的 fresh 噪声同样**不**注入；
    `first_input_fresh` 槽位也是 `effective=False`，纯占位。
 
@@ -511,7 +512,8 @@ assert result.ok, f"baseline failed: {result.error}"
 
 RO 一侧应在写响应前做 self-check：
 
-1. `results` 长度 == `5 * num_layers - 1`（缺 (block=1, layer=0)，或者返回但被 RL 忽略）。
+1. `results` 长度 == `5 * num_layers - 1`（缺 layer-0 Block1 SF request；
+   model-side K 不计入 RO results）。
 2. 每条 result 的 `(block, layer)` 配对都唯一。
 3. 每条 result 的 `graph_key` 与 `dataset` / `gelu_degree[layer]` /
    `softmax_degree[layer]` 一致（block 3 → `block3_exp_n<softmax_deg[layer]>`，

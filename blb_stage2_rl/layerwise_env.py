@@ -311,6 +311,10 @@ class BLBStage2LayerwiseEnv:
         candidate_vector = np.asarray(application.full_vector, dtype=int).copy()
         graph_keys = dict(spec.graph_keys_by_block)
         graph_keys[3] = f"block3_exp_n{self._attn_degrees[spec.layer_idx]}"
+        # This loop collects SF/fusion optimizer diagnostics, not policy
+        # coordinates. Layer-0 Block1 has no RO graph, while its selected K is
+        # already present in ``application.decoded`` and is included below in
+        # terminal cost, model materialization, and PPO slot credit.
         active_blocks = (2, 3, 4, 5) if spec.layer_idx == 0 else (1, 2, 3, 4, 5)
 
         runtimes: List[BlockRuntimeResult] = []
