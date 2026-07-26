@@ -580,7 +580,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             "",
         )
 
-    def test_stage2_launcher_warns_when_visible_gpus_are_not_forwarded_to_gpu_flags(self):
+    def test_stage2_launcher_auto_forwards_visible_gpus(self):
         with tempfile.TemporaryDirectory(prefix="stage2_gpu_audit_") as td:
             tmp = Path(td)
             capture = tmp / "python_argv.nul"
@@ -638,8 +638,9 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 msg=result.stdout + "\n" + result.stderr,
             )
             combined = result.stdout + "\n" + result.stderr
-            self.assertIn("[gpu-audit][WARN]", combined)
-            self.assertIn("--blb-v3-reward-devices 0,1", combined)
+            self.assertNotIn("[gpu-audit][WARN]", combined)
+            self.assertIn("scripts/elastic_gpu_supervisor.py", combined)
+            self.assertIn("--blb_v3_reward_devices auto", combined)
 
     def test_stage2_rl_launches_inside_constraint_persistent_dir(self):
         with tempfile.TemporaryDirectory(prefix="stage2_persist_launcher_") as td:
