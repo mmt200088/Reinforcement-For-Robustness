@@ -5015,7 +5015,10 @@ class _PromotionBase:
 
     def prepare_action_for_terminal_probe(self, full_vec, **kwargs):
         self.prepare_calls.append((list(full_vec), dict(kwargs)))
-        return {"prepared": True, "action": list(full_vec)}
+        prepared = {"prepared": True, "action": list(full_vec)}
+        if kwargs.get("probe_base_seed") is not None:
+            prepared["probe_base_seed"] = int(kwargs["probe_base_seed"])
+        return prepared
 
     def evaluate_prepared_terminal_batch(self, prepared, **kwargs):
         from blb_stage2_rl.seed_utils import derive_probe_trial_seed
@@ -5033,21 +5036,27 @@ class _PromotionBase:
                 "metric2_stability_probability",
             )
         }
-        return [(None, 0.0, True, {
-            "statistical_trials": {
-                "loss": [0.3 + i * 0.001 for i in range(count)],
-                "metric1": [0.9 - i * 0.001 for i in range(count)],
-                "metric2": [0.8 - i * 0.001 for i in range(count)],
-                "seeds": [
-                    derive_probe_trial_seed(self.probe_noise_seed, i)
-                    for i in range(count)
-                ],
-            },
-            "statistical_assessment": {**fields, "bootstrap_seed": 77},
-            "metrics": types.SimpleNamespace(
-                loss_mean=0.3, metric1_mean=0.9, metric2_mean=0.8,
-            ),
-        })]
+        results = []
+        for item in prepared:
+            probe_seed = int(item.get(
+                "probe_base_seed", self.probe_noise_seed,
+            ))
+            results.append((None, 0.0, True, {
+                "statistical_trials": {
+                    "loss": [0.3 + i * 0.001 for i in range(count)],
+                    "metric1": [0.9 - i * 0.001 for i in range(count)],
+                    "metric2": [0.8 - i * 0.001 for i in range(count)],
+                    "seeds": [
+                        derive_probe_trial_seed(probe_seed, i)
+                        for i in range(count)
+                    ],
+                },
+                "statistical_assessment": {**fields, "bootstrap_seed": 77},
+                "metrics": types.SimpleNamespace(
+                    loss_mean=0.3, metric1_mean=0.9, metric2_mean=0.8,
+                ),
+            }))
+        return results
 
 
 class LayerwisePromotionTests(unittest.TestCase):
@@ -5218,10 +5227,24 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(result.trial_count, 50)
         self.assertEqual(result.fresh_trial_count, 50)
         self.assertEqual(repeated.status, "already_promoted")
-        self.assertEqual(len(base.evaluate_calls), 10)
+        self.assertEqual(len(base.evaluate_calls), 2)
         self.assertEqual(
             [call[1]["num_trials_per_action"] for call in base.evaluate_calls],
-            [5] * 10,
+            [5, 5],
+        )
+        self.assertEqual(
+            [len(call[0]) for call in base.evaluate_calls],
+            [5, 5],
+        )
+        self.assertEqual(
+            [
+                [int(item["probe_base_seed"]) for item in call[0]]
+                for call in base.evaluate_calls
+            ],
+            [
+                list(_three_validation_banks().bank_a.probe_seeds),
+                list(_three_validation_banks().bank_b.probe_seeds),
+            ],
         )
 
     def test_three_bank_promotion_resumes_from_complete_fixed_seed_groups(self):
@@ -5273,7 +5296,11 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(result.status, "promoted")
         self.assertEqual(result.trial_count, 50)
         self.assertEqual(result.fresh_trial_count, 40)
-        self.assertEqual(len(base.evaluate_calls), 8)
+        self.assertEqual(len(base.evaluate_calls), 2)
+        self.assertEqual(
+            [len(call[0]) for call in base.evaluate_calls],
+            [3, 5],
+        )
         self.assertEqual(
             tuple(result.evidence.trials.seeds),
             banks.bank_a.trial_seeds + banks.bank_b.trial_seeds,
@@ -5328,7 +5355,11 @@ class LayerwisePromotionTests(unittest.TestCase):
         self.assertEqual(certified.status, "final_revalidation_passed")
         self.assertEqual(certified.trial_count, 75)
         self.assertEqual(certified.fresh_trial_count, 25)
-        self.assertEqual(len(base.evaluate_calls), 15)
+        self.assertEqual(len(base.evaluate_calls), 3)
+        self.assertEqual(
+            [len(call[0]) for call in base.evaluate_calls],
+            [5, 5, 5],
+        )
 
     def test_bank_c_transient_failure_is_retryable_after_restore(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -5514,7 +5545,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 CandidateStore(Path(td) / "bank_a.jsonl"), base, banks,
             )
             self.assertEqual(result.status, "bank_a_point_failed")
-            self.assertEqual(len(base.evaluate_calls), 5)
+            self.assertEqual(len(base.evaluate_calls), 1)
 
             banks = _three_validation_banks()
             banks.promotion_reference.metric1_std_limit = 1.0e-6
@@ -5523,7 +5554,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 CandidateStore(Path(td) / "bank_b.jsonl"), base, banks,
             )
             self.assertEqual(result.status, "bank_b_point_failed")
-            self.assertEqual(len(base.evaluate_calls), 10)
+            self.assertEqual(len(base.evaluate_calls), 2)
 
             banks = _three_validation_banks()
             base = _PromotionBase()
@@ -5548,7 +5579,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 validation_banks=banks,
             )
             self.assertEqual(certified.status, "bank_c_point_failed")
-            self.assertEqual(len(base.evaluate_calls), 15)
+            self.assertEqual(len(base.evaluate_calls), 3)
 
     def test_already_promoted_candidate_uses_f4_evidence_not_new_f1_result(self):
         from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
