@@ -685,6 +685,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
                 return SimpleNamespace(
                     decoded=decoded,
                     failure_reason=None,
+                    final_config_fingerprint="materialized-test-config",
                     replan_application={
                         "applied_before_forward": True,
                         "model_uses_replan_config": True,
