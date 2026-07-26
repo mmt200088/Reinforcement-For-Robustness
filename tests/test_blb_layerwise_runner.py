@@ -1744,6 +1744,107 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 run_context_hash="run-a",
             )
 
+    def test_cuda_rng_role_registry_survives_shrink_and_reexpansion(self):
+        from blb_stage2_rl.sequential_runner import (
+            merge_cuda_rng_role_registry,
+            resolve_cuda_rng_role_registry,
+        )
+
+        checkpoint = {
+            "cuda_rng_role_registry_version": 1,
+            "cuda_rng_state_by_role": ["r0", "r1", "r2", "r3", "r4"],
+            "cuda_rng_active_role_count": 5,
+        }
+        registry, active = resolve_cuda_rng_role_registry(
+            checkpoint,
+            active_role_count=4,
+            new_role_state_factory=lambda role: f"new-{role}",
+        )
+        self.assertEqual(active, ["r0", "r1", "r2", "r3"])
+        self.assertEqual(registry, ["r0", "r1", "r2", "r3", "r4"])
+
+        registry = merge_cuda_rng_role_registry(
+            registry,
+            ["n0", "n1", "n2", "n3"],
+        )
+        resumed_registry, resumed_active = resolve_cuda_rng_role_registry(
+            {
+                "cuda_rng_role_registry_version": 1,
+                "cuda_rng_state_by_role": registry,
+                "cuda_rng_active_role_count": 4,
+            },
+            active_role_count=5,
+            new_role_state_factory=lambda role: f"new-{role}",
+        )
+        self.assertEqual(
+            resumed_active,
+            ["n0", "n1", "n2", "n3", "r4"],
+        )
+        self.assertEqual(resumed_registry, resumed_active)
+
+    def test_cuda_rng_role_registry_initializes_only_never_seen_roles(self):
+        from blb_stage2_rl.sequential_runner import (
+            resolve_cuda_rng_role_registry,
+        )
+
+        initialized = []
+        registry, active = resolve_cuda_rng_role_registry(
+            {
+                "cuda_rng_role_registry_version": 1,
+                "cuda_rng_state_by_role": ["r0", "r1"],
+                "cuda_rng_active_role_count": 2,
+            },
+            active_role_count=4,
+            new_role_state_factory=lambda role: (
+                initialized.append(role) or f"new-{role}"
+            ),
+        )
+
+        self.assertEqual(initialized, [2, 3])
+        self.assertEqual(active, ["r0", "r1", "new-2", "new-3"])
+        self.assertEqual(registry, active)
+
+    def test_legacy_cuda_rng_checkpoint_rejects_changed_gpu_count(self):
+        from blb_stage2_rl.sequential_runner import (
+            resolve_cuda_rng_role_registry,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "legacy.*GPU count"):
+            resolve_cuda_rng_role_registry(
+                {"cuda_rng_state_all": ["r0", "r1", "r2", "r3", "r4"]},
+                active_role_count=4,
+                new_role_state_factory=lambda role: f"new-{role}",
+            )
+
+    def test_layerwise_gpu_recovery_restart_waits_for_committed_checkpoint(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        callback = next(
+            node for node in branch.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "on_layerwise_update"
+        )
+        callback_source = ast.get_source_segment(source, callback)
+
+        diagnostics_commit = callback_source.index(
+            "diag_recorder.record_ppo_update(update_stats)"
+        )
+        checkpoint_commit = callback_source.index(
+            "save_layerwise_checkpoint("
+        )
+        restart_boundary = callback_source.index(
+            "raise_if_elastic_gpu_restart_requested()"
+        )
+        self.assertLess(diagnostics_commit, checkpoint_commit)
+        self.assertLess(checkpoint_commit, restart_boundary)
+
     def test_layerwise_checkpoint_contract_fails_before_mutating_training_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
@@ -2075,6 +2176,9 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             'checkpoint.get("ppo_update_count")',
             '"ppo_update_count": int(ppo_update_counter)',
             '"strict_pareto_frontier": copy.deepcopy(strict_pareto_frontier)',
+            '"cuda_rng_role_registry_version": 1',
+            '"cuda_rng_state_by_role": cuda_rng_role_registry',
+            '"cuda_rng_active_role_count": len(active_cuda_rng_states)',
         ):
             self.assertIn(required, branch_source)
 
