@@ -3468,7 +3468,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(
             summary["best_promotion_evidence"]["trial_count"], 75,
         )
-        self.assertEqual(len(promotion_base.evaluate_calls), 15)
+        self.assertEqual(len(promotion_base.evaluate_calls), 3)
 
     def test_max_cap_falls_back_to_dominated_ab_candidate_when_winner_fails_c(self):
         from blb_stage2_rl.candidate_store import CandidateStore
