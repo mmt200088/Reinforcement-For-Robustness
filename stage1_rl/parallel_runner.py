@@ -46,7 +46,7 @@ import torch.nn as nn
 
 from device_utils import parse_device_ids
 from elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
-from .seed_utils import derive_episode_seed
+from .seed_utils import assign_global_episodes, derive_episode_seed
 
 # Defer the heavy import so this module is importable in torch-free CI without
 # pulling transformers / function_handler at module load.
