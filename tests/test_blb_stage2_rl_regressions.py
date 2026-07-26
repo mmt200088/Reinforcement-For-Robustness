@@ -668,32 +668,39 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         }
 
         old_action_vector_to_cfgs = mod.action_vector_to_cfgs
-        old_apply_optimizer_outputs_to_cfgs = mod.apply_optimizer_outputs_to_cfgs
+        old_materialize_decoded_action = mod.materialize_decoded_action
         old_avg_truncation_k_in_action = mod.avg_truncation_k_in_action
+        expected_outputs = outputs
         try:
             mod.action_vector_to_cfgs = lambda **_kwargs: fake_decoded
             mod.avg_truncation_k_in_action = lambda *_args, **_kwargs: 13.0
 
-            def fake_apply_optimizer_outputs_to_cfgs(*, cfgs_dict, opt_outputs, **_kwargs):
+            def fake_materialize_decoded_action(
+                    *, decoded, cfgs_dict, outputs, **_kwargs,
+                    ):
                 cfg = cfgs_dict["block2"][0]
                 self.assertEqual(cfg.marker, "action_decoded")
-                self.assertIs(opt_outputs, outputs)
+                self.assertIs(outputs, expected_outputs)
                 cfg.marker = "replan_applied"
-                return {
-                    "applied_before_forward": True,
-                    "model_uses_replan_config": True,
-                    "expected_config_count": 1,
-                    "applied_config_count": 1,
-                    "invalid_config_count": 0,
-                    "missing_compact_config_count": 0,
-                    "missing_decoded_cfg_count": 0,
-                    "apply_error_count": 0,
-                    "override_total": 1,
-                    "per_config": {},
-                    "optimizer_cfg_overrides": {},
-                }
+                return SimpleNamespace(
+                    decoded=decoded,
+                    failure_reason=None,
+                    replan_application={
+                        "applied_before_forward": True,
+                        "model_uses_replan_config": True,
+                        "expected_config_count": 1,
+                        "applied_config_count": 1,
+                        "invalid_config_count": 0,
+                        "missing_compact_config_count": 0,
+                        "missing_decoded_cfg_count": 0,
+                        "apply_error_count": 0,
+                        "override_total": 1,
+                        "per_config": {},
+                        "optimizer_cfg_overrides": {},
+                    },
+                )
 
-            mod.apply_optimizer_outputs_to_cfgs = fake_apply_optimizer_outputs_to_cfgs
+            mod.materialize_decoded_action = fake_materialize_decoded_action
 
             runner = BLBActionFinalEvaluationModule.__new__(BLBActionFinalEvaluationModule)
             runner.evaluator = FakeEvaluator()
@@ -744,7 +751,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
             )
         finally:
             mod.action_vector_to_cfgs = old_action_vector_to_cfgs
-            mod.apply_optimizer_outputs_to_cfgs = old_apply_optimizer_outputs_to_cfgs
+            mod.materialize_decoded_action = old_materialize_decoded_action
             mod.avg_truncation_k_in_action = old_avg_truncation_k_in_action
 
         self.assertEqual(marker_seen_by_forward["value"], "replan_applied")
@@ -1653,7 +1660,11 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         self.assertEqual(out.total_bits, 123)
 
     def test_env_all_max_action_uses_optimizer_baseline_scoring(self):
-        from blb_stage2_rl.action_space import load_max_sfs, make_all_max_action_vector
+        from blb_stage2_rl.action_space import (
+            avg_truncation_k_in_action,
+            load_max_sfs,
+            make_all_max_action_vector,
+        )
         from blb_stage2_rl.env import BLBStage2Env, BLBStage2EnvConfig, ProbeBatch
         from blb_stage2_rl.reward import BaselineCostStats, RewardWeights
         from rescale_optimizer_bridge import RescaleOptimizerOutput
@@ -1676,6 +1687,12 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         class FakeRescaleBridge:
             def __init__(self):
                 self.calls = []
+                self.invoker = SimpleNamespace(baselines={
+                    "block2_mrpc": ([0], [], []),
+                    "block3_exp_n4": ([0], [], []),
+                    "block4": ([0], [], []),
+                    "block5_n4": ([0], [], []),
+                })
 
             def evaluate_blocks(self, requests):
                 self.calls.append("cfg-derived")
@@ -1686,7 +1703,10 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
                         total_bits=100,
                         invalid_chain=None,
                         valid=True,
-                        raw={},
+                        raw={
+                            "result": {"valid": True},
+                            "new_compact_config": {},
+                        },
                     )
                     for name in requests
                 }
@@ -1700,12 +1720,16 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
                         total_bits=100,
                         invalid_chain=None,
                         valid=True,
-                        raw={},
+                        raw={
+                            "result": {"valid": True},
+                            "new_compact_config": {},
+                        },
                     )
                     for name in requests
                 }
 
         bridge = FakeRescaleBridge()
+        all_max_action = make_all_max_action_vector(num_layers=1)
         probe = ProbeBatch(
             input_ids=torch.ones((2, 4), dtype=torch.long),
             attention_mask=torch.ones((2, 4), dtype=torch.long),
@@ -1718,7 +1742,11 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             rescale_bridge=bridge,
             # RO still evaluates 4 SF/fusion blocks. Layer-0 Block1 K is
             # model-side only and does not add a replan request.
-            baseline=BaselineCostStats(total_bits_sum=400, total_fusion_count=0, avg_k=13.0),
+            baseline=BaselineCostStats(
+                total_bits_sum=400,
+                total_fusion_count=0,
+                avg_k=avg_truncation_k_in_action(all_max_action, 1),
+            ),
             reward_weights=RewardWeights(),
             acc_threshold=0.5,
             stab_threshold=10.0,
@@ -1727,7 +1755,7 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
             env_cfg=BLBStage2EnvConfig(profile="mrpc", num_trials_per_step=1),
         )
 
-        _obs, reward, done, info = env.step(make_all_max_action_vector(num_layers=1))
+        _obs, reward, done, info = env.step(all_max_action)
 
         self.assertEqual(bridge.calls, ["cfg-derived"])
         self.assertTrue(done)
@@ -1819,7 +1847,10 @@ class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
         # wasted model forward is skipped.
         self.assertFalse(info["forward_ran"])
         self.assertEqual(model.forward_count, 0)
-        self.assertEqual(info.get("forward_skipped_reason"), "any_invalid_chain")
+        self.assertEqual(
+            info.get("forward_skipped_reason"),
+            "optimizer_invalid_chain",
+        )
         self.assertEqual(info["reward_breakdown"].priority, 1)
         self.assertTrue(info["reward_breakdown"].invalid)
         self.assertEqual(info["reward_breakdown"].r_invalid, -30.0)
