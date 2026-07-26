@@ -211,6 +211,43 @@ class ElasticRLScalingABTests(unittest.TestCase):
             result.diffs,
         )
 
+    def test_stage2_allows_steps_absent_from_both_runs(self):
+        from scripts.elastic_rl_scaling_ab import compare_runs
+
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            data_root = base / "rl_training_data_points"
+            control = base / "control"
+            candidate = base / "candidate"
+            self._write_run(control, data_root, run_id="control-run")
+            self._write_run(
+                candidate,
+                data_root,
+                run_id="candidate-run",
+                timestamp=2.0,
+            )
+            for run_id in ("control-run", "candidate-run"):
+                (
+                    data_root
+                    / "stage2"
+                    / "bert-base"
+                    / "mrpc"
+                    / run_id
+                    / "steps.jsonl"
+                ).unlink()
+
+            result = compare_runs(
+                control,
+                candidate,
+                stage="stage2",
+                data_points_root=data_root,
+            )
+
+        self.assertTrue(result.equal, result.diffs)
+        self.assertEqual(result.compared["structured_steps"], 0)
+        self.assertEqual(result.compared["structured_episodes"], 1)
+        self.assertEqual(result.compared["structured_ppo"], 1)
+
     def test_recursive_checkpoint_change_fails(self):
         from scripts.elastic_rl_scaling_ab import compare_runs
 
