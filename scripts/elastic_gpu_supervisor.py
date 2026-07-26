@@ -83,11 +83,33 @@ class HealthSnapshot:
     def logical_device_spec(self) -> str:
         return ",".join(str(index) for index in range(len(self.healthy_tokens)))
 
+    @property
+    def healthy_visibility_tokens(self) -> tuple[str, ...]:
+        return tuple(
+            record.uuid
+            for record in self.records
+            if record.is_healthy
+        )
+
+    @property
+    def quarantined_visibility_tokens(self) -> tuple[str, ...]:
+        return tuple(
+            record.uuid
+            for record in self.records
+            if not record.is_healthy
+        )
+
     def to_record(self) -> dict[str, object]:
         return {
             "candidate_tokens": list(self.candidate_tokens),
             "healthy_tokens": list(self.healthy_tokens),
             "quarantined_tokens": list(self.quarantined_tokens),
+            "healthy_visibility_tokens": list(
+                self.healthy_visibility_tokens
+            ),
+            "quarantined_visibility_tokens": list(
+                self.quarantined_visibility_tokens
+            ),
             "logical_device_spec": self.logical_device_spec,
             "devices": [
                 {
@@ -203,6 +225,37 @@ def resolve_health_snapshot(
         quarantined_tokens=quarantined,
         records=selected,
     )
+
+
+def _visibility_tokens_for_candidates(
+    records: Sequence[GPUHealthRecord],
+    candidate_tokens: Iterable[object],
+) -> tuple[str, ...]:
+    return tuple(
+        _record_for_token(records, str(token).strip()).uuid
+        for token in candidate_tokens
+    )
+
+
+def _candidate_token_for_device(
+    records: Sequence[GPUHealthRecord],
+    candidate_tokens: Iterable[object],
+    device_token: object,
+) -> str:
+    device_record = _record_for_token(records, str(device_token).strip())
+    matches = [
+        str(candidate).strip()
+        for candidate in candidate_tokens
+        if _record_for_token(
+            records, str(candidate).strip()
+        ).uuid == device_record.uuid
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"device token {device_token!r} does not map to exactly one "
+            "candidate GPU"
+        )
+    return matches[0]
 
 
 def build_child_command(
@@ -366,7 +419,7 @@ class RecoveryMonitor:
             record = _record_for_token(records, token)
             if not record.is_healthy:
                 continue
-            if not self._canary(token):
+            if not self._canary(record.uuid):
                 continue
             self._reported.add(token)
             recovered.append(token)
@@ -544,6 +597,10 @@ def run_supervised(
             for original_index, token in enumerate(candidates)
             if token in current_index
         }
+        visibility_tokens = _visibility_tokens_for_candidates(
+            records,
+            live_tokens,
+        )
         launch_command = build_child_command(
             command,
             logical_device_spec=logical_spec,
@@ -551,7 +608,7 @@ def run_supervised(
             original_to_current_logical=original_to_current,
         )
         child_env = os.environ.copy()
-        child_env["CUDA_VISIBLE_DEVICES"] = ",".join(live_tokens)
+        child_env["CUDA_VISIBLE_DEVICES"] = ",".join(visibility_tokens)
         child_env[ELASTIC_GPU_RESTART_REQUEST_ENV] = str(request_path)
 
         failure_path.unlink(missing_ok=True)
@@ -562,6 +619,7 @@ def run_supervised(
                 "event": "launch",
                 "restart_count": restart_count,
                 "healthy_tokens": list(live_tokens),
+                "cuda_visible_devices": list(visibility_tokens),
                 "quarantined_tokens": sorted(permanently_quarantined),
                 "logical_device_spec": logical_spec,
                 "resume": should_resume,
@@ -635,9 +693,17 @@ def run_supervised(
         record_type = str(failure.get("record_type", ""))
         if record_type == _FAILURE_RECORD_TYPE:
             failed_token = str(failure.get("physical_device", "")).strip()
-            if not failed_token or failed_token not in live_tokens:
+            if not failed_token:
                 return return_code
-            permanently_quarantined.add(failed_token)
+            try:
+                failed_candidate = _candidate_token_for_device(
+                    records,
+                    live_tokens,
+                    failed_token,
+                )
+            except (RuntimeError, ValueError):
+                return return_code
+            permanently_quarantined.add(failed_candidate)
         elif record_type == _RESTART_RECORD_TYPE:
             recovered_tokens = tuple(
                 str(token)
