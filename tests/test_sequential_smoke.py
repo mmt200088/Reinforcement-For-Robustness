@@ -595,7 +595,7 @@ class OutputHygieneRegressionTest(unittest.TestCase):
             "metadata_width=0",
             "signal_width=4",
             "step_layer_indices=tuple(range(layerwise_horizon))",
-            "step_block_indices=(3,) * 12",
+            "step_block_indices=(3,) * layerwise_horizon",
         ):
             self.assertIn(needle, runner_src)
         self.assertIn('decision_granularity: str = "layer"', config_src)
