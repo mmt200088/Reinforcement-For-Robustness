@@ -137,11 +137,6 @@ class SupervisorRestartTest(unittest.TestCase):
             run_dir = Path(tmp)
             logs = run_dir / "logs"
             logs.mkdir()
-            (logs / "elastic_gpu_failure.json").write_text(
-                '{"record_type":"elastic_gpu_failure_v1",'
-                '"physical_device":"1"}\n',
-                encoding="utf-8",
-            )
             launches = []
             results = iter(
                 [
@@ -152,7 +147,14 @@ class SupervisorRestartTest(unittest.TestCase):
 
             def fake_run(command, *, env, check):
                 launches.append((list(command), dict(env), check))
-                return next(results)
+                result = next(results)
+                if result.returncode == ELASTIC_GPU_RESTART_EXIT_CODE:
+                    (logs / "elastic_gpu_failure.json").write_text(
+                        '{"record_type":"elastic_gpu_failure_v1",'
+                        '"physical_device":"1"}\n',
+                        encoding="utf-8",
+                    )
+                return result
 
             rc = run_supervised(
                 child_command=[
@@ -190,13 +192,13 @@ class SupervisorRestartTest(unittest.TestCase):
             run_dir = Path(tmp)
             logs = run_dir / "logs"
             logs.mkdir()
-            (logs / "elastic_gpu_failure.json").write_text(
-                '{"record_type":"elastic_gpu_failure_v1",'
-                '"physical_device":"1"}\n',
-                encoding="utf-8",
-            )
 
             def always_restart(command, *, env, check):
+                (logs / "elastic_gpu_failure.json").write_text(
+                    '{"record_type":"elastic_gpu_failure_v1",'
+                    '"physical_device":"1"}\n',
+                    encoding="utf-8",
+                )
                 return subprocess.CompletedProcess(
                     command,
                     ELASTIC_GPU_RESTART_EXIT_CODE,
