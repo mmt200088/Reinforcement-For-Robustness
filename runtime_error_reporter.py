@@ -8,6 +8,13 @@ from collections import deque
 from pathlib import Path
 from typing import Iterable, Optional, Sequence, Union
 
+from elastic_gpu import (
+    ELASTIC_GPU_RESTART_EXIT_CODE,
+    ElasticGPUFailure,
+    ElasticGPURestartRequested,
+    write_elastic_gpu_failure_record,
+)
+
 
 ERROR_SUMMARY_FILENAME = "error_summary.txt"
 
@@ -154,6 +161,17 @@ def run_fire_entrypoint(
 
     try:
         fire_module.Fire(target)
+    except (ElasticGPUFailure, ElasticGPURestartRequested) as exc:
+        write_elastic_gpu_failure_record(run_output_dir, exc)
+        write_error_summary(
+            run_output_dir,
+            program_name=program_name,
+            status="elastic_gpu_restart",
+            message=f"{type(exc).__name__}: {exc}",
+            argv=argv,
+            exit_code=ELASTIC_GPU_RESTART_EXIT_CODE,
+        )
+        raise SystemExit(ELASTIC_GPU_RESTART_EXIT_CODE) from None
     except KeyboardInterrupt:
         write_error_summary(
             run_output_dir,
