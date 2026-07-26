@@ -501,7 +501,13 @@ def run_child_foreground(
     check: bool,
 ) -> subprocess.CompletedProcess[object]:
     """Run the learner in front and forward launcher stop signals to it."""
-    child = subprocess.Popen(list(command), env=dict(env))
+    lock_fd_text = str(env.get("BLB_STAGE2_RUN_LOCK_FD", "")).strip()
+    pass_fds = (int(lock_fd_text),) if lock_fd_text else ()
+    child = subprocess.Popen(
+        list(command),
+        env=dict(env),
+        pass_fds=pass_fds,
+    )
     previous_handlers: dict[int, object] = {}
 
     def forward(signum: int, _frame: object) -> None:

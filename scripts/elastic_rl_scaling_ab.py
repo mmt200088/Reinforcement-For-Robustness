@@ -12,7 +12,12 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
+import sys
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from blb_stage2_rl.candidate_store import CandidateStore
 from jsonl_utils import iter_jsonl
