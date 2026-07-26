@@ -6814,6 +6814,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"触发安全停止（在下一回合边界保存 checkpoint 后退出）。"
             )
             stage1_resume_start_episode = 0
+            _stage1_cuda_rng_role_registry = None
             if _stage1_resume_ckpt_path:
                 _log_rounded_box(
                     self.log,
@@ -6848,6 +6849,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
                 ckpt = load_stage1_rl_checkpoint(
                     _stage1_resume_ckpt_path, gtrxl_net, optimizer, device=self.device,
+                )
+                _stage1_cuda_rng_role_registry = list(
+                    ckpt.get("cuda_rng_state_by_role") or ()
                 )
                 _checkpoint_run_id = ckpt.get("structured_run_id")
                 if (
@@ -7553,6 +7557,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         structured_run_id=stage1_data_writer.run_id,
                         structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                         detail_file_sizes=_stage1_detail_file_sizes,
+                        cuda_rng_role_registry=_stage1_cuda_rng_role_registry,
                     )
                     if (
                         not stage1_entropy_converged
@@ -7634,6 +7639,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         structured_run_id=stage1_data_writer.run_id,
                         structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                         detail_file_sizes=_stage1_detail_file_sizes,
+                        cuda_rng_role_registry=_stage1_cuda_rng_role_registry,
                     )
                     consume_stop_flag_file(stage1_stop_flag_path)
                     stage1_data_writer.write_summary({
@@ -7717,6 +7723,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     structured_run_id=stage1_data_writer.run_id,
                     structured_jsonl_sizes=_stage1_structured_jsonl_sizes,
                     detail_file_sizes=_stage1_detail_file_sizes,
+                    cuda_rng_role_registry=_stage1_cuda_rng_role_registry,
                 )
                 self.log(f"  [完成] Stage-1 最终 checkpoint 已保存 → {stage1_checkpoint_path}")
             if self.run_output_dir:
