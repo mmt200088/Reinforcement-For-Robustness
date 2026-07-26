@@ -1643,7 +1643,7 @@ class RLDataPointWriterTest(unittest.TestCase):
 
     def test_layerwise_checkpoint_precedes_probe_replica_restart(self):
         source = (REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text()
-        callback_start = source.index("def on_ppo_update(")
+        callback_start = source.index("def on_layerwise_update(")
         checkpoint_pos = source.index(
             "save_layerwise_checkpoint(",
             callback_start,
