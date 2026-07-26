@@ -327,6 +327,11 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         self.assertEqual(runner.pool_generation, 1)
         self.assertTrue(failed.closed)
         self.assertFalse(healthy.closed)
+        deferred = runner.pop_deferred_gpu_failure()
+        self.assertIsNotNone(deferred)
+        self.assertEqual(deferred.role, "reward-probe-replica")
+        self.assertEqual(deferred.device, "cuda:2")
+        self.assertIsNone(runner.pop_deferred_gpu_failure())
 
     def test_remote_failure_names_worker_and_device(self):
         events = []

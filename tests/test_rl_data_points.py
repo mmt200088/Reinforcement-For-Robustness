@@ -1641,6 +1641,24 @@ class RLDataPointWriterTest(unittest.TestCase):
         checkpoint_pos = source.index("torch.save(checkpoint, tmp_path)", flush_pos)
         self.assertLess(flush_pos, checkpoint_pos)
 
+    def test_layerwise_checkpoint_precedes_probe_replica_restart(self):
+        source = (REPO_ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text()
+        callback_start = source.index("def on_ppo_update(")
+        checkpoint_pos = source.index(
+            "save_layerwise_checkpoint(",
+            callback_start,
+        )
+        deferred_pos = source.index(
+            "shared_probe_runner.pop_deferred_gpu_failure()",
+            checkpoint_pos,
+        )
+        recovery_pos = source.index(
+            "raise_if_elastic_gpu_restart_requested()",
+            deferred_pos,
+        )
+        self.assertLess(checkpoint_pos, deferred_pos)
+        self.assertLess(deferred_pos, recovery_pos)
+
     def test_stage2_diagnostics_streams_human_report_writes(self):
         spec = importlib.util.spec_from_file_location(
             "blb_stage2_diagnostics_report_stream_for_test",
