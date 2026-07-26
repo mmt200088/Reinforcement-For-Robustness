@@ -127,6 +127,45 @@ class ChildCommandTest(unittest.TestCase):
         self.assertEqual(appended[-2:], ["--resume_run_dir", "/run/current"])
         self.assertNotIn("old", replaced)
 
+    def test_explicit_devices_follow_the_compressed_visibility_map(self):
+        rewritten = build_child_command(
+            [
+                "python",
+                "rl_tune.py",
+                "--blb_v3_reward_devices",
+                "2,4",
+            ],
+            logical_device_spec="0,1,2,3",
+            resume_run_dir=None,
+            original_to_current_logical={
+                "0": "0",
+                "1": "1",
+                "2": "2",
+                "4": "3",
+            },
+        )
+
+        self.assertEqual(rewritten[-1], "2,3")
+
+    def test_explicit_devices_drop_only_quarantined_members(self):
+        rewritten = build_child_command(
+            [
+                "python",
+                "rl_tune.py",
+                "--blb_v3_reward_devices",
+                "2,4",
+            ],
+            logical_device_spec="0,1,2",
+            resume_run_dir=None,
+            original_to_current_logical={
+                "0": "0",
+                "1": "1",
+                "4": "2",
+            },
+        )
+
+        self.assertEqual(rewritten[-1], "2")
+
 
 class RecoveryMonitorTest(unittest.TestCase):
     def test_only_quarantined_eligible_devices_reach_canary(self):
