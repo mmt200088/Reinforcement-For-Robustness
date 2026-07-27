@@ -1,8 +1,8 @@
 """Torch-free codec for the canonical Stage-2 layerwise policy.
 
-The legacy full action vector remains the runtime interchange format.  This
-module owns only the compact policy action: one Block4 fusion choice and five
-truncation-K choices per Transformer layer.
+The legacy full action vector remains the runtime interchange format. This
+module owns only the compact policy action: one Block4 fusion choice and one
+high/medium/low truncation-precision preset per Transformer layer.
 """
 
 from __future__ import annotations
@@ -13,6 +13,21 @@ from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence, Tuple
 
 import numpy as np
+
+try:
+    from .precision_presets import (
+        PRECISION_PRESETS,
+        network_axis_weights,
+        precision_preset,
+        validate_communication_importance_ratio,
+    )
+except ImportError:  # pragma: no cover - legacy top-level import compatibility
+    from precision_presets import (
+        PRECISION_PRESETS,
+        network_axis_weights,
+        precision_preset,
+        validate_communication_importance_ratio,
+    )
 
 try:
     from .truncation_levels import (
@@ -32,11 +47,7 @@ except ImportError:  # pragma: no cover - legacy top-level import compatibility
 
 LAYERWISE_SLOT_NAMES = (
     "block4_fusion",
-    "block1_k",
-    "block2_k",
-    "block3_k",
-    "block4_k",
-    "block5_k",
+    "truncation_precision",
 )
 
 def _validate_k_levels() -> Tuple[int, ...]:
@@ -60,7 +71,7 @@ def _validated_num_layers(num_layers: int) -> int:
 def layerwise_action_space_version(num_layers: int) -> str:
     """Return the persisted action-space identity for one model depth."""
     layers = _validated_num_layers(num_layers)
-    return f"stage2_layerwise_{layers}x{len(LAYERWISE_SLOT_NAMES)}_v2"
+    return f"stage2_layerwise_{layers}x{len(LAYERWISE_SLOT_NAMES)}_hml_v3"
 
 
 def max_compute_saving_units(num_layers: int) -> float:
@@ -69,18 +80,16 @@ def max_compute_saving_units(num_layers: int) -> float:
 
 
 def max_communication_saving_units(num_layers: int) -> float:
-    """Maximum removed K bits across all active per-block K slots."""
-    layers = _validated_num_layers(num_layers)
-    return float(5 * layers) * float(K_MAX_BITS - K_MIN_BITS)
+    """Maximum count of per-layer low-precision utility units."""
+    return float(_validated_num_layers(num_layers))
 
 
 # Backward-compatible BERT-base constants. New callers with a model instance
 # must use the layer-count helpers above.
 MAX_COMPUTE_SAVING_UNITS = max_compute_saving_units(12)
 MAX_COMMUNICATION_SAVING_UNITS = max_communication_saving_units(12)
-RESOURCE_SECONDARY_EPSILON = 1.0e-4
-LAYERWISE_DECODE_VERSION = "layerwise_action_v2"
-LAYERWISE_COST_MODEL_REVISION = "dual_resource_maxmin_shapley_v2"
+LAYERWISE_DECODE_VERSION = "layerwise_hml_action_v3"
+LAYERWISE_COST_MODEL_REVISION = "network_weighted_compute_communication_v3"
 
 
 @dataclass(frozen=True)
@@ -98,6 +107,7 @@ class LayerwiseStepSpec:
 class LayerwiseDecodedAction:
     block4_fusion: int
     k_by_block: Mapping[int, int]
+    precision_preset_index: int = -1
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -105,6 +115,11 @@ class LayerwiseDecodedAction:
             "k_by_block",
             MappingProxyType({int(block): int(k_value) for block, k_value in self.k_by_block.items()}),
         )
+        object.__setattr__(self, "precision_preset_index", int(self.precision_preset_index))
+
+    @property
+    def precision_preset_name(self) -> str:
+        return precision_preset(self.precision_preset_index).name
 
 
 @dataclass(frozen=True)
@@ -121,7 +136,11 @@ class LayerActionApplication:
         object.__setattr__(
             self,
             "decoded",
-            LayerwiseDecodedAction(self.decoded.block4_fusion, self.decoded.k_by_block),
+            LayerwiseDecodedAction(
+                self.decoded.block4_fusion,
+                self.decoded.k_by_block,
+                self.decoded.precision_preset_index,
+            ),
         )
         object.__setattr__(
             self,
@@ -139,6 +158,40 @@ class LayerActionApplication:
 
 
 @dataclass(frozen=True)
+class LayerwiseMaterialization:
+    """One exact legacy-vector materialization used by strict evaluation."""
+
+    mode: str
+    full_vector: np.ndarray
+    action_matrix: Tuple[Tuple[int, int], ...]
+    boosted_overrides: Mapping[Tuple[int, int], Mapping[str, int]]
+
+    def __post_init__(self) -> None:
+        vector = np.asarray(self.full_vector, dtype=int).reshape(-1).copy()
+        vector.setflags(write=False)
+        matrix = tuple(
+            tuple(int(value) for value in row)
+            for row in self.action_matrix
+        )
+        if not matrix or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in matrix):
+            raise ValueError("materialized action_matrix must have shape num_layers x 2")
+        object.__setattr__(self, "mode", str(self.mode))
+        object.__setattr__(self, "full_vector", vector)
+        object.__setattr__(self, "action_matrix", matrix)
+        object.__setattr__(
+            self,
+            "boosted_overrides",
+            MappingProxyType({
+                (int(block_idx), int(layer_idx)): MappingProxyType({
+                    str(name): int(value)
+                    for name, value in fields.items()
+                })
+                for (block_idx, layer_idx), fields in self.boosted_overrides.items()
+            }),
+        )
+
+
+@dataclass(frozen=True)
 class VariableCost:
     compute_saving: float
     communication_saving: float
@@ -147,6 +200,9 @@ class VariableCost:
     ppo_resource_score: float
     compute_shapley_credit: float
     communication_shapley_credit: float
+    compute_weight: float
+    communication_weight: float
+    communication_importance_ratio: float
     fusion_count: int
     removed_k_bits: int
     layer_resource_rewards: Tuple[float, ...]
@@ -191,41 +247,37 @@ def _unit_interval(name: str, value: float) -> float:
 def dual_resource_score(
         compute_saving: float,
         communication_saving: float,
+        communication_importance_ratio: float = 1.0,
         ) -> Tuple[float, float, float]:
-    """Return robust floor, secondary progress, and the bounded PPO score."""
+    """Return diagnostics plus the network-weighted bounded PPO score."""
     compute = _unit_interval("compute_saving", compute_saving)
     communication = _unit_interval("communication_saving", communication_saving)
     robust_floor = min(compute, communication)
     secondary_progress = 0.5 * (compute + communication)
-    score = (
-        robust_floor + RESOURCE_SECONDARY_EPSILON * secondary_progress
-    ) / (1.0 + RESOURCE_SECONDARY_EPSILON)
+    compute_weight, communication_weight = network_axis_weights(
+        communication_importance_ratio,
+    )
+    score = compute_weight * compute + communication_weight * communication
     return float(robust_floor), float(secondary_progress), float(score)
 
 
 def resource_shapley_credits(
         compute_saving: float,
         communication_saving: float,
+        communication_importance_ratio: float = 1.0,
         ) -> Tuple[float, float]:
-    """Split the coupled PPO score between compute and communication."""
+    """Return direct, separable resource-family credits.
+
+    The historical function name remains as a read-only API alias for reports
+    and fixtures. No Shapley decomposition is used by the v3 objective.
+    """
     compute = _unit_interval("compute_saving", compute_saving)
     communication = _unit_interval("communication_saving", communication_saving)
-
-    def value(compute_value: float, communication_value: float) -> float:
-        return dual_resource_score(compute_value, communication_value)[2]
-
-    empty = value(0.0, 0.0)
-    compute_credit = 0.5 * (value(compute, 0.0) - empty) + 0.5 * (
-        value(compute, communication) - value(0.0, communication)
+    compute_weight, communication_weight = network_axis_weights(
+        communication_importance_ratio,
     )
-    total = value(compute, communication)
-    if abs(compute_credit) < 1.0e-15:
-        compute_credit = 0.0
-    communication_credit = total - compute_credit
-    if abs(communication_credit) < 1.0e-15:
-        communication_credit = 0.0
-    if compute_credit < 0.0 or communication_credit < 0.0:
-        raise RuntimeError("dual-resource Shapley credits must be nonnegative")
+    compute_credit = compute_weight * compute
+    communication_credit = communication_weight * communication
     return float(compute_credit), float(communication_credit)
 
 
@@ -306,15 +358,15 @@ def layerwise_schedule(
         profile: str = "mrpc",
         gelu_degrees: Sequence[int] | None = None,
         ) -> list[LayerwiseStepSpec]:
-    """Return one six-slot policy step per Transformer layer."""
-    levels = _validate_k_levels()
+    """Return one two-slot policy step per Transformer layer."""
+    _validate_k_levels()
     layers = int(num_layers)
     if layers < 1:
         raise ValueError(f"num_layers must be >= 1, got {layers}")
     if gelu_degrees is not None and len(gelu_degrees) != layers:
         raise ValueError(f"gelu_degrees has {len(gelu_degrees)} values, expected {layers}")
 
-    slot_dims = (2,) + (len(levels),) * 5
+    slot_dims = (2, len(PRECISION_PRESETS))
     specs = []
     for layer_idx in range(layers):
         gelu_degree = int(gelu_degrees[layer_idx]) if gelu_degrees is not None else 4
@@ -322,7 +374,7 @@ def layerwise_schedule(
             step_idx=layer_idx,
             layer_idx=layer_idx,
             slot_dims=slot_dims,
-            slot_mask=(True, True, True, True, True, True),
+            slot_mask=(True, True),
             terminal=(layer_idx == layers - 1),
             num_layers=layers,
             graph_keys_by_block=_graph_keys(layer_idx, str(profile), gelu_degree),
@@ -393,9 +445,17 @@ def apply_layer_action(
     _validate_graphs(step_spec, fusion_map)
 
     graph_keys = dict(step_spec.graph_keys_by_block)
-    k_indices = {1: action[1], 2: action[2], 3: action[3], 4: action[4], 5: action[5]}
+    preset_index = int(action[1])
+    preset = precision_preset(preset_index)
+    k_by_block = {
+        block_idx: int(preset.k_by_block[block_idx - 1])
+        for block_idx in _BLOCK_ORDER
+    }
+    k_indices = {
+        block_idx: int(K_LEVELS.index(k_by_block[block_idx]))
+        for block_idx in _BLOCK_ORDER
+    }
     active_blocks = _BLOCK_ORDER
-    k_by_block = {block_idx: int(K_LEVELS[k_indices[block_idx]]) for block_idx in active_blocks}
     fusion_option_ids: dict[int, int] = {}
     boosted_values: dict[int, Mapping[str, int]] = {}
 
@@ -424,23 +484,145 @@ def apply_layer_action(
         result[k_offset] = k_indices[baseline_owned_block]
     return LayerActionApplication(
         full_vector=result,
-        decoded=LayerwiseDecodedAction(block4_fusion=int(action[0]), k_by_block=k_by_block),
+        decoded=LayerwiseDecodedAction(
+            block4_fusion=int(action[0]),
+            k_by_block=k_by_block,
+            precision_preset_index=preset_index,
+        ),
         fusion_option_ids=fusion_option_ids,
         boosted_field_values_by_block=boosted_values,
     )
 
 
-def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> VariableCost:
+def materialize_layerwise_counterfactuals(
+        baseline_full_vector: Sequence[int],
+        action_matrix: Sequence[Sequence[int]],
+        schedule: Sequence[LayerwiseStepSpec],
+        fusion_map: Any,
+        ) -> Mapping[str, LayerwiseMaterialization]:
+    """Materialize joint and isolated-axis configs from one policy action.
+
+    ``compute_only`` preserves every installed fusion option but resets every
+    truncation K to the statistical baseline K=13. ``communication_only``
+    starts from the statistical baseline vector and changes only the five K
+    slots per layer, so no fusion option or boosted noise is installed.
+    """
+    rows = tuple(tuple(int(value) for value in row) for row in action_matrix)
+    specs = tuple(schedule)
+    if not rows or len(rows) != len(specs):
+        raise ValueError(
+            "action_matrix and schedule must contain the same nonzero layer count"
+        )
+    if any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
+        raise ValueError("action_matrix must have shape num_layers x 2")
+    if any(int(spec.step_idx) != index for index, spec in enumerate(specs)):
+        raise ValueError("layerwise schedule must be ordered by step_idx")
+
+    baseline = np.asarray(baseline_full_vector, dtype=int).reshape(-1).copy()
+    expected_size = len(specs) * _LAYER_WIDTH + 1
+    if baseline.size != expected_size:
+        raise ValueError(
+            f"baseline_full_vector has {baseline.size} slots, expected {expected_size}"
+        )
+
+    joint_vector = baseline.copy()
+    joint_overrides: dict[Tuple[int, int], dict[str, int]] = {}
+    for row, spec in zip(rows, specs):
+        application = apply_layer_action(
+            joint_vector,
+            row,
+            spec,
+            fusion_map,
+        )
+        joint_vector = application.full_vector.copy()
+        for block_idx, fields in application.boosted_field_values_by_block.items():
+            joint_overrides[(int(block_idx), int(spec.layer_idx))] = {
+                str(name): int(value) for name, value in fields.items()
+            }
+
+    baseline_k_index = int(K_LEVELS.index(K_MAX_BITS))
+    compute_vector = joint_vector.copy()
+    compute_overrides = {
+        key: dict(fields) for key, fields in joint_overrides.items()
+    }
+    communication_vector = baseline.copy()
+    for row, spec in zip(rows, specs):
+        preset = precision_preset(row[1])
+        for block_idx, k_value in zip(_BLOCK_ORDER, preset.k_by_block):
+            k_offset = _block_offsets(spec.layer_idx, block_idx).stop - 1
+            compute_vector[k_offset] = baseline_k_index
+            communication_vector[k_offset] = int(K_LEVELS.index(int(k_value)))
+        for block_idx in _BLOCK_ORDER:
+            fields = compute_overrides.get((block_idx, int(spec.layer_idx)))
+            if fields is not None:
+                fields["output_truncation_k"] = int(K_MAX_BITS)
+
+    return MappingProxyType({
+        "joint": LayerwiseMaterialization(
+            mode="joint",
+            full_vector=joint_vector,
+            action_matrix=rows,
+            boosted_overrides=joint_overrides,
+        ),
+        "compute_only": LayerwiseMaterialization(
+            mode="compute_only",
+            full_vector=compute_vector,
+            action_matrix=rows,
+            boosted_overrides=compute_overrides,
+        ),
+        "communication_only": LayerwiseMaterialization(
+            mode="communication_only",
+            full_vector=communication_vector,
+            action_matrix=rows,
+            boosted_overrides={},
+        ),
+    })
+
+
+def _decoded_preset_index(action: LayerwiseDecodedAction, layer_idx: int) -> int:
+    index = int(action.precision_preset_index)
+    if 0 <= index < len(PRECISION_PRESETS):
+        expected = {
+            block_idx: PRECISION_PRESETS[index].k_by_block[block_idx - 1]
+            for block_idx in _BLOCK_ORDER
+        }
+        if dict(action.k_by_block) != expected:
+            raise ValueError(
+                f"layer {layer_idx} preset {index} does not match decoded K values"
+            )
+        return index
+    observed = tuple(int(action.k_by_block[block]) for block in _BLOCK_ORDER)
+    matches = [
+        preset_index
+        for preset_index, preset in enumerate(PRECISION_PRESETS)
+        if tuple(preset.k_by_block) == observed
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"layer {layer_idx} K values {observed} do not identify one precision preset"
+        )
+    return int(matches[0])
+
+
+def compute_variable_cost(
+        actions: Sequence[LayerwiseDecodedAction],
+        *,
+        communication_importance_ratio: float = 1.0,
+        ) -> VariableCost:
     """Compute independent compute/communication savings from decoded actions."""
     _validate_k_levels()
     num_layers = len(actions)
     if num_layers < 1:
         raise ValueError("variable cost requires at least one layer action")
+    ratio = validate_communication_importance_ratio(
+        communication_importance_ratio,
+    )
+    compute_weight, communication_weight = network_axis_weights(ratio)
     compute_denominator = max_compute_saving_units(num_layers)
     active_k_slots = 5 * num_layers
-    communication_denominator = max_communication_saving_units(num_layers)
     fusion_values = []
     k_values = []
+    communication_utilities = []
     raw_slot_contributions = []
     for layer_idx, action in enumerate(actions):
         expected_blocks = {1, 2, 3, 4, 5}
@@ -453,20 +635,20 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
         if fusion not in (0, 1):
             raise ValueError(f"layer {layer_idx} Block4 fusion must be 0 or 1, got {fusion}")
         fusion_values.append(fusion)
+        preset_index = _decoded_preset_index(action, layer_idx)
+        communication_utility = float(
+            PRECISION_PRESETS[preset_index].communication_utility
+        )
+        communication_utilities.append(communication_utility)
         for block_idx, k_value in action.k_by_block.items():
             k = int(k_value)
             if k not in K_LEVELS:
                 raise ValueError(f"layer {layer_idx} block {block_idx} has unsupported K={k}")
             k_values.append(k)
         current_slot_contributions = [
-            float(fusion) / compute_denominator,
+            compute_weight * float(fusion) / compute_denominator,
+            communication_weight * communication_utility / float(num_layers),
         ]
-        current_slot_contributions.extend(
-            (float(K_MAX_BITS) - float(action.k_by_block[block_idx]))
-            / communication_denominator
-            if block_idx in action.k_by_block else 0.0
-            for block_idx in _BLOCK_ORDER
-        )
         raw_slot_contributions.append(current_slot_contributions)
     if len(k_values) != active_k_slots:
         raise RuntimeError(
@@ -476,28 +658,22 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
     fusion_count = int(sum(fusion_values))
     removed_k_bits = int(sum(K_MAX_BITS - k for k in k_values))
     compute_saving = float(fusion_count) / compute_denominator
-    communication_saving = (
-        float(removed_k_bits) / communication_denominator
-    )
+    communication_saving = float(sum(communication_utilities)) / float(num_layers)
     robust_floor, secondary_progress, ppo_resource_score = dual_resource_score(
-        compute_saving, communication_saving,
+        compute_saving,
+        communication_saving,
+        ratio,
     )
     compute_credit, communication_credit = resource_shapley_credits(
-        compute_saving, communication_saving,
+        compute_saving,
+        communication_saving,
+        ratio,
     )
 
-    slot_resource_rewards = []
-    for raw_row in raw_slot_contributions:
-        row = [
-            compute_credit * raw_row[0] / compute_saving
-            if compute_saving > 0.0 else 0.0,
-        ]
-        row.extend(
-            communication_credit * value / communication_saving
-            if communication_saving > 0.0 else 0.0
-            for value in raw_row[1:]
-        )
-        slot_resource_rewards.append(tuple(float(value) for value in row))
+    slot_resource_rewards = [
+        tuple(float(value) for value in raw_row)
+        for raw_row in raw_slot_contributions
+    ]
     layer_resource_rewards = tuple(
         float(sum(row)) for row in slot_resource_rewards
     )
@@ -515,6 +691,9 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
         ppo_resource_score=float(ppo_resource_score),
         compute_shapley_credit=float(compute_credit),
         communication_shapley_credit=float(communication_credit),
+        compute_weight=float(compute_weight),
+        communication_weight=float(communication_weight),
+        communication_importance_ratio=float(ratio),
         fusion_count=int(fusion_count),
         removed_k_bits=int(removed_k_bits),
         layer_resource_rewards=layer_resource_rewards,
@@ -524,12 +703,14 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
 
 def compute_variable_cost_from_action_matrix(
         action_matrix: Sequence[Sequence[int]],
+        *,
+        communication_importance_ratio: float = 1.0,
         ) -> VariableCost:
-    """Decode a canonical ``num_layers x 6`` policy action and compute its cost."""
-    levels = _validate_k_levels()
+    """Decode a canonical ``num_layers x 2`` policy action and compute its cost."""
+    _validate_k_levels()
     rows = [tuple(int(value) for value in row) for row in action_matrix]
     if not rows or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
-        raise ValueError("action_matrix must have shape num_layers x 6")
+        raise ValueError("action_matrix must have shape num_layers x 2")
     decoded = []
     for layer_idx, row in enumerate(rows):
         fusion = int(row[0])
@@ -537,18 +718,46 @@ def compute_variable_cost_from_action_matrix(
             raise ValueError(
                 f"action_matrix[{layer_idx}][0]={fusion} outside [0, 2)"
             )
-        active_blocks = _BLOCK_ORDER
-        k_by_block = {}
-        for block_idx in active_blocks:
-            k_index = int(row[block_idx])
-            if not 0 <= k_index < len(levels):
-                raise ValueError(
-                    f"action_matrix[{layer_idx}][{block_idx}]={k_index} "
-                    f"outside [0, {len(levels)})"
+        preset_index = int(row[1])
+        preset = precision_preset(preset_index)
+        k_by_block = {
+            block_idx: int(preset.k_by_block[block_idx - 1])
+            for block_idx in _BLOCK_ORDER
+        }
+        decoded.append(LayerwiseDecodedAction(fusion, k_by_block, preset_index))
+    return compute_variable_cost(
+        decoded,
+        communication_importance_ratio=communication_importance_ratio,
+    )
+
+
+def describe_layerwise_action_matrix(
+        action_matrix: Sequence[Sequence[int]],
+        ) -> list[dict[str, Any]]:
+    """Return the exact per-layer fusion and truncation configuration."""
+    rows = [tuple(int(value) for value in row) for row in action_matrix]
+    if not rows or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
+        raise ValueError("action_matrix must have shape num_layers x 2")
+    description = []
+    for layer_idx, (fusion, preset_index) in enumerate(rows):
+        if fusion not in (0, 1):
+            raise ValueError(
+                f"action_matrix[{layer_idx}][0]={fusion} outside [0, 2)"
+            )
+        preset = precision_preset(preset_index)
+        description.append({
+            "layer_idx": int(layer_idx),
+            "block4_fusion_count": int(fusion),
+            "precision_preset_index": int(preset_index),
+            "precision_preset_name": str(preset.name),
+            "truncation_k_by_block": {
+                f"block{block_idx}": int(k_value)
+                for block_idx, k_value in enumerate(
+                    preset.k_by_block, start=1,
                 )
-            k_by_block[block_idx] = int(levels[k_index])
-        decoded.append(LayerwiseDecodedAction(fusion, k_by_block))
-    return compute_variable_cost(decoded)
+            },
+        })
+    return description
 
 
 def one_coordinate_neighbors(action_matrix: Sequence[Sequence[int]]) -> Iterator[list[list[int]]]:
@@ -556,8 +765,8 @@ def one_coordinate_neighbors(action_matrix: Sequence[Sequence[int]]) -> Iterator
     levels = _validate_k_levels()
     rows = [list(map(int, row)) for row in action_matrix]
     if not rows or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
-        raise ValueError("action_matrix must have shape num_layers x 6")
-    dims = (2,) + (len(levels),) * 5
+        raise ValueError("action_matrix must have shape num_layers x 2")
+    dims = (2, len(PRECISION_PRESETS))
     for layer_idx, row in enumerate(rows):
         for slot_idx, value in enumerate(row):
             if not 0 <= value < dims[slot_idx]:

@@ -159,7 +159,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
 
         self.assertEqual(self.base.reset_seeds, [17])
         self.assertEqual(self.env.horizon, 12)
-        self.assertEqual(self.env.max_step_dim, 6)
+        self.assertEqual(self.env.max_step_dim, 2)
         self.assertEqual(observation.shape, (self.env.state_dim,))
         self.assertEqual(self.env.current_spec().layer_idx, 0)
         self.assertEqual(len(self.env.schedule), 12)
@@ -191,7 +191,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
 
     def test_evaluates_four_then_five_blocks_and_records_one_row(self):
         self.env.reset()
-        next_obs, reward, done, info = self.env.step([1, 5, 0, 1, 2, 3])
+        next_obs, reward, done, info = self.env.step([1, 2])
 
         self.assertEqual([call["block_idx"] for call in self.runtime_calls], [2, 3, 4, 5])
         self.assertEqual(reward, 0.0)
@@ -207,7 +207,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(len(self.base.step_calls), 0)
 
         self.runtime_calls.clear()
-        self.env.step([0, 0, 0, 0, 0, 0])
+        self.env.step([0, 0])
         self.assertEqual([call["block_idx"] for call in self.runtime_calls], [1, 2, 3, 4, 5])
         self.assertEqual(len(self.env.layer_summaries), 2)
 
@@ -215,7 +215,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.env.reset()
         actions = []
         for layer_idx in range(12):
-            action = [layer_idx % 2, 0, 1, 2, 3, 4]
+            action = [layer_idx % 2, layer_idx % 3]
             actions.append(action[:])
             obs, reward, done, info = self.env.step(action)
             if layer_idx < 11:
@@ -245,6 +245,9 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
                 "ppo_resource_score",
                 "compute_shapley_credit",
                 "communication_shapley_credit",
+                "compute_weight",
+                "communication_weight",
+                "communication_importance_ratio",
                 "fusion_count",
                 "removed_k_bits",
                 "layer_resource_rewards",
@@ -255,7 +258,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(len(objective["layer_resource_rewards"]), 12)
         self.assertEqual(len(objective["slot_resource_rewards"]), 12)
         self.assertTrue(all(
-            len(row) == 6 for row in objective["slot_resource_rewards"]
+            len(row) == 2 for row in objective["slot_resource_rewards"]
         ))
 
         for layer_cost, slot_costs in zip(
@@ -304,15 +307,19 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
                 row for row in info["k_choices"]
                 if row["layer_idx"] == 0 and row["block_idx"] == 1
             )["k_value"],
-            8,
+            11,
         )
-        expected_removed = 12 * sum(
-            13 - int(self.layerwise.K_LEVELS[index]) for index in range(5)
+        expected_removed = sum(
+            sum(13 - int(k_value) for k_value in preset.k_by_block)
+            for preset in (
+                self.layerwise.PRECISION_PRESETS[layer_idx % 3]
+                for layer_idx in range(12)
+            )
         )
         self.assertEqual(objective["removed_k_bits"], expected_removed)
         self.assertAlmostEqual(
             objective["communication_saving"],
-            float(expected_removed) / 420.0,
+            0.5,
         )
         self.assertEqual(len(info["fusion_option_ids"]), 12)
         self.assertTrue(info["boosted_overrides"])
@@ -322,7 +329,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
 
         # Block3 keeps the exact RO-baseline SF indices but carries policy K.
         np.testing.assert_array_equal(terminal_vector[32:39], np.arange(1, 8))
-        self.assertEqual(terminal_vector[39], 2)
+        self.assertEqual(terminal_vector[39], self.layerwise.K_LEVELS.index(10))
 
     def test_deferred_terminal_prepares_exact_seed_without_running_base_step(self):
         self.base.probe_noise_seed = 777
@@ -331,7 +338,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
 
         for layer_idx in range(12):
             obs, reward, done, info = self.env.step(
-                [layer_idx % 2, 0, 1, 2, 3, 4],
+                [layer_idx % 2, layer_idx % 3],
             )
 
         self.assertTrue(done)
@@ -377,7 +384,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
 
         env.reset(seed=24)
         for layer_idx in range(24):
-            _obs, reward, done, info = env.step([layer_idx % 2, 0, 1, 2, 3, 4])
+            _obs, reward, done, info = env.step([layer_idx % 2, layer_idx % 3])
             self.assertEqual(done, layer_idx == 23)
             self.assertEqual(reward, 7.25 if done else 0.0)
 
@@ -390,7 +397,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
     def test_invalid_block_is_aggregated_without_early_termination(self):
         self.invalid_key = (0, 2)
         self.env.reset()
-        _obs, reward, done, info = self.env.step([0, 0, 0, 0, 0, 0])
+        _obs, reward, done, info = self.env.step([0, 0])
 
         self.assertEqual(reward, 0.0)
         self.assertFalse(done)
@@ -399,16 +406,16 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
             "reason": "invalid test chain",
         })
         for _ in range(11):
-            _obs, reward, done, info = self.env.step([0, 0, 0, 0, 0, 0])
+            _obs, reward, done, info = self.env.step([0, 0])
         self.assertTrue(done)
         self.assertEqual(reward, 7.25)
         self.assertEqual(len(self.base.step_calls), 1)
 
     def test_rejects_misuse_and_owns_actions_and_terminal_results(self):
         with self.assertRaisesRegex(RuntimeError, "reset"):
-            self.env.step([0] * 6)
+            self.env.step([0] * 2)
         self.env.reset()
-        action = [1, 0, 0, 0, 0, 0]
+        action = [1, 0]
         self.env.step(action)
         action[0] = 0
         self.assertEqual(self.env.action_history[0][0], 1)
@@ -416,19 +423,19 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         history[0][0] = 0
         self.assertEqual(self.env.action_history[0][0], 1)
         with self.assertRaises(ValueError):
-            self.env.step([0] * 5)
+            self.env.step([0])
         for _ in range(11):
-            _obs, _reward, done, info = self.env.step([0] * 6)
+            _obs, _reward, done, info = self.env.step([0] * 2)
         self.assertTrue(done)
         info["policy_actions"][0][0] = 0
         self.assertEqual(self.env.action_history[0][0], 1)
         with self.assertRaisesRegex(RuntimeError, "terminated"):
-            self.env.step([0] * 6)
+            self.env.step([0] * 2)
 
     def test_reset_after_terminal_starts_a_fresh_episode(self):
         self.env.reset(seed=1)
         for _ in range(12):
-            _obs, _reward, done, _info = self.env.step([0] * 6)
+            _obs, _reward, done, _info = self.env.step([0] * 2)
         self.assertTrue(done)
 
         obs = self.env.reset(seed=2)
@@ -438,7 +445,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(self.env.current_spec().layer_idx, 0)
         self.assertEqual(self.env.action_history, [])
         self.assertEqual(self.env.layer_summaries, [])
-        _obs, reward, done, info = self.env.step([0] * 6)
+        _obs, reward, done, info = self.env.step([0] * 2)
         self.assertEqual((reward, done), (0.0, False))
         self.assertEqual(info["layer_idx"], 0)
 
@@ -447,13 +454,13 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.base.attn_degree = [6, 4] + [2] * 10
         self.env.reset()
 
-        self.env.step([0] * 6)
+        self.env.step([0] * 2)
         layer0_graphs = {
             int(call["block_idx"]): str(call["graph_key"])
             for call in self.runtime_calls
         }
         self.runtime_calls.clear()
-        self.env.step([0] * 6)
+        self.env.step([0] * 2)
         layer1_graphs = {
             int(call["block_idx"]): str(call["graph_key"])
             for call in self.runtime_calls
@@ -516,7 +523,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.base.terminal_info = runtime_info
         self.env.reset()
         for _ in range(12):
-            _obs, _reward, _done, info = self.env.step([0] * 6)
+            _obs, _reward, _done, info = self.env.step([0] * 2)
 
         snapshot = info["terminal_info"]
         self.assertIs(self.env.runtime_terminal_info, runtime_info)
@@ -767,7 +774,7 @@ class LayerwiseRealHelperIntegrationTest(unittest.TestCase):
         )
 
         env.reset(seed=17)
-        _obs, reward, done, info = env.step([0, 5, 0, 0, 0, 0])
+        _obs, reward, done, info = env.step([0, 0])
 
         self.assertEqual((reward, done), (0.0, False))
         self.assertEqual([row["block_idx"] for row in info["layer_summary"]["blocks"]], [2, 3, 4, 5])

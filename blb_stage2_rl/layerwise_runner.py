@@ -20,12 +20,23 @@ from .candidate_store import (
     candidate_key,
     sha256_json,
 )
-from .layerwise_action import compute_variable_cost_from_action_matrix
+from .layerwise_action import (
+    LAYERWISE_SLOT_NAMES,
+    compute_variable_cost_from_action_matrix,
+    describe_layerwise_action_matrix,
+    materialize_layerwise_counterfactuals,
+)
+from .precision_presets import (
+    allocated_precision_tolerances,
+    network_axis_weights,
+    validate_communication_importance_ratio,
+)
 from .statistical_constraints import (
     ConstraintAssessment,
     TrialSeries,
     assess_candidate,
     retarget_constraint_assessment,
+    retarget_precision_tolerance,
 )
 from .truncation_levels import LEVELS_K
 
@@ -51,6 +62,10 @@ ResourceObjective = tuple[float, float]
 _FINAL_REVALIDATION_PASSED = "final_revalidation_passed"
 _FINAL_REVALIDATION_FAILED = "final_revalidation_failed"
 _FINAL_REVALIDATION_RETRYABLE = "failed_evaluation"
+_STRICT_GATE_CONTRACT = (
+    "joint_six_point_plus_compute_and_communication_"
+    "counterfactual_six_point_v1"
+)
 _UNSET = object()
 
 
@@ -278,7 +293,7 @@ def bind_layerwise_candidate_identity(
     contract = dict(resource_contract)
     required = (
         "algorithm_contract_hash",
-        "resource_secondary_epsilon",
+        "communication_importance_ratio",
         "compute_axis_denominator",
         "communication_axis_denominator",
         "resource_credit_mode",
@@ -301,13 +316,16 @@ def bind_layerwise_candidate_identity(
     strict_order = [str(value).strip() for value in order_raw]
     if not strict_order or any(not value for value in strict_order):
         raise ValueError("strict_resource_order must contain non-empty fields")
-    epsilon = float(contract["resource_secondary_epsilon"])
+    communication_importance_ratio = validate_communication_importance_ratio(
+        contract["communication_importance_ratio"],
+    )
+    compute_weight, communication_weight = network_axis_weights(
+        communication_importance_ratio,
+    )
     compute_denominator = float(contract["compute_axis_denominator"])
     communication_denominator = float(
         contract["communication_axis_denominator"]
     )
-    if not math.isfinite(epsilon) or epsilon < 0.0:
-        raise ValueError("resource_secondary_epsilon must be finite and nonnegative")
     for field_name, value in (
             ("compute_axis_denominator", compute_denominator),
             ("communication_axis_denominator", communication_denominator),
@@ -319,7 +337,9 @@ def bind_layerwise_candidate_identity(
     context["cost_model_revision"] = str(cost_model_revision)
     context["resource_objective_contract"] = {
         "algorithm_contract_hash": algorithm_hash,
-        "resource_secondary_epsilon": epsilon,
+        "communication_importance_ratio": communication_importance_ratio,
+        "compute_weight": compute_weight,
+        "communication_weight": communication_weight,
         "compute_axis_denominator": compute_denominator,
         "communication_axis_denominator": communication_denominator,
         "resource_credit_mode": credit_mode,
@@ -471,22 +491,16 @@ def validate_stage2_episode_limit_mode(
 
 
 def initialize_layerwise_policy(policy: Any) -> None:
-    """Install the accepted decoded-value priors on all six slot heads."""
-    from .layerwise_action import K_LEVELS
-
-    k_probabilities = {
-        13: 0.475,
-        12: 0.190,
-        11: 0.114,
-        10: 0.076,
-        9: 0.057,
-        8: 0.038,
-        7: 0.030,
-        6: 0.020,
-    }
+    """Install conservative but fully exploratory priors on both slot heads."""
     policy.set_initial_slot_probabilities(
-        [{0: 0.60, 1: 0.40}] + [dict(k_probabilities) for _ in range(5)],
-        [(0, 1)] + [tuple(K_LEVELS) for _ in range(5)],
+        [
+            {0: 0.60, 1: 0.40},
+            {0: 0.60, 1: 0.27, 2: 0.13},
+        ],
+        [
+            (0, 1),
+            (0, 1, 2),
+        ],
     )
 
 
@@ -770,7 +784,7 @@ class LayerwiseValidationBanks:
             },
             "promotion_trial_count": int(self.promotion_trial_count),
             "final_trial_count": int(self.final_trial_count),
-            "hard_gate": "six_point_constraints",
+            "hard_gate": _STRICT_GATE_CONTRACT,
             "bootstrap_probability_role": "diagnostic_tiebreak_only",
         }
 
@@ -790,8 +804,12 @@ def _constraint_safety_margins(candidate: Any) -> tuple[float, ...]:
 
 def _resource_fields_from_action_matrix(
         action_matrix: Sequence[Sequence[int]],
+        communication_importance_ratio: float = 1.0,
         ) -> dict[str, Any]:
-    objective = compute_variable_cost_from_action_matrix(action_matrix)
+    objective = compute_variable_cost_from_action_matrix(
+        action_matrix,
+        communication_importance_ratio=communication_importance_ratio,
+    )
     return {
         "compute_saving": float(objective.compute_saving),
         "communication_saving": float(objective.communication_saving),
@@ -801,6 +819,11 @@ def _resource_fields_from_action_matrix(
         "compute_shapley_credit": float(objective.compute_shapley_credit),
         "communication_shapley_credit": float(
             objective.communication_shapley_credit
+        ),
+        "compute_weight": float(objective.compute_weight),
+        "communication_weight": float(objective.communication_weight),
+        "communication_importance_ratio": float(
+            objective.communication_importance_ratio
         ),
         "fusion_count": int(objective.fusion_count),
         "removed_k_bits": int(objective.removed_k_bits),
@@ -817,7 +840,13 @@ def _resource_fields_from_action_matrix(
 def _candidate_resource_fields(candidate: Any) -> dict[str, Any]:
     action_matrix = _field(candidate, "action_matrix")
     if action_matrix is not None:
-        return _resource_fields_from_action_matrix(action_matrix)
+        return _resource_fields_from_action_matrix(
+            action_matrix,
+            _finite(
+                _field(candidate, "communication_importance_ratio", 1.0),
+                name="communication_importance_ratio",
+            ),
+        )
     compute = _field(candidate, "compute_saving")
     communication = _field(candidate, "communication_saving")
     if compute is None or communication is None:
@@ -834,6 +863,12 @@ def _candidate_resource_fields(candidate: Any) -> dict[str, Any]:
         "communication_saving": communication_value,
         "robust_floor": min(compute_value, communication_value),
         "secondary_progress": 0.5 * (compute_value + communication_value),
+        "ppo_resource_score": _finite(
+            _field(candidate, "ppo_resource_score", 0.5 * (
+                compute_value + communication_value
+            )),
+            name="ppo_resource_score",
+        ),
     }
 
 
@@ -846,8 +881,8 @@ def strict_rank_key(candidate: Any) -> tuple[float, ...]:
     confidence_order = tuple(-value for value in sorted(probabilities))
     margin_order = tuple(-value for value in sorted(margins))
     return (
+        -resource["ppo_resource_score"],
         -resource["robust_floor"],
-        -resource["secondary_progress"],
         *confidence_order,
         *margin_order,
     )
@@ -1038,6 +1073,9 @@ def _strict_best_snapshot(
         "candidate_key": str(candidate_key_value),
         "rank_key": list(strict_rank_key(best)),
         "action_matrix": [list(row) for row in best["action_matrix"]],
+        "layer_configurations": describe_layerwise_action_matrix(
+            best["action_matrix"]
+        ),
         "full_vector": list(best["full_vector"]),
         "assessment": _to_plain_mapping(best["assessment"]),
         "metrics": dict(best["metrics"]),
@@ -1053,6 +1091,9 @@ def _strict_best_snapshot(
         ),
         "boosted_overrides": copy.deepcopy(best["boosted_overrides"]),
         "promotion_evidence": promotion_evidence,
+        "axis_counterfactuals": copy.deepcopy(
+            best.get("axis_counterfactuals")
+        ),
     }
 
 
@@ -1071,14 +1112,14 @@ def normalized_entropy_snapshot(
         slot_masks: Any,
         per_slot_num_levels: Any,
         ) -> dict[str, float | int | None]:
-    """Normalize active per-slot entropy and split Block4 from K slots."""
+    """Normalize entropy for Block4 fusion and the precision-preset slot."""
     entropy = np.asarray(entropy_per_slot, dtype=np.float64)
     masks = np.asarray(slot_masks, dtype=bool)
     levels = np.asarray(per_slot_num_levels, dtype=np.int64)
     if entropy.ndim != 2 or entropy.shape != masks.shape or entropy.shape != levels.shape:
         raise ValueError("entropy, masks, and levels must be aligned 2-D arrays")
-    if entropy.shape[1] != 6:
-        raise ValueError("layerwise entropy requires exactly six slots")
+    if entropy.shape[1] != len(LAYERWISE_SLOT_NAMES):
+        raise ValueError("layerwise entropy requires exactly two slots")
 
     active = masks & (levels > 1)
     normalized = np.zeros_like(entropy, dtype=np.float64)
@@ -1170,19 +1211,22 @@ def _normalize_resource_objective(
         legacy = _finite(value, name=name)
         value = (legacy, legacy)
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        raise ValueError(f"{name} must contain robust_floor and secondary_progress")
+        raise ValueError(f"{name} must contain weighted_score and balance_tiebreak")
     values = tuple(
         _finite(item, name=f"{name}[{index}]")
         for index, item in enumerate(value)
     )
     if len(values) != 2:
         raise ValueError(f"{name} must contain exactly two values")
-    robust_floor, secondary_progress = values
-    if not 0.0 <= robust_floor <= secondary_progress <= 1.0:
+    weighted_score, balance_tiebreak = values
+    if not (
+            0.0 <= weighted_score <= 1.0
+            and 0.0 <= balance_tiebreak <= 1.0
+    ):
         raise ValueError(
-            f"{name} must satisfy 0 <= robust_floor <= secondary_progress <= 1"
+            f"{name} values must both be in [0, 1]"
         )
-    return float(robust_floor), float(secondary_progress)
+    return float(weighted_score), float(balance_tiebreak)
 
 
 def _resolve_resource_objective(
@@ -1481,6 +1525,7 @@ class PromotionResult:
     evidence: Optional[CandidateTrialEvidence]
     assessment: Optional[Any]
     metrics: Optional[Mapping[str, float]]
+    axis_counterfactuals: Optional[Mapping[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -1718,7 +1763,10 @@ def _record_final_revalidation_outcome(
         ) -> None:
     """Persist the final verdict on the base F4 identity for honest resume."""
     action_indices = tuple(int(value) for value in candidate["full_vector"])
-    resource = _resource_fields_from_action_matrix(candidate["action_matrix"])
+    resource = _resource_fields_from_action_matrix(
+        candidate["action_matrix"],
+        float(candidate.get("communication_importance_ratio", 1.0)),
+    )
     metadata = {
         "final_revalidation_identity_context": evidence_identity_context(
             revalidation_identity_context, "F4",
@@ -1834,9 +1882,11 @@ def _restore_three_bank_candidates(
             tuple(int(value) for value in row)
             for row in metadata["action_matrix"]
         )
-        if not action_matrix or any(len(row) != 6 for row in action_matrix):
+        if not action_matrix or any(
+                len(row) != len(LAYERWISE_SLOT_NAMES) for row in action_matrix
+        ):
             raise ValueError(
-                "persisted layerwise action_matrix must be a nonempty Nx6 matrix"
+                "persisted layerwise action_matrix must be a nonempty Nx2 matrix"
             )
         assessment = assess_candidate_fn(
             evidence.trials,
@@ -1847,7 +1897,10 @@ def _restore_three_bank_candidates(
             ),
             bootstrap_seed=int(metadata.get("assessment_bootstrap_seed", 0)),
         )
-        resource = _resource_fields_from_action_matrix(action_matrix)
+        resource = _resource_fields_from_action_matrix(
+            action_matrix,
+            float(metadata.get("communication_importance_ratio", 1.0)),
+        )
         reward = metadata.get("episode_reward")
         restored[key] = {
             **resource,
@@ -1871,6 +1924,9 @@ def _restore_three_bank_candidates(
             ),
             "validation_evidence": (
                 "ABC_75" if final_certified else "AB_50"
+            ),
+            "axis_counterfactuals": copy.deepcopy(
+                metadata.get("axis_counterfactuals")
             ),
         }
     return restored
@@ -1990,11 +2046,16 @@ def restore_promoted_candidates(
             tuple(int(value) for value in row)
             for row in metadata["action_matrix"]
         )
-        if not action_matrix or any(len(row) != 6 for row in action_matrix):
+        if not action_matrix or any(
+                len(row) != len(LAYERWISE_SLOT_NAMES) for row in action_matrix
+        ):
             raise ValueError(
-                "persisted layerwise action_matrix must be a nonempty Nx6 matrix"
+                "persisted layerwise action_matrix must be a nonempty Nx2 matrix"
             )
-        resource = _resource_fields_from_action_matrix(action_matrix)
+        resource = _resource_fields_from_action_matrix(
+            action_matrix,
+            float(metadata.get("communication_importance_ratio", 1.0)),
+        )
         reward = metadata.get("episode_reward")
         restored_metrics = _metrics_from_trials(evidence.trials)
         restored[key] = {
@@ -2014,6 +2075,9 @@ def restore_promoted_candidates(
             "promotion_trials": evidence.trials,
             "final_revalidation_status": (
                 "passed" if final_revalidated else "not_run"
+            ),
+            "axis_counterfactuals": copy.deepcopy(
+                promotion_metadata.get("axis_counterfactuals")
             ),
         }
     return restored
@@ -2143,7 +2207,10 @@ def _collect_fixed_validation_bank(
             raise AssertionError("complete validation bank has no evidence")
         return evidence, 0
 
-    resource = _resource_fields_from_action_matrix(action_matrix)
+    resource = _resource_fields_from_action_matrix(
+        action_matrix,
+        float(getattr(env, "communication_importance_ratio", 1.0)),
+    )
     cost = float(resource["ppo_resource_score"])
     next_group = (existing_count - start_count) // bank.trials_per_probe
     online_clear = getattr(env.base, "clear_installed_blb", None)
@@ -2232,7 +2299,7 @@ def _collect_fixed_validation_bank(
                 "validation_bank_group_index": int(group_index),
                 "validation_bank_probe_seed": probe_seed,
                 "validation_bank_trials_per_probe": int(bank.trials_per_probe),
-                "hard_gate": "six_point_constraints",
+                "hard_gate": _STRICT_GATE_CONTRACT,
                 "bootstrap_probability_role": "diagnostic_tiebreak_only",
                 **resource,
                 "variable_cost": cost,
@@ -2279,6 +2346,216 @@ def _collect_fixed_validation_bank(
     return evidence, fresh_count
 
 
+def _retarget_validation_banks_for_axis(
+        validation_banks: LayerwiseValidationBanks,
+        *,
+        precision_tolerance: float,
+        ) -> LayerwiseValidationBanks:
+    """Keep seeds/stability fixed while assigning one axis a mean budget."""
+    return LayerwiseValidationBanks(
+        bank_a=replace(
+            validation_banks.bank_a,
+            reference=retarget_precision_tolerance(
+                validation_banks.bank_a.reference,
+                precision_tolerance,
+            ),
+        ),
+        bank_b=replace(
+            validation_banks.bank_b,
+            reference=retarget_precision_tolerance(
+                validation_banks.bank_b.reference,
+                precision_tolerance,
+            ),
+        ),
+        bank_c=replace(
+            validation_banks.bank_c,
+            reference=retarget_precision_tolerance(
+                validation_banks.bank_c.reference,
+                precision_tolerance,
+            ),
+        ),
+        promotion_reference=retarget_precision_tolerance(
+            validation_banks.promotion_reference,
+            precision_tolerance,
+        ),
+        final_reference=retarget_precision_tolerance(
+            validation_banks.final_reference,
+            precision_tolerance,
+        ),
+    )
+
+
+def _axis_proxy_action_matrix(
+        action_matrix: Sequence[Sequence[int]],
+        axis: str,
+        ) -> tuple[tuple[int, int], ...]:
+    rows = tuple(tuple(int(value) for value in row) for row in action_matrix)
+    if not rows or any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
+        raise ValueError("action_matrix must have shape num_layers x 2")
+    if axis == "compute":
+        return tuple((row[0], 0) for row in rows)
+    if axis == "communication":
+        return tuple((0, row[1]) for row in rows)
+    raise ValueError(f"unknown resource axis {axis!r}")
+
+
+def _evaluate_axis_counterfactual_banks(
+        *,
+        env: Any,
+        full_base_env: Any,
+        candidate_store: CandidateStore,
+        joint_action_indices: Sequence[int],
+        joint_boosted_overrides: Mapping[Any, Any],
+        identity_context: Mapping[str, Any],
+        action_matrix: Sequence[Sequence[int]],
+        bootstrap_seed: int,
+        episode_reward: Optional[float],
+        assess_candidate_fn: Callable[..., Any],
+        gate_probability: float,
+        validation_banks: LayerwiseValidationBanks,
+        bank_labels: Sequence[str],
+        ) -> tuple[dict[str, Any], int]:
+    """Evaluate compute-only and communication-only strict counterfactuals."""
+    ratio = validate_communication_importance_ratio(
+        getattr(env, "communication_importance_ratio", 1.0),
+    )
+    total_tolerance = float(
+        validation_banks.final_reference.precision_tolerance
+    )
+    compute_tolerance, communication_tolerance = (
+        allocated_precision_tolerances(total_tolerance, ratio)
+    )
+    materialized = materialize_layerwise_counterfactuals(
+        env.baseline_full_vector,
+        action_matrix,
+        env.schedule,
+        env.fusion_map,
+    )
+    observed_joint = tuple(int(value) for value in joint_action_indices)
+    expected_joint = tuple(
+        int(value) for value in materialized["joint"].full_vector
+    )
+    if observed_joint != expected_joint:
+        raise RuntimeError(
+            "layerwise joint action does not match canonical counterfactual "
+            "materialization"
+        )
+    if _serialize_boosted_overrides(joint_boosted_overrides) != (
+            _serialize_boosted_overrides(
+                materialized["joint"].boosted_overrides,
+            )
+    ):
+        raise RuntimeError(
+            "layerwise joint boosted overrides do not match canonical "
+            "counterfactual materialization"
+        )
+
+    labels = tuple(str(label).strip().upper() for label in bank_labels)
+    if not labels or labels not in (("A", "B"), ("A", "B", "C")):
+        raise ValueError("axis counterfactual banks must be A+B or A+B+C")
+    results: dict[str, Any] = {}
+    total_fresh = 0
+    for axis, materialization, tolerance in (
+            ("compute", materialized["compute_only"], compute_tolerance),
+            (
+                "communication",
+                materialized["communication_only"],
+                communication_tolerance,
+            ),
+    ):
+        axis_banks = _retarget_validation_banks_for_axis(
+            validation_banks,
+            precision_tolerance=tolerance,
+        )
+        axis_identity = evidence_identity_context({
+            **dict(identity_context),
+            "counterfactual_axis": axis,
+            "counterfactual_contract": (
+                "compute_k13_or_communication_fusion000_v1"
+            ),
+            "axis_precision_tolerance": float(tolerance),
+            "communication_importance_ratio": float(ratio),
+        }, "F4")
+        proxy_matrix = _axis_proxy_action_matrix(action_matrix, axis)
+        evidence = None
+        metrics = None
+        assessment = None
+        passed = True
+        bank_payloads: dict[str, Any] = {}
+        for label in labels:
+            evidence, fresh_count = _collect_fixed_validation_bank(
+                env=env,
+                full_base_env=full_base_env,
+                candidate_store=candidate_store,
+                action_indices=materialization.full_vector,
+                full_identity_context=axis_identity,
+                action_matrix=proxy_matrix,
+                boosted_overrides=materialization.boosted_overrides,
+                bootstrap_seed=bootstrap_seed,
+                episode_reward=episode_reward,
+                validation_banks=axis_banks,
+                bank_label=label,
+            )
+            total_fresh += int(fresh_count)
+            metrics = _metrics_from_trials(evidence.trials)
+            if label == "A":
+                reference = axis_banks.bank_a.reference
+            elif label == "B":
+                reference = axis_banks.promotion_reference
+            else:
+                reference = axis_banks.final_reference
+            assessment = assess_candidate_fn(
+                evidence.trials,
+                reference,
+                gate_probability=float(gate_probability),
+                bootstrap_seed=int(bootstrap_seed),
+            )
+            current_pass = point_constraints_pass(metrics, reference)
+            bank_payloads[label] = {
+                "trial_count": int(evidence.trial_count),
+                "fresh_trial_count": int(fresh_count),
+                "metrics": dict(metrics),
+                "assessment": _to_plain_mapping(assessment),
+                "point_pass": bool(current_pass),
+            }
+            if not current_pass:
+                passed = False
+                break
+        results[axis] = {
+            "mode": materialization.mode,
+            "precision_tolerance": float(tolerance),
+            "stability_multiplier": float(
+                axis_banks.final_reference.stability_multiplier
+            ),
+            "loss_limit": float(axis_banks.final_reference.loss_limit),
+            "metric1_limit": float(axis_banks.final_reference.metric1_limit),
+            "metric2_limit": float(axis_banks.final_reference.metric2_limit),
+            "loss_std_limit": float(
+                axis_banks.final_reference.loss_std_limit
+            ),
+            "metric1_std_limit": float(
+                axis_banks.final_reference.metric1_std_limit
+            ),
+            "metric2_std_limit": float(
+                axis_banks.final_reference.metric2_std_limit
+            ),
+            "action_hash": sha256_json(
+                [int(value) for value in materialization.full_vector]
+            ),
+            "boosted_overrides": _serialize_boosted_overrides(
+                materialization.boosted_overrides,
+            ),
+            "banks": bank_payloads,
+            "point_pass": bool(passed and len(bank_payloads) == len(labels)),
+            "metrics": None if metrics is None else dict(metrics),
+            "assessment": (
+                None if assessment is None
+                else _to_plain_mapping(assessment)
+            ),
+        }
+    return results, total_fresh
+
+
 def _promote_candidate_through_validation_banks(
         *,
         env: Any,
@@ -2307,7 +2584,7 @@ def _promote_candidate_through_validation_banks(
         max_trials=validation_banks.final_trial_count,
     )
     trial_count = 0 if evidence is None else evidence.trial_count
-    latest_status, _latest_metadata = _latest_promotion_status(
+    latest_status, latest_metadata = _latest_promotion_status(
         candidate_store, action_indices, full_identity_context,
     )
     if latest_status in ("promoted", _FINAL_REVALIDATION_PASSED):
@@ -2345,12 +2622,19 @@ def _promote_candidate_through_validation_banks(
             )
         )
         return PromotionResult(
-            "already_promoted", trial_count, 0, evidence, diagnostic, metrics,
+            "already_promoted",
+            trial_count,
+            0,
+            evidence,
+            diagnostic,
+            metrics,
+            latest_metadata.get("axis_counterfactuals"),
         )
     terminal_failures = {
         "bank_a_point_failed",
         "bank_b_point_failed",
         "bank_c_point_failed",
+        "axis_counterfactual_point_failed",
         _FINAL_REVALIDATION_FAILED,
     }
     if latest_status in terminal_failures:
@@ -2364,7 +2648,10 @@ def _promote_candidate_through_validation_banks(
             "priority_not_p3", trial_count, 0, evidence, assessment, None,
         )
 
-    resource = _resource_fields_from_action_matrix(action_matrix)
+    resource = _resource_fields_from_action_matrix(
+        action_matrix,
+        float(getattr(env, "communication_importance_ratio", 1.0)),
+    )
     dominated = False
     if frontier_candidates is not None:
         compute = float(resource["compute_saving"])
@@ -2400,7 +2687,7 @@ def _promote_candidate_through_validation_banks(
         "assessment_bootstrap_seed": int(bootstrap_seed),
         "action_matrix": [list(map(int, row)) for row in action_matrix],
         "boosted_overrides": _serialize_boosted_overrides(boosted_overrides),
-        "hard_gate": "six_point_constraints",
+        "hard_gate": _STRICT_GATE_CONTRACT,
         "bootstrap_probability_role": "diagnostic_tiebreak_only",
         "validation_bank_contract": validation_banks.contract_payload(),
     }
@@ -2409,6 +2696,7 @@ def _promote_candidate_through_validation_banks(
     fresh_count = 0
     pooled_assessment = assessment
     pooled_metrics: Optional[Mapping[str, float]] = None
+    axis_counterfactuals: Optional[Mapping[str, Any]] = None
     promotion_status = "failed_evaluation"
     try:
         bank_a_evidence, bank_a_fresh = _collect_fixed_validation_bank(
@@ -2472,11 +2760,41 @@ def _promote_candidate_through_validation_banks(
             status_metadata["bank_ab_point_pass"] = point_constraints_pass(
                 pooled_metrics, validation_banks.promotion_reference,
             )
-            promotion_status = (
-                "promoted"
-                if status_metadata["bank_ab_point_pass"]
-                else "bank_b_point_failed"
-            )
+            if not status_metadata["bank_ab_point_pass"]:
+                promotion_status = "bank_b_point_failed"
+            else:
+                axis_counterfactuals, axis_fresh = (
+                    _evaluate_axis_counterfactual_banks(
+                        env=env,
+                        full_base_env=full_base_env,
+                        candidate_store=candidate_store,
+                        joint_action_indices=action_indices,
+                        joint_boosted_overrides=boosted_overrides,
+                        identity_context=identity_context,
+                        action_matrix=action_matrix,
+                        bootstrap_seed=bootstrap_seed,
+                        episode_reward=episode_reward,
+                        assess_candidate_fn=assess_candidate_fn,
+                        gate_probability=promotion_probability,
+                        validation_banks=validation_banks,
+                        bank_labels=("A", "B"),
+                    )
+                )
+                fresh_count += int(axis_fresh)
+                status_metadata["axis_counterfactuals"] = (
+                    axis_counterfactuals
+                )
+                axis_pass = all(
+                    bool(payload.get("point_pass", False))
+                    for payload in axis_counterfactuals.values()
+                )
+                status_metadata["axis_counterfactual_point_pass"] = bool(
+                    axis_pass
+                )
+                promotion_status = (
+                    "promoted"
+                    if axis_pass else "axis_counterfactual_point_failed"
+                )
     except Exception as exc:
         status_metadata["error"] = str(exc)
 
@@ -2489,7 +2807,11 @@ def _promote_candidate_through_validation_banks(
     )
     target = (
         validation_banks.promotion_trial_count
-        if promotion_status in ("promoted", "bank_b_point_failed")
+        if promotion_status in (
+            "promoted",
+            "bank_b_point_failed",
+            "axis_counterfactual_point_failed",
+        )
         else validation_banks.bank_a.trial_count
     )
     evidence = candidate_store.trial_evidence_for_action(
@@ -2505,6 +2827,7 @@ def _promote_candidate_through_validation_banks(
         evidence=evidence,
         assessment=pooled_assessment,
         metrics=pooled_metrics,
+        axis_counterfactuals=axis_counterfactuals,
     )
 
 
@@ -2593,7 +2916,10 @@ def promote_candidate_if_eligible(
             "promotion_probability_below_gate", trial_count, 0,
             evidence, assessment, pooled_metrics,
         )
-    resource = _resource_fields_from_action_matrix(action_matrix)
+    resource = _resource_fields_from_action_matrix(
+        action_matrix,
+        float(getattr(env, "communication_importance_ratio", 1.0)),
+    )
     cost = float(resource["ppo_resource_score"])
     dominated = False
     if frontier_candidates is not None:
@@ -2807,7 +3133,7 @@ def certify_candidate_with_bank_c(
         for row in candidate["action_matrix"]
     )
     boosted_overrides = dict(candidate.get("boosted_overrides") or {})
-    latest_status, _metadata = _latest_promotion_status(
+    latest_status, latest_metadata = _latest_promotion_status(
         candidate_store, action_indices, full_identity_context,
     )
     if latest_status == _FINAL_REVALIDATION_PASSED:
@@ -2839,8 +3165,13 @@ def certify_candidate_with_bank_c(
             evidence,
             diagnostic,
             metrics,
+            latest_metadata.get("axis_counterfactuals"),
         )
-    if latest_status in ("bank_c_point_failed", _FINAL_REVALIDATION_FAILED):
+    if latest_status in (
+            "bank_c_point_failed",
+            "axis_counterfactual_point_failed",
+            _FINAL_REVALIDATION_FAILED,
+    ):
         evidence = candidate_store.trial_evidence_for_action(
             action_indices,
             full_identity_context,
@@ -2891,14 +3222,17 @@ def certify_candidate_with_bank_c(
         )
 
     full_base_env = promotion_base_env or env.base
-    resource = _resource_fields_from_action_matrix(action_matrix)
+    resource = _resource_fields_from_action_matrix(
+        action_matrix,
+        float(getattr(env, "communication_importance_ratio", 1.0)),
+    )
     status_metadata = {
         **resource,
         "variable_cost": float(resource["ppo_resource_score"]),
         "assessment_bootstrap_seed": int(bootstrap_seed),
         "action_matrix": [list(row) for row in action_matrix],
         "boosted_overrides": _serialize_boosted_overrides(boosted_overrides),
-        "hard_gate": "six_point_constraints",
+        "hard_gate": _STRICT_GATE_CONTRACT,
         "bootstrap_probability_role": "diagnostic_tiebreak_only",
         "validation_bank_contract": validation_banks.contract_payload(),
     }
@@ -2910,6 +3244,7 @@ def certify_candidate_with_bank_c(
     fresh_count = 0
     assessment = None
     metrics = None
+    axis_counterfactuals: Optional[Mapping[str, Any]] = None
     status = "failed_evaluation"
     try:
         evidence, fresh_count = _collect_fixed_validation_bank(
@@ -2935,12 +3270,44 @@ def certify_candidate_with_bank_c(
         passed = point_constraints_pass(
             metrics, validation_banks.final_reference,
         )
-        status = _FINAL_REVALIDATION_PASSED if passed else "bank_c_point_failed"
         status_metadata.update({
             "bank_abc_metrics": metrics,
             "bank_abc_assessment": _to_plain_mapping(assessment),
             "bank_abc_point_pass": bool(passed),
         })
+        if not passed:
+            status = "bank_c_point_failed"
+        else:
+            axis_counterfactuals, axis_fresh = (
+                _evaluate_axis_counterfactual_banks(
+                    env=env,
+                    full_base_env=full_base_env,
+                    candidate_store=candidate_store,
+                    joint_action_indices=action_indices,
+                    joint_boosted_overrides=boosted_overrides,
+                    identity_context=identity_context,
+                    action_matrix=action_matrix,
+                    bootstrap_seed=bootstrap_seed,
+                    episode_reward=(None if reward is None else float(reward)),
+                    assess_candidate_fn=assess_candidate_fn,
+                    gate_probability=final_probability,
+                    validation_banks=validation_banks,
+                    bank_labels=("A", "B", "C"),
+                )
+            )
+            fresh_count += int(axis_fresh)
+            status_metadata["axis_counterfactuals"] = axis_counterfactuals
+            axis_pass = all(
+                bool(payload.get("point_pass", False))
+                for payload in axis_counterfactuals.values()
+            )
+            status_metadata["axis_counterfactual_point_pass"] = bool(
+                axis_pass
+            )
+            status = (
+                _FINAL_REVALIDATION_PASSED
+                if axis_pass else "axis_counterfactual_point_failed"
+            )
     except Exception as exc:
         status_metadata["error"] = str(exc)
 
@@ -2963,6 +3330,7 @@ def certify_candidate_with_bank_c(
         evidence=evidence,
         assessment=assessment,
         metrics=metrics,
+        axis_counterfactuals=axis_counterfactuals,
     )
 
 
@@ -3012,7 +3380,10 @@ def _certify_strict_best_candidates(
         )
         if not passed:
             status = str(result.status)
-            if result.status == "bank_c_point_failed":
+            if result.status in (
+                    "bank_c_point_failed",
+                    "axis_counterfactual_point_failed",
+            ):
                 accepted_candidates.pop(selected_key, None)
                 survivor = _strict_best_snapshot(accepted_candidates)
                 if survivor is not None:
@@ -3039,6 +3410,9 @@ def _certify_strict_best_candidates(
         candidate["promotion_trials"] = result.evidence.trials
         candidate["final_revalidation_status"] = "passed"
         candidate["validation_evidence"] = "ABC_75"
+        candidate["axis_counterfactuals"] = copy.deepcopy(
+            getattr(result, "axis_counterfactuals", None)
+        )
         winner = _strict_best_snapshot(accepted_candidates)
         if winner is None:
             return "no_bank_b_confirmed_candidate", None
@@ -3313,9 +3687,12 @@ def train_layerwise(
     probe_identity_context = evidence_identity_context(identity_context, "F1")
     authoritative_base_env = promotion_base_env or env.base
     horizon = int(getattr(env, "horizon", 0))
-    if horizon <= 0 or int(getattr(env, "max_step_dim", 0)) != 6:
+    if (
+            horizon <= 0
+            or int(getattr(env, "max_step_dim", 0)) != len(LAYERWISE_SLOT_NAMES)
+    ):
         raise ValueError(
-            "layerwise training requires a positive horizon and max_step_dim=6"
+            "layerwise training requires a positive horizon and max_step_dim=2"
         )
     if device is None:
         try:
@@ -3734,11 +4111,11 @@ def train_layerwise(
             for row in terminal_info.get("policy_actions", ())
         )
         if len(action_matrix) != horizon or any(
-                len(row) != 6 for row in action_matrix
+                len(row) != len(LAYERWISE_SLOT_NAMES) for row in action_matrix
         ):
             raise RuntimeError(
                 "layerwise terminal policy_actions must match the "
-                f"{horizon}x6 environment contract"
+                f"{horizon}x2 environment contract"
             )
         full_vector = tuple(
             int(value) for value in terminal_info.get("pending_full_vector", ())
@@ -3779,11 +4156,12 @@ def train_layerwise(
                 f"{horizon} values"
             )
         if len(slot_resource_rewards) != horizon or any(
-                len(row) != 6 for row in slot_resource_rewards
+                len(row) != len(LAYERWISE_SLOT_NAMES)
+                for row in slot_resource_rewards
         ):
             raise RuntimeError(
                 "layerwise terminal slot_resource_rewards must match the "
-                f"{horizon}x6 environment contract"
+                f"{horizon}x2 environment contract"
             )
         for layer_idx, (layer_resource, slot_resources) in enumerate(zip(
                 layer_resource_rewards, slot_resource_rewards,
@@ -3808,15 +4186,23 @@ def train_layerwise(
                 rel_tol=0.0,
                 abs_tol=1.0e-9,
         ):
-            raise RuntimeError("fusion slots do not sum to compute Shapley credit")
+            raise RuntimeError(
+                "fusion slots do not sum to direct compute credit"
+            )
         if not math.isclose(
                 sum(sum(row[1:]) for row in slot_resource_rewards),
                 communication_shapley_credit,
                 rel_tol=0.0,
                 abs_tol=1.0e-9,
         ):
-            raise RuntimeError("K slots do not sum to communication Shapley credit")
-        exact_resource = _resource_fields_from_action_matrix(action_matrix)
+            raise RuntimeError(
+                "precision-preset slots do not sum to direct communication "
+                "credit"
+            )
+        exact_resource = _resource_fields_from_action_matrix(
+            action_matrix,
+            float(getattr(env, "communication_importance_ratio", 1.0)),
+        )
         for field_name in (
                 "compute_saving",
                 "communication_saving",
@@ -3906,7 +4292,9 @@ def train_layerwise(
             ppo_resource_score=ppo_resource_score,
             layer_resource_rewards=layer_resource_rewards,
         )
-        zero_slot_resources = ((0.0,) * 6,) * horizon
+        zero_slot_resources = (
+            (0.0,) * len(LAYERWISE_SLOT_NAMES),
+        ) * horizon
         actor_slot_resources = (
             slot_resource_rewards if reward_priority == 3 else zero_slot_resources
         )
@@ -4066,6 +4454,9 @@ def train_layerwise(
                         else float(episode_reward)
                     ),
                     "promotion_trials": promotion.evidence.trials,
+                    "axis_counterfactuals": copy.deepcopy(
+                        getattr(promotion, "axis_counterfactuals", None)
+                    ),
                 }
 
         local_episode += 1
@@ -4099,8 +4490,8 @@ def train_layerwise(
             best_objective = (
                 None if strict_best_snapshot is None
                 else (
+                    float(strict_best_snapshot["ppo_resource_score"]),
                     float(strict_best_snapshot["robust_floor"]),
-                    float(strict_best_snapshot["secondary_progress"]),
                 )
             )
             best_action_identity = (
@@ -4153,8 +4544,8 @@ def train_layerwise(
                     best_objective = (
                         None if strict_best_snapshot is None
                         else (
+                            float(strict_best_snapshot["ppo_resource_score"]),
                             float(strict_best_snapshot["robust_floor"]),
-                            float(strict_best_snapshot["secondary_progress"]),
                         )
                     )
                     best_action_identity = (
@@ -4262,8 +4653,8 @@ def train_layerwise(
                             block4_entropy=entropy_snapshot["block4"],
                             k_entropy=entropy_snapshot["k"],
                             robust_feasible_objective=(
+                                float(strict_best_snapshot["ppo_resource_score"]),
                                 float(strict_best_snapshot["robust_floor"]),
-                                float(strict_best_snapshot["secondary_progress"]),
                             ),
                             robust_feasible_action_identity=selected_key,
                             count_patience=False,
@@ -4283,8 +4674,8 @@ def train_layerwise(
                     best_objective = (
                         None if strict_best_snapshot is None
                         else (
+                            float(strict_best_snapshot["ppo_resource_score"]),
                             float(strict_best_snapshot["robust_floor"]),
-                            float(strict_best_snapshot["secondary_progress"]),
                         )
                     )
                     best_action_identity = (
@@ -4558,8 +4949,8 @@ def train_layerwise(
         best_objective = (
             None if strict_best_snapshot is None
             else (
+                float(strict_best_snapshot["ppo_resource_score"]),
                 float(strict_best_snapshot["robust_floor"]),
-                float(strict_best_snapshot["secondary_progress"]),
             )
         )
         best_action_identity = (
@@ -4637,6 +5028,10 @@ def train_layerwise(
             [list(row) for row in strict_best["action_matrix"]]
             if strict_best is not None else None
         ),
+        "best_layer_configurations": (
+            copy.deepcopy(strict_best["layer_configurations"])
+            if strict_best is not None else None
+        ),
         "best_full_vector": (
             list(strict_best["full_vector"]) if strict_best is not None else None
         ),
@@ -4679,6 +5074,10 @@ def train_layerwise(
         ),
         "best_promotion_evidence": (
             copy.deepcopy(strict_best.get("promotion_evidence"))
+            if strict_best is not None else None
+        ),
+        "best_axis_counterfactuals": (
+            copy.deepcopy(strict_best.get("axis_counterfactuals"))
             if strict_best is not None else None
         ),
         "episode_rewards": rewards,

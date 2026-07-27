@@ -148,6 +148,8 @@ GA / Greedy：
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
   --stage2-calibrate-baseline-samples N   BLB v3 reward 权重校准样本数
   --stage2-stability-multiplier FLOAT     robust layerwise 的 baseline std 倍率
+  --stage2-communication-importance-ratio FLOAT
+                                         通讯相对计算的重要性，默认 1.0
   --blb-v3-baseline-groups N              robust baseline 初始组数
   --blb-v3-baseline-trials-per-group N    robust baseline 每组 trial 数
   --blb-v3-constraint-bootstrap-samples N bootstrap 重采样数
@@ -529,6 +531,7 @@ STAGE1_ACCURACY_TOLERANCE="0.005"; S_STAGE1_ACCURACY_TOLERANCE="false"
 STAGE2_LIMIT_TOLERANCE="0.05"; S_STAGE2_LIMIT_TOLERANCE="false"
 STAGE2_STABILITY_TOLERANCE="1.2"; S_STAGE2_STABILITY_TOLERANCE="false"
 STAGE2_STABILITY_MULTIPLIER="2.0"; S_STAGE2_STABILITY_MULTIPLIER="false"
+STAGE2_COMMUNICATION_IMPORTANCE_RATIO="1.0"; S_STAGE2_COMMUNICATION_IMPORTANCE_RATIO="false"
 STAGE2_K_TRIALS="5"; S_STAGE2_K_TRIALS="false"
 STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
@@ -770,6 +773,7 @@ while [ "$#" -gt 0 ]; do
     --stage2-limit-tolerance) needv "$@"; STAGE2_LIMIT_TOLERANCE="$2"; S_STAGE2_LIMIT_TOLERANCE="true"; shift 2 ;;
     --stage2-stability-tolerance) needv "$@"; STAGE2_STABILITY_TOLERANCE="$2"; S_STAGE2_STABILITY_TOLERANCE="true"; shift 2 ;;
     --stage2-stability-multiplier) needv "$@"; STAGE2_STABILITY_MULTIPLIER="$2"; S_STAGE2_STABILITY_MULTIPLIER="true"; shift 2 ;;
+    --stage2-communication-importance-ratio) needv "$@"; STAGE2_COMMUNICATION_IMPORTANCE_RATIO="$2"; S_STAGE2_COMMUNICATION_IMPORTANCE_RATIO="true"; shift 2 ;;
     --stage2-k-trials) needv "$@"; STAGE2_K_TRIALS="$2"; S_STAGE2_K_TRIALS="true"; shift 2 ;;
     --stage2-probe-size) needv "$@"; STAGE2_PROBE_SIZE="$2"; S_STAGE2_PROBE_SIZE="true"; shift 2 ;;
     --stage2-rl-variant) needv "$@"; STAGE2_RL_VARIANT="$2"; S_STAGE2_RL_VARIANT="true"; shift 2 ;;
@@ -1069,6 +1073,7 @@ is_pos_num "$STAGE2_LIMIT_TOLERANCE" || err "--stage2-limit-tolerance 必须是�
 awk -v x="$STAGE2_LIMIT_TOLERANCE" 'BEGIN { if ((x + 0) >= 1) exit 1 }' || err "--stage2-limit-tolerance 必须 < 1（百分比形式如 0.05 表示 5%），当前为：$STAGE2_LIMIT_TOLERANCE"
 is_pos_num "$STAGE2_STABILITY_TOLERANCE" || err "--stage2-stability-tolerance 必须是正数，当前为：$STAGE2_STABILITY_TOLERANCE"
 is_pos_num "$STAGE2_STABILITY_MULTIPLIER" || err "--stage2-stability-multiplier 必须是正数，当前为：$STAGE2_STABILITY_MULTIPLIER"
+is_pos_num "$STAGE2_COMMUNICATION_IMPORTANCE_RATIO" || err "--stage2-communication-importance-ratio 必须是正数，当前为：$STAGE2_COMMUNICATION_IMPORTANCE_RATIO"
 is_pos_int "$STAGE2_K_TRIALS" || err "--stage2-k-trials 必须是正整数，当前为：$STAGE2_K_TRIALS"
 is_pos_int "$STAGE2_PROBE_SIZE" || err "--stage2-probe-size 必须是正整数，当前为：$STAGE2_PROBE_SIZE"
 is_pos_int "$PPO_UPDATE_INTERVAL_VAL" || err "--ppo-update-interval 必须是正整数，当前为：$PPO_UPDATE_INTERVAL_VAL"
@@ -1854,7 +1859,7 @@ else
     RL_STAGE2_EPISODES_SPECIFIED="$S_STAGE2_EPISODES"
     [ "$SKIP_STAGE1_SEARCH" = "true" ] && RL_STAGE1_EPISODES_SPECIFIED="false"
     [ "$SKIP_NOISE_SEARCH" = "true" ] && RL_STAGE2_EPISODES_SPECIFIED="false"
-    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_stability_multiplier "$STAGE2_STABILITY_MULTIPLIER" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
+    CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_stability_multiplier "$STAGE2_STABILITY_MULTIPLIER" --stage2_communication_importance_ratio "$STAGE2_COMMUNICATION_IMPORTANCE_RATIO" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
     # 解耦布局开关 + stage2-only 的 stage1 record 选择（仅 rl）。
     CMD+=(--decoupled_layout "$DECOUPLED_LAYOUT" --stage1_run_id "$STAGE1_RUN_ID")
     # Optional multi-seed override (when --blb-v3-seed provided)

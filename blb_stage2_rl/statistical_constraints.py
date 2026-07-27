@@ -455,6 +455,25 @@ def retarget_constraint_assessment(
     )
 
 
+def retarget_precision_tolerance(
+    reference: BaselineReference,
+    precision_tolerance: float,
+) -> BaselineReference:
+    """Rebuild only the three mean limits for an axis-specific budget."""
+    if not isinstance(reference, BaselineReference):
+        raise TypeError("reference must be a BaselineReference")
+    tolerance = _finite_float("precision_tolerance", precision_tolerance)
+    if not 0.0 <= tolerance < 1.0:
+        raise ValueError("precision_tolerance must be in [0, 1)")
+    return replace(
+        reference,
+        precision_tolerance=tolerance,
+        loss_limit=float(reference.loss_mean) * (1.0 + tolerance),
+        metric1_limit=float(reference.metric1_mean) * (1.0 - tolerance),
+        metric2_limit=float(reference.metric2_mean) * (1.0 - tolerance),
+    )
+
+
 __all__ = [
     "BaselineReference",
     "ConstraintAssessment",
@@ -464,4 +483,5 @@ __all__ = [
     "assess_candidate",
     "build_baseline_reference",
     "retarget_constraint_assessment",
+    "retarget_precision_tolerance",
 ]

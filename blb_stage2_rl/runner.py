@@ -640,6 +640,13 @@ class BLBStage2TrainConfig:
         self.stage2_stability_multiplier = float(self.stage2_stability_multiplier)
         if self.stage2_stability_multiplier <= 0.0:
             raise ValueError("stage2_stability_multiplier must be positive")
+        from .precision_presets import validate_communication_importance_ratio
+
+        self.communication_importance_ratio = (
+            validate_communication_importance_ratio(
+                self.communication_importance_ratio,
+            )
+        )
         for field_name in (
                 "online_constraint_probability", "promotion_constraint_probability",
                 "final_constraint_probability",
@@ -781,6 +788,7 @@ class BLBStage2TrainConfig:
     promotion_constraint_probability: float = 0.80
     final_constraint_probability: float = 0.95
     stage2_stability_multiplier: float = 2.0
+    communication_importance_ratio: float = 1.0
     convergence_min_episodes: int = 90_000
     convergence_patience_updates: int = 100
     # ---- 4-sub-stage mode (opt-in 2026-05-27) -----------------------------
@@ -2962,6 +2970,10 @@ class BLBStage2RLRunner:
                 pass
         for cfg_field, attr_name in (
                 ("stage2_stability_multiplier", "stage2_stability_multiplier"),
+                (
+                    "communication_importance_ratio",
+                    "stage2_communication_importance_ratio",
+                ),
                 ("online_constraint_probability", "blb_v3_online_constraint_probability"),
                 ("promotion_constraint_probability", "blb_v3_promotion_constraint_probability"),
                 ("final_constraint_probability", "blb_v3_final_constraint_probability"),

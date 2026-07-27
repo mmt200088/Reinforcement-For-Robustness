@@ -549,6 +549,7 @@ def train(
         stage2_limit_tolerance: float = None,
         stage2_stability_tolerance: float = None,
         stage2_stability_multiplier: float = 2.0,
+        stage2_communication_importance_ratio: float = 1.0,
         stage2_k_trials: int = None,
         stage2_probe_size: int = None,
         # Stage-2 RL variant (新版 BLB v3 / 旧版 v2 二选一；默认新版)
@@ -739,6 +740,14 @@ def train(
     stage2_stability_multiplier = float(stage2_stability_multiplier)
     if stage2_stability_multiplier <= 0.0:
         raise ValueError("stage2_stability_multiplier must be positive")
+    from blb_stage2_rl.precision_presets import (
+        validate_communication_importance_ratio,
+    )
+    stage2_communication_importance_ratio = (
+        validate_communication_importance_ratio(
+            stage2_communication_importance_ratio,
+        )
+    )
     for name, value in (
             ("blb_v3_baseline_groups", blb_v3_baseline_groups),
             ("blb_v3_baseline_trials_per_group", blb_v3_baseline_trials_per_group),
@@ -1314,6 +1323,9 @@ def train(
             stage2_limit_tolerance=stage2_limit_tolerance,
             stage2_stability_tolerance=stage2_stability_tolerance,
             stage2_stability_multiplier=stage2_stability_multiplier,
+            stage2_communication_importance_ratio=(
+                stage2_communication_importance_ratio
+            ),
             stage2_k_trials=stage2_k_trials,
             stage2_probe_size=stage2_probe_size,
             stage2_rl_variant=stage2_rl_variant,

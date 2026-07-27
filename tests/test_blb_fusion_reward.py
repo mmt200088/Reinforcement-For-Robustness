@@ -106,119 +106,111 @@ class _Sig:
     total_fusion_count = 0
 
 
-def _layerwise_actions(*, block4_fusion=0, k=13):
+def _layerwise_actions(*, block4_fusion=0, preset_index=0):
+    from blb_stage2_rl.precision_presets import PRECISION_PRESETS
+
+    preset = PRECISION_PRESETS[preset_index]
     actions = []
     for _layer_idx in range(12):
-        k_by_block = {1: k, 2: k, 3: k, 4: k, 5: k}
-        actions.append(layerwise_action.LayerwiseDecodedAction(block4_fusion, k_by_block))
+        k_by_block = {
+            block_idx: preset.k_by_block[block_idx - 1]
+            for block_idx in range(1, 6)
+        }
+        actions.append(layerwise_action.LayerwiseDecodedAction(
+            block4_fusion, k_by_block, preset_index,
+        ))
     return actions
 
 
 class LayerwiseVariableCostContractTest(unittest.TestCase):
     def test_higher_block4_fusion_increases_only_fusion_units(self):
         baseline = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=0, k=13)
+            _layerwise_actions(block4_fusion=0, preset_index=0)
         )
         fused = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=1, k=13)
+            _layerwise_actions(block4_fusion=1, preset_index=0)
         )
 
         self.assertEqual(baseline.normalized, 0.0)
         self.assertEqual(fused.fusion_saving, 1.0)
         self.assertEqual(fused.truncation_saving, baseline.truncation_saving)
         self.assertEqual(fused.fusion_units, 12.0)
-        self.assertEqual(fused.truncation_units, 0.0)
+        self.assertEqual(fused.truncation_units, baseline.truncation_units)
         self.assertEqual(fused.robust_floor, 0.0)
         self.assertEqual(fused.secondary_progress, 0.5)
-        self.assertAlmostEqual(
-            fused.normalized,
-            layerwise_action.dual_resource_score(1.0, 0.0)[2],
-        )
+        self.assertEqual(fused.normalized, 0.5)
 
-    def test_fusion_and_k_update_independent_axes_without_exchange_rate(self):
-        baseline_actions = _layerwise_actions(block4_fusion=0, k=13)
-        fusion_actions = _layerwise_actions(block4_fusion=0, k=13)
+    def test_fusion_and_precision_preset_update_independent_axes(self):
+        baseline_actions = _layerwise_actions(block4_fusion=0, preset_index=0)
+        fusion_actions = _layerwise_actions(block4_fusion=0, preset_index=0)
         fusion_actions[3] = layerwise_action.LayerwiseDecodedAction(
-            1, dict(fusion_actions[3].k_by_block),
+            1, dict(fusion_actions[3].k_by_block), 0,
         )
-        k_actions = _layerwise_actions(block4_fusion=0, k=13)
-        changed = dict(k_actions[3].k_by_block)
-        changed[4] = 11
-        k_actions[3] = layerwise_action.LayerwiseDecodedAction(0, changed)
+        communication_actions = _layerwise_actions(
+            block4_fusion=0, preset_index=0,
+        )
+        low = _layerwise_actions(block4_fusion=0, preset_index=2)[3]
+        communication_actions[3] = low
 
         baseline = layerwise_action.compute_variable_cost(baseline_actions)
         fusion = layerwise_action.compute_variable_cost(fusion_actions)
-        communication = layerwise_action.compute_variable_cost(k_actions)
+        communication = layerwise_action.compute_variable_cost(
+            communication_actions,
+        )
 
         self.assertEqual(baseline.ppo_resource_score, 0.0)
         self.assertAlmostEqual(fusion.compute_saving, 1.0 / 12.0)
         self.assertEqual(fusion.communication_saving, 0.0)
         self.assertEqual(communication.compute_saving, 0.0)
-        self.assertAlmostEqual(communication.communication_saving, 2.0 / 420.0)
+        self.assertAlmostEqual(communication.communication_saving, 1.0 / 12.0)
         self.assertEqual(fusion.robust_floor, 0.0)
         self.assertEqual(communication.robust_floor, 0.0)
-        self.assertNotAlmostEqual(
+        self.assertAlmostEqual(
             fusion.ppo_resource_score,
             communication.ppo_resource_score,
         )
 
-    def test_robust_floor_rewards_progress_on_both_resource_axes(self):
+    def test_equal_weighted_sum_rewards_both_resource_axes(self):
         compute_only = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=1, k=13)
+            _layerwise_actions(block4_fusion=1, preset_index=0)
         )
         communication_only = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=0, k=6)
+            _layerwise_actions(block4_fusion=0, preset_index=2)
         )
         balanced = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=1, k=6)
+            _layerwise_actions(block4_fusion=1, preset_index=2)
         )
 
-        self.assertEqual(compute_only.robust_floor, 0.0)
-        self.assertEqual(communication_only.robust_floor, 0.0)
+        self.assertEqual(compute_only.ppo_resource_score, 0.5)
+        self.assertEqual(communication_only.ppo_resource_score, 0.5)
         self.assertEqual(balanced.compute_saving, 1.0)
         self.assertEqual(balanced.communication_saving, 1.0)
-        self.assertEqual(balanced.robust_floor, 1.0)
         self.assertEqual(balanced.ppo_resource_score, 1.0)
 
-    def test_lowering_each_actual_k_slot_increases_cost(self):
-        baseline_actions = _layerwise_actions(block4_fusion=0, k=13)
-        baseline = layerwise_action.compute_variable_cost(baseline_actions).normalized
-        changed = 0
-        for layer_idx, action in enumerate(baseline_actions):
-            for block_idx in action.k_by_block:
-                candidate = _layerwise_actions(block4_fusion=0, k=13)
-                updated = dict(candidate[layer_idx].k_by_block)
-                updated[block_idx] = 12
-                candidate[layer_idx] = layerwise_action.LayerwiseDecodedAction(0, updated)
-                self.assertGreater(
-                    layerwise_action.compute_variable_cost(candidate).normalized,
-                    baseline,
-                    msg=f"layer={layer_idx} block={block_idx}",
-                )
-                changed += 1
-        self.assertEqual(changed, 60)
-
-    def test_actual_k_values_not_category_order_drive_cost(self):
-        actions = _layerwise_actions(block4_fusion=0, k=6)
-        expected = layerwise_action.compute_variable_cost(actions)
-        reordered = (13, 8, 10, 9, 11, 12, 6, 7)
-
-        with mock.patch.object(layerwise_action, "K_LEVELS", reordered):
-            actual = layerwise_action.compute_variable_cost(actions)
-
-        self.assertEqual(actual, expected)
-        self.assertEqual(actual.truncation_saving, 1.0)
+    def test_preset_utility_not_individual_k_bits_drives_cost(self):
+        high = layerwise_action.compute_variable_cost(
+            _layerwise_actions(preset_index=0),
+        )
+        medium = layerwise_action.compute_variable_cost(
+            _layerwise_actions(preset_index=1),
+        )
+        low = layerwise_action.compute_variable_cost(
+            _layerwise_actions(preset_index=2),
+        )
+        self.assertEqual(high.communication_saving, 0.0)
+        self.assertEqual(medium.communication_saving, 0.5)
+        self.assertEqual(low.communication_saving, 1.0)
 
     def test_fixed_block2_and_block5_fusion_are_not_variable_cost_inputs(self):
         with self.assertRaises(TypeError):
             layerwise_action.LayerwiseDecodedAction(
                 block4_fusion=0,
-                k_by_block={2: 13, 3: 13, 4: 13, 5: 13},
+                k_by_block={2: 10, 3: 10, 4: 12, 5: 11},
                 block2_fusion=1,
             )
         self.assertEqual(
             set(layerwise_action.LayerwiseDecodedAction.__dataclass_fields__),
-            {"block4_fusion", "k_by_block"},
+            {"block4_fusion", "k_by_block", "precision_preset_index"},
         )
 
 

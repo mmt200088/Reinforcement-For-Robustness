@@ -18,6 +18,7 @@ from .layerwise_action import (
     compute_variable_cost,
     layerwise_schedule,
 )
+from .precision_presets import validate_communication_importance_ratio
 from .sequential_env import BlockRuntimeResult, evaluate_block_from_full_vector
 
 
@@ -157,6 +158,7 @@ class BLBStage2LayerwiseEnv:
             baseline_action_vec: Sequence[int],
             env_cfg: Optional[LayerwiseEnvConfig] = None,
             profile: Optional[str] = None,
+            communication_importance_ratio: float = 1.0,
             ):
         self.base = base_env
         self.fusion_map = fusion_map
@@ -167,6 +169,11 @@ class BLBStage2LayerwiseEnv:
                 f"BLBStage2LayerwiseEnv requires at least one layer, got {self.num_layers}"
             )
         self.profile = str(profile or base_env.env_cfg.profile)
+        self.communication_importance_ratio = (
+            validate_communication_importance_ratio(
+                communication_importance_ratio,
+            )
+        )
         self.horizon = self.num_layers
         self._max_step_dim = len(LAYERWISE_SLOT_NAMES)
         self._schedule: List[LayerwiseStepSpec] = []
@@ -217,6 +224,10 @@ class BLBStage2LayerwiseEnv:
     @property
     def pending_full_vector(self) -> np.ndarray:
         return self._pending_full_vec.copy()
+
+    @property
+    def baseline_full_vector(self) -> np.ndarray:
+        return self._baseline_action_vec.copy()
 
     @property
     def action_history(self) -> List[List[int]]:
@@ -367,10 +378,14 @@ class BLBStage2LayerwiseEnv:
         if self._step_idx < self.horizon:
             return self._build_obs(), 0.0, False, info
 
-        variable_cost = compute_variable_cost(self._decoded_actions)
+        variable_cost = compute_variable_cost(
+            self._decoded_actions,
+            communication_importance_ratio=self.communication_importance_ratio,
+        )
         resource_objective = self._resource_objective_payload(variable_cost)
-        # The base reward API still transports one bounded scalar.  It is the
-        # packed max-min surrogate only; exact candidate selection uses F/C/B/S.
+        # The base reward API still transports one bounded scalar. It is the
+        # network-weighted resource score; exact selection also applies the
+        # strict joint and isolated-axis validation gates.
         external_cost_score = float(variable_cost.ppo_resource_score)
         external_cost_rank = float(variable_cost.ppo_resource_score)
         if not 0.0 <= external_cost_score <= 1.0:
@@ -522,6 +537,11 @@ class BLBStage2LayerwiseEnv:
             "communication_shapley_credit": float(
                 variable_cost.communication_shapley_credit
             ),
+            "compute_weight": float(variable_cost.compute_weight),
+            "communication_weight": float(variable_cost.communication_weight),
+            "communication_importance_ratio": float(
+                variable_cost.communication_importance_ratio
+            ),
             "fusion_count": int(variable_cost.fusion_count),
             "removed_k_bits": int(variable_cost.removed_k_bits),
             "layer_resource_rewards": [
@@ -545,6 +565,8 @@ class BLBStage2LayerwiseEnv:
         decoded_actions = [
             {
                 "block4_fusion": int(action.block4_fusion),
+                "precision_preset_index": int(action.precision_preset_index),
+                "precision_preset_name": str(action.precision_preset_name),
                 "k_by_block": {
                     int(block): int(k_value) for block, k_value in action.k_by_block.items()
                 },

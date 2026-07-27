@@ -97,10 +97,10 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             ),
         }
 
+        self.assertLess(strict_rank_key(candidates["a"]), strict_rank_key(candidates["c"]))
         self.assertLess(strict_rank_key(candidates["c"]), strict_rank_key(candidates["b"]))
-        self.assertLess(strict_rank_key(candidates["b"]), strict_rank_key(candidates["a"]))
         frontier = strict_resource_pareto_frontier(candidates)
-        self.assertEqual(list(frontier), ["c", "a"])
+        self.assertEqual(list(frontier), ["a", "c"])
 
     def test_protected_k1_preserves_every_potential_resource_frontier_point(self):
         from blb_stage2_rl.layerwise_runner import (
@@ -380,6 +380,207 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                     dict(passing, **{metric_name: violating_value}), reference,
                 ))
 
+    def test_axis_counterfactual_gate_splits_precision_but_keeps_all_stability_limits(self):
+        from blb_stage2_rl.layerwise_runner import (
+            LayerwiseValidationBank,
+            LayerwiseValidationBanks,
+            _evaluate_axis_counterfactual_banks,
+        )
+        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from blb_stage2_rl.statistical_constraints import (
+            TrialSeries,
+            build_baseline_reference,
+        )
+
+        def trials(probe_seeds):
+            seeds = tuple(
+                derive_probe_trial_seed(probe_seed, trial_idx)
+                for probe_seed in probe_seeds
+                for trial_idx in range(5)
+            )
+            return TrialSeries(
+                loss=[
+                    0.30 + 0.0001 * (index % 5)
+                    for index in range(len(seeds))
+                ],
+                metric1=[
+                    0.90 - 0.0001 * (index % 5)
+                    for index in range(len(seeds))
+                ],
+                metric2=[
+                    0.80 - 0.0001 * (index % 5)
+                    for index in range(len(seeds))
+                ],
+                seeds=seeds,
+            )
+
+        def reference(groups, seed):
+            return build_baseline_reference(
+                groups,
+                precision_tolerance=0.001,
+                stability_multiplier=2.0,
+                bootstrap_samples=64,
+                seed=seed,
+            )
+
+        probe_seeds = {
+            "A": (101, 102, 103, 104, 105),
+            "B": (201, 202, 203, 204, 205),
+            "C": (301, 302, 303, 304, 305),
+        }
+        trial_groups = {
+            label: trials(seeds)
+            for label, seeds in probe_seeds.items()
+        }
+        banks = LayerwiseValidationBanks(
+            bank_a=LayerwiseValidationBank(
+                "A", reference([trial_groups["A"]], 1),
+                probe_seeds["A"], 5,
+            ),
+            bank_b=LayerwiseValidationBank(
+                "B", reference([trial_groups["B"]], 2),
+                probe_seeds["B"], 5,
+            ),
+            bank_c=LayerwiseValidationBank(
+                "C", reference([trial_groups["C"]], 3),
+                probe_seeds["C"], 5,
+            ),
+            promotion_reference=reference(
+                [trial_groups["A"], trial_groups["B"]], 4,
+            ),
+            final_reference=reference(
+                [
+                    trial_groups["A"],
+                    trial_groups["B"],
+                    trial_groups["C"],
+                ],
+                5,
+            ),
+        )
+        joint_overrides = {(4, 0): {"v_mask_rescale_sf": 47}}
+        materializations = {
+            "joint": types.SimpleNamespace(
+                mode="joint",
+                full_vector=np.asarray([11, 12]),
+                boosted_overrides=joint_overrides,
+            ),
+            "compute_only": types.SimpleNamespace(
+                mode="compute_only",
+                full_vector=np.asarray([21, 22]),
+                boosted_overrides={
+                    (4, 0): {
+                        "v_mask_rescale_sf": 47,
+                        "output_truncation_k": 13,
+                    },
+                },
+            ),
+            "communication_only": types.SimpleNamespace(
+                mode="communication_only",
+                full_vector=np.asarray([31, 32]),
+                boosted_overrides={},
+            ),
+        }
+        calls = []
+
+        def collect(**kwargs):
+            label = kwargs["bank_label"]
+            axis_banks = kwargs["validation_banks"]
+            bank_reference = {
+                "A": axis_banks.bank_a.reference,
+                "B": axis_banks.promotion_reference,
+                "C": axis_banks.final_reference,
+            }[label]
+            calls.append({
+                "axis": kwargs["full_identity_context"]["counterfactual_axis"],
+                "label": label,
+                "action_indices": tuple(kwargs["action_indices"]),
+                "action_matrix": tuple(
+                    tuple(row) for row in kwargs["action_matrix"]
+                ),
+                "boosted_overrides": dict(kwargs["boosted_overrides"]),
+                "precision_tolerance": bank_reference.precision_tolerance,
+            })
+            return (
+                types.SimpleNamespace(
+                    trials=bank_reference.trials,
+                    trial_count=bank_reference.trial_count,
+                ),
+                25,
+            )
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch(
+                "blb_stage2_rl.layerwise_runner."
+                "materialize_layerwise_counterfactuals",
+                return_value=materializations,
+            ),
+            mock.patch(
+                "blb_stage2_rl.layerwise_runner."
+                "_collect_fixed_validation_bank",
+                side_effect=collect,
+            ),
+        ):
+            from blb_stage2_rl.candidate_store import CandidateStore
+
+            result, fresh_count = _evaluate_axis_counterfactual_banks(
+                env=types.SimpleNamespace(
+                    communication_importance_ratio=1.0,
+                    baseline_full_vector=np.asarray([1, 2]),
+                    schedule=object(),
+                    fusion_map=object(),
+                ),
+                full_base_env=object(),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                joint_action_indices=[11, 12],
+                joint_boosted_overrides=joint_overrides,
+                identity_context={"action_space_version": "test"},
+                action_matrix=[[1, 2]],
+                bootstrap_seed=17,
+                episode_reward=1.0,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.99),
+                gate_probability=0.95,
+                validation_banks=banks,
+                bank_labels=("A", "B", "C"),
+            )
+
+        self.assertEqual(fresh_count, 150)
+        self.assertEqual(set(result), {"compute", "communication"})
+        for axis in ("compute", "communication"):
+            self.assertTrue(result[axis]["point_pass"])
+            self.assertAlmostEqual(
+                result[axis]["precision_tolerance"], 0.0005,
+            )
+            self.assertEqual(result[axis]["stability_multiplier"], 2.0)
+            self.assertEqual(
+                (
+                    result[axis]["loss_std_limit"],
+                    result[axis]["metric1_std_limit"],
+                    result[axis]["metric2_std_limit"],
+                ),
+                (
+                    banks.final_reference.loss_std_limit,
+                    banks.final_reference.metric1_std_limit,
+                    banks.final_reference.metric2_std_limit,
+                ),
+            )
+        self.assertEqual(
+            [call["action_indices"] for call in calls[:3]],
+            [(21, 22)] * 3,
+        )
+        self.assertEqual(
+            [call["action_indices"] for call in calls[3:]],
+            [(31, 32)] * 3,
+        )
+        self.assertEqual(
+            [call["action_matrix"] for call in calls[:3]],
+            [((1, 0),)] * 3,
+        )
+        self.assertEqual(
+            [call["action_matrix"] for call in calls[3:]],
+            [((0, 2),)] * 3,
+        )
+
     def test_three_validation_banks_are_disjoint_and_pool_in_order(self):
         import blb_stage2_rl.layerwise_runner as layerwise_runner
         from blb_stage2_rl.seed_utils import derive_probe_trial_seed
@@ -563,27 +764,24 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         from blb_stage2_rl.layerwise_runner import normalized_entropy_snapshot
 
         entropy = np.asarray([
-            [0.05 * math.log(2), 999.0, 0.08 * math.log(6), 999.0, 0.12 * math.log(6), 0.16 * math.log(6)],
-            [
-                0.07 * math.log(2), 0.04 * math.log(6), 0.06 * math.log(6),
-                0.10 * math.log(6), 999.0, 0.14 * math.log(6),
-            ],
+            [0.05 * math.log(2), 999.0],
+            [0.07 * math.log(2), 0.04 * math.log(3)],
         ])
         masks = np.asarray([
-            [True, False, True, True, True, True],
-            [True, True, True, True, True, True],
+            [True, False],
+            [True, True],
         ])
         levels = np.asarray([
-            [2, 6, 6, 1, 6, 6],
-            [2, 6, 6, 6, 1, 6],
+            [2, 3],
+            [2, 3],
         ])
 
         snapshot = normalized_entropy_snapshot(entropy, masks, levels)
 
         self.assertAlmostEqual(snapshot["block4"], 0.06)
-        self.assertAlmostEqual(snapshot["k"], 0.10)
+        self.assertAlmostEqual(snapshot["k"], 0.04)
         self.assertEqual(snapshot["block4_slot_count"], 2)
-        self.assertEqual(snapshot["k_slot_count"], 7)
+        self.assertEqual(snapshot["k_slot_count"], 1)
 
     def test_evidence_identity_context_separates_probe_and_full_validation(self):
         from blb_stage2_rl.candidate_store import candidate_key
@@ -1002,18 +1200,28 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             tracker.load_state_dict(incompatible)
 
     def test_layerwise_contract_records_multifidelity_and_honest_stop_statuses(self):
-        source_path = (
+        sequential_source_path = (
             Path(__file__).resolve().parents[1]
             / "blb_stage2_rl"
             / "sequential_runner.py"
         )
-        source = source_path.read_text(encoding="utf-8")
+        layerwise_source_path = (
+            Path(__file__).resolve().parents[1]
+            / "blb_stage2_rl"
+            / "layerwise_runner.py"
+        )
+        source = sequential_source_path.read_text(encoding="utf-8")
+        layerwise_source = layerwise_source_path.read_text(encoding="utf-8")
 
         self.assertIn(
-            "dual_resource_maxmin_shapley_three_bank_convergence_v10", source,
+            "network_weighted_hml_three_bank_convergence_v12", source,
         )
         self.assertIn('"F1": {', source)
         self.assertIn('"F4": {', source)
+        self.assertIn("_evaluate_axis_counterfactual_banks(", layerwise_source)
+        self.assertIn("materialize_layerwise_counterfactuals(", layerwise_source)
+        self.assertIn("retarget_precision_tolerance(", layerwise_source)
+        self.assertIn('"axis_counterfactual_point_pass"', layerwise_source)
         self.assertIn('"minimum_episodes": convergence_min_episodes', source)
         self.assertNotIn('"maximum_episodes": convergence_max_episodes', source)
         self.assertIn('completion_status = "max_episodes_reached"', source)
@@ -1178,7 +1386,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 "metric1_mean": 0.9,
                 "metric2_mean": 0.8,
             },
-            "action_matrix": [[0, 0, 0, 0, 0, 0] for _ in range(12)],
+            "action_matrix": [[0, 0] for _ in range(12)],
             "full_vector": list(range(20)),
             "boosted_overrides": {},
             "reward": 1.4,
@@ -1197,6 +1405,17 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
         self.assertEqual(snapshot["candidate_key"], "candidate-z")
         self.assertEqual(snapshot["full_vector"], [0, 9])
+        self.assertEqual(len(snapshot["layer_configurations"]), 12)
+        self.assertEqual(
+            snapshot["layer_configurations"][0]["truncation_k_by_block"],
+            {
+                "block1": 11,
+                "block2": 10,
+                "block3": 10,
+                "block4": 12,
+                "block5": 11,
+            },
+        )
 
     def test_strict_selection_key_uses_action_vector_before_candidate_key(self):
         from blb_stage2_rl.layerwise_runner import strict_selection_key
@@ -1642,16 +1861,16 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIsNotNone(binder)
         if binder is None:
             return
-        base = {"action_space_version": "stage2_layerwise_12x6_v1"}
+        base = {"action_space_version": "stage2_layerwise_12x2_hml_v3"}
         first_order = (8, 9, 11, 13, 10, 12)
         second_order = (13, 8, 9, 10, 11, 12)
         resource_contract = {
             "algorithm_contract_hash": "algorithm-v9",
-            "resource_secondary_epsilon": 1.0e-4,
+            "communication_importance_ratio": 1.0,
             "compute_axis_denominator": 12,
-            "communication_axis_denominator": 295,
-            "resource_credit_mode": "two_family_shapley_per_slot_v1",
-            "strict_resource_order": ["robust_floor", "secondary_progress"],
+            "communication_axis_denominator": 12,
+            "resource_credit_mode": "separable_weighted_per_slot_v1",
+            "strict_resource_order": ["weighted_score", "balance_tiebreak"],
         }
         first = binder(base, first_order, "cost-v1", resource_contract)
         second = binder(base, second_order, "cost-v1", resource_contract)
@@ -1666,34 +1885,34 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
         contract = {
             "algorithm_contract_hash": "algorithm-v9",
-            "resource_secondary_epsilon": 1.0e-4,
+            "communication_importance_ratio": 1.0,
             "compute_axis_denominator": 12,
-            "communication_axis_denominator": 295,
-            "resource_credit_mode": "two_family_shapley_per_slot_v1",
-            "strict_resource_order": ["robust_floor", "secondary_progress"],
+            "communication_axis_denominator": 12,
+            "resource_credit_mode": "separable_weighted_per_slot_v1",
+            "strict_resource_order": ["weighted_score", "balance_tiebreak"],
         }
         base = bind_layerwise_candidate_identity(
-            {"action_space_version": "stage2_layerwise_12x6_v1"},
+            {"action_space_version": "stage2_layerwise_12x2_hml_v3"},
             (8, 9, 11, 13, 10, 12),
-            "dual_resource_maxmin_shapley_v1",
+            "network_weighted_compute_communication_v3",
             contract,
         )
         base_key = candidate_key([0], base)
         mutations = {
             "algorithm_contract_hash": "algorithm-v10",
-            "resource_secondary_epsilon": 2.0e-4,
+            "communication_importance_ratio": 2.0,
             "compute_axis_denominator": 24,
-            "communication_axis_denominator": 294,
+            "communication_axis_denominator": 24,
             "resource_credit_mode": "other_credit_mode",
-            "strict_resource_order": ["secondary_progress", "robust_floor"],
+            "strict_resource_order": ["balance_tiebreak", "weighted_score"],
         }
 
         for field_name, replacement in mutations.items():
             changed_contract = {**contract, field_name: replacement}
             changed = bind_layerwise_candidate_identity(
-                {"action_space_version": "stage2_layerwise_12x6_v1"},
+                {"action_space_version": "stage2_layerwise_12x2_hml_v3"},
                 (8, 9, 11, 13, 10, 12),
-                "dual_resource_maxmin_shapley_v1",
+                "network_weighted_compute_communication_v3",
                 changed_contract,
             )
             self.assertNotEqual(
@@ -1923,15 +2142,15 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             "action_space_version": layerwise_action_space_version(12),
         }
         common_resource_contract = {
-            "resource_secondary_epsilon": 1.0e-4,
+            "communication_importance_ratio": 1.0,
             "compute_axis_denominator": max_compute_saving_units(12),
             "communication_axis_denominator": (
                 max_communication_saving_units(12)
             ),
-            "resource_credit_mode": "two_family_shapley_per_slot_v1",
+            "resource_credit_mode": "separable_weighted_per_slot_v1",
             "strict_resource_order": [
-                "robust_floor",
-                "secondary_progress",
+                "weighted_score",
+                "balance_tiebreak",
             ],
         }
         old_identity = bind_layerwise_candidate_identity(
@@ -2355,7 +2574,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn('"factorized_actor_clip": True', branch_source)
         self.assertIn('"algorithm_revision": algorithm_revision', branch_source)
         self.assertIn(
-            '"dual_resource_maxmin_shapley_three_bank_convergence_v10"',
+            '"network_weighted_hml_three_bank_convergence_v12"',
             branch_source,
         )
         self.assertIn('"algorithm_contract_hash": algorithm_contract_hash', branch_source)
@@ -2363,12 +2582,12 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("validate_layerwise_checkpoint_metadata(", branch_source)
         self.assertIn('"decode_version": LAYERWISE_DECODE_VERSION', branch_source)
         self.assertIn('"cost_model_revision": LAYERWISE_COST_MODEL_REVISION', source)
-        self.assertIn('"resource_secondary_epsilon":', branch_source)
+        self.assertNotIn('"resource_secondary_epsilon":', branch_source)
         self.assertIn('"compute_axis_denominator":', branch_source)
         self.assertIn('"communication_axis_denominator":', branch_source)
-        self.assertIn('"resource_credit_mode": "two_family_shapley_per_slot_v1"', branch_source)
+        self.assertIn('"resource_credit_mode": "separable_weighted_per_slot_v1"', branch_source)
         self.assertIn(
-            '"strict_resource_order": ["robust_floor", "secondary_progress"]',
+            '"strict_resource_order": ["weighted_score", "balance_tiebreak"]',
             branch_source,
         )
         self.assertIn('"ppo": asdict(ppo)', branch_source)
@@ -2404,7 +2623,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             branch_source,
         )
         self.assertIn(
-            '"feasible,robust_floor,secondary_progress,confidence_vector,"',
+            '"feasible,weighted_resource_score,balance_tiebreak,confidence_vector,"',
             branch_source,
         )
         self.assertIn("strict_selection_key(", branch_source)
@@ -2832,22 +3051,11 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         initialize_layerwise_policy(policy)
 
         self.assertEqual(policy.probabilities[0], {0: 0.60, 1: 0.40})
-        expected_k = {
-            13: 0.475,
-            12: 0.190,
-            11: 0.114,
-            10: 0.076,
-            9: 0.057,
-            8: 0.038,
-            7: 0.030,
-            6: 0.020,
-        }
-        self.assertEqual(policy.probabilities[1:], [expected_k] * 5)
-        self.assertEqual(math.fsum(expected_k.values()), 1.0)
-        self.assertGreater(expected_k[6], 0.0)
-        self.assertGreater(expected_k[7], 0.0)
+        expected_precision = {0: 0.60, 1: 0.27, 2: 0.13}
+        self.assertEqual(policy.probabilities[1], expected_precision)
+        self.assertEqual(math.fsum(expected_precision.values()), 1.0)
         self.assertEqual(policy.values[0], (0, 1))
-        self.assertEqual(policy.values[1:], [tuple(K_LEVELS)] * 5)
+        self.assertEqual(policy.values[1], (0, 1, 2))
 
 class _FakeBuffer:
     def __init__(self):
@@ -2886,9 +3094,9 @@ class _FakePolicy:
 
     def sample_action(self, state, slot_mask, per_slot_num_levels, **_kwargs):
         del state, per_slot_num_levels
-        mask = np.asarray(slot_mask, dtype=bool).reshape(1, 6)
+        mask = np.asarray(slot_mask, dtype=bool).reshape(1, 2)
         self.masks.append(mask[0].copy())
-        action = np.asarray([[1, 5, 4, 3, 2, 1]], dtype=np.int64)
+        action = np.asarray([[1, 2]], dtype=np.int64)
         result = action, np.asarray([float(mask.sum())]), np.asarray([0.25])
         if _kwargs.get("return_per_slot_log_prob", False):
             return result + (mask.astype(np.float32),)
@@ -2908,7 +3116,7 @@ def _strict_reference():
 
 class _FakeLayerwiseEnv:
     horizon = 12
-    max_step_dim = 6
+    max_step_dim = 2
     state_dim = 4
 
     def __init__(
@@ -2946,8 +3154,8 @@ class _FakeLayerwiseEnv:
         return types.SimpleNamespace(
             step_idx=self._step,
             layer_idx=self._step,
-            slot_dims=(2,) + (self.k_num_levels,) * 5,
-            slot_mask=(True, self._step != 0, True, True, True, True),
+            slot_dims=(2, 3),
+            slot_mask=(True, True),
         )
 
     def step(self, action):
@@ -3017,6 +3225,9 @@ class _FakeLayerwiseEnv:
             "ppo_resource_score": objective.ppo_resource_score,
             "compute_shapley_credit": objective.compute_shapley_credit,
             "communication_shapley_credit": objective.communication_shapley_credit,
+            "compute_weight": objective.compute_weight,
+            "communication_weight": objective.communication_weight,
+            "communication_importance_ratio": objective.communication_importance_ratio,
             "fusion_count": objective.fusion_count,
             "removed_k_bits": objective.removed_k_bits,
             "layer_resource_rewards": list(objective.layer_resource_rewards),
@@ -3173,10 +3384,22 @@ def _resource_objective_for_matrix(action_matrix):
 
 
 def _fake_policy_action_matrix():
-    return [[1, 0, 4, 3, 2, 1]] + [[1, 5, 4, 3, 2, 1] for _ in range(11)]
+    return [[1, 2] for _ in range(12)]
 
 
 class LayerwiseRolloutTests(unittest.TestCase):
+    def setUp(self):
+        axis_evidence = {
+            "compute": {"point_pass": True},
+            "communication": {"point_pass": True},
+        }
+        patcher = mock.patch(
+            "blb_stage2_rl.layerwise_runner._evaluate_axis_counterfactual_banks",
+            return_value=(axis_evidence, 0),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @staticmethod
     def _train_cfg(total_episodes=1, update_every=1):
         return types.SimpleNamespace(
@@ -3210,10 +3433,9 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(resolve_exact_terminal_batch_size(4, 5, 5), 1)
         self.assertEqual(resolve_exact_terminal_batch_size(1, 5, 4), 1)
 
-    def test_default_step_adapter_accepts_canonical_k_level_count(self):
+    def test_default_step_adapter_accepts_precision_preset_level_count(self):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
-        from blb_stage2_rl.truncation_levels import LEVELS_K
 
         source = Path("blb_stage2_rl/sequential_policy.py").read_text(
             encoding="utf-8",
@@ -3241,7 +3463,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         default_adapter_module.step_to_mask_and_levels = namespace[
             "step_to_mask_and_levels"
         ]
-        env = _FakeLayerwiseEnv(k_num_levels=LEVELS_K)
+        env = _FakeLayerwiseEnv(k_num_levels=3)
         buffer = _FakeBuffer()
 
         with (
@@ -3276,7 +3498,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
         self.assertEqual(
             buffer.transitions[0]["per_slot_num_levels"].tolist(),
-            [2, LEVELS_K, LEVELS_K, LEVELS_K, LEVELS_K, LEVELS_K],
+            [2, 3],
         )
 
     def test_grouped_terminal_probes_finalize_in_order_at_the_ppo_boundary(self):
@@ -3599,12 +3821,12 @@ class LayerwiseRolloutTests(unittest.TestCase):
             resource["communication_shapley_credit"],
         )
         self.assertEqual([row["done"] for row in buffer.transitions], [False] * 11 + [True])
-        self.assertEqual([float(row["log_prob"]) for row in buffer.transitions], [5.0] + [6.0] * 11)
-        self.assertFalse(policy.masks[0][1])
-        self.assertEqual(env.actions[0][1], 0)
+        self.assertEqual([float(row["log_prob"]) for row in buffer.transitions], [2.0] * 12)
+        self.assertTrue(policy.masks[0][1])
+        self.assertEqual(env.actions[0][1], 2)
         self.assertEqual(observed_ppo[0][0:3], (12, 1.0, 1.0))
         self.assertEqual(observed_ppo[0][3]["ent_coef_override"], 0.0)
-        self.assertEqual(summary["episode_records"][0].action_matrix[0][1], 0)
+        self.assertEqual(summary["episode_records"][0].action_matrix[0][1], 2)
         self.assertEqual(summary["episode_records"][0].pending_full_vector, tuple(range(20)))
         self.assertEqual(
             summary["episode_records"][0].probe_diagnostics,
@@ -3689,7 +3911,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
         high_matrix = _fake_policy_action_matrix()
-        low_matrix = [[0] * 6 for _ in range(12)]
+        low_matrix = [[0] * 2 for _ in range(12)]
 
         def candidate(key, vector, matrix):
             return {
@@ -4000,7 +4222,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
 
         context = {"action_space_version": "layerwise-v1"}
         action = list(range(20))
-        action_matrix = [[0] * 6 for _ in range(12)]
+        action_matrix = [[0] * 2 for _ in range(12)]
         banks = _three_validation_banks()
         with tempfile.TemporaryDirectory() as td:
             store = CandidateStore(Path(td) / "candidates.jsonl")
@@ -4050,7 +4272,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
-        action_matrix = [[1, 0, 1, 2, 3, 4] for _ in range(12)]
+        action_matrix = [[1, 2] for _ in range(12)]
         frontier = {
             "variable_cost": 0.4,
             "assessment": _assessment(0.9),
@@ -4067,10 +4289,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
         objective = _resource_objective_for_matrix(action_matrix)
         config.convergence_resume_state = {
             "best_robust_feasible_objective": [
-                objective["robust_floor"], objective["secondary_progress"],
+                objective["ppo_resource_score"], objective["robust_floor"],
             ],
             "current_robust_feasible_objective": [
-                objective["robust_floor"], objective["secondary_progress"],
+                objective["ppo_resource_score"], objective["robust_floor"],
             ],
             "stall_update_windows": 99,
             "selected_action_identity": "frontier",
@@ -4194,7 +4416,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 "metric1_mean": 0.9,
                 "metric2_mean": 0.8,
             },
-            "action_matrix": [[1, 0, 1, 2, 3, 4] for _ in range(12)],
+            "action_matrix": [[1, 2] for _ in range(12)],
             "full_vector": list(range(20)),
             "boosted_overrides": {},
             "reward": 1.4,
@@ -4343,10 +4565,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
         objective = _resource_objective_for_matrix(frontier["action_matrix"])
         config.convergence_resume_state = {
             "best_robust_feasible_objective": [
-                objective["robust_floor"], objective["secondary_progress"],
+                objective["ppo_resource_score"], objective["robust_floor"],
             ],
             "current_robust_feasible_objective": [
-                objective["robust_floor"], objective["secondary_progress"],
+                objective["ppo_resource_score"], objective["robust_floor"],
             ],
             "stall_update_windows": 99,
             "selected_action_identity": "frontier",
@@ -4497,7 +4719,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
                 "metric1_mean": 0.9,
                 "metric2_mean": 0.8,
             },
-            "action_matrix": [[1, 0, 1, 2, 3, 4] for _ in range(12)],
+            "action_matrix": [[1, 2] for _ in range(12)],
             "full_vector": list(range(20)),
             "boosted_overrides": {},
             "reward": 1.4,
@@ -4619,7 +4841,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
-        action_matrix = [[1, 0, 1, 2, 3, 4] for _ in range(12)]
+        action_matrix = [[1, 2] for _ in range(12)]
         frontier = {
             "variable_cost": 0.4,
             "assessment": _assessment(0.9),
@@ -4635,10 +4857,10 @@ class LayerwiseRolloutTests(unittest.TestCase):
         objective = _resource_objective_for_matrix(action_matrix)
         config.convergence_resume_state = {
             "best_robust_feasible_objective": [
-                objective["robust_floor"], objective["secondary_progress"],
+                objective["ppo_resource_score"], objective["robust_floor"],
             ],
             "current_robust_feasible_objective": [
-                objective["robust_floor"], objective["secondary_progress"],
+                objective["ppo_resource_score"], objective["robust_floor"],
             ],
             "stall_update_windows": 99,
             "selected_action_identity": "frontier",
@@ -4978,7 +5200,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
         action = list(range(20))
-        matrix = [[layer % 2, 0, 1, 2, 3, 4] for layer in range(12)]
+        matrix = [[layer % 2, layer % 3] for layer in range(12)]
         overrides = [{
             "block_idx": 4,
             "layer_idx": 3,
@@ -5277,6 +5499,18 @@ class _PromotionBase:
 
 
 class LayerwisePromotionTests(unittest.TestCase):
+    def setUp(self):
+        axis_evidence = {
+            "compute": {"point_pass": True},
+            "communication": {"point_pass": True},
+        }
+        patcher = mock.patch(
+            "blb_stage2_rl.layerwise_runner._evaluate_axis_counterfactual_banks",
+            return_value=(axis_evidence, 0),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _store_with_five(self, root, seeds=None):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import evidence_identity_context
@@ -5350,7 +5584,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         from blb_stage2_rl.layerwise_action import compute_variable_cost_from_action_matrix
         from blb_stage2_rl.layerwise_runner import promote_candidate_if_eligible
 
-        action_matrix = [[0] * 6 for _ in range(12)]
+        action_matrix = [[0] * 2 for _ in range(12)]
         expected_objective = compute_variable_cost_from_action_matrix(action_matrix)
         with tempfile.TemporaryDirectory() as td:
             store = self._store_with_five(td)
@@ -5413,7 +5647,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=action,
                 identity_context={"action_space_version": "layerwise-v1"},
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.01),
                 priority=3,
                 variable_cost=0.0,
@@ -5429,7 +5663,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=action,
                 identity_context={"action_space_version": "layerwise-v1"},
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.01),
                 priority=3,
                 variable_cost=0.0,
@@ -5499,7 +5733,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=action,
                 identity_context=context,
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.01),
                 priority=3,
                 variable_cost=0.0,
@@ -5531,7 +5765,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
 
         action = list(range(20))
-        action_matrix = [[0] * 6 for _ in range(12)]
+        action_matrix = [[0] * 2 for _ in range(12)]
         base = _PromotionBase(fresh_probability=0.01)
         banks = _three_validation_banks()
         with tempfile.TemporaryDirectory() as td:
@@ -5598,7 +5832,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 return super().evaluate_prepared_terminal_batch(prepared, **kwargs)
 
         action = list(range(20))
-        action_matrix = [[0] * 6 for _ in range(12)]
+        action_matrix = [[0] * 2 for _ in range(12)]
         context = {"action_space_version": "layerwise-v1"}
         base = FailNextEvaluation()
         banks = _three_validation_banks()
@@ -5670,7 +5904,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
 
         action = list(range(20))
-        action_matrix = [[0] * 6 for _ in range(12)]
+        action_matrix = [[0] * 2 for _ in range(12)]
         context = {"action_space_version": "layerwise-v1"}
         base = _PromotionBase(fresh_probability=0.01)
         banks = _three_validation_banks()
@@ -5733,7 +5967,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
 
         action = list(range(20))
-        action_matrix = [[0] * 6 for _ in range(12)]
+        action_matrix = [[0] * 2 for _ in range(12)]
         context = {"action_space_version": "layerwise-v1"}
 
         def promote(store, base, banks):
@@ -5809,7 +6043,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=list(range(20)),
                 identity_context={"action_space_version": "layerwise-v1"},
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 variable_cost=0.6,
                 boosted_overrides={},
                 bootstrap_seed=77,
@@ -5847,7 +6081,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=list(range(20)),
                 identity_context={"action_space_version": "layerwise-v1"},
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.9),
                 priority=3,
                 variable_cost=0.6,
@@ -5897,7 +6131,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=action,
                 identity_context=context,
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.85),
                 priority=3,
                 variable_cost=0.6,
@@ -5955,7 +6189,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=action,
                 identity_context=context,
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.85),
                 priority=3,
                 variable_cost=0.6,
@@ -6004,7 +6238,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=action,
                 identity_context=context,
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.85),
                 priority=3,
                 variable_cost=0.6,
@@ -6031,7 +6265,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         context = {"action_space_version": "layerwise-v1"}
         full_context = evidence_identity_context(context, "F4")
         action = list(range(20))
-        matrix = [[0, 3, 3, 3, 3, 3] for _layer in range(12)]
+        matrix = [[0, 0] for _layer in range(12)]
         with tempfile.TemporaryDirectory() as td:
             store = CandidateStore(Path(td) / "candidates.jsonl")
             store.append_trial_group(
@@ -6103,7 +6337,7 @@ class LayerwisePromotionTests(unittest.TestCase):
         }
         strict_context = evidence_identity_context(revalidation_context, "F4")
         action = list(range(20))
-        matrix = [[0] * 6 for _layer in range(12)]
+        matrix = [[0] * 2 for _layer in range(12)]
         candidate = {
             "candidate_key": "candidate-a",
             "variable_cost": 0.0,
@@ -6220,7 +6454,7 @@ class LayerwisePromotionTests(unittest.TestCase):
             "convergence_revalidation_candidate": "candidate-a",
         }
         action = list(range(20))
-        matrix = [[0] * 6 for _layer in range(12)]
+        matrix = [[0] * 2 for _layer in range(12)]
         candidate = {
             "candidate_key": "candidate-a",
             "variable_cost": 0.0,
@@ -6323,7 +6557,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=action,
                 identity_context=context,
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.85),
                 priority=3,
                 variable_cost=0.6,
@@ -6359,7 +6593,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                         candidate_store=store,
                         action_indices=list(range(20)),
                         identity_context={"action_space_version": "layerwise-v1"},
-                        action_matrix=[[0] * 6 for _ in range(12)],
+                        action_matrix=[[0] * 2 for _ in range(12)],
                         assessment=_assessment(probability),
                         priority=priority,
                         variable_cost=cost,
@@ -6383,7 +6617,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=list(range(20)),
                 identity_context={"action_space_version": "layerwise-v1"},
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.9),
                 priority=3,
                 variable_cost=0.5,
@@ -6406,7 +6640,7 @@ class LayerwisePromotionTests(unittest.TestCase):
                 candidate_store=store,
                 action_indices=list(range(20)),
                 identity_context={"action_space_version": "layerwise-v1"},
-                action_matrix=[[0] * 6 for _ in range(12)],
+                action_matrix=[[0] * 2 for _ in range(12)],
                 assessment=_assessment(0.85),
                 priority=3,
                 variable_cost=0.6,

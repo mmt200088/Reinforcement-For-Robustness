@@ -2327,6 +2327,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_limit_tolerance=None,
                  stage2_stability_tolerance=None,
                  stage2_stability_multiplier=2.0,
+                 stage2_communication_importance_ratio=1.0,
                  stage2_k_trials=None,
                  stage2_probe_size=None,
                  stage2_rl_variant='blb_v3',
@@ -2629,6 +2630,15 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.stage2_stability_multiplier = float(stage2_stability_multiplier)
         if self.stage2_stability_multiplier <= 0.0:
             raise ValueError("stage2_stability_multiplier must be positive")
+        from blb_stage2_rl.precision_presets import (
+            validate_communication_importance_ratio,
+        )
+
+        self.stage2_communication_importance_ratio = (
+            validate_communication_importance_ratio(
+                stage2_communication_importance_ratio,
+            )
+        )
         # Stage-2 稳定性评测：K 次噪声 trial 在同一份固定分层探针上评测
         #   stage2_k_trials: 噪声 trial 次数（K）
         #   stage2_probe_size: 探针子集大小
@@ -5566,6 +5576,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             "stage1_accuracy_tolerance": float(self.error_threshold),
             "stage2_limit_tolerance": float(self.stage2_limit_tolerance),
             "stage2_stability_tolerance": float(self.stage2_stability_tolerance),
+            "stage2_communication_importance_ratio": float(
+                self.stage2_communication_importance_ratio
+            ),
             "stage2_k_trials": int(self.stage2_k_trials),
             "stage2_probe_size": int(self.stage2_probe_size),
             "dataset": str(getattr(self, "data_path", "")),

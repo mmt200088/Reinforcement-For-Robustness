@@ -282,6 +282,7 @@ class SequentialTrainConfig:
     online_constraint_probability: float = 0.50
     promotion_constraint_probability: float = 0.80
     final_constraint_probability: float = 0.95
+    communication_importance_ratio: float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -3898,8 +3899,8 @@ def _build_layerwise_candidate_identity_context(
         LAYERWISE_COST_MODEL_REVISION,
         {
             "algorithm_contract_hash": str(algorithm_contract_hash),
-            "resource_secondary_epsilon": algorithm_contract[
-                "resource_secondary_epsilon"
+            "communication_importance_ratio": algorithm_contract[
+                "communication_importance_ratio"
             ],
             "compute_axis_denominator": algorithm_contract[
                 "compute_axis_denominator"
@@ -3973,12 +3974,20 @@ def _run_layerwise_training_branch(
     )
     from .layerwise_action import (
         K_LEVELS as LAYERWISE_K_LEVELS,
+        LAYERWISE_SLOT_NAMES,
         LAYERWISE_COST_MODEL_REVISION,
         LAYERWISE_DECODE_VERSION,
-        RESOURCE_SECONDARY_EPSILON,
+        describe_layerwise_action_matrix,
         layerwise_action_space_version,
         max_communication_saving_units,
         max_compute_saving_units,
+    )
+    from .precision_presets import (
+        PRECISION_PRESETS,
+        PRECISION_PRESET_VERSION,
+        allocated_precision_tolerances,
+        network_axis_weights,
+        validate_communication_importance_ratio,
     )
     from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_runner import (
@@ -4026,9 +4035,9 @@ def _run_layerwise_training_branch(
         getattr(train_cfg, "protected_k1_enabled", False)
     )
     algorithm_revision = (
-        "dual_resource_maxmin_shapley_three_bank_convergence_v11_protected_k1"
+        "network_weighted_hml_three_bank_convergence_v12_protected_k1"
         if protected_k1_enabled else
-        "dual_resource_maxmin_shapley_three_bank_convergence_v10"
+        "network_weighted_hml_three_bank_convergence_v12"
     )
     policy_network_variant = normalize_policy_network_variant(
         getattr(train_cfg, "policy_network_variant", None)
@@ -4058,7 +4067,7 @@ def _run_layerwise_training_branch(
             getattr(train_cfg, "final_constraint_probability", 0.95)
         ),
         "selection_order": (
-            "feasible,robust_floor,secondary_progress,confidence_vector,"
+            "feasible,weighted_resource_score,balance_tiebreak,confidence_vector,"
             "safety_margin_vector,"
             "action_lexicographic"
         ),
@@ -4071,7 +4080,7 @@ def _run_layerwise_training_branch(
     layerwise_ppo_mode = {
         "factorized_actor_clip": True,
         "behavior_log_prob_source": "sampling_time_per_slot_v1",
-        "actor_credit_mode": "shared_constraint_plus_own_resource_shapley",
+        "actor_credit_mode": "shared_constraint_plus_separable_axis_resource",
         "actor_advantage_normalization": "per_slot_center_shared_scale_v1",
         "entropy_average_active_slots": True,
         "entropy_normalize_active_slots": True,
@@ -4081,6 +4090,11 @@ def _run_layerwise_training_branch(
         fusion_map=fusion_map,
         baseline_action_vec=baseline_action_vec,
         profile=str(train_cfg.profile),
+        communication_importance_ratio=(
+            validate_communication_importance_ratio(
+                getattr(train_cfg, "communication_importance_ratio", 1.0),
+            )
+        ),
     )
     layerwise_horizon = int(layerwise_env.horizon)
     if layerwise_horizon != int(evaluator.total_layers):
@@ -4100,8 +4114,8 @@ def _run_layerwise_training_branch(
         )
     policy_cfg = SequentialPolicyConfig(
         state_dim=int(layerwise_env.state_dim),
-        max_step_dim=6,
-        max_num_levels=LEVELS_K,
+        max_step_dim=len(LAYERWISE_SLOT_NAMES),
+        max_num_levels=max(2, len(PRECISION_PRESETS)),
         horizon=layerwise_horizon,
         num_layers=layerwise_horizon,
         metadata_width=0,
@@ -4127,7 +4141,7 @@ def _run_layerwise_training_branch(
         entropy_normalize_active_slots=True,
     )
     algorithm_contract = {
-        "schema_version": "stage2_layerwise_algorithm_contract_v5",
+        "schema_version": "stage2_layerwise_algorithm_contract_v7",
         "algorithm_revision": algorithm_revision,
         "rl_variant": rl_variant,
         "action_space_version": layerwise_action_space_version(
@@ -4136,20 +4150,38 @@ def _run_layerwise_training_branch(
         "decode_version": LAYERWISE_DECODE_VERSION,
         "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
         "k_levels": [int(value) for value in LAYERWISE_K_LEVELS],
-        "resource_secondary_epsilon": float(RESOURCE_SECONDARY_EPSILON),
+        "precision_preset_version": PRECISION_PRESET_VERSION,
+        "precision_presets": [
+            {
+                "name": preset.name,
+                "k_by_block": list(preset.k_by_block),
+                "communication_utility": float(preset.communication_utility),
+            }
+            for preset in PRECISION_PRESETS
+        ],
+        "communication_importance_ratio": float(
+            layerwise_env.communication_importance_ratio
+        ),
+        "network_axis_weights": list(network_axis_weights(
+            layerwise_env.communication_importance_ratio,
+        )),
+        "axis_precision_tolerances": list(allocated_precision_tolerances(
+            float(robust_reference.precision_tolerance),
+            layerwise_env.communication_importance_ratio,
+        )),
         "compute_axis_denominator": int(
             max_compute_saving_units(layerwise_horizon)
         ),
         "communication_axis_denominator": int(
             max_communication_saving_units(layerwise_horizon)
         ),
-        "resource_credit_mode": "two_family_shapley_per_slot_v1",
-        "strict_resource_order": ["robust_floor", "secondary_progress"],
+        "resource_credit_mode": "separable_weighted_per_slot_v1",
+        "strict_resource_order": ["weighted_score", "balance_tiebreak"],
         "resource_objective": {
             "compute_axis": "learnable_block4_fusion_count",
-            "communication_axis": "removed_truncation_k_bits",
-            "selection": "max_min_then_mean",
-            "ppo_surrogate": "(robust_floor+eta*secondary_progress)/(1+eta)",
+            "communication_axis": "layerwise_precision_preset_utility",
+            "selection": "network_weighted_sum_then_balance",
+            "ppo_surrogate": "(compute+rho*communication)/(1+rho)",
         },
         "policy": {
             "state_dim": int(policy_cfg.state_dim),
@@ -4192,7 +4224,10 @@ def _run_layerwise_training_branch(
                 "final_pooled_trial_count": int(
                     authoritative_validation_banks.final_trial_count
                 ),
-                "hard_gate": "six_point_constraints",
+                "hard_gate": (
+                    "joint_six_point_plus_compute_and_communication_"
+                    "counterfactual_six_point_v1"
+                ),
                 "bootstrap_probability_role": "diagnostic_tiebreak_only",
                 "roles": ["strict_frontier", "convergence", "final_selection"],
                 "authoritative": True,
@@ -4475,6 +4510,9 @@ def _run_layerwise_training_branch(
         final_constraint_probability=float(
             getattr(train_cfg, "final_constraint_probability", 0.95)
         ),
+        communication_importance_ratio=float(
+            layerwise_env.communication_importance_ratio
+        ),
         reward_design="robust_constrained",
     )
     candidate_store = CandidateStore(candidate_store_path)
@@ -4550,7 +4588,7 @@ def _run_layerwise_training_branch(
         top_k=20,
         log_fn=log,
         slots_view_builder=layerwise_slots_view,
-        schema_version="stage2_layerwise_action_v2",
+        schema_version="stage2_layerwise_action_hml_v3",
         data_point_writer=stage2_data_writer,
         strict_writes=True,
         history_window=600,
@@ -4676,7 +4714,12 @@ def _run_layerwise_training_branch(
         "run_context_hash": run_context_hash,
         "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
         "resource_objective": dict(algorithm_contract["resource_objective"]),
-        "resource_secondary_epsilon": float(RESOURCE_SECONDARY_EPSILON),
+        "communication_importance_ratio": float(
+            algorithm_contract["communication_importance_ratio"]
+        ),
+        "network_axis_weights": list(
+            algorithm_contract["network_axis_weights"]
+        ),
         "compute_axis_denominator": int(
             algorithm_contract["compute_axis_denominator"]
         ),
@@ -4961,10 +5004,11 @@ def _run_layerwise_training_branch(
             for name in _PROBABILITY_FIELDS if name in promotion_assessment
         }
         b4_count = sum(int(row[0]) for row in record.action_matrix)
-        k_values = []
-        for row in record.action_matrix:
-            for slot_idx in range(1, 6):
-                k_values.append(int(LAYERWISE_K_LEVELS[int(row[slot_idx])]))
+        k_values = [
+            int(k_value)
+            for row in record.action_matrix
+            for k_value in PRECISION_PRESETS[int(row[1])].k_by_block
+        ]
         avg_k = float(np.mean(k_values)) if k_values else 13.0
         is_new_best = False
         if (
@@ -4978,6 +5022,9 @@ def _run_layerwise_training_branch(
                     "variable_cost": record.variable_cost,
                     "compute_saving": record.compute_saving,
                     "communication_saving": record.communication_saving,
+                    "communication_importance_ratio": float(
+                        layerwise_env.communication_importance_ratio
+                    ),
                     "robust_floor": record.robust_floor,
                     "secondary_progress": record.secondary_progress,
                     "action_matrix": record.action_matrix,
@@ -5564,7 +5611,7 @@ def _run_layerwise_training_branch(
 
     bank_b_best = dict(summary.get("bank_b_best") or {})
     compact_summary = {
-        "schema_version": "stage2_layerwise_robust_summary_v5",
+        "schema_version": "stage2_layerwise_robust_summary_v6",
         "status": completion_status,
         "rl_variant": rl_variant,
         "policy_network_variant": policy_network_variant,
@@ -5572,8 +5619,20 @@ def _run_layerwise_training_branch(
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,
         "run_context_hash": run_context_hash,
+        "communication_importance_ratio": float(
+            layerwise_env.communication_importance_ratio
+        ),
+        "network_axis_weights": list(
+            algorithm_contract["network_axis_weights"]
+        ),
+        "axis_precision_tolerances": list(
+            algorithm_contract["axis_precision_tolerances"]
+        ),
         "completed_episodes": int(summary.get("completed_episodes", start_episode)),
         "best_action_matrix": summary.get("best_action_matrix"),
+        "best_layer_configurations": summary.get(
+            "best_layer_configurations"
+        ),
         "best_full_vector": summary.get("best_full_vector"),
         "best_assessment": summary.get("best_assessment"),
         "strict_best_assessment": summary.get("best_assessment"),
@@ -5584,6 +5643,9 @@ def _run_layerwise_training_branch(
         "best_variable_cost": summary.get("best_variable_cost"),
         "best_reward": summary.get("best_reward"),
         "best_promotion_evidence": summary.get("best_promotion_evidence"),
+        "best_axis_counterfactuals": summary.get(
+            "best_axis_counterfactuals"
+        ),
         "bank_b_best": bank_b_best or None,
         "protected_k1": dict(summary.get("protected_k1") or {}),
         "final_evidence": {
@@ -5597,7 +5659,10 @@ def _run_layerwise_training_branch(
             "diagnostic_probability": float(
                 getattr(train_cfg, "final_constraint_probability", 0.95)
             ),
-            "hard_gate": "six_point_constraints",
+            "hard_gate": (
+                "joint_six_point_plus_compute_and_communication_"
+                "counterfactual_six_point_v1"
+            ),
             "bank_a_trial_count": int(
                 authoritative_validation_banks.bank_a.trial_count
             ),
@@ -5617,11 +5682,15 @@ def _run_layerwise_training_branch(
             "note": (
                 "Bank A qualifies a candidate, independent Bank B confirms "
                 "the pooled AB point gate, and held-out Bank C certifies the "
-                "pooled ABC point gate; probabilities are diagnostics only."
+                "pooled ABC point gate. The same fixed banks certify the "
+                "compute-only and communication-only counterfactuals against "
+                "their allocated precision budgets; probabilities are "
+                "diagnostics only."
             ),
         },
         "block4_entropy": summary.get("block4_entropy"),
         "k_entropy": summary.get("k_entropy"),
+        "precision_preset_entropy": summary.get("k_entropy"),
         "stall_update_windows": summary.get("stall_update_windows"),
         "selected_action_identity": summary.get("selected_action_identity"),
         "selected_action_stable_update_windows": summary.get(
@@ -5705,6 +5774,14 @@ def _run_layerwise_training_branch(
 
     best_full_vector = summary.get("best_full_vector")
     best_action_matrix = summary.get("best_action_matrix")
+    best_layer_configurations = (
+        summary.get("best_layer_configurations")
+        if summary.get("best_layer_configurations") is not None
+        else (
+            describe_layerwise_action_matrix(best_action_matrix)
+            if best_action_matrix else None
+        )
+    )
     best_action_group = build_reloadable_best_group({
         "full_vector": best_full_vector,
         "action_matrix": best_action_matrix,
@@ -5752,6 +5829,7 @@ def _run_layerwise_training_branch(
         "blb_v3_best_action_vec": best_full_vector,
         "blb_v3_best_action_group": best_action_group,
         "blb_v3_layerwise_best_action_group": best_action_group,
+        "blb_v3_layerwise_best_configuration": best_layer_configurations,
         "blb_v3_best_reward": float(best_reward),
         "blb_v3_profile": str(train_cfg.profile),
         "blb_v3_fusion_count_action": True,
@@ -5762,10 +5840,20 @@ def _run_layerwise_training_branch(
         "algorithm_revision": algorithm_revision,
         "algorithm_contract_hash": algorithm_contract_hash,
         "run_context_hash": run_context_hash,
+        "communication_importance_ratio": float(
+            layerwise_env.communication_importance_ratio
+        ),
+        "network_axis_weights": list(
+            algorithm_contract["network_axis_weights"]
+        ),
+        "axis_precision_tolerances": list(
+            algorithm_contract["axis_precision_tolerances"]
+        ),
         "selection_diagnostics": {
-            "selection_mode": "layerwise_robust_dual_resource_strict",
+            "selection_mode": "layerwise_network_weighted_strict",
             "best_action_vec": best_full_vector,
             "best_action_matrix": best_action_matrix,
+            "best_layer_configurations": best_layer_configurations,
             "best_assessment": summary.get("best_assessment"),
             "best_metrics": summary.get("best_metrics"),
             "best_resource_objective": summary.get("best_resource_objective"),
@@ -5775,11 +5863,14 @@ def _run_layerwise_training_branch(
             # Read-only compatibility alias for report consumers predating v4.
             "best_variable_cost": summary.get("best_variable_cost"),
             "best_promotion_evidence": summary.get("best_promotion_evidence"),
+            "best_axis_counterfactuals": summary.get(
+                "best_axis_counterfactuals"
+            ),
             "final_evidence": compact_summary["final_evidence"],
         },
         "sequential_diagnostics": {
             "horizon": layerwise_horizon,
-            "max_step_dim": 6,
+            "max_step_dim": len(LAYERWISE_SLOT_NAMES),
             "state_dim": int(layerwise_env.state_dim),
             "episode_count": int(summary.get(
                 "completed_episodes", completed_episode_count,
@@ -5787,6 +5878,7 @@ def _run_layerwise_training_branch(
             "ppo_metric_count": int(ppo_update_counter),
             "block4_entropy": summary.get("block4_entropy"),
             "k_entropy": summary.get("k_entropy"),
+            "precision_preset_entropy": summary.get("k_entropy"),
             "selected_action_identity": summary.get("selected_action_identity"),
             "selected_action_stable_update_windows": summary.get(
                 "selected_action_stable_update_windows"
@@ -5974,7 +6066,7 @@ def _run_sequential_via_runner_locked(
     log(
         f"  {bullet} 模式（mode）："
         + (
-            f"horizon={int(ev.total_layers)} layerwise，max_step_dim=6"
+            f"horizon={int(ev.total_layers)} layerwise，max_step_dim=2"
             if decision_path == "layerwise"
             else "horizon=59 per-block sequential"
         )
@@ -6548,7 +6640,10 @@ def _run_sequential_via_runner_locked(
             authoritative_robust_summary = {
                 "ok": True,
                 "schema_version": "stage2_validation_banks_v1",
-                "hard_gate": "six_point_constraints",
+                "hard_gate": (
+                    "joint_six_point_plus_compute_and_communication_"
+                    "counterfactual_six_point_v1"
+                ),
                 "bootstrap_probability_role": "diagnostic_tiebreak_only",
                 "banks": bank_summaries,
                 "promotion_reference_ab": pooled_reference_summary(

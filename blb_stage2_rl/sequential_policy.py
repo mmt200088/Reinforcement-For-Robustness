@@ -2402,7 +2402,7 @@ def sequential_ppo_update(
             rows.append(None if count <= 0.0 else float((total[idx] / count).item()))
         return rows
 
-    slot_labels = ["block4_fusion", "block1_k", "block2_k", "block3_k", "block4_k", "block5_k"]
+    slot_labels = ["block4_fusion", "truncation_precision"]
     if slot_count != len(slot_labels):
         slot_labels = [f"slot_{idx}" for idx in range(slot_count)]
     return {
@@ -2427,7 +2427,7 @@ def sequential_ppo_update(
             "factorized_per_slot" if factorized_actor_clip else "joint"
         ),
         "actor_credit_mode": (
-            "shared_constraint_plus_own_resource_shapley"
+            "shared_constraint_plus_separable_axis_resource"
             if factorized_actor_advantages is not None else "scalar_gae"
         ),
         "entropy_objective_mode": (
