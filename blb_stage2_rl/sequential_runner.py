@@ -47,7 +47,11 @@ from .action_mask import (
     ForbiddenActionMask,
     StaticInvalidLevelMask,
 )
-from .action_space import K_LEVELS, _baseline_k_index_for_block
+from .action_space import (
+    K_LEVELS,
+    LEVELS_K,
+    _baseline_k_index_for_block,
+)
 from .baseline_bootstrap import resolve_stage2_model_type
 from .fusion_curriculum import (
     FUSION_NEIGHBOR_RAMP_FRACTION,
@@ -64,6 +68,13 @@ from .sequential_policy import (
     SequentialRolloutBuffer,
     sequential_ppo_update,
     step_to_mask_and_levels,
+)
+from .schedule_geometry import schedule_max_num_levels
+from .truncation_levels import (
+    CHECKPOINT_K_DOMAIN_KEY,
+    checkpoint_k_domain_contract,
+    validate_exact_k_domain,
+    validate_checkpoint_k_domain,
 )
 
 if TYPE_CHECKING:
@@ -1789,6 +1800,7 @@ def train_sequential(
 
     Returns dict with episode_rewards / ppo_metrics / final_invalid_rate.
     """
+    validate_exact_k_domain(K_LEVELS)
     train_cfg = train_cfg or SequentialTrainConfig()
     train_cfg.rl_algo = _normalize_supported_rl_algo(
         getattr(train_cfg, "rl_algo", "ppo"), context="SequentialTrainConfig.rl_algo"
@@ -4089,7 +4101,7 @@ def _run_layerwise_training_branch(
     policy_cfg = SequentialPolicyConfig(
         state_dim=int(layerwise_env.state_dim),
         max_step_dim=6,
-        max_num_levels=6,
+        max_num_levels=LEVELS_K,
         horizon=layerwise_horizon,
         num_layers=layerwise_horizon,
         metadata_width=0,
@@ -5833,6 +5845,7 @@ def run_sequential_via_runner(
         resume_checkpoint_path=None,
         ) -> Dict[str, Any]:
     """Lock the complete Stage-2 run before any probe or persistent write."""
+    validate_exact_k_domain(K_LEVELS)
     from .layerwise_runner import LayerwiseRunLock
     from .runner import resolve_blb_persistence_dir
 
@@ -6773,7 +6786,7 @@ def _run_sequential_via_runner_locked(
     policy_cfg = SequentialPolicyConfig(
         state_dim=int(seq_env.state_dim),
         max_step_dim=int(seq_env.max_step_dim),
-        max_num_levels=(max(6, int(fusion_map.max_num_options())) if fusion_map is not None else 6),
+        max_num_levels=schedule_max_num_levels(seq_env.schedule),
         horizon=int(seq_env.horizon),
         num_layers=int(ev.total_layers),
         network_variant=getattr(train_cfg, "policy_network_variant", None),
@@ -6981,50 +6994,62 @@ def _run_sequential_via_runner_locked(
     best_rank_key: Tuple[float, ...] = tuple()
     best_action_vec: Optional[np.ndarray] = None
     best_record: Optional[EpisodeRecord] = None
+    resume_ckpt: Optional[Mapping[str, Any]] = None
     if effective_resume_path and os.path.isfile(effective_resume_path):
         try:
             ckpt = torch.load(effective_resume_path, map_location=device)
-            ckpt_variant = str(ckpt.get("rl_variant", "") or "")
-            if ckpt_variant and ckpt_variant != seq_rl_variant:
-                log(
-                    f"  [resume][warning] checkpoint at {effective_resume_path} "
-                    f"has rl_variant={ckpt_variant!r} (expected {seq_rl_variant!r}); "
-                    f"skipping load to avoid policy-shape mismatch. Training will "
-                    f"start fresh."
-                )
-            else:
-                if "policy" in ckpt:
-                    policy.load_state_dict(ckpt["policy"])
-                if "policy_ppo_aux" in ckpt:
-                    policy.load_ppo_aux_state_dict(ckpt.get("policy_ppo_aux"))
-                if "optimizer" in ckpt:
-                    optimizer.load_state_dict(ckpt["optimizer"])
-                start_episode = int(ckpt.get("episode", 0))
-                if "best_reward" in ckpt:
-                    try:
-                        best_reward = float(ckpt["best_reward"])
-                    except Exception:
-                        best_reward = -float("inf")
-                saved_rank_key = ckpt.get("best_rank_key")
-                if isinstance(saved_rank_key, (list, tuple)):
-                    try:
-                        best_rank_key = tuple(float(x) for x in saved_rank_key)
-                    except Exception:
-                        best_rank_key = tuple()
-                if ckpt.get("best_action") is not None:
-                    try:
-                        best_action_vec = np.asarray(
-                            ckpt["best_action"], dtype=np.int64
-                        )
-                    except Exception:
-                        best_action_vec = None
-                log(
-                    f"  {bullet} resumed from {effective_resume_path} @ "
-                    f"ep={start_episode}    best_reward="
-                    f"{('+%.4f' % best_reward) if np.isfinite(best_reward) else 'N/A'}"
-                )
         except Exception as exc:
-            log(f"  [resume][warning] failed to resume from {effective_resume_path}: {exc}")
+            raise RuntimeError(
+                f"failed to read Stage-2 checkpoint {effective_resume_path}; "
+                "a fresh run is required"
+            ) from exc
+        validate_checkpoint_k_domain(
+            ckpt,
+            context=f"legacy Stage-2 checkpoint {effective_resume_path}",
+        )
+        ckpt_variant = str(ckpt.get("rl_variant", "") or "")
+        if ckpt_variant and ckpt_variant != seq_rl_variant:
+            log(
+                f"  [resume][warning] checkpoint at {effective_resume_path} "
+                f"has rl_variant={ckpt_variant!r} (expected {seq_rl_variant!r}); "
+                f"skipping load to avoid policy-shape mismatch. Training will "
+                f"start fresh."
+            )
+        else:
+            try:
+                policy.load_state_dict(ckpt["policy"])
+                policy.load_ppo_aux_state_dict(ckpt["policy_ppo_aux"])
+                optimizer.load_state_dict(ckpt["optimizer"])
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Stage-2 checkpoint {effective_resume_path} contains "
+                    "incompatible policy or optimizer state; a fresh run is required"
+                ) from exc
+            resume_ckpt = ckpt
+            start_episode = int(ckpt.get("episode", 0))
+            if "best_reward" in ckpt:
+                try:
+                    best_reward = float(ckpt["best_reward"])
+                except Exception:
+                    best_reward = -float("inf")
+            saved_rank_key = ckpt.get("best_rank_key")
+            if isinstance(saved_rank_key, (list, tuple)):
+                try:
+                    best_rank_key = tuple(float(x) for x in saved_rank_key)
+                except Exception:
+                    best_rank_key = tuple()
+            if ckpt.get("best_action") is not None:
+                try:
+                    best_action_vec = np.asarray(
+                        ckpt["best_action"], dtype=np.int64
+                    )
+                except Exception:
+                    best_action_vec = None
+            log(
+                f"  {bullet} resumed from {effective_resume_path} @ "
+                f"ep={start_episode}    best_reward="
+                f"{('+%.4f' % best_reward) if np.isfinite(best_reward) else 'N/A'}"
+            )
 
     status.set_phase("PPO 训练 (sequential per-block)")
 
@@ -7179,7 +7204,7 @@ def _run_sequential_via_runner_locked(
         output_dir=blb_progress_dir,
         num_layers=int(ev.total_layers),
         num_action_slots=int(num_action_slots),
-        max_action_levels=6,
+        max_action_levels=int(policy_cfg.max_num_levels),
         top_k=20,
         log_fn=log,
         slots_view_builder=_slots_view_builder,
@@ -7593,6 +7618,7 @@ def _run_sequential_via_runner_locked(
                     ),
                     "best_rank_key": [float(x) for x in best_rank_key],
                     "rl_variant": seq_rl_variant,
+                    CHECKPOINT_K_DOMAIN_KEY: checkpoint_k_domain_contract(),
                     # Persist the forbidden-action mask so the next resume
                     # doesn't have to re-discover the same invalid tuples.
                     "forbidden_mask_records": forbidden_mask.to_json_records(),
@@ -8123,9 +8149,9 @@ def _run_sequential_via_runner_locked(
             getattr(seq_train_cfg, "empirical_invalid_level_max_valid", 0)
         ),
     ) if (bool(getattr(seq_train_cfg, "empirical_invalid_level_mask_enabled", False)) and fusion_map is None) else None
-    if effective_resume_path and os.path.isfile(effective_resume_path):
+    if resume_ckpt is not None:
         try:
-            _ckpt = torch.load(effective_resume_path, map_location=device)
+            _ckpt = resume_ckpt
             rec = _ckpt.get("forbidden_mask_records") if isinstance(_ckpt, dict) else None
             if rec:
                 forbidden_mask = ForbiddenActionMask.from_json_records(rec)

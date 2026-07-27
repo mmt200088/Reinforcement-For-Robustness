@@ -435,6 +435,12 @@ class BLBStage2SequentialEnv:
                 raise ValueError(
                     f"fusion step {spec.step_idx} expects 2 slots (option, K), got {action.size}"
                 )
+            _kidx = int(action[1])
+            if not 0 <= _kidx < len(K_LEVELS):
+                raise ValueError(
+                    f"fusion step {spec.step_idx} K index {_kidx} outside legal range "
+                    f"[0, {len(K_LEVELS)})"
+                )
             policy_option_index = int(action[0])
             map_option_id = (
                 int(map_option_id_override)
@@ -454,7 +460,7 @@ class BLBStage2SequentialEnv:
             block_vec = self._fusion_map.expand(
                 spec.graph_key_suffix,
                 map_option_id,
-                int(action[1]),
+                _kidx,
             )
             splice_fusion_step_into_full_vec(temp_vec, spec, block_vec)
             # Record the per-block (fusion_count, max_fusion, K) for the terminal
@@ -462,8 +468,7 @@ class BLBStage2SequentialEnv:
             # (what the policy chose), not the optimizer's re-derived value.
             _chosen_fusion = int(_opt_obj.fusion_count)
             _max_fusion = max((int(o.fusion_count) for o in _opts), default=0)
-            _kidx = int(action[1])
-            _kval = int(K_LEVELS[_kidx]) if 0 <= _kidx < len(K_LEVELS) else int(K_LEVELS[-1])
+            _kval = int(K_LEVELS[_kidx])
             fusion_choice = BlockChoice(
                 block_idx=int(spec.block_idx),
                 graph_key=str(spec.graph_key_suffix),

@@ -34,6 +34,8 @@ Run::
 """
 from __future__ import annotations
 
+import ast
+from contextlib import contextmanager
 import importlib.machinery
 import importlib.util
 import json
@@ -45,6 +47,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -64,6 +67,47 @@ def _load_module_standalone(rel_path: str, name: str):
     return mod
 
 
+def _load_function_standalone(rel_path: str, function_name: str, **globals_):
+    """Compile one production function without importing its heavy module."""
+    path = REPO_ROOT / rel_path
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    )
+    future = ast.parse("from __future__ import annotations\n").body[0]
+    isolated = ast.Module(body=[future, function], type_ignores=[])
+    ast.fix_missing_locations(isolated)
+    namespace = {
+        "__name__": f"blb_stage2_rl._isolated_{function_name}",
+        "__package__": "blb_stage2_rl",
+        **globals_,
+    }
+    exec(compile(isolated, str(path), "exec"), namespace)
+    return namespace[function_name]
+
+
+class _AccessTrap:
+    """Fail if an entry point touches state after its K-domain guard."""
+
+    def __getattribute__(self, name):
+        raise AssertionError(f"fail-fast trap accessed attribute {name!r}")
+
+    def __setattr__(self, name, value):
+        raise AssertionError(f"fail-fast trap mutated attribute {name!r}")
+
+
+def _dependency_stub(suffix: str, **overrides):
+    """Return a lazy module stub for imports not reached after fail-fast."""
+    module = types.ModuleType(f"blb_stage2_rl.{suffix}")
+    fallback = object()
+    module.__getattr__ = lambda _name: fallback
+    for name, value in overrides.items():
+        setattr(module, name, value)
+    return module
+
+
 def _method_region_from_source(source: str, method_name: str) -> str:
     needle = f"    def {method_name}"
     next_needle = "\n    def "
@@ -75,6 +119,88 @@ def _method_region_from_source(source: str, method_name: str) -> str:
     if next_method == -1:
         next_method = len(source)
     return source[start:next_method]
+
+
+@contextmanager
+def _stubbed_step_mask_adapter():
+    """Load the real torch-free mask adapter behind a minimal torch import shim."""
+    module_name = "sequential_policy_geometry_test"
+    dependency_names = ("torch", "torch.nn", "torch.nn.functional")
+    missing = object()
+    previous = {
+        name: sys.modules.get(name, missing)
+        for name in dependency_names
+    }
+    previous_module = sys.modules.get(module_name, missing)
+
+    torch_stub = types.ModuleType("torch")
+    nn_stub = types.ModuleType("torch.nn")
+    functional_stub = types.ModuleType("torch.nn.functional")
+
+    class Module:
+        pass
+
+    nn_stub.Module = Module
+    torch_stub.nn = nn_stub
+    torch_stub.Tensor = object
+    sys.modules.update({
+        "torch": torch_stub,
+        "torch.nn": nn_stub,
+        "torch.nn.functional": functional_stub,
+    })
+    try:
+        yield _load_module_standalone(
+            "blb_stage2_rl/sequential_policy.py",
+            module_name,
+        ).step_to_mask_and_levels
+    finally:
+        if previous_module is missing:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+        for name, module in previous.items():
+            if module is missing:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+
+class _GeometryFusionOption:
+    def __init__(self, option_id: int, fusion_count: int, block_num_slots: int):
+        self.option_id = int(option_id)
+        self.fusion_count = int(fusion_count)
+        self.action_indices = [0] * int(block_num_slots)
+        self.boosted = False
+        self.explicit_field_values = {}
+
+
+class _GeometryFusionGraph:
+    def __init__(self, block_num_slots: int, fusion_counts):
+        self.block_num_slots = int(block_num_slots)
+        self.k_slot_index = int(block_num_slots) - 1
+        self.options = [
+            _GeometryFusionOption(option_id, count, block_num_slots)
+            for option_id, count in enumerate(fusion_counts)
+        ]
+
+
+class _GeometryFusionMap:
+    def __init__(self, block4_options: int):
+        extra_counts = list(range(2, int(block4_options)))
+        self.graphs = {
+            "block2_mrpc": _GeometryFusionGraph(23, [1]),
+            "block4": _GeometryFusionGraph(17, [0, 1] + extra_counts),
+            "block5_n4": _GeometryFusionGraph(16, [1]),
+        }
+
+    def options(self, graph_key):
+        return list(self.graphs[graph_key].options)
+
+    def k_slot_index(self, graph_key):
+        return int(self.graphs[graph_key].k_slot_index)
+
+    def max_num_options(self):
+        return max(len(graph.options) for graph in self.graphs.values())
 
 
 class SequentialArtifactContractsTest(unittest.TestCase):
@@ -525,6 +651,395 @@ class PresetValidatorTest(unittest.TestCase):
         self.assertEqual(problems, [], msg=f"preset has problems: {problems}")
 
 
+class ProductionPolicyGeometryTest(unittest.TestCase):
+    def test_schedule_geometry_import_does_not_register_torch(self):
+        script = "\n".join((
+            "import sys",
+            "assert 'torch' not in sys.modules",
+            "from blb_stage2_rl.schedule_geometry import schedule_max_num_levels",
+            "assert callable(schedule_max_num_levels)",
+            "assert 'torch' not in sys.modules",
+        ))
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+
+    def test_real_schedules_define_their_required_categorical_width(self):
+        from tests.test_blb_truncation_levels import _stubbed_action_space
+        from blb_stage2_rl.layerwise_action import layerwise_schedule
+        from blb_stage2_rl.schedule_geometry import schedule_max_num_levels
+        from blb_stage2_rl.truncation_levels import LEVELS_K
+
+        with _stubbed_action_space() as action_space:
+            legacy_schedule = action_space.step_schedule(1)
+            substage_schedule = [
+                spec for spec in legacy_schedule if int(spec.block_idx) == 2
+            ]
+            narrow_fusion_schedule = action_space.fusion_step_schedule(
+                1,
+                _GeometryFusionMap(2),
+            )
+            wide_fusion_schedule = action_space.fusion_step_schedule(
+                1,
+                _GeometryFusionMap(LEVELS_K + 3),
+            )
+            canonical_schedule = layerwise_schedule(
+                1,
+                _GeometryFusionMap(2),
+            )
+
+            self.assertEqual(
+                schedule_max_num_levels(canonical_schedule),
+                LEVELS_K,
+            )
+            self.assertEqual(
+                schedule_max_num_levels(legacy_schedule),
+                15,
+            )
+            self.assertEqual(
+                schedule_max_num_levels(substage_schedule),
+                15,
+            )
+            self.assertEqual(
+                schedule_max_num_levels(narrow_fusion_schedule),
+                LEVELS_K,
+            )
+            self.assertEqual(
+                schedule_max_num_levels(wide_fusion_schedule),
+                LEVELS_K + 3,
+            )
+
+    def test_real_block2_step_mask_requires_and_accepts_fifteen_levels(self):
+        from tests.test_blb_truncation_levels import _stubbed_action_space
+        from blb_stage2_rl.schedule_geometry import schedule_max_num_levels
+        from blb_stage2_rl.truncation_levels import LEVELS_K
+
+        with _stubbed_action_space() as action_space:
+            schedule = action_space.step_schedule(1)
+            block2_step = next(
+                spec for spec in schedule if int(spec.block_idx) == 2
+            )
+            max_step_dim = max(len(spec.slot_dims) for spec in schedule)
+            with _stubbed_step_mask_adapter() as step_to_mask_and_levels:
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "15 levels > max_num_levels=8",
+                ):
+                    step_to_mask_and_levels(
+                        block2_step,
+                        max_step_dim,
+                        LEVELS_K,
+                    )
+                slot_mask, levels = step_to_mask_and_levels(
+                    block2_step,
+                    max_step_dim,
+                    schedule_max_num_levels(schedule),
+                )
+
+            self.assertTrue(bool(slot_mask[0]))
+            self.assertEqual(int(levels[0]), 15)
+
+    def test_schedule_width_rejects_empty_and_invalid_geometry(self):
+        from blb_stage2_rl.schedule_geometry import schedule_max_num_levels
+
+        class EmptyStep:
+            slot_dims = ()
+
+        class InvalidStep:
+            slot_dims = (2, 0)
+
+        with self.assertRaisesRegex(ValueError, "schedule must not be empty"):
+            schedule_max_num_levels([])
+        with self.assertRaisesRegex(ValueError, "has no categorical slots"):
+            schedule_max_num_levels([EmptyStep()])
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            schedule_max_num_levels([InvalidStep()])
+
+    def test_production_wiring_uses_canonical_and_real_schedule_widths(self):
+        runner_src = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        substage_src = Path("blb_stage2_rl/substage_runner.py").read_text(
+            encoding="utf-8"
+        )
+        action_space_src = Path("blb_stage2_rl/action_space.py").read_text(
+            encoding="utf-8"
+        )
+        policy_src = Path("blb_stage2_rl/sequential_policy.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "from .schedule_geometry import schedule_max_num_levels",
+            runner_src,
+        )
+        self.assertIn(
+            "from .schedule_geometry import schedule_max_num_levels",
+            substage_src,
+        )
+        self.assertNotIn("def schedule_max_num_levels(", action_space_src)
+        self.assertIn("max_num_levels=LEVELS_K", runner_src)
+        self.assertIn(
+            "max_num_levels=schedule_max_num_levels(seq_env.schedule)",
+            runner_src,
+        )
+        self.assertIn(
+            "max_num_levels=schedule_max_num_levels(substage_env.schedule)",
+            substage_src,
+        )
+        self.assertIn("max_num_levels: int = 6", policy_src)
+
+    def test_legacy_diagnostics_uses_policy_width_and_counts_k7_index(self):
+        runner_src = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        diagnostics_region = runner_src[
+            runner_src.index("# ---------- 6.5) Long-term diagnostics recorder ----------"):
+            runner_src.index(
+                "# Provide the static_skeletons baseline",
+                runner_src.index(
+                    "# ---------- 6.5) Long-term diagnostics recorder ----------"
+                ),
+            )
+        ]
+        self.assertIn(
+            "max_action_levels=int(policy_cfg.max_num_levels)",
+            diagnostics_region,
+        )
+        self.assertNotIn("max_action_levels=6", diagnostics_region)
+
+        diag = _load_module_standalone(
+            "blb_stage2_rl/diagnostics.py",
+            "smoke_diag_k8_histogram",
+        )
+        with tempfile.TemporaryDirectory(prefix="blb_diag_k8_") as output_dir:
+            recorder = diag.RLDiagnosticsRecorder(
+                output_dir=output_dir,
+                num_layers=1,
+                num_action_slots=1,
+                max_action_levels=8,
+                top_k=1,
+                log_fn=lambda *_: None,
+            )
+            recorder.record_episode(
+                episode_stats=diag.EpisodeStats(
+                    episode=0,
+                    total_reward=0.0,
+                    terminal_reward=0.0,
+                    per_step_sum=0.0,
+                    valid_steps=1,
+                    invalid_steps=0,
+                    steps_taken=1,
+                    total_bits=0,
+                    fusion_count=0,
+                    first_invalid_step=None,
+                    first_invalid_block=None,
+                    first_invalid_layer=None,
+                    early_terminated=False,
+                ),
+                full_action_vec=np.asarray([7], dtype=np.int64),
+                is_new_best=False,
+                best_reward_so_far=0.0,
+            )
+            self.assertEqual(recorder._action_hist.shape, (1, 8))
+            self.assertEqual(int(recorder._action_hist[0, 7]), 1)
+            recorder.finalize()
+
+
+class CheckpointKDomainWiringTest(unittest.TestCase):
+    _OLD_SIX_LEVEL_DOMAIN = (8, 9, 11, 13, 10, 12)
+
+    def test_train_sequential_rejects_six_levels_before_training_state(self):
+        from blb_stage2_rl.truncation_levels import validate_exact_k_domain
+
+        train = _load_function_standalone(
+            "blb_stage2_rl/sequential_runner.py",
+            "train_sequential",
+            K_LEVELS=self._OLD_SIX_LEVEL_DOMAIN,
+            validate_exact_k_domain=validate_exact_k_domain,
+        )
+        env = _AccessTrap()
+        policy = _AccessTrap()
+        train_cfg = _AccessTrap()
+
+        with self.assertRaisesRegex(ValueError, "exactly once"):
+            train(env=env, policy=policy, train_cfg=train_cfg)
+
+    def test_runner_entry_rejects_six_levels_before_lock_or_persistence(self):
+        from blb_stage2_rl.truncation_levels import validate_exact_k_domain
+
+        entry = _load_function_standalone(
+            "blb_stage2_rl/sequential_runner.py",
+            "run_sequential_via_runner",
+            K_LEVELS=self._OLD_SIX_LEVEL_DOMAIN,
+            validate_exact_k_domain=validate_exact_k_domain,
+        )
+        runner = _AccessTrap()
+        train_cfg = _AccessTrap()
+        real_import = __import__
+        with mock.patch("builtins.__import__", wraps=real_import) as import_spy:
+            with self.assertRaisesRegex(ValueError, "exactly once"):
+                entry(
+                    runner=runner,
+                    train_cfg=train_cfg,
+                    fixed_gelu=None,
+                    fixed_softmax=None,
+                    fixed_label="test",
+                    fixed_source="test",
+                )
+
+        import_spy.assert_not_called()
+
+    def test_substage_entry_rejects_six_levels_before_runtime_dependencies(self):
+        from blb_stage2_rl.truncation_levels import validate_exact_k_domain
+
+        resolve_persistence = mock.Mock(name="resolve_blb_persistence_dir")
+        construct_policy = mock.Mock(name="BLBStage2SequentialPolicy")
+        stubbed_dependencies = (
+            "baseline_bootstrap",
+            "env",
+            "reward",
+            "persistence",
+            "schedule_geometry",
+            "sequential_env",
+            "sequential_runner",
+            "substage_env",
+        )
+        stubs = {
+            f"blb_stage2_rl.{suffix}": _dependency_stub(suffix)
+            for suffix in stubbed_dependencies
+        }
+        stubs.update({
+            "blb_stage2_rl.runner": _dependency_stub(
+                "runner",
+                resolve_blb_persistence_dir=resolve_persistence,
+            ),
+            "blb_stage2_rl.sequential_policy": _dependency_stub(
+                "sequential_policy",
+                BLBStage2SequentialPolicy=construct_policy,
+            ),
+            "blb_stage2_rl.truncation_levels": _dependency_stub(
+                "truncation_levels",
+                CHECKPOINT_K_DOMAIN_KEY="truncation_k_domain",
+                K_LEVELS=self._OLD_SIX_LEVEL_DOMAIN,
+                validate_exact_k_domain=validate_exact_k_domain,
+            ),
+        })
+        entry = _load_function_standalone(
+            "blb_stage2_rl/substage_runner.py",
+            "run_substage_via_runner",
+            torch=None,
+        )
+        runner = _AccessTrap()
+        train_cfg = _AccessTrap()
+        with mock.patch.dict(sys.modules, stubs):
+            with self.assertRaisesRegex(ValueError, "exactly once"):
+                entry(
+                    runner=runner,
+                    train_cfg=train_cfg,
+                    fixed_gelu=np.asarray([], dtype=int),
+                    fixed_softmax=np.asarray([], dtype=int),
+                    fixed_label="test",
+                    fixed_source="test",
+                )
+
+        resolve_persistence.assert_not_called()
+        construct_policy.assert_not_called()
+
+    def test_runtime_domain_validator_accepts_reorder_and_rejects_six_levels(self):
+        from blb_stage2_rl.truncation_levels import validate_exact_k_domain
+
+        reordered = (13, 12, 11, 10, 9, 8, 7, 6)
+        self.assertEqual(validate_exact_k_domain(reordered), reordered)
+        with self.assertRaisesRegex(ValueError, "exactly once"):
+            validate_exact_k_domain((8, 9, 11, 13, 10, 12))
+
+    def test_legacy_runtime_validates_domain_before_lock_or_mutation(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        entry = _method_region_from_source(source, "run_sequential_via_runner")
+        validation = entry.index("validate_exact_k_domain(K_LEVELS)")
+        self.assertLess(validation, entry.index("resolve_blb_persistence_dir("))
+        self.assertLess(validation, entry.index("_ProbeRunnerOwnerHolder()"))
+        self.assertLess(validation, entry.index("LayerwiseRunLock("))
+
+        train = _method_region_from_source(source, "train_sequential")
+        train_validation = train.index("validate_exact_k_domain(K_LEVELS)")
+        self.assertLess(train_validation, train.index("train_cfg ="))
+        self.assertLess(train_validation, train.index("torch.optim.Adam("))
+        self.assertNotIn(
+            "try:",
+            train[max(0, train_validation - 80):train_validation],
+        )
+
+    def test_substage_runtime_validates_domain_before_policy_or_writes(self):
+        source = Path("blb_stage2_rl/substage_runner.py").read_text(
+            encoding="utf-8"
+        )
+        entry = _method_region_from_source(source, "run_substage_via_runner")
+        validation = entry.index("validate_exact_k_domain(K_LEVELS)")
+        self.assertLess(validation, entry.index("if torch is None:"))
+        self.assertLess(validation, entry.index("ev = runner.evaluator"))
+        self.assertLess(validation, entry.index("resolve_blb_persistence_dir("))
+        self.assertLess(validation, entry.index("SequentialPolicyConfig("))
+        self.assertNotIn(
+            "try:",
+            entry[max(0, validation - 80):validation],
+        )
+
+    def test_legacy_resume_validates_domain_before_policy_and_optimizer_load(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        start = source.index(
+            "if effective_resume_path and os.path.isfile(effective_resume_path):",
+            source.rindex("save_path ="),
+        )
+        end = source.index('status.set_phase("PPO', start)
+        resume = source[start:end]
+
+        validation = resume.index("validate_checkpoint_k_domain(")
+        self.assertLess(validation, resume.index("policy.load_state_dict("))
+        self.assertLess(validation, resume.index("optimizer.load_state_dict("))
+        self.assertIn("raise RuntimeError(", resume)
+        self.assertNotIn("failed to resume", resume)
+        self.assertNotIn('if "policy" in ckpt', resume)
+        self.assertNotIn('if "policy_ppo_aux" in ckpt', resume)
+        self.assertNotIn('if "optimizer" in ckpt', resume)
+
+    def test_substage_resume_validates_domain_before_policy_and_optimizer_load(self):
+        source = Path("blb_stage2_rl/substage_runner.py").read_text(
+            encoding="utf-8"
+        )
+        start = source.index("# ---- 4) Resume sub-stage checkpoint")
+        end = source.index("# ---- 5) Collect candidates", start)
+        resume = source[start:end]
+
+        validation = resume.index("validate_checkpoint_k_domain(")
+        self.assertLess(validation, resume.index("policy.load_state_dict("))
+        self.assertLess(validation, resume.index("optimizer.load_state_dict("))
+        self.assertIn("raise RuntimeError(", resume)
+        self.assertNotIn("starting fresh", resume)
+        self.assertNotIn('if "optimizer_state_dict" in ckpt', resume)
+
+    def test_new_legacy_and_substage_saves_persist_k_domain_contract(self):
+        for path in (
+            "blb_stage2_rl/sequential_runner.py",
+            "blb_stage2_rl/substage_runner.py",
+        ):
+            with self.subTest(path=path):
+                source = Path(path).read_text(encoding="utf-8")
+                self.assertIn(
+                    "CHECKPOINT_K_DOMAIN_KEY: checkpoint_k_domain_contract()",
+                    source,
+                )
+
+
 class OutputHygieneRegressionTest(unittest.TestCase):
     """Catch the regression where layer_importance_evaluator wrote the noise
     log header 80x per init (due to implicit string concat * operator-precedence
@@ -581,6 +1096,7 @@ class OutputHygieneRegressionTest(unittest.TestCase):
     def test_runner_dispatches_layerwise_and_preserves_explicit_block_rollback(self):
         runner_src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
         config_src = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+        substage_src = Path("blb_stage2_rl/substage_runner.py").read_text(encoding="utf-8")
 
         for needle in (
             "resolve_decision_path(",
@@ -591,13 +1107,18 @@ class OutputHygieneRegressionTest(unittest.TestCase):
             "train_sequential(",
             "horizon=layerwise_horizon",
             "max_step_dim=6",
-            "max_num_levels=6",
+            "max_num_levels=LEVELS_K",
+            "max_num_levels=schedule_max_num_levels(seq_env.schedule)",
             "metadata_width=0",
             "signal_width=4",
             "step_layer_indices=tuple(range(layerwise_horizon))",
             "step_block_indices=(3,) * layerwise_horizon",
         ):
             self.assertIn(needle, runner_src)
+        self.assertIn(
+            "max_num_levels=schedule_max_num_levels(substage_env.schedule)",
+            substage_src,
+        )
         self.assertIn('decision_granularity: str = "layer"', config_src)
         self.assertIn('reward_design: str = "robust_constrained"', config_src)
         self.assertIn("apply_public_stage2_decision_config(ev, cfg)", config_src)
@@ -916,7 +1437,7 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             lambda value, layer, count, **kwargs:
             int(value[layer] if isinstance(value, (list, tuple)) else value)
         )
-        action_space.K_LEVELS = (8, 9, 11, 13, 10, 12)
+        action_space.K_LEVELS = (8, 9, 11, 13, 10, 12, 6, 7)
         action_space.BlockStepSpec = FakeSpec
         action_space.build_block_cfg_from_field_values = cls._build_cfg
         action_space.fusion_step_schedule = lambda *args, **kwargs: []
@@ -1167,6 +1688,59 @@ class BlockRuntimeHelperTest(unittest.TestCase):
         })
         self.assertEqual(result["block_cfg"].values, result["boosted_field_values"])
         self.assertEqual(result["block_cfg"].marker, "optimizer_applied")
+
+        result_k7 = env.evaluate_step([1, 7])
+
+        self.assertEqual(result_k7["boosted_field_values"], {
+            "field": 61, "output_truncation_k": 7,
+        })
+
+    def test_fusion_evaluate_step_rejects_out_of_range_k_before_expand_or_replan(self):
+        option = types.SimpleNamespace(
+            option_id=1,
+            fusion_count=1,
+            boosted=False,
+            explicit_field_values={},
+        )
+        expand_calls = []
+        bridge_calls = []
+
+        def expand(*args):
+            expand_calls.append(args)
+            return np.zeros(2, dtype=int)
+
+        def fail_if_bridge_called(**kwargs):
+            bridge_calls.append(kwargs)
+            raise AssertionError("bridge/replan must not run for an invalid K index")
+
+        fusion_map = types.SimpleNamespace(
+            options=lambda graph_key: [option],
+            expand=expand,
+            k_slot_index=lambda graph_key: 1,
+        )
+        env = self.mod.BLBStage2SequentialEnv.__new__(self.mod.BLBStage2SequentialEnv)
+        env._terminated_early = False
+        env._schedule = [self.FakeSpec()]
+        env._step_idx = 0
+        env._pending_full_vec = np.zeros(12 * 73 + 1, dtype=int)
+        env._fusion_map = fusion_map
+        env.num_layers = 12
+        env.base = self._base(types.SimpleNamespace(
+            invoker=types.SimpleNamespace(baselines={}),
+            evaluate=fail_if_bridge_called,
+        ))
+
+        for invalid_k_index in (-1, len(self.mod.K_LEVELS)):
+            with self.subTest(k_index=invalid_k_index):
+                with self.assertRaisesRegex(
+                        ValueError,
+                        rf"K index {invalid_k_index}.*legal range "
+                        rf"\[0, {len(self.mod.K_LEVELS)}\)",
+                ):
+                    env.evaluate_step([1, invalid_k_index])
+
+        self.assertEqual(expand_calls, [])
+        self.assertEqual(bridge_calls, [])
 
     def test_helper_returns_structured_bridge_error_without_optimizer_apply(self):
         def fail(**kwargs):

@@ -312,7 +312,7 @@ class LayerwiseEnvironmentTest(unittest.TestCase):
         self.assertEqual(objective["removed_k_bits"], expected_removed)
         self.assertAlmostEqual(
             objective["communication_saving"],
-            float(expected_removed) / 300.0,
+            float(expected_removed) / 420.0,
         )
         self.assertEqual(len(info["fusion_option_ids"]), 12)
         self.assertTrue(info["boosted_overrides"])

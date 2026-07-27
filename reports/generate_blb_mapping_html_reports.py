@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from blb_stage2_rl.truncation_levels import K_LEVELS  # noqa: E402
 from json_utils import read_json_file, write_json_file  # noqa: E402
 from report_format_utils import html_table  # noqa: E402
 
@@ -23,7 +24,6 @@ BRIDGE = ROOT / "rescale_optimizer_bridge.py"
 STATIC_SKELETONS = ROOT / "Rescale_optimizer" / "configs" / "mrpc" / "static_skeletons_mrpc.json"
 
 NUM_LAYERS = 12
-K_LEVELS = (8, 9, 11, 13, 10, 12)
 LEVELS_BY_KIND = {"F": 5, "W": 5, "M": 3, "S": 3, "R": 4, "K": len(K_LEVELS)}
 KIND_CN = {
     "F": "fresh 噪声",

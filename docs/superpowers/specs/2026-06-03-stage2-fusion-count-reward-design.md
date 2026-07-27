@@ -5,6 +5,12 @@
 **Related:** ADR-008 (fusion-count action), ADR-002/007 (reward), Stage-1 reward
 (`layer_importance_evaluator.py` `_compute_dense_step_reward` / `_compute_final_reward`)
 
+> **Superseded K-domain snapshot:** The `K_MIN=8` constants, formulas, and
+> derived totals below document the 2026-06-03 design. The current ordered
+> domain is `K_LEVELS=(8,9,11,13,10,12,6,7)` (`K=6..13`), and current
+> truncation cost/reward normalization uses `13-6`. Do not use the historical
+> K bound or derived totals below as the current runtime contract.
+
 ## Goal
 
 Redesign the Stage-2 **fusion-count** RL reward so the per-block cost signal is a

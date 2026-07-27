@@ -7,6 +7,8 @@ and imported by bare name with ``blb_stage2_rl/`` on ``sys.path`` (the package
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+import importlib.util
 import pathlib
 import sys
 import unittest
@@ -24,6 +26,43 @@ import fusion_enum
 import layerwise_action
 import reward as rwd
 
+
+_MISSING_MODULE = object()
+
+
+@contextmanager
+def _load_standalone_without_sibling_path(filename):
+    module_name = f"_fusion_reward_{pathlib.Path(filename).stem}_standalone"
+    original_path = list(sys.path)
+    previous_module = sys.modules.pop(module_name, _MISSING_MODULE)
+    previous_truncation = sys.modules.pop("truncation_levels", _MISSING_MODULE)
+    try:
+        blb_dir = _BLB_DIR.resolve()
+        sys.path[:] = [
+            entry
+            for entry in sys.path
+            if pathlib.Path(entry or ".").resolve() != blb_dir
+        ]
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            _BLB_DIR / filename,
+        )
+        if spec is None or spec.loader is None:
+            raise AssertionError(f"cannot load standalone module: {filename}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        yield module
+    finally:
+        sys.path[:] = original_path
+        sys.modules.pop(module_name, None)
+        if previous_module is not _MISSING_MODULE:
+            sys.modules[module_name] = previous_module
+        sys.modules.pop("truncation_levels", None)
+        if previous_truncation is not _MISSING_MODULE:
+            sys.modules["truncation_levels"] = previous_truncation
+
+
 try:  # action_space transitively imports torch (blb_rl_bridge) — skip locally if absent
     import action_space as _asp
     _HAS_ASP = True
@@ -33,6 +72,31 @@ except Exception:
 # Spec weights: block1:block2:block4:block5:truncation = 80:150:130:40:50.
 FW = {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0}
 TW = 50.0
+
+
+class StandaloneImportCompatibilityTest(unittest.TestCase):
+    def test_fusion_cost_loads_without_sibling_path_or_cached_module(self):
+        with _load_standalone_without_sibling_path("fusion_cost.py") as module:
+            self.assertEqual((module.K_MAX_BITS, module.K_MIN_BITS), (13, 6))
+
+    def test_reward_cost_fraction_uses_k6_k13_domain_when_loaded_standalone(self):
+        with _load_standalone_without_sibling_path("reward.py") as module:
+            baseline = module.BaselineCostStats(total_bits_sum=200, avg_k=13.0)
+            weights = module.RewardWeights()
+            for action_avg_k, expected in (
+                (13.0, 0.0),
+                (8.0, 5.0 / 7.0),
+                (6.0, 1.0),
+            ):
+                with self.subTest(action_avg_k=action_avg_k):
+                    actual = module._stage1_aligned_cost_fraction(
+                        external_cost_score=None,
+                        baseline=baseline,
+                        opt_total_bits=200.0,
+                        action_avg_k=action_avg_k,
+                        weights=weights,
+                    )
+                    self.assertAlmostEqual(actual, expected)
 
 
 class _Sig:
@@ -90,7 +154,7 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
         self.assertAlmostEqual(fusion.compute_saving, 1.0 / 12.0)
         self.assertEqual(fusion.communication_saving, 0.0)
         self.assertEqual(communication.compute_saving, 0.0)
-        self.assertAlmostEqual(communication.communication_saving, 2.0 / 300.0)
+        self.assertAlmostEqual(communication.communication_saving, 2.0 / 420.0)
         self.assertEqual(fusion.robust_floor, 0.0)
         self.assertEqual(communication.robust_floor, 0.0)
         self.assertNotAlmostEqual(
@@ -103,10 +167,10 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
             _layerwise_actions(block4_fusion=1, k=13)
         )
         communication_only = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=0, k=8)
+            _layerwise_actions(block4_fusion=0, k=6)
         )
         balanced = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=1, k=8)
+            _layerwise_actions(block4_fusion=1, k=6)
         )
 
         self.assertEqual(compute_only.robust_floor, 0.0)
@@ -135,9 +199,9 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
         self.assertEqual(changed, 60)
 
     def test_actual_k_values_not_category_order_drive_cost(self):
-        actions = _layerwise_actions(block4_fusion=0, k=8)
+        actions = _layerwise_actions(block4_fusion=0, k=6)
         expected = layerwise_action.compute_variable_cost(actions)
-        reordered = (13, 8, 10, 9, 11, 12)
+        reordered = (13, 8, 10, 9, 11, 12, 6, 7)
 
         with mock.patch.object(layerwise_action, "K_LEVELS", reordered):
             actual = layerwise_action.compute_variable_cost(actions)
@@ -201,12 +265,12 @@ class FusionCostSavingTest(unittest.TestCase):
         self.assertAlmostEqual(res.max_actual, 390.0)
 
     def test_full_saving_normalizes_to_one(self):
-        # fusion_count == max_fusion AND K=min(8) on every fusable lever.
+        # fusion_count == max_fusion AND K=min(6) on every fusable lever.
         choices = [
-            _bc(2, 1, 1, 8),
-            _bc(5, 1, 1, 8),
-            _bc(1, 0, 0, 8),
-            _bc(4, 0, 0, 8),
+            _bc(2, 1, 1, 6),
+            _bc(5, 1, 1, 6),
+            _bc(1, 0, 0, 6),
+            _bc(4, 0, 0, 6),
         ]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         self.assertAlmostEqual(res.cost_norm, 1.0)
@@ -215,7 +279,7 @@ class FusionCostSavingTest(unittest.TestCase):
     def test_block1_block4_fusion_inert(self):
         # max_fusion==0 => fusion weight never contributes (even with a bogus count),
         # and the 80/130 fusion weights are absent from the normalizer.
-        choices = [_bc(1, 99, 0, 8), _bc(4, 99, 0, 8)]
+        choices = [_bc(1, 99, 0, 6), _bc(4, 99, 0, 6)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         self.assertAlmostEqual(res.max_actual, 100.0)  # 2 * trunc only, no 80/130
         self.assertAlmostEqual(res.cost_rank, 100.0)   # 2 * (50 * trunc_saving=1)
@@ -224,13 +288,13 @@ class FusionCostSavingTest(unittest.TestCase):
             self.assertEqual(pb["fusion_saving"], 0.0)
 
     def test_trunc_saving_linear(self):
-        # K=13 -> 0, K=8 -> 1, midpoint K=10.5 not in levels; check K=11 -> (13-11)/5.
+        # K=13 -> 0, K=6 -> 1; check the intermediate K=11 -> (13-11)/7.
         choices = [_bc(2, 0, 1, 11)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
-        # actual = 50 * (13-11)/5 = 50 * 0.4 = 20 ; denom = 150 (fusion) + 50 = 200.
-        self.assertAlmostEqual(res.cost_rank, 20.0)
+        trunc_saving = (13.0 - 11.0) / 7.0
+        self.assertAlmostEqual(res.cost_rank, 50.0 * trunc_saving)
         self.assertAlmostEqual(res.max_actual, 200.0)
-        self.assertAlmostEqual(res.cost_norm, 0.1)
+        self.assertAlmostEqual(res.cost_norm, 50.0 * trunc_saving / 200.0)
 
     def test_rank_monotonic_in_fusion(self):
         base = [_bc(2, 0, 1, 13)]
@@ -241,7 +305,7 @@ class FusionCostSavingTest(unittest.TestCase):
         self.assertAlmostEqual(r1.cost_rank - r0.cost_rank, 150.0)
 
     def test_precomputed_max_actual_used(self):
-        choices = [_bc(2, 1, 1, 8)]
+        choices = [_bc(2, 1, 1, 6)]
         res = fusion_cost.compute_fusion_cost_saving(
             choices, fusion_w=FW, trunc_w=TW, max_actual=400.0
         )
@@ -388,6 +452,18 @@ class BudgetSplitComponentsTest(unittest.TestCase):
         self.assertAlmostEqual(res.fusion_max_actual, 190.0)
         self.assertAlmostEqual(res.trunc_max_actual, 150.0)
 
+    def test_k6_is_full_truncation_saving_and_k13_is_zero(self):
+        low = [_bc(2, 0, 1, 6), _bc(5, 0, 1, 6)]
+        baseline = [_bc(2, 0, 1, 13), _bc(5, 0, 1, 13)]
+        low_result = fusion_cost.compute_fusion_cost_saving(
+            low, fusion_w=FW, trunc_w=TW,
+        )
+        baseline_result = fusion_cost.compute_fusion_cost_saving(
+            baseline, fusion_w=FW, trunc_w=TW,
+        )
+        self.assertAlmostEqual(low_result.trunc_norm, 1.0)
+        self.assertAlmostEqual(baseline_result.trunc_norm, 0.0)
+
     def test_fusion_only_moves_fusion_norm(self):
         choices = [_bc(2, 1, 1, 13), _bc(5, 0, 1, 13)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
@@ -399,11 +475,11 @@ class BudgetSplitComponentsTest(unittest.TestCase):
         choices = [_bc(2, 0, 1, 8), _bc(5, 0, 1, 13)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         self.assertEqual(res.fusion_norm, 0.0)
-        self.assertAlmostEqual(res.trunc_actual, 50.0)
-        self.assertAlmostEqual(res.trunc_norm, 0.5)
+        self.assertAlmostEqual(res.trunc_actual, 50.0 * (13.0 - 8.0) / 7.0)
+        self.assertAlmostEqual(res.trunc_norm, (13.0 - 8.0) / 7.0 / 2.0)
 
     def test_both_full_saturate_to_one(self):
-        choices = [_bc(2, 1, 1, 8), _bc(5, 1, 1, 8)]
+        choices = [_bc(2, 1, 1, 6), _bc(5, 1, 1, 6)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         self.assertAlmostEqual(res.fusion_norm, 1.0)
         self.assertAlmostEqual(res.trunc_norm, 1.0)
@@ -411,7 +487,7 @@ class BudgetSplitComponentsTest(unittest.TestCase):
     def test_fusion_degenerate_schedule_has_zero_fusion_max(self):
         # all-block1/block4 schedule: no fusion lever anywhere -> fusion_norm
         # pinned 0 with no division blowup.
-        choices = [_bc(1, 0, 0, 8), _bc(4, 0, 0, 8)]
+        choices = [_bc(1, 0, 0, 6), _bc(4, 0, 0, 6)]
         res = fusion_cost.compute_fusion_cost_saving(choices, fusion_w=FW, trunc_w=TW)
         self.assertEqual(res.fusion_max_actual, 0.0)
         self.assertEqual(res.fusion_norm, 0.0)
@@ -451,7 +527,7 @@ class BudgetSplitComponentsTest(unittest.TestCase):
         self.assertAlmostEqual(frac, 0.5)
 
         full_fusion = [_bc(2, 1, 1, 13), _bc(5, 1, 1, 13)]
-        full_trunc = [_bc(2, 0, 1, 8), _bc(5, 0, 1, 8)]
+        full_trunc = [_bc(2, 0, 1, 6), _bc(5, 0, 1, 6)]
 
         def score(ch):
             r = fusion_cost.compute_fusion_cost_saving(ch, fusion_w=FW, trunc_w=TW)
@@ -465,7 +541,7 @@ class ExternalCostThreadingTest(unittest.TestCase):
     def test_weight_constants_match_spec(self):
         self.assertEqual(rwd.FUSION_COST_W, {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0})
         self.assertEqual(rwd.TRUNC_COST_W, 50.0)
-        self.assertEqual((rwd.K_MAX_BITS, rwd.K_MIN_BITS), (13, 8))
+        self.assertEqual((rwd.K_MAX_BITS, rwd.K_MIN_BITS), (13, 6))
 
     def test_p3_uses_external_cost(self):
         # accuracy ok (m == baseline) + stability ok (std 0) => P3; external cost used.
@@ -583,7 +659,7 @@ class RealMapIntegrationTest(unittest.TestCase):
         self.assertAlmostEqual(res.max_actual, self._expected_max_actual())
 
     def test_max_saving_episode_normalizes_to_one(self):
-        choices = self._schedule_choices(fusion_count_of=lambda mf: mf, k_value=8)
+        choices = self._schedule_choices(fusion_count_of=lambda mf: mf, k_value=6)
         res = fusion_cost.compute_fusion_cost_saving(
             choices, fusion_w=rwd.FUSION_COST_W, trunc_w=rwd.TRUNC_COST_W,
         )

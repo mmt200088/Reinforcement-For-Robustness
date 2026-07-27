@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate a human-readable MRPC fusion-count map report and fixed actions.
 
-The script intentionally avoids importing ``blb_stage2_rl`` because local
-developer machines used for report generation may not have torch installed.
-It reads the map JSON artifacts and parses the action slot table from
+The script avoids importing torch-heavy ``blb_stage2_rl.action_space`` because
+local developer machines used for report generation may not have torch
+installed. It may import torch-free helpers such as
+``blb_stage2_rl.truncation_levels``. The action slot table is parsed from
 ``action_space.py`` as data.
 """
 from __future__ import annotations
@@ -24,14 +25,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cli_parse_utils import parse_json_int_list  # noqa: E402
+from blb_stage2_rl.truncation_levels import K_LEVELS, baseline_k_index  # noqa: E402
 from json_utils import read_json_file, write_json_file  # noqa: E402
 from report_format_utils import html_table  # noqa: E402
 
 ACTION_SPACE_PATH = REPO_ROOT / "blb_stage2_rl" / "action_space.py"
 DEFAULT_MAP_DIR = REPO_ROOT / "blb_stage2_rl" / "fusion_maps" / "mrpc"
 
-K_LEVELS = (8, 9, 11, 13, 10, 12)
-BASELINE_K_INDEX = K_LEVELS.index(13)
+BASELINE_K_INDEX = baseline_k_index(K_LEVELS)
 # Keep in lockstep with action_space.LEVELS_* (this script stays torch-free so
 # it mirrors the literal): 15-level uniform step-1 grid since 2026-06-11.
 LEVELS_BY_KIND = {"F": 15, "W": 15, "M": 15, "S": 15, "R": 15, "K": len(K_LEVELS)}

@@ -22,6 +22,7 @@ from blb_stage2_rl.action_space import (
     per_layer_field_offsets,
     sf_from,
     sum_truncation_k_in_action,
+    validate_action_vector,
 )
 from cli_parse_utils import parse_int_list_text
 from json_utils import read_json_file
@@ -131,7 +132,7 @@ def load_action_grid_config(
     4. **fixed / ranges only** (back-compat with cartesian-sweep presets)::
 
         {"fixed": {"layer2.block5.wffn1_sf": 18},
-         "ranges": {"block3.truncation": [8, 9, 10, 11, 12, 13]}}
+         "ranges": {"block3.truncation": [6, 7, 8, 9, 10, 11, 12, 13]}}
 
     All four shapes also support the optional top-level ``fixed`` / ``ranges``
     fields which apply *after* the base/slots/action_vec is decoded.
@@ -637,7 +638,6 @@ def parse_action_spec(spec: str) -> Tuple[str, Tuple[int, ...]]:
 
 
 def _normalize_base_action(base_action_vec: Optional[Sequence[int]], num_layers: int) -> np.ndarray:
-    expected = len(action_dims_for_config(num_layers))
     if base_action_vec is None:
         return make_all_max_action_vector(num_layers).astype(int)
     if isinstance(base_action_vec, str):
@@ -650,19 +650,7 @@ def _normalize_base_action(base_action_vec: Optional[Sequence[int]], num_layers:
             base_action_vec = json.loads(text)
         else:
             base_action_vec = parse_int_list_text(text, allow_semicolon=False)
-    arr = np.asarray(base_action_vec, dtype=int).reshape(-1)
-    if arr.size != expected:
-        raise ValueError(
-            f"action vector length {arr.size} != expected {expected} for {num_layers} layers"
-        )
-    dims = np.asarray(action_dims_for_config(num_layers), dtype=int)
-    invalid = np.where((arr < 0) | (arr >= dims))[0]
-    if invalid.size:
-        first = int(invalid[0])
-        raise ValueError(
-            f"action vector index {first}={int(arr[first])} outside [0,{int(dims[first])})"
-        )
-    return arr.copy()
+    return validate_action_vector(base_action_vec, int(num_layers)).copy()
 
 
 def _parse_base_action_vec(base_raw, num_layers_hint: int) -> Optional[np.ndarray | str]:
@@ -676,13 +664,12 @@ def _parse_base_action_vec(base_raw, num_layers_hint: int) -> Optional[np.ndarra
         ):
             return text
         if text.startswith("["):
-            return np.asarray(json.loads(text), dtype=int)
+            return np.asarray(json.loads(text))
         return np.asarray(
             parse_int_list_text(text, allow_semicolon=False),
-            dtype=int,
         )
     if isinstance(base_raw, Sequence):
-        return np.asarray(base_raw, dtype=int)
+        return np.asarray(base_raw)
     raise ValueError("action config base_action must be 'max', 'min', or an integer list")
 
 

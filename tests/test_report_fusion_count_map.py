@@ -9,6 +9,13 @@ from scripts import report_fusion_count_map as report
 
 
 class FusionCountMapReportTest(unittest.TestCase):
+    def test_report_uses_canonical_eight_level_truncation_domain(self):
+        from blb_stage2_rl.truncation_levels import K_LEVELS
+
+        self.assertEqual(tuple(report.K_LEVELS), tuple(K_LEVELS))
+        self.assertEqual(report.LEVELS_BY_KIND["K"], 8)
+        self.assertEqual(report.BASELINE_K_INDEX, 3)
+
     def test_build_report_payload_reuses_decoded_base_option(self):
         class CountingList(list):
             def __init__(self, values):

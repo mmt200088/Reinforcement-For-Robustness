@@ -34,13 +34,12 @@ None（即不安装该处噪声），所以 RL 选这些槽的值不会改变 cf
 from __future__ import annotations
 
 import math
-import os
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from cli_parse_utils import parse_int_list_text
 from json_utils import read_json_file
 from blb_rl_bridge import (
     Block1ActionSpec,
@@ -62,6 +61,21 @@ from function_handler import (
     Block4NoiseConfig,
     Block5NoiseConfig,
 )
+
+try:
+    from .truncation_levels import (
+        DEFAULT_K_LEVELS_LEGACY_COMPAT,
+        K_LEVELS,
+        LEVELS_K,
+        baseline_k_index,
+    )
+except ImportError:  # pragma: no cover - legacy top-level import compatibility
+    from truncation_levels import (
+        DEFAULT_K_LEVELS_LEGACY_COMPAT,
+        K_LEVELS,
+        LEVELS_K,
+        baseline_k_index,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -86,27 +100,6 @@ LEVELS_MS = 15       # mask / scalar encode
 LEVELS_R = 15        # rescale (idx0=None; idx1..14 sweep SF, step-1)
 LEVELS_F = 15        # fresh
 
-# Truncation K 挡位默认扩展为 6 档，但保持旧 checkpoint / 旧 action vector 的
-# index 语义：0/1/2/3 仍然解码为 8/9/11/13，新挡位 10/12 追加在后面。
-# 如需做临时实验，可用环境变量覆盖，例如：
-#   BLB_TRUNCATION_K_LEVELS=8,9,11,13,10,12
-DEFAULT_K_LEVELS_LEGACY_COMPAT: Tuple[int, ...] = (8, 9, 11, 13, 10, 12)
-
-
-def _load_k_levels_from_env() -> Tuple[int, ...]:
-    raw = str(os.environ.get("BLB_TRUNCATION_K_LEVELS", "") or "").strip()
-    if not raw:
-        return DEFAULT_K_LEVELS_LEGACY_COMPAT
-    values = tuple(parse_int_list_text(raw))
-    if not values:
-        raise ValueError("BLB_TRUNCATION_K_LEVELS must contain at least one integer")
-    if len(set(values)) != len(values):
-        raise ValueError(f"BLB_TRUNCATION_K_LEVELS contains duplicate values: {values}")
-    return values
-
-
-K_LEVELS: Tuple[int, ...] = _load_k_levels_from_env()
-LEVELS_K = len(K_LEVELS)
 LEVELS_FIRST_INPUT = 5   # 与 fresh 一致
 BLB_FIRST_INPUT_N = 8192
 
@@ -127,9 +120,7 @@ def _baseline_k_index_for_block(block_idx: int) -> int:
     var override could remove 10 or 13).
     """
     target = int(BASELINE_K_BY_BLOCK.get(int(block_idx), max(K_LEVELS)))
-    if target in K_LEVELS:
-        return int(K_LEVELS.index(target))
-    return int(K_LEVELS.index(max(K_LEVELS)))
+    return int(baseline_k_index(K_LEVELS, baseline_k=target))
 
 
 # 离散挡位数（与 cfg 字段一一对应；同时影响 reward / policy 头维度）
@@ -585,6 +576,69 @@ def action_dims_for_config(num_layers: int) -> List[int]:
     return out
 
 
+@lru_cache(maxsize=None)
+def _action_dims_array(num_layers: int) -> np.ndarray:
+    """Return the immutable per-slot domain used by full-vector consumers."""
+    dims = np.asarray(action_dims_for_config(int(num_layers)), dtype=np.int64)
+    dims.setflags(write=False)
+    return dims
+
+
+def validate_action_vector(
+        action_vec: Sequence[int] | np.ndarray,
+        num_layers: int,
+        ) -> np.ndarray:
+    """Return a 1D integer action after lossless categorical validation."""
+    original = action_vec
+    if not isinstance(action_vec, np.ndarray):
+        try:
+            original = tuple(action_vec)
+        except TypeError:
+            pass
+    raw = np.asarray(original)
+    if raw.ndim != 1:
+        raise ValueError(
+            f"action_vec must be one-dimensional, got shape {raw.shape}"
+        )
+
+    dims = _action_dims_array(int(num_layers))
+    if raw.size != dims.size:
+        raise ValueError(
+            f"action_vec length {raw.size} != expected {dims.size} "
+            f"(num_layers={int(num_layers)})"
+        )
+
+    original_has_boolean = (
+        any(isinstance(value, (bool, np.bool_)) for value in original)
+        if isinstance(original, tuple)
+        else raw.dtype == object
+        and any(isinstance(value, (bool, np.bool_)) for value in raw.flat)
+    )
+    integer_dtype = np.issubdtype(raw.dtype, np.integer)
+    boolean_dtype = np.issubdtype(raw.dtype, np.bool_) or original_has_boolean
+    if not integer_dtype or boolean_dtype:
+        if np.issubdtype(raw.dtype, np.floating):
+            integer_valued = np.isfinite(raw) & (raw == np.trunc(raw))
+        else:
+            integer_valued = np.zeros(raw.shape, dtype=bool)
+        non_integer_positions = np.flatnonzero(~integer_valued)
+        if non_integer_positions.size:
+            position = int(non_integer_positions[0])
+            raise ValueError(
+                "action_vec must contain integer categorical indices; "
+                f"position {position}={raw[position]!r}"
+            )
+
+    invalid_positions = np.flatnonzero((raw < 0) | (raw >= dims))
+    if invalid_positions.size:
+        position = int(invalid_positions[0])
+        raise ValueError(
+            f"action index at position {position}={int(raw[position])} "
+            f"out of range [0,{int(dims[position])})"
+        )
+    return raw.astype(np.int64, copy=False)
+
+
 def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
     """返回单层动作向量内每个分量的 ``(block_idx, field_name, kind)`` 三元组。"""
     out: List[Tuple[int, str, str]] = []
@@ -684,11 +738,12 @@ def horizon_for_num_layers(num_layers: int) -> int:
 
 
 def _full_vec_offset_for_block(num_layers: int, layer_idx: int, block_idx: int) -> int:
-    """Return start offset (into the legacy 577-dim full action vector) of
+    """Return start offset (into the current full action vector) of
     the (layer_idx, block_idx) slot range.
 
     The full vec is one categorical index per slot per layer, in block order
-    1..5; first_input fresh sits at the very end.
+    1..5; first_input fresh sits at the very end. For BERT-base, this vector
+    contains 73 slots per layer and 877 entries in total.
     """
     per_layer_width = len(layer_dims())
     base = int(layer_idx) * per_layer_width
@@ -797,7 +852,7 @@ def splice_step_action_into_full_vec(
         step: BlockStepSpec,
         step_action: Sequence[int],
         ) -> np.ndarray:
-    """Write the per-step action's slot values into the legacy 577-dim vec.
+    """Write the per-step action's slot values into the current full action vector.
 
     ``step_action`` length must equal ``len(step.slot_dims)``. Returns
     ``full_vec`` for chaining.
@@ -835,8 +890,9 @@ class FusionStepSpec:
         Block2/5 expose one local choice fixed to fusion_count=1, while Block4
         keeps its full map domain;
       * slot 1 = K, ``k_num_levels`` (== LEVELS_K) levels.
-    ``block_full_vec_offsets`` are the legacy-577-vec offsets of this block's
-    slots (the fusion map's expanded block vector is spliced there).
+    ``block_full_vec_offsets`` are offsets into the current full action vector
+    for this block's slots (the fusion map's expanded block vector is spliced
+    there).
     """
     step_idx: int
     layer_idx: int
@@ -974,8 +1030,8 @@ def splice_fusion_step_into_full_vec(
         spec: FusionStepSpec,
         expanded_block_vec: Sequence[int],
         ) -> np.ndarray:
-    """Write an expanded per-block SF vector into the legacy 577-dim vec at this
-    block's offsets. Returns ``full_vec`` for chaining."""
+    """Write an expanded per-block SF vector into the current full action vector
+    at this block's offsets. Returns ``full_vec`` for chaining."""
     arr = np.asarray(expanded_block_vec, dtype=int).reshape(-1)
     if arr.size != len(spec.block_full_vec_offsets):
         raise ValueError(
@@ -1349,13 +1405,7 @@ def action_vector_to_cfgs(
     Returns:
         ``ActionDecodeResult``
     """
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
-
-    expected_dim = len(action_dims_for_config(num_layers))
-    if arr.size != expected_dim:
-        raise ValueError(
-            f"action_vec length {arr.size} != expected {expected_dim} (num_layers={num_layers})"
-        )
+    arr = validate_action_vector(action_vec, num_layers)
 
     layer_dim_list = layer_dims()
     layer_dim = len(layer_dim_list)
@@ -1801,12 +1851,7 @@ def describe_action_vector(
     decoded value, scaling-factor table N, and whether the slot is effective
     for the layer's polynomial degree.
     """
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
-    expected_dim = len(action_dims_for_config(num_layers))
-    if arr.size != expected_dim:
-        raise ValueError(
-            f"action_vec length {arr.size} != expected {expected_dim} (num_layers={num_layers})"
-        )
+    arr = validate_action_vector(action_vec, num_layers)
 
     fields = per_layer_field_offsets()
     layer_dim = len(fields)
@@ -1996,7 +2041,7 @@ def _sum_count_effective_k_values_in_action(
         action_vec: np.ndarray,
         num_layers: int,
         ) -> Tuple[int, int]:
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    arr = validate_action_vector(action_vec, num_layers)
     layer_dim = len(layer_dims())
     total = 0
     count = 0
@@ -2013,7 +2058,7 @@ def _gather_effective_k_values_in_action(
         action_vec: np.ndarray,
         num_layers: int,
         ) -> List[int]:
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    arr = validate_action_vector(action_vec, num_layers)
     layer_dim = len(layer_dims())
     ks: List[int] = []
     for li in range(int(num_layers)):

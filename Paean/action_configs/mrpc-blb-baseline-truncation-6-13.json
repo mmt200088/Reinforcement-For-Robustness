@@ -1,9 +1,9 @@
 {
-  "description": "MRPC BLB baseline non-truncation configuration with truncation sweep over 8, 9, 10, 11, 12, 13.",
+  "description": "MRPC BLB baseline non-truncation configuration with truncation sweep over 6 through 13.",
   "base_action": "blb_baseline",
   "rescale_optimizer_mode": "baseline",
   "ranges": {
-    "truncation": [8, 9, 10, 11, 12, 13]
+    "truncation": [6, 7, 8, 9, 10, 11, 12, 13]
   },
   "notes": [
     "The model-side base action is the BLB RL baseline action: all non-truncation fields use their highest selectable action-space scaling-factor settings.",

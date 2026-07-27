@@ -71,7 +71,7 @@ class SequentialPolicyConfig:
     """
     state_dim: int
     max_step_dim: int
-    max_num_levels: int = 6      # max levels across F/W/M/S/R/K (currently 6 for K)
+    max_num_levels: int = 6      # generic default; production derives schedule width
     d_hidden: int = 256
     d_step_embed: int = 32       # embedding for step_idx (0..horizon-1)
     horizon: int = 59
@@ -301,7 +301,8 @@ class BLBStage2SequentialPolicy(nn.Module):
             (cfg.max_step_dim,), 8.0, dtype=torch.float32,
         )
         if cfg.metadata_width == 0 and cfg.signal_width == 4:
-            # Canonical layerwise observations encode fusion by /1 and K by /5.
+            # Canonical layerwise observations encode fusion by /1 and K by
+            # the largest categorical index (7 for the K6-K13 domain).
             action_decode_scales.fill_(float(max(1, cfg.max_num_levels - 1)))
             action_decode_scales[0] = 1.0
         self.register_buffer(

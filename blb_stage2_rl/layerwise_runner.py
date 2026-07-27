@@ -27,6 +27,7 @@ from .statistical_constraints import (
     assess_candidate,
     retarget_constraint_assessment,
 )
+from .truncation_levels import LEVELS_K
 
 
 _PROBABILITY_FIELDS = (
@@ -474,12 +475,14 @@ def initialize_layerwise_policy(policy: Any) -> None:
     from .layerwise_action import K_LEVELS
 
     k_probabilities = {
-        13: 0.50,
-        12: 0.20,
-        11: 0.12,
-        10: 0.08,
-        9: 0.06,
-        8: 0.04,
+        13: 0.475,
+        12: 0.190,
+        11: 0.114,
+        10: 0.076,
+        9: 0.057,
+        8: 0.038,
+        7: 0.030,
+        6: 0.020,
     }
     policy.set_initial_slot_probabilities(
         [{0: 0.60, 1: 0.40}] + [dict(k_probabilities) for _ in range(5)],
@@ -3149,7 +3152,11 @@ def _collect_layerwise_episode(
     episode_reward = 0.0
     for step_idx in range(horizon):
         spec = env.current_spec()
-        slot_mask, levels = step_adapter_fn(spec, 6, 6)
+        slot_mask, levels = step_adapter_fn(
+            spec,
+            int(env.max_step_dim),
+            LEVELS_K,
+        )
         state_np = np.asarray(state, dtype=np.float32)
         sample_out = policy.sample_action(
             _policy_input(state_np[None, ...], device),

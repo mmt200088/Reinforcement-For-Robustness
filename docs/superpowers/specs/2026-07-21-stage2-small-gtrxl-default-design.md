@@ -1,5 +1,12 @@
 # Stage-2 Small GTrXL Default Design
 
+> **Superseded action-domain snapshot:** The six-level K action space,
+> `6^59`, and parameter count below describe the 2026-07-21 design point. The
+> current K domain is `K=6..13` with ordered
+> `K_LEVELS=(8,9,11,13,10,12,6,7)`, so the current factorized K space is
+> `8^60`. The historical parameter count is retained for provenance and must
+> not be treated as a current count without measuring the current policy.
+
 ## Context
 
 The Stage-2 layerwise policy makes 12 sequential decisions. Each layer exposes

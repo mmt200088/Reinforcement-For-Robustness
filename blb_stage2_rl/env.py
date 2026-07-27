@@ -38,6 +38,7 @@ from .action_space import (
     build_optimizer_requests,
     layer_dims,
     make_all_max_action_vector,
+    validate_action_vector,
 )
 from .candidate_store import action_hash
 from .inference_eval import run_installed_probe_trial
@@ -596,11 +597,7 @@ class BLBStage2Env:
         sequential trainer can batch several completed actions onto different
         GPUs before running model-forward reward probes.
         """
-        action_vec = np.asarray(action_vec, dtype=int).reshape(-1)
-        if action_vec.size != self.total_action_dim:
-            raise ValueError(
-                f"action_vec dim {action_vec.size} != expected {self.total_action_dim}"
-            )
+        action_vec = validate_action_vector(action_vec, self.num_layers)
         is_optimizer_baseline_action = bool(
             np.array_equal(action_vec, make_all_max_action_vector(self.num_layers))
         )
@@ -1560,11 +1557,7 @@ class BLBStage2Env:
         的 cfg 用 SF-direct 重建，使 **本次 forward 真正安装的噪声是加大精度之后的动作组**
         （cost replan / optimizer override / 装噪声 全部基于 boosted cfg）。None ⇒ 旧路径。
         """
-        action_vec = np.asarray(action_vec, dtype=int).reshape(-1)
-        if action_vec.size != self.total_action_dim:
-            raise ValueError(
-                f"action_vec dim {action_vec.size} != expected {self.total_action_dim}"
-            )
+        action_vec = validate_action_vector(action_vec, self.num_layers)
         is_optimizer_baseline_action = bool(
             np.array_equal(action_vec, make_all_max_action_vector(self.num_layers))
         )

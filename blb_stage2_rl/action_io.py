@@ -1,6 +1,6 @@
 """Human-readable action ↔ action_vec converters.
 
-The RL policy outputs an integer ``action_vec`` (577 dims for L=12) where each
+The RL policy outputs an integer ``action_vec`` (877 dims for L=12) where each
 slot's value is an *action index* into per-slot level table. That's the right
 representation for the policy but is opaque for humans: index 5 in block 2's
 ``wq_encode`` slot vs. block 3's ``square_rescale_sf_0`` slot mean completely
@@ -56,8 +56,8 @@ For K kind:
     "kind":            "K",
     "operation":       "block3_output_truncation",
     "truncation_bits": 13,                    // PRIMARY user-facing value
-    "action_index":    5,
-    "level_values":    [8, 9, 10, 11, 12, 13]
+    "action_index":    3,
+    "level_values":    [8, 9, 11, 13, 10, 12, 6, 7]
   }
 
 The legacy ``first_input`` slot (last element of action_vec, layer 0, no block)
@@ -84,6 +84,7 @@ edit configs by approximation instead of looking up the table for every slot.
 """
 from __future__ import annotations
 
+import operator
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -97,7 +98,6 @@ from .action_space import (
     MaxSFsTable,
     NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N,
     NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
-    action_dims_for_config,
     describe_action_vector,
     load_max_sfs,
     make_all_max_action_vector,
@@ -108,6 +108,7 @@ from .action_space import (
     _snap_to_table,
     _block_default_N,
     _degree_for_layer,
+    validate_action_vector,
 )
 
 
@@ -133,7 +134,7 @@ def action_vec_to_slots_list(
     or ``truncation_bits`` depending on kind).
     """
     description = describe_action_vector(
-        np.asarray(action_vec, dtype=int),
+        action_vec,
         max_sfs=max_sfs,
         num_layers=int(num_layers),
         gelu_degree=gelu_degree,
@@ -290,10 +291,21 @@ def _coerce_action_index_from_sf(
     return best_idx
 
 
-def _coerce_action_index_from_k(value: int) -> int:
-    """Pick the K_LEVELS index closest to ``value``."""
+def _normalize_truncation_bits(value: object) -> int:
+    """Return one exact integer representation of a requested truncation K."""
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"truncation_bits must be an integer, got {value!r}")
+    try:
+        return operator.index(value)
+    except TypeError as exc:
+        raise ValueError(
+            f"truncation_bits must be an integer, got {value!r}"
+        ) from exc
+
+
+def _nearest_action_index_from_k(target: int) -> int:
+    """Pick the K_LEVELS index closest to an already-normalized integer K."""
     levels = list(K_LEVELS)
-    target = int(value)
     best_idx = 0
     best_dist = abs(int(levels[0]) - target)
     for idx, k in enumerate(levels[1:], start=1):
@@ -302,6 +314,11 @@ def _coerce_action_index_from_k(value: int) -> int:
             best_dist = d
             best_idx = idx
     return best_idx
+
+
+def _coerce_action_index_from_k(value: object) -> int:
+    """Normalize ``value`` exactly once, then pick its nearest K_LEVELS index."""
+    return _nearest_action_index_from_k(_normalize_truncation_bits(value))
 
 
 def _coerce_first_input_index(value: int) -> int:
@@ -411,18 +428,9 @@ def slots_list_to_action_vec(
         table level (e.g. requested SF=13 → snapped to 14). Empty if all
         values matched exactly.
     """
-    fields = per_layer_field_offsets()
-    layer_dim = len(fields)
-    expected_dim = len(action_dims_for_config(int(num_layers)))
-
     # Build base
     if base_action_vec is not None:
-        vec = np.asarray(base_action_vec, dtype=np.int64).reshape(-1).copy()
-        if vec.size != expected_dim:
-            raise ValueError(
-                f"base_action_vec length {vec.size} != expected {expected_dim} "
-                f"(num_layers={num_layers})"
-            )
+        vec = validate_action_vector(base_action_vec, int(num_layers)).copy()
     else:
         base_choice = str(base or "max").strip().lower()
         if base_choice in ("max", "all-max", "all_max"):
@@ -472,14 +480,15 @@ def slots_list_to_action_vec(
                 )
             if entry["truncation_bits"] is None and entry.get("effective") is False:
                 continue
-            new_idx = _coerce_action_index_from_k(int(entry["truncation_bits"]))
+            requested_k = _normalize_truncation_bits(entry["truncation_bits"])
+            new_idx = _nearest_action_index_from_k(requested_k)
             old_idx = int(vec[global_index])
             vec[global_index] = int(new_idx)
             decoded_after = int(K_LEVELS[new_idx])
-            if int(decoded_after) != int(entry["truncation_bits"]):
+            if decoded_after != requested_k:
                 coercion_notes.append({
                     "label": label,
-                    "requested_truncation_bits": int(entry["truncation_bits"]),
+                    "requested_truncation_bits": requested_k,
                     "applied_truncation_bits": decoded_after,
                     "old_action_index": old_idx,
                     "new_action_index": new_idx,
@@ -561,7 +570,7 @@ def slots_payload_to_action_vec(
     # Shape D (back-compat) — flat action_vec
     av = payload.get("action_vec") or payload.get("base_action_vec") or payload.get("base_action")
     if av is not None and isinstance(av, (list, tuple)):
-        return np.asarray(av, dtype=np.int64), []
+        return validate_action_vector(av, int(num_layers)).copy(), []
 
     # base / base_action_vec
     base_action_vec = None
@@ -570,7 +579,7 @@ def slots_payload_to_action_vec(
     if isinstance(base_field, str):
         base_str = base_field
     elif isinstance(base_field, (list, tuple)):
-        base_action_vec = np.asarray(base_field, dtype=np.int64)
+        base_action_vec = base_field
 
     raw_slots = payload.get("slots")
     overrides = payload.get("overrides")

@@ -216,7 +216,7 @@ reward = compute_reward(metrics, opt_signals, action, max_action_baseline)
 | `M` / `S`  | mask / 标量 encode (γ, 1/D, ones, 1/2^n) | 3      | sf ∈ {max-4, max-2, max} |
 | `R`        | rescale                                   | 4      | sf ∈ {max-6, max-4, max-2, max} |
 | `F`        | fresh                                     | 5      | sf ∈ {max-8, max-6, max-4, max-2, max} |
-| `K`        | 末尾 truncation 保留位数                  | 4      | k ∈ {8, 9, 11, 13}    |
+| `K`        | 末尾 truncation 保留位数                  | 8      | `K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7)` |
 | `B`        | rotation 是否启用                         | 2      | bool ∈ {0, 1}         |
 
 `max` 来自 `Rescale_optimizer/configs/<profile>/static_skeletons_<profile>.json`
@@ -227,7 +227,21 @@ reward = compute_reward(metrics, opt_signals, action, max_action_baseline)
 `B` 不是 RL 选的（rotation 启用与否由 Rescale_optimizer 决定），但保留在
 `Block{}NoiseConfig` 里供 `apply_rotation_flags_to_cfg` 写回（详见 §5.4）。
 
+`K_LEVELS` 的顺序是 checkpoint/action-index 契约，不是数值排序：历史
+indices `0..5` 保持不变，index `3` 仍是 baseline `K=13`，新 indices
+`6`/`7` 分别为 `K=6`/`K=7`。canonical layerwise policy 每层仍有六个
+categorical slots（一个 Block4 fusion + 五个 K），但每个 K slot 现在有八类。
+成本与 reward 按 `13-6` 归一化；旧六类 checkpoint 必须 fresh run。K 与
+fusion-map option 分离且旧 indices 未改变，所以本次扩展不要求重建 fusion
+maps。
+
 ### 4.2 每层每 block 的动作维度（mandatory + optional）
+
+> **Historical/stale registry snapshot:** 本节的 full-SF 字段表及
+> `94`/`1129` 维统计保留为旧原型记录，不代表当前生产动作 registry。当前
+> registry 以 `scripts/blb_export_action_registry.py` 的导出结果和
+> `AGENTS.md` 记录的每层 `73` 个槽、BERT-base 全模型 `877` 个槽为准。下表不在本次
+> K-domain 扩展中整体重写。
 
 每个 block 的精确字段对照 [`function_handler.py`](../function_handler.py) 中的
 `Block{N}NoiseConfig` dataclass。这里给出 RL 该出多少个 categorical action：
@@ -260,11 +274,13 @@ reward = compute_reward(metrics, opt_signals, action, max_action_baseline)
 # 在 RL 框架（gymnasium 风格）里：
 action_space = MultiDiscrete([
     # Layer 0 Block 1 (8 SF + 1 K)：
-    5, 5, 3, 3, 4, 4, 4, 4, 4,
+    5, 5, 3, 3, 4, 4, 4, 4, 8,
     # Layer 0 Block 2 (22 SF + 1 K) ...
     ...
     # ...
 ])
+# Historical/stale prototype width. The current registry has 73 slots per
+# layer and 877 entries for BERT-base.
 total_dim = L * 94 + 1   # = 1129 for L=12
 ```
 
@@ -322,7 +338,7 @@ def build_all_cfgs(action_vec, max_sfs, gelu_degrees, attn_degrees, layer_count)
     cfgs["first_input_sf"] = sf_from(action_vec[pos], levels=5)
     return cfgs
 
-K_LEVELS = (8, 9, 11, 13)   # action_idx ∈ {0,1,2,3}
+K_LEVELS = (8, 9, 11, 13, 10, 12, 6, 7)  # action_idx ∈ {0,...,7}; idx3 = baseline K13
 def sf_from(idx, max, levels): return max - 2 * (levels - 1 - int(idx))
 ```
 
@@ -633,8 +649,9 @@ class BLBStage2Policy(nn.Module):
         self.value = nn.Linear(256, 1)              # critic
 ```
 
-跨层共享 head 是关键 —— 不然 12 层 × 94 dim 的全连接太重；且语义上不同层做
-相似的决策。
+> **Historical/stale prototype rationale:** 旧原型中的跨层共享 head 用于避免
+> `12 层 × 94 dim` 的全连接；当前 registry 是每层 `73` 个槽、BERT-base
+> full vector `877` 个槽。跨层共享参数的语义动机仍是不同层执行相似决策。
 
 ### 7.3 训练超参（起步建议）
 
@@ -684,7 +701,8 @@ class BLBStage2Policy(nn.Module):
   的 8+1 dims。验证 PPO 能稳定下降 cost
 - [ ] 再扩到 Block 1 / 全 12 层
 - [ ] 再扩到 Block 1+2+3+4+5 / Layer 0
-- [ ] 最后扩到全维度 1129 dim
+- [ ] **Historical/stale milestone:** 旧原型最后扩到 `1129 dim`；当前 registry
+  对应每层 `73` 个槽、BERT-base full vector `877` 个槽
 
 ### M3：稳定性 / 精度约束接入
 

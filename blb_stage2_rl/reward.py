@@ -65,11 +65,42 @@ reward 永远 bounded，cost 优化只在 metric/stab 都通过后驱动候选�
 """
 from __future__ import annotations
 
+import importlib.util
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Mapping, Optional, Tuple
 
 import numpy as np
+
+
+def _load_truncation_bounds() -> tuple[int, int]:
+    if __package__:
+        from .truncation_levels import K_MAX_BITS, K_MIN_BITS
+
+        return K_MAX_BITS, K_MIN_BITS
+
+    try:
+        from truncation_levels import K_MAX_BITS, K_MIN_BITS
+    except ModuleNotFoundError as exc:
+        if exc.name != "truncation_levels":
+            raise
+    else:
+        return K_MAX_BITS, K_MIN_BITS
+
+    sibling = Path(__file__).with_name("truncation_levels.py")
+    spec = importlib.util.spec_from_file_location(
+        f"_{Path(__file__).stem}_standalone_truncation_levels",
+        sibling,
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load truncation bounds from {sibling}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.K_MAX_BITS, module.K_MIN_BITS
+
+
+K_MAX_BITS, K_MIN_BITS = _load_truncation_bounds()
 
 
 # ---------------------------------------------------------------------------
@@ -118,8 +149,6 @@ DEFAULT_STAB_W_LOSS = 1.0
 # fusion-degenerate, so their 80/130 weights are inert (those blocks tune only K).
 FUSION_COST_W = {1: 80.0, 2: 150.0, 4: 130.0, 5: 40.0}
 TRUNC_COST_W = 50.0
-K_MAX_BITS = 13
-K_MIN_BITS = 8
 # The P3 cost budget is split equally between fusion and truncation/K, each
 # normalized over its own maximum. Fusion still keeps the per-block-type ratio
 # in FUSION_COST_W, while K contributes through TRUNC_COST_W with lower K better.

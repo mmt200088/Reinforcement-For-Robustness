@@ -9,11 +9,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-import os
 from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence, Tuple
 
 import numpy as np
+
+try:
+    from .truncation_levels import (
+        K_LEVELS,
+        K_MAX_BITS,
+        K_MIN_BITS,
+        validate_exact_k_domain,
+    )
+except ImportError:  # pragma: no cover - legacy top-level import compatibility
+    from truncation_levels import (
+        K_LEVELS,
+        K_MAX_BITS,
+        K_MIN_BITS,
+        validate_exact_k_domain,
+    )
 
 
 LAYERWISE_SLOT_NAMES = (
@@ -25,38 +39,8 @@ LAYERWISE_SLOT_NAMES = (
     "block5_k",
 )
 
-# Keep this loader in step with action_space.K_LEVELS without importing
-# action_space, which deliberately remains outside the torch-free boundary.
-_DEFAULT_K_LEVELS = (8, 9, 11, 13, 10, 12)
-
-
-def _load_k_levels() -> Tuple[int, ...]:
-    raw = str(os.environ.get("BLB_TRUNCATION_K_LEVELS", "") or "").strip()
-    if not raw:
-        return _DEFAULT_K_LEVELS
-    try:
-        levels = tuple(int(value.strip()) for value in raw.split(","))
-    except ValueError as exc:
-        raise ValueError("BLB_TRUNCATION_K_LEVELS must contain only integers") from exc
-    if not levels or any(value == "" for value in raw.split(",")):
-        raise ValueError("BLB_TRUNCATION_K_LEVELS must contain at least one integer")
-    if len(set(levels)) != len(levels):
-        raise ValueError(f"BLB_TRUNCATION_K_LEVELS contains duplicate values: {levels}")
-    return levels
-
-
-K_LEVELS = _load_k_levels()
-_REQUIRED_K_VALUES = frozenset((8, 9, 10, 11, 12, 13))
-
-
 def _validate_k_levels() -> Tuple[int, ...]:
-    levels = tuple(int(value) for value in K_LEVELS)
-    if len(levels) != len(_REQUIRED_K_VALUES) or frozenset(levels) != _REQUIRED_K_VALUES:
-        raise ValueError(
-            "K_LEVELS must contain each supported K value exactly once: "
-            f"{sorted(_REQUIRED_K_VALUES)}, got {levels}"
-        )
-    return levels
+    return validate_exact_k_domain(K_LEVELS)
 
 # These are the stable legacy action_space._BLOCK_SPECS field counts, in block
 # order.  All blocks put output_truncation_k in their last slot.
@@ -87,7 +71,7 @@ def max_compute_saving_units(num_layers: int) -> float:
 def max_communication_saving_units(num_layers: int) -> float:
     """Maximum removed K bits across all active per-block K slots."""
     layers = _validated_num_layers(num_layers)
-    return float(5 * layers) * (13.0 - 8.0)
+    return float(5 * layers) * float(K_MAX_BITS - K_MIN_BITS)
 
 
 # Backward-compatible BERT-base constants. New callers with a model instance
@@ -478,7 +462,7 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
             float(fusion) / compute_denominator,
         ]
         current_slot_contributions.extend(
-            (13.0 - float(action.k_by_block[block_idx]))
+            (float(K_MAX_BITS) - float(action.k_by_block[block_idx]))
             / communication_denominator
             if block_idx in action.k_by_block else 0.0
             for block_idx in _BLOCK_ORDER
@@ -490,7 +474,7 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
             f"expected {active_k_slots}"
         )
     fusion_count = int(sum(fusion_values))
-    removed_k_bits = int(sum(13 - k for k in k_values))
+    removed_k_bits = int(sum(K_MAX_BITS - k for k in k_values))
     compute_saving = float(fusion_count) / compute_denominator
     communication_saving = (
         float(removed_k_bits) / communication_denominator

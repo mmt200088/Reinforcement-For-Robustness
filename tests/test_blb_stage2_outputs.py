@@ -625,7 +625,7 @@ class RegeneratorEndToEndTest(unittest.TestCase):
             list(rows[0]),
             ["layer", "block4_fusion", "k_b1", "k_b2", "k_b3", "k_b4", "k_b5"],
         )
-        self.assertIsNone(rows[0]["k_b1"])
+        self.assertEqual(rows[0]["k_b1"], 8)
         self.assertEqual(rows[0]["k_b3"], 13)
         self.assertEqual(rows[1]["block4_fusion"], 1)
         self.assertEqual(rows[1]["k_b3"], 11)

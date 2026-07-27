@@ -282,6 +282,7 @@ def run_substage_via_runner(
         write_training_curves,
     )
     from .runner import resolve_blb_persistence_dir
+    from .schedule_geometry import schedule_max_num_levels
     from .sequential_env import SequentialEnvConfig
     from .sequential_policy import (
         BLBStage2SequentialPolicy,
@@ -293,7 +294,15 @@ def run_substage_via_runner(
         train_sequential,
     )
     from .substage_env import BLBStage2SubstageEnv
+    from .truncation_levels import (
+        CHECKPOINT_K_DOMAIN_KEY,
+        K_LEVELS,
+        checkpoint_k_domain_contract,
+        validate_exact_k_domain,
+        validate_checkpoint_k_domain,
+    )
 
+    validate_exact_k_domain(K_LEVELS)
     if torch is None:
         raise RuntimeError("torch is required to run the substage path")
 
@@ -589,7 +598,7 @@ def run_substage_via_runner(
         pol_cfg = SequentialPolicyConfig(
             state_dim=int(substage_env.state_dim),
             max_step_dim=int(substage_env._max_step_dim),
-            max_num_levels=6,
+            max_num_levels=schedule_max_num_levels(substage_env.schedule),
             horizon=int(substage_env.horizon),
             num_layers=int(ev.total_layers),
             block_count=6,
@@ -603,13 +612,25 @@ def run_substage_via_runner(
         if os.path.exists(ck_path):
             try:
                 ckpt = torch.load(ck_path, map_location=device)
-                policy.load_state_dict(ckpt["policy_state_dict"])
-                if "optimizer_state_dict" in ckpt:
-                    optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-                start_ep = int(ckpt.get("completed_episodes", 0) or 0)
-                log(f"  [substage {k+1}] resume from ep={start_ep}")
             except Exception as exc:
-                log(f"  [warn] resume ckpt load failed: {exc}; starting fresh")
+                raise RuntimeError(
+                    f"failed to read substage checkpoint {ck_path}; "
+                    "a fresh run is required"
+                ) from exc
+            validate_checkpoint_k_domain(
+                ckpt,
+                context=f"substage checkpoint {ck_path}",
+            )
+            try:
+                policy.load_state_dict(ckpt["policy_state_dict"])
+                optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+            except Exception as exc:
+                raise RuntimeError(
+                    f"substage checkpoint {ck_path} contains incompatible policy "
+                    "or optimizer state; a fresh run is required"
+                ) from exc
+            start_ep = int(ckpt.get("completed_episodes", 0) or 0)
+            log(f"  [substage {k+1}] resume from ep={start_ep}")
 
         # ---- 5) Collect candidates via callbacks ----
         candidates: List[Tuple[Tuple[int, int, float, float], np.ndarray]] = []
@@ -649,6 +670,7 @@ def run_substage_via_runner(
                     "substage_index": int(k),
                     "active_block": int(active_block),
                     "rl_variant": SUBSTAGE_RL_VARIANT,
+                    CHECKPOINT_K_DOMAIN_KEY: checkpoint_k_domain_contract(),
                 }, ck_path)
             except Exception as exc:
                 log(f"  [warn] substage {k+1} checkpoint save failed: {exc}")

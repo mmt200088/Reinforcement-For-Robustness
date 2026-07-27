@@ -11,8 +11,8 @@
     "Allowed values per kind:",
     "  F/W/M/S: integer scaling_factor in slot's level_values (see blb_stage2_best_action_full.json)",
     "  R: integer scaling_factor or null/'off' (rescale disabled)",
-    "  K: integer truncation_bits, one of (8, 9, 10, 11, 12, 13)",
-    "First-layer (L0) Block 1 is ignored by the runtime (lossless HE config)."
+    "  K: integer truncation_bits, one of (6, 7, 8, 9, 10, 11, 12, 13)",
+    "L0.B1.K is active; its Gaussian SF/noise chain remains disabled while truncation uses the shared Block 1 runtime."
   ],
   "schema_version": "blb_v3_slots_human_v1",
   "label": "manual_template",

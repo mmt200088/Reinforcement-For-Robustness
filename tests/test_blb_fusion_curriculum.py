@@ -27,14 +27,14 @@ for _p in (str(_REPO_ROOT), str(_BLB_DIR)):
 
 import fusion_curriculum as fcur  # bare import; blb_stage2_rl on sys.path
 
-# Default K table (action_space.DEFAULT_K_LEVELS_LEGACY_COMPAT) — intentionally
-# non-monotonic so the K-distance locality is exercised, not categorical index.
-K_LEVELS = (8, 9, 11, 13, 10, 12)
+# Canonical K table — intentionally non-monotonic so the K-distance locality is
+# exercised, not categorical index. Historical indices 0..5 stay stable.
+K_LEVELS = (8, 9, 11, 13, 10, 12, 6, 7)
 N_K = len(K_LEVELS)
 BASELINE_K_IDX = 3  # value 13 (the max-K baseline)
 
 
-def _open_mask(n_opts: int, n_k: int, max_step_dim: int = 2, max_num_levels: int = 6) -> np.ndarray:
+def _open_mask(n_opts: int, n_k: int, max_step_dim: int = 2, max_num_levels: int = 8) -> np.ndarray:
     """Replica of the unrestricted open mask for one fusion step."""
     mask = np.zeros((max_step_dim, max_num_levels), dtype=bool)
     mask[0, : min(n_opts, max_num_levels)] = True
@@ -95,7 +95,7 @@ class FusionStepLevelMaskTest(unittest.TestCase):
         return fcur.build_fusion_step_level_mask(
             fusion_num_options=n_opts, k_num_levels=N_K, k_level_values=K_LEVELS,
             mutable=mutable, radius=radius, baseline_k_index=BASELINE_K_IDX,
-            max_step_dim=2, max_num_levels=6,
+            max_step_dim=2, max_num_levels=8,
         )
 
     def test_nonmutable_block_pinned_to_baseline(self):
@@ -117,7 +117,10 @@ class FusionStepLevelMaskTest(unittest.TestCase):
     def test_mutable_radius1_widens_locally(self):
         mask = self._mask(n_opts=3, mutable=True, radius=1)
         # options [0, 1] only (radius 1)
-        self.assertListEqual([bool(x) for x in mask[0]], [True, True, False, False, False, False])
+        self.assertListEqual(
+            [bool(x) for x in mask[0]],
+            [True, True, False, False, False, False, False, False],
+        )
         # K = the 3 nearest-by-bit indices to baseline 13: {idx3=13, idx5=12, idx2=11}
         self.assertEqual({int(i) for i in np.where(mask[1])[0]}, {2, 3, 5})
 
@@ -134,7 +137,7 @@ class FusionStepLevelMaskTest(unittest.TestCase):
             fcur.build_fusion_step_level_mask(
                 fusion_num_options=2, k_num_levels=N_K, k_level_values=K_LEVELS,
                 mutable=False, radius=1, baseline_k_index=99,
-                max_step_dim=2, max_num_levels=6,
+                max_step_dim=2, max_num_levels=8,
             )
 
     def test_reuses_cached_mask_template_without_sharing_returned_array(self):
@@ -242,7 +245,7 @@ class FullSpaceReachabilityTest(unittest.TestCase):
         n_opts, n_k = 3, N_K
         # Accumulate, per "block", the union of allowed (option, K) cells seen as a
         # mutable block across the whole schedule (anchor → well past the ramp).
-        union = np.zeros((2, 6), dtype=bool)
+        union = np.zeros((2, 8), dtype=bool)
         for ep in range(0, ANCHOR + RAMP + 5):
             fully_open, _num_mutable, radius = fcur.fusion_block_curriculum(
                 absolute_episode_idx=ep, anchor_episodes=ANCHOR,
@@ -254,7 +257,7 @@ class FullSpaceReachabilityTest(unittest.TestCase):
                 union |= fcur.build_fusion_step_level_mask(
                     fusion_num_options=n_opts, k_num_levels=n_k, k_level_values=K_LEVELS,
                     mutable=True, radius=radius, baseline_k_index=BASELINE_K_IDX,
-                    max_step_dim=2, max_num_levels=6,
+                    max_step_dim=2, max_num_levels=8,
                 )
         np.testing.assert_array_equal(union, _open_mask(n_opts, n_k))
 
