@@ -575,6 +575,26 @@ def action_dims_for_config(num_layers: int) -> List[int]:
     return out
 
 
+def _validate_action_vector_indices(
+        action_vec: np.ndarray,
+        action_dims: Sequence[int],
+        ) -> None:
+    """Reject categorical indices outside their per-slot action domains."""
+    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    dims = np.asarray(action_dims, dtype=int).reshape(-1)
+    if arr.size != dims.size:
+        raise ValueError(
+            f"action_vec length {arr.size} != action_dims length {dims.size}"
+        )
+    invalid_positions = np.flatnonzero((arr < 0) | (arr >= dims))
+    if invalid_positions.size:
+        position = int(invalid_positions[0])
+        raise ValueError(
+            f"action index at position {position}={int(arr[position])} "
+            f"out of range [0,{int(dims[position])})"
+        )
+
+
 def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
     """返回单层动作向量内每个分量的 ``(block_idx, field_name, kind)`` 三元组。"""
     out: List[Tuple[int, str, str]] = []
@@ -1341,11 +1361,13 @@ def action_vector_to_cfgs(
     """
     arr = np.asarray(action_vec, dtype=int).reshape(-1)
 
-    expected_dim = len(action_dims_for_config(num_layers))
+    action_dims = action_dims_for_config(num_layers)
+    expected_dim = len(action_dims)
     if arr.size != expected_dim:
         raise ValueError(
             f"action_vec length {arr.size} != expected {expected_dim} (num_layers={num_layers})"
         )
+    _validate_action_vector_indices(arr, action_dims)
 
     layer_dim_list = layer_dims()
     layer_dim = len(layer_dim_list)

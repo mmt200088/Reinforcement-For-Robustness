@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import copy
+from contextlib import contextmanager
+import importlib
+import sys
+import types
 import unittest
 from types import SimpleNamespace
 
@@ -19,6 +23,107 @@ except Exception as exc:  # pragma: no cover - local macOS may be torch-free.
     materialize_decoded_action = None  # type: ignore
     materialized_config_fingerprint = None  # type: ignore
     _IMPORT_ERROR = exc
+
+
+_MISSING = object()
+
+
+@contextmanager
+def _stubbed_action_space():
+    package = importlib.import_module("blb_stage2_rl")
+    module_name = "blb_stage2_rl.action_space"
+    module_before = sys.modules.get(module_name, _MISSING)
+    attribute_before = package.__dict__.get("action_space", _MISSING)
+
+    bridge = types.ModuleType("blb_rl_bridge")
+    for name in (
+        "Block1ActionSpec",
+        "Block2ActionSpec",
+        "Block3ActionSpec",
+        "Block4ActionSpec",
+        "Block5ActionSpec",
+        "build_block1_cfg_from_action",
+        "build_block2_cfg_from_action",
+        "build_block3_cfg_from_action",
+        "build_block4_cfg_from_action",
+        "build_block5_cfg_from_action",
+    ):
+        setattr(bridge, name, type(name, (), {}))
+    handler = types.ModuleType("function_handler")
+    handler.NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N = {}
+    for name in (
+        "Block1NoiseConfig",
+        "Block2NoiseConfig",
+        "Block3NoiseConfig",
+        "Block4NoiseConfig",
+        "Block5NoiseConfig",
+    ):
+        setattr(handler, name, type(name, (), {}))
+
+    dependency_names = ("blb_rl_bridge", "function_handler")
+    dependencies_before = {
+        name: sys.modules.get(name, _MISSING)
+        for name in dependency_names
+    }
+    sys.modules["blb_rl_bridge"] = bridge
+    sys.modules["function_handler"] = handler
+    sys.modules.pop(module_name, None)
+    package.__dict__.pop("action_space", None)
+    try:
+        yield importlib.import_module(module_name)
+    finally:
+        if module_before is _MISSING:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = module_before
+        if attribute_before is _MISSING:
+            package.__dict__.pop("action_space", None)
+        else:
+            package.action_space = attribute_before
+        for name, module in dependencies_before.items():
+            if module is _MISSING:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+
+class ActionVectorBoundsTests(unittest.TestCase):
+    @staticmethod
+    def _first_k_offset(action_space):
+        return next(
+            offset
+            for offset, (_block_idx, _field_name, kind) in enumerate(
+                action_space.per_layer_field_offsets()
+            )
+            if kind == "K"
+        )
+
+    def test_full_decode_rejects_negative_k_index(self):
+        with _stubbed_action_space() as action_space:
+            action = action_space.make_all_max_action_vector(num_layers=1)
+            action[self._first_k_offset(action_space)] = -1
+
+            with self.assertRaisesRegex(ValueError, "action index.*-1.*out of range"):
+                action_space.action_vector_to_cfgs(
+                    action,
+                    max_sfs=action_space.MaxSFsTable(),
+                    num_layers=1,
+                )
+
+    def test_full_decode_rejects_k_index_equal_to_level_count(self):
+        with _stubbed_action_space() as action_space:
+            action = action_space.make_all_max_action_vector(num_layers=1)
+            action[self._first_k_offset(action_space)] = len(action_space.K_LEVELS)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                rf"action index.*{len(action_space.K_LEVELS)}.*out of range",
+            ):
+                action_space.action_vector_to_cfgs(
+                    action,
+                    max_sfs=action_space.MaxSFsTable(),
+                    num_layers=1,
+                )
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"runtime imports unavailable: {_IMPORT_ERROR!r}")
