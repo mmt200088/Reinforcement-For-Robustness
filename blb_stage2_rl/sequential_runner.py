@@ -4699,7 +4699,11 @@ def _run_layerwise_training_branch(
     })
     log(f"  {bullet} [data-points] layerwise Stage-2 → {stage2_data_writer.run_dir}")
 
-    recent_episode_records = deque(maxlen=max(1, int(train_cfg.rollout_size)))
+    recent_episode_window = max(1, int(train_cfg.rollout_size))
+    recent_episode_outcomes = deque(
+        diag_recorder.recent_episode_outcomes(recent_episode_window),
+        maxlen=recent_episode_window,
+    )
     completed_episode_count = int(start_episode)
     best_reward_so_far = resolve_resumed_best_reward(
         resumed_best, diag_recorder.best_episode_return
@@ -4908,7 +4912,10 @@ def _run_layerwise_training_branch(
             )
         completed_episode_count += 1
         best_reward_so_far = max(best_reward_so_far, float(record.reward))
-        recent_episode_records.append(record)
+        recent_episode_outcomes.append((
+            float(record.reward),
+            int(record.invalid_steps),
+        ))
         pooled_assessment = _to_plain_mapping(record.assessment)
         fresh_assessment = _to_plain_mapping(record.fresh_assessment)
         fresh_metrics = dict(record.metrics or {})
@@ -5177,8 +5184,8 @@ def _run_layerwise_training_branch(
         ]
         best_selection_key = strict_selection_key_from_snapshot(strict_best)
         write_strict_best_diagnostics(strict_best, episode=int(record.episode_index))
-        recent = list(recent_episode_records)
-        recent_rewards = [float(item.reward) for item in recent] or [0.0]
+        recent = list(recent_episode_outcomes)
+        recent_rewards = [float(item[0]) for item in recent] or [0.0]
         update_stats = PPOUpdateStats(
             update=ppo_update_counter,
             completed_episodes=int(completed),
@@ -5192,7 +5199,7 @@ def _run_layerwise_training_branch(
             window_mean_return=float(np.mean(recent_rewards)),
             window_max_return=float(np.max(recent_rewards)),
             window_min_return=float(np.min(recent_rewards)),
-            window_mean_invalid=float(np.mean([item.invalid_steps for item in recent])),
+            window_mean_invalid=float(np.mean([item[1] for item in recent])),
             best_reward_so_far=float(best_reward_so_far),
             elapsed_sec=float(time.time() - started_at),
             ent_coef=float(metrics.get("ent_coef", 0.0)),

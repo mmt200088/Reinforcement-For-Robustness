@@ -92,7 +92,7 @@ from numbers import Integral
 import os
 import sys
 import time
-from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO
+from typing import Any, Dict, Iterable, List, Mapping, Optional, TextIO, Tuple
 
 import numpy as np
 
@@ -517,6 +517,24 @@ class RLDiagnosticsRecorder:
     @property
     def worst_episode_return(self) -> Optional[float]:
         return self._worst_episode_return
+
+    def recent_episode_outcomes(
+            self,
+            limit: int,
+            ) -> Tuple[Tuple[float, int], ...]:
+        """Return restored rolling reward/invalid state without exposing internals."""
+        count = max(0, int(limit))
+        if count == 0:
+            return ()
+        if len(self._all_episode_returns) != len(self._all_invalid_counts):
+            raise RuntimeError("diagnostics episode outcome history is inconsistent")
+        return tuple(
+            (float(reward), int(invalid_steps))
+            for reward, invalid_steps in zip(
+                self._all_episode_returns[-count:],
+                self._all_invalid_counts[-count:],
+            )
+        )
 
     @property
     def first_ppo_entropy(self) -> Optional[float]:
