@@ -240,7 +240,7 @@ maps。
 > **Historical/stale registry snapshot:** 本节的 full-SF 字段表及
 > `94`/`1129` 维统计保留为旧原型记录，不代表当前生产动作 registry。当前
 > registry 以 `scripts/blb_export_action_registry.py` 的导出结果和
-> `AGENTS.md` 记录的每层 `48` 个槽、全模型 `577` 个槽为准。下表不在本次
+> `AGENTS.md` 记录的每层 `73` 个槽、BERT-base 全模型 `877` 个槽为准。下表不在本次
 > K-domain 扩展中整体重写。
 
 每个 block 的精确字段对照 [`function_handler.py`](../function_handler.py) 中的

@@ -738,11 +738,12 @@ def horizon_for_num_layers(num_layers: int) -> int:
 
 
 def _full_vec_offset_for_block(num_layers: int, layer_idx: int, block_idx: int) -> int:
-    """Return start offset (into the legacy 577-dim full action vector) of
+    """Return start offset (into the current full action vector) of
     the (layer_idx, block_idx) slot range.
 
     The full vec is one categorical index per slot per layer, in block order
-    1..5; first_input fresh sits at the very end.
+    1..5; first_input fresh sits at the very end. For BERT-base, this vector
+    contains 73 slots per layer and 877 entries in total.
     """
     per_layer_width = len(layer_dims())
     base = int(layer_idx) * per_layer_width
@@ -851,7 +852,7 @@ def splice_step_action_into_full_vec(
         step: BlockStepSpec,
         step_action: Sequence[int],
         ) -> np.ndarray:
-    """Write the per-step action's slot values into the legacy 577-dim vec.
+    """Write the per-step action's slot values into the current full action vector.
 
     ``step_action`` length must equal ``len(step.slot_dims)``. Returns
     ``full_vec`` for chaining.
@@ -889,8 +890,9 @@ class FusionStepSpec:
         Block2/5 expose one local choice fixed to fusion_count=1, while Block4
         keeps its full map domain;
       * slot 1 = K, ``k_num_levels`` (== LEVELS_K) levels.
-    ``block_full_vec_offsets`` are the legacy-577-vec offsets of this block's
-    slots (the fusion map's expanded block vector is spliced there).
+    ``block_full_vec_offsets`` are offsets into the current full action vector
+    for this block's slots (the fusion map's expanded block vector is spliced
+    there).
     """
     step_idx: int
     layer_idx: int
@@ -1028,8 +1030,8 @@ def splice_fusion_step_into_full_vec(
         spec: FusionStepSpec,
         expanded_block_vec: Sequence[int],
         ) -> np.ndarray:
-    """Write an expanded per-block SF vector into the legacy 577-dim vec at this
-    block's offsets. Returns ``full_vec`` for chaining."""
+    """Write an expanded per-block SF vector into the current full action vector
+    at this block's offsets. Returns ``full_vec`` for chaining."""
     arr = np.asarray(expanded_block_vec, dtype=int).reshape(-1)
     if arr.size != len(spec.block_full_vec_offsets):
         raise ValueError(
