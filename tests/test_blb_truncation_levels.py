@@ -231,6 +231,13 @@ class TruncationLevelsTest(unittest.TestCase):
             self.assertEqual(layerwise_action.K_LEVELS, truncation_levels.K_LEVELS)
             self.assertEqual(action_space.LEVELS_K, truncation_levels.LEVELS_K)
 
+    def test_action_space_loads_mrpc_max_sfs_from_its_profile_directory(self):
+        with _stubbed_action_space() as action_space:
+            table = action_space.load_max_sfs("mrpc")
+
+        self.assertEqual(table.get(1, "ctpt_gelu_out"), 30)
+        self.assertEqual(table.get(4, "ctct_attn_var_rescale"), 28)
+
     def test_top_level_import_works_with_only_stage2_package_on_pythonpath(self):
         stage2_dir = Path(__file__).resolve().parents[1] / "blb_stage2_rl"
         env = os.environ.copy()
