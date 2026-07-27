@@ -1,0 +1,72 @@
+/usr/local/lib/python3.11/dist-packages/transformers/tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
+  warnings.warn(
+Using the latest cached version of the dataset since nyu-mll/glue couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'mrpc' at /hy-tmp/hf_cache/datasets/nyu-mll___glue/mrpc/0.0.0/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (last modified on Sun Jul 26 21:53:49 2026).
+[dataset] task='mrpc' → route=hf_remote endpoint=nyu-mll/glue
+[信息] 数据集（Dataset）'mrpc' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, F1
+[数据集协议（Dataset Protocol）] 完整验证集（validation_full）=408  （统一使用 validation_full，不再拆分 search/holdout/proxy）
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+  * Rescale_optimizer 根目录：/hy-tmp/RFR_stage2_18group_ff7e7526/Rescale_optimizer
+  * Rescale optimizer 模式：in_process_real
+[grid] f000_k13: fusion=(0, 0, 0) K=(13, 13, 13, 13, 13)
+[grid] f000_k13 complete: loss=0.344035+/-0.001836 m1=0.882353+/-0.003466 m2=0.880035+/-0.003624
+[grid] f000_k8: fusion=(0, 0, 0) K=(8, 8, 8, 8, 8)
+[grid] f000_k8 complete: loss=0.338925+/-0.001668 m1=0.880882+/-0.003982 m2=0.878889+/-0.004098
+[grid] f000_k6: fusion=(0, 0, 0) K=(6, 6, 6, 6, 6)
+[grid] f000_k6 complete: loss=0.333763+/-0.001156 m1=0.871569+/-0.003668 m2=0.869980+/-0.003687
+[grid] f000_high: fusion=(0, 0, 0) K=(11, 10, 10, 12, 11)
+[grid] f000_high complete: loss=0.342301+/-0.001898 m1=0.882353+/-0.002685 m2=0.880163+/-0.002849
+[grid] f000_medium: fusion=(0, 0, 0) K=(9, 8, 8, 10, 9)
+[grid] f000_medium complete: loss=0.339303+/-0.001658 m1=0.881863+/-0.003602 m2=0.879949+/-0.003687
+[grid] f000_low: fusion=(0, 0, 0) K=(7, 6, 6, 8, 7)
+[grid] f000_low complete: loss=0.336401+/-0.001866 m1=0.877451+/-0.003466 m2=0.875743+/-0.003735
+[grid] f101_k13: fusion=(1, 0, 1) K=(13, 13, 13, 13, 13)
+[grid] f101_k13 complete: loss=0.345329+/-0.001868 m1=0.880392+/-0.001834 m2=0.877775+/-0.001877
+[grid] f101_k8: fusion=(1, 0, 1) K=(8, 8, 8, 8, 8)
+[grid] f101_k8 complete: loss=0.340240+/-0.001900 m1=0.880882+/-0.002500 m2=0.878701+/-0.002511
+[grid] f101_k6: fusion=(1, 0, 1) K=(6, 6, 6, 6, 6)
+[grid] f101_k6 complete: loss=0.334024+/-0.002407 m1=0.872549+/-0.002192 m2=0.870911+/-0.002221
+[grid] f101_high: fusion=(1, 0, 1) K=(11, 10, 10, 12, 11)
+[grid] f101_high complete: loss=0.343568+/-0.001908 m1=0.881373+/-0.001961 m2=0.878907+/-0.002073
+[grid] f101_medium: fusion=(1, 0, 1) K=(9, 8, 8, 10, 9)
+[grid] f101_medium complete: loss=0.340647+/-0.002025 m1=0.881373+/-0.001201 m2=0.879295+/-0.001252
+[grid] f101_low: fusion=(1, 0, 1) K=(7, 6, 6, 8, 7)
+[grid] f101_low complete: loss=0.337578+/-0.002019 m1=0.875000+/-0.002685 m2=0.873236+/-0.002551
+[grid] f111_k13: fusion=(1, 1, 1) K=(13, 13, 13, 13, 13)
+[grid] f111_k13 complete: loss=0.342103+/-0.002776 m1=0.879902+/-0.003100 m2=0.877435+/-0.003229
+[grid] f111_k8: fusion=(1, 1, 1) K=(8, 8, 8, 8, 8)
+[grid] f111_k8 complete: loss=0.337288+/-0.003377 m1=0.880882+/-0.003325 m2=0.878746+/-0.003714
+[grid] f111_k6: fusion=(1, 1, 1) K=(6, 6, 6, 6, 6)
+[grid] f111_k6 complete: loss=0.332861+/-0.003459 m1=0.870588+/-0.001834 m2=0.869109+/-0.002054
+[grid] f111_high: fusion=(1, 1, 1) K=(11, 10, 10, 12, 11)
+[grid] f111_high complete: loss=0.340492+/-0.002994 m1=0.881373+/-0.002500 m2=0.879034+/-0.002603
+[grid] f111_medium: fusion=(1, 1, 1) K=(9, 8, 8, 10, 9)
+[grid] f111_medium complete: loss=0.337985+/-0.003324 m1=0.881373+/-0.003325 m2=0.879281+/-0.003631
+[grid] f111_low: fusion=(1, 1, 1) K=(7, 6, 6, 8, 7)
+[grid] f111_low complete: loss=0.334869+/-0.004113 m1=0.873529+/-0.001201 m2=0.871961+/-0.001360
+{
+  "output": "/hy-tmp/stage2_18_group_precision_stability_20260727_213546/seed_20263721/precision_stability_grid_seed_result.json",
+  "seed": 20263721,
+  "groups": [
+    "f000_k13",
+    "f000_k8",
+    "f000_k6",
+    "f000_high",
+    "f000_medium",
+    "f000_low",
+    "f101_k13",
+    "f101_k8",
+    "f101_k6",
+    "f101_high",
+    "f101_medium",
+    "f101_low",
+    "f111_k13",
+    "f111_k8",
+    "f111_k6",
+    "f111_high",
+    "f111_medium",
+    "f111_low"
+  ]
+}

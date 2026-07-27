@@ -48,6 +48,6 @@
 - Test: existing Stage-2 K/materialization suites
 
 - [x] Run Python compilation and focused torch-free tests locally.
-- [ ] Commit and push the experiment branch, then fast-forward the remote aggregate/main only after checks pass.
-- [ ] Sync an exact Git commit to a separate server source path and run torch-backed K6 materialization tests.
-- [ ] Launch five paired seed workers across five GPUs, aggregate results, pull artifacts locally, and place the final HTML on the Desktop.
+- [x] Commit and push the experiment branch, then fast-forward the remote aggregate/main only after checks pass.
+- [x] Sync an exact Git commit to a separate server source path and run torch-backed K6 materialization tests.
+- [x] Launch five paired seed workers across the available GPUs, aggregate results, pull artifacts locally, and place the final HTML on the Desktop.
