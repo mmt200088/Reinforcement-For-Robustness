@@ -57,7 +57,7 @@ For K kind:
     "operation":       "block3_output_truncation",
     "truncation_bits": 13,                    // PRIMARY user-facing value
     "action_index":    5,
-    "level_values":    [8, 9, 10, 11, 12, 13]
+    "level_values":    [8, 9, 11, 13, 10, 12, 6, 7]
   }
 
 The legacy ``first_input`` slot (last element of action_vec, layer 0, no block)
