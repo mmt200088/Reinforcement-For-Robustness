@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -575,24 +576,55 @@ def action_dims_for_config(num_layers: int) -> List[int]:
     return out
 
 
-def _validate_action_vector_indices(
+@lru_cache(maxsize=None)
+def _action_dims_array(num_layers: int) -> np.ndarray:
+    """Return the immutable per-slot domain used by full-vector consumers."""
+    dims = np.asarray(action_dims_for_config(int(num_layers)), dtype=np.int64)
+    dims.setflags(write=False)
+    return dims
+
+
+def _coerce_and_validate_action_vector(
         action_vec: np.ndarray,
-        action_dims: Sequence[int],
-        ) -> None:
-    """Reject categorical indices outside their per-slot action domains."""
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
-    dims = np.asarray(action_dims, dtype=int).reshape(-1)
-    if arr.size != dims.size:
+        num_layers: int,
+        ) -> np.ndarray:
+    """Return a 1D integer action after lossless categorical validation."""
+    raw = np.asarray(action_vec)
+    if raw.ndim != 1:
         raise ValueError(
-            f"action_vec length {arr.size} != action_dims length {dims.size}"
+            f"action_vec must be one-dimensional, got shape {raw.shape}"
         )
-    invalid_positions = np.flatnonzero((arr < 0) | (arr >= dims))
+
+    dims = _action_dims_array(int(num_layers))
+    if raw.size != dims.size:
+        raise ValueError(
+            f"action_vec length {raw.size} != expected {dims.size} "
+            f"(num_layers={int(num_layers)})"
+        )
+
+    integer_dtype = np.issubdtype(raw.dtype, np.integer)
+    boolean_dtype = np.issubdtype(raw.dtype, np.bool_)
+    if not integer_dtype or boolean_dtype:
+        if np.issubdtype(raw.dtype, np.floating):
+            integer_valued = np.isfinite(raw) & (raw == np.trunc(raw))
+        else:
+            integer_valued = np.zeros(raw.shape, dtype=bool)
+        non_integer_positions = np.flatnonzero(~integer_valued)
+        if non_integer_positions.size:
+            position = int(non_integer_positions[0])
+            raise ValueError(
+                "action_vec must contain integer categorical indices; "
+                f"position {position}={raw[position]!r}"
+            )
+
+    invalid_positions = np.flatnonzero((raw < 0) | (raw >= dims))
     if invalid_positions.size:
         position = int(invalid_positions[0])
         raise ValueError(
-            f"action index at position {position}={int(arr[position])} "
+            f"action index at position {position}={int(raw[position])} "
             f"out of range [0,{int(dims[position])})"
         )
+    return raw.astype(np.int64, copy=False)
 
 
 def per_layer_field_offsets() -> List[Tuple[int, str, str]]:
@@ -1359,15 +1391,7 @@ def action_vector_to_cfgs(
     Returns:
         ``ActionDecodeResult``
     """
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
-
-    action_dims = action_dims_for_config(num_layers)
-    expected_dim = len(action_dims)
-    if arr.size != expected_dim:
-        raise ValueError(
-            f"action_vec length {arr.size} != expected {expected_dim} (num_layers={num_layers})"
-        )
-    _validate_action_vector_indices(arr, action_dims)
+    arr = _coerce_and_validate_action_vector(action_vec, num_layers)
 
     layer_dim_list = layer_dims()
     layer_dim = len(layer_dim_list)
@@ -1813,12 +1837,7 @@ def describe_action_vector(
     decoded value, scaling-factor table N, and whether the slot is effective
     for the layer's polynomial degree.
     """
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
-    expected_dim = len(action_dims_for_config(num_layers))
-    if arr.size != expected_dim:
-        raise ValueError(
-            f"action_vec length {arr.size} != expected {expected_dim} (num_layers={num_layers})"
-        )
+    arr = _coerce_and_validate_action_vector(action_vec, num_layers)
 
     fields = per_layer_field_offsets()
     layer_dim = len(fields)
@@ -2008,7 +2027,7 @@ def _sum_count_effective_k_values_in_action(
         action_vec: np.ndarray,
         num_layers: int,
         ) -> Tuple[int, int]:
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    arr = _coerce_and_validate_action_vector(action_vec, num_layers)
     layer_dim = len(layer_dims())
     total = 0
     count = 0
@@ -2025,7 +2044,7 @@ def _gather_effective_k_values_in_action(
         action_vec: np.ndarray,
         num_layers: int,
         ) -> List[int]:
-    arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    arr = _coerce_and_validate_action_vector(action_vec, num_layers)
     layer_dim = len(layer_dims())
     ks: List[int] = []
     for li in range(int(num_layers)):

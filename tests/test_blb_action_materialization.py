@@ -125,6 +125,45 @@ class ActionVectorBoundsTests(unittest.TestCase):
                     num_layers=1,
                 )
 
+    def test_full_decode_rejects_fractional_and_matrix_actions(self):
+        with _stubbed_action_space() as action_space:
+            action = action_space.make_all_max_action_vector(num_layers=1)
+            fractional = action.astype(float)
+            fractional[self._first_k_offset(action_space)] = -0.1
+
+            with self.assertRaisesRegex(ValueError, "integer categorical indices"):
+                action_space.action_vector_to_cfgs(
+                    fractional,
+                    max_sfs=action_space.MaxSFsTable(),
+                    num_layers=1,
+                )
+            with self.assertRaisesRegex(ValueError, "one-dimensional"):
+                action_space.action_vector_to_cfgs(
+                    action.reshape(1, -1),
+                    max_sfs=action_space.MaxSFsTable(),
+                    num_layers=1,
+                )
+
+    def test_reporting_and_k_summaries_reject_invalid_full_vectors(self):
+        with _stubbed_action_space() as action_space:
+            action = action_space.make_all_max_action_vector(num_layers=1)
+            negative_k = action.copy()
+            negative_k[self._first_k_offset(action_space)] = -1
+            negative_sf = action.copy()
+            negative_sf[0] = -1
+
+            with self.assertRaisesRegex(ValueError, "out of range"):
+                action_space.describe_action_vector(
+                    negative_k,
+                    max_sfs=action_space.MaxSFsTable(),
+                    num_layers=1,
+                )
+            with self.assertRaisesRegex(ValueError, "out of range"):
+                action_space.avg_truncation_k_in_action(
+                    negative_sf,
+                    num_layers=1,
+                )
+
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"runtime imports unavailable: {_IMPORT_ERROR!r}")
 class ActionMaterializationTests(unittest.TestCase):
