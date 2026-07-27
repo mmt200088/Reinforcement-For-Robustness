@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from typing import Mapping, Sequence, Tuple
 
-from cli_parse_utils import parse_int_list_text
-
 
 _ENV_NAME = "BLB_TRUNCATION_K_LEVELS"
 
@@ -27,6 +25,19 @@ CHECKPOINT_K_DOMAIN_KEY = "truncation_k_domain"
 CHECKPOINT_K_DOMAIN_SCHEMA_VERSION = "stage2_truncation_k_domain_v1"
 
 
+def _parse_int_list_text(raw: str) -> Tuple[int, ...]:
+    """Parse a strict comma/semicolon-separated integer list locally."""
+    tokens = str(raw).replace(";", ",").split(",")
+    if any(not token.strip() for token in tokens):
+        raise ValueError(
+            f"{_ENV_NAME} must be a non-empty ordered list of integers"
+        )
+    try:
+        return tuple(int(token.strip()) for token in tokens)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{_ENV_NAME} must contain only integers") from exc
+
+
 def load_k_levels(environ: Mapping[str, str] | None = None) -> Tuple[int, ...]:
     """Load the ordered K table, preserving the default when unset."""
     source = os.environ if environ is None else environ
@@ -36,15 +47,7 @@ def load_k_levels(environ: Mapping[str, str] | None = None) -> Tuple[int, ...]:
     raw = str(source.get(_ENV_NAME, "") or "").strip()
     if not raw:
         return DEFAULT_K_LEVELS_LEGACY_COMPAT
-    tokens = raw.replace(";", ",").split(",")
-    if any(not token.strip() for token in tokens):
-        raise ValueError(
-            f"{_ENV_NAME} must be a non-empty ordered list of integers"
-        )
-    try:
-        values = tuple(parse_int_list_text(raw))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{_ENV_NAME} must contain only integers") from exc
+    values = _parse_int_list_text(raw)
     if len(set(values)) != len(values):
         raise ValueError(f"{_ENV_NAME} contains duplicate values: {values}")
     return values

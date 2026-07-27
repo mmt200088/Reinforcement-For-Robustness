@@ -1,6 +1,11 @@
 from contextlib import contextmanager
 import importlib
+import json
+import os
+from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -206,6 +211,38 @@ class TruncationLevelsTest(unittest.TestCase):
             self.assertEqual(action_space.K_LEVELS, truncation_levels.K_LEVELS)
             self.assertEqual(layerwise_action.K_LEVELS, truncation_levels.K_LEVELS)
             self.assertEqual(action_space.LEVELS_K, truncation_levels.LEVELS_K)
+
+    def test_top_level_import_works_with_only_stage2_package_on_pythonpath(self):
+        stage2_dir = Path(__file__).resolve().parents[1] / "blb_stage2_rl"
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(stage2_dir)
+        env.pop("BLB_TRUNCATION_K_LEVELS", None)
+        script = "\n".join(
+            (
+                "import json",
+                "import layerwise_action",
+                "import truncation_levels",
+                "print(json.dumps({",
+                '    "levels": list(truncation_levels.K_LEVELS),',
+                '    "layerwise_levels": list(layerwise_action.K_LEVELS),',
+                "}))",
+            )
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            completed = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=temp_dir,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        expected = list(truncation_levels.DEFAULT_K_LEVELS_LEGACY_COMPAT)
+        self.assertEqual(payload["levels"], expected)
+        self.assertEqual(payload["layerwise_levels"], expected)
 
     def test_action_space_stub_restores_global_module_state(self):
         package = importlib.import_module("blb_stage2_rl")

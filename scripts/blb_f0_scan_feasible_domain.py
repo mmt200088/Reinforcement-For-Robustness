@@ -135,14 +135,11 @@ def _normalize_eval(raw: Mapping[str, Any], action: Sequence[int], source: str) 
 
 def _safe_allowed_k_indices() -> List[int]:
     allowed_values = {13, 12, 11}
-    raw = str(os.environ.get("BLB_TRUNCATION_K_LEVELS", "") or "").strip()
-    if raw:
-        k_levels = tuple(parse_optional_int_list(raw) or ())
-    else:
-        k_levels = K_LEVELS
-    if not k_levels:
-        k_levels = K_LEVELS
-    return [idx for idx, value in enumerate(k_levels) if int(value) in allowed_values]
+    return [
+        idx
+        for idx, value in enumerate(K_LEVELS)
+        if int(value) in allowed_values
+    ]
 
 
 def _smallest_cost_rows(rows: Iterable[Mapping[str, Any]], limit: int) -> List[Mapping[str, Any]]:
