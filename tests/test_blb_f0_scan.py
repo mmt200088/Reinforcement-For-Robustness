@@ -33,7 +33,7 @@ class BLBF0ScanTests(unittest.TestCase):
                 "operation": "output_truncation_k",
                 "effective": True,
                 "N": 8192,
-                "action_values": [8, 9, 11, 13, 10, 12],
+                "action_values": [8, 9, 11, 13, 10, 12, 6, 7],
             },
             {
                 "global_index": 2,
@@ -127,7 +127,7 @@ class BLBF0ScanTests(unittest.TestCase):
         with mock.patch("builtins.sorted", side_effect=counting_sorted):
             mask = _build_mask(
                 baseline_action=[1, 3, 1],
-                action_dims=[2, 6, 2],
+                action_dims=[2, 8, 2],
                 records=self._records(),
                 per_slot_rows=[
                     {
@@ -155,11 +155,7 @@ class BLBF0ScanTests(unittest.TestCase):
         from blb_stage2_rl.truncation_levels import K_LEVELS
         from scripts import blb_f0_scan_feasible_domain as scan
 
-        expected = [
-            idx
-            for idx, value in enumerate(K_LEVELS)
-            if int(value) in {11, 12, 13}
-        ]
+        expected = list(range(len(K_LEVELS)))
         with mock.patch.dict("os.environ", {"BLB_TRUNCATION_K_LEVELS": "8; 13; 12"}, clear=False):
             self.assertEqual(scan._safe_allowed_k_indices(), expected)
 
@@ -192,7 +188,7 @@ class BLBF0ScanTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "baseline"):
                 run_scan_core(
                     baseline_action=[1, 3],
-                    action_dims=[2, 6],
+                    action_dims=[2, 8],
                     records=self._records(),
                     evaluate_action=evaluate,
                     output_dir=td,
@@ -223,7 +219,7 @@ class BLBF0ScanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             result = run_scan_core(
                 baseline_action=[1, 3, 1],
-                action_dims=[2, 6, 2],
+                action_dims=[2, 8, 2],
                 records=self._records(),
                 evaluate_action=evaluate,
                 output_dir=td,
@@ -267,6 +263,10 @@ class BLBF0ScanTests(unittest.TestCase):
             k_rows = [row for row in rows if row["kind"] == "K"]
             self.assertTrue(k_rows)
             self.assertTrue(all(row["optimizer_cost_irrelevant"] for row in k_rows))
+            self.assertEqual(
+                {int(row["candidate_value"]) for row in k_rows},
+                {6, 7, 8, 9, 10, 11, 12},
+            )
 
             mask = json.loads((out / "suggested_action_mask.json").read_text(encoding="utf-8"))
             self.assertEqual(mask["action_width"], 3)
@@ -277,6 +277,9 @@ class BLBF0ScanTests(unittest.TestCase):
             inactive_slot = next(slot for slot in mask["slots"] if slot["global_index"] == 2)
             self.assertEqual(inactive_slot["reason"], "ineffective_compat_slot_baseline_only")
             self.assertEqual(inactive_slot["allowed_indices"], [1])
+            k_slot = next(slot for slot in mask["slots"] if slot["global_index"] == 1)
+            self.assertEqual(k_slot["allowed_indices"], list(range(8)))
+            self.assertEqual(set(k_slot["allowed_values"]), set(range(6, 14)))
 
             random_report = json.loads((out / "masked_random_validity.json").read_text(encoding="utf-8"))
             self.assertIn("by_mutation_count", random_report)
@@ -308,7 +311,7 @@ class BLBF0ScanTests(unittest.TestCase):
             ):
                 run_scan_core(
                     baseline_action=[1, 3, 1],
-                    action_dims=[2, 6, 2],
+                    action_dims=[2, 8, 2],
                     records=self._records(),
                     evaluate_action=evaluate,
                     output_dir=td,

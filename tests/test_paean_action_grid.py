@@ -8,6 +8,8 @@ import types
 import unittest
 from unittest import mock
 
+import numpy as np
+
 from blb_stage2_rl.truncation_levels import K_LEVELS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +30,9 @@ def _load_action_grid_module():
     stub.per_layer_field_offsets = lambda *args, **kwargs: {}
     stub.sf_from = lambda idx, max_sf, levels: int(max_sf) - 2 * (int(levels) - 1 - int(idx))
     stub.sum_truncation_k_in_action = lambda *args, **kwargs: 0
+    stub.validate_action_vector = (
+        lambda action, _num_layers: np.asarray(action, dtype=np.int64).copy()
+    )
 
     name = "paean_action_grid_under_test"
     spec = importlib.util.spec_from_file_location(name, ACTION_GRID_PATH)
@@ -186,6 +191,46 @@ class PaeanActionGridTest(unittest.TestCase):
         self.assertEqual(out.tolist(), [1, 2, 3])
         self.assertIsNot(out, base)
 
+    def test_normalize_base_action_preserves_raw_input_for_shared_validation(self):
+        action_grid = _load_action_grid_module()
+        action_grid.action_dims_for_config = lambda _num_layers: [2, 3, 4]
+
+        def reject_invalid(action, _num_layers):
+            raw = np.asarray(action)
+            if raw.ndim != 1:
+                raise ValueError("one-dimensional")
+            if np.issubdtype(raw.dtype, np.floating):
+                if np.any(raw != np.trunc(raw)):
+                    raise ValueError("integer categorical indices")
+            raise AssertionError("base action was coerced before validation")
+
+        action_grid.validate_action_vector = reject_invalid
+        with self.assertRaisesRegex(ValueError, "integer categorical indices"):
+            action_grid._normalize_base_action([0.5, 1, 2], num_layers=1)
+        with self.assertRaisesRegex(ValueError, "one-dimensional"):
+            action_grid._normalize_base_action([[0, 1, 2]], num_layers=1)
+
+    def test_standard_truncation_sweeps_cover_k6_through_k13(self):
+        action_config = ROOT / "Paean/action_configs/mrpc-blb-baseline-truncation-6-13.json"
+        payload = json.loads(action_config.read_text(encoding="utf-8"))
+        self.assertEqual(payload["ranges"]["truncation"], list(range(6, 14)))
+
+        sweep_preset = (
+            ROOT / "Paean/presets/mrpc-blb-baseline-truncation-sweep.conf"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "--action-config Paean/action_configs/mrpc-blb-baseline-truncation-6-13.json",
+            sweep_preset,
+        )
+
+        range_preset = (
+            ROOT / "Paean/presets/mrpc-blb-action-range.conf"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "--range truncation=6,7,8,9,10,11,12,13",
+            range_preset,
+        )
+
     def test_parse_base_action_vec_accepts_list_without_extra_list_materialization(self):
         action_grid = _load_action_grid_module()
 
@@ -193,6 +238,17 @@ class PaeanActionGridTest(unittest.TestCase):
             out = action_grid._parse_base_action_vec([1, 2, 3], num_layers_hint=1)
 
         self.assertEqual(out.tolist(), [1, 2, 3])
+
+    def test_parse_base_action_vec_preserves_fractional_values_for_validation(self):
+        action_grid = _load_action_grid_module()
+
+        parsed = action_grid._parse_base_action_vec(
+            [0.5, 1, 2],
+            num_layers_hint=1,
+        )
+
+        self.assertEqual(parsed.tolist(), [0.5, 1.0, 2.0])
+        self.assertTrue(np.issubdtype(parsed.dtype, np.floating))
 
     def test_cost_matched_sampling_reuses_parsed_fixed_specs(self):
         action_grid = _load_action_grid_module()

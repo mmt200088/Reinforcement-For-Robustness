@@ -1386,6 +1386,7 @@ def _decode_blb_action_for_glue(
     import numpy as _np
 
     from Paean.blb_action_eval import BLBActionFinalEvaluationModule
+    from blb_stage2_rl.action_space import validate_action_vector
     from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
     from types import SimpleNamespace
 
@@ -1410,8 +1411,9 @@ def _decode_blb_action_for_glue(
     shim.rescale_optimizer_root = root
 
     num_layers = int(len(gelu_degrees))
+    action_arr = validate_action_vector(action_vec, num_layers)
     decoded = shim._decode_action_candidate(
-        action_vec=_np.asarray(action_vec, dtype=int),
+        action_vec=action_arr,
         metadata=dict(fusion_metadata or {}),
         max_sfs=max_sfs,
         num_layers=num_layers,
@@ -1423,7 +1425,7 @@ def _decode_blb_action_for_glue(
     opt_outputs, opt_signals = shim._optimizer_outputs(str(profile), cfgs_dict)
     materialized = shim._materialize_decoded_action(
         profile=str(profile),
-        action_vec=_np.asarray(action_vec, dtype=int),
+        action_vec=action_arr,
         decoded=decoded,
         cfgs_dict=cfgs_dict,
         opt_outputs=opt_outputs,
@@ -1530,7 +1532,7 @@ def _process_blb_task(
     # Non-fusion (fusion_metadata None) skips only map replay; it still uses the
     # same optimizer materialization and fail-closed install contract.
     decoded = _decode_blb_action_for_glue(
-        action_vec=np.asarray(action_vec, dtype=int),
+        action_vec=action_vec,
         fusion_metadata=fusion_metadata,
         profile=str(profile),
         gelu_degrees=gelu_degrees,
@@ -1756,11 +1758,12 @@ def generate_blb_glue_submission(
             "BLB GLUE submission requires a concrete action vector in the JSON "
             "(slots/base+overrides/action_vec). Got config without a base."
         )
+    from blb_stage2_rl.action_space import (
+        make_all_max_action_vector as _all_max,
+        make_all_min_action_vector as _all_min,
+        validate_action_vector as _validate_action_vector,
+    )
     if isinstance(grid_cfg.base_action_vec, str):
-        from blb_stage2_rl.action_space import (
-            make_all_max_action_vector as _all_max,
-            make_all_min_action_vector as _all_min,
-        )
         text = grid_cfg.base_action_vec.lower()
         if text in ("max", "all-max", "all_max", "blb-baseline", "blb_baseline",
                     "rescale-baseline", "rescale_baseline"):
@@ -1770,7 +1773,10 @@ def generate_blb_glue_submission(
         else:
             raise ValueError(f"BLB GLUE: unsupported base action sentinel '{text}'")
     else:
-        action_vec = np.asarray(grid_cfg.base_action_vec, dtype=int)
+        action_vec = _validate_action_vector(
+            grid_cfg.base_action_vec,
+            num_layers_hint,
+        )
 
     # Resolve device with the same policy as ``main``: GPU-first, optional CPU.
     requested = str(device or "auto").lower()

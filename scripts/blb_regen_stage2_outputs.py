@@ -62,12 +62,12 @@ def _load_persistence_module():
 
 
 def _layerwise_k_levels():
-    path = os.path.join(_REPO_ROOT, "blb_stage2_rl", "layerwise_action.py")
-    spec = importlib.util.spec_from_file_location("blb_layerwise_action_standalone", path)
+    path = os.path.join(_REPO_ROOT, "blb_stage2_rl", "truncation_levels.py")
+    spec = importlib.util.spec_from_file_location("blb_truncation_levels_standalone", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
-    return tuple(int(value) for value in mod.K_LEVELS)
+    return tuple(mod.validate_exact_k_domain(mod.K_LEVELS))
 
 
 def _layerwise_action_table(action_matrix):
@@ -89,7 +89,7 @@ def _layerwise_action_table(action_matrix):
         rows.append({
             "layer": layer_idx,
             "block4_fusion": values[0],
-            "k_b1": None if layer_idx == 0 else k_levels[values[1]],
+            "k_b1": k_levels[values[1]],
             "k_b2": k_levels[values[2]],
             "k_b3": k_levels[values[3]],
             "k_b4": k_levels[values[4]],

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 import os
 from typing import Mapping, Sequence, Tuple
 
@@ -53,14 +54,28 @@ def load_k_levels(environ: Mapping[str, str] | None = None) -> Tuple[int, ...]:
     return values
 
 
-def validate_exact_k_domain(levels: Sequence[int]) -> Tuple[int, ...]:
-    """Require every supported K value exactly once, in any order."""
+def _exact_integer_tuple(
+        levels: Sequence[int],
+        *,
+        error_message: str,
+        ) -> Tuple[int, ...]:
+    values = []
     try:
-        values = tuple(int(value) for value in levels)
+        for value in levels:
+            if isinstance(value, bool) or type(value).__name__ == "bool_":
+                raise TypeError("boolean values are not integer K levels")
+            values.append(operator.index(value))
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "K_LEVELS must contain each supported K value exactly once"
-        ) from exc
+        raise ValueError(error_message) from exc
+    return tuple(values)
+
+
+def validate_exact_k_domain(levels: Sequence[int]) -> Tuple[int, ...]:
+    """Require every supported integer K value exactly once, in any order."""
+    values = _exact_integer_tuple(
+        levels,
+        error_message="K_LEVELS must contain each supported K value exactly once",
+    )
     if len(values) != len(SUPPORTED_K_VALUES) or frozenset(values) != SUPPORTED_K_VALUES:
         raise ValueError(
             "K_LEVELS must contain each supported K value exactly once: "
@@ -74,10 +89,16 @@ def baseline_k_index(
     baseline_k: int = 13,
 ) -> int:
     """Return the baseline index, falling back to the largest available K."""
-    values = tuple(int(value) for value in levels)
+    values = _exact_integer_tuple(
+        levels,
+        error_message="K levels must contain only integers",
+    )
     if not values:
         raise ValueError("K levels must contain at least one value")
-    target = int(baseline_k)
+    target = _exact_integer_tuple(
+        (baseline_k,),
+        error_message="baseline K must be an integer",
+    )[0]
     if target not in values:
         target = max(values)
     return values.index(target)
@@ -129,8 +150,11 @@ def validate_checkpoint_k_domain(
             f"{prefix} has an invalid ordered K domain; a fresh run is required"
         )
     try:
-        saved_levels = tuple(int(value) for value in raw_levels)
-    except (TypeError, ValueError) as exc:
+        saved_levels = _exact_integer_tuple(
+            raw_levels,
+            error_message=f"{prefix} has an invalid ordered K domain",
+        )
+    except ValueError as exc:
         raise RuntimeError(
             f"{prefix} has an invalid ordered K domain; a fresh run is required"
         ) from exc

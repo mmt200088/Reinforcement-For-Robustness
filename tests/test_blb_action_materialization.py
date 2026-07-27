@@ -49,13 +49,27 @@ def _load_function_standalone(rel_path, function_name, **runtime_globals):
 
 
 def _load_paean_method(method_name, **runtime_globals):
-    path = _REPO / "Paean" / "blb_action_eval.py"
+    return _load_paean_method_from_path(
+        "Paean/blb_action_eval.py",
+        "BLBActionFinalEvaluationModule",
+        method_name,
+        **runtime_globals,
+    )
+
+
+def _load_paean_method_from_path(
+        rel_path,
+        class_name,
+        method_name,
+        **runtime_globals,
+        ):
+    path = _REPO / rel_path
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     cls = next(
         node
         for node in tree.body
         if isinstance(node, ast.ClassDef)
-        and node.name == "BLBActionFinalEvaluationModule"
+        and node.name == class_name
     )
     method = next(
         node
@@ -280,6 +294,59 @@ class ActionVectorBoundsTests(unittest.TestCase):
                 softmax=[6],
                 profile="mrpc",
             )
+
+    def test_action_payload_preserves_invalid_raw_action_for_shared_validation(self):
+        slots_payload_to_action_vec = _load_function_standalone(
+            "blb_stage2_rl/action_io.py",
+            "slots_payload_to_action_vec",
+            Mapping=__import__("collections.abc").abc.Mapping,
+            np=__import__("numpy"),
+            validate_action_vector=_reject_invalid_raw_action,
+        )
+
+        with self.assertRaisesRegex(ValueError, "integer categorical indices"):
+            slots_payload_to_action_vec(
+                {"action_vec": [0.5]},
+                max_sfs=object(),
+                num_layers=1,
+            )
+
+    def test_fusion_final_eval_preserves_invalid_base_for_shared_validation(self):
+        decode_fusion = _load_paean_method(
+            "_decode_fusion_count_fixed_action",
+            Mapping=__import__("collections.abc").abc.Mapping,
+            np=__import__("numpy"),
+            action_vector_to_cfgs=_reject_invalid_raw_action,
+            validate_action_vector=_reject_invalid_raw_action,
+        )
+
+        with self.assertRaisesRegex(ValueError, "integer categorical indices"):
+            decode_fusion(
+                SimpleNamespace(),
+                action_vec=[0],
+                metadata={
+                    "group": {"option_by_step": {}},
+                    "legacy_action_vec": [0.5],
+                },
+                max_sfs=object(),
+                num_layers=1,
+                gelu=[4],
+                softmax=[6],
+                profile="mrpc",
+            )
+
+    def test_terminal_probe_entrypoints_preserve_invalid_raw_actions(self):
+        for method_name in ("prepare_action_for_terminal_probe", "step"):
+            with self.subTest(method=method_name):
+                method = _load_paean_method_from_path(
+                    "blb_stage2_rl/env.py",
+                    "BLBStage2Env",
+                    method_name,
+                    np=__import__("numpy"),
+                    validate_action_vector=_reject_invalid_raw_action,
+                )
+                with self.assertRaisesRegex(ValueError, "one-dimensional"):
+                    method(SimpleNamespace(num_layers=1, total_action_dim=2), [[0]])
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"runtime imports unavailable: {_IMPORT_ERROR!r}")

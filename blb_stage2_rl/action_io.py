@@ -1,6 +1,6 @@
 """Human-readable action ↔ action_vec converters.
 
-The RL policy outputs an integer ``action_vec`` (577 dims for L=12) where each
+The RL policy outputs an integer ``action_vec`` (877 dims for L=12) where each
 slot's value is an *action index* into per-slot level table. That's the right
 representation for the policy but is opaque for humans: index 5 in block 2's
 ``wq_encode`` slot vs. block 3's ``square_rescale_sf_0`` slot mean completely
@@ -56,7 +56,7 @@ For K kind:
     "kind":            "K",
     "operation":       "block3_output_truncation",
     "truncation_bits": 13,                    // PRIMARY user-facing value
-    "action_index":    5,
+    "action_index":    3,
     "level_values":    [8, 9, 11, 13, 10, 12, 6, 7]
   }
 
@@ -97,7 +97,6 @@ from .action_space import (
     MaxSFsTable,
     NOISE_TABLE_ALLOWED_SCALING_FACTORS_BY_N,
     NUM_LEVELS_PER_DIM_BY_BLOCK_KIND,
-    action_dims_for_config,
     describe_action_vector,
     load_max_sfs,
     make_all_max_action_vector,
@@ -108,6 +107,7 @@ from .action_space import (
     _snap_to_table,
     _block_default_N,
     _degree_for_layer,
+    validate_action_vector,
 )
 
 
@@ -411,18 +411,9 @@ def slots_list_to_action_vec(
         table level (e.g. requested SF=13 → snapped to 14). Empty if all
         values matched exactly.
     """
-    fields = per_layer_field_offsets()
-    layer_dim = len(fields)
-    expected_dim = len(action_dims_for_config(int(num_layers)))
-
     # Build base
     if base_action_vec is not None:
-        vec = np.asarray(base_action_vec, dtype=np.int64).reshape(-1).copy()
-        if vec.size != expected_dim:
-            raise ValueError(
-                f"base_action_vec length {vec.size} != expected {expected_dim} "
-                f"(num_layers={num_layers})"
-            )
+        vec = validate_action_vector(base_action_vec, int(num_layers)).copy()
     else:
         base_choice = str(base or "max").strip().lower()
         if base_choice in ("max", "all-max", "all_max"):
@@ -561,7 +552,7 @@ def slots_payload_to_action_vec(
     # Shape D (back-compat) — flat action_vec
     av = payload.get("action_vec") or payload.get("base_action_vec") or payload.get("base_action")
     if av is not None and isinstance(av, (list, tuple)):
-        return np.asarray(av, dtype=np.int64), []
+        return validate_action_vector(av, int(num_layers)).copy(), []
 
     # base / base_action_vec
     base_action_vec = None
@@ -570,7 +561,7 @@ def slots_payload_to_action_vec(
     if isinstance(base_field, str):
         base_str = base_field
     elif isinstance(base_field, (list, tuple)):
-        base_action_vec = np.asarray(base_field, dtype=np.int64)
+        base_action_vec = base_field
 
     raw_slots = payload.get("slots")
     overrides = payload.get("overrides")

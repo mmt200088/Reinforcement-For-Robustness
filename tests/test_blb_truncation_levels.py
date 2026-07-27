@@ -144,6 +144,8 @@ class TruncationLevelsTest(unittest.TestCase):
             (6, 7, 8, 9, 10, 11, 12),
             (6, 7, 8, 9, 10, 11, 12, 14),
             (6, 7, 8, 9, 10, 11, 12, 12),
+            (6, 7, 8.9, 9, 10, 11, 12, 13),
+            (6, 7, True, 9, 10, 11, 12, 13),
         )
         for levels in invalid_domains:
             with self.subTest(levels=levels):
@@ -187,6 +189,23 @@ class TruncationLevelsTest(unittest.TestCase):
                         checkpoint,
                         context="legacy Stage-2 checkpoint",
                     )
+
+    def test_checkpoint_k_domain_rejects_nonintegral_and_boolean_levels(self):
+        for malformed in (
+            [8.9, 9, 11, 13, 10, 12, 6, 7],
+            [True, 9, 11, 13, 10, 12, 6, 7],
+        ):
+            checkpoint = {
+                truncation_levels.CHECKPOINT_K_DOMAIN_KEY: {
+                    "schema_version": (
+                        truncation_levels.CHECKPOINT_K_DOMAIN_SCHEMA_VERSION
+                    ),
+                    "k_levels": malformed,
+                },
+            }
+            with self.subTest(levels=malformed):
+                with self.assertRaisesRegex(RuntimeError, "fresh run"):
+                    truncation_levels.validate_checkpoint_k_domain(checkpoint)
 
     def test_baseline_k_index_prefers_k13_and_falls_back_to_maximum(self):
         self.assertEqual(

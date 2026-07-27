@@ -1552,21 +1552,25 @@ experiment reproduction.
 ## Current BLB Action Space
 
 Do not trust stale comments at the top of `blb_stage2_rl/action_space.py`.
-Current field tables are compacted:
+Current field tables are:
 
-- Block 1: 7 slots per layer.
-- Block 2: 12 slots per layer.
-- Block 3: 7 slots per layer.
-- Block 4: 12 slots per layer.
-- Block 5: 10 slots per layer.
-- Total per-layer action width: 48.
-- BERT-base full action vector width: `48 * 12 + 1 = 577`.
-- Sequential episode horizon for 12 layers: `4 + (12 - 1) * 5 = 59`.
+- Block 1: 9 slots per layer.
+- Block 2: 23 slots per layer.
+- Block 3: 8 slots per layer.
+- Block 4: 17 slots per layer.
+- Block 5: 16 slots per layer.
+- Total per-layer full-vector action width: 73.
+- BERT-base full action vector width: `73 * 12 + 1 = 877`.
+- Legacy `step_schedule(12)` horizon: `3 + (12 - 1) * 4 = 47`; it excludes
+  Block 3 and layer-0 Block 1.
+- The canonical layerwise policy horizon is 12. Each layer emits six compact
+  choices: Block4 fusion plus K for Blocks 1, 2, 3, 4, and 5. Layer-0 Block1 K
+  is active.
 
-The old "59 required slots" wording refers to sequential `(layer, block)` steps,
-not the full categorical action-vector width. Older docs/comments may still say
-73/877, 94/1129, or describe a separate first-input noise point. Treat those as
-stale unless `scripts/blb_export_action_registry.py` and
+The legacy 47-step schedule is not the full categorical action-vector width or
+the canonical 12-step layerwise policy. Older docs/comments may still say
+48/577, 59 steps, 94/1129, or describe a separate first-input noise point. Treat
+those as stale unless `scripts/blb_export_action_registry.py` and
 `describe_action_vector(...)` confirm them.
 
 K decoding is non-monotonic by design. The current ordered domain is
@@ -1689,14 +1693,14 @@ is the default in `BLBStage2TrainConfig`, `rl_tune.py`, and
 The schedule is:
 
 ```text
-L0:B2 -> L0:B3 -> L0:B4 -> L0:B5
-L1:B1 -> L1:B2 -> ... -> L11:B5
+L0:B2 -> L0:B4 -> L0:B5
+L1:B1 -> L1:B2 -> L1:B4 -> L1:B5 -> ... -> L11:B5
 ```
 
 Step 0 also carries the deprecated first-input tail slot only for vector
 compatibility. Each nonterminal step calls `RescaleOptimizerBridge.evaluate` for
 that one block and gives dense cost shaping. The terminal step assembles the
-full 577-wide vector and calls the base env for model forward plus hard-priority
+full 877-wide vector and calls the base env for model forward plus hard-priority
 reward.
 
 The old single-shot `BLBStage2Env`/`BLBStage2Policy` path still exists for tests,

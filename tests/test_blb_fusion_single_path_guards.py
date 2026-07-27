@@ -55,10 +55,17 @@ class FusionSinglePathGuardTest(unittest.TestCase):
             if not isinstance(node, ast.Call):
                 continue
             func = node.func
-            if not isinstance(func, ast.Name) or func.id != "evaluate_action_for_cost":
+            if not (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "_materialize_action"
+                    ):
                 continue
             forwarded = any(kw.arg == "boosted_overrides" for kw in node.keywords)
-        self.assertTrue(forwarded, "prepare_action_for_terminal_probe must pass boosted_overrides to cost decode")
+        self.assertTrue(
+            forwarded,
+            "prepare_action_for_terminal_probe must pass boosted_overrides "
+            "to the canonical materialization path",
+        )
 
     def test_final_strict_revalidation_replays_boosted_fusion_config(self):
         source = (REPO / "blb_stage2_rl" / "sequential_runner.py").read_text(encoding="utf-8")

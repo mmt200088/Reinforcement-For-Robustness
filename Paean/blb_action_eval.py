@@ -22,6 +22,7 @@ from blb_stage2_rl.action_space import (
     build_optimizer_requests,
     step_schedule,
     sum_truncation_k_in_action,
+    validate_action_vector,
 )
 from blb_stage2_rl.baseline_bootstrap import (
     load_calibrated_stage2_action_context,
@@ -837,7 +838,7 @@ class BLBActionFinalEvaluationModule:
                 break
         if base_raw is None:
             base_raw = action_vec
-        base_arr = np.asarray(base_raw, dtype=int).reshape(-1)
+        base_arr = validate_action_vector(base_raw, int(num_layers))
         gelu_arr = np.asarray(gelu, dtype=int).reshape(-1)
         softmax_arr = np.asarray(softmax, dtype=int).reshape(-1)
 

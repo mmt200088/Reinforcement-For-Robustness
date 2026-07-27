@@ -134,12 +134,7 @@ def _normalize_eval(raw: Mapping[str, Any], action: Sequence[int], source: str) 
 
 
 def _safe_allowed_k_indices() -> List[int]:
-    allowed_values = {13, 12, 11}
-    return [
-        idx
-        for idx, value in enumerate(K_LEVELS)
-        if int(value) in allowed_values
-    ]
+    return list(range(len(K_LEVELS)))
 
 
 def _smallest_cost_rows(rows: Iterable[Mapping[str, Any]], limit: int) -> List[Mapping[str, Any]]:
@@ -152,6 +147,20 @@ def _smallest_cost_rows(rows: Iterable[Mapping[str, Any]], limit: int) -> List[M
 
 def _candidate_indices_below_baseline(baseline_idx: int) -> range:
     return range(0, int(baseline_idx))
+
+
+def _candidate_indices_for_slot(
+        baseline_idx: int,
+        dim: int,
+        kind: str,
+        ) -> Iterable[int]:
+    if str(kind) == "K":
+        return (
+            idx
+            for idx in range(int(dim))
+            if idx != int(baseline_idx)
+        )
+    return _candidate_indices_below_baseline(baseline_idx)
 
 
 def _build_per_slot_summary_rows(
@@ -234,7 +243,7 @@ def _build_mask(
             for k_idx in _safe_allowed_k_indices():
                 if 0 <= int(k_idx) < int(dim):
                     allowed.add(int(k_idx))
-            reason = "safe_k_13_12_11"
+            reason = "all_k_levels_optimizer_cost_independent"
         else:
             valid_rows = [
                 row for row in by_slot.get(idx, [])
@@ -547,7 +556,11 @@ def run_scan_core(
     rows: List[Dict[str, Any]] = []
     for slot_idx, baseline_idx in enumerate(baseline_action):
         record = records[slot_idx] if slot_idx < len(records) else {}
-        for candidate_idx in _candidate_indices_below_baseline(baseline_idx):
+        for candidate_idx in _candidate_indices_for_slot(
+                baseline_idx,
+                action_dims[slot_idx],
+                str(record.get("kind", "")),
+                ):
             action = list(baseline_action)
             action[slot_idx] = int(candidate_idx)
             evaluated = _normalize_eval(
