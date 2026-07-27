@@ -1191,6 +1191,14 @@ class RLDataPointWriterTest(unittest.TestCase):
             self.assertEqual(resumed._all_episode_returns, [1.0, 2.0])
             self.assertEqual(len(resumed._ppo_history), 1)
             self.assertEqual(int(resumed._action_hist.sum()), 6)
+            self.assertEqual(
+                resumed.recent_episode_outcomes(1),
+                ((2.0, 0),),
+            )
+            self.assertEqual(
+                resumed.recent_episode_outcomes(10),
+                ((1.0, 0), (2.0, 0)),
+            )
 
             resumed.record_episode(
                 episode_stats=episode(module, 2),

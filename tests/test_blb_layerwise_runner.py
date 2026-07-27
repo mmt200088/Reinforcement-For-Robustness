@@ -2192,6 +2192,8 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             '"diagnostics_jsonl_sizes": diagnostics_jsonl_sizes',
             "diag_recorder.committed_jsonl_sizes()",
             "diag_recorder.recover_to_checkpoint_sizes",
+            "diag_recorder.recent_episode_outcomes(recent_episode_window)",
+            "recent_episode_outcomes.append((",
             "checkpoint_planned_total = int(checkpoint.get(",
             '"planned_total_episodes", planned_total_episodes',
             'checkpoint.get("ppo_update_count")',
