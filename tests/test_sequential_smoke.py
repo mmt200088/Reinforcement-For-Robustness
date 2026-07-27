@@ -1455,10 +1455,7 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             "field": 61, "output_truncation_k": 7,
         })
 
-    def test_fusion_evaluate_step_rejects_out_of_range_k_before_expand(self):
-        output = types.SimpleNamespace(
-            valid=True, total_bits=99, fusion_count=1, invalid_chain=None,
-        )
+    def test_fusion_evaluate_step_rejects_out_of_range_k_before_expand_or_replan(self):
         option = types.SimpleNamespace(
             option_id=1,
             fusion_count=1,
@@ -1466,10 +1463,15 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             explicit_field_values={},
         )
         expand_calls = []
+        bridge_calls = []
 
         def expand(*args):
             expand_calls.append(args)
             return np.zeros(2, dtype=int)
+
+        def fail_if_bridge_called(**kwargs):
+            bridge_calls.append(kwargs)
+            raise AssertionError("bridge/replan must not run for an invalid K index")
 
         fusion_map = types.SimpleNamespace(
             options=lambda graph_key: [option],
@@ -1485,17 +1487,20 @@ class BlockRuntimeHelperTest(unittest.TestCase):
         env.num_layers = 12
         env.base = self._base(types.SimpleNamespace(
             invoker=types.SimpleNamespace(baselines={}),
-            evaluate=lambda **kwargs: output,
+            evaluate=fail_if_bridge_called,
         ))
-        invalid_k_index = len(self.mod.K_LEVELS)
 
-        with self.assertRaisesRegex(
-                ValueError,
-                rf"K index {invalid_k_index}.*legal range \[0, {len(self.mod.K_LEVELS)}\)",
-        ):
-            env.evaluate_step([1, invalid_k_index])
+        for invalid_k_index in (-1, len(self.mod.K_LEVELS)):
+            with self.subTest(k_index=invalid_k_index):
+                with self.assertRaisesRegex(
+                        ValueError,
+                        rf"K index {invalid_k_index}.*legal range "
+                        rf"\[0, {len(self.mod.K_LEVELS)}\)",
+                ):
+                    env.evaluate_step([1, invalid_k_index])
 
         self.assertEqual(expand_calls, [])
+        self.assertEqual(bridge_calls, [])
 
     def test_helper_returns_structured_bridge_error_without_optimizer_apply(self):
         def fail(**kwargs):
