@@ -12,7 +12,9 @@ candidate state, PPO/checkpoint state, and structured training data.
 
 Runtime evidence was produced at commit
 `6e8d1cfc88e03d2e6fd20d5255685569c4821fc5`. Commit `2af7bd55` only updates a
-static source-order test for the conditional restart call.
+static source-order test for the conditional restart call. The dedicated
+three-GPU run used commit `7a9e1ce70cb0a4b22dd429647c58109f27cf1029`;
+its runtime source is unchanged from `6e8d1cfc`.
 
 ## Scaling
 
@@ -23,11 +25,20 @@ control and exact recursive equivalence gate.
 | ---: | ---: | ---: | ---: | ---: |
 | 1 | 7573 s | 80.813 ep/h | 1.000x | 100.0% |
 | 2 | 4002 s | 152.924 ep/h | 1.892x | 94.6% |
+| 3 | 2792 s | 219.198 ep/h | 2.712x | 90.4% |
 | 4 | 2221 s | 275.552 ep/h | 3.410x | 85.2% |
 
-Both multi-GPU runs passed quality/effect, strict diagnostic, and PPO equality.
-Their full gate output is in `scaling_1v2_verdict.txt` and
-`scaling_1v4_verdict.txt`.
+All multi-GPU runs passed quality/effect, strict diagnostic, and PPO equality.
+Their full gate output is in `scaling_1v2_verdict.txt`,
+`scaling_1v3_verdict.txt`, and `scaling_1v4_verdict.txt`.
+
+The dedicated three-GPU run started directly on physical GPUs `0,1,2`; it did
+not rely on a four-to-three recovery transition. All 170 episodes used all
+three devices. The five terminal trials rotated through `1/2/2`, `2/1/2`, and
+`2/2/1`, producing cumulative trial counts `284/283/283`. Mean sampled GPU
+utilization was 94.45%, 87.08%, and 84.39%. Physical GPU 3 reported `[N/A]`
+before launch and was excluded; physical GPU 4 remained outside the
+three-device test.
 
 ## Fault Injection
 
@@ -61,6 +72,12 @@ requires a PPO-boundary restart.
 - Full server suite with `CUDA_VISIBLE_DEVICES=0,1,2`: 1836 passed, 3 skipped.
 - `fault_tolerance_summary.json` is the compact machine-readable audit.
 - `strict_fault_equivalence.json` contains the recursive zero-diff result.
+- `three_gpu_summary.json` is the dedicated three-GPU audit.
+- `strict_3gpu_equivalence.json` contains its recursive zero-diff result.
+- `three_gpu_utilization.json` records trial balance and sampled utilization.
+- `three_gpu_inventory_pre.csv` records the pre-run physical GPU state.
+- `three_gpu_health_events.jsonl` records one launch and a clean exit with no
+  restart.
 - `fault_health_events.jsonl` records launch, quarantine restart, resume, and
   clean exit.
 - `pre_terminal_fix_health_events.jsonl` records the eliminated second restart.
