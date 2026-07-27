@@ -304,10 +304,10 @@ sf_actual = snap_to_noise_table(sf_decoded, N)
 
 ### 4.4 truncation k 的解码
 
-K 槽位不是用 `sf_from`。它通过 K_LEVELS 查表。例如当前某些代码版本中为：
+K 槽位不是用 `sf_from`。它通过当前权威的 `K_LEVELS` 查表：
 
 ```text
-K_LEVELS = (8, 9, 11, 13, 10, 12)
+K_LEVELS = (8, 9, 11, 13, 10, 12, 6, 7)
 ```
 
 对应：
@@ -319,9 +319,11 @@ idx 2 -> k 11
 idx 3 -> k 13
 idx 4 -> k 10
 idx 5 -> k 12
+idx 6 -> k 6
+idx 7 -> k 7
 ```
 
-这个顺序可能不是单调的，因为要兼容旧 checkpoint。不要假设 index 越大 k 越大。all-max baseline 的 K 应该找最大 k 值对应的 index，而不是简单取最后一个 index。
+索引 `0..5` 保留旧动作语义，新增索引 `6..7` 分别表示 K6 和 K7。这个顺序不是单调的；不要假设 index 越大 k 越大，也不要取表尾作为 baseline。all-max baseline 固定为 K13，对应 `idx 3`。
 
 ### 4.5 slot kind
 

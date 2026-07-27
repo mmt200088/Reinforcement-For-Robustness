@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate a human-readable MRPC fusion-count map report and fixed actions.
 
-The script intentionally avoids importing ``blb_stage2_rl`` because local
-developer machines used for report generation may not have torch installed.
-It reads the map JSON artifacts and parses the action slot table from
+The script avoids importing torch-heavy ``blb_stage2_rl.action_space`` because
+local developer machines used for report generation may not have torch
+installed. It may import torch-free helpers such as
+``blb_stage2_rl.truncation_levels``. The action slot table is parsed from
 ``action_space.py`` as data.
 """
 from __future__ import annotations
