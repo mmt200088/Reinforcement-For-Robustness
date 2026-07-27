@@ -240,7 +240,7 @@ maps。
 > **Historical/stale registry snapshot:** 本节的 full-SF 字段表及
 > `94`/`1129` 维统计保留为旧原型记录，不代表当前生产动作 registry。当前
 > registry 以 `scripts/blb_export_action_registry.py` 的导出结果和
-> `AGENTS.md` 记录的每层 `48` 个槽、全模型 `577` 个槽为准。下表不在本次
+> `AGENTS.md` 记录的每层 `73` 个槽、BERT-base 全模型 `877` 个槽为准。下表不在本次
 > K-domain 扩展中整体重写。
 
 每个 block 的精确字段对照 [`function_handler.py`](../function_handler.py) 中的
@@ -279,6 +279,8 @@ action_space = MultiDiscrete([
     ...
     # ...
 ])
+# Historical/stale prototype width. The current registry has 73 slots per
+# layer and 877 entries for BERT-base.
 total_dim = L * 94 + 1   # = 1129 for L=12
 ```
 
@@ -647,8 +649,9 @@ class BLBStage2Policy(nn.Module):
         self.value = nn.Linear(256, 1)              # critic
 ```
 
-跨层共享 head 是关键 —— 不然 12 层 × 94 dim 的全连接太重；且语义上不同层做
-相似的决策。
+> **Historical/stale prototype rationale:** 旧原型中的跨层共享 head 用于避免
+> `12 层 × 94 dim` 的全连接；当前 registry 是每层 `73` 个槽、BERT-base
+> full vector `877` 个槽。跨层共享参数的语义动机仍是不同层执行相似决策。
 
 ### 7.3 训练超参（起步建议）
 
@@ -698,7 +701,8 @@ class BLBStage2Policy(nn.Module):
   的 8+1 dims。验证 PPO 能稳定下降 cost
 - [ ] 再扩到 Block 1 / 全 12 层
 - [ ] 再扩到 Block 1+2+3+4+5 / Layer 0
-- [ ] 最后扩到全维度 1129 dim
+- [ ] **Historical/stale milestone:** 旧原型最后扩到 `1129 dim`；当前 registry
+  对应每层 `73` 个槽、BERT-base full vector `877` 个槽
 
 ### M3：稳定性 / 精度约束接入
 
