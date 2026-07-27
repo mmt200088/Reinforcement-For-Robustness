@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 import numpy as np
@@ -21,6 +22,8 @@ from blb_stage2_rl.precision_presets import (
     network_axis_weights,
 )
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 class LayerwisePrecisionPresetContractTest(unittest.TestCase):
     @classmethod
@@ -32,6 +35,17 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
             profile="mrpc",
             gelu_degrees=[4] * 12,
         )
+
+    def test_formal_mrpc_preset_pins_hml_action_and_equal_network_weights(self):
+        preset_path = _REPO_ROOT / "presets" / "mrpc-blb-stage2-rl.conf"
+        text = preset_path.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "--stage2-communication-importance-ratio 1.0",
+            text,
+        )
+        self.assertIn("high / medium / low", text)
+        self.assertNotIn("Block1/2/3/4/5 truncation K；", text)
 
     def test_policy_has_only_fusion_and_precision_preset_slots(self):
         self.assertEqual(
