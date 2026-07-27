@@ -25,7 +25,7 @@ Files written
                               failure points fast.
 * ``action_histogram.npz``  – per-slot action-index count matrix, periodically
                               flushed. Shape ``(num_slots, max_levels)`` int64.
-                              Reveals "policy collapsed onto action 0 / 5".
+                              Reveals collapse onto the first / last action.
 * ``diagnostics_summary.md`` – **human-readable Chinese summary** regenerated
                               at every periodic flush. **Read this first when
                               debugging.** Contains training progress, Top-K
@@ -49,7 +49,7 @@ Usage
         output_dir=blb_progress_dir,
         num_layers=12,
         num_action_slots=len(action_dims_for_config(12)),
-        max_action_levels=6,
+        max_action_levels=policy_cfg.max_num_levels,
         top_k=20,
         log_fn=log,
     )
