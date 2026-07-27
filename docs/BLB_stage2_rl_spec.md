@@ -237,6 +237,12 @@ maps。
 
 ### 4.2 每层每 block 的动作维度（mandatory + optional）
 
+> **Historical/stale registry snapshot:** 本节的 full-SF 字段表及
+> `94`/`1129` 维统计保留为旧原型记录，不代表当前生产动作 registry。当前
+> registry 以 `scripts/blb_export_action_registry.py` 的导出结果和
+> `AGENTS.md` 记录的每层 `48` 个槽、全模型 `577` 个槽为准。下表不在本次
+> K-domain 扩展中整体重写。
+
 每个 block 的精确字段对照 [`function_handler.py`](../function_handler.py) 中的
 `Block{N}NoiseConfig` dataclass。这里给出 RL 该出多少个 categorical action：
 
@@ -268,7 +274,7 @@ maps。
 # 在 RL 框架（gymnasium 风格）里：
 action_space = MultiDiscrete([
     # Layer 0 Block 1 (8 SF + 1 K)：
-    5, 5, 3, 3, 4, 4, 4, 4, 4,
+    5, 5, 3, 3, 4, 4, 4, 4, 8,
     # Layer 0 Block 2 (22 SF + 1 K) ...
     ...
     # ...

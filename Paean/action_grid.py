@@ -131,7 +131,7 @@ def load_action_grid_config(
     4. **fixed / ranges only** (back-compat with cartesian-sweep presets)::
 
         {"fixed": {"layer2.block5.wffn1_sf": 18},
-         "ranges": {"block3.truncation": [8, 9, 10, 11, 12, 13]}}
+         "ranges": {"block3.truncation": [6, 7, 8, 9, 10, 11, 12, 13]}}
 
     All four shapes also support the optional top-level ``fixed`` / ``ranges``
     fields which apply *after* the base/slots/action_vec is decoded.
