@@ -27,6 +27,7 @@ from .statistical_constraints import (
     assess_candidate,
     retarget_constraint_assessment,
 )
+from .truncation_levels import LEVELS_K
 
 
 _PROBABILITY_FIELDS = (
@@ -3113,7 +3114,11 @@ def _collect_layerwise_episode(
     episode_reward = 0.0
     for step_idx in range(horizon):
         spec = env.current_spec()
-        slot_mask, levels = step_adapter_fn(spec, 6, 6)
+        slot_mask, levels = step_adapter_fn(
+            spec,
+            int(env.max_step_dim),
+            LEVELS_K,
+        )
         state_np = np.asarray(state, dtype=np.float32)
         sample_out = policy.sample_action(
             _policy_input(state_np[None, ...], device),

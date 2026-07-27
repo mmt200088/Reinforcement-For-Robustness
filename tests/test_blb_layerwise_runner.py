@@ -2777,8 +2777,10 @@ class _FakeLayerwiseEnv:
             evidence_mode="valid",
             invalid=False,
             num_layers=12,
+            k_num_levels=6,
     ):
         self.horizon = int(num_layers)
+        self.k_num_levels = int(k_num_levels)
         self._step = 0
         self.actions = []
         self.boosted_overrides = {(4, 3): {"v_mask_rescale_sf": 47}}
@@ -2804,7 +2806,7 @@ class _FakeLayerwiseEnv:
         return types.SimpleNamespace(
             step_idx=self._step,
             layer_idx=self._step,
-            slot_dims=(2, 6, 6, 6, 6, 6),
+            slot_dims=(2,) + (self.k_num_levels,) * 5,
             slot_mask=(True, self._step != 0, True, True, True, True),
         )
 
@@ -3066,6 +3068,75 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(resolve_exact_terminal_batch_size(2, 5, 4), 2)
         self.assertEqual(resolve_exact_terminal_batch_size(4, 5, 5), 1)
         self.assertEqual(resolve_exact_terminal_batch_size(1, 5, 4), 1)
+
+    def test_default_step_adapter_accepts_canonical_k_level_count(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+        from blb_stage2_rl.truncation_levels import LEVELS_K
+
+        source = Path("blb_stage2_rl/sequential_policy.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        adapter_nodes = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"_spec_slot_num_levels", "step_to_mask_and_levels"}
+        ]
+        namespace = {"np": np, "Tuple": __import__("typing").Tuple}
+        exec(
+            compile(
+                ast.fix_missing_locations(
+                    ast.Module(body=adapter_nodes, type_ignores=[]),
+                ),
+                "blb_stage2_rl/sequential_policy.py",
+                "exec",
+            ),
+            namespace,
+        )
+        default_adapter_module = types.ModuleType(
+            "blb_stage2_rl.sequential_policy",
+        )
+        default_adapter_module.step_to_mask_and_levels = namespace[
+            "step_to_mask_and_levels"
+        ]
+        env = _FakeLayerwiseEnv(k_num_levels=LEVELS_K)
+        buffer = _FakeBuffer()
+
+        with (
+                tempfile.TemporaryDirectory() as td,
+                mock.patch.dict(
+                    "sys.modules",
+                    {
+                        "blb_stage2_rl.sequential_policy": (
+                            default_adapter_module
+                        ),
+                    },
+                ),
+        ):
+            train_layerwise(
+                env=env,
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=buffer,
+                ppo_update_fn=(
+                    lambda *_args, **_kwargs: {
+                        "entropy": 0.0,
+                        "n_samples": len(buffer),
+                    }
+                ),
+                assess_candidate_fn=(
+                    lambda *_args, **_kwargs: _assessment(0.7)
+                ),
+            )
+
+        self.assertEqual(
+            buffer.transitions[0]["per_slot_num_levels"].tolist(),
+            [2, LEVELS_K, LEVELS_K, LEVELS_K, LEVELS_K, LEVELS_K],
+        )
 
     def test_grouped_terminal_probes_finalize_in_order_at_the_ppo_boundary(self):
         from blb_stage2_rl.candidate_store import CandidateStore
