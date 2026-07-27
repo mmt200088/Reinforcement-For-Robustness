@@ -291,16 +291,20 @@ def _coerce_action_index_from_sf(
     return best_idx
 
 
-def _coerce_action_index_from_k(value: object) -> int:
-    """Pick the K_LEVELS index closest to ``value``."""
+def _normalize_truncation_bits(value: object) -> int:
+    """Return one exact integer representation of a requested truncation K."""
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"truncation_bits must be an integer, got {value!r}")
     try:
-        target = operator.index(value)
+        return operator.index(value)
     except TypeError as exc:
         raise ValueError(
             f"truncation_bits must be an integer, got {value!r}"
         ) from exc
+
+
+def _nearest_action_index_from_k(target: int) -> int:
+    """Pick the K_LEVELS index closest to an already-normalized integer K."""
     levels = list(K_LEVELS)
     best_idx = 0
     best_dist = abs(int(levels[0]) - target)
@@ -310,6 +314,11 @@ def _coerce_action_index_from_k(value: object) -> int:
             best_dist = d
             best_idx = idx
     return best_idx
+
+
+def _coerce_action_index_from_k(value: object) -> int:
+    """Normalize ``value`` exactly once, then pick its nearest K_LEVELS index."""
+    return _nearest_action_index_from_k(_normalize_truncation_bits(value))
 
 
 def _coerce_first_input_index(value: int) -> int:
@@ -471,9 +480,8 @@ def slots_list_to_action_vec(
                 )
             if entry["truncation_bits"] is None and entry.get("effective") is False:
                 continue
-            requested_k = entry["truncation_bits"]
-            new_idx = _coerce_action_index_from_k(requested_k)
-            requested_k = operator.index(requested_k)
+            requested_k = _normalize_truncation_bits(entry["truncation_bits"])
+            new_idx = _nearest_action_index_from_k(requested_k)
             old_idx = int(vec[global_index])
             vec[global_index] = int(new_idx)
             decoded_after = int(K_LEVELS[new_idx])
