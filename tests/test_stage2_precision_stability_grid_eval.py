@@ -1,6 +1,7 @@
 """Contracts for the 18-group Stage-2 precision/stability evaluation."""
 from __future__ import annotations
 
+import ast
 import unittest
 from types import SimpleNamespace
 
@@ -19,6 +20,20 @@ from scripts.run_stage2_precision_stability_grid_eval import (
 
 
 class Stage2PrecisionStabilityGridTest(unittest.TestCase):
+    def test_action_space_imports_os_for_max_sf_materialization(self):
+        source = (REPO_ROOT / "blb_stage2_rl" / "action_space.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        imported_names = {
+            alias.name
+            for node in tree.body
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+
+        self.assertIn("os", imported_names)
+
     def test_repo_root_contains_the_runtime_dependencies(self):
         self.assertTrue((REPO_ROOT / "Rescale_optimizer").is_dir())
         self.assertTrue((REPO_ROOT / "blb_stage2_rl").is_dir())
