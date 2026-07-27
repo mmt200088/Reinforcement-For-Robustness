@@ -154,6 +154,29 @@ def _stubbed_action_space():
                 sys.modules[name] = module
 
 
+@contextmanager
+def _stubbed_action_io():
+    package = importlib.import_module("blb_stage2_rl")
+    module_name = "blb_stage2_rl.action_io"
+    module_before = sys.modules.get(module_name, _MISSING)
+    attribute_before = package.__dict__.get("action_io", _MISSING)
+
+    with _stubbed_action_space():
+        sys.modules.pop(module_name, None)
+        package.__dict__.pop("action_io", None)
+        try:
+            yield importlib.import_module(module_name)
+        finally:
+            if module_before is _MISSING:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = module_before
+            if attribute_before is _MISSING:
+                package.__dict__.pop("action_io", None)
+            else:
+                package.action_io = attribute_before
+
+
 class ActionVectorBoundsTests(unittest.TestCase):
     @staticmethod
     def _first_k_offset(action_space):
@@ -312,12 +335,22 @@ class ActionVectorBoundsTests(unittest.TestCase):
 
     def test_k_coercion_accepts_k6_and_k7(self):
         np = __import__("numpy")
+        normalize_k = _load_function_standalone(
+            "blb_stage2_rl/action_io.py",
+            "_normalize_truncation_bits",
+            np=np,
+            operator=__import__("operator"),
+        )
+        nearest_k = _load_function_standalone(
+            "blb_stage2_rl/action_io.py",
+            "_nearest_action_index_from_k",
+            K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7),
+        )
         coerce_k = _load_function_standalone(
             "blb_stage2_rl/action_io.py",
             "_coerce_action_index_from_k",
-            K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7),
-            np=np,
-            operator=__import__("operator"),
+            _normalize_truncation_bits=normalize_k,
+            _nearest_action_index_from_k=nearest_k,
         )
 
         self.assertEqual(coerce_k(6), 6)
@@ -325,18 +358,75 @@ class ActionVectorBoundsTests(unittest.TestCase):
 
     def test_k_coercion_rejects_non_integral_and_boolean_values(self):
         np = __import__("numpy")
+        normalize_k = _load_function_standalone(
+            "blb_stage2_rl/action_io.py",
+            "_normalize_truncation_bits",
+            np=np,
+            operator=__import__("operator"),
+        )
+        nearest_k = _load_function_standalone(
+            "blb_stage2_rl/action_io.py",
+            "_nearest_action_index_from_k",
+            K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7),
+        )
         coerce_k = _load_function_standalone(
             "blb_stage2_rl/action_io.py",
             "_coerce_action_index_from_k",
-            K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7),
-            np=np,
-            operator=__import__("operator"),
+            _normalize_truncation_bits=normalize_k,
+            _nearest_action_index_from_k=nearest_k,
         )
 
         for value in (6.9, True, np.bool_(False)):
             with self.subTest(value=value):
                 with self.assertRaisesRegex(ValueError, "integer"):
                     coerce_k(value)
+
+    def test_slots_list_public_entry_accepts_k6_and_k7(self):
+        with _stubbed_action_io() as action_io:
+            k_offset = action_io._build_label_to_offset_map(1)["L0.B1.K"][0]
+            for k, expected_index in ((6, 6), (7, 7)):
+                with self.subTest(k=k):
+                    action_vec, notes = action_io.slots_list_to_action_vec(
+                        [{"label": "L0.B1.K", "truncation_bits": k}],
+                        max_sfs=object(),
+                        num_layers=1,
+                    )
+                    self.assertEqual(int(action_vec[k_offset]), expected_index)
+                    self.assertEqual(notes, [])
+
+    def test_slots_list_public_entry_rejects_non_integral_and_boolean_k(self):
+        np = __import__("numpy")
+        with _stubbed_action_io() as action_io:
+            for value in (6.9, True, np.bool_(False)):
+                with self.subTest(value=value):
+                    with self.assertRaisesRegex(ValueError, "integer"):
+                        action_io.slots_list_to_action_vec(
+                            [{"label": "L0.B1.K", "truncation_bits": value}],
+                            max_sfs=object(),
+                            num_layers=1,
+                        )
+
+    def test_slots_list_public_entry_normalizes_k_exactly_once(self):
+        class StatefulIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 6 if self.calls == 1 else 7
+
+        requested_k = StatefulIndex()
+        with _stubbed_action_io() as action_io:
+            k_offset = action_io._build_label_to_offset_map(1)["L0.B1.K"][0]
+            action_vec, notes = action_io.slots_list_to_action_vec(
+                [{"label": "L0.B1.K", "truncation_bits": requested_k}],
+                max_sfs=object(),
+                num_layers=1,
+            )
+
+        self.assertEqual(requested_k.calls, 1)
+        self.assertEqual(int(action_vec[k_offset]), 6)
+        self.assertEqual(notes, [])
 
     def test_action_payload_preserves_invalid_raw_action_for_shared_validation(self):
         slots_payload_to_action_vec = _load_function_standalone(
