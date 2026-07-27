@@ -380,6 +380,7 @@ class PersistedBoostedOverrideDecodeTest(unittest.TestCase):
             build_block_cfg_from_field_values=build_cfg,
             np=np,
             step_schedule=lambda *_args, **_kwargs: [step],
+            validate_action_vector=lambda raw, _num_layers: np.asarray(raw),
         )
         metadata = {
             "schema_version": "fusion_count_fixed_action_v1",
