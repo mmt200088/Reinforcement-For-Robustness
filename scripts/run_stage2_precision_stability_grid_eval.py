@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run and aggregate the BERT-base MRPC Stage-2 3x7 configuration grid."""
+"""Run and aggregate the BERT-base MRPC Stage-2 3x9 configuration grid."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from pathlib import Path
 import statistics
 import sys
 import time
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -43,7 +43,11 @@ ALL4_GELU = (4,) * NUM_LAYERS
 FIXED_SOFTMAX = (6,) * NUM_LAYERS
 DEFAULT_RECORD_ID = "bert large mrpc 1 20260725"
 FusionProfile = tuple[str, str, tuple[int, int, int]]
-TruncationProfile = tuple[str, str, tuple[int, int, int, int, int]]
+KByBlock = tuple[int, int, int, int, int]
+TruncationProfile = tuple[str, str, KByBlock, Optional[KByBlock]]
+HIGH_K: KByBlock = (11, 10, 10, 12, 11)
+MEDIUM_K: KByBlock = (9, 8, 8, 10, 9)
+LOW_K: KByBlock = (7, 6, 6, 8, 7)
 
 FUSION_PROFILES: tuple[FusionProfile, ...] = (
     ("f000", "Fusion B2/B4/B5=0/0/0", (0, 0, 0)),
@@ -51,24 +55,39 @@ FUSION_PROFILES: tuple[FusionProfile, ...] = (
     ("f111", "Fusion B2/B4/B5=1/1/1", (1, 1, 1)),
 )
 TRUNCATION_PROFILES: tuple[TruncationProfile, ...] = (
-    ("k13", "all K=13", (13, 13, 13, 13, 13)),
-    ("k8", "all K=8", (8, 8, 8, 8, 8)),
-    ("k7", "all K=7", (7, 7, 7, 7, 7)),
-    ("k6", "all K=6", (6, 6, 6, 6, 6)),
+    ("k13", "all K=13", (13, 13, 13, 13, 13), None),
+    ("k8", "all K=8", (8, 8, 8, 8, 8), None),
+    ("k7", "all K=7", (7, 7, 7, 7, 7), None),
+    ("k6", "all K=6", (6, 6, 6, 6, 6), None),
     (
         "high",
         "high precision B1/B2/B3/B4/B5=11/10/10/12/11",
-        (11, 10, 10, 12, 11),
+        HIGH_K,
+        None,
     ),
     (
         "medium",
         "medium precision B1/B2/B3/B4/B5=9/8/8/10/9",
-        (9, 8, 8, 10, 9),
+        MEDIUM_K,
+        None,
     ),
     (
         "low",
         "low precision B1/B2/B3/B4/B5=7/6/6/8/7",
-        (7, 6, 6, 8, 7),
+        LOW_K,
+        None,
+    ),
+    (
+        "odd_high_even_low",
+        "1-based odd layers high precision; even layers low precision",
+        HIGH_K,
+        LOW_K,
+    ),
+    (
+        "odd_medium_even_low",
+        "1-based odd layers medium precision; even layers low precision",
+        MEDIUM_K,
+        LOW_K,
     ),
 )
 
@@ -78,11 +97,44 @@ class GroupSpec:
     name: str
     label: str
     fusion_by_block: tuple[int, int, int]
-    k_by_block: tuple[int, int, int, int, int]
+    k_by_layer: tuple[KByBlock, ...]
 
     @property
     def policy_representable(self) -> bool:
         return self.fusion_by_block[0] == 1 and self.fusion_by_block[2] == 1
+
+    @property
+    def uniform_k_by_block(self) -> KByBlock | None:
+        first = self.k_by_layer[0]
+        if all(values == first for values in self.k_by_layer[1:]):
+            return first
+        return None
+
+    @property
+    def k_summary(self) -> str:
+        uniform = self.uniform_k_by_block
+        if uniform is not None:
+            return "B1/B2/B3/B4/B5=" + "/".join(
+                str(value) for value in uniform
+            )
+        odd = self.k_by_layer[0]
+        even = self.k_by_layer[1] if len(self.k_by_layer) > 1 else odd
+        odd_layers = "/".join(
+            str(layer_idx + 1)
+            for layer_idx in range(len(self.k_by_layer))
+            if layer_idx % 2 == 0
+        )
+        even_layers = "/".join(
+            str(layer_idx + 1)
+            for layer_idx in range(len(self.k_by_layer))
+            if layer_idx % 2 == 1
+        )
+        return (
+            f"odd layers {odd_layers}="
+            + "/".join(str(value) for value in odd)
+            + f"; even layers {even_layers}="
+            + "/".join(str(value) for value in even)
+        )
 
 
 def build_group_specs(*, num_layers: int = NUM_LAYERS) -> tuple[GroupSpec, ...]:
@@ -94,10 +146,25 @@ def build_group_specs(*, num_layers: int = NUM_LAYERS) -> tuple[GroupSpec, ...]:
             name=f"{fusion_key}_{k_key}",
             label=f"{fusion_label}; {k_label}",
             fusion_by_block=tuple(int(value) for value in fusion_values),
-            k_by_block=tuple(int(value) for value in k_values),
+            k_by_layer=tuple(
+                tuple(
+                    int(value)
+                    for value in (
+                        odd_k_values
+                        if layer_idx % 2 == 0 or even_k_values is None
+                        else even_k_values
+                    )
+                )
+                for layer_idx in range(int(num_layers))
+            ),
         )
         for fusion_key, fusion_label, fusion_values in FUSION_PROFILES
-        for k_key, k_label, k_values in TRUNCATION_PROFILES
+        for (
+            k_key,
+            k_label,
+            odd_k_values,
+            even_k_values,
+        ) in TRUNCATION_PROFILES
     )
 
 
@@ -150,9 +217,18 @@ def build_policy_action_matrix(
         raise ValueError(
             f"{group.name}: fusion profile is not policy-representable"
         )
-    k_indices = tuple(_k_index(k_value) for k_value in group.k_by_block)
-    row = (int(group.fusion_by_block[1]), *k_indices)
-    return tuple(row for _ in range(int(num_layers)))
+    if len(group.k_by_layer) != int(num_layers):
+        raise ValueError(
+            f"{group.name}: K schedule has {len(group.k_by_layer)} layers, "
+            f"expected {int(num_layers)}"
+        )
+    return tuple(
+        (
+            int(group.fusion_by_block[1]),
+            *(_k_index(k_value) for k_value in layer_values),
+        )
+        for layer_values in group.k_by_layer
+    )
 
 
 def apply_k_profile_to_full_vector(
@@ -163,13 +239,33 @@ def apply_k_profile_to_full_vector(
         per_layer_fields: Sequence[tuple[int, str, str]] | None = None,
         ) -> np.ndarray:
     profile = tuple(int(value) for value in k_by_block)
-    if len(profile) != 5:
-        raise ValueError(f"k_by_block must contain B1-B5, got {profile}")
+    return apply_k_schedule_to_full_vector(
+        baseline_action_vec,
+        k_by_layer=tuple(profile for _ in range(int(num_layers))),
+        num_layers=num_layers,
+        per_layer_fields=per_layer_fields,
+    )
+
+
+def apply_k_schedule_to_full_vector(
+        baseline_action_vec: Sequence[int],
+        *,
+        k_by_layer: Sequence[Sequence[int]],
+        num_layers: int = NUM_LAYERS,
+        per_layer_fields: Sequence[tuple[int, str, str]] | None = None,
+        ) -> np.ndarray:
+    schedule = tuple(
+        tuple(int(value) for value in layer_values)
+        for layer_values in k_by_layer
+    )
+    if len(schedule) != int(num_layers):
+        raise ValueError(
+            f"k_by_layer must contain {int(num_layers)} layers, "
+            f"got {len(schedule)}"
+        )
+    if any(len(layer_values) != 5 for layer_values in schedule):
+        raise ValueError("every k_by_layer row must contain B1-B5")
     result = np.asarray(baseline_action_vec, dtype=int).reshape(-1).copy()
-    k_indices = {
-        block_idx: _k_index(profile[block_idx - 1])
-        for block_idx in range(1, 6)
-    }
     if per_layer_fields is None:
         from blb_stage2_rl.action_space import per_layer_field_offsets
 
@@ -184,6 +280,10 @@ def apply_k_profile_to_full_vector(
         )
     seen_blocks = set()
     for layer_idx in range(int(num_layers)):
+        k_indices = {
+            block_idx: _k_index(schedule[layer_idx][block_idx - 1])
+            for block_idx in range(1, 6)
+        }
         for field_offset, (block_idx, _field_name, kind) in enumerate(fields):
             if kind != "K":
                 continue
@@ -371,22 +471,48 @@ def _trial_payload(base_env: Any, wall_seconds: float) -> tuple[dict, list[int]]
     return packed, seeds
 
 
+def _normalize_expected_k_schedule(
+        *,
+        expected_k_by_layer: Sequence[Sequence[int]] | None,
+        expected_k_by_block: Sequence[int] | None,
+        num_layers: int,
+        ) -> tuple[KByBlock, ...]:
+    if (expected_k_by_layer is None) == (expected_k_by_block is None):
+        raise ValueError(
+            "provide exactly one of expected_k_by_layer or "
+            "expected_k_by_block"
+        )
+    if expected_k_by_layer is None:
+        profile = tuple(int(value) for value in expected_k_by_block or ())
+        schedule = tuple(profile for _ in range(int(num_layers)))
+    else:
+        schedule = tuple(
+            tuple(int(value) for value in layer_values)
+            for layer_values in expected_k_by_layer
+        )
+    if len(schedule) != int(num_layers):
+        raise ValueError(
+            f"expected K schedule has {len(schedule)} layers, "
+            f"expected {int(num_layers)}"
+        )
+    if any(len(layer_values) != 5 for layer_values in schedule):
+        raise ValueError("every expected K row must contain B1-B5")
+    return schedule
+
+
 def _k_evidence(
         action_vec: Sequence[int],
         runtime: chain.Stage2Runtime,
         *,
-        expected_k_by_block: Sequence[int],
+        expected_k_by_layer: Sequence[Sequence[int]],
         ) -> list[dict]:
     from blb_stage2_rl.action_space import describe_action_vector
 
-    expected = {
-        block_idx: int(value)
-        for block_idx, value in enumerate(expected_k_by_block, start=1)
-    }
-    if set(expected) != set(range(1, 6)):
-        raise ValueError(
-            f"expected_k_by_block must cover B1-B5, got {expected}"
-        )
+    schedule = _normalize_expected_k_schedule(
+        expected_k_by_layer=expected_k_by_layer,
+        expected_k_by_block=None,
+        num_layers=NUM_LAYERS,
+    )
     description = describe_action_vector(
         np.asarray(action_vec, dtype=int),
         max_sfs=runtime.calibrated_context.max_sfs,
@@ -412,11 +538,12 @@ def _k_evidence(
         )
     wrong = [
         row for row in rows
-        if row["k_value"] != expected[int(row["block"])]
+        if row["k_value"]
+        != schedule[int(row["layer"])][int(row["block"]) - 1]
     ]
     if wrong:
         raise RuntimeError(
-            "K evidence differs from the requested per-block profile: "
+            "K evidence differs from the requested per-layer schedule: "
             f"{wrong[:3]}"
         )
     return rows
@@ -425,18 +552,16 @@ def _k_evidence(
 def installed_k_evidence(
         decoded: Any,
         *,
-        expected_k_by_block: Sequence[int],
+        expected_k_by_layer: Sequence[Sequence[int]] | None = None,
+        expected_k_by_block: Sequence[int] | None = None,
         num_layers: int = NUM_LAYERS,
         expected_backend: str = "binary",
         ) -> list[dict]:
-    expected = {
-        block_idx: int(value)
-        for block_idx, value in enumerate(expected_k_by_block, start=1)
-    }
-    if set(expected) != set(range(1, 6)):
-        raise ValueError(
-            f"expected_k_by_block must cover B1-B5, got {expected}"
-        )
+    schedule = _normalize_expected_k_schedule(
+        expected_k_by_layer=expected_k_by_layer,
+        expected_k_by_block=expected_k_by_block,
+        num_layers=num_layers,
+    )
     rows = []
     for layer_idx in range(int(num_layers)):
         for block_idx in range(1, 6):
@@ -447,11 +572,12 @@ def installed_k_evidence(
                 )
             cfg = cfgs[layer_idx]
             actual_k = getattr(cfg, "output_truncation_k", None)
-            if actual_k is None or int(actual_k) != expected[block_idx]:
+            expected_k = schedule[layer_idx][block_idx - 1]
+            if actual_k is None or int(actual_k) != expected_k:
                 raise RuntimeError(
                     "installed K mismatch at "
                     f"L{layer_idx}.B{block_idx}: {actual_k!r} "
-                    f"!= {expected[block_idx]}"
+                    f"!= {expected_k}"
                 )
             backend = str(
                 getattr(cfg, "output_truncation_mode", "") or ""
@@ -507,6 +633,25 @@ def _runtime_gate(info: Mapping[str, Any], *, expected_fusion: int) -> dict:
     }
 
 
+def _k_group_payload(group: GroupSpec) -> dict:
+    uniform = group.uniform_k_by_block
+    return {
+        "k_summary": group.k_summary,
+        "k_by_block": (
+            {
+                str(block_idx): int(value)
+                for block_idx, value in enumerate(uniform, start=1)
+            }
+            if uniform is not None
+            else None
+        ),
+        "k_by_layer": [
+            [int(value) for value in layer_values]
+            for layer_values in group.k_by_layer
+        ],
+    }
+
+
 def _run_control_group(
         runtime: chain.Stage2Runtime,
         *,
@@ -516,9 +661,9 @@ def _run_control_group(
     if group.policy_representable:
         raise ValueError(f"{group.name}: expected a fusion=0 control group")
     base_env = runtime.base_env
-    action_vec = apply_k_profile_to_full_vector(
+    action_vec = apply_k_schedule_to_full_vector(
         runtime.calibrated_context.baseline_action_vec,
-        k_by_block=group.k_by_block,
+        k_by_layer=group.k_by_layer,
     )
     base_env.clear_installed_blb()
     base_env.fixed_eval_trial_metrics = None
@@ -534,11 +679,11 @@ def _run_control_group(
     action_k_rows = _k_evidence(
         action_vec,
         runtime,
-        expected_k_by_block=group.k_by_block,
+        expected_k_by_layer=group.k_by_layer,
     )
     installed_k_rows = installed_k_evidence(
         info.get("decoded"),
-        expected_k_by_block=group.k_by_block,
+        expected_k_by_layer=group.k_by_layer,
         expected_backend=str(base_env.env_cfg.truncation_backend),
     )
     base_env.clear_installed_blb()
@@ -549,10 +694,7 @@ def _run_control_group(
         "policy_representable": False,
         "expected_fusion_by_block": {"2": 0, "4": 0, "5": 0},
         "actual_fusion_by_block": {"2": 0, "4": 0, "5": 0},
-        "k_by_block": {
-            str(block_idx): int(value)
-            for block_idx, value in enumerate(group.k_by_block, start=1)
-        },
+        **_k_group_payload(group),
         "effective_k_count": len(installed_k_rows),
         "action_k_choices": action_k_rows,
         "k_choices": installed_k_rows,
@@ -600,11 +742,11 @@ def _run_candidate_group(
     action_k_rows = _k_evidence(
         env.pending_full_vector,
         runtime,
-        expected_k_by_block=group.k_by_block,
+        expected_k_by_layer=group.k_by_layer,
     )
     installed_k_rows = installed_k_evidence(
         info.get("decoded"),
-        expected_k_by_block=group.k_by_block,
+        expected_k_by_layer=group.k_by_layer,
         expected_backend=str(base_env.env_cfg.truncation_backend),
     )
 
@@ -656,10 +798,7 @@ def _run_candidate_group(
         "actual_fusion_by_block": {
             str(block): int(value) for block, value in fusion_by_block.items()
         },
-        "k_by_block": {
-            str(block_idx): int(value)
-            for block_idx, value in enumerate(group.k_by_block, start=1)
-        },
+        **_k_group_payload(group),
         "effective_k_count": len(installed_k_rows),
         "action_k_choices": action_k_rows,
         "k_choices": installed_k_rows,
@@ -717,7 +856,7 @@ def run_seed(args: argparse.Namespace) -> int:
     for group in GROUP_SPECS:
         print(
             f"[grid] {group.name}: fusion={group.fusion_by_block} "
-            f"K={group.k_by_block}",
+            f"K={group.k_summary}",
             flush=True,
         )
         if group.policy_representable:
@@ -750,7 +889,7 @@ def run_seed(args: argparse.Namespace) -> int:
             )
 
     payload = {
-        "schema_version": "stage2_precision_stability_grid_seed_v2",
+        "schema_version": "stage2_precision_stability_grid_seed_v3",
         "generated_at_utc": _utc_now(),
         "git_commit": _git_value("rev-parse", "HEAD"),
         "git_tree": _git_value("rev-parse", "HEAD^{tree}"),
@@ -847,6 +986,11 @@ def _aggregate_group(seed_payloads: Sequence[Mapping[str, Any]], name: str) -> d
             payload["groups"][name]["actual_fusion_by_block"] != fusion_by_block
             for payload in seed_payloads[1:]):
         raise RuntimeError(f"{name}: realized fusion changed across seeds")
+    k_by_layer = first["k_by_layer"]
+    if any(
+            payload["groups"][name]["k_by_layer"] != k_by_layer
+            for payload in seed_payloads[1:]):
+        raise RuntimeError(f"{name}: requested K schedule changed across seeds")
     return {
         "name": name,
         "label": first["label"],
@@ -858,7 +1002,13 @@ def _aggregate_group(seed_payloads: Sequence[Mapping[str, Any]], name: str) -> d
         "path": first["path"],
         "policy_representable": bool(first["policy_representable"]),
         "actual_fusion_by_block": fusion_by_block,
-        "k_by_block": dict(first["k_by_block"]),
+        "k_summary": str(first["k_summary"]),
+        "k_by_block": (
+            dict(first["k_by_block"])
+            if first["k_by_block"] is not None
+            else None
+        ),
+        "k_by_layer": k_by_layer,
         "effective_k_count": int(first["effective_k_count"]),
         "k_choices": k_choices,
         "fingerprints": fingerprints,
@@ -973,13 +1123,6 @@ def _pass(flag: bool) -> str:
     return '<span class="pass">PASS</span>' if flag else '<span class="fail">FAIL</span>'
 
 
-def _format_k_profile(k_by_block: Mapping[str, Any]) -> str:
-    return "/".join(
-        str(int(k_by_block[str(block_idx)]))
-        for block_idx in range(1, 6)
-    )
-
-
 def _render_html(payload: Mapping[str, Any]) -> str:
     groups = payload["groups"]
     constraints = payload["constraint_reference"]
@@ -1000,7 +1143,7 @@ def _render_html(payload: Mapping[str, Any]) -> str:
             f"<td>{_fmt(stats['s_mean'])} +/- {_fmt(stats['s_std'])}<br>"
             f"<small>within-seed std mean {_fmt(stats['s_within_seed_std_mean'])}</small></td>"
             f"<td>B2={fusion.get('2', 0)}, B4={fusion.get('4', 0)}, B5={fusion.get('5', 0)}</td>"
-            f"<td>B1/B2/B3/B4/B5={_format_k_profile(group['k_by_block'])}"
+            f"<td>{html.escape(group['k_summary'])}"
             f"<br><small>{group['effective_k_count']} installed slots</small></td>"
             f"<td>{_pass(gate['precision_all_pass'])}</td>"
             f"<td>{_pass(gate['stability_all_pass'])}</td>"
@@ -1055,8 +1198,8 @@ def _render_html(payload: Mapping[str, Any]) -> str:
             f"<td><code>{html.escape(name)}</code></td>"
             f"<td>{html.escape(group['path'])}</td>"
             f"<td>B2={fusion.get('2', 0)}, B4={fusion.get('4', 0)}, B5={fusion.get('5', 0)}</td>"
-            f"<td>B1/B2/B3/B4/B5={_format_k_profile(group['k_by_block'])}"
-            f" x 12 layers ({group['effective_k_count']} slots)</td>"
+            f"<td>{html.escape(group['k_summary'])}"
+            f" ({group['effective_k_count']} slots)</td>"
             f"<td>{_pass(group['all_runtime_gates_passed'])}</td>"
             f"<td>{len(group['fingerprints'])} unique across seeds</td>"
             "</tr>"
@@ -1074,7 +1217,7 @@ def _render_html(payload: Mapping[str, Any]) -> str:
             layer_rows.append(
                 "<tr>"
                 f"<td><code>{html.escape(name)}</code></td>"
-                f"<td>L{layer_idx}</td>"
+                f"<td>L{layer_idx + 1}</td>"
                 f"<td>"
                 f"{int(fusion.get('2', 0) > 0)}/"
                 f"{int(fusion.get('4', 0) > 0)}/"
@@ -1092,7 +1235,7 @@ def _render_html(payload: Mapping[str, Any]) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stage-2 21-group precision and stability evaluation</title>
+<title>Stage-2 27-group precision and stability evaluation</title>
 <style>
 :root{{--ink:#18212b;--muted:#536273;--line:#cbd5df;--head:#e8eef4;--band:#f4f7fa;--blue:#135fa7;--green:#176a37;--red:#a12b2b}}
 *{{box-sizing:border-box}}body{{margin:0;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#fff}}
@@ -1106,12 +1249,12 @@ code{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}}sm
 </style>
 </head>
 <body>
-<header><h1>Stage-2 21 组 Fusion/K：精度与稳定性</h1>
+<header><h1>Stage-2 27 组 Fusion/K：精度与稳定性</h1>
 <div class="meta">BERT-base MRPC | GELU=[4]x12 | Softmax=[6]x12 |
 validation_full={payload['validation_full_size']} | 5 seeds x 5 trials/group |
 generated {html.escape(payload['generated_at_utc'])}</div></header>
 <main>
-<div class="note"><strong>实验口径。</strong>21 组使用同一组配对 trial seeds。
+<div class="note"><strong>实验口径。</strong>27 组使用同一组配对 trial seeds。
 Fusion 1/0/1 与 1/1/1 走生产 <code>BLBStage2LayerwiseEnv</code>；
 Fusion 0/0/0 从 calibrated baseline action vector 只改 60 个有效 K 槽。
 二者最终进入同一 <code>BLBStage2Env.step</code>、共用 optimizer write-back
@@ -1156,7 +1299,7 @@ Accuracy/F1 >= baseline x 0.999。稳定性比值采用五个 seed 内 std 的�
 <tbody>{''.join(audit_rows)}</tbody></table>
 
 <h2>逐层动作审计（实际送入模型）</h2>
-<details><summary>展开 21 组 x 12 层，共 252 行</summary>
+<details><summary>展开 27 组 x 12 层，共 324 行</summary>
 <table><thead><tr><th>组别</th><th>层</th><th>Fusion B2/B4/B5</th>
 <th>K B1</th><th>K B2</th><th>K B3</th><th>K B4</th><th>K B5</th></tr></thead>
 <tbody>{''.join(layer_rows)}</tbody></table>
@@ -1196,7 +1339,7 @@ def aggregate(args: argparse.Namespace) -> int:
         if name != "f000_k13"
     ]
     payload = {
-        "schema_version": "stage2_precision_stability_grid_aggregate_v2",
+        "schema_version": "stage2_precision_stability_grid_aggregate_v3",
         "generated_at_utc": _utc_now(),
         "git_commit": next(iter(commits)),
         "git_tree": next(iter(trees)),
@@ -1219,8 +1362,8 @@ def aggregate(args: argparse.Namespace) -> int:
     }
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    json_path = output_dir / "stage2_21_group_precision_stability.json"
-    html_path = output_dir / "stage2_21_group_precision_stability.html"
+    json_path = output_dir / "stage2_27_group_precision_stability.json"
+    html_path = output_dir / "stage2_27_group_precision_stability.html"
     write_json_file(json_path, payload)
     html_path.write_text(_render_html(payload), encoding="utf-8")
     print(json.dumps({
