@@ -1661,7 +1661,7 @@ class RLDataPointWriterTest(unittest.TestCase):
             checkpoint_pos,
         )
         recovery_pos = source.index(
-            "raise_if_elastic_gpu_restart_requested()",
+            "raise_if_elastic_gpu_restart_requested(",
             deferred_pos,
         )
         self.assertLess(checkpoint_pos, deferred_pos)
