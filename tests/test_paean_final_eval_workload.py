@@ -12,6 +12,12 @@ from Paean.run_final_eval import configuration_lines, estimate_workload
 
 
 class FinalEvalWorkloadEstimateTest(unittest.TestCase):
+    def test_rl_final_eval_command_disables_stage2_training_episode_limit(self):
+        command = run_final_eval.build_command(FinalEvalSettings(algorithm="rl"))
+
+        stage2_index = command.index("--stage2_rl_episodes")
+        self.assertEqual(command[stage2_index + 1], "0")
+
     def test_batch_manifest_counts_candidates_in_one_launcher_process(self):
         with tempfile.TemporaryDirectory() as td:
             manifest = Path(td) / "batch.json"

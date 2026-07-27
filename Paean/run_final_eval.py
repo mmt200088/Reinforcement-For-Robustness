@@ -163,7 +163,7 @@ def build_command(settings: FinalEvalSettings) -> List[str]:
             "--stage1_rl_episodes",
             "51000",
             "--stage2_rl_episodes",
-            "40000",
+            "0",
             "--stage1_rl_episodes_specified",
             "false",
             "--stage2_rl_episodes_specified",
