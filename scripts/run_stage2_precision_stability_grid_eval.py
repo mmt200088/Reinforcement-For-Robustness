@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run and aggregate the BERT-base MRPC Stage-2 3x6 configuration grid."""
+"""Run and aggregate the BERT-base MRPC Stage-2 3x7 configuration grid."""
 
 from __future__ import annotations
 
@@ -53,6 +53,7 @@ FUSION_PROFILES: tuple[FusionProfile, ...] = (
 TRUNCATION_PROFILES: tuple[TruncationProfile, ...] = (
     ("k13", "all K=13", (13, 13, 13, 13, 13)),
     ("k8", "all K=8", (8, 8, 8, 8, 8)),
+    ("k7", "all K=7", (7, 7, 7, 7, 7)),
     ("k6", "all K=6", (6, 6, 6, 6, 6)),
     (
         "high",
@@ -749,7 +750,7 @@ def run_seed(args: argparse.Namespace) -> int:
             )
 
     payload = {
-        "schema_version": "stage2_precision_stability_grid_seed_v1",
+        "schema_version": "stage2_precision_stability_grid_seed_v2",
         "generated_at_utc": _utc_now(),
         "git_commit": _git_value("rev-parse", "HEAD"),
         "git_tree": _git_value("rev-parse", "HEAD^{tree}"),
@@ -1091,7 +1092,7 @@ def _render_html(payload: Mapping[str, Any]) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stage-2 18-group precision and stability evaluation</title>
+<title>Stage-2 21-group precision and stability evaluation</title>
 <style>
 :root{{--ink:#18212b;--muted:#536273;--line:#cbd5df;--head:#e8eef4;--band:#f4f7fa;--blue:#135fa7;--green:#176a37;--red:#a12b2b}}
 *{{box-sizing:border-box}}body{{margin:0;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#fff}}
@@ -1105,12 +1106,12 @@ code{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}}sm
 </style>
 </head>
 <body>
-<header><h1>Stage-2 18 组 Fusion/K：精度与稳定性</h1>
+<header><h1>Stage-2 21 组 Fusion/K：精度与稳定性</h1>
 <div class="meta">BERT-base MRPC | GELU=[4]x12 | Softmax=[6]x12 |
 validation_full={payload['validation_full_size']} | 5 seeds x 5 trials/group |
 generated {html.escape(payload['generated_at_utc'])}</div></header>
 <main>
-<div class="note"><strong>实验口径。</strong>18 组使用同一组配对 trial seeds。
+<div class="note"><strong>实验口径。</strong>21 组使用同一组配对 trial seeds。
 Fusion 1/0/1 与 1/1/1 走生产 <code>BLBStage2LayerwiseEnv</code>；
 Fusion 0/0/0 从 calibrated baseline action vector 只改 60 个有效 K 槽。
 二者最终进入同一 <code>BLBStage2Env.step</code>、共用 optimizer write-back
@@ -1155,7 +1156,7 @@ Accuracy/F1 >= baseline x 0.999。稳定性比值采用五个 seed 内 std 的�
 <tbody>{''.join(audit_rows)}</tbody></table>
 
 <h2>逐层动作审计（实际送入模型）</h2>
-<details><summary>展开 18 组 x 12 层，共 216 行</summary>
+<details><summary>展开 21 组 x 12 层，共 252 行</summary>
 <table><thead><tr><th>组别</th><th>层</th><th>Fusion B2/B4/B5</th>
 <th>K B1</th><th>K B2</th><th>K B3</th><th>K B4</th><th>K B5</th></tr></thead>
 <tbody>{''.join(layer_rows)}</tbody></table>
@@ -1195,7 +1196,7 @@ def aggregate(args: argparse.Namespace) -> int:
         if name != "f000_k13"
     ]
     payload = {
-        "schema_version": "stage2_precision_stability_grid_aggregate_v1",
+        "schema_version": "stage2_precision_stability_grid_aggregate_v2",
         "generated_at_utc": _utc_now(),
         "git_commit": next(iter(commits)),
         "git_tree": next(iter(trees)),
@@ -1218,8 +1219,8 @@ def aggregate(args: argparse.Namespace) -> int:
     }
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    json_path = output_dir / "stage2_18_group_precision_stability.json"
-    html_path = output_dir / "stage2_18_group_precision_stability.html"
+    json_path = output_dir / "stage2_21_group_precision_stability.json"
+    html_path = output_dir / "stage2_21_group_precision_stability.html"
     write_json_file(json_path, payload)
     html_path.write_text(_render_html(payload), encoding="utf-8")
     print(json.dumps({

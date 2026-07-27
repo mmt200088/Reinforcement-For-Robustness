@@ -1,4 +1,4 @@
-"""Contracts for the 18-group Stage-2 precision/stability evaluation."""
+"""Contracts for the 21-group Stage-2 precision/stability evaluation."""
 from __future__ import annotations
 
 import ast
@@ -38,28 +38,29 @@ class Stage2PrecisionStabilityGridTest(unittest.TestCase):
         self.assertTrue((REPO_ROOT / "Rescale_optimizer").is_dir())
         self.assertTrue((REPO_ROOT / "blb_stage2_rl").is_dir())
 
-    def test_builds_requested_three_by_six_grid(self):
+    def test_builds_requested_three_by_seven_grid(self):
         groups = build_group_specs(num_layers=12)
 
         self.assertEqual(len(FUSION_PROFILES), 3)
-        self.assertEqual(len(TRUNCATION_PROFILES), 6)
-        self.assertEqual(len(groups), 18)
+        self.assertEqual(len(TRUNCATION_PROFILES), 7)
+        self.assertEqual(len(groups), 21)
         self.assertEqual(
-            [group.fusion_by_block for group in groups[::6]],
+            [group.fusion_by_block for group in groups[::7]],
             [(0, 0, 0), (1, 0, 1), (1, 1, 1)],
         )
         self.assertEqual(
-            [group.k_by_block for group in groups[:6]],
+            [group.k_by_block for group in groups[:7]],
             [
                 (13, 13, 13, 13, 13),
                 (8, 8, 8, 8, 8),
+                (7, 7, 7, 7, 7),
                 (6, 6, 6, 6, 6),
                 (11, 10, 10, 12, 11),
                 (9, 8, 8, 10, 9),
                 (7, 6, 6, 8, 7),
             ],
         )
-        self.assertEqual(len({group.name for group in groups}), 18)
+        self.assertEqual(len({group.name for group in groups}), 21)
 
     def test_policy_matrix_uses_exact_k6_k7_indices(self):
         group = next(
