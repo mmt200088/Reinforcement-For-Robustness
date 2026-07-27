@@ -259,10 +259,13 @@ def consume_elastic_gpu_restart_request() -> Optional[Dict[str, Any]]:
     return payload
 
 
-def raise_if_elastic_gpu_restart_requested() -> None:
-    """Raise only after the caller has committed its PPO transaction."""
+def raise_if_elastic_gpu_restart_requested(
+        *,
+        work_remaining: bool = True,
+        ) -> None:
+    """Raise after a committed PPO transaction only when training will continue."""
     payload = consume_elastic_gpu_restart_request()
-    if payload is None:
+    if payload is None or not bool(work_remaining):
         return
     raise ElasticGPURestartRequested(
         reason=str(payload.get("reason", "device_recovery")),

@@ -5304,7 +5304,15 @@ def _run_layerwise_training_branch(
             )
             if deferred_gpu_failure is not None:
                 raise deferred_gpu_failure
-        raise_if_elastic_gpu_restart_requested()
+        raise_if_elastic_gpu_restart_requested(
+            work_remaining=(
+                not bool(record.converged)
+                and (
+                    int(planned_total_episodes) == 0
+                    or int(completed) < int(planned_total_episodes)
+                )
+            ),
+        )
         status.update_after_ppo_update(
             int(ppo_update_counter),
             {
