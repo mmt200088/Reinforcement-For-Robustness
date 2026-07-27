@@ -152,10 +152,13 @@ class BLBF0ScanTests(unittest.TestCase):
         self.assertEqual(list(candidates), [0, 1, 2, 3, 4])
 
     def test_safe_allowed_k_indices_uses_shared_int_parser(self):
-        from scripts.blb_f0_scan_feasible_domain import _safe_allowed_k_indices
+        from blb_stage2_rl.truncation_levels import K_LEVELS
+        from scripts import blb_f0_scan_feasible_domain as scan
 
         with mock.patch.dict("os.environ", {"BLB_TRUNCATION_K_LEVELS": "8; 13; 12"}, clear=False):
-            self.assertEqual(_safe_allowed_k_indices(), [1, 2])
+            self.assertEqual(scan._safe_allowed_k_indices(), [1, 2])
+
+        self.assertEqual(tuple(getattr(scan, "K_LEVELS", ())), tuple(K_LEVELS))
 
     def test_main_streams_stdout_json_without_json_dumps_string(self):
         source = (Path(__file__).resolve().parents[1] / "scripts" / "blb_f0_scan_feasible_domain.py").read_text(

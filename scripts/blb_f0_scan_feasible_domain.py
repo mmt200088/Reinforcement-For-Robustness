@@ -31,8 +31,7 @@ from blb_stage2_rl.candidate_store import (  # noqa: E402
     f0_sort_key,
     raw_action_hash,
 )
-
-_DEFAULT_K_LEVELS_LEGACY_COMPAT = (8, 9, 11, 13, 10, 12)
+from blb_stage2_rl.truncation_levels import K_LEVELS  # noqa: E402
 
 
 def _file_sha256(path: Path) -> str | None:
@@ -140,9 +139,9 @@ def _safe_allowed_k_indices() -> List[int]:
     if raw:
         k_levels = tuple(parse_optional_int_list(raw) or ())
     else:
-        k_levels = _DEFAULT_K_LEVELS_LEGACY_COMPAT
+        k_levels = K_LEVELS
     if not k_levels:
-        k_levels = _DEFAULT_K_LEVELS_LEGACY_COMPAT
+        k_levels = K_LEVELS
     return [idx for idx, value in enumerate(k_levels) if int(value) in allowed_values]
 
 
