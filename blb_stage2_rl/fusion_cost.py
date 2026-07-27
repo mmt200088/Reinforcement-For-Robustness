@@ -6,10 +6,10 @@ This is the redesign agreed 2026-06-03: instead of the aggregate
 weighted saving ratio (user ratio ``block1:block2:block4:block5:truncation =
 80:150:130:40:50``). ``total_bits`` is dropped from the reward scalar entirely.
 
-The module is **pure / torch-free** (only dataclasses + arithmetic) so it can be
-unit-tested locally without the heavy ``blb_stage2_rl`` package import (which pulls
-torch). It does not import any sibling module; callers pass pre-extracted per-block
-choices.
+The module is **pure / torch-free** (dataclasses + arithmetic plus the shared
+truncation-domain constants). It imports only the torch-free ``truncation_levels``
+sibling, with package, legacy top-level, and standalone file-load compatibility;
+callers pass pre-extracted per-block choices.
 
 Semantics (see ``docs/superpowers/specs/2026-06-03-stage2-fusion-count-reward-design.md``):
 
@@ -28,12 +28,39 @@ does not dilute the normalization.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import importlib.util
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 
-# Truncation-bit range (K_LEVELS = (8, 9, 11, 13, 10, 12); baseline K = 13 = max).
-K_MAX_BITS = 13
-K_MIN_BITS = 8
+
+def _load_truncation_bounds() -> tuple[int, int]:
+    if __package__:
+        from .truncation_levels import K_MAX_BITS, K_MIN_BITS
+
+        return K_MAX_BITS, K_MIN_BITS
+
+    try:
+        from truncation_levels import K_MAX_BITS, K_MIN_BITS
+    except ModuleNotFoundError as exc:
+        if exc.name != "truncation_levels":
+            raise
+    else:
+        return K_MAX_BITS, K_MIN_BITS
+
+    sibling = Path(__file__).with_name("truncation_levels.py")
+    spec = importlib.util.spec_from_file_location(
+        f"_{Path(__file__).stem}_standalone_truncation_levels",
+        sibling,
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load truncation bounds from {sibling}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.K_MAX_BITS, module.K_MIN_BITS
+
+
+K_MAX_BITS, K_MIN_BITS = _load_truncation_bounds()
 
 
 @dataclass(frozen=True)
