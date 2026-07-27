@@ -17,11 +17,15 @@ import numpy as np
 try:
     from .truncation_levels import (
         K_LEVELS,
+        K_MAX_BITS,
+        K_MIN_BITS,
         validate_exact_k_domain,
     )
 except ImportError:  # pragma: no cover - legacy top-level import compatibility
     from truncation_levels import (
         K_LEVELS,
+        K_MAX_BITS,
+        K_MIN_BITS,
         validate_exact_k_domain,
     )
 
@@ -67,7 +71,7 @@ def max_compute_saving_units(num_layers: int) -> float:
 def max_communication_saving_units(num_layers: int) -> float:
     """Maximum removed K bits across all active per-block K slots."""
     layers = _validated_num_layers(num_layers)
-    return float(5 * layers) * (13.0 - 8.0)
+    return float(5 * layers) * float(K_MAX_BITS - K_MIN_BITS)
 
 
 # Backward-compatible BERT-base constants. New callers with a model instance
@@ -458,7 +462,7 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
             float(fusion) / compute_denominator,
         ]
         current_slot_contributions.extend(
-            (13.0 - float(action.k_by_block[block_idx]))
+            (float(K_MAX_BITS) - float(action.k_by_block[block_idx]))
             / communication_denominator
             if block_idx in action.k_by_block else 0.0
             for block_idx in _BLOCK_ORDER
@@ -470,7 +474,7 @@ def compute_variable_cost(actions: Sequence[LayerwiseDecodedAction]) -> Variable
             f"expected {active_k_slots}"
         )
     fusion_count = int(sum(fusion_values))
-    removed_k_bits = int(sum(13 - k for k in k_values))
+    removed_k_bits = int(sum(K_MAX_BITS - k for k in k_values))
     compute_saving = float(fusion_count) / compute_denominator
     communication_saving = (
         float(removed_k_bits) / communication_denominator

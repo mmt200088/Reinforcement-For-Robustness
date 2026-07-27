@@ -90,7 +90,7 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
         self.assertAlmostEqual(fusion.compute_saving, 1.0 / 12.0)
         self.assertEqual(fusion.communication_saving, 0.0)
         self.assertEqual(communication.compute_saving, 0.0)
-        self.assertAlmostEqual(communication.communication_saving, 2.0 / 300.0)
+        self.assertAlmostEqual(communication.communication_saving, 2.0 / 420.0)
         self.assertEqual(fusion.robust_floor, 0.0)
         self.assertEqual(communication.robust_floor, 0.0)
         self.assertNotAlmostEqual(
@@ -103,10 +103,10 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
             _layerwise_actions(block4_fusion=1, k=13)
         )
         communication_only = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=0, k=8)
+            _layerwise_actions(block4_fusion=0, k=6)
         )
         balanced = layerwise_action.compute_variable_cost(
-            _layerwise_actions(block4_fusion=1, k=8)
+            _layerwise_actions(block4_fusion=1, k=6)
         )
 
         self.assertEqual(compute_only.robust_floor, 0.0)
@@ -135,9 +135,9 @@ class LayerwiseVariableCostContractTest(unittest.TestCase):
         self.assertEqual(changed, 60)
 
     def test_actual_k_values_not_category_order_drive_cost(self):
-        actions = _layerwise_actions(block4_fusion=0, k=8)
+        actions = _layerwise_actions(block4_fusion=0, k=6)
         expected = layerwise_action.compute_variable_cost(actions)
-        reordered = (13, 8, 10, 9, 11, 12)
+        reordered = (13, 8, 10, 9, 11, 12, 6, 7)
 
         with mock.patch.object(layerwise_action, "K_LEVELS", reordered):
             actual = layerwise_action.compute_variable_cost(actions)
