@@ -216,7 +216,7 @@ reward = compute_reward(metrics, opt_signals, action, max_action_baseline)
 | `M` / `S`  | mask / 标量 encode (γ, 1/D, ones, 1/2^n) | 3      | sf ∈ {max-4, max-2, max} |
 | `R`        | rescale                                   | 4      | sf ∈ {max-6, max-4, max-2, max} |
 | `F`        | fresh                                     | 5      | sf ∈ {max-8, max-6, max-4, max-2, max} |
-| `K`        | 末尾 truncation 保留位数                  | 4      | k ∈ {8, 9, 11, 13}    |
+| `K`        | 末尾 truncation 保留位数                  | 8      | `K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7)` |
 | `B`        | rotation 是否启用                         | 2      | bool ∈ {0, 1}         |
 
 `max` 来自 `Rescale_optimizer/configs/<profile>/static_skeletons_<profile>.json`
@@ -226,6 +226,14 @@ reward = compute_reward(metrics, opt_signals, action, max_action_baseline)
 
 `B` 不是 RL 选的（rotation 启用与否由 Rescale_optimizer 决定），但保留在
 `Block{}NoiseConfig` 里供 `apply_rotation_flags_to_cfg` 写回（详见 §5.4）。
+
+`K_LEVELS` 的顺序是 checkpoint/action-index 契约，不是数值排序：历史
+indices `0..5` 保持不变，index `3` 仍是 baseline `K=13`，新 indices
+`6`/`7` 分别为 `K=6`/`K=7`。canonical layerwise policy 每层仍有六个
+categorical slots（一个 Block4 fusion + 五个 K），但每个 K slot 现在有八类。
+成本与 reward 按 `13-6` 归一化；旧六类 checkpoint 必须 fresh run。K 与
+fusion-map option 分离且旧 indices 未改变，所以本次扩展不要求重建 fusion
+maps。
 
 ### 4.2 每层每 block 的动作维度（mandatory + optional）
 
@@ -322,7 +330,7 @@ def build_all_cfgs(action_vec, max_sfs, gelu_degrees, attn_degrees, layer_count)
     cfgs["first_input_sf"] = sf_from(action_vec[pos], levels=5)
     return cfgs
 
-K_LEVELS = (8, 9, 11, 13)   # action_idx ∈ {0,1,2,3}
+K_LEVELS = (8, 9, 11, 13, 10, 12, 6, 7)  # action_idx ∈ {0,...,7}; idx3 = baseline K13
 def sf_from(idx, max, levels): return max - 2 * (levels - 1 - int(idx))
 ```
 

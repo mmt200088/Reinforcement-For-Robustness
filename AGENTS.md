@@ -1569,10 +1569,17 @@ not the full categorical action-vector width. Older docs/comments may still say
 stale unless `scripts/blb_export_action_registry.py` and
 `describe_action_vector(...)` confirm them.
 
-K decoding is non-monotonic by design. Default `K_LEVELS` is
-`(8, 9, 11, 13, 10, 12)`. The all-max/baseline helper means max SF plus
-per-block baseline K: Blocks 1/3/5 use K=13, Blocks 2/4 use K=10. Do not find a
-K baseline by taking the largest index.
+K decoding is non-monotonic by design. The current ordered domain is
+`K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7)`: historical indices `0..5` retain
+their exact meanings, index `3` remains the all-max/baseline `K=13`, and new
+indices `6`/`7` decode to `K=6`/`K=7`. Do not find the baseline by taking the
+largest index. The canonical layerwise policy still emits six categorical
+slots per layer (one Block4 fusion slot plus five K slots), but every K slot is
+now 8-way. Truncation cost and reward normalize over the full `13 - 6`
+interval. Six-category checkpoints are intentionally incompatible and require
+a fresh run. Existing fusion maps do not require rebuilding for this expansion:
+their historical action indices are unchanged, and truncation K is carried
+separately from fusion-map options.
 
 ## Canonical Entrypoints
 
@@ -1596,7 +1603,7 @@ Standalone final eval uses the Paean wrapper:
 bash Paean/run_final_eval.sh --preset mrpc-final-eval-only
 bash Paean/run_final_eval.sh --preset mrpc-blb-baseline-fixed
 bash Paean/run_final_eval.sh --preset mrpc-blb-baseline-fixed \
-  --range block3.truncation=8,9,10,11,12,13 \
+  --range block3.truncation=6,7,8,9,10,11,12,13 \
   --action-fixed layer2.block5.wffn1_sf=18
 ```
 
