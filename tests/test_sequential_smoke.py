@@ -1197,7 +1197,7 @@ class BlockRuntimeHelperTest(unittest.TestCase):
             lambda value, layer, count, **kwargs:
             int(value[layer] if isinstance(value, (list, tuple)) else value)
         )
-        action_space.K_LEVELS = (8, 9, 11, 13, 10, 12)
+        action_space.K_LEVELS = (8, 9, 11, 13, 10, 12, 6, 7)
         action_space.BlockStepSpec = FakeSpec
         action_space.build_block_cfg_from_field_values = cls._build_cfg
         action_space.fusion_step_schedule = lambda *args, **kwargs: []
@@ -1448,6 +1448,54 @@ class BlockRuntimeHelperTest(unittest.TestCase):
         })
         self.assertEqual(result["block_cfg"].values, result["boosted_field_values"])
         self.assertEqual(result["block_cfg"].marker, "optimizer_applied")
+
+        result_k7 = env.evaluate_step([1, 7])
+
+        self.assertEqual(result_k7["boosted_field_values"], {
+            "field": 61, "output_truncation_k": 7,
+        })
+
+    def test_fusion_evaluate_step_rejects_out_of_range_k_before_expand(self):
+        output = types.SimpleNamespace(
+            valid=True, total_bits=99, fusion_count=1, invalid_chain=None,
+        )
+        option = types.SimpleNamespace(
+            option_id=1,
+            fusion_count=1,
+            boosted=False,
+            explicit_field_values={},
+        )
+        expand_calls = []
+
+        def expand(*args):
+            expand_calls.append(args)
+            return np.zeros(2, dtype=int)
+
+        fusion_map = types.SimpleNamespace(
+            options=lambda graph_key: [option],
+            expand=expand,
+            k_slot_index=lambda graph_key: 1,
+        )
+        env = self.mod.BLBStage2SequentialEnv.__new__(self.mod.BLBStage2SequentialEnv)
+        env._terminated_early = False
+        env._schedule = [self.FakeSpec()]
+        env._step_idx = 0
+        env._pending_full_vec = np.zeros(12 * 73 + 1, dtype=int)
+        env._fusion_map = fusion_map
+        env.num_layers = 12
+        env.base = self._base(types.SimpleNamespace(
+            invoker=types.SimpleNamespace(baselines={}),
+            evaluate=lambda **kwargs: output,
+        ))
+        invalid_k_index = len(self.mod.K_LEVELS)
+
+        with self.assertRaisesRegex(
+                ValueError,
+                rf"K index {invalid_k_index}.*legal range \[0, {len(self.mod.K_LEVELS)}\)",
+        ):
+            env.evaluate_step([1, invalid_k_index])
+
+        self.assertEqual(expand_calls, [])
 
     def test_helper_returns_structured_bridge_error_without_optimizer_apply(self):
         def fail(**kwargs):
