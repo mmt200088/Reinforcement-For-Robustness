@@ -750,8 +750,106 @@ class ProductionPolicyGeometryTest(unittest.TestCase):
         )
         self.assertIn("max_num_levels: int = 6", policy_src)
 
+    def test_legacy_diagnostics_uses_policy_width_and_counts_k7_index(self):
+        runner_src = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        diagnostics_region = runner_src[
+            runner_src.index("# ---------- 6.5) Long-term diagnostics recorder ----------"):
+            runner_src.index(
+                "# Provide the static_skeletons baseline",
+                runner_src.index(
+                    "# ---------- 6.5) Long-term diagnostics recorder ----------"
+                ),
+            )
+        ]
+        self.assertIn(
+            "max_action_levels=int(policy_cfg.max_num_levels)",
+            diagnostics_region,
+        )
+        self.assertNotIn("max_action_levels=6", diagnostics_region)
+
+        diag = _load_module_standalone(
+            "blb_stage2_rl/diagnostics.py",
+            "smoke_diag_k8_histogram",
+        )
+        with tempfile.TemporaryDirectory(prefix="blb_diag_k8_") as output_dir:
+            recorder = diag.RLDiagnosticsRecorder(
+                output_dir=output_dir,
+                num_layers=1,
+                num_action_slots=1,
+                max_action_levels=8,
+                top_k=1,
+                log_fn=lambda *_: None,
+            )
+            recorder.record_episode(
+                episode_stats=diag.EpisodeStats(
+                    episode=0,
+                    total_reward=0.0,
+                    terminal_reward=0.0,
+                    per_step_sum=0.0,
+                    valid_steps=1,
+                    invalid_steps=0,
+                    steps_taken=1,
+                    total_bits=0,
+                    fusion_count=0,
+                    first_invalid_step=None,
+                    first_invalid_block=None,
+                    first_invalid_layer=None,
+                    early_terminated=False,
+                ),
+                full_action_vec=np.asarray([7], dtype=np.int64),
+                is_new_best=False,
+                best_reward_so_far=0.0,
+            )
+            self.assertEqual(recorder._action_hist.shape, (1, 8))
+            self.assertEqual(int(recorder._action_hist[0, 7]), 1)
+            recorder.finalize()
+
 
 class CheckpointKDomainWiringTest(unittest.TestCase):
+    def test_runtime_domain_validator_accepts_reorder_and_rejects_six_levels(self):
+        from blb_stage2_rl.truncation_levels import validate_exact_k_domain
+
+        reordered = (13, 12, 11, 10, 9, 8, 7, 6)
+        self.assertEqual(validate_exact_k_domain(reordered), reordered)
+        with self.assertRaisesRegex(ValueError, "exactly once"):
+            validate_exact_k_domain((8, 9, 11, 13, 10, 12))
+
+    def test_legacy_runtime_validates_domain_before_lock_or_mutation(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        entry = _method_region_from_source(source, "run_sequential_via_runner")
+        validation = entry.index("validate_exact_k_domain(K_LEVELS)")
+        self.assertLess(validation, entry.index("resolve_blb_persistence_dir("))
+        self.assertLess(validation, entry.index("_ProbeRunnerOwnerHolder()"))
+        self.assertLess(validation, entry.index("LayerwiseRunLock("))
+
+        train = _method_region_from_source(source, "train_sequential")
+        train_validation = train.index("validate_exact_k_domain(K_LEVELS)")
+        self.assertLess(train_validation, train.index("train_cfg ="))
+        self.assertLess(train_validation, train.index("torch.optim.Adam("))
+        self.assertNotIn(
+            "try:",
+            train[max(0, train_validation - 80):train_validation],
+        )
+
+    def test_substage_runtime_validates_domain_before_policy_or_writes(self):
+        source = Path("blb_stage2_rl/substage_runner.py").read_text(
+            encoding="utf-8"
+        )
+        entry = _method_region_from_source(source, "run_substage_via_runner")
+        validation = entry.index("validate_exact_k_domain(K_LEVELS)")
+        self.assertLess(validation, entry.index("if torch is None:"))
+        self.assertLess(validation, entry.index("ev = runner.evaluator"))
+        self.assertLess(validation, entry.index("resolve_blb_persistence_dir("))
+        self.assertLess(validation, entry.index("SequentialPolicyConfig("))
+        self.assertNotIn(
+            "try:",
+            entry[max(0, validation - 80):validation],
+        )
+
     def test_legacy_resume_validates_domain_before_policy_and_optimizer_load(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8"

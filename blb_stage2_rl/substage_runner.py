@@ -296,10 +296,13 @@ def run_substage_via_runner(
     from .substage_env import BLBStage2SubstageEnv
     from .truncation_levels import (
         CHECKPOINT_K_DOMAIN_KEY,
+        K_LEVELS,
         checkpoint_k_domain_contract,
+        validate_exact_k_domain,
         validate_checkpoint_k_domain,
     )
 
+    validate_exact_k_domain(K_LEVELS)
     if torch is None:
         raise RuntimeError("torch is required to run the substage path")
 

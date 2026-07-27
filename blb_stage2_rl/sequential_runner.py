@@ -68,6 +68,7 @@ from .schedule_geometry import schedule_max_num_levels
 from .truncation_levels import (
     CHECKPOINT_K_DOMAIN_KEY,
     checkpoint_k_domain_contract,
+    validate_exact_k_domain,
     validate_checkpoint_k_domain,
 )
 
@@ -1722,6 +1723,7 @@ def train_sequential(
 
     Returns dict with episode_rewards / ppo_metrics / final_invalid_rate.
     """
+    validate_exact_k_domain(K_LEVELS)
     train_cfg = train_cfg or SequentialTrainConfig()
     train_cfg.rl_algo = _normalize_supported_rl_algo(
         getattr(train_cfg, "rl_algo", "ppo"), context="SequentialTrainConfig.rl_algo"
@@ -5701,6 +5703,7 @@ def run_sequential_via_runner(
         resume_checkpoint_path=None,
         ) -> Dict[str, Any]:
     """Lock the complete Stage-2 run before any probe or persistent write."""
+    validate_exact_k_domain(K_LEVELS)
     from .layerwise_runner import LayerwiseRunLock
     from .runner import resolve_blb_persistence_dir
 
@@ -7059,7 +7062,7 @@ def _run_sequential_via_runner_locked(
         output_dir=blb_progress_dir,
         num_layers=int(ev.total_layers),
         num_action_slots=int(num_action_slots),
-        max_action_levels=6,
+        max_action_levels=int(policy_cfg.max_num_levels),
         top_k=20,
         log_fn=log,
         slots_view_builder=_slots_view_builder,
