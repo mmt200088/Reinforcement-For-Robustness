@@ -1,0 +1,354 @@
+......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_blb_layerwise_policy.py:444: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  self.assertAlmostEqual(float(sampled_log_prob), expected_selected_log_prob, places=6)
+................................................................................................................................................................................................................................................................................................................................................................../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_blb_stage2_outputs.py:450: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpce3gl5do/blb_stage2_search_log.txt' mode='r' encoding='utf-8'>
+  text = open(out, encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+......./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_blb_stage2_outputs.py:1346: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpgnlw70sa/diagnostics/episodes.jsonl' mode='r' encoding='utf-8'>
+  encoding="utf-8").read().strip().splitlines()[-1]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_blb_stage2_outputs.py:1361: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpgnlw70sa/diagnostics/blb_stage2_health.log' mode='r' encoding='utf-8'>
+  line = open(hp, encoding="utf-8").read().strip()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpgnlw70sa/diagnostics/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+....................................................................................................................................................................................................................................................s............................[dataset] load_dataset('nyu-mll/glue', 'mrpc') failed (RuntimeError: metadata listing failed); using equivalent direct parquet route for the same nyu-mll/glue revision='main' via https://huggingface.co
+..[dataset] load_dataset('nyu-mll/glue', 'mrpc') failed (RuntimeError: 500 Server Error for url: https://hf-mirror.com/api/datasets/nyu-mll/glue/tree/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c/qnli); using equivalent direct parquet route for the same nyu-mll/glue revision='bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c' via https://huggingface.co; audit_log=/tmp/tmpvt86kdsf/glue_dataset_equivalent_route.txt
+..[dataset] using cached local GLUE dataset for task 'mrpc'; audit_log=/tmp/tmp2qu04ocq/glue_dataset_local_route.txt
+.[dataset] using local GLUE dataset for task 'mrpc' from /tmp/tmp9ohi5fr5/mrpc; audit_log=/tmp/tmp9ohi5fr5/glue_dataset_local_route.txt
+.[dataset] load_dataset('nyu-mll/glue', 'mrpc') failed (RuntimeError: 500 Server Error for url: https://hf-mirror.com/api/datasets/nyu-mll/glue/tree/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c/qnli); using equivalent direct parquet route for the same nyu-mll/glue revision='bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c' via https://hf-mirror.com; audit_log=/tmp/tmpxmzvxbyl/glue_dataset_equivalent_route.txt
+.[FATAL] visible GPUs without sampled activity above 10.0%: cuda:1
+...........................................................[gpu-audit][WARN] 2 GPUs are visible, but Stage-1 RL has no --stage1-rl-devices setting. Consider --stage1-rl-devices 0,1 so rollout collection uses all visible GPUs.
+............................................s...........................................................................................s..................................................................../usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpjveu4sye/points/stage2/bert-base/mrpc/backfill/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpjveu4sye/progress/diagnostics/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmph_2nr31z/points/stage2/bert-base/mrpc/reconcile/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmptm1tm2ul/points/stage2/bert-base/mrpc/conflict/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+...............................................................Wrote: /tmp/tmpb5mgyjgb/out/seed_summary.md
+Wrote: /tmp/tmpb5mgyjgb/out/seed_summary.json
+Wrote: /tmp/tmp8qnn_1sc/out/seed_summary.md
+Wrote: /tmp/tmp8qnn_1sc/out/seed_summary.json
+Wrote: /tmp/tmpnwypzgoe/out/seed_summary.md
+Wrote: /tmp/tmpnwypzgoe/out/seed_summary.json
+Wrote: /tmp/tmprhd989n8/out/seed_summary.md
+Wrote: /tmp/tmprhd989n8/out/seed_summary.json
+fusion map audit: fail (2 profile(s)); report=/tmp/tmpom_xk7he/audit.json
+[ab-compare] wrote /tmp/tmpl_upaqai/ab.html
+[ab-compare] curriculum ON: tail P1=3% P3=89% reward=37.45
+[ab-compare] curriculum OFF: tail P1=0% P3=89% reward=37.81
+[ab-compare] verdict: 🔎 Both runs avoided accuracy collapse → verdict by SEARCH PROGRESS (best P3 reward + when it was found; tail mean reward is only a safety metric): <b>curriculum ON</b> wins — best P3 40.58@ep258 (curriculum ON) vs 40.10@ep259 (curriculum OFF); tail fusion curriculum ON=14.8 / curriculum OFF=12.7; tail P2 curriculum ON=8% / curriculum OFF=11%.
+wrote /tmp/tmpb1nsk77o/out/audit_mrpc.md
+wrote /tmp/tmpb1nsk77o/out/audit_mrpc.json
+[regen] progress dir : /tmp/tmpgxra6ld3
+[regen] output  dir : /tmp/tmpgxra6ld3/preview
+[regen] episodes=300  ppo_updates(entropy)=5  baselines={'avg_k': 13.0, 'loss_mean': 0.367, 'metric1_mean': 0.871, 'metric2_mean': 0.861}
+[regen]   png         → /tmp/tmpgxra6ld3/preview/blb_stage2_training_curve.png  (175452 bytes)
+[regen]   npz         → /tmp/tmpgxra6ld3/preview/blb_stage2_training_curve.npz  (17136 bytes)
+[regen]   paper_png   → /tmp/tmpgxra6ld3/preview/blb_stage2_reward_paper.png  (50789 bytes)
+[regen]   paper_pdf   → /tmp/tmpgxra6ld3/preview/blb_stage2_reward_paper.pdf  (11937 bytes)
+[regen]   entropy_png → /tmp/tmpgxra6ld3/preview/blb_stage2_entropy_curve.png  (63667 bytes)
+[regen]   diagnostics → /tmp/tmpgxra6ld3/preview/blb_stage2_diagnostics_curve.png  (219684 bytes)
+  [检测] 局部最优检测报告 → /tmp/tmpgxra6ld3/preview/blb_stage2_search_log.txt
+  [检测] [LIKELY LOCAL-OPTIMUM] reward_plateau(cv=0.0000), best_stuck(99ep_no_improve)
+[regen]   search_log  → /tmp/tmpgxra6ld3/preview/blb_stage2_search_log.txt
+[regen] done.
+[regen] progress dir : /tmp/tmpcsf480y7
+[regen] output  dir : /tmp/tmpcsf480y7/preview
+[regen] episodes=300  ppo_updates(entropy)=5  baselines={'avg_k': 13.0, 'loss_mean': 0.367, 'metric1_mean': 0.871, 'metric2_mean': 0.861}
+[regen]   png         → /tmp/tmpcsf480y7/preview/blb_stage2_training_curve.png  (175452 bytes)
+[regen]   npz         → /tmp/tmpcsf480y7/preview/blb_stage2_training_curve.npz  (17136 bytes)
+[regen]   paper_png   → /tmp/tmpcsf480y7/preview/blb_stage2_reward_paper.png  (50789 bytes)
+[regen]   paper_pdf   → /tmp/tmpcsf480y7/preview/blb_stage2_reward_paper.pdf  (11937 bytes)
+[regen]   entropy_png → /tmp/tmpcsf480y7/preview/blb_stage2_entropy_curve.png  (63667 bytes)
+[regen]   diagnostics → /tmp/tmpcsf480y7/preview/blb_stage2_diagnostics_curve.png  (219684 bytes)
+  [检测] 局部最优检测报告 → /tmp/tmpcsf480y7/preview/blb_stage2_search_log.txt
+  [检测] [LIKELY LOCAL-OPTIMUM] reward_plateau(cv=0.0000), best_stuck(99ep_no_improve)
+[regen]   search_log  → /tmp/tmpcsf480y7/preview/blb_stage2_search_log.txt
+[regen] done.
+[skip] block1_mrpc: degenerate/dormant map (no boosted fusion option)
+[skip] block5_n0: degenerate/dormant map (no boosted fusion option)
+[skip] block2_mrpc: no boosted fusion option
+Wrote 0 file(s) to /tmp/tmppi653jm7/figures:
+report=/tmp/tmptrma64ej/report.html summary=/tmp/tmptrma64ej/summary.json gates=True
+[info] groups=1 unique_group_actions=1
+[run] fixed_b2
+.{
+  "output_json": "/tmp/tmpztlp9a10/result.json",
+  "output_html": "/tmp/tmpztlp9a10/result.html"
+}
+[info] groups=2 unique_group_actions=2
+[run] first
+[run] second
+.[info] groups=1 unique_group_actions=1
+[run] fixed_b2
+.[info] groups=1 unique_group_actions=1
+[run] fixed_b2
+....[info] groups=1 unique_group_actions=1
+[run] fixed_b2
+.............................................../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3445: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/diagnostics.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/diagnostics.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3337: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3358: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_policy.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_policy.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3351: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3390: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3438: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3370: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3375: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/runner.py' mode='r' encoding='utf-8'>
+  src2 = open("blb_stage2_rl/runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:875: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/env.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/env.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:845: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_env.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_env.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:855: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:689: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/action_mask.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/action_mask.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+..../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1357: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/env.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/env.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+....../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1349: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/probe_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/probe_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1339: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/probe_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/probe_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1327: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/probe_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/probe_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+........./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1370: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+............../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:649: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:631: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/env.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/env.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:667: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:535: ResourceWarning: unclosed file <_io.TextIOWrapper name='layer_importance_evaluator.py' mode='r' encoding='utf-8'>
+  src = open("layer_importance_evaluator.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:553: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:613: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:568: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1987: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1975: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1958: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1921: ResourceWarning: unclosed file <_io.TextIOWrapper name='llama_7B_LayerImportance.sh' mode='r' encoding='utf-8'>
+  src = open("llama_7B_LayerImportance.sh", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1875: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/reward.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/reward.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1905: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:1945: ResourceWarning: unclosed file <_io.TextIOWrapper name='llama_7B_LayerImportance.sh' mode='r' encoding='utf-8'>
+  src = open("llama_7B_LayerImportance.sh", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:456: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/blb_smoke_0myg72ki/agg_missing/seed_summary.md' mode='r' encoding='utf-8'>
+  text = open(os.path.join(out_dir, "seed_summary.md"), encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+..../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:416: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/blb_smoke_0myg72ki/index.md' mode='r' encoding='utf-8'>
+  text = open(idx_path, encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:360: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/blb_smoke_0myg72ki/run4/diagnostics/diagnostics_summary.md' mode='r' encoding='utf-8'>
+  text = open(path, encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/lib/python3.11/unittest/case.py:579: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/blb_smoke_0myg72ki/run_ranked_top/diagnostics/episodes.jsonl' mode='a' encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+....../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:2198: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+............/hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:2019: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:3316: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:2007: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:2057: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+........../hy-tmp/rfr-elastic-rl-gpu-scheduling-20260726/tests/test_sequential_smoke.py:2209: ResourceWarning: unclosed file <_io.TextIOWrapper name='blb_stage2_rl/sequential_runner.py' mode='r' encoding='utf-8'>
+  src = open("blb_stage2_rl/sequential_runner.py", encoding="utf-8").read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.............................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 1836 tests in 126.658s
+
+OK (skipped=3)
+{
+  "output_json": "/tmp/tmpb7g_cya7/result.json",
+  "output_html": "/tmp/tmpb7g_cya7/result.html"
+}
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 3 层的GELU函数（GELU function）
+已替换 3 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 2 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+[bench] wrote /tmp/tmp37srh5vn/benchmark_summary.json
+[bench] wrote /tmp/tmp37srh5vn/stage2_reward_probe_scaling_report.html
+[bench] best_batch_size=128 best_label=bs128_g1
