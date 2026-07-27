@@ -1840,10 +1840,24 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             "save_layerwise_checkpoint("
         )
         restart_boundary = callback_source.index(
-            "raise_if_elastic_gpu_restart_requested()"
+            "raise_if_elastic_gpu_restart_requested("
         )
         self.assertLess(diagnostics_commit, checkpoint_commit)
         self.assertLess(checkpoint_commit, restart_boundary)
+        restart_call = next(
+            node for node in ast.walk(callback)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "raise_if_elastic_gpu_restart_requested"
+        )
+        work_remaining = next(
+            keyword.value for keyword in restart_call.keywords
+            if keyword.arg == "work_remaining"
+        )
+        work_remaining_source = ast.get_source_segment(source, work_remaining)
+        self.assertIn("record.converged", work_remaining_source)
+        self.assertIn("planned_total_episodes", work_remaining_source)
+        self.assertIn("completed", work_remaining_source)
 
     def test_layerwise_training_wraps_primary_cuda_device_failures(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(

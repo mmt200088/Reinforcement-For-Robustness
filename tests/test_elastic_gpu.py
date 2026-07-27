@@ -111,6 +111,24 @@ class ElasticGPURestartRequestTest(unittest.TestCase):
                 self.assertIsNone(consume_elastic_gpu_restart_request())
                 raise_if_elastic_gpu_restart_requested()
 
+    def test_final_boundary_consumes_request_without_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            request_path = Path(tmp) / "restart-request.json"
+            with mock.patch.dict(
+                os.environ,
+                {"RFR_ELASTIC_GPU_RESTART_REQUEST": str(request_path)},
+                clear=False,
+            ):
+                request_elastic_gpu_restart(
+                    reason="recovered_device",
+                    physical_devices=["4"],
+                )
+
+                raise_if_elastic_gpu_restart_requested(work_remaining=False)
+
+                self.assertFalse(request_path.exists())
+                self.assertIsNone(consume_elastic_gpu_restart_request())
+
 
 class RuntimeErrorReporterElasticExitTest(unittest.TestCase):
     class _Fire:
