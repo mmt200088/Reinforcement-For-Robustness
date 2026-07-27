@@ -1,0 +1,99 @@
+/usr/local/lib/python3.11/dist-packages/transformers/tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
+  warnings.warn(
+Using the latest cached version of the dataset since nyu-mll/glue couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'mrpc' at /hy-tmp/hf_cache/datasets/nyu-mll___glue/mrpc/0.0.0/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (last modified on Sun Jul 26 21:53:49 2026).
+[dataset] task='mrpc' → route=hf_remote endpoint=nyu-mll/glue
+[信息] 数据集（Dataset）'mrpc' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, F1
+[数据集协议（Dataset Protocol）] 完整验证集（validation_full）=408  （统一使用 validation_full，不再拆分 search/holdout/proxy）
+已替换 12 层的GELU函数（GELU function）
+已替换 12 层的Softmax函数（Softmax function）
+  * Rescale_optimizer 根目录：/hy-tmp/RFR_stage2_18group_ff7e7526/Rescale_optimizer
+  * Rescale optimizer 模式：in_process_real
+[grid] f000_k13: fusion=(0, 0, 0) K=B1/B2/B3/B4/B5=13/13/13/13/13
+[grid] f000_k13 complete: loss=0.342994+/-0.002433 m1=0.879902+/-0.002192 m2=0.877373+/-0.002315
+[grid] f000_k8: fusion=(0, 0, 0) K=B1/B2/B3/B4/B5=8/8/8/8/8
+[grid] f000_k8 complete: loss=0.338260+/-0.002470 m1=0.878922+/-0.002500 m2=0.876770+/-0.002483
+[grid] f000_k7: fusion=(0, 0, 0) K=B1/B2/B3/B4/B5=7/7/7/7/7
+[grid] f000_k7 complete: loss=0.336047+/-0.002701 m1=0.877451+/-0.002685 m2=0.875498+/-0.002787
+[grid] f000_k6: fusion=(0, 0, 0) K=B1/B2/B3/B4/B5=6/6/6/6/6
+[grid] f000_k6 complete: loss=0.332290+/-0.003293 m1=0.870098+/-0.002685 m2=0.868589+/-0.002671
+[grid] f000_high: fusion=(0, 0, 0) K=B1/B2/B3/B4/B5=11/10/10/12/11
+[grid] f000_high complete: loss=0.341285+/-0.002465 m1=0.878431+/-0.002500 m2=0.875972+/-0.002604
+[grid] f000_medium: fusion=(0, 0, 0) K=B1/B2/B3/B4/B5=9/8/8/10/9
+[grid] f000_medium complete: loss=0.338768+/-0.002487 m1=0.879412+/-0.002401 m2=0.877300+/-0.002423
+[grid] f000_low: fusion=(0, 0, 0) K=B1/B2/B3/B4/B5=7/6/6/8/7
+[grid] f000_low complete: loss=0.334769+/-0.002958 m1=0.874020+/-0.003982 m2=0.872487+/-0.004202
+[grid] f000_odd_high_even_low: fusion=(0, 0, 0) K=odd layers 1/3/5/7/9/11=11/10/10/12/11; even layers 2/4/6/8/10/12=7/6/6/8/7
+[grid] f000_odd_high_even_low complete: loss=0.337712+/-0.002969 m1=0.875980+/-0.003668 m2=0.873968+/-0.003852
+[grid] f000_odd_medium_even_low: fusion=(0, 0, 0) K=odd layers 1/3/5/7/9/11=9/8/8/10/9; even layers 2/4/6/8/10/12=7/6/6/8/7
+[grid] f000_odd_medium_even_low complete: loss=0.337175+/-0.002919 m1=0.876961+/-0.004753 m2=0.875090+/-0.004952
+[grid] f101_k13: fusion=(1, 0, 1) K=B1/B2/B3/B4/B5=13/13/13/13/13
+[grid] f101_k13 complete: loss=0.342944+/-0.002105 m1=0.881373+/-0.002500 m2=0.878968+/-0.002758
+[grid] f101_k8: fusion=(1, 0, 1) K=B1/B2/B3/B4/B5=8/8/8/8/8
+[grid] f101_k8 complete: loss=0.337811+/-0.002256 m1=0.882353+/-0.001550 m2=0.880353+/-0.001678
+[grid] f101_k7: fusion=(1, 0, 1) K=B1/B2/B3/B4/B5=7/7/7/7/7
+[grid] f101_k7 complete: loss=0.335456+/-0.002056 m1=0.880392+/-0.000980 m2=0.878548+/-0.001094
+[grid] f101_k6: fusion=(1, 0, 1) K=B1/B2/B3/B4/B5=6/6/6/6/6
+[grid] f101_k6 complete: loss=0.332724+/-0.000864 m1=0.874020+/-0.002500 m2=0.872620+/-0.002362
+[grid] f101_high: fusion=(1, 0, 1) K=B1/B2/B3/B4/B5=11/10/10/12/11
+[grid] f101_high complete: loss=0.341273+/-0.002088 m1=0.881863+/-0.001834 m2=0.879630+/-0.002087
+[grid] f101_medium: fusion=(1, 0, 1) K=B1/B2/B3/B4/B5=9/8/8/10/9
+[grid] f101_medium complete: loss=0.338403+/-0.002232 m1=0.882843+/-0.002401 m2=0.880880+/-0.002603
+[grid] f101_low: fusion=(1, 0, 1) K=B1/B2/B3/B4/B5=7/6/6/8/7
+[grid] f101_low complete: loss=0.335133+/-0.001922 m1=0.875490+/-0.002858 m2=0.873826+/-0.002836
+[grid] f101_odd_high_even_low: fusion=(1, 0, 1) K=odd layers 1/3/5/7/9/11=11/10/10/12/11; even layers 2/4/6/8/10/12=7/6/6/8/7
+[grid] f101_odd_high_even_low complete: loss=0.337534+/-0.001714 m1=0.881373+/-0.001961 m2=0.879545+/-0.001976
+[grid] f101_odd_medium_even_low: fusion=(1, 0, 1) K=odd layers 1/3/5/7/9/11=9/8/8/10/9; even layers 2/4/6/8/10/12=7/6/6/8/7
+[grid] f101_odd_medium_even_low complete: loss=0.336598+/-0.001982 m1=0.880882+/-0.001201 m2=0.879078+/-0.001222
+[grid] f111_k13: fusion=(1, 1, 1) K=B1/B2/B3/B4/B5=13/13/13/13/13
+[grid] f111_k13 complete: loss=0.345072+/-0.006542 m1=0.878431+/-0.006316 m2=0.875978+/-0.006251
+[grid] f111_k8: fusion=(1, 1, 1) K=B1/B2/B3/B4/B5=8/8/8/8/8
+[grid] f111_k8 complete: loss=0.340970+/-0.007265 m1=0.875980+/-0.005502 m2=0.873971+/-0.005556
+[grid] f111_k7: fusion=(1, 1, 1) K=B1/B2/B3/B4/B5=7/7/7/7/7
+[grid] f111_k7 complete: loss=0.338731+/-0.007702 m1=0.873039+/-0.005674 m2=0.871307+/-0.005728
+[grid] f111_k6: fusion=(1, 1, 1) K=B1/B2/B3/B4/B5=6/6/6/6/6
+[grid] f111_k6 complete: loss=0.336889+/-0.008999 m1=0.871078+/-0.006316 m2=0.869703+/-0.006437
+[grid] f111_high: fusion=(1, 1, 1) K=B1/B2/B3/B4/B5=11/10/10/12/11
+[grid] f111_high complete: loss=0.343645+/-0.006761 m1=0.876471+/-0.005717 m2=0.874175+/-0.005775
+[grid] f111_medium: fusion=(1, 1, 1) K=B1/B2/B3/B4/B5=9/8/8/10/9
+[grid] f111_medium complete: loss=0.341468+/-0.007042 m1=0.875980+/-0.005047 m2=0.874036+/-0.004929
+[grid] f111_low: fusion=(1, 1, 1) K=B1/B2/B3/B4/B5=7/6/6/8/7
+[grid] f111_low complete: loss=0.339028+/-0.008322 m1=0.870098+/-0.005800 m2=0.868776+/-0.005830
+[grid] f111_odd_high_even_low: fusion=(1, 1, 1) K=odd layers 1/3/5/7/9/11=11/10/10/12/11; even layers 2/4/6/8/10/12=7/6/6/8/7
+[grid] f111_odd_high_even_low complete: loss=0.340944+/-0.008325 m1=0.874020+/-0.006685 m2=0.872048+/-0.006586
+[grid] f111_odd_medium_even_low: fusion=(1, 1, 1) K=odd layers 1/3/5/7/9/11=9/8/8/10/9; even layers 2/4/6/8/10/12=7/6/6/8/7
+[grid] f111_odd_medium_even_low complete: loss=0.340412+/-0.008577 m1=0.872059+/-0.005234 m2=0.870184+/-0.005225
+{
+  "output": "/hy-tmp/stage2_27_group_precision_stability_20260727_234158/seed_20262721/precision_stability_grid_seed_result.json",
+  "seed": 20262721,
+  "groups": [
+    "f000_k13",
+    "f000_k8",
+    "f000_k7",
+    "f000_k6",
+    "f000_high",
+    "f000_medium",
+    "f000_low",
+    "f000_odd_high_even_low",
+    "f000_odd_medium_even_low",
+    "f101_k13",
+    "f101_k8",
+    "f101_k7",
+    "f101_k6",
+    "f101_high",
+    "f101_medium",
+    "f101_low",
+    "f101_odd_high_even_low",
+    "f101_odd_medium_even_low",
+    "f111_k13",
+    "f111_k8",
+    "f111_k7",
+    "f111_k6",
+    "f111_high",
+    "f111_medium",
+    "f111_low",
+    "f111_odd_high_even_low",
+    "f111_odd_medium_even_low"
+  ]
+}

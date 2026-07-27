@@ -15,6 +15,6 @@ Layer index 0 is human layer 1 and therefore uses the odd-layer profile.
 - [x] Preserve the uniform K helper and production action-to-model chain.
 - [x] Audit all 60 post-materialization K slots against the per-layer schedule.
 - [x] Run local compilation and focused tests.
-- [ ] Sync the verified commit to Git and the server.
-- [ ] Run five experiment seeds and aggregate 25 trials per group.
-- [ ] Deliver HTML/raw JSON and archive compact evidence in Git.
+- [x] Sync the verified commit to Git and the server.
+- [x] Run five experiment seeds and aggregate 25 trials per group.
+- [x] Deliver HTML/raw JSON and archive compact evidence in Git.

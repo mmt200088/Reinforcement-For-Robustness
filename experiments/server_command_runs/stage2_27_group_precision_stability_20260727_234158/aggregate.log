@@ -1,0 +1,33 @@
+{
+  "json": "/hy-tmp/stage2_27_group_precision_stability_20260727_234158/aggregate/stage2_27_group_precision_stability.json",
+  "html": "/hy-tmp/stage2_27_group_precision_stability_20260727_234158/aggregate/stage2_27_group_precision_stability.html",
+  "groups": [
+    "f000_k13",
+    "f000_k8",
+    "f000_k7",
+    "f000_k6",
+    "f000_high",
+    "f000_medium",
+    "f000_low",
+    "f000_odd_high_even_low",
+    "f000_odd_medium_even_low",
+    "f101_k13",
+    "f101_k8",
+    "f101_k7",
+    "f101_k6",
+    "f101_high",
+    "f101_medium",
+    "f101_low",
+    "f101_odd_high_even_low",
+    "f101_odd_medium_even_low",
+    "f111_k13",
+    "f111_k8",
+    "f111_k7",
+    "f111_k6",
+    "f111_high",
+    "f111_medium",
+    "f111_low",
+    "f111_odd_high_even_low",
+    "f111_odd_medium_even_low"
+  ]
+}
