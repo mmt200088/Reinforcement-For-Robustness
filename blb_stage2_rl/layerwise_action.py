@@ -9,11 +9,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-import os
 from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence, Tuple
 
 import numpy as np
+
+try:
+    from .truncation_levels import (
+        K_LEVELS,
+        validate_exact_k_domain,
+    )
+except ImportError:  # pragma: no cover - legacy top-level import compatibility
+    from truncation_levels import (
+        K_LEVELS,
+        validate_exact_k_domain,
+    )
 
 
 LAYERWISE_SLOT_NAMES = (
@@ -25,38 +35,8 @@ LAYERWISE_SLOT_NAMES = (
     "block5_k",
 )
 
-# Keep this loader in step with action_space.K_LEVELS without importing
-# action_space, which deliberately remains outside the torch-free boundary.
-_DEFAULT_K_LEVELS = (8, 9, 11, 13, 10, 12)
-
-
-def _load_k_levels() -> Tuple[int, ...]:
-    raw = str(os.environ.get("BLB_TRUNCATION_K_LEVELS", "") or "").strip()
-    if not raw:
-        return _DEFAULT_K_LEVELS
-    try:
-        levels = tuple(int(value.strip()) for value in raw.split(","))
-    except ValueError as exc:
-        raise ValueError("BLB_TRUNCATION_K_LEVELS must contain only integers") from exc
-    if not levels or any(value == "" for value in raw.split(",")):
-        raise ValueError("BLB_TRUNCATION_K_LEVELS must contain at least one integer")
-    if len(set(levels)) != len(levels):
-        raise ValueError(f"BLB_TRUNCATION_K_LEVELS contains duplicate values: {levels}")
-    return levels
-
-
-K_LEVELS = _load_k_levels()
-_REQUIRED_K_VALUES = frozenset((8, 9, 10, 11, 12, 13))
-
-
 def _validate_k_levels() -> Tuple[int, ...]:
-    levels = tuple(int(value) for value in K_LEVELS)
-    if len(levels) != len(_REQUIRED_K_VALUES) or frozenset(levels) != _REQUIRED_K_VALUES:
-        raise ValueError(
-            "K_LEVELS must contain each supported K value exactly once: "
-            f"{sorted(_REQUIRED_K_VALUES)}, got {levels}"
-        )
-    return levels
+    return validate_exact_k_domain(K_LEVELS)
 
 # These are the stable legacy action_space._BLOCK_SPECS field counts, in block
 # order.  All blocks put output_truncation_k in their last slot.

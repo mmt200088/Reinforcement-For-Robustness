@@ -98,7 +98,7 @@ class CliParseUtilsTest(unittest.TestCase):
             "scripts/bert_mrpc_layer_noise_experiment.py": "from cli_parse_utils import parse_float_list_text",
             "scripts/stage1_parallel_report.py": "from cli_parse_utils import parse_int_list_text, split_int_tokens",
             "Paean/action_grid.py": "from cli_parse_utils import parse_int_list_text",
-            "blb_stage2_rl/action_space.py": "from cli_parse_utils import parse_int_list_text",
+            "blb_stage2_rl/truncation_levels.py": "from cli_parse_utils import parse_int_list_text",
             "blb_stage2_rl/runner.py": "from cli_parse_utils import parse_int_list_text",
             "scripts/blb_diagnose_invalid_blocks.py": "from cli_parse_utils import parse_int_list_text",
             "scripts/blb_diag_block2_boost.py": "from cli_parse_utils import parse_int_list_text",

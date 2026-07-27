@@ -34,13 +34,11 @@ None（即不安装该处噪声），所以 RL 选这些槽的值不会改变 cf
 from __future__ import annotations
 
 import math
-import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from cli_parse_utils import parse_int_list_text
 from json_utils import read_json_file
 from blb_rl_bridge import (
     Block1ActionSpec,
@@ -62,6 +60,21 @@ from function_handler import (
     Block4NoiseConfig,
     Block5NoiseConfig,
 )
+
+try:
+    from .truncation_levels import (
+        DEFAULT_K_LEVELS_LEGACY_COMPAT,
+        K_LEVELS,
+        LEVELS_K,
+        baseline_k_index,
+    )
+except ImportError:  # pragma: no cover - legacy top-level import compatibility
+    from truncation_levels import (
+        DEFAULT_K_LEVELS_LEGACY_COMPAT,
+        K_LEVELS,
+        LEVELS_K,
+        baseline_k_index,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -86,27 +99,6 @@ LEVELS_MS = 15       # mask / scalar encode
 LEVELS_R = 15        # rescale (idx0=None; idx1..14 sweep SF, step-1)
 LEVELS_F = 15        # fresh
 
-# Truncation K 挡位默认扩展为 6 档，但保持旧 checkpoint / 旧 action vector 的
-# index 语义：0/1/2/3 仍然解码为 8/9/11/13，新挡位 10/12 追加在后面。
-# 如需做临时实验，可用环境变量覆盖，例如：
-#   BLB_TRUNCATION_K_LEVELS=8,9,11,13,10,12
-DEFAULT_K_LEVELS_LEGACY_COMPAT: Tuple[int, ...] = (8, 9, 11, 13, 10, 12)
-
-
-def _load_k_levels_from_env() -> Tuple[int, ...]:
-    raw = str(os.environ.get("BLB_TRUNCATION_K_LEVELS", "") or "").strip()
-    if not raw:
-        return DEFAULT_K_LEVELS_LEGACY_COMPAT
-    values = tuple(parse_int_list_text(raw))
-    if not values:
-        raise ValueError("BLB_TRUNCATION_K_LEVELS must contain at least one integer")
-    if len(set(values)) != len(values):
-        raise ValueError(f"BLB_TRUNCATION_K_LEVELS contains duplicate values: {values}")
-    return values
-
-
-K_LEVELS: Tuple[int, ...] = _load_k_levels_from_env()
-LEVELS_K = len(K_LEVELS)
 LEVELS_FIRST_INPUT = 5   # 与 fresh 一致
 BLB_FIRST_INPUT_N = 8192
 
@@ -127,9 +119,7 @@ def _baseline_k_index_for_block(block_idx: int) -> int:
     var override could remove 10 or 13).
     """
     target = int(BASELINE_K_BY_BLOCK.get(int(block_idx), max(K_LEVELS)))
-    if target in K_LEVELS:
-        return int(K_LEVELS.index(target))
-    return int(K_LEVELS.index(max(K_LEVELS)))
+    return int(baseline_k_index(K_LEVELS, baseline_k=target))
 
 
 # 离散挡位数（与 cfg 字段一一对应；同时影响 reward / policy 头维度）

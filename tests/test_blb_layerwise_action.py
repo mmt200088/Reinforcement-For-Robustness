@@ -418,7 +418,7 @@ class KLevelsContractTest(unittest.TestCase):
         ]
         baseline = _legacy_all_max()
         matrix = [[0, 0, 0, 0, 0, 0] for _ in range(12)]
-        with mock.patch.object(layerwise, "K_LEVELS", (8, 9, 10, 11, 12, 14)):
+        with mock.patch.object(layerwise, "K_LEVELS", (6, 7, 8, 9, 10, 11, 12, 14)):
             with self.assertRaisesRegex(ValueError, "K_LEVELS"):
                 layerwise.layerwise_schedule(12, self.map)
             with self.assertRaisesRegex(ValueError, "K_LEVELS"):
@@ -429,7 +429,7 @@ class KLevelsContractTest(unittest.TestCase):
                 list(layerwise.one_coordinate_neighbors(matrix))
 
     def test_reordered_supported_k_levels_decode_and_cost_by_value(self):
-        reordered = (13, 8, 10, 9, 11, 12)
+        reordered = (13, 6, 8, 10, 7, 9, 11, 12)
         with mock.patch.object(layerwise, "K_LEVELS", reordered):
             spec = layerwise.layerwise_schedule(12, self.map)[1]
             action = [0, reordered.index(8), reordered.index(9), reordered.index(10), reordered.index(11), reordered.index(12)]
@@ -484,8 +484,8 @@ class LayerwiseNeighborTest(unittest.TestCase):
         action = [[0, layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13)] for _ in range(12)]
         original = [row[:] for row in action]
         neighbors = list(layerwise.one_coordinate_neighbors(action))
-        self.assertEqual(len(neighbors), 312)
-        self.assertEqual(len({tuple(value for row in neighbor for value in row) for neighbor in neighbors}), 312)
+        self.assertEqual(len(neighbors), 432)
+        self.assertEqual(len({tuple(value for row in neighbor for value in row) for neighbor in neighbors}), 432)
         self.assertEqual(action, original)
         for neighbor in neighbors:
             changes = [(row, col) for row in range(12) for col in range(6) if neighbor[row][col] != action[row][col]]
@@ -514,7 +514,7 @@ class LayerwiseNeighborTest(unittest.TestCase):
 
         action = [[0, 0, 0, 0, 0, 0] for _ in range(12)]
         neighbors = list(layerwise.one_coordinate_neighbors(action))
-        self.assertEqual(len(neighbors), 312)
+        self.assertEqual(len(neighbors), 432)
         self.assertEqual(
             sum(neighbor[0][1] != action[0][1] for neighbor in neighbors),
             len(layerwise.K_LEVELS) - 1,
