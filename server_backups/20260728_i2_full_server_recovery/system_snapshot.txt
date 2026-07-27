@@ -1,0 +1,5 @@
+Linux I2a1195928001d01a0a 5.15.0-179-generic #189-Ubuntu SMP Tue May 5 18:20:56 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+git version 2.34.1
+Python 3.11.12
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1    250G   51G  200G  21% /hy-tmp
