@@ -62,6 +62,12 @@ class TruncationBackendTests(unittest.TestCase):
         actual = _apply_truncation(x, 8, "binary")
         self.assertTrue(torch.equal(actual, expected))
 
+    def test_binary_k6_matches_exact_signed_grid_contract(self):
+        x = torch.tensor([-1.2345, -0.0001, 0.0001, 1.2345], dtype=torch.float64)
+        expected = torch.trunc(x * 64) / 64
+        actual = _apply_truncation(x, 6, "binary")
+        self.assertTrue(torch.equal(actual, expected))
+
     def test_rotation_repeat_count_executes_independent_noise_for_every_rotation(self):
         import function_handler as fh
 

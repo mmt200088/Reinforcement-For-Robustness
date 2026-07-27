@@ -252,6 +252,75 @@ class ActionMaterializationTests(unittest.TestCase):
         self.assertTrue(any(count == 3 for *_, count in enabled_rotation_flags))
         self.assertRegex(result.final_config_fingerprint, r"^[0-9a-f]{64}$")
 
+    def test_real_mrpc_k6_materializes_all_blocks_including_layer0(self):
+        from blb_stage2_rl.action_space import (
+            K_LEVELS,
+            load_max_sfs,
+            make_all_max_action_vector,
+            per_layer_field_offsets,
+        )
+        from blb_stage2_rl.optimizer_cost import materialize_action_for_model
+        from rescale_optimizer_bridge import InProcessInvoker, RescaleOptimizerBridge
+
+        num_layers = 12
+        action = make_all_max_action_vector(num_layers=num_layers)
+        per_layer_fields = per_layer_field_offsets()
+        k6_index = K_LEVELS.index(6)
+        truncation_offsets = [
+            field_offset
+            for field_offset, (_block_idx, field_name, kind) in enumerate(
+                per_layer_fields
+            )
+            if kind == "K" and field_name == "output_truncation_k"
+        ]
+        self.assertEqual(len(truncation_offsets), 5)
+        for layer_idx in range(num_layers):
+            layer_start = layer_idx * len(per_layer_fields)
+            for field_offset in truncation_offsets:
+                action[layer_start + field_offset] = k6_index
+
+        invoker = InProcessInvoker.from_profile(
+            rescale_optimizer_root="Rescale_optimizer",
+            profile="mrpc",
+        )
+        result = materialize_action_for_model(
+            action,
+            profile="mrpc",
+            num_layers=num_layers,
+            max_sfs=load_max_sfs("mrpc"),
+            rescale_bridge=RescaleOptimizerBridge(invoker=invoker),
+            gelu_degree=4,
+            attn_degree=4,
+            invoker_baselines=invoker.baselines,
+        )
+
+        self.assertTrue(result.model_ready, result.replan_application)
+        self.assertFalse(result.optimizer_invalid)
+        self.assertIsNone(result.failure_reason)
+        expected_count = result.replan_application["expected_config_count"]
+        self.assertGreater(expected_count, 0)
+        self.assertEqual(
+            expected_count,
+            result.replan_application["applied_config_count"],
+        )
+        self.assertTrue(result.replan_application["model_uses_replan_config"])
+        for block_idx in range(1, 6):
+            cfgs = getattr(result.decoded, f"block{block_idx}_cfgs")
+            self.assertEqual(set(cfgs), set(range(num_layers)))
+            self.assertEqual(
+                {cfg.output_truncation_k for cfg in cfgs.values()},
+                {6},
+            )
+        self.assertEqual(result.decoded.block1_cfgs[0].output_truncation_k, 6)
+        self.assertEqual(result.decoded.block3_cfgs[0].output_truncation_k, 6)
+        self.assertTrue(result.outputs)
+        self.assertEqual(len(result.outputs), expected_count)
+        self.assertEqual(
+            sum(name.startswith("block3_exp_n4_L") for name in result.outputs),
+            num_layers,
+        )
+        self.assertRegex(result.final_config_fingerprint, r"^[0-9a-f]{64}$")
+
 
 if __name__ == "__main__":
     unittest.main()

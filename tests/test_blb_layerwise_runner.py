@@ -1744,6 +1744,118 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 run_context_hash="run-a",
             )
 
+    def test_old_six_level_checkpoint_is_rejected_by_current_layerwise_context(self):
+        from blb_stage2_rl.candidate_store import candidate_key, sha256_json
+        from blb_stage2_rl.layerwise_action import (
+            K_LEVELS,
+            LAYERWISE_COST_MODEL_REVISION,
+            layerwise_action_space_version,
+            max_communication_saving_units,
+            max_compute_saving_units,
+        )
+        from blb_stage2_rl.layerwise_runner import (
+            bind_layerwise_candidate_identity,
+            build_layerwise_run_context,
+            validate_layerwise_checkpoint_metadata,
+        )
+        from blb_stage2_rl.network_variants import LEGACY_SHARED_RL_VARIANT
+
+        old_k_levels = (8, 9, 11, 13, 10, 12)
+        current_k_levels = tuple(K_LEVELS)
+        self.assertEqual(current_k_levels, old_k_levels + (6, 7))
+        algorithm_revision = (
+            "dual_resource_maxmin_shapley_three_bank_convergence_v10"
+        )
+        common_algorithm_contract = {
+            "schema_version": "stage2_layerwise_algorithm_contract_v5",
+            "algorithm_revision": algorithm_revision,
+            "rl_variant": LEGACY_SHARED_RL_VARIANT,
+        }
+        old_algorithm_hash = sha256_json({
+            **common_algorithm_contract,
+            "k_levels": list(old_k_levels),
+            "policy": {"max_num_levels": len(old_k_levels)},
+        })
+        current_algorithm_hash = sha256_json({
+            **common_algorithm_contract,
+            "k_levels": list(current_k_levels),
+            "policy": {"max_num_levels": len(current_k_levels)},
+        })
+        self.assertNotEqual(old_algorithm_hash, current_algorithm_hash)
+
+        base_identity = {
+            "action_space_version": layerwise_action_space_version(12),
+        }
+        common_resource_contract = {
+            "resource_secondary_epsilon": 1.0e-4,
+            "compute_axis_denominator": max_compute_saving_units(12),
+            "communication_axis_denominator": (
+                max_communication_saving_units(12)
+            ),
+            "resource_credit_mode": "two_family_shapley_per_slot_v1",
+            "strict_resource_order": [
+                "robust_floor",
+                "secondary_progress",
+            ],
+        }
+        old_identity = bind_layerwise_candidate_identity(
+            base_identity,
+            old_k_levels,
+            LAYERWISE_COST_MODEL_REVISION,
+            {
+                **common_resource_contract,
+                "algorithm_contract_hash": old_algorithm_hash,
+            },
+        )
+        current_identity = bind_layerwise_candidate_identity(
+            base_identity,
+            current_k_levels,
+            LAYERWISE_COST_MODEL_REVISION,
+            {
+                **common_resource_contract,
+                "algorithm_contract_hash": current_algorithm_hash,
+            },
+        )
+        self.assertNotEqual(
+            candidate_key([0], old_identity),
+            candidate_key([0], current_identity),
+        )
+
+        training_settings = {"online_trials_per_episode": 5}
+        old_run_context_hash = sha256_json(build_layerwise_run_context(
+            old_identity,
+            old_algorithm_hash,
+            training_settings,
+        ))
+        current_run_context_hash = sha256_json(build_layerwise_run_context(
+            current_identity,
+            current_algorithm_hash,
+            training_settings,
+        ))
+        self.assertNotEqual(old_run_context_hash, current_run_context_hash)
+
+        old_checkpoint = {
+            "rl_variant": LEGACY_SHARED_RL_VARIANT,
+            "algorithm_revision": algorithm_revision,
+            "algorithm_contract_hash": old_algorithm_hash,
+            "run_context_hash": old_run_context_hash,
+        }
+        validate_layerwise_checkpoint_metadata(
+            old_checkpoint,
+            rl_variant=LEGACY_SHARED_RL_VARIANT,
+            algorithm_revision=algorithm_revision,
+            algorithm_contract_hash=old_algorithm_hash,
+            run_context_hash=old_run_context_hash,
+        )
+        with self.assertRaisesRegex(RuntimeError, "algorithm contract"):
+            validate_layerwise_checkpoint_metadata(
+                old_checkpoint,
+                rl_variant=LEGACY_SHARED_RL_VARIANT,
+                algorithm_revision=algorithm_revision,
+                algorithm_contract_hash=current_algorithm_hash,
+                run_context_hash=current_run_context_hash,
+            )
+
     def test_layerwise_checkpoint_contract_fails_before_mutating_training_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
@@ -1760,6 +1872,10 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         )
 
         self.assertLess(validation, branch_source.index("policy.load_state_dict("))
+        self.assertLess(
+            validation,
+            branch_source.index("policy.load_ppo_aux_state_dict("),
+        )
         self.assertLess(validation, branch_source.index("optimizer.load_state_dict("))
         self.assertLess(
             validation,
