@@ -471,7 +471,7 @@ class BLBActionFinalEvaluationModule:
                 raw = search_best_stage2.get(key)
                 if raw is None:
                     continue
-                arr = np.asarray(raw, dtype=int)
+                arr = np.asarray(raw)
                 if arr.size > 0:
                     return arr
         return None

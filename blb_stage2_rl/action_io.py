@@ -84,6 +84,7 @@ edit configs by approximation instead of looking up the table for every slot.
 """
 from __future__ import annotations
 
+import operator
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -290,10 +291,17 @@ def _coerce_action_index_from_sf(
     return best_idx
 
 
-def _coerce_action_index_from_k(value: int) -> int:
+def _coerce_action_index_from_k(value: object) -> int:
     """Pick the K_LEVELS index closest to ``value``."""
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"truncation_bits must be an integer, got {value!r}")
+    try:
+        target = operator.index(value)
+    except TypeError as exc:
+        raise ValueError(
+            f"truncation_bits must be an integer, got {value!r}"
+        ) from exc
     levels = list(K_LEVELS)
-    target = int(value)
     best_idx = 0
     best_dist = abs(int(levels[0]) - target)
     for idx, k in enumerate(levels[1:], start=1):
@@ -463,14 +471,16 @@ def slots_list_to_action_vec(
                 )
             if entry["truncation_bits"] is None and entry.get("effective") is False:
                 continue
-            new_idx = _coerce_action_index_from_k(int(entry["truncation_bits"]))
+            requested_k = entry["truncation_bits"]
+            new_idx = _coerce_action_index_from_k(requested_k)
+            requested_k = operator.index(requested_k)
             old_idx = int(vec[global_index])
             vec[global_index] = int(new_idx)
             decoded_after = int(K_LEVELS[new_idx])
-            if int(decoded_after) != int(entry["truncation_bits"]):
+            if decoded_after != requested_k:
                 coercion_notes.append({
                     "label": label,
-                    "requested_truncation_bits": int(entry["truncation_bits"]),
+                    "requested_truncation_bits": requested_k,
                     "applied_truncation_bits": decoded_after,
                     "old_action_index": old_idx,
                     "new_action_index": new_idx,

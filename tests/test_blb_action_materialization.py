@@ -295,6 +295,49 @@ class ActionVectorBoundsTests(unittest.TestCase):
                 profile="mrpc",
             )
 
+    def test_paean_resolve_base_action_preserves_fractional_raw_values(self):
+        np = __import__("numpy")
+        resolve_base_action = _load_paean_method(
+            "_resolve_base_action",
+            np=np,
+        )
+
+        resolved = resolve_base_action(
+            SimpleNamespace(),
+            {"best_action_vec": [0.75, 1.0, 2.0]},
+        )
+
+        self.assertTrue(np.issubdtype(resolved.dtype, np.floating))
+        np.testing.assert_array_equal(resolved, np.asarray([0.75, 1.0, 2.0]))
+
+    def test_k_coercion_accepts_k6_and_k7(self):
+        np = __import__("numpy")
+        coerce_k = _load_function_standalone(
+            "blb_stage2_rl/action_io.py",
+            "_coerce_action_index_from_k",
+            K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7),
+            np=np,
+            operator=__import__("operator"),
+        )
+
+        self.assertEqual(coerce_k(6), 6)
+        self.assertEqual(coerce_k(7), 7)
+
+    def test_k_coercion_rejects_non_integral_and_boolean_values(self):
+        np = __import__("numpy")
+        coerce_k = _load_function_standalone(
+            "blb_stage2_rl/action_io.py",
+            "_coerce_action_index_from_k",
+            K_LEVELS=(8, 9, 11, 13, 10, 12, 6, 7),
+            np=np,
+            operator=__import__("operator"),
+        )
+
+        for value in (6.9, True, np.bool_(False)):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "integer"):
+                    coerce_k(value)
+
     def test_action_payload_preserves_invalid_raw_action_for_shared_validation(self):
         slots_payload_to_action_vec = _load_function_standalone(
             "blb_stage2_rl/action_io.py",
