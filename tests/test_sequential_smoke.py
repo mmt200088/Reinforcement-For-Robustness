@@ -694,7 +694,7 @@ class ProductionPolicyGeometryTest(unittest.TestCase):
 
             self.assertEqual(
                 schedule_max_num_levels(canonical_schedule),
-                LEVELS_K,
+                3,
             )
             self.assertEqual(
                 schedule_max_num_levels(legacy_schedule),
@@ -782,7 +782,10 @@ class ProductionPolicyGeometryTest(unittest.TestCase):
             substage_src,
         )
         self.assertNotIn("def schedule_max_num_levels(", action_space_src)
-        self.assertIn("max_num_levels=LEVELS_K", runner_src)
+        self.assertIn(
+            "max_num_levels=max(2, len(PRECISION_PRESETS))",
+            runner_src,
+        )
         self.assertIn(
             "max_num_levels=schedule_max_num_levels(seq_env.schedule)",
             runner_src,
@@ -1106,8 +1109,8 @@ class OutputHygieneRegressionTest(unittest.TestCase):
             "BLBStage2SequentialEnv(",
             "train_sequential(",
             "horizon=layerwise_horizon",
-            "max_step_dim=6",
-            "max_num_levels=LEVELS_K",
+            "max_step_dim=len(LAYERWISE_SLOT_NAMES)",
+            "max_num_levels=max(2, len(PRECISION_PRESETS))",
             "max_num_levels=schedule_max_num_levels(seq_env.schedule)",
             "metadata_width=0",
             "signal_width=4",

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from fractions import Fraction
 import pathlib
 import sys
 import unittest
@@ -102,18 +101,18 @@ class LayerwiseScheduleTest(unittest.TestCase):
 
     def test_has_canonical_twelve_step_geometry(self):
         self.assertEqual(layerwise.LAYERWISE_SLOT_NAMES, (
-            "block4_fusion", "block1_k", "block2_k", "block3_k", "block4_k", "block5_k",
+            "block4_fusion", "truncation_precision",
         ))
         self.assertEqual(len(self.specs), 12)
         self.assertEqual([spec.step_idx for spec in self.specs], list(range(12)))
         self.assertEqual([spec.layer_idx for spec in self.specs], list(range(12)))
         self.assertEqual(
             self.specs[0].slot_dims,
-            (2, 8, 8, 8, 8, 8),
+            (2, 3),
         )
         self.assertTrue(
             all(
-                spec.slot_mask == (True, True, True, True, True, True)
+                spec.slot_mask == (True, True)
                 for spec in self.specs
             )
         )
@@ -138,10 +137,13 @@ class LayerwiseApplicationTest(unittest.TestCase):
     def test_each_layer_splices_maps_and_preserves_block3_scaling_factors(self):
         full = _legacy_all_max()
         baseline = full.copy()
-        k_indices = [layerwise.K_LEVELS.index(value) for value in (8, 9, 11, 12, 10)]
+        expected_k_values = (9, 8, 8, 10, 9)
+        k_indices = [
+            layerwise.K_LEVELS.index(value) for value in expected_k_values
+        ]
 
         for spec in self.specs:
-            action = [spec.layer_idx % 2, *k_indices]
+            action = [spec.layer_idx % 2, 1]
             result = layerwise.apply_layer_action(full, action, spec, self.map)
             full = result.full_vector
             layer_base = spec.layer_idx * _LAYER_WIDTH
@@ -149,7 +151,9 @@ class LayerwiseApplicationTest(unittest.TestCase):
             self.assertEqual(result.decoded.block4_fusion, spec.layer_idx % 2)
             expected_blocks = {1, 2, 3, 4, 5}
             self.assertEqual(set(result.decoded.k_by_block), expected_blocks)
-            for block_idx, expected_k in zip((1, 2, 3, 4, 5), (8, 9, 11, 12, 10)):
+            for block_idx, expected_k in zip(
+                    (1, 2, 3, 4, 5), expected_k_values,
+            ):
                 if block_idx in expected_blocks:
                     self.assertEqual(result.decoded.k_by_block[block_idx], expected_k)
 
@@ -188,28 +192,31 @@ class LayerwiseApplicationTest(unittest.TestCase):
         self.assertEqual(layerwise.K_LEVELS[:6], (8, 9, 11, 13, 10, 12))
         self.assertEqual(layerwise.K_LEVELS[6:], (6, 7))
 
-        action = [0, 6, 7, 3, 4, 5]
+        action = [0, 2]
         result = layerwise.apply_layer_action(
             _legacy_all_max(), action, self.specs[1], self.map,
         )
 
         self.assertEqual(
             result.decoded.k_by_block,
-            {1: 6, 2: 7, 3: 13, 4: 10, 5: 12},
+            {1: 7, 2: 6, 3: 6, 4: 8, 5: 7},
         )
         layer_base = _LAYER_WIDTH
-        for block_idx, expected_index in zip((1, 2, 3, 4, 5), action[1:]):
+        for block_idx, expected_k in result.decoded.k_by_block.items():
             k_offset = (
                 layer_base
                 + _BLOCK_OFFSETS[block_idx]
                 + _BLOCK_SLOT_COUNTS[block_idx]
                 - 1
             )
-            self.assertEqual(int(result.full_vector[k_offset]), expected_index)
+            self.assertEqual(
+                int(result.full_vector[k_offset]),
+                layerwise.K_LEVELS.index(expected_k),
+            )
         self.assertEqual(set(result.boosted_field_values_by_block), {2, 5})
         self.assertEqual(
             result.boosted_field_values_by_block[2]["output_truncation_k"],
-            7,
+            6,
         )
         for block_idx, values in result.boosted_field_values_by_block.items():
             self.assertEqual(
@@ -222,7 +229,9 @@ class LayerwiseApplicationTest(unittest.TestCase):
         with self.assertRaises(IndexError):
             fusion_map.expand("block2_mrpc", 88, 0)
         spec = layerwise.layerwise_schedule(12, fusion_map)[1]
-        result = layerwise.apply_layer_action(_legacy_all_max(), [1, 0, 0, 0, 0, 0], spec, fusion_map)
+        result = layerwise.apply_layer_action(
+            _legacy_all_max(), [1, 1], spec, fusion_map,
+        )
         self.assertEqual(result.fusion_option_ids, {2: 88, 4: 88, 5: 88})
         layer_base = _LAYER_WIDTH
         self.assertEqual(int(result.full_vector[layer_base + _BLOCK_OFFSETS[2]]), 9)
@@ -231,59 +240,81 @@ class LayerwiseApplicationTest(unittest.TestCase):
 
 
 class VariableCostTest(unittest.TestCase):
-    def _actions(self, fusion: int, k: int):
+    def _actions(self, fusion: int, preset_index: int):
+        preset = layerwise.precision_preset(preset_index)
         return [
             layerwise.LayerwiseDecodedAction(
-                fusion, {1: k, 2: k, 3: k, 4: k, 5: k},
+                fusion,
+                {
+                    block_idx: preset.k_by_block[block_idx - 1]
+                    for block_idx in range(1, 6)
+                },
+                preset_index,
             )
             for _layer_idx in range(12)
         ]
 
     def test_independent_resource_axes_and_monotonicity(self):
-        low = layerwise.compute_variable_cost(self._actions(0, 13))
-        high = layerwise.compute_variable_cost(self._actions(1, 6))
-        fusion_only = layerwise.compute_variable_cost(self._actions(1, 13))
-        communication_only = layerwise.compute_variable_cost(self._actions(0, 6))
+        baseline = layerwise.compute_variable_cost(self._actions(0, 0))
+        both = layerwise.compute_variable_cost(self._actions(1, 2))
+        fusion_only = layerwise.compute_variable_cost(self._actions(1, 0))
+        communication_only = layerwise.compute_variable_cost(self._actions(0, 2))
 
         self.assertEqual(
-            (low.compute_saving, low.communication_saving, low.ppo_resource_score),
+            (
+                baseline.compute_saving,
+                baseline.communication_saving,
+                baseline.ppo_resource_score,
+            ),
             (0.0, 0.0, 0.0),
         )
         self.assertEqual(
-            (high.compute_saving, high.communication_saving, high.ppo_resource_score),
+            (both.compute_saving, both.communication_saving, both.ppo_resource_score),
             (1.0, 1.0, 1.0),
         )
         self.assertEqual((fusion_only.compute_saving, fusion_only.communication_saving), (1.0, 0.0))
         self.assertEqual((communication_only.compute_saving, communication_only.communication_saving), (0.0, 1.0))
-        self.assertEqual((low.fusion_count, low.removed_k_bits), (0, 0))
-        self.assertEqual((high.fusion_count, high.removed_k_bits), (12, 420))
-        self.assertEqual(len(high.layer_resource_rewards), 12)
-        self.assertEqual(len(high.slot_resource_rewards), 12)
-        self.assertTrue(all(len(row) == 6 for row in high.slot_resource_rewards))
-        self.assertAlmostEqual(sum(high.layer_resource_rewards), high.ppo_resource_score)
+        self.assertEqual((baseline.fusion_count, baseline.removed_k_bits), (0, 132))
+        self.assertEqual((both.fusion_count, both.removed_k_bits), (12, 372))
+        self.assertEqual(len(both.layer_resource_rewards), 12)
+        self.assertEqual(len(both.slot_resource_rewards), 12)
+        self.assertTrue(all(len(row) == 2 for row in both.slot_resource_rewards))
+        self.assertAlmostEqual(sum(both.layer_resource_rewards), both.ppo_resource_score)
         for layer_reward, slot_rewards in zip(
-                high.layer_resource_rewards, high.slot_resource_rewards,
+                both.layer_resource_rewards, both.slot_resource_rewards,
         ):
             self.assertAlmostEqual(sum(slot_rewards), layer_reward)
-        self.assertGreater(fusion_only.ppo_resource_score, low.ppo_resource_score)
-        self.assertGreater(communication_only.ppo_resource_score, low.ppo_resource_score)
-        self.assertLess(fusion_only.ppo_resource_score, high.ppo_resource_score)
-        self.assertLess(communication_only.ppo_resource_score, high.ppo_resource_score)
+        self.assertGreater(
+            fusion_only.ppo_resource_score, baseline.ppo_resource_score,
+        )
+        self.assertGreater(
+            communication_only.ppo_resource_score, baseline.ppo_resource_score,
+        )
+        self.assertLess(fusion_only.ppo_resource_score, both.ppo_resource_score)
+        self.assertLess(
+            communication_only.ppo_resource_score, both.ppo_resource_score,
+        )
 
     def test_one_axis_cannot_modify_the_other_axis(self):
-        baseline_actions = self._actions(0, 13)
+        baseline_actions = self._actions(0, 0)
         baseline = layerwise.compute_variable_cost(baseline_actions)
 
-        fused_actions = self._actions(0, 13)
+        fused_actions = self._actions(0, 0)
         fused_actions[7] = layerwise.LayerwiseDecodedAction(
-            1, dict(fused_actions[7].k_by_block),
+            1, dict(fused_actions[7].k_by_block), 0,
         )
         fused = layerwise.compute_variable_cost(fused_actions)
 
-        lower_k_actions = self._actions(0, 13)
-        changed_k = dict(lower_k_actions[7].k_by_block)
-        changed_k[3] = 11
-        lower_k_actions[7] = layerwise.LayerwiseDecodedAction(0, changed_k)
+        lower_k_actions = self._actions(0, 0)
+        medium = layerwise.precision_preset(1)
+        lower_k_actions[7] = layerwise.LayerwiseDecodedAction(
+            0,
+            {
+                block_idx: medium.k_by_block[block_idx - 1]
+                for block_idx in range(1, 6)
+            },
+            1,
+        )
         lower_k = layerwise.compute_variable_cost(lower_k_actions)
 
         self.assertAlmostEqual(fused.compute_saving - baseline.compute_saving, 1.0 / 12.0)
@@ -291,24 +322,20 @@ class VariableCostTest(unittest.TestCase):
         self.assertEqual(lower_k.compute_saving, baseline.compute_saving)
         self.assertAlmostEqual(
             lower_k.communication_saving - baseline.communication_saving,
-            2.0 / 420.0,
+            0.5 / 12.0,
         )
 
-    def test_shapley_and_slot_credits_cover_each_resource_family_once(self):
-        result = layerwise.compute_variable_cost(self._actions(1, 11))
+    def test_separable_slot_credits_cover_each_resource_family_once(self):
+        result = layerwise.compute_variable_cost(self._actions(1, 1))
         self.assertEqual(result.fusion_count, 12)
-        self.assertEqual(result.removed_k_bits, 120)
+        self.assertEqual(result.removed_k_bits, 252)
         self.assertAlmostEqual(result.compute_saving, 1.0)
-        self.assertAlmostEqual(result.communication_saving, 120.0 / 420.0)
+        self.assertAlmostEqual(result.communication_saving, 0.5)
         self.assertAlmostEqual(
             result.compute_shapley_credit + result.communication_shapley_credit,
             result.ppo_resource_score,
         )
         self.assertGreater(result.slot_resource_rewards[0][1], 0.0)
-        self.assertEqual(
-            result.slot_resource_rewards[0][1],
-            result.slot_resource_rewards[0][2],
-        )
         compute_slot_total = sum(row[0] for row in result.slot_resource_rewards)
         communication_slot_total = sum(
             sum(row[1:]) for row in result.slot_resource_rewards
@@ -321,41 +348,44 @@ class VariableCostTest(unittest.TestCase):
             sum(map(sum, result.slot_resource_rewards)), result.ppo_resource_score,
         )
 
-    def test_packed_score_preserves_every_realisable_robust_floor_improvement(self):
-        score_bounds = {}
-        for fusion_count in range(13):
-            for removed_k_bits in range(421):
-                compute = fusion_count / 12.0
-                communication = removed_k_bits / 420.0
-                robust_floor = min(
-                    Fraction(fusion_count, 12),
-                    Fraction(removed_k_bits, 420),
-                )
-                _floor, _secondary, packed = layerwise.dual_resource_score(
-                    compute, communication,
-                )
-                lower, upper = score_bounds.get(robust_floor, (packed, packed))
-                score_bounds[robust_floor] = (min(lower, packed), max(upper, packed))
-
-        previous_max = None
-        for robust_floor in sorted(score_bounds):
-            current_min, current_max = score_bounds[robust_floor]
-            if previous_max is not None:
-                self.assertGreater(current_min, previous_max)
-            previous_max = current_max
+    def test_network_weighted_score_is_monotonic_on_each_resource_axis(self):
+        for ratio in (0.25, 1.0, 4.0):
+            with self.subTest(ratio=ratio):
+                previous = -1.0
+                for compute in np.linspace(0.0, 1.0, 13):
+                    score = layerwise.dual_resource_score(
+                        compute, 0.5, ratio,
+                    )[2]
+                    self.assertGreater(score, previous)
+                    previous = score
+                previous = -1.0
+                for communication in (0.0, 0.5, 1.0):
+                    score = layerwise.dual_resource_score(
+                        0.5, communication, ratio,
+                    )[2]
+                    self.assertGreater(score, previous)
+                    previous = score
 
     def test_cost_uses_decoded_k_values_not_category_order(self):
-        actions = self._actions(0, 6)
+        actions = self._actions(0, 2)
         result = layerwise.compute_variable_cost(actions)
         self.assertEqual(result.communication_saving, 1.0)
-        actions[0] = layerwise.LayerwiseDecodedAction(0, {2: 6, 3: 6, 4: 6, 5: 6})
+        actions[0] = layerwise.LayerwiseDecodedAction(
+            0, {1: 7, 2: 6, 3: 6, 4: 8, 5: 8}, 2,
+        )
         with self.assertRaises(ValueError):
             layerwise.compute_variable_cost(actions)
 
     def test_bert_large_uses_all_24_layers_and_dynamic_resource_denominators(self):
+        low = layerwise.precision_preset(2)
         actions = [
             layerwise.LayerwiseDecodedAction(
-                1, {1: 6, 2: 6, 3: 6, 4: 6, 5: 6},
+                1,
+                {
+                    block_idx: low.k_by_block[block_idx - 1]
+                    for block_idx in range(1, 6)
+                },
+                2,
             )
             for _layer_idx in range(24)
         ]
@@ -363,15 +393,14 @@ class VariableCostTest(unittest.TestCase):
         result = layerwise.compute_variable_cost(actions)
 
         self.assertEqual(result.fusion_count, 24)
-        self.assertEqual(result.removed_k_bits, 5 * 24 * (13 - 6))
+        self.assertEqual(result.removed_k_bits, 31 * 24)
         self.assertEqual(result.compute_saving, 1.0)
         self.assertEqual(result.communication_saving, 1.0)
         self.assertEqual(result.ppo_resource_score, 1.0)
         self.assertEqual(len(result.layer_resource_rewards), 24)
         self.assertEqual(len(result.slot_resource_rewards), 24)
 
-        matrix = [[1, 0, 0, 0, 0, 0] for _ in range(24)]
-        matrix[0][1] = 0
+        matrix = [[1, 2] for _ in range(24)]
         decoded = layerwise.compute_variable_cost_from_action_matrix(matrix)
         self.assertEqual(decoded.fusion_count, 24)
         self.assertEqual(len(decoded.layer_resource_rewards), 24)
@@ -379,16 +408,16 @@ class VariableCostTest(unittest.TestCase):
     def test_layer_count_is_bound_into_identity_and_resource_denominators(self):
         self.assertEqual(
             layerwise.layerwise_action_space_version(12),
-            "stage2_layerwise_12x6_v2",
+            "stage2_layerwise_12x2_hml_v3",
         )
         self.assertEqual(
             layerwise.layerwise_action_space_version(24),
-            "stage2_layerwise_24x6_v2",
+            "stage2_layerwise_24x2_hml_v3",
         )
         self.assertEqual(layerwise.max_compute_saving_units(12), 12.0)
         self.assertEqual(layerwise.max_compute_saving_units(24), 24.0)
-        self.assertEqual(layerwise.max_communication_saving_units(12), 420.0)
-        self.assertEqual(layerwise.max_communication_saving_units(24), 840.0)
+        self.assertEqual(layerwise.max_communication_saving_units(12), 12.0)
+        self.assertEqual(layerwise.max_communication_saving_units(24), 24.0)
 
         for helper in (
             layerwise.layerwise_action_space_version,
@@ -425,7 +454,7 @@ class BertLargeLayerwiseScheduleTest(unittest.TestCase):
         block1_before = baseline[_LAYER_WIDTH:_LAYER_WIDTH + _BLOCK_SLOT_COUNTS[1] - 1].copy()
         applied = layerwise.apply_layer_action(
             baseline,
-            [1, 0, 1, 2, 3, 4],
+            [1, 1],
             specs[1],
             self.map,
         )
@@ -450,12 +479,14 @@ class KLevelsContractTest(unittest.TestCase):
             for _ in range(12)
         ]
         baseline = _legacy_all_max()
-        matrix = [[0, 0, 0, 0, 0, 0] for _ in range(12)]
+        matrix = [[0, 0] for _ in range(12)]
         with mock.patch.object(layerwise, "K_LEVELS", (6, 7, 8, 9, 10, 11, 12, 14)):
             with self.assertRaisesRegex(ValueError, "K_LEVELS"):
                 layerwise.layerwise_schedule(12, self.map)
             with self.assertRaisesRegex(ValueError, "K_LEVELS"):
-                layerwise.apply_layer_action(baseline, [0, 0, 0, 0, 0, 0], self.spec, self.map)
+                layerwise.apply_layer_action(
+                    baseline, [0, 0], self.spec, self.map,
+                )
             with self.assertRaisesRegex(ValueError, "K_LEVELS"):
                 layerwise.compute_variable_cost(actions)
             with self.assertRaisesRegex(ValueError, "K_LEVELS"):
@@ -467,12 +498,23 @@ class KLevelsContractTest(unittest.TestCase):
         self.assertEqual(set(reordered), set(range(6, 14)))
         with mock.patch.object(layerwise, "K_LEVELS", reordered):
             spec = layerwise.layerwise_schedule(12, self.map)[1]
-            action = [0, reordered.index(8), reordered.index(9), reordered.index(10), reordered.index(11), reordered.index(12)]
+            action = [0, 0]
             result = layerwise.apply_layer_action(_legacy_all_max(), action, spec, self.map)
-            self.assertEqual(result.decoded.k_by_block, {1: 8, 2: 9, 3: 10, 4: 11, 5: 12})
+            self.assertEqual(
+                result.decoded.k_by_block,
+                {1: 11, 2: 10, 3: 10, 4: 12, 5: 11},
+            )
 
+            low = layerwise.precision_preset(2)
             actions = [
-                layerwise.LayerwiseDecodedAction(0, {1: 6, 2: 6, 3: 6, 4: 6, 5: 6})
+                layerwise.LayerwiseDecodedAction(
+                    0,
+                    {
+                        block_idx: low.k_by_block[block_idx - 1]
+                        for block_idx in range(1, 6)
+                    },
+                    2,
+                )
                 for _ in range(12)
             ]
             self.assertAlmostEqual(
@@ -516,56 +558,63 @@ class LayerwiseOwnershipTest(unittest.TestCase):
 
 class LayerwiseNeighborTest(unittest.TestCase):
     def test_neighbors_are_complete_unique_and_non_mutating(self):
-        action = [[0, layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13), layerwise.K_LEVELS.index(13)] for _ in range(12)]
+        action = [[0, 0] for _ in range(12)]
         original = [row[:] for row in action]
         neighbors = list(layerwise.one_coordinate_neighbors(action))
-        self.assertEqual(len(neighbors), 432)
-        self.assertEqual(len({tuple(value for row in neighbor for value in row) for neighbor in neighbors}), 432)
-        layer_zero_block1_candidates = {
+        self.assertEqual(len(neighbors), 36)
+        self.assertEqual(
+            len({tuple(value for row in neighbor for value in row) for neighbor in neighbors}),
+            36,
+        )
+        layer_zero_precision_candidates = {
             neighbor[0][1]
             for neighbor in neighbors
             if neighbor[0][1] != action[0][1]
             and all(
                 neighbor[row][col] == action[row][col]
                 for row in range(12)
-                for col in range(6)
+                for col in range(2)
                 if (row, col) != (0, 1)
             )
         }
-        self.assertIn(6, layer_zero_block1_candidates)
-        self.assertIn(7, layer_zero_block1_candidates)
+        self.assertEqual(layer_zero_precision_candidates, {1, 2})
         self.assertEqual(action, original)
         for neighbor in neighbors:
-            changes = [(row, col) for row in range(12) for col in range(6) if neighbor[row][col] != action[row][col]]
+            changes = [
+                (row, col)
+                for row in range(12)
+                for col in range(2)
+                if neighbor[row][col] != action[row][col]
+            ]
             self.assertEqual(len(changes), 1)
             self.assertIsNot(neighbor[0], action[0])
 
     def test_validates_late_coordinates_before_first_yield(self):
-        action = [[0, 0, 0, 0, 0, 0] for _ in range(12)]
-        action[11][5] = len(layerwise.K_LEVELS)
+        action = [[0, 0] for _ in range(12)]
+        action[11][1] = 3
         iterator = layerwise.one_coordinate_neighbors(action)
         with self.assertRaises(ValueError):
             next(iterator)
 
-    def test_layer_zero_block1_k_is_active_everywhere(self):
+    def test_layer_zero_precision_preset_installs_block1_k(self):
         fusion_map = fcm.FusionCountMap.load("mrpc")
         spec = layerwise.layerwise_schedule(12, fusion_map)[0]
-        k_index = layerwise.K_LEVELS.index(8)
+        k_index = layerwise.K_LEVELS.index(7)
         result = layerwise.apply_layer_action(
-            _legacy_all_max(), [0, k_index, 0, 0, 0, 0], spec, fusion_map,
+            _legacy_all_max(), [0, 2], spec, fusion_map,
         )
-        self.assertEqual(result.decoded.k_by_block[1], 8)
+        self.assertEqual(result.decoded.k_by_block[1], 7)
         self.assertEqual(
             int(result.full_vector[_BLOCK_OFFSETS[1] + _BLOCK_SLOT_COUNTS[1] - 1]),
             k_index,
         )
 
-        action = [[0, 0, 0, 0, 0, 0] for _ in range(12)]
+        action = [[0, 0] for _ in range(12)]
         neighbors = list(layerwise.one_coordinate_neighbors(action))
-        self.assertEqual(len(neighbors), 432)
+        self.assertEqual(len(neighbors), 36)
         self.assertEqual(
             sum(neighbor[0][1] != action[0][1] for neighbor in neighbors),
-            len(layerwise.K_LEVELS) - 1,
+            2,
         )
 
 
@@ -577,9 +626,11 @@ class LayerwiseValidationTest(unittest.TestCase):
 
     def test_invalid_action_shapes_and_indices_fail_loudly(self):
         with self.assertRaises(ValueError):
-            layerwise.apply_layer_action(_legacy_all_max(), [0] * 5, self.spec, self.map)
+            layerwise.apply_layer_action(_legacy_all_max(), [0], self.spec, self.map)
         with self.assertRaises(ValueError):
-            layerwise.apply_layer_action(_legacy_all_max(), [2, 0, 0, 0, 0, 0], self.spec, self.map)
+            layerwise.apply_layer_action(
+                _legacy_all_max(), [2, 0], self.spec, self.map,
+            )
         with self.assertRaises(ValueError):
             list(layerwise.one_coordinate_neighbors([]))
 

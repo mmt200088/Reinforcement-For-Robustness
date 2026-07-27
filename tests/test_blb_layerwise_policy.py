@@ -823,7 +823,10 @@ class LayerwisePolicyTest(unittest.TestCase):
 
         self.assertEqual(metrics["actor_clip_mode"], "factorized_per_slot")
         self.assertAlmostEqual(metrics["approx_kl"], 0.75, places=6)
-        self.assertEqual(metrics["slot_labels"], ["slot_0", "slot_1"])
+        self.assertEqual(
+            metrics["slot_labels"],
+            ["block4_fusion", "truncation_precision"],
+        )
         self.assertEqual(len(metrics["entropy_per_slot"]), 2)
         self.assertEqual(len(metrics["approx_kl_per_slot"]), 2)
         self.assertEqual(len(metrics["clip_fraction_per_slot"]), 2)
@@ -902,7 +905,6 @@ class LayerwisePolicyTest(unittest.TestCase):
 
     def test_factorized_ppo_converges_both_resource_families_on_contextual_bandit(self):
         from blb_stage2_rl.layerwise_action import (
-            K_LEVELS,
             compute_variable_cost_from_action_matrix,
         )
         from blb_stage2_rl.sequential_policy import (
@@ -914,18 +916,18 @@ class LayerwisePolicyTest(unittest.TestCase):
         class ContextualCostPolicy(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                initial = torch.empty((12, 6, 6), dtype=torch.float32)
+                initial = torch.empty((12, 2, 3), dtype=torch.float32)
                 initial[:, 0, :] = -20.0
                 initial[:, 0, :2] = torch.log(torch.tensor([0.90, 0.10]))
-                k_probs = torch.tensor([0.50, 0.20, 0.12, 0.08, 0.06, 0.04])
-                initial[:, 1:, :] = torch.log(k_probs)
+                precision_probs = torch.tensor([0.80, 0.15, 0.05])
+                initial[:, 1, :] = torch.log(precision_probs)
                 self.logits = torch.nn.Parameter(initial)
                 self.values = torch.nn.Parameter(torch.zeros(12))
 
             def _distribution(self, state, slot_mask, per_slot_num_levels):
                 layer = state[:, 0].long()
                 logits = self.logits.index_select(0, layer)
-                level_index = torch.arange(6).view(1, 1, 6)
+                level_index = torch.arange(3).view(1, 1, 3)
                 valid = level_index < per_slot_num_levels.unsqueeze(-1)
                 valid = valid & slot_mask.unsqueeze(-1)
                 safe_logits = logits.masked_fill(~valid, -20.0)
@@ -1003,7 +1005,7 @@ class LayerwisePolicyTest(unittest.TestCase):
             entropy_average_active_slots=True,
             entropy_normalize_active_slots=True,
         )
-        slot_levels = np.asarray([2, 6, 6, 6, 6, 6], dtype=np.int64)
+        slot_levels = np.asarray([2, 3], dtype=np.int64)
         update_count = 180
         last_metrics = None
 
@@ -1011,7 +1013,7 @@ class LayerwisePolicyTest(unittest.TestCase):
             buffer = SequentialRolloutBuffer()
             for sample_idx in range(120):
                 layer_idx = sample_idx % 12
-                slot_mask = np.ones(6, dtype=bool)
+                slot_mask = np.ones(2, dtype=bool)
                 state = np.asarray([layer_idx], dtype=np.float32)
                 with torch.no_grad():
                     action, log_prob, value, log_prob_per_slot = policy.sample_action(
@@ -1052,7 +1054,7 @@ class LayerwisePolicyTest(unittest.TestCase):
         self.assertEqual(last_metrics["actor_clip_mode"], "factorized_per_slot")
         self.assertEqual(
             last_metrics["actor_credit_mode"],
-            "shared_constraint_plus_own_resource_shapley",
+            "shared_constraint_plus_separable_axis_resource",
         )
         self.assertEqual(
             last_metrics["entropy_objective_mode"],
@@ -1061,28 +1063,25 @@ class LayerwisePolicyTest(unittest.TestCase):
 
         with torch.no_grad():
             fusion_dist = torch.distributions.Categorical(logits=policy.logits[:, 0, :2])
-            k_dist = torch.distributions.Categorical(logits=policy.logits[:, 1:, :])
+            precision_dist = torch.distributions.Categorical(
+                logits=policy.logits[:, 1, :3],
+            )
             fusion_entropy = float((fusion_dist.entropy() / np.log(2.0)).mean())
-            active_k_entropy = torch.cat((
-                k_dist.entropy()[0, 1:].reshape(-1),
-                k_dist.entropy()[1:].reshape(-1),
-            ))
-            k_entropy = float((active_k_entropy / np.log(6.0)).mean())
+            precision_entropy = float(
+                (precision_dist.entropy() / np.log(3.0)).mean()
+            )
             fusion_modes = torch.argmax(policy.logits[:, 0, :2], dim=-1)
-            k_modes = torch.argmax(policy.logits[:, 1:, :], dim=-1)
-            active_k_modes = torch.cat((
-                k_modes[0, 1:].reshape(-1),
-                k_modes[1:].reshape(-1),
-            ))
+            precision_modes = torch.argmax(policy.logits[:, 1, :3], dim=-1)
             diagnostic = (
-                f"fusion_entropy={fusion_entropy:.6f}, k_entropy={k_entropy:.6f}, "
-                f"fusion_modes={fusion_modes.tolist()}, k_modes={k_modes.tolist()}"
+                f"fusion_entropy={fusion_entropy:.6f}, "
+                f"precision_entropy={precision_entropy:.6f}, "
+                f"fusion_modes={fusion_modes.tolist()}, "
+                f"precision_modes={precision_modes.tolist()}"
             )
             self.assertTrue(torch.all(fusion_modes == 1), diagnostic)
-            selected_k_values = torch.as_tensor(K_LEVELS)[active_k_modes]
-            self.assertTrue(torch.all(selected_k_values == 8), diagnostic)
+            self.assertTrue(torch.all(precision_modes == 2), diagnostic)
         self.assertLess(fusion_entropy, 0.1, diagnostic)
-        self.assertLess(k_entropy, 0.1, diagnostic)
+        self.assertLess(precision_entropy, 0.1, diagnostic)
 
 
 if __name__ == "__main__":
