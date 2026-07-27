@@ -1,0 +1,386 @@
+{
+  "generated_at_utc": "2026-07-27T14:12:12.838541+00:00",
+  "paean_fix": {
+    "commit": "b7ce0bfd4209359505a0dd93a53756ebda53468a",
+    "fix": "pass 0 and protect the contract with test_rl_final_eval_command_disables_stage2_training_episode_limit",
+    "issue": "final-eval-only command incorrectly passed --stage2_rl_episodes 40000"
+  },
+  "real_model_gate": {
+    "accuracy": 0.8872549019607843,
+    "action_fixed": [
+      "truncation=13",
+      "layer0.block1.truncation=6",
+      "layer0.block2.truncation=7"
+    ],
+    "any_invalid": false,
+    "avg_truncation_k": 12.783333333333333,
+    "dataset": "mrpc",
+    "effective_position_count": 60,
+    "final_config_fingerprint": "c84669e280cacb8096b451851e30ad23b01dfa10e7dd6b41a7c28dee4e34927d",
+    "install_verification": {
+      "bridge_installed_layers_match_expected": true,
+      "checked_before_forward": true,
+      "expected_active_layers": {
+        "block1": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "block2": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "block3": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "block4": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "block5": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "first_input": []
+      },
+      "handler_active_layers": {
+        "block1": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "block2": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "block3": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "block4": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "block5": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "first_input": []
+      },
+      "handler_active_layers_match_expected": true,
+      "handler_cfg_objects_match_decoded_cfgs": true,
+      "model_will_use_selected_cfg": true
+    },
+    "installed_selected_entries": {
+      "layer0.block1.output_truncation_k": {
+        "N": null,
+        "active": true,
+        "block": "block1",
+        "distribution": null,
+        "layer": 0,
+        "path": "layer0.block1.output_truncation_k",
+        "point": "output_truncation_k",
+        "scaling_factor": null,
+        "truncation_k": 6,
+        "truncation_mode": "binary",
+        "type": "truncation",
+        "value": 6
+      },
+      "layer0.block2.output_truncation_k": {
+        "N": null,
+        "active": true,
+        "block": "block2",
+        "distribution": null,
+        "layer": 0,
+        "path": "layer0.block2.output_truncation_k",
+        "point": "output_truncation_k",
+        "scaling_factor": null,
+        "truncation_k": 7,
+        "truncation_mode": "binary",
+        "type": "truncation",
+        "value": 7
+      }
+    },
+    "invalid_block_count": 0,
+    "loss": 0.36949849128723145,
+    "main_log": "paean_k6_k7_b7ce0bfd.log",
+    "model": "bert-base",
+    "per_block_truncation": {
+      "block1": {
+        "per_layer": {
+          "0": 6,
+          "1": 13,
+          "10": 13,
+          "11": 13,
+          "2": 13,
+          "3": 13,
+          "4": 13,
+          "5": 13,
+          "6": 13,
+          "7": 13,
+          "8": 13,
+          "9": 13
+        },
+        "unique_effective_k": [
+          6,
+          13
+        ]
+      },
+      "block2": {
+        "per_layer": {
+          "0": 7,
+          "1": 13,
+          "10": 13,
+          "11": 13,
+          "2": 13,
+          "3": 13,
+          "4": 13,
+          "5": 13,
+          "6": 13,
+          "7": 13,
+          "8": 13,
+          "9": 13
+        },
+        "unique_effective_k": [
+          7,
+          13
+        ]
+      },
+      "block3": {
+        "per_layer": {
+          "0": 13,
+          "1": 13,
+          "10": 13,
+          "11": 13,
+          "2": 13,
+          "3": 13,
+          "4": 13,
+          "5": 13,
+          "6": 13,
+          "7": 13,
+          "8": 13,
+          "9": 13
+        },
+        "unique_effective_k": [
+          13
+        ]
+      },
+      "block4": {
+        "per_layer": {
+          "0": 13,
+          "1": 13,
+          "10": 13,
+          "11": 13,
+          "2": 13,
+          "3": 13,
+          "4": 13,
+          "5": 13,
+          "6": 13,
+          "7": 13,
+          "8": 13,
+          "9": 13
+        },
+        "unique_effective_k": [
+          13
+        ]
+      },
+      "block5": {
+        "per_layer": {
+          "0": 13,
+          "1": 13,
+          "10": 13,
+          "11": 13,
+          "2": 13,
+          "3": 13,
+          "4": 13,
+          "5": 13,
+          "6": 13,
+          "7": 13,
+          "8": 13,
+          "9": 13
+        },
+        "unique_effective_k": [
+          13
+        ]
+      }
+    },
+    "repeat_n": 1,
+    "replan_application": {
+      "applied_before_forward": true,
+      "applied_config_count": 59,
+      "apply_error_count": 0,
+      "expected_config_count": 59,
+      "invalid_config_count": 0,
+      "missing_compact_config_count": 0,
+      "missing_decoded_cfg_count": 0,
+      "model_uses_replan_config": true
+    },
+    "report_md": "paean/mrpc/rl/k6-k7-production-gate-b7ce0bfd/final_eval/blb_action_final_eval_report_mrpc.md",
+    "report_md_sha256": "5cb94a69f675429796ca2849ffb208fb5510b44e2f71231b2fb457865b61e40f",
+    "result_json": "paean/mrpc/rl/k6-k7-production-gate-b7ce0bfd/final_eval/blb_action_final_eval_results_mrpc.json",
+    "result_json_sha256": "75665fcf120b672299138bd583e5f256971ba3d6cb8f8a26fcde102f039df9db",
+    "skipped_forward": false,
+    "skipped_positions": [],
+    "split": "validation_full",
+    "total_bits_sum": 14461,
+    "total_fusion_count": 0,
+    "validation_examples": 408,
+    "weighted_f1": 0.8850991515332197
+  },
+  "schema_version": 1,
+  "server_cuda_note": {
+    "gpu_model": "NVIDIA GeForce RTX 4090",
+    "nvidia_smi_physical_gpu_count": 5,
+    "real_model_gate_visibility": "CUDA_VISIBLE_DEVICES=0",
+    "torch_version": "2.9.1+cu128",
+    "unrestricted_cuda_probe": "torch.cuda.device_count() returned 5 but lazy init raised device=4,num_gpus=4 internal assertion",
+    "verified_test_visibility": "CUDA_VISIBLE_DEVICES=0,1,2,3"
+  },
+  "source": {
+    "branch": "codex/all-agents-k6-13-integrated-20260727",
+    "commit": "b7ce0bfd4209359505a0dd93a53756ebda53468a",
+    "tree": "8ab7adda127357f1ec067a8d8a2ca379d78f87a1"
+  },
+  "tests": {
+    "focused": {
+      "log": "focused_b7ce0bfd.log",
+      "return_code": 0,
+      "tests_run": 415
+    },
+    "paean_final_eval_contract": {
+      "log": "paean_contract_after_fix.log",
+      "return_code": 0
+    },
+    "shared_and_backends": {
+      "cuda_visible_devices": "0,1,2,3",
+      "log": "shared_paths_b7ce0bfd.log",
+      "return_code": 0,
+      "tests_run": 144
+    }
+  },
+  "truncation_contract": {
+    "checkpoint_contract": {
+      "k_levels": [
+        8,
+        9,
+        11,
+        13,
+        10,
+        12,
+        6,
+        7
+      ],
+      "schema_version": "stage2_truncation_k_domain_v1"
+    },
+    "level_count": 8,
+    "ordered_k_levels": [
+      8,
+      9,
+      11,
+      13,
+      10,
+      12,
+      6,
+      7
+    ]
+  }
+}

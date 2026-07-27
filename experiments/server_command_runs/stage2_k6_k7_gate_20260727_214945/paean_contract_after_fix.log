@@ -1,0 +1,11 @@
+test_batch_manifest_counts_candidates_in_one_launcher_process (tests.test_paean_final_eval_workload.FinalEvalWorkloadEstimateTest.test_batch_manifest_counts_candidates_in_one_launcher_process) ... ok
+test_configuration_lines_include_workload_summary (tests.test_paean_final_eval_workload.FinalEvalWorkloadEstimateTest.test_configuration_lines_include_workload_summary) ... ok
+test_counts_action_range_product_and_random_controls (tests.test_paean_final_eval_workload.FinalEvalWorkloadEstimateTest.test_counts_action_range_product_and_random_controls) ... ok
+test_default_cost_match_count_is_counted_even_without_legacy_random (tests.test_paean_final_eval_workload.FinalEvalWorkloadEstimateTest.test_default_cost_match_count_is_counted_even_without_legacy_random) ... ok
+test_list_presets_streams_only_first_line (tests.test_paean_final_eval_workload.FinalEvalWorkloadEstimateTest.test_list_presets_streams_only_first_line) ... ok
+test_rl_final_eval_command_disables_stage2_training_episode_limit (tests.test_paean_final_eval_workload.FinalEvalWorkloadEstimateTest.test_rl_final_eval_command_disables_stage2_training_episode_limit) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.003s
+
+OK

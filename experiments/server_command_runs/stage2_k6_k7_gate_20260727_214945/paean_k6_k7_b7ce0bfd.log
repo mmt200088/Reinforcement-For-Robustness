@@ -1,0 +1,242 @@
+/usr/local/lib/python3.11/dist-packages/transformers/utils/hub.py:127: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/usr/local/lib/python3.11/dist-packages/transformers/tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
+  warnings.warn(
+Using the latest cached version of the dataset since nyu-mll/glue couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'mrpc' at /hy-tmp/hf_cache/datasets/nyu-mll___glue/mrpc/0.0.0/bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c (last modified on Sun Jul 26 21:53:49 2026).
+[dataset] task='mrpc' → route=hf_remote endpoint=nyu-mll/glue
+/usr/local/lib/python3.11/dist-packages/transformers/training_args.py:1525: FutureWarning: `evaluation_strategy` is deprecated and will be removed in version 4.46 of 🤗 Transformers. Use `eval_strategy` instead
+  warnings.warn(
+[PPO] ppo_update_interval=120 (batch=1440 steps, details chunk=360 episodes)
+Finetuning model with params:
+base_model: textattack/bert-base-uncased-MRPC
+data_path: mrpc
+output_dir: /hy-tmp/stage2_k6_k7_gate_74c5bda4_20260727_214945/paean/mrpc/rl/k6-k7-production-gate-b7ce0bfd
+batch_size: 64
+micro_batch_size: 64
+num_epochs: 1
+learning_rate: 0.0002
+rl_lr: 0.0001
+stage1_rl_lr: None
+stage2_rl_lr: None
+cutoff_len: 256
+val_set_size: 120
+use_gradient_checkpointing: False
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules: None
+Wdecompose_target_modules: None
+bottleneck_size: 256
+non_linearity: tanh
+adapter_dropout: 0.0
+use_parallel_adapter: True
+use_adapterp: False
+train_on_inputs: True
+scaling: 1.0
+adapter_name: lora
+target_modules: ['q_proj', 'k_proj', 'v_proj', 'up_proj', 'down_proj']
+final_eval_config_source: json
+final_eval_config_path: /hy-tmp/RFR_k6_13_eb19c6af_20260727/glue_final_configs_best_ppo.json
+manual_stage1_gelu: 
+manual_stage1_softmax: 
+manual_stage2_noise: 
+stage1_rl_episodes: 51000
+stage1_entropy_stop_threshold: None
+stage2_rl_episodes: 0
+stage1_rl_episodes_specified: False
+stage2_rl_episodes_specified: False
+skip_noise_rl: True
+final_eval_repeat_n: 1
+final_eval_preset: default
+final_eval_output_root: 
+final_eval_run_name: 
+final_eval_random_enabled: False
+final_eval_action_config: 
+final_eval_action_ranges: []
+final_eval_action_fixed: ['truncation=13', 'layer0.block1.truncation=6', 'layer0.block2.truncation=7']
+final_eval_require_rescale_optimizer: True
+skip_stage1_rl: True
+skip_final_eval: False
+final_eval_only: True
+group_by_length: False
+wandb_project: 
+wandb_run_name: 
+wandb_watch: 
+wandb_log_model: 
+resume_from_checkpoint: None
+resume_run_dir: 
+stage2_rl_variant: blb_v3
+blb_v3_rescale_invoker_kind: in_process
+blb_v3_inproc_rescale_optimizer_root: /hy-tmp/RFR_k6_13_eb19c6af_20260727/Rescale_optimizer
+blb_v3_warmstart_anchor_episodes: None
+blb_v3_warmstart_neighbor_ramp_episodes: None
+blb_v3_warmstart_neighbor_max_mutations: None
+blb_v3_warmstart_neighbor_max_radius: None
+blb_v3_warmstart_neighbor_sampling: None
+blb_v3_guarded_radius2_enabled: None
+blb_v3_guarded_radius2_min_episode: None
+blb_v3_guarded_radius2_stall_window: None
+blb_v3_guarded_radius2_max_mutations: None
+blb_v3_guarded_radius2_episode_fraction: None
+blb_v3_guarded_radius2_cooldown_episodes: None
+blb_v3_static_invalid_level_mask_enabled: None
+blb_v3_warmstart_baseline_bias: None
+blb_v3_warmstart_bias_gain: None
+blb_v3_ent_coef: None
+blb_v3_ent_coef_anchor: None
+blb_v3_ent_coef_ramp_episodes: None
+blb_v3_action_mask_enabled: False
+blb_v3_action_mask_mode: none
+blb_v3_action_mask_file: 
+blb_v3_action_mask_baseline_logit_bonus: 0.0
+blb_v3_action_mask_source: 
+
+Auto-detected num_labels=2 for dataset 'mrpc'
+BertForSequenceClassification(
+  (bert): BertModel(
+    (embeddings): BertEmbeddings(
+      (word_embeddings): Embedding(30522, 768, padding_idx=0)
+      (position_embeddings): Embedding(512, 768)
+      (token_type_embeddings): Embedding(2, 768)
+      (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+      (dropout): Dropout(p=0.1, inplace=False)
+    )
+    (encoder): BertEncoder(
+      (layer): ModuleList(
+        (0-11): 12 x BertLayer(
+          (attention): BertAttention(
+            (self): BertSdpaSelfAttention(
+              (query): Linear(in_features=768, out_features=768, bias=True)
+              (key): Linear(in_features=768, out_features=768, bias=True)
+              (value): Linear(in_features=768, out_features=768, bias=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+            (output): BertSelfOutput(
+              (dense): Linear(in_features=768, out_features=768, bias=True)
+              (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+          (intermediate): BertIntermediate(
+            (dense): Linear(in_features=768, out_features=3072, bias=True)
+            (intermediate_act_fn): GELUActivation()
+          )
+          (output): BertOutput(
+            (dense): Linear(in_features=3072, out_features=768, bias=True)
+            (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+            (dropout): Dropout(p=0.1, inplace=False)
+          )
+        )
+      )
+    )
+    (pooler): BertPooler(
+      (dense): Linear(in_features=768, out_features=768, bias=True)
+      (activation): Tanh()
+    )
+  )
+  (dropout): Dropout(p=0.1, inplace=False)
+  (classifier): Linear(in_features=768, out_features=2, bias=True)
+)
+Loading dataset: Dataset({
+    features: ['sentence1', 'sentence2', 'label', 'idx'],
+    num_rows: 408
+})
+After tokenize: {'sentence1': '" This decision is clearly incorrect , " FTC Chairman Timothy Muris said in a written statement .', 'sentence2': 'The decision is " clearly incorrect , " FTC Chairman Tim Muris said .', 'label': 1, 'idx': 558, 'input_ids': [101, 1000, 2023, 3247, 2003, 4415, 16542, 1010, 1000, 3027, 2278, 3472, 10805, 14163, 6935, 2056, 1999, 1037, 2517, 4861, 1012, 102, 1996, 3247, 2003, 1000, 4415, 16542, 1010, 1000, 3027, 2278, 3472, 5199, 14163, 6935, 2056, 1012, 102], 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
+After add label: {'sentence1': '" This decision is clearly incorrect , " FTC Chairman Timothy Muris said in a written statement .', 'sentence2': 'The decision is " clearly incorrect , " FTC Chairman Tim Muris said .', 'labels': 1, 'idx': 558, 'input_ids': [101, 1000, 2023, 3247, 2003, 4415, 16542, 1010, 1000, 3027, 2278, 3472, 10805, 14163, 6935, 2056, 1999, 1037, 2517, 4861, 1012, 102, 1996, 3247, 2003, 1000, 4415, 16542, 1010, 1000, 3027, 2278, 3472, 5199, 14163, 6935, 2056, 1012, 102], 'token_type_ids': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}
+After format: Dataset({
+    features: ['sentence1', 'sentence2', 'labels', 'idx', 'input_ids', 'token_type_ids', 'attention_mask'],
+    num_rows: 408
+})
+Train data size: 3668
+Validation data size: 408
+Reinforcement Learning to evaluate layer sensitivity to approximation
+[信息] 数据集（Dataset）'mrpc' 检测为 CLASSIFICATION 任务
+[信息] 使用指标（Using metrics）: Accuracy, F1
+[数据集协议（Dataset Protocol）] 完整验证集（validation_full）=408  （统一使用 validation_full，不再拆分 search/holdout/proxy）
+Model compile started
+Model compile finished
+Starting evaluation...
+Round 0 of evaluation
+{'labels': tensor(1), 'input_ids': tensor([  101,  1000,  2023,  3247,  2003,  4415, 16542,  1010,  1000,  3027,
+         2278,  3472, 10805, 14163,  6935,  2056,  1999,  1037,  2517,  4861,
+         1012,   102,  1996,  3247,  2003,  1000,  4415, 16542,  1010,  1000,
+         3027,  2278,  3472,  5199, 14163,  6935,  2056,  1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])}
+{'labels': tensor(1), 'input_ids': tensor([  101,  1000,  2023,  3247,  2003,  4415, 16542,  1010,  1000,  3027,
+         2278,  3472, 10805, 14163,  6935,  2056,  1999,  1037,  2517,  4861,
+         1012,   102,  1996,  3247,  2003,  1000,  4415, 16542,  1010,  1000,
+         3027,  2278,  3472,  5199, 14163,  6935,  2056,  1012,   102]), 'token_type_ids': tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]), 'attention_mask': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])}
+  0%|          | 0/7 [00:00<?, ?it/s] 57%|█████▋    | 4/7 [00:00<00:00, 33.49it/s]
+============================================================
+开始配置评估（STARTING CONFIGURATION EVALUATION）
+最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）=json
+[信息] 第一阶段RL搜索已跳过（--skip-stage1-rl）。
+============================================================
+
+--- 阶段1（Phase 1）: 已跳过（SKIPPED）（--skip-stage1-rl） ---
+[信息] 基线建立已跳过，因其仅用于第一阶段RL搜索。
+已恢复 12 层的原始GELU函数（original GELU function）
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+[Info] Stage-2 固定 GELU/Softmax 来源：Stage-2 all4 (softmax fixed deg6) (source=stage2_all4)
+  Stage-2 GELU   : [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+  Stage-2 Softmax: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+
+[信息] 第二阶段噪声RL训练已跳过（--skip-noise-rl）。
+
+============================================================
+PHASE: BLB ACTION FINAL EVALUATION (validation_full)
+CONFIG_SOURCE=json  STAGE1_SOURCE=json
+RESCALE_OPTIMIZER=in_process root=/hy-tmp/RFR_k6_13_eb19c6af_20260727/Rescale_optimizer mode=cfg_derived
+selected_candidates=1 random_enabled=False cost_match_count=0 repeat=1
+action_fixed=['truncation=13', 'layer0.block1.truncation=6', 'layer0.block2.truncation=7']
+============================================================
+
+--- BLB selected candidate 1/1: ActionSelected ---
+已替换 11 层的GELU函数（GELU function）
+已替换 1 层的GELU函数（GELU function）
+已替换 5 层的Softmax函数（Softmax function）
+已替换 6 层的Softmax函数（Softmax function）
+已替换 1 层的Softmax函数（Softmax function）
+  ActionSelected: Loss=0.3695, Acc.=0.8873, F1=0.8851, avg_k=12.78, bits=14461, fusion=0
+BLB action final-eval plots deferred; set RFR_PAEAN_RENDER_PLOTS=1 to enable.
+BLB action final-eval summary saved to: /hy-tmp/stage2_k6_k7_gate_74c5bda4_20260727_214945/paean/mrpc/rl/k6-k7-production-gate-b7ce0bfd/final_eval/blb_action_final_eval_results_mrpc.json
+BLB action final-eval text report saved to: /hy-tmp/stage2_k6_k7_gate_74c5bda4_20260727_214945/paean/mrpc/rl/k6-k7-production-gate-b7ce0bfd/final_eval/blb_action_final_eval_report_mrpc.md
+
+配置评估完成（Configuration evaluation finished）。
+100%|██████████| 7/7 [00:03<00:00,  1.98it/s]
+Round 0, Final evaluation loss: 0.3462543785572052
+
+ If there's a warning about missing keys above, please disregard :)
+final_eval standalone configuration:
+  dataset: mrpc
+  algorithm: rl
+  source: json
+  config: /hy-tmp/RFR_k6_13_eb19c6af_20260727/glue_final_configs_best_ppo.json
+  random_enabled: False
+  action_fixed: ['truncation=13', 'layer0.block1.truncation=6', 'layer0.block2.truncation=7']
+  blb_rescale_invoker_kind: in_process
+  blb_rescale_optimizer_root: /hy-tmp/RFR_k6_13_eb19c6af_20260727/Rescale_optimizer
+  require_rescale_optimizer: True
+  output_dir: /hy-tmp/stage2_k6_k7_gate_74c5bda4_20260727_214945/paean/mrpc/rl/k6-k7-production-gate-b7ce0bfd
+  workload:
+    selected_configs: 1
+    action_range_dimensions: 0
+    legacy_random_controls: 0
+    cost_matched_random_configs: 0
+    total_configs: 1
+    repeat: 1
+    total_repeated_evaluations: 1
+    batch_size: 64
+    stage2_k_trials: 5
+    stage2_probe_size: 256
+    launcher_processes: 1
+    gpu_parallelism_candidate: false
+    gpu_parallelism_hint: single final-eval config
+  command: /usr/local/bin/python3 /hy-tmp/RFR_k6_13_eb19c6af_20260727/rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir /hy-tmp/stage2_k6_k7_gate_74c5bda4_20260727_214945/paean/mrpc/rl/k6-k7-production-gate-b7ce0bfd --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]' --use_ist --final_eval_config_source json --final_eval_config_path /hy-tmp/RFR_k6_13_eb19c6af_20260727/glue_final_configs_best_ppo.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 0 --final_eval_stage2_budget_trials 0 --final_eval_random_enabled false --final_eval_repeat_n 1 --final_eval_action_config '' --final_eval_action_ranges '[]' --final_eval_action_fixed '["truncation=13", "layer0.block1.truncation=6", "layer0.block2.truncation=7"]' --final_eval_cost_match_count 0 --final_eval_cost_match_max_attempts 5000 --final_eval_glue_submission_enabled false --final_eval_glue_submission_seed 42 --blb_v3_rescale_invoker_kind in_process --blb_v3_inproc_rescale_optimizer_root /hy-tmp/RFR_k6_13_eb19c6af_20260727/Rescale_optimizer --final_eval_require_rescale_optimizer true --skip_noise_rl true --skip_stage1_rl true --skip_final_eval false --final_eval_only true --resume_run_dir '' --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.05 --stage2_stability_tolerance 0.05 --stage2_k_trials 5 --stage2_probe_size 256 --stage1_rl_episodes 51000 --stage2_rl_episodes 0 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified false --ppo_update_interval 120 --stage2_rl_variant blb_v3
