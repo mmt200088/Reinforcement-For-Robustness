@@ -777,7 +777,7 @@ class BLBActionFinalEvaluationModule:
                 profile=str(profile),
             )
         return action_vector_to_cfgs(
-            action_vec=np.asarray(action_vec, dtype=int),
+            action_vec=action_vec,
             max_sfs=max_sfs,
             num_layers=int(num_layers),
             gelu_degree=np.asarray(gelu, dtype=int),

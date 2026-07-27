@@ -584,12 +584,18 @@ def _action_dims_array(num_layers: int) -> np.ndarray:
     return dims
 
 
-def _coerce_and_validate_action_vector(
-        action_vec: np.ndarray,
+def validate_action_vector(
+        action_vec: Sequence[int] | np.ndarray,
         num_layers: int,
         ) -> np.ndarray:
     """Return a 1D integer action after lossless categorical validation."""
-    raw = np.asarray(action_vec)
+    original = action_vec
+    if not isinstance(action_vec, np.ndarray):
+        try:
+            original = tuple(action_vec)
+        except TypeError:
+            pass
+    raw = np.asarray(original)
     if raw.ndim != 1:
         raise ValueError(
             f"action_vec must be one-dimensional, got shape {raw.shape}"
@@ -602,8 +608,14 @@ def _coerce_and_validate_action_vector(
             f"(num_layers={int(num_layers)})"
         )
 
+    original_has_boolean = (
+        any(isinstance(value, (bool, np.bool_)) for value in original)
+        if isinstance(original, tuple)
+        else raw.dtype == object
+        and any(isinstance(value, (bool, np.bool_)) for value in raw.flat)
+    )
     integer_dtype = np.issubdtype(raw.dtype, np.integer)
-    boolean_dtype = np.issubdtype(raw.dtype, np.bool_)
+    boolean_dtype = np.issubdtype(raw.dtype, np.bool_) or original_has_boolean
     if not integer_dtype or boolean_dtype:
         if np.issubdtype(raw.dtype, np.floating):
             integer_valued = np.isfinite(raw) & (raw == np.trunc(raw))
@@ -1391,7 +1403,7 @@ def action_vector_to_cfgs(
     Returns:
         ``ActionDecodeResult``
     """
-    arr = _coerce_and_validate_action_vector(action_vec, num_layers)
+    arr = validate_action_vector(action_vec, num_layers)
 
     layer_dim_list = layer_dims()
     layer_dim = len(layer_dim_list)
@@ -1837,7 +1849,7 @@ def describe_action_vector(
     decoded value, scaling-factor table N, and whether the slot is effective
     for the layer's polynomial degree.
     """
-    arr = _coerce_and_validate_action_vector(action_vec, num_layers)
+    arr = validate_action_vector(action_vec, num_layers)
 
     fields = per_layer_field_offsets()
     layer_dim = len(fields)
@@ -2027,7 +2039,7 @@ def _sum_count_effective_k_values_in_action(
         action_vec: np.ndarray,
         num_layers: int,
         ) -> Tuple[int, int]:
-    arr = _coerce_and_validate_action_vector(action_vec, num_layers)
+    arr = validate_action_vector(action_vec, num_layers)
     layer_dim = len(layer_dims())
     total = 0
     count = 0
@@ -2044,7 +2056,7 @@ def _gather_effective_k_values_in_action(
         action_vec: np.ndarray,
         num_layers: int,
         ) -> List[int]:
-    arr = _coerce_and_validate_action_vector(action_vec, num_layers)
+    arr = validate_action_vector(action_vec, num_layers)
     layer_dim = len(layer_dims())
     ks: List[int] = []
     for li in range(int(num_layers)):

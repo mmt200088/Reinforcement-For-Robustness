@@ -26,6 +26,7 @@ if __package__:  # package/runtime context
         action_vector_to_cfgs,
         build_optimizer_requests,
         parse_config_name,
+        validate_action_vector,
     )
 else:  # torch-free test lane (blb_stage2_rl on sys.path)
     from action_space import (
@@ -34,6 +35,7 @@ else:  # torch-free test lane (blb_stage2_rl on sys.path)
         action_vector_to_cfgs,
         build_optimizer_requests,
         parse_config_name,
+        validate_action_vector,
     )
 
 
@@ -526,7 +528,7 @@ def evaluate_action_for_cost(
     path — replan cost signals, optimizer override, AND the model noise install —
     uses the boosted action group rather than the index-decoded pre-boost one.
     """
-    action_arr = np.asarray(action_vec, dtype=int).reshape(-1)
+    action_arr = validate_action_vector(action_vec, int(num_layers))
     decoded = action_vector_to_cfgs(
         action_arr,
         max_sfs,

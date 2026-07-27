@@ -133,7 +133,7 @@ def action_vec_to_slots_list(
     or ``truncation_bits`` depending on kind).
     """
     description = describe_action_vector(
-        np.asarray(action_vec, dtype=int),
+        action_vec,
         max_sfs=max_sfs,
         num_layers=int(num_layers),
         gelu_degree=gelu_degree,

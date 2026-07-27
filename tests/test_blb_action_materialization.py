@@ -1,9 +1,11 @@
 """Runtime contracts for canonical Stage-2 action materialization."""
 from __future__ import annotations
 
+import ast
 import copy
 from contextlib import contextmanager
 import importlib
+from pathlib import Path
 import sys
 import types
 import unittest
@@ -26,6 +28,57 @@ except Exception as exc:  # pragma: no cover - local macOS may be torch-free.
 
 
 _MISSING = object()
+_REPO = Path(__file__).resolve().parents[1]
+
+
+def _load_function_standalone(rel_path, function_name, **runtime_globals):
+    path = _REPO / rel_path
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == function_name
+    )
+    future = ast.parse("from __future__ import annotations\n").body[0]
+    module = ast.Module(body=[future, function], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = dict(runtime_globals)
+    exec(compile(module, str(path), "exec"), namespace)
+    return namespace[function_name]
+
+
+def _load_paean_method(method_name, **runtime_globals):
+    path = _REPO / "Paean" / "blb_action_eval.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    cls = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "BLBActionFinalEvaluationModule"
+    )
+    method = next(
+        node
+        for node in cls.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == method_name
+    )
+    future = ast.parse("from __future__ import annotations\n").body[0]
+    module = ast.Module(body=[future, method], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = dict(runtime_globals)
+    exec(compile(module, str(path), "exec"), namespace)
+    return namespace[method_name]
+
+
+def _reject_invalid_raw_action(action_vec, *_args, **_kwargs):
+    raw = __import__("numpy").asarray(action_vec)
+    if raw.ndim != 1:
+        raise ValueError("action_vec must be one-dimensional")
+    if __import__("numpy").issubdtype(raw.dtype, __import__("numpy").floating):
+        if __import__("numpy").any(raw != __import__("numpy").trunc(raw)):
+            raise ValueError("action_vec must contain integer categorical indices")
+    raise AssertionError("entry point coerced the invalid action before decoding")
 
 
 @contextmanager
@@ -163,6 +216,70 @@ class ActionVectorBoundsTests(unittest.TestCase):
                     negative_sf,
                     num_layers=1,
                 )
+
+    def test_full_decode_rejects_boolean_in_mixed_python_sequence(self):
+        with _stubbed_action_space() as action_space:
+            action = action_space.make_all_max_action_vector(num_layers=1).tolist()
+            action[self._first_k_offset(action_space)] = True
+
+            with self.assertRaisesRegex(ValueError, "integer categorical indices"):
+                action_space.action_vector_to_cfgs(
+                    action,
+                    max_sfs=action_space.MaxSFsTable(),
+                    num_layers=1,
+                )
+
+    def test_action_io_preserves_invalid_raw_action_for_shared_validation(self):
+        action_vec_to_slots_list = _load_function_standalone(
+            "blb_stage2_rl/action_io.py",
+            "action_vec_to_slots_list",
+            np=__import__("numpy"),
+            describe_action_vector=_reject_invalid_raw_action,
+        )
+
+        with self.assertRaisesRegex(ValueError, "integer categorical indices"):
+            action_vec_to_slots_list(
+                [0.5],
+                max_sfs=object(),
+                num_layers=1,
+            )
+
+    def test_optimizer_cost_preserves_invalid_raw_action_for_shared_validation(self):
+        evaluate_action_for_cost = _load_function_standalone(
+            "blb_stage2_rl/optimizer_cost.py",
+            "evaluate_action_for_cost",
+            np=__import__("numpy"),
+            validate_action_vector=_reject_invalid_raw_action,
+            action_vector_to_cfgs=_reject_invalid_raw_action,
+        )
+
+        with self.assertRaisesRegex(ValueError, "one-dimensional"):
+            evaluate_action_for_cost(
+                [[0]],
+                profile="mrpc",
+                num_layers=1,
+                max_sfs=object(),
+                rescale_bridge=object(),
+            )
+
+    def test_paean_preserves_invalid_raw_action_for_shared_validation(self):
+        decode_action_candidate = _load_paean_method(
+            "_decode_action_candidate",
+            np=__import__("numpy"),
+            action_vector_to_cfgs=_reject_invalid_raw_action,
+        )
+
+        with self.assertRaisesRegex(ValueError, "integer categorical indices"):
+            decode_action_candidate(
+                SimpleNamespace(),
+                action_vec=[0.5],
+                metadata={},
+                max_sfs=object(),
+                num_layers=1,
+                gelu=[4],
+                softmax=[6],
+                profile="mrpc",
+            )
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"runtime imports unavailable: {_IMPORT_ERROR!r}")
