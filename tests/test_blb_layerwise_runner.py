@@ -2576,8 +2576,20 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         initialize_layerwise_policy(policy)
 
         self.assertEqual(policy.probabilities[0], {0: 0.60, 1: 0.40})
-        expected_k = {13: 0.50, 12: 0.20, 11: 0.12, 10: 0.08, 9: 0.06, 8: 0.04}
+        expected_k = {
+            13: 0.475,
+            12: 0.190,
+            11: 0.114,
+            10: 0.076,
+            9: 0.057,
+            8: 0.038,
+            7: 0.030,
+            6: 0.020,
+        }
         self.assertEqual(policy.probabilities[1:], [expected_k] * 5)
+        self.assertEqual(math.fsum(expected_k.values()), 1.0)
+        self.assertGreater(expected_k[6], 0.0)
+        self.assertGreater(expected_k[7], 0.0)
         self.assertEqual(policy.values[0], (0, 1))
         self.assertEqual(policy.values[1:], [tuple(K_LEVELS)] * 5)
 

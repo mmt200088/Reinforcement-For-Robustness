@@ -71,7 +71,7 @@ class SequentialPolicyConfig:
     """
     state_dim: int
     max_step_dim: int
-    max_num_levels: int = 6      # max levels across F/W/M/S/R/K (currently 6 for K)
+    max_num_levels: int = 6      # generic default; production derives schedule width
     d_hidden: int = 256
     d_step_embed: int = 32       # embedding for step_idx (0..horizon-1)
     horizon: int = 59

@@ -145,6 +145,44 @@ class TruncationLevelsTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "each supported K value"):
                     truncation_levels.validate_exact_k_domain(levels)
 
+    def test_checkpoint_k_domain_contract_carries_exact_ordered_levels(self):
+        contract = truncation_levels.checkpoint_k_domain_contract()
+        self.assertEqual(
+            contract,
+            {
+                "schema_version": "stage2_truncation_k_domain_v1",
+                "k_levels": list(truncation_levels.K_LEVELS),
+            },
+        )
+        checkpoint = {
+            truncation_levels.CHECKPOINT_K_DOMAIN_KEY: contract,
+        }
+        self.assertEqual(
+            truncation_levels.validate_checkpoint_k_domain(checkpoint),
+            truncation_levels.K_LEVELS,
+        )
+
+    def test_checkpoint_k_domain_rejects_missing_and_old_six_level_contracts(self):
+        old_six = {
+            "schema_version": "stage2_truncation_k_domain_v1",
+            "k_levels": [8, 9, 11, 13, 10, 12],
+        }
+        reordered_eight = {
+            "schema_version": "stage2_truncation_k_domain_v1",
+            "k_levels": [13, 12, 11, 10, 9, 8, 7, 6],
+        }
+        for checkpoint in (
+            {},
+            {truncation_levels.CHECKPOINT_K_DOMAIN_KEY: old_six},
+            {truncation_levels.CHECKPOINT_K_DOMAIN_KEY: reordered_eight},
+        ):
+            with self.subTest(checkpoint=checkpoint):
+                with self.assertRaisesRegex(RuntimeError, "fresh run"):
+                    truncation_levels.validate_checkpoint_k_domain(
+                        checkpoint,
+                        context="legacy Stage-2 checkpoint",
+                    )
+
     def test_baseline_k_index_prefers_k13_and_falls_back_to_maximum(self):
         self.assertEqual(
             truncation_levels.baseline_k_index(
