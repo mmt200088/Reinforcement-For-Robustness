@@ -34,6 +34,7 @@ Run::
 """
 from __future__ import annotations
 
+import ast
 from contextlib import contextmanager
 import importlib.machinery
 import importlib.util
@@ -46,6 +47,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -63,6 +65,47 @@ def _load_module_standalone(rel_path: str, name: str):
     sys.modules[name] = mod
     loader.exec_module(mod)
     return mod
+
+
+def _load_function_standalone(rel_path: str, function_name: str, **globals_):
+    """Compile one production function without importing its heavy module."""
+    path = REPO_ROOT / rel_path
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    )
+    future = ast.parse("from __future__ import annotations\n").body[0]
+    isolated = ast.Module(body=[future, function], type_ignores=[])
+    ast.fix_missing_locations(isolated)
+    namespace = {
+        "__name__": f"blb_stage2_rl._isolated_{function_name}",
+        "__package__": "blb_stage2_rl",
+        **globals_,
+    }
+    exec(compile(isolated, str(path), "exec"), namespace)
+    return namespace[function_name]
+
+
+class _AccessTrap:
+    """Fail if an entry point touches state after its K-domain guard."""
+
+    def __getattribute__(self, name):
+        raise AssertionError(f"fail-fast trap accessed attribute {name!r}")
+
+    def __setattr__(self, name, value):
+        raise AssertionError(f"fail-fast trap mutated attribute {name!r}")
+
+
+def _dependency_stub(suffix: str, **overrides):
+    """Return a lazy module stub for imports not reached after fail-fast."""
+    module = types.ModuleType(f"blb_stage2_rl.{suffix}")
+    fallback = object()
+    module.__getattr__ = lambda _name: fallback
+    for name, value in overrides.items():
+        setattr(module, name, value)
+    return module
 
 
 def _method_region_from_source(source: str, method_name: str) -> str:
@@ -808,6 +851,105 @@ class ProductionPolicyGeometryTest(unittest.TestCase):
 
 
 class CheckpointKDomainWiringTest(unittest.TestCase):
+    _OLD_SIX_LEVEL_DOMAIN = (8, 9, 11, 13, 10, 12)
+
+    def test_train_sequential_rejects_six_levels_before_training_state(self):
+        from blb_stage2_rl.truncation_levels import validate_exact_k_domain
+
+        train = _load_function_standalone(
+            "blb_stage2_rl/sequential_runner.py",
+            "train_sequential",
+            K_LEVELS=self._OLD_SIX_LEVEL_DOMAIN,
+            validate_exact_k_domain=validate_exact_k_domain,
+        )
+        env = _AccessTrap()
+        policy = _AccessTrap()
+        train_cfg = _AccessTrap()
+
+        with self.assertRaisesRegex(ValueError, "exactly once"):
+            train(env=env, policy=policy, train_cfg=train_cfg)
+
+    def test_runner_entry_rejects_six_levels_before_lock_or_persistence(self):
+        from blb_stage2_rl.truncation_levels import validate_exact_k_domain
+
+        entry = _load_function_standalone(
+            "blb_stage2_rl/sequential_runner.py",
+            "run_sequential_via_runner",
+            K_LEVELS=self._OLD_SIX_LEVEL_DOMAIN,
+            validate_exact_k_domain=validate_exact_k_domain,
+        )
+        runner = _AccessTrap()
+        train_cfg = _AccessTrap()
+        real_import = __import__
+        with mock.patch("builtins.__import__", wraps=real_import) as import_spy:
+            with self.assertRaisesRegex(ValueError, "exactly once"):
+                entry(
+                    runner=runner,
+                    train_cfg=train_cfg,
+                    fixed_gelu=None,
+                    fixed_softmax=None,
+                    fixed_label="test",
+                    fixed_source="test",
+                )
+
+        import_spy.assert_not_called()
+
+    def test_substage_entry_rejects_six_levels_before_runtime_dependencies(self):
+        from blb_stage2_rl.truncation_levels import validate_exact_k_domain
+
+        resolve_persistence = mock.Mock(name="resolve_blb_persistence_dir")
+        construct_policy = mock.Mock(name="BLBStage2SequentialPolicy")
+        stubbed_dependencies = (
+            "baseline_bootstrap",
+            "env",
+            "reward",
+            "persistence",
+            "schedule_geometry",
+            "sequential_env",
+            "sequential_runner",
+            "substage_env",
+        )
+        stubs = {
+            f"blb_stage2_rl.{suffix}": _dependency_stub(suffix)
+            for suffix in stubbed_dependencies
+        }
+        stubs.update({
+            "blb_stage2_rl.runner": _dependency_stub(
+                "runner",
+                resolve_blb_persistence_dir=resolve_persistence,
+            ),
+            "blb_stage2_rl.sequential_policy": _dependency_stub(
+                "sequential_policy",
+                BLBStage2SequentialPolicy=construct_policy,
+            ),
+            "blb_stage2_rl.truncation_levels": _dependency_stub(
+                "truncation_levels",
+                CHECKPOINT_K_DOMAIN_KEY="truncation_k_domain",
+                K_LEVELS=self._OLD_SIX_LEVEL_DOMAIN,
+                validate_exact_k_domain=validate_exact_k_domain,
+            ),
+        })
+        entry = _load_function_standalone(
+            "blb_stage2_rl/substage_runner.py",
+            "run_substage_via_runner",
+            torch=None,
+        )
+        runner = _AccessTrap()
+        train_cfg = _AccessTrap()
+        with mock.patch.dict(sys.modules, stubs):
+            with self.assertRaisesRegex(ValueError, "exactly once"):
+                entry(
+                    runner=runner,
+                    train_cfg=train_cfg,
+                    fixed_gelu=np.asarray([], dtype=int),
+                    fixed_softmax=np.asarray([], dtype=int),
+                    fixed_label="test",
+                    fixed_source="test",
+                )
+
+        resolve_persistence.assert_not_called()
+        construct_policy.assert_not_called()
+
     def test_runtime_domain_validator_accepts_reorder_and_rejects_six_levels(self):
         from blb_stage2_rl.truncation_levels import validate_exact_k_domain
 
