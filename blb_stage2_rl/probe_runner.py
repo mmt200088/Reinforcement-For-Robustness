@@ -46,10 +46,20 @@ import torch
 import torch.nn as nn
 
 from elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
-from function_handler import ReversibleLayerHandler, reseed_noise_rng_for_device
+from function_handler import (
+    ReversibleLayerHandler,
+    noise_rng_offsets_for_device,
+    reseed_noise_rng_for_device,
+    set_noise_rng_offsets_for_device,
+)
 
 from .action_space import ActionDecodeResult
-from .inference_eval import run_installed_probe_trial
+from .inference_eval import (
+    ProbeBatchContribution,
+    probe_batch_to_model_kwargs,
+    run_installed_probe_batch,
+    run_installed_probe_trial,
+)
 # We use BLBNoiseRLBridge for noise install/clear; defer import to avoid the
 # heavy chain at module-load time when this file is imported by tests.
 try:
@@ -60,6 +70,10 @@ except Exception:  # pragma: no cover — torch-free import path
 
 _PROCESS_STARTUP_TIMEOUT_SECONDS = 300.0
 _PROCESS_COMMAND_TIMEOUT_SECONDS = 3600.0
+
+
+class ProbeBatchRNGOffsetMismatch(RuntimeError):
+    """Raised when a batch does not consume the calibrated CUDA RNG offsets."""
 
 
 def resolve_probe_backend(spec: Optional[str] = None) -> str:
@@ -380,6 +394,107 @@ class ProbeWorker:
                 metric_profile=str(self.metric_profile),
                 is_regression=bool(self.is_regression),
             )
+
+    def calibrate_batch_rng_offsets(
+            self,
+            batch_set_key: str = "F1",
+            ) -> Tuple[int, int]:
+        """Measure per-forward CUDA noise RNG consumption on one sample."""
+        normalized = _normalize_batch_set_key(batch_set_key)
+        try:
+            batch = self.probe_batch_sets[normalized][0]
+        except KeyError as exc:
+            raise KeyError(
+                f"unknown probe batch-set {normalized!r}; "
+                f"registered={sorted(self.probe_batch_sets)}"
+            ) from exc
+        if self.device.type != "cuda":
+            raise RuntimeError("probe batch RNG offsets require a CUDA device")
+
+        sample_kwargs = {
+            key: value[:1] if isinstance(value, torch.Tensor) else value
+            for key, value in probe_batch_to_model_kwargs(batch).items()
+        }
+        was_training = bool(self.model.training)
+        with torch.cuda.device(self.device):
+            reseed_noise_rng_for_device(self.device, 0)
+            start_offsets = noise_rng_offsets_for_device(self.device)
+            if was_training:
+                self.model.eval()
+            try:
+                with torch.inference_mode():
+                    self.model(**sample_kwargs)
+            finally:
+                if was_training:
+                    self.model.train()
+            end_offsets = noise_rng_offsets_for_device(self.device)
+        return (
+            int(end_offsets[0] - start_offsets[0]),
+            int(end_offsets[1] - start_offsets[1]),
+        )
+
+    def run_trial_batch(
+            self,
+            trial_idx: int,
+            base_seed: int,
+            *,
+            batch_index: int,
+            noise_offset: int,
+            truncation_offset: int,
+            expected_offset_deltas: Tuple[int, int],
+            batch_set_key: str = "F1",
+            ) -> ProbeBatchContribution:
+        """Replay one trial batch from exact CUDA RNG stream offsets."""
+        normalized = _normalize_batch_set_key(batch_set_key)
+        try:
+            probe_batches = self.probe_batch_sets[normalized]
+        except KeyError as exc:
+            raise KeyError(
+                f"unknown probe batch-set {normalized!r}; "
+                f"registered={sorted(self.probe_batch_sets)}"
+            ) from exc
+        batch_idx = int(batch_index)
+        if batch_idx < 0 or batch_idx >= len(probe_batches):
+            raise IndexError(
+                f"probe batch index {batch_idx} is outside "
+                f"[0, {len(probe_batches)})"
+            )
+        expected = tuple(int(value) for value in expected_offset_deltas)
+        if len(expected) != 2 or any(value < 0 for value in expected):
+            raise ValueError(
+                "expected CUDA RNG offset deltas must be two non-negative ints"
+            )
+
+        with torch.cuda.device(self.device):
+            seed = _trial_seed(base_seed, int(trial_idx))
+            reseed_noise_rng_for_device(self.device, seed)
+            set_noise_rng_offsets_for_device(
+                self.device,
+                noise_offset=int(noise_offset),
+                truncation_offset=int(truncation_offset),
+            )
+            start_offsets = noise_rng_offsets_for_device(self.device)
+            contribution = run_installed_probe_batch(
+                self.model,
+                probe_batches[batch_idx],
+                trial_index=int(trial_idx),
+                batch_index=batch_idx,
+                metric_profile=str(self.metric_profile),
+                is_regression=bool(self.is_regression),
+            )
+            end_offsets = noise_rng_offsets_for_device(self.device)
+
+        actual = (
+            int(end_offsets[0] - start_offsets[0]),
+            int(end_offsets[1] - start_offsets[1]),
+        )
+        if actual != expected:
+            raise ProbeBatchRNGOffsetMismatch(
+                "probe batch CUDA RNG consumption differs from calibration: "
+                f"expected={expected}, actual={actual}, "
+                f"trial={int(trial_idx)}, batch={batch_idx}"
+            )
+        return contribution
 
 
 def _probe_process_main(

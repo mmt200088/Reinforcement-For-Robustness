@@ -362,6 +362,83 @@ def probe_batch_to_model_kwargs(batch: Any) -> dict:
     return kwargs
 
 
+def run_installed_probe_batch(
+        model: torch.nn.Module,
+        batch: Any,
+        *,
+        trial_index: int,
+        batch_index: int,
+        is_regression: bool,
+        metric_profile: str,
+        restore_training: bool = True,
+        forward_context: Optional[Any] = None,
+        ) -> ProbeBatchContribution:
+    """Run one canonical probe batch for distributed trial reconstruction."""
+    was_training = bool(model.training)
+    need_prediction_arrays = (
+        bool(is_regression) or uses_weighted_f1_metric2(metric_profile)
+    )
+    if was_training:
+        model.eval()
+    forward_ctx = (
+        forward_context
+        if forward_context is not None
+        else contextlib.nullcontext()
+    )
+    try:
+        with forward_ctx:
+            with torch.inference_mode():
+                outputs = model(**probe_batch_to_model_kwargs(batch))
+                _loss_t, logits = output_loss_and_logits(outputs)
+    finally:
+        if restore_training and was_training:
+            model.train()
+
+    with torch.inference_mode():
+        labels = batch.labels
+        sample_count = probe_batch_sample_count(labels)
+        if is_regression:
+            predictions = logits.view(-1).float()
+            targets = labels.view(-1).float()
+            loss_t = torch.nn.functional.mse_loss(predictions, targets)
+            metric1_t = -loss_t
+            metric2_t = -loss_t
+        else:
+            loss_t = torch.nn.functional.cross_entropy(
+                logits.float(), labels.long(), reduction="mean",
+            )
+            predictions = logits_to_classes_tensor(logits.detach())
+            metric1_t = (
+                predictions.long() == labels.detach().long()
+            ).float().mean()
+            metric2_t = metric1_t
+
+    losses, metric1s, metric2s = tensor_scalar_sequences_to_float_lists(
+        [loss_t.detach().reshape(())],
+        [metric1_t.detach().reshape(())],
+        [metric2_t.detach().reshape(())],
+    )
+    prediction_array: Optional[np.ndarray] = None
+    label_array: Optional[np.ndarray] = None
+    if need_prediction_arrays:
+        prediction_array = tensor_values_to_numpy_arrays(
+            [predictions.detach().reshape(-1)]
+        )[0]
+        label_array = tensor_values_to_numpy_arrays(
+            [labels.detach().reshape(-1)]
+        )[0]
+    return ProbeBatchContribution(
+        trial_index=int(trial_index),
+        batch_index=int(batch_index),
+        loss=losses[0],
+        metric1=metric1s[0],
+        metric2=metric2s[0],
+        sample_count=int(sample_count),
+        predictions=prediction_array,
+        labels=label_array,
+    )
+
+
 def run_installed_probe_trial(
         model: torch.nn.Module,
         probe_batches: Sequence[Any],
