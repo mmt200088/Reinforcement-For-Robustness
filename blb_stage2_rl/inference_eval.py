@@ -36,6 +36,65 @@ class InstalledModelEvalResult:
     logits: np.ndarray
 
 
+@dataclass(frozen=True)
+class ProbeBatchContribution:
+    """One canonical `(trial, batch)` contribution to probe metrics."""
+    trial_index: int
+    batch_index: int
+    loss: float
+    metric1: float
+    metric2: float
+    sample_count: int
+    predictions: Optional[np.ndarray] = None
+    labels: Optional[np.ndarray] = None
+
+
+def finalize_probe_batch_contributions(
+        contributions: Sequence[ProbeBatchContribution],
+        *,
+        expected_trial_index: int,
+        expected_batch_count: int,
+        metric_profile: str,
+        is_regression: bool,
+        ) -> Optional[Tuple[float, float, float]]:
+    """Finalize already ordered batch contributions with existing semantics."""
+    trial_index = int(expected_trial_index)
+    batch_count = int(expected_batch_count)
+    canonical = [
+        (trial_index, batch_index)
+        for batch_index in range(batch_count)
+    ]
+    actual = [
+        (int(item.trial_index), int(item.batch_index))
+        for item in contributions
+    ]
+    if actual != canonical:
+        raise ValueError(
+            "probe batch contributions are not in canonical trial/batch order: "
+            f"expected={canonical}, actual={actual}"
+        )
+    predictions = [
+        np.asarray(item.predictions)
+        for item in contributions
+        if item.predictions is not None
+    ]
+    labels = [
+        np.asarray(item.labels)
+        for item in contributions
+        if item.labels is not None
+    ]
+    return finalize_probe_trial_metrics(
+        losses=[float(item.loss) for item in contributions],
+        m1s=[float(item.metric1) for item in contributions],
+        m2s=[float(item.metric2) for item in contributions],
+        counts=[int(item.sample_count) for item in contributions],
+        metric_profile=str(metric_profile),
+        is_regression=bool(is_regression),
+        preds=predictions or None,
+        labels=labels or None,
+    )
+
+
 def normalize_labels_for_metrics(labels: Any) -> np.ndarray:
     if isinstance(labels, torch.Tensor):
         arr = labels.detach()

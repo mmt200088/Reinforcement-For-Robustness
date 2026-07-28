@@ -168,6 +168,25 @@ def _split_round_robin(k: int, n_workers: int) -> List[List[int]]:
     return [list(trials) for trials in _split_round_robin_cached(k, n_workers)]
 
 
+def _should_batch_shard_trials(
+        *,
+        k: int,
+        worker_count: int,
+        batch_count: int,
+        process_backend: bool,
+        ) -> bool:
+    """Use finer tasks only for an uneven, genuinely degraded process pool."""
+    trials = max(0, int(k))
+    workers = max(0, int(worker_count))
+    batches = max(0, int(batch_count))
+    return bool(
+        process_backend
+        and 1 < workers < trials
+        and batches > 1
+        and (trials % workers) != 0
+    )
+
+
 @lru_cache(maxsize=64)
 def _split_action_trial_tasks_cached(
         action_count: int,

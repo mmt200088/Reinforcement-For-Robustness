@@ -291,6 +291,37 @@ def reseed_noise_rng_for_device(
     truncation_generator.manual_seed(_derive_truncation_seed(int(seed)))
 
 
+def noise_rng_offsets_for_device(
+        device,
+        scope: Optional[str] = None,
+        ) -> Tuple[int, int]:
+    """Return CUDA Philox offsets for the scoped noise RNG domains."""
+    with noise_rng_scope(scope):
+        noise_generator = _get_noise_generator(device)
+        truncation_generator = _get_truncation_generator(device)
+        return (
+            int(noise_generator.get_offset()),
+            int(truncation_generator.get_offset()),
+        )
+
+
+def set_noise_rng_offsets_for_device(
+        device,
+        *,
+        noise_offset: int,
+        truncation_offset: int,
+        scope: Optional[str] = None,
+        ) -> None:
+    """Advance scoped CUDA noise generators to exact non-negative offsets."""
+    noise_value = int(noise_offset)
+    truncation_value = int(truncation_offset)
+    if noise_value < 0 or truncation_value < 0:
+        raise ValueError("CUDA generator offsets must be non-negative")
+    with noise_rng_scope(scope):
+        _get_noise_generator(device).set_offset(noise_value)
+        _get_truncation_generator(device).set_offset(truncation_value)
+
+
 # ---------------------------------------------------------------------------
 # Helpers shared by BERT and GPT-2 code paths.
 # ---------------------------------------------------------------------------
