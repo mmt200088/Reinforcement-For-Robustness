@@ -491,6 +491,76 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             [0, 4],
         )
 
+    def test_recoverable_batch_failure_retries_only_missing_batch_identities(self):
+        events = []
+        healthy_one = self._RemoteWorker(events, device_id=1)
+        failed = self._RemoteWorker(
+            events,
+            device_id=2,
+            fail_receive_once=True,
+        )
+        healthy_three = self._RemoteWorker(events, device_id=3)
+        runner = ProbeRunner(
+            [self._LocalWorker(events)],
+            process_workers=[healthy_one, failed, healthy_three],
+        )
+        runner._batch_sets["F1"] = ("b0", "b1", "b2", "b3")
+
+        results = runner.run_trials(k=5, base_seed=41)
+
+        self.assertEqual(
+            results,
+            [
+                (float(trial_index), 1.0, 1.0)
+                for trial_index in range(5)
+            ],
+        )
+        self.assertEqual(runner.num_workers, 3)
+        self.assertEqual(runner.pool_generation, 1)
+        self.assertTrue(failed.closed)
+        submissions = [
+            event
+            for event in events
+            if event[0] == "remote-submit"
+        ]
+        self.assertTrue(submissions)
+        self.assertEqual(
+            {event[1] for event in submissions},
+            {"run_trial_batches"},
+        )
+        task_counts = {}
+        for event in submissions:
+            for task in event[2]["tasks"]:
+                identity = (
+                    int(task["trial_index"]),
+                    int(task["batch_index"]),
+                )
+                task_counts[identity] = task_counts.get(identity, 0) + 1
+        for event in events:
+            if event[0] != "local-run-batch":
+                continue
+            identity = (int(event[1]), int(event[2]))
+            task_counts[identity] = task_counts.get(identity, 0) + 1
+        self.assertEqual(
+            task_counts,
+            {
+                (trial_index, batch_index): (
+                    2 if batch_index == 2 else 1
+                )
+                for trial_index in range(5)
+                for batch_index in range(4)
+            },
+        )
+        self.assertEqual(runner.last_diagnostics.retry_count, 1)
+        self.assertEqual(
+            runner.last_diagnostics.quarantined_devices,
+            ["cuda:2"],
+        )
+        self.assertEqual(
+            runner.last_diagnostics.retried_trial_indices,
+            [0, 1, 2, 3, 4],
+        )
+
     def test_all_healthy_five_gpu_single_group_stays_on_grouped_trials(self):
         events = []
         runner, _remotes = self._runner_with_process_count(
