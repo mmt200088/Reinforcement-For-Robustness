@@ -162,6 +162,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 fail_receive_once=False,
                 receive_error=None,
                 duplicate_result=False,
+                batch_fallback=False,
                 ):
             self.device = torch.device(f"cuda:{int(device_id)}")
             self.events = events
@@ -170,6 +171,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.fail_receive_once = fail_receive_once
             self.receive_error = receive_error
             self.duplicate_result = duplicate_result
+            self.batch_fallback = batch_fallback
             self.pending = None
             self.closed = False
             self.close_count = 0
@@ -204,6 +206,12 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                     "wall_seconds": 0.25,
                 }
             if operation == "run_trial_batches":
+                if self.batch_fallback:
+                    return {
+                        "results": [],
+                        "fallback_reason": "injected RNG offset mismatch",
+                        "wall_seconds": 0.25,
+                    }
                 results = []
                 for task in payload["tasks"]:
                     trial_index = int(task["trial_index"])
@@ -390,6 +398,55 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.assertEqual(event[4], batch_index * 4)
             self.assertEqual(event[5], batch_index * 8)
             self.assertEqual(event[6], (4, 8))
+
+    def test_rng_offset_mismatch_discards_shards_and_replays_whole_trials(self):
+        events = []
+        remotes = [
+            self._RemoteWorker(
+                events,
+                device_id=device_id,
+                batch_fallback=(device_id == 2),
+            )
+            for device_id in range(1, 4)
+        ]
+        runner = ProbeRunner(
+            [self._LocalWorker(events)],
+            process_workers=remotes,
+        )
+        runner._batch_sets["F1"] = ("b0", "b1", "b2", "b3")
+
+        results = runner.run_trials(k=5, base_seed=41)
+
+        self.assertEqual(
+            results,
+            [
+                (0.0, 41.0, -1.0),
+                (1.0, 41.0, 1.0),
+                (2.0, 41.0, 1.0),
+                (3.0, 41.0, 1.0),
+                (4.0, 41.0, -1.0),
+            ],
+        )
+        submitted_operations = [
+            event[1]
+            for event in events
+            if event[0] == "remote-submit"
+        ]
+        self.assertEqual(
+            submitted_operations,
+            ["run_trial_batches"] * 3 + ["run_trials"] * 3,
+        )
+        self.assertTrue(any(
+            event[0] == "local-run-batch" for event in events
+        ))
+        self.assertEqual(
+            [
+                event[1]
+                for event in events
+                if event[0] == "local-run"
+            ],
+            [0, 4],
+        )
 
     def test_multi_action_remote_work_overlaps_primary_worker(self):
         events = []
