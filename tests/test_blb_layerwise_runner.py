@@ -2489,6 +2489,12 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             "terminal_probe_devices": "devices",
             "terminal_probe_trial_counts": "per_worker_trial_counts",
             "terminal_probe_trial_indices": "per_worker_trial_indices",
+            "terminal_probe_worker_install_seconds": (
+                "per_worker_install_seconds"
+            ),
+            "terminal_probe_worker_trial_seconds": (
+                "per_worker_trial_seconds"
+            ),
             "terminal_probe_speedup": "speedup_vs_sequential",
             "terminal_cost_eval_wall_seconds": "cost_eval_wall_seconds",
             "terminal_probe_install_wall_seconds": "probe_install_wall_seconds",
@@ -3203,6 +3209,8 @@ class _FakeLayerwiseEnv:
                 "per_worker_seconds": [1.10, 1.20],
                 "per_worker_trial_counts": [3, 2],
                 "per_worker_trial_indices": [[0, 2, 4], [1, 3]],
+                "per_worker_install_seconds": [0.20, 0.21],
+                "per_worker_trial_seconds": [1.00, 1.10],
                 "speedup_vs_sequential": 1.75,
                 "cost_eval_wall_seconds": 0.11,
                 "probe_install_wall_seconds": 0.22,

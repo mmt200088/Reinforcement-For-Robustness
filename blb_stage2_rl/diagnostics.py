@@ -183,6 +183,12 @@ class EpisodeStats:
     terminal_probe_devices: List[str] = field(default_factory=list)
     terminal_probe_trial_counts: List[int] = field(default_factory=list)
     terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
+    terminal_probe_worker_install_seconds: List[float] = field(
+        default_factory=list
+    )
+    terminal_probe_worker_trial_seconds: List[float] = field(
+        default_factory=list
+    )
     terminal_probe_speedup: float = 1.0
     fusion_action_steps: List[Dict[str, Any]] = field(default_factory=list)
     per_step_optimizer_wall_seconds: float = 0.0

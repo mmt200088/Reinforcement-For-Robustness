@@ -63,6 +63,8 @@ _EFFICIENCY_TELEMETRY_KEYS = {
     "terminal_probe_trial_counts",
     "terminal_probe_trial_indices",
     "terminal_probe_trial_seeds",
+    "terminal_probe_worker_install_seconds",
+    "terminal_probe_worker_trial_seconds",
     "terminal_probe_speedup",
     "terminal_probe_install_skipped",
     "terminal_probe_clear_skipped",

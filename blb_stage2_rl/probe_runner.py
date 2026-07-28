@@ -103,6 +103,12 @@ def resolve_probe_interop_threads() -> int:
     return _resolve_probe_thread_count("BLB_STAGE2_PROBE_INTEROP_THREADS")
 
 
+def probe_phase_profile_enabled() -> bool:
+    return str(
+        os.environ.get("BLB_STAGE2_PROBE_PHASE_PROFILE", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
 # ---------------------------------------------------------------------------
 # Trial / split helpers
 # ---------------------------------------------------------------------------
@@ -481,12 +487,25 @@ def _probe_process_main(
             elif operation == "run_action_trial_groups":
                 batch_set_key = str(payload["batch_set_key"])
                 grouped_results = []
+                phase_profile = probe_phase_profile_enabled()
+                install_seconds = 0.0
+                trial_seconds = 0.0
                 for group in payload["action_groups"]:
                     action_index = int(group["action_index"])
                     base_seed = int(group["base_seed"])
+                    install_started = (
+                        time.perf_counter() if phase_profile else 0.0
+                    )
                     worker.install(group["decoded"])
+                    if phase_profile:
+                        install_seconds += (
+                            time.perf_counter() - install_started
+                        )
                     for trial_idx in group["trial_indices"]:
                         trial_index = int(trial_idx)
+                        trial_started = (
+                            time.perf_counter() if phase_profile else 0.0
+                        )
                         grouped_results.append((
                             action_index,
                             trial_index,
@@ -494,7 +513,15 @@ def _probe_process_main(
                                 trial_index, base_seed, batch_set_key,
                             ),
                         ))
-                result = {"results": grouped_results}
+                        if phase_profile:
+                            trial_seconds += (
+                                time.perf_counter() - trial_started
+                            )
+                result = {
+                    "results": grouped_results,
+                    "install_seconds": float(install_seconds),
+                    "trial_seconds": float(trial_seconds),
+                }
             elif operation == "close":
                 try:
                     worker.clear()
@@ -673,6 +700,8 @@ class ProbeRunnerDiagnostics:
     k: int = 0
     wall_seconds: float = 0.0
     per_worker_seconds: List[float] = field(default_factory=list)
+    per_worker_install_seconds: List[float] = field(default_factory=list)
+    per_worker_trial_seconds: List[float] = field(default_factory=list)
     per_worker_trial_counts: List[int] = field(default_factory=list)
     per_worker_trial_indices: List[List[int]] = field(default_factory=list)
     per_worker_trial_seeds: List[List[int]] = field(default_factory=list)
@@ -1818,8 +1847,11 @@ class ProbeRunner:
             [None] * len(indices) for _ in range(action_count)
         ]
         per_worker_seconds = [0.0] * self.num_workers
+        per_worker_install_seconds = [0.0] * self.num_workers
+        per_worker_trial_seconds = [0.0] * self.num_workers
         errors: List[Tuple[int, BaseException]] = []
         submitted: List[Tuple[int, Any]] = []
+        phase_profile = probe_phase_profile_enabled()
 
         wall_started = time.perf_counter()
         for worker_index, worker in enumerate(self._process_workers, start=1):
@@ -1843,8 +1875,18 @@ class ProbeRunner:
                     assignments[0], actions, base_seeds,
             ):
                 action_index = int(group["action_index"])
+                install_started = (
+                    time.perf_counter() if phase_profile else 0.0
+                )
                 self.workers[0].install(group["decoded"])
+                if phase_profile:
+                    per_worker_install_seconds[0] += (
+                        time.perf_counter() - install_started
+                    )
                 for trial_index in group["trial_indices"]:
+                    trial_started = (
+                        time.perf_counter() if phase_profile else 0.0
+                    )
                     results[action_index][
                         position_by_trial[int(trial_index)]
                     ] = (
@@ -1854,6 +1896,10 @@ class ProbeRunner:
                             batch_set_key,
                         )
                     )
+                    if phase_profile:
+                        per_worker_trial_seconds[0] += (
+                            time.perf_counter() - trial_started
+                        )
         except BaseException as exc:  # noqa: BLE001
             errors.append((0, exc))
         finally:
@@ -1864,6 +1910,12 @@ class ProbeRunner:
                 payload = worker.receive("run_action_trial_groups")
                 per_worker_seconds[worker_index] = float(
                     payload.get("wall_seconds", 0.0) or 0.0
+                )
+                per_worker_install_seconds[worker_index] = float(
+                    payload.get("install_seconds", 0.0) or 0.0
+                )
+                per_worker_trial_seconds[worker_index] = float(
+                    payload.get("trial_seconds", 0.0) or 0.0
                 )
                 self._accept_grouped_payload(
                     payload=payload,
@@ -1877,6 +1929,8 @@ class ProbeRunner:
         self._set_group_diagnostics(
             assignments, base_seeds, indices,
             per_worker_seconds, wall_elapsed,
+            per_worker_install_seconds=per_worker_install_seconds,
+            per_worker_trial_seconds=per_worker_trial_seconds,
         )
         if errors:
             quarantined = self._handle_process_errors(
@@ -1908,6 +1962,8 @@ class ProbeRunner:
             trial_indices: Sequence[int],
             per_worker_seconds: Sequence[float],
             wall_seconds: float,
+            per_worker_install_seconds: Optional[Sequence[float]] = None,
+            per_worker_trial_seconds: Optional[Sequence[float]] = None,
             ) -> None:
         indices = _normalize_trial_indices(trial_indices)
         position_by_trial = {
@@ -1920,6 +1976,20 @@ class ProbeRunner:
             wall_seconds=float(wall_seconds),
             per_worker_seconds=[
                 float(value) for value in per_worker_seconds
+            ],
+            per_worker_install_seconds=[
+                float(value)
+                for value in (
+                    per_worker_install_seconds
+                    or [0.0] * len(assignments)
+                )
+            ],
+            per_worker_trial_seconds=[
+                float(value)
+                for value in (
+                    per_worker_trial_seconds
+                    or [0.0] * len(assignments)
+                )
             ],
             per_worker_trial_counts=[
                 len(tasks) for tasks in assignments
@@ -2032,8 +2102,11 @@ class ProbeRunner:
             [None] * len(indices) for _ in actions
         ]
         per_worker_seconds = [0.0] * self.num_workers
+        per_worker_install_seconds = [0.0] * self.num_workers
+        per_worker_trial_seconds = [0.0] * self.num_workers
         errors: List[Tuple[int, BaseException]] = []
         lock = threading.Lock()
+        phase_profile = probe_phase_profile_enabled()
 
         def task(worker_index: int) -> None:
             worker = self.workers[worker_index]
@@ -2043,8 +2116,18 @@ class ProbeRunner:
                         assignments[worker_index], actions, seeds,
                 ):
                     action_index = int(group["action_index"])
+                    install_started = (
+                        time.perf_counter() if phase_profile else 0.0
+                    )
                     worker.install(group["decoded"])
+                    if phase_profile:
+                        per_worker_install_seconds[worker_index] += (
+                            time.perf_counter() - install_started
+                        )
                     for trial_index in group["trial_indices"]:
+                        trial_started = (
+                            time.perf_counter() if phase_profile else 0.0
+                        )
                         results[action_index][
                             position_by_trial[int(trial_index)]
                         ] = (
@@ -2054,6 +2137,10 @@ class ProbeRunner:
                                 normalized_batch_set_key,
                             )
                         )
+                        if phase_profile:
+                            per_worker_trial_seconds[worker_index] += (
+                                time.perf_counter() - trial_started
+                            )
             except BaseException as exc:  # noqa: BLE001
                 with lock:
                     errors.append((worker_index, exc))
@@ -2078,6 +2165,8 @@ class ProbeRunner:
         self._set_group_diagnostics(
             assignments, seeds, indices,
             per_worker_seconds, wall_elapsed,
+            per_worker_install_seconds=per_worker_install_seconds,
+            per_worker_trial_seconds=per_worker_trial_seconds,
         )
         if errors:
             worker_index, exc = errors[0]
@@ -2431,6 +2520,12 @@ def diagnostics_payload(diag: ProbeRunnerDiagnostics) -> dict:
         "k": int(diag.k),
         "wall_seconds": float(diag.wall_seconds),
         "per_worker_seconds": [float(x) for x in diag.per_worker_seconds],
+        "per_worker_install_seconds": [
+            float(x) for x in diag.per_worker_install_seconds
+        ],
+        "per_worker_trial_seconds": [
+            float(x) for x in diag.per_worker_trial_seconds
+        ],
         "per_worker_trial_counts": [int(x) for x in diag.per_worker_trial_counts],
         "per_worker_trial_indices": [
             list(map(int, x)) for x in diag.per_worker_trial_indices

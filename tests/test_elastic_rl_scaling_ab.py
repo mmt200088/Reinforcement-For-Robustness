@@ -44,6 +44,8 @@ class ElasticRLScalingABTests(unittest.TestCase):
                 "terminal_probe_speedup": timestamp,
                 "terminal_probe_devices": [device],
                 "terminal_probe_trial_indices": [[0, 1, 2, 3, 4]],
+                "terminal_probe_worker_install_seconds": [timestamp],
+                "terminal_probe_worker_trial_seconds": [timestamp * 2.0],
                 "fresh_trials": {
                     "seeds": [11, 12, 13, 14, 15],
                     "loss": [0.1, 0.2, 0.3, 0.4, 0.5],
@@ -153,11 +155,15 @@ class ElasticRLScalingABTests(unittest.TestCase):
                 "reward": 1.25,
                 "terminal_probe_install_skipped": False,
                 "terminal_probe_clear_skipped": False,
+                "terminal_probe_worker_install_seconds": [1.0],
+                "terminal_probe_worker_trial_seconds": [2.0],
             },
             {
                 "reward": 1.25,
                 "terminal_probe_install_skipped": True,
                 "terminal_probe_clear_skipped": True,
+                "terminal_probe_worker_install_seconds": [3.0, 4.0],
+                "terminal_probe_worker_trial_seconds": [5.0, 6.0],
             },
         )
 

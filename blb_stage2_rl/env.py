@@ -1286,6 +1286,18 @@ class BLBStage2Env:
                 float(value)
                 for value in group_diag.get("per_worker_seconds", ())
             ]
+            group_worker_install_seconds = [
+                float(value)
+                for value in group_diag.get(
+                    "per_worker_install_seconds", ()
+                )
+            ]
+            group_worker_trial_seconds = [
+                float(value)
+                for value in group_diag.get(
+                    "per_worker_trial_seconds", ()
+                )
+            ]
             group_metadata = {
                 "group_k": int(group_diag.get("k", action_count * k)),
                 "group_action_count": int(
@@ -1363,6 +1375,14 @@ class BLBStage2Env:
                     "per_worker_seconds": [
                         value / max(1, action_count)
                         for value in group_worker_seconds
+                    ],
+                    "per_worker_install_seconds": [
+                        value / max(1, action_count)
+                        for value in group_worker_install_seconds
+                    ],
+                    "per_worker_trial_seconds": [
+                        value / max(1, action_count)
+                        for value in group_worker_trial_seconds
                     ],
                     "per_worker_trial_counts": [
                         len(indices) for indices in per_worker_indices

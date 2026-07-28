@@ -119,10 +119,14 @@ class Stage2NgpuCompareTests(unittest.TestCase):
         one[0].update({
             "terminal_probe_install_skipped": False,
             "terminal_probe_clear_skipped": False,
+            "terminal_probe_worker_install_seconds": [0.3],
+            "terminal_probe_worker_trial_seconds": [1.1],
         })
         many[0].update({
             "terminal_probe_install_skipped": False,
             "terminal_probe_clear_skipped": True,
+            "terminal_probe_worker_install_seconds": [0.1, 0.2],
+            "terminal_probe_worker_trial_seconds": [0.4, 0.5],
         })
 
         ok, diffs = ngpu_mod.compare_rows(one, many, atol=0.0, limit=10)

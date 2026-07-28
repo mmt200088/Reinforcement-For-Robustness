@@ -1314,6 +1314,12 @@ class EpisodeRecord:
     terminal_probe_devices: List[str] = field(default_factory=list)
     terminal_probe_trial_counts: List[int] = field(default_factory=list)
     terminal_probe_trial_indices: List[List[int]] = field(default_factory=list)
+    terminal_probe_worker_install_seconds: List[float] = field(
+        default_factory=list
+    )
+    terminal_probe_worker_trial_seconds: List[float] = field(
+        default_factory=list
+    )
     terminal_probe_speedup: float = 1.0
     fusion_action_steps: List[Dict[str, Any]] = field(default_factory=list)
     per_step_optimizer_wall_seconds: float = 0.0
@@ -1602,6 +1608,18 @@ def _apply_terminal_info_to_record(
         record.terminal_probe_trial_indices = [
             [int(y) for y in (x or [])]
             for x in (term_probe_diag.get("per_worker_trial_indices") or [])
+        ]
+        record.terminal_probe_worker_install_seconds = [
+            float(x)
+            for x in (
+                term_probe_diag.get("per_worker_install_seconds") or []
+            )
+        ]
+        record.terminal_probe_worker_trial_seconds = [
+            float(x)
+            for x in (
+                term_probe_diag.get("per_worker_trial_seconds") or []
+            )
         ]
         record.terminal_probe_speedup = float(
             term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
@@ -2380,6 +2398,8 @@ def train_sequential(
         terminal_probe_devices_val: List[str] = []
         terminal_probe_trial_counts_val: List[int] = []
         terminal_probe_trial_indices_val: List[List[int]] = []
+        terminal_probe_worker_install_seconds_val: List[float] = []
+        terminal_probe_worker_trial_seconds_val: List[float] = []
         terminal_probe_speedup_val = 1.0
         fusion_action_steps_val: List[Dict[str, Any]] = []
         terminal_cost_eval_wall_seconds_val = 0.0
@@ -2848,6 +2868,22 @@ def train_sequential(
                         [int(y) for y in (x or [])]
                         for x in (term_probe_diag.get("per_worker_trial_indices") or [])
                     ]
+                    terminal_probe_worker_install_seconds_val = [
+                        float(x)
+                        for x in (
+                            term_probe_diag.get(
+                                "per_worker_install_seconds"
+                            ) or []
+                        )
+                    ]
+                    terminal_probe_worker_trial_seconds_val = [
+                        float(x)
+                        for x in (
+                            term_probe_diag.get(
+                                "per_worker_trial_seconds"
+                            ) or []
+                        )
+                    ]
                     terminal_probe_speedup_val = float(
                         term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
                     )
@@ -3191,6 +3227,22 @@ def train_sequential(
                     [int(y) for y in (x or [])]
                     for x in (term_probe_diag.get("per_worker_trial_indices") or [])
                 ]
+                terminal_probe_worker_install_seconds_val = [
+                    float(x)
+                    for x in (
+                        term_probe_diag.get(
+                            "per_worker_install_seconds"
+                        ) or []
+                    )
+                ]
+                terminal_probe_worker_trial_seconds_val = [
+                    float(x)
+                    for x in (
+                        term_probe_diag.get(
+                            "per_worker_trial_seconds"
+                        ) or []
+                    )
+                ]
                 terminal_probe_speedup_val = float(
                     term_probe_diag.get("speedup_vs_sequential", 1.0) or 1.0
                 )
@@ -3277,6 +3329,12 @@ def train_sequential(
             terminal_probe_devices=list(terminal_probe_devices_val),
             terminal_probe_trial_counts=list(terminal_probe_trial_counts_val),
             terminal_probe_trial_indices=[list(x) for x in terminal_probe_trial_indices_val],
+            terminal_probe_worker_install_seconds=list(
+                terminal_probe_worker_install_seconds_val
+            ),
+            terminal_probe_worker_trial_seconds=list(
+                terminal_probe_worker_trial_seconds_val
+            ),
             terminal_probe_speedup=float(terminal_probe_speedup_val),
             fusion_action_steps=list(fusion_action_steps_val),
             per_step_optimizer_wall_seconds=float(per_step_optimizer_wall_seconds_val),
@@ -5117,6 +5175,22 @@ def _run_layerwise_training_branch(
                     [int(index) for index in (indices or [])]
                     for indices in (
                         probe_diagnostics.get("per_worker_trial_indices") or []
+                    )
+                ],
+                terminal_probe_worker_install_seconds=[
+                    float(value)
+                    for value in (
+                        probe_diagnostics.get(
+                            "per_worker_install_seconds"
+                        ) or []
+                    )
+                ],
+                terminal_probe_worker_trial_seconds=[
+                    float(value)
+                    for value in (
+                        probe_diagnostics.get(
+                            "per_worker_trial_seconds"
+                        ) or []
                     )
                 ],
                 terminal_probe_speedup=float(
@@ -7899,6 +7973,12 @@ def _run_sequential_via_runner_locked(
                     terminal_probe_trial_indices=[
                         list(x) for x in record.terminal_probe_trial_indices
                     ],
+                    terminal_probe_worker_install_seconds=list(
+                        record.terminal_probe_worker_install_seconds
+                    ),
+                    terminal_probe_worker_trial_seconds=list(
+                        record.terminal_probe_worker_trial_seconds
+                    ),
                     terminal_probe_speedup=float(record.terminal_probe_speedup),
                     fusion_action_steps=[
                         dict(x) for x in (record.fusion_action_steps or [])

@@ -25,6 +25,8 @@ TIMING_OR_DEVICE_KEYS = {
     "terminal_probe_devices",
     "terminal_probe_trial_counts",
     "terminal_probe_trial_indices",
+    "terminal_probe_worker_install_seconds",
+    "terminal_probe_worker_trial_seconds",
     "terminal_probe_speedup",
     "terminal_cost_eval_wall_seconds",
     "terminal_probe_install_wall_seconds",
