@@ -24,8 +24,30 @@ GPU_CSV = """\
 4, GPU-e, None
 """
 
+ALL_HEALTHY_GPU_CSV = """\
+0, GPU-a, None
+1, GPU-b, None
+2, GPU-c, None
+3, GPU-d, None
+4, GPU-e, None
+"""
+
 
 class HealthResolverTest(unittest.TestCase):
+    def test_all_five_healthy_devices_are_preserved_in_candidate_order(self):
+        resolved = resolve_health_snapshot(
+            parse_nvidia_smi_csv(ALL_HEALTHY_GPU_CSV),
+            candidate_tokens=["0", "1", "2", "3", "4"],
+        )
+
+        self.assertEqual(resolved.healthy_tokens, ("0", "1", "2", "3", "4"))
+        self.assertEqual(resolved.quarantined_tokens, ())
+        self.assertEqual(resolved.logical_device_spec, "0,1,2,3,4")
+        self.assertEqual(
+            resolved.healthy_visibility_tokens,
+            ("GPU-a", "GPU-b", "GPU-c", "GPU-d", "GPU-e"),
+        )
+
     def test_reset_device_is_removed_and_logical_ids_are_dense(self):
         resolved = resolve_health_snapshot(
             parse_nvidia_smi_csv(GPU_CSV),

@@ -41,6 +41,52 @@ _GPU_INTEGRATION_READY = (
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"probe runner unavailable: {_IMPORT_ERROR!r}")
 class ProbeRunnerProcessBackendTest(unittest.TestCase):
+    def test_batch_sharding_never_intercepts_balanced_five_gpu_path(self):
+        should_shard = _probe_runner._should_batch_shard_trials
+
+        self.assertFalse(should_shard(
+            k=5,
+            worker_count=5,
+            batch_count=4,
+            process_backend=True,
+        ))
+        self.assertTrue(should_shard(
+            k=5,
+            worker_count=4,
+            batch_count=4,
+            process_backend=True,
+        ))
+        self.assertTrue(should_shard(
+            k=5,
+            worker_count=3,
+            batch_count=4,
+            process_backend=True,
+        ))
+        self.assertFalse(should_shard(
+            k=5,
+            worker_count=1,
+            batch_count=4,
+            process_backend=True,
+        ))
+        self.assertFalse(should_shard(
+            k=5,
+            worker_count=4,
+            batch_count=1,
+            process_backend=True,
+        ))
+        self.assertFalse(should_shard(
+            k=5,
+            worker_count=4,
+            batch_count=4,
+            process_backend=False,
+        ))
+        self.assertFalse(should_shard(
+            k=25,
+            worker_count=5,
+            batch_count=4,
+            process_backend=True,
+        ))
+
     class _LocalWorker:
         def __init__(self, events):
             self.device = torch.device("cuda:0")

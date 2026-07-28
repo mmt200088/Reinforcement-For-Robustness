@@ -7,6 +7,10 @@ pytest.importorskip("torch")
 
 try:
     from blb_stage2_rl.eval_metrics import finalize_probe_trial_metrics
+    from blb_stage2_rl.inference_eval import (
+        ProbeBatchContribution,
+        finalize_probe_batch_contributions,
+    )
 except Exception as exc:  # pragma: no cover - torch-free local environments
     pytest.skip(f"Stage-2 probe modules are unavailable: {exc}", allow_module_level=True)
 
@@ -77,3 +81,85 @@ def test_probe_metric_aggregation_is_invariant_to_batch_partitioning():
     )
 
     assert partitioned == pytest.approx(combined, rel=0.0, abs=1e-15)
+
+
+def test_ordered_batch_contributions_preserve_mrpc_weighted_f1():
+    contributions = [
+        ProbeBatchContribution(
+            trial_index=7,
+            batch_index=0,
+            loss=0.3,
+            metric1=2.0 / 3.0,
+            metric2=2.0 / 3.0,
+            sample_count=3,
+            predictions=np.array([0, 1, 0]),
+            labels=np.array([0, 1, 1]),
+        ),
+        ProbeBatchContribution(
+            trial_index=7,
+            batch_index=1,
+            loss=0.6,
+            metric1=0.5,
+            metric2=0.5,
+            sample_count=2,
+            predictions=np.array([1, 1]),
+            labels=np.array([0, 1]),
+        ),
+    ]
+
+    actual = finalize_probe_batch_contributions(
+        contributions,
+        expected_trial_index=7,
+        expected_batch_count=2,
+        metric_profile="mrpc",
+        is_regression=False,
+    )
+    expected = finalize_probe_trial_metrics(
+        losses=[0.3, 0.6],
+        m1s=[2.0 / 3.0, 0.5],
+        m2s=[2.0 / 3.0, 0.5],
+        counts=[3, 2],
+        metric_profile="mrpc",
+        is_regression=False,
+        preds=[
+            np.array([0, 1, 0]),
+            np.array([1, 1]),
+        ],
+        labels=[
+            np.array([0, 1, 1]),
+            np.array([0, 1]),
+        ],
+    )
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "batch_indices",
+    ([0, 0], [0, 2], [1, 0]),
+)
+def test_batch_contribution_finalizer_rejects_noncanonical_identities(
+        batch_indices,
+):
+    contributions = [
+        ProbeBatchContribution(
+            trial_index=3,
+            batch_index=batch_index,
+            loss=0.1,
+            metric1=1.0,
+            metric2=1.0,
+            sample_count=1,
+            predictions=np.array([1]),
+            labels=np.array([1]),
+        )
+        for batch_index in batch_indices
+    ]
+
+    with pytest.raises(ValueError, match="canonical"):
+        finalize_probe_batch_contributions(
+            contributions,
+            expected_trial_index=3,
+            expected_batch_count=2,
+            metric_profile="mrpc",
+            is_regression=False,
+        )
