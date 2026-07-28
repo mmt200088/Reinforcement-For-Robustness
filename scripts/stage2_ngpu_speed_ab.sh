@@ -63,6 +63,9 @@ REUSE_ONE_EPISODES="${REUSE_ONE_EPISODES:-}"
 REUSE_ONE_WALL="${REUSE_ONE_WALL:-}"
 REUSE_ONE_LOG="${REUSE_ONE_LOG:-}"
 REUSE_ONE_PPO="${REUSE_ONE_PPO:-}"
+REUSE_ONE_RUN_ROOT="${REUSE_ONE_RUN_ROOT:-}"
+DATA_POINTS_ROOT="${DATA_POINTS_ROOT:-rl_training_data_points}"
+REQUIRE_FULL_STATE_EQUALITY="${REQUIRE_FULL_STATE_EQUALITY:-1}"
 PRINT_EFFECTIVE_COMMANDS="${PRINT_EFFECTIVE_COMMANDS:-0}"
 
 mkdir -p "$ARTIFACT_DIR"
@@ -77,6 +80,7 @@ echo "[ab] cpu_threads OMP=${OMP_NUM_THREADS} MKL=${MKL_NUM_THREADS} OPENBLAS=${
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git rev-parse HEAD > "${ARTIFACT_DIR}/HEAD.txt"
+  git rev-parse HEAD^{tree} > "${ARTIFACT_DIR}/TREE.txt"
   git status --short > "${ARTIFACT_DIR}/git_status_short.txt" || true
 fi
 
@@ -404,6 +408,7 @@ run_case() {
   fi
   ep_path="$(find_episodes_jsonl "$persistent_root")"
   cp "$ep_path" "$episodes_out"
+  printf '%s\n' "$persistent_root" > "${ARTIFACT_DIR}/${label}_run_root.txt"
   local episode_lines
   episode_lines="$(wc -l < "$episodes_out")"
   echo "[ab] ${label} episodes -> ${episodes_out} (${episode_lines} lines), wall=$(cat "$wall_file")s"
@@ -475,6 +480,13 @@ reuse_one_case() {
   else
     echo "[ab][warning] reused one PPO updates not found; equality gate will compare episodes only"
   fi
+  if [ "$REQUIRE_FULL_STATE_EQUALITY" = "1" ]; then
+    if [ -z "$REUSE_ONE_RUN_ROOT" ] || [ ! -d "$REUSE_ONE_RUN_ROOT" ]; then
+      echo "[FATAL] strict reused control requires REUSE_ONE_RUN_ROOT"
+      exit 2
+    fi
+    printf '%s\n' "$REUSE_ONE_RUN_ROOT" > "${ARTIFACT_DIR}/one_run_root.txt"
+  fi
   printf '{"label":"one","reused":true,"episodes":"%s","wall":"%s"}\n' \
     "$REUSE_ONE_EPISODES" "$REUSE_ONE_WALL" >> "${ARTIFACT_DIR}/runs.jsonl"
   echo "[ab] one baseline reused from ${REUSE_ONE_EPISODES}; wall=$(cat "${ARTIFACT_DIR}/one_wall_seconds.txt")s"
@@ -512,5 +524,16 @@ python3 scripts/stage2_ngpu_ab_compare.py \
   --min-speedup "$MIN_SPEEDUP" \
   --require-speedup \
   --out "${ARTIFACT_DIR}/stage2_ngpu_gate_verdict.txt"
+
+if [ "$REQUIRE_FULL_STATE_EQUALITY" = "1" ]; then
+  one_run_root="$(cat "${ARTIFACT_DIR}/one_run_root.txt")"
+  many_run_root="$(cat "${ARTIFACT_DIR}/many_run_root.txt")"
+  python3 scripts/elastic_rl_scaling_ab.py compare \
+    --control "$one_run_root" \
+    --candidate "$many_run_root" \
+    --stage stage2 \
+    --data-points-root "$DATA_POINTS_ROOT" \
+    --output "${ARTIFACT_DIR}/strict_scientific_equivalence.json"
+fi
 
 echo "[DONE] Stage-2 N-GPU A/B gate passed: ${ARTIFACT_DIR}/stage2_ngpu_gate_verdict.txt"
