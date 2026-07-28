@@ -1445,6 +1445,147 @@ class ProbeRunner:
                     f"trial identities {still_missing}"
                 )
 
+    @staticmethod
+    def _trial_batch_task_payload(
+            tasks: Sequence[Tuple[int, int]],
+            *,
+            start_offsets: Sequence[Tuple[int, int]],
+            offset_plan: Sequence[Tuple[int, int]],
+            ) -> List[Dict[str, Any]]:
+        return [
+            {
+                "trial_index": int(trial_index),
+                "batch_index": int(batch_index),
+                "noise_offset": int(start_offsets[batch_index][0]),
+                "truncation_offset": int(start_offsets[batch_index][1]),
+                "expected_offset_deltas": list(offset_plan[batch_index]),
+            }
+            for trial_index, batch_index in tasks
+        ]
+
+    def _retry_missing_trial_batches_processes(
+            self,
+            *,
+            contributions: Dict[
+                Tuple[int, int], ProbeBatchContribution
+            ],
+            expected_identities: Sequence[Tuple[int, int]],
+            base_seed: int,
+            batch_set_key: str,
+            start_offsets: Sequence[Tuple[int, int]],
+            offset_plan: Sequence[Tuple[int, int]],
+            ) -> Tuple[
+                int,
+                List[str],
+                List[Tuple[int, int]],
+                bool,
+            ]:
+        expected = {
+            (int(trial_index), int(batch_index))
+            for trial_index, batch_index in expected_identities
+        }
+        retried = sorted(expected - set(contributions))
+        retry_rounds = 0
+        quarantined: List[str] = []
+        while True:
+            missing = sorted(expected - set(contributions))
+            if not missing:
+                return retry_rounds, quarantined, retried, False
+            retry_rounds += 1
+            assignments: List[List[Tuple[int, int]]] = [
+                [] for _ in range(self.num_workers)
+            ]
+            for position, identity in enumerate(missing):
+                assignments[position % self.num_workers].append(identity)
+
+            errors: List[Tuple[int, BaseException]] = []
+            submitted: List[Tuple[int, Any]] = []
+            for worker_index, worker in enumerate(
+                    self._process_workers, start=1,
+            ):
+                tasks = assignments[worker_index]
+                if not tasks:
+                    continue
+                try:
+                    worker.submit("run_trial_batches", {
+                        "tasks": self._trial_batch_task_payload(
+                            tasks,
+                            start_offsets=start_offsets,
+                            offset_plan=offset_plan,
+                        ),
+                        "base_seed": int(base_seed),
+                        "batch_set_key": batch_set_key,
+                    })
+                    submitted.append((worker_index, worker))
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append((worker_index, exc))
+
+            try:
+                for trial_index, batch_index in assignments[0]:
+                    identity = (trial_index, batch_index)
+                    if identity in contributions:
+                        raise RuntimeError(
+                            "probe-runner attempted to recompute accepted "
+                            f"trial/batch identity {identity}"
+                        )
+                    contribution = self.workers[0].run_trial_batch(
+                        trial_index,
+                        base_seed,
+                        batch_index=batch_index,
+                        noise_offset=int(start_offsets[batch_index][0]),
+                        truncation_offset=int(
+                            start_offsets[batch_index][1]
+                        ),
+                        expected_offset_deltas=offset_plan[batch_index],
+                        batch_set_key=batch_set_key,
+                    )
+                    self._accept_trial_batch_payload(
+                        payload={
+                            "results": [(
+                                trial_index,
+                                batch_index,
+                                contribution,
+                            )],
+                        },
+                        expected_identities=[identity],
+                        results=contributions,
+                    )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((0, exc))
+
+            for worker_index, worker in submitted:
+                try:
+                    payload = worker.receive("run_trial_batches")
+                    self._accept_trial_batch_payload(
+                        payload=payload,
+                        expected_identities=assignments[worker_index],
+                        results=contributions,
+                    )
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append((worker_index, exc))
+            if errors:
+                ordinary_errors = [
+                    (worker_index, exc)
+                    for worker_index, exc in errors
+                    if not isinstance(exc, ProbeBatchRNGOffsetMismatch)
+                ]
+                if ordinary_errors:
+                    quarantined.extend(
+                        self._handle_process_errors(
+                            ordinary_errors,
+                            "run_trial_batches",
+                        )
+                    )
+                if len(ordinary_errors) != len(errors):
+                    return retry_rounds, quarantined, retried, True
+                continue
+            still_missing = sorted(expected - set(contributions))
+            if still_missing:
+                raise RuntimeError(
+                    "probe-runner batch retry completed without errors but "
+                    f"omitted identities {still_missing}"
+                )
+
     def _run_whole_trials_processes(
             self,
             k: int,
@@ -1594,28 +1735,13 @@ class ProbeRunner:
             [_trial_seed(base_seed, trial_idx) for trial_idx in trials]
             for trials in nominal_assignments
         ]
+        initial_devices = [str(device) for device in self.devices]
         contributions: Dict[
             Tuple[int, int], ProbeBatchContribution
         ] = {}
         per_worker_seconds: List[float] = [0.0] * self.num_workers
         errors: List[Tuple[int, BaseException]] = []
         submitted: List[Tuple[int, Any]] = []
-
-        def task_payload(
-                tasks: Sequence[Tuple[int, int]],
-                ) -> List[Dict[str, Any]]:
-            return [
-                {
-                    "trial_index": int(trial_index),
-                    "batch_index": int(batch_index),
-                    "noise_offset": int(start_offsets[batch_index][0]),
-                    "truncation_offset": int(start_offsets[batch_index][1]),
-                    "expected_offset_deltas": list(
-                        offset_plan[batch_index]
-                    ),
-                }
-                for trial_index, batch_index in tasks
-            ]
 
         wall_started = time.perf_counter()
         for worker_index, worker in enumerate(
@@ -1626,7 +1752,11 @@ class ProbeRunner:
                 continue
             try:
                 worker.submit("run_trial_batches", {
-                    "tasks": task_payload(tasks),
+                    "tasks": self._trial_batch_task_payload(
+                        tasks,
+                        start_offsets=start_offsets,
+                        offset_plan=offset_plan,
+                    ),
                     "base_seed": int(base_seed),
                     "batch_set_key": batch_set_key,
                 })
@@ -1676,36 +1806,57 @@ class ProbeRunner:
             except BaseException as exc:  # noqa: BLE001
                 errors.append((worker_index, exc))
 
+        expected_identities = {
+            (trial_index, batch_index)
+            for trial_index in range(k)
+            for batch_index in range(batch_count)
+        }
+        retry_count = 0
+        retried_identities: List[Tuple[int, int]] = []
+        quarantined: List[str] = []
         if errors:
             ordinary_errors = [
                 (worker_index, exc)
                 for worker_index, exc in errors
                 if not isinstance(exc, ProbeBatchRNGOffsetMismatch)
             ]
-            quarantined: List[str] = []
             if ordinary_errors:
                 quarantined = self._handle_process_errors(
                     ordinary_errors,
                     "run_trial_batches",
                 )
-            results = self._run_whole_trials_processes(
-                k, base_seed, batch_set_key,
+            fallback_to_whole_trials = (
+                len(ordinary_errors) != len(errors)
             )
-            if self.last_diagnostics is not None and quarantined:
-                self.last_diagnostics.pool_generation = int(
-                    self.pool_generation
+            if not fallback_to_whole_trials:
+                (
+                    retry_count,
+                    retry_quarantined,
+                    retried_identities,
+                    fallback_to_whole_trials,
+                ) = self._retry_missing_trial_batches_processes(
+                    contributions=contributions,
+                    expected_identities=tuple(sorted(expected_identities)),
+                    base_seed=base_seed,
+                    batch_set_key=batch_set_key,
+                    start_offsets=start_offsets,
+                    offset_plan=offset_plan,
                 )
-                self.last_diagnostics.quarantined_devices = (
-                    quarantined
-                    + list(self.last_diagnostics.quarantined_devices)
+                quarantined.extend(retry_quarantined)
+            if fallback_to_whole_trials:
+                results = self._run_whole_trials_processes(
+                    k, base_seed, batch_set_key,
                 )
-            return results
+                if self.last_diagnostics is not None and quarantined:
+                    self.last_diagnostics.pool_generation = int(
+                        self.pool_generation
+                    )
+                    self.last_diagnostics.quarantined_devices = (
+                        quarantined
+                        + list(self.last_diagnostics.quarantined_devices)
+                    )
+                return results
 
-        expected_identities = {
-            (trial_index, batch_index)
-            for trial_index in range(k)
-            for batch_index in range(batch_count)
-        }
         if set(contributions) != expected_identities:
             missing = sorted(expected_identities - set(contributions))
             unexpected = sorted(set(contributions) - expected_identities)
@@ -1726,8 +1877,14 @@ class ProbeRunner:
                 list(trials) for trials in nominal_assignments
             ],
             per_worker_trial_seeds=[list(seeds) for seeds in seed_assignments],
-            devices=[str(device) for device in self.devices],
+            devices=initial_devices,
             pool_generation=int(self.pool_generation),
+            retry_count=int(retry_count),
+            quarantined_devices=quarantined,
+            retried_trial_indices=sorted({
+                trial_index
+                for trial_index, _batch_index in retried_identities
+            }),
         )
 
         ordered: List[Tuple[float, float, float]] = []
