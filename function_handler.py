@@ -1566,7 +1566,7 @@ def make_block3_default_config(
 _BLOCK3_FUSED_CUDA_ENABLED = str(
     _os.environ.get("BLB_STAGE2_BLOCK3_FUSED_CUDA", "1")
 ).strip().lower() not in {"0", "false", "no", "off"}
-_BLOCK3_FUSED_CUDA_IMPL = None
+_BLOCK3_FUSED_CUDA_IMPLS = {}
 _BLOCK3_FUSED_CUDA_RESOLVED = False
 _BLOCK3_FUSED_CUDA_WORKSPACES = {}
 
@@ -1598,31 +1598,36 @@ def _get_block3_fused_cuda_noise_workspace(
     return workspace[:required].view(count, *x.shape)
 
 
-def _resolve_block3_fused_cuda_impl():
-    global _BLOCK3_FUSED_CUDA_IMPL, _BLOCK3_FUSED_CUDA_RESOLVED
+def _resolve_block3_fused_cuda_impl(degree: int):
+    global _BLOCK3_FUSED_CUDA_IMPLS, _BLOCK3_FUSED_CUDA_RESOLVED
     if not _BLOCK3_FUSED_CUDA_RESOLVED:
         _BLOCK3_FUSED_CUDA_RESOLVED = True
         try:
             from blb_stage2_rl.block3_fused_cuda import (
                 block3_degree4_cuda,
+                block3_degree6_cuda,
                 is_available,
             )
 
             if is_available():
-                _BLOCK3_FUSED_CUDA_IMPL = block3_degree4_cuda
+                _BLOCK3_FUSED_CUDA_IMPLS = {
+                    4: block3_degree4_cuda,
+                    6: block3_degree6_cuda,
+                }
         except (ImportError, ModuleNotFoundError):
-            _BLOCK3_FUSED_CUDA_IMPL = None
-    return _BLOCK3_FUSED_CUDA_IMPL
+            _BLOCK3_FUSED_CUDA_IMPLS = {}
+    return _BLOCK3_FUSED_CUDA_IMPLS.get(int(degree))
 
 
 def _try_block3_fused_cuda(x: Tensor, cfg: Block3NoiseConfig) -> Optional[Tensor]:
-    """Run the exact degree-4 CUDA specialization, or return ``None``."""
+    """Run an exact degree-4/6 CUDA specialization, or return ``None``."""
+    degree = int(getattr(cfg, "degree", 0))
     square_rescales = tuple(getattr(cfg, "square_rescales", ()) or ())
     if (
             not _BLOCK3_FUSED_CUDA_ENABLED
-            or int(getattr(cfg, "degree", 0)) != 4
+            or degree not in (4, 6)
             or getattr(cfg, "x_inv_2n_result_rescale", None) is not None
-            or len(square_rescales) != 4
+            or len(square_rescales) != degree
             or any(point is None for point in square_rescales)
             or not x.is_cuda
             or x.dtype != torch.float32
@@ -1631,7 +1636,7 @@ def _try_block3_fused_cuda(x: Tensor, cfg: Block3NoiseConfig) -> Optional[Tensor
     ):
         return None
 
-    implementation = _resolve_block3_fused_cuda_impl()
+    implementation = _resolve_block3_fused_cuda_impl(degree)
     if implementation is None:
         return None
 
