@@ -2572,6 +2572,49 @@ class ProbeRunner:
                 [0.0] * self.num_workers, 0.0,
             )
             return [[] for _ in actions]
+        can_batch_shard_single_group = bool(
+            self._process_workers
+            and len(actions) == 1
+            and indices == tuple(range(len(indices)))
+            and _should_batch_shard_trials(
+                k=len(indices),
+                worker_count=self.num_workers,
+                batch_count=len(
+                    self._batch_sets[normalized_batch_set_key]
+                ),
+                process_backend=True,
+            )
+        )
+        if can_batch_shard_single_group:
+            wall_started = time.perf_counter()
+            self.install_action(actions[0])
+            results = self.run_trials(
+                len(indices),
+                seeds[0],
+                normalized_batch_set_key,
+            )
+            trial_diagnostics = self.last_diagnostics
+            if trial_diagnostics is None:
+                raise RuntimeError(
+                    "single-action batch shard omitted probe diagnostics"
+                )
+            assignments = _split_action_trial_index_tasks(
+                1, indices, self.num_workers,
+            )
+            self._set_group_diagnostics(
+                assignments,
+                seeds,
+                indices,
+                trial_diagnostics.per_worker_seconds,
+                time.perf_counter() - wall_started,
+                per_worker_install_seconds=(
+                    trial_diagnostics.per_worker_install_seconds
+                ),
+                per_worker_trial_seconds=(
+                    trial_diagnostics.per_worker_trial_seconds
+                ),
+            )
+            return [results]
         if self._process_workers:
             return self._run_action_trial_groups_processes(
                 actions, seeds, indices, normalized_batch_set_key,
