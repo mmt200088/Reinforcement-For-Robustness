@@ -2,12 +2,7 @@ import unittest
 
 try:
     import torch
-
-    from function_handler import (
-        noise_rng_offsets_for_device,
-        reseed_noise_rng_for_device,
-        set_noise_rng_offsets_for_device,
-    )
+    import function_handler
 
     _IMPORT_ERROR = None
 except Exception as exc:  # pragma: no cover - dependency-light local lane
@@ -21,6 +16,15 @@ except Exception as exc:  # pragma: no cover - dependency-light local lane
 )
 class CudaNoiseRngOffsetTest(unittest.TestCase):
     def test_noise_and_truncation_offsets_round_trip(self):
+        noise_rng_offsets_for_device = (
+            function_handler.noise_rng_offsets_for_device
+        )
+        reseed_noise_rng_for_device = (
+            function_handler.reseed_noise_rng_for_device
+        )
+        set_noise_rng_offsets_for_device = (
+            function_handler.set_noise_rng_offsets_for_device
+        )
         device = torch.device("cuda:0")
         reseed_noise_rng_for_device(device, 12345)
 

@@ -7,10 +7,7 @@ pytest.importorskip("torch")
 
 try:
     from blb_stage2_rl.eval_metrics import finalize_probe_trial_metrics
-    from blb_stage2_rl.inference_eval import (
-        ProbeBatchContribution,
-        finalize_probe_batch_contributions,
-    )
+    from blb_stage2_rl import inference_eval
 except Exception as exc:  # pragma: no cover - torch-free local environments
     pytest.skip(f"Stage-2 probe modules are unavailable: {exc}", allow_module_level=True)
 
@@ -84,8 +81,10 @@ def test_probe_metric_aggregation_is_invariant_to_batch_partitioning():
 
 
 def test_ordered_batch_contributions_preserve_mrpc_weighted_f1():
+    contribution_type = inference_eval.ProbeBatchContribution
+    finalize_contributions = inference_eval.finalize_probe_batch_contributions
     contributions = [
-        ProbeBatchContribution(
+        contribution_type(
             trial_index=7,
             batch_index=0,
             loss=0.3,
@@ -95,7 +94,7 @@ def test_ordered_batch_contributions_preserve_mrpc_weighted_f1():
             predictions=np.array([0, 1, 0]),
             labels=np.array([0, 1, 1]),
         ),
-        ProbeBatchContribution(
+        contribution_type(
             trial_index=7,
             batch_index=1,
             loss=0.6,
@@ -107,7 +106,7 @@ def test_ordered_batch_contributions_preserve_mrpc_weighted_f1():
         ),
     ]
 
-    actual = finalize_probe_batch_contributions(
+    actual = finalize_contributions(
         contributions,
         expected_trial_index=7,
         expected_batch_count=2,
@@ -141,8 +140,10 @@ def test_ordered_batch_contributions_preserve_mrpc_weighted_f1():
 def test_batch_contribution_finalizer_rejects_noncanonical_identities(
         batch_indices,
 ):
+    contribution_type = inference_eval.ProbeBatchContribution
+    finalize_contributions = inference_eval.finalize_probe_batch_contributions
     contributions = [
-        ProbeBatchContribution(
+        contribution_type(
             trial_index=3,
             batch_index=batch_index,
             loss=0.1,
@@ -156,7 +157,7 @@ def test_batch_contribution_finalizer_rejects_noncanonical_identities(
     ]
 
     with pytest.raises(ValueError, match="canonical"):
-        finalize_probe_batch_contributions(
+        finalize_contributions(
             contributions,
             expected_trial_index=3,
             expected_batch_count=2,
