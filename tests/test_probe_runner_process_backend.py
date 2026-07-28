@@ -275,6 +275,56 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             [[(0, 0), (0, 2), (1, 1)], [(0, 1), (1, 0), (1, 2)]],
         )
 
+    def test_grouped_process_probe_reports_install_and_trial_phases(self):
+        events = []
+        runner, remotes = self._runner_with_process_count(
+            events,
+            process_count=4,
+        )
+        for remote in remotes:
+            original_receive = remote.receive
+
+            def receive_with_phases(operation, receive=original_receive):
+                payload = receive(operation)
+                if operation == "run_action_trial_groups":
+                    payload["install_seconds"] = 0.25
+                    payload["trial_seconds"] = 1.50
+                return payload
+
+            remote.receive = receive_with_phases
+
+        with mock.patch.dict(
+                os.environ,
+                {"BLB_STAGE2_PROBE_PHASE_PROFILE": "1"},
+                clear=False,
+                ):
+            results = runner.run_action_trial_groups(
+                [object(), object()],
+                base_seeds=[101, 202],
+                k=5,
+            )
+
+        self.assertEqual([len(row) for row in results], [5, 5])
+        self.assertEqual(
+            runner.last_diagnostics.per_worker_install_seconds[1:],
+            [0.25, 0.25, 0.25, 0.25],
+        )
+        self.assertEqual(
+            runner.last_diagnostics.per_worker_trial_seconds[1:],
+            [1.50, 1.50, 1.50, 1.50],
+        )
+        payload = _probe_runner.diagnostics_payload(
+            runner.last_diagnostics
+        )
+        self.assertEqual(
+            payload["per_worker_install_seconds"][1:],
+            [0.25, 0.25, 0.25, 0.25],
+        )
+        self.assertEqual(
+            payload["per_worker_trial_seconds"][1:],
+            [1.50, 1.50, 1.50, 1.50],
+        )
+
     def test_grouped_action_trials_preserve_explicit_indices_on_process_backend(self):
         events = []
         runner, _remote = self._runner(events)
@@ -1357,6 +1407,20 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"probe runner unavailable: {_IMPORT_ERROR!r}")
 class ProbeBackendSelectionTest(unittest.TestCase):
+    def test_probe_phase_profile_defaults_off(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(
+                _probe_runner.probe_phase_profile_enabled()
+            )
+        with mock.patch.dict(
+                os.environ,
+                {"BLB_STAGE2_PROBE_PHASE_PROFILE": "1"},
+                clear=True,
+                ):
+            self.assertTrue(
+                _probe_runner.probe_phase_profile_enabled()
+            )
+
     def test_process_is_default_and_thread_is_explicit_fallback(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(resolve_probe_backend(), "process")
