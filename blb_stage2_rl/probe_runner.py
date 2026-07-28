@@ -56,6 +56,7 @@ from function_handler import (
 from .action_space import ActionDecodeResult
 from .inference_eval import (
     ProbeBatchContribution,
+    finalize_probe_batch_contributions,
     probe_batch_to_model_kwargs,
     run_installed_probe_batch,
     run_installed_probe_trial,
@@ -199,6 +200,25 @@ def _should_batch_shard_trials(
         and batches > 1
         and (trials % workers) != 0
     )
+
+
+@lru_cache(maxsize=64)
+def _split_trial_batch_tasks_cached(
+        k: int,
+        batch_count: int,
+        n_workers: int,
+        ) -> Tuple[Tuple[Tuple[int, int], ...], ...]:
+    """Assign canonical trial/batch identities round-robin across workers."""
+    trials = max(0, int(k))
+    batches = max(0, int(batch_count))
+    workers = max(1, int(n_workers))
+    out: List[List[Tuple[int, int]]] = [[] for _ in range(workers)]
+    flat_index = 0
+    for trial_index in range(trials):
+        for batch_index in range(batches):
+            out[flat_index % workers].append((trial_index, batch_index))
+            flat_index += 1
+    return tuple(tuple(tasks) for tasks in out)
 
 
 @lru_cache(maxsize=64)
@@ -607,6 +627,42 @@ def _probe_process_main(
                         for trial_idx in payload["trial_indices"]
                     ]
                 }
+            elif operation == "run_trial_batches":
+                base_seed = int(payload["base_seed"])
+                batch_set_key = str(payload["batch_set_key"])
+                expected_offset_deltas = tuple(
+                    int(value)
+                    for value in payload["expected_offset_deltas"]
+                )
+                batch_results = []
+                fallback_reason = None
+                for task in payload["tasks"]:
+                    trial_index = int(task["trial_index"])
+                    batch_index = int(task["batch_index"])
+                    try:
+                        contribution = worker.run_trial_batch(
+                            trial_index,
+                            base_seed,
+                            batch_index=batch_index,
+                            noise_offset=int(task["noise_offset"]),
+                            truncation_offset=int(
+                                task["truncation_offset"]
+                            ),
+                            expected_offset_deltas=expected_offset_deltas,
+                            batch_set_key=batch_set_key,
+                        )
+                    except ProbeBatchRNGOffsetMismatch as exc:
+                        fallback_reason = str(exc)
+                        batch_results = []
+                        break
+                    batch_results.append((
+                        trial_index,
+                        batch_index,
+                        contribution,
+                    ))
+                result = {"results": batch_results}
+                if fallback_reason is not None:
+                    result["fallback_reason"] = fallback_reason
             elif operation == "run_action_trial":
                 trial_idx = int(payload["trial_idx"])
                 base_seed = int(payload["base_seed"])
@@ -1242,6 +1298,41 @@ class ProbeRunner:
                 )
             results[trial_index] = tuple(raw_result)
 
+    @staticmethod
+    def _accept_trial_batch_payload(
+            *,
+            payload: Dict[str, Any],
+            expected_identities: Sequence[Tuple[int, int]],
+            results: Dict[Tuple[int, int], ProbeBatchContribution],
+            ) -> None:
+        fallback_reason = payload.get("fallback_reason")
+        if fallback_reason:
+            raise ProbeBatchRNGOffsetMismatch(str(fallback_reason))
+        expected = {
+            (int(trial_index), int(batch_index))
+            for trial_index, batch_index in expected_identities
+        }
+        for raw_trial_index, raw_batch_index, contribution in payload.get(
+                "results", []
+                ):
+            identity = (int(raw_trial_index), int(raw_batch_index))
+            contribution_identity = (
+                int(contribution.trial_index),
+                int(contribution.batch_index),
+            )
+            if (
+                    identity not in expected
+                    or identity in results
+                    or contribution_identity != identity
+            ):
+                raise RuntimeError(
+                    "probe-runner received duplicate, out-of-range, or "
+                    f"mismatched trial/batch identity {identity}; "
+                    f"contribution={contribution_identity}, "
+                    f"expected={sorted(expected)}"
+                )
+            results[identity] = contribution
+
     def _retry_missing_trials_processes(
             self,
             *,
@@ -1326,7 +1417,7 @@ class ProbeRunner:
                     f"trial identities {still_missing}"
                 )
 
-    def _run_trials_processes(
+    def _run_whole_trials_processes(
             self,
             k: int,
             base_seed: int,
@@ -1422,6 +1513,225 @@ class ProbeRunner:
                 )
             ordered.append(result)
         return ordered
+
+    def _run_trial_batches_processes(
+            self,
+            k: int,
+            base_seed: int,
+            batch_set_key: str,
+            ) -> List[Tuple[float, float, float]]:
+        batch_count = len(self._batch_sets[batch_set_key])
+        try:
+            offset_deltas = tuple(
+                int(value)
+                for value in self.workers[0].calibrate_batch_rng_offsets(
+                    batch_set_key
+                )
+            )
+        except BaseException as exc:  # noqa: BLE001
+            if is_recoverable_gpu_failure(exc):
+                raise ElasticGPUFailure(
+                    device=self.workers[0].device,
+                    role="learner-primary",
+                    operation="calibrate_batch_rng_offsets",
+                    cause=exc,
+                ) from exc
+            return self._run_whole_trials_processes(
+                k, base_seed, batch_set_key,
+            )
+        if len(offset_deltas) != 2 or any(
+                value < 0 for value in offset_deltas
+                ):
+            return self._run_whole_trials_processes(
+                k, base_seed, batch_set_key,
+            )
+
+        task_assignments = _split_trial_batch_tasks_cached(
+            k, batch_count, self.num_workers,
+        )
+        nominal_assignments = _split_round_robin_cached(k, self.num_workers)
+        seed_assignments = [
+            [_trial_seed(base_seed, trial_idx) for trial_idx in trials]
+            for trials in nominal_assignments
+        ]
+        contributions: Dict[
+            Tuple[int, int], ProbeBatchContribution
+        ] = {}
+        per_worker_seconds: List[float] = [0.0] * self.num_workers
+        errors: List[Tuple[int, BaseException]] = []
+        submitted: List[Tuple[int, Any]] = []
+
+        def task_payload(
+                tasks: Sequence[Tuple[int, int]],
+                ) -> List[Dict[str, int]]:
+            return [
+                {
+                    "trial_index": int(trial_index),
+                    "batch_index": int(batch_index),
+                    "noise_offset": int(batch_index * offset_deltas[0]),
+                    "truncation_offset": int(
+                        batch_index * offset_deltas[1]
+                    ),
+                }
+                for trial_index, batch_index in tasks
+            ]
+
+        wall_started = time.perf_counter()
+        for worker_index, worker in enumerate(
+                self._process_workers, start=1,
+                ):
+            tasks = task_assignments[worker_index]
+            if not tasks:
+                continue
+            try:
+                worker.submit("run_trial_batches", {
+                    "tasks": task_payload(tasks),
+                    "base_seed": int(base_seed),
+                    "batch_set_key": batch_set_key,
+                    "expected_offset_deltas": list(offset_deltas),
+                })
+                submitted.append((worker_index, worker))
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((worker_index, exc))
+
+        local_started = time.perf_counter()
+        try:
+            for trial_index, batch_index in task_assignments[0]:
+                contribution = self.workers[0].run_trial_batch(
+                    trial_index,
+                    base_seed,
+                    batch_index=batch_index,
+                    noise_offset=int(batch_index * offset_deltas[0]),
+                    truncation_offset=int(
+                        batch_index * offset_deltas[1]
+                    ),
+                    expected_offset_deltas=offset_deltas,
+                    batch_set_key=batch_set_key,
+                )
+                self._accept_trial_batch_payload(
+                    payload={
+                        "results": [(
+                            trial_index,
+                            batch_index,
+                            contribution,
+                        )],
+                    },
+                    expected_identities=[(trial_index, batch_index)],
+                    results=contributions,
+                )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append((0, exc))
+        finally:
+            per_worker_seconds[0] = time.perf_counter() - local_started
+
+        for worker_index, worker in submitted:
+            try:
+                payload = worker.receive("run_trial_batches")
+                per_worker_seconds[worker_index] = float(
+                    payload.get("wall_seconds", 0.0) or 0.0
+                )
+                self._accept_trial_batch_payload(
+                    payload=payload,
+                    expected_identities=task_assignments[worker_index],
+                    results=contributions,
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append((worker_index, exc))
+
+        if errors:
+            ordinary_errors = [
+                (worker_index, exc)
+                for worker_index, exc in errors
+                if not isinstance(exc, ProbeBatchRNGOffsetMismatch)
+            ]
+            quarantined: List[str] = []
+            if ordinary_errors:
+                quarantined = self._handle_process_errors(
+                    ordinary_errors,
+                    "run_trial_batches",
+                )
+            results = self._run_whole_trials_processes(
+                k, base_seed, batch_set_key,
+            )
+            if self.last_diagnostics is not None and quarantined:
+                self.last_diagnostics.pool_generation = int(
+                    self.pool_generation
+                )
+                self.last_diagnostics.quarantined_devices = (
+                    quarantined
+                    + list(self.last_diagnostics.quarantined_devices)
+                )
+            return results
+
+        expected_identities = {
+            (trial_index, batch_index)
+            for trial_index in range(k)
+            for batch_index in range(batch_count)
+        }
+        if set(contributions) != expected_identities:
+            missing = sorted(expected_identities - set(contributions))
+            unexpected = sorted(set(contributions) - expected_identities)
+            raise RuntimeError(
+                "probe-runner batch shard completed with an invalid identity "
+                f"set: missing={missing}, unexpected={unexpected}"
+            )
+
+        wall_elapsed = time.perf_counter() - wall_started
+        self.last_diagnostics = ProbeRunnerDiagnostics(
+            k=k,
+            wall_seconds=float(wall_elapsed),
+            per_worker_seconds=[float(value) for value in per_worker_seconds],
+            per_worker_trial_counts=[
+                len(trials) for trials in nominal_assignments
+            ],
+            per_worker_trial_indices=[
+                list(trials) for trials in nominal_assignments
+            ],
+            per_worker_trial_seeds=[list(seeds) for seeds in seed_assignments],
+            devices=[str(device) for device in self.devices],
+            pool_generation=int(self.pool_generation),
+        )
+
+        ordered: List[Tuple[float, float, float]] = []
+        for trial_index in range(k):
+            result = finalize_probe_batch_contributions(
+                [
+                    contributions[(trial_index, batch_index)]
+                    for batch_index in range(batch_count)
+                ],
+                expected_trial_index=trial_index,
+                expected_batch_count=batch_count,
+                metric_profile=str(
+                    getattr(self.workers[0], "metric_profile", "")
+                ),
+                is_regression=bool(
+                    getattr(self.workers[0], "is_regression", False)
+                ),
+            )
+            if result is None:
+                result = (float("nan"), float("nan"), float("nan"))
+            ordered.append(result)
+        return ordered
+
+    def _run_trials_processes(
+            self,
+            k: int,
+            base_seed: int,
+            batch_set_key: str,
+            ) -> List[Tuple[float, float, float]]:
+        batch_count = len(self._batch_sets[batch_set_key])
+        if _should_batch_shard_trials(
+                k=k,
+                worker_count=self.num_workers,
+                batch_count=batch_count,
+                process_backend=bool(self._process_workers),
+                ):
+            return self._run_trial_batches_processes(
+                k, base_seed, batch_set_key,
+            )
+        return self._run_whole_trials_processes(
+            k, base_seed, batch_set_key,
+        )
 
     def run_trials(
             self,
