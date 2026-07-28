@@ -96,6 +96,12 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.installed = None
             self.is_regression = False
             self.metric_profile = "sst2"
+            self.batch_rng_plan = (
+                (4, 8),
+                (12, 16),
+                (20, 24),
+                (28, 32),
+            )
 
         def register_batch_set(self, key, batches):
             normalized = str(key)
@@ -120,6 +126,10 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         def calibrate_batch_rng_offsets(self, batch_set_key="F1"):
             self.events.append(("local-calibrate", str(batch_set_key)))
             return (4, 8)
+
+        def calibrate_batch_rng_plan(self, batch_set_key="F1"):
+            self.events.append(("local-calibrate-plan", str(batch_set_key)))
+            return self.batch_rng_plan
 
         def run_trial_batch(
                 self,
@@ -333,7 +343,11 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             ["run_trials"] * 4,
         )
         self.assertFalse(any(
-            event[0] in {"local-calibrate", "local-run-batch"}
+            event[0] in {
+                "local-calibrate",
+                "local-calibrate-plan",
+                "local-run-batch",
+            }
             for event in events
         ))
         self.assertEqual(
@@ -387,17 +401,46 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 for batch_index in range(4)
             ],
         )
-        self.assertEqual(
-            events.count(("local-calibrate", "F1")),
-            1,
-        )
+        self.assertEqual(events.count(("local-calibrate-plan", "F1")), 1)
+        self.assertEqual(events.count(("local-calibrate", "F1")), 0)
+        offsets_by_batch = {
+            0: (0, 0),
+            1: (4, 8),
+            2: (16, 24),
+            3: (36, 48),
+        }
+        expected_deltas_by_batch = {
+            batch_index: tuple(deltas)
+            for batch_index, deltas in enumerate(
+                runner.workers[0].batch_rng_plan
+            )
+        }
         for event in events:
             if event[0] != "local-run-batch":
                 continue
             batch_index = int(event[2])
-            self.assertEqual(event[4], batch_index * 4)
-            self.assertEqual(event[5], batch_index * 8)
-            self.assertEqual(event[6], (4, 8))
+            self.assertEqual(
+                (event[4], event[5]),
+                offsets_by_batch[batch_index],
+            )
+            self.assertEqual(
+                event[6],
+                expected_deltas_by_batch[batch_index],
+            )
+        for event in submissions:
+            for task in event[2]["tasks"]:
+                batch_index = int(task["batch_index"])
+                self.assertEqual(
+                    (
+                        int(task["noise_offset"]),
+                        int(task["truncation_offset"]),
+                    ),
+                    offsets_by_batch[batch_index],
+                )
+                self.assertEqual(
+                    tuple(task["expected_offset_deltas"]),
+                    expected_deltas_by_batch[batch_index],
+                )
 
     def test_rng_offset_mismatch_discards_shards_and_replays_whole_trials(self):
         events = []

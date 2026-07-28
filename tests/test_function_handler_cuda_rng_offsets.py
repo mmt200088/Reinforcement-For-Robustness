@@ -167,6 +167,84 @@ class CudaNoiseRngOffsetTest(unittest.TestCase):
             complete_next_truncation,
         ))
 
+    def test_probe_batch_rng_plan_uses_full_resident_batch_shapes(self):
+        class ShapeDependentNoiseClassifier(torch.nn.Module):
+            def forward(
+                    self,
+                    input_ids,
+                    attention_mask,
+                    token_type_ids=None,
+                    ):
+                del attention_mask, token_type_ids
+                values = input_ids.float()
+                noisy = values + function_handler._sample_independent_gaussian(
+                    values,
+                    0.125,
+                )
+                truncated = function_handler._apply_truncation(
+                    noisy,
+                    2,
+                    "stochastic_ring",
+                    ring_bits=43,
+                    source_fractional_bits=4,
+                )
+                score = truncated[:, :8].sum(dim=1)
+                return SimpleNamespace(
+                    logits=torch.stack((-score, score), dim=1),
+                )
+
+        device = torch.device("cuda:0")
+
+        def make_batch(batch_size):
+            shape = (int(batch_size), 131072)
+            return SimpleNamespace(
+                input_ids=torch.ones(shape, device=device),
+                attention_mask=torch.ones(
+                    shape,
+                    dtype=torch.long,
+                    device=device,
+                ),
+                token_type_ids=None,
+                labels=torch.ones(
+                    int(batch_size),
+                    dtype=torch.long,
+                    device=device,
+                ),
+            )
+
+        batches = [make_batch(8), make_batch(2), make_batch(8)]
+        worker = ProbeWorker(
+            device=device,
+            model=ShapeDependentNoiseClassifier().to(device),
+            handler=None,
+            bridge=None,
+            probe_batches=batches,
+            is_regression=False,
+            metric_profile="sst2",
+        )
+
+        plan = worker.calibrate_batch_rng_plan("F1")
+        expected = []
+        for batch in batches:
+            function_handler.reseed_noise_rng_for_device(device, 0)
+            start_offsets = function_handler.noise_rng_offsets_for_device(
+                device,
+            )
+            with torch.inference_mode():
+                worker.model(
+                    input_ids=batch.input_ids,
+                    attention_mask=batch.attention_mask,
+                )
+            end_offsets = function_handler.noise_rng_offsets_for_device(device)
+            expected.append((
+                end_offsets[0] - start_offsets[0],
+                end_offsets[1] - start_offsets[1],
+            ))
+
+        self.assertEqual(plan, tuple(expected))
+        self.assertEqual(plan[0], plan[2])
+        self.assertNotEqual(plan[0], plan[1])
+
 
 if __name__ == "__main__":
     unittest.main()
