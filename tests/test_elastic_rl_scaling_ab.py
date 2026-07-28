@@ -302,6 +302,53 @@ class ElasticRLScalingABTests(unittest.TestCase):
             result.diffs,
         )
 
+    def test_learner_cuda_rng_role_change_fails(self):
+        from scripts.elastic_rl_scaling_ab import compare_runs
+
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            data_root = base / "rl_training_data_points"
+            control = base / "control"
+            candidate = base / "candidate"
+            self._write_run(control, data_root, run_id="control-run")
+            self._write_run(
+                candidate,
+                data_root,
+                run_id="candidate-run",
+                timestamp=2.0,
+            )
+            checkpoint_path = (
+                candidate
+                / "progress"
+                / "blb_stage2_rl_checkpoint_live.pt"
+            )
+            checkpoint = torch.load(
+                checkpoint_path,
+                map_location="cpu",
+                weights_only=False,
+            )
+            checkpoint["cuda_rng_state_by_role"][0] = torch.tensor(
+                [73],
+                dtype=torch.uint8,
+            )
+            torch.save(checkpoint, checkpoint_path)
+
+            result = compare_runs(
+                control,
+                candidate,
+                stage="stage2",
+                data_points_root=data_root,
+            )
+
+        self.assertFalse(result.equal)
+        self.assertTrue(
+            any(
+                "checkpoint.cuda_rng_state_by_role.learner" in diff
+                for diff in result.diffs
+            ),
+            result.diffs,
+        )
+
     def test_scaling_summary_requires_exact_monotonic_runs(self):
         from scripts.elastic_rl_scaling_ab import summarize_scaling
 
