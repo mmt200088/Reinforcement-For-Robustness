@@ -10,6 +10,32 @@ _REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
 class Stage2NgpuSpeedTargetedFirstTests(unittest.TestCase):
+    def test_ngpu_gate_requires_recursive_scientific_state_comparison(self):
+        script = (
+            _REPO / "scripts" / "stage2_ngpu_speed_ab.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'REQUIRE_FULL_STATE_EQUALITY="${REQUIRE_FULL_STATE_EQUALITY:-1}"',
+            script,
+        )
+        self.assertIn(
+            'DATA_POINTS_ROOT="${DATA_POINTS_ROOT:-rl_training_data_points}"',
+            script,
+        )
+        self.assertIn(
+            '"${ARTIFACT_DIR}/${label}_run_root.txt"',
+            script,
+        )
+        self.assertIn('"${ARTIFACT_DIR}/HEAD.txt"', script)
+        self.assertIn('"${ARTIFACT_DIR}/TREE.txt"', script)
+        self.assertIn("scripts/elastic_rl_scaling_ab.py", script)
+        self.assertIn('--data-points-root "$DATA_POINTS_ROOT"', script)
+        self.assertIn(
+            '--output "${ARTIFACT_DIR}/strict_scientific_equivalence.json"',
+            script,
+        )
+
     def test_targeted_first_defaults_to_validated_fast_candidate_only(self):
         script = (_REPO / "scripts" / "stage2_ngpu_speed_targeted_first.sh").read_text(
             encoding="utf-8"
