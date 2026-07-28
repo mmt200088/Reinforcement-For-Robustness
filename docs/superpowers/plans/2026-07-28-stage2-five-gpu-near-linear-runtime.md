@@ -1662,3 +1662,67 @@ compact evidence path
 ```
 
 Do not claim RL-quality improvement from this 170-episode performance gate.
+
+## Task 12: Preserve Five Healthy GPUs And Balance Degraded Pools
+
+**Files:**
+- Modify: `function_handler.py`
+- Modify: `blb_stage2_rl/inference_eval.py`
+- Modify: `blb_stage2_rl/probe_runner.py`
+- Modify: `tests/test_elastic_gpu_supervisor.py`
+- Modify: `tests/test_blb_probe_metric_aggregation.py`
+- Modify: `tests/test_probe_runner_process_backend.py`
+- Modify only if telemetry requires it:
+  `blb_stage2_rl/env.py`, `blb_stage2_rl/sequential_runner.py`,
+  `scripts/elastic_rl_scaling_ab.py`, and their focused tests.
+
+- [ ] **Step 1: Lock the all-healthy invariant with red tests**
+
+Require an all-healthy five-device health snapshot to preserve candidate order,
+produce logical devices `0,1,2,3,4`, and create five probe workers. Require
+K=5 with five workers to choose whole-trial scheduling and never batch
+sharding.
+
+- [ ] **Step 2: Specify exact per-batch metric contributions**
+
+Write tests proving that finalizing ordered per-batch contributions returns the
+same loss, metric1, and weighted-F1 metric2 as the existing complete-trial
+path. Duplicate, missing, or out-of-order identities must fail closed.
+
+- [ ] **Step 3: Specify deterministic CUDA generator offset replay**
+
+Write server-only CUDA tests proving that a later probe batch executed after
+reseed plus exact noise/truncation generator offsets is bitwise equal to the
+same batch in a sequential complete trial, including the next generator state.
+
+- [ ] **Step 4: Implement guarded uneven-pool scheduling**
+
+Keep the existing complete-trial process path unchanged for five healthy
+workers and K=5. For uneven smaller pools, calibrate generator offset deltas
+with one inference-only sample, distribute `(trial, batch)` identities
+round-robin, verify offsets on every result, and finalize in canonical order.
+Discard all partial outputs and replay complete trials if any guard fails.
+
+- [ ] **Step 5: Verify failure handling and zero hot-path health polling**
+
+Prove a failed replica retries only missing batch identities on the remaining
+pool, while all-healthy execution performs no per-episode `nvidia-smi` query.
+The existing 60-second recovery monitor remains dormant when there are no
+quarantined devices.
+
+- [ ] **Step 6: Run matched server A/B**
+
+Run profile-off one-, three-, four-, and five-GPU probes from the same source,
+seed, action, and batch set. Acceptance requires:
+
+- five healthy GPUs use all five workers and retain at least the already
+  measured `4.9299x` terminal-probe speedup;
+- four GPUs improve materially over the current `2.5257x` discrete-task limit;
+- three GPUs improve materially over whole-trial scheduling;
+- every arm passes recursive scientific-state equality with `diffs=[]`.
+
+- [ ] **Step 7: Commit, push, and include in the final 170-episode gate**
+
+Commit each red/green stage and push it before server deployment. Reject the
+degraded scheduler if exact replay cannot be proved; do not weaken or replace
+the all-healthy five-GPU path.

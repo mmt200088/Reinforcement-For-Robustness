@@ -141,6 +141,46 @@ primary-device failure resumes only from a committed PPO transaction boundary.
 Health resolution runs once at launch and after a real infrastructure failure;
 it is not polled in the episode hot path.
 
+### All-Healthy Fast-Path Invariant
+
+GPU health is resolved from the current server snapshot. No physical index,
+including GPU 3, is pre-quarantined or treated specially. When all five
+candidate GPUs are healthy and K=5:
+
+- all five physical GPUs remain visible to the child;
+- the probe pool contains exactly five workers on logical `cuda:0..4`;
+- each worker receives exactly one complete trial;
+- degraded-mode batch sharding is disabled.
+
+This invariant protects the measured five-GPU path from a historical failure
+on a different server. A healthy device may be removed only after the current
+health query reports it unhealthy or a recoverable runtime failure identifies
+that device.
+
+### Uneven Degraded-Mode Scheduling
+
+Whole-trial scheduling remains the default. Batch-level scheduling is eligible
+only when all of the following are true:
+
+- the persistent process backend is active;
+- at least two healthy workers remain;
+- the worker count is smaller than the trial count;
+- whole-trial round-robin assignment is uneven;
+- the registered probe set contains more than one batch.
+
+The degraded scheduler preserves each original `(trial_index, batch_index)`
+identity. It reseeds the same per-trial CUDA generators and advances them to
+the exact offsets that the preceding batches would have consumed. Offset
+increments are calibrated with an inference-only one-sample forward after the
+action is installed, then verified on every real batch. Returned batch
+contributions are sorted by trial and batch before the existing metric
+finalizer runs.
+
+If offset calibration, offset verification, worker transport, or exact result
+comparison fails, all partial degraded-mode outputs are discarded and the
+complete trials are replayed through the existing scheduler. The fallback may
+cost time but cannot publish mixed or altered scientific results.
+
 ## Per-GPU Efficiency Work
 
 The profile determines which of these candidates are implemented:
