@@ -94,6 +94,8 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.probe_batches = ("online-probe",)
             self.batch_sets = {"F1": self.probe_batches}
             self.installed = None
+            self.is_regression = False
+            self.metric_profile = "sst2"
 
         def register_batch_set(self, key, batches):
             normalized = str(key)
@@ -114,6 +116,40 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 ("local-run", trial_idx, base_seed, str(batch_set_key))
             )
             return (float(trial_idx), float(base_seed), -1.0)
+
+        def calibrate_batch_rng_offsets(self, batch_set_key="F1"):
+            self.events.append(("local-calibrate", str(batch_set_key)))
+            return (4, 8)
+
+        def run_trial_batch(
+                self,
+                trial_idx,
+                base_seed,
+                *,
+                batch_index,
+                noise_offset,
+                truncation_offset,
+                expected_offset_deltas,
+                batch_set_key="F1",
+                ):
+            self.events.append((
+                "local-run-batch",
+                int(trial_idx),
+                int(batch_index),
+                int(base_seed),
+                int(noise_offset),
+                int(truncation_offset),
+                tuple(expected_offset_deltas),
+                str(batch_set_key),
+            ))
+            return _probe_runner.ProbeBatchContribution(
+                trial_index=int(trial_idx),
+                batch_index=int(batch_index),
+                loss=float(trial_idx),
+                metric1=1.0,
+                metric2=1.0,
+                sample_count=1,
+            )
 
     class _RemoteWorker:
         def __init__(
@@ -163,6 +199,27 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 ]
                 if self.duplicate_result and results:
                     results.append(results[0])
+                return {
+                    "results": results,
+                    "wall_seconds": 0.25,
+                }
+            if operation == "run_trial_batches":
+                results = []
+                for task in payload["tasks"]:
+                    trial_index = int(task["trial_index"])
+                    batch_index = int(task["batch_index"])
+                    results.append((
+                        trial_index,
+                        batch_index,
+                        _probe_runner.ProbeBatchContribution(
+                            trial_index=trial_index,
+                            batch_index=batch_index,
+                            loss=float(trial_index),
+                            metric1=1.0,
+                            metric2=1.0,
+                            sample_count=1,
+                        ),
+                    ))
                 return {
                     "results": results,
                     "wall_seconds": 0.25,
@@ -247,6 +304,92 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         self.assertEqual(diag.per_worker_trial_counts, [1, 1])
         self.assertEqual(diag.per_worker_trial_indices, [[0], [1]])
         self.assertEqual(diag.devices, ["cuda:0", "cuda:1"])
+
+    def test_all_healthy_five_gpu_path_never_uses_batch_sharding(self):
+        events = []
+        runner, _remotes = self._runner_with_process_count(
+            events,
+            process_count=4,
+        )
+        runner._batch_sets["F1"] = ("b0", "b1", "b2", "b3")
+
+        results = runner.run_trials(k=5, base_seed=41)
+
+        self.assertEqual(len(results), 5)
+        self.assertEqual(runner.num_workers, 5)
+        submissions = [
+            event for event in events if event[0] == "remote-submit"
+        ]
+        self.assertEqual(
+            [event[1] for event in submissions],
+            ["run_trials"] * 4,
+        )
+        self.assertFalse(any(
+            event[0] in {"local-calibrate", "local-run-batch"}
+            for event in events
+        ))
+        self.assertEqual(
+            runner.last_diagnostics.per_worker_trial_counts,
+            [1, 1, 1, 1, 1],
+        )
+
+    def test_degraded_four_gpu_path_shards_five_trials_by_probe_batch(self):
+        events = []
+        runner, _remotes = self._runner_with_process_count(
+            events,
+            process_count=3,
+        )
+        runner._batch_sets["F1"] = ("b0", "b1", "b2", "b3")
+
+        results = runner.run_trials(k=5, base_seed=41)
+
+        self.assertEqual(
+            results,
+            [(float(trial_index), 1.0, 1.0) for trial_index in range(5)],
+        )
+        submissions = [
+            event
+            for event in events
+            if event[:2] == ("remote-submit", "run_trial_batches")
+        ]
+        self.assertEqual(len(submissions), 3)
+        local_tasks = [
+            (event[1], event[2])
+            for event in events
+            if event[0] == "local-run-batch"
+        ]
+        remote_tasks = [
+            (
+                int(task["trial_index"]),
+                int(task["batch_index"]),
+            )
+            for event in submissions
+            for task in event[2]["tasks"]
+        ]
+        self.assertEqual(len(local_tasks), 5)
+        self.assertEqual(
+            [len(event[2]["tasks"]) for event in submissions],
+            [5, 5, 5],
+        )
+        self.assertEqual(
+            sorted(local_tasks + remote_tasks),
+            [
+                (trial_index, batch_index)
+                for trial_index in range(5)
+                for batch_index in range(4)
+            ],
+        )
+        self.assertEqual(
+            events.count(("local-calibrate", "F1")),
+            1,
+        )
+        for event in events:
+            if event[0] != "local-run-batch":
+                continue
+            batch_index = int(event[2])
+            self.assertEqual(event[4], batch_index * 4)
+            self.assertEqual(event[5], batch_index * 8)
+            self.assertEqual(event[6], (4, 8))
 
     def test_multi_action_remote_work_overlaps_primary_worker(self):
         events = []
