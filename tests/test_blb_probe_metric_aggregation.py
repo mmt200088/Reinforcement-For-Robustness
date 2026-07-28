@@ -1,7 +1,9 @@
 import math
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import torch
 
 pytest.importorskip("torch")
 
@@ -164,3 +166,36 @@ def test_batch_contribution_finalizer_rejects_noncanonical_identities(
             metric_profile="mrpc",
             is_regression=False,
         )
+
+
+def test_installed_probe_batch_emits_canonical_metric_contribution():
+    class Classifier(torch.nn.Module):
+        def forward(self, input_ids, attention_mask, token_type_ids=None):
+            score = input_ids[:, 0].float()
+            return SimpleNamespace(
+                logits=torch.stack((-score, score), dim=1),
+            )
+
+    batch = SimpleNamespace(
+        input_ids=torch.tensor([[1, 0], [-1, 0]]),
+        attention_mask=torch.ones((2, 2), dtype=torch.long),
+        token_type_ids=torch.zeros((2, 2), dtype=torch.long),
+        labels=torch.tensor([1, 0]),
+    )
+
+    contribution = inference_eval.run_installed_probe_batch(
+        Classifier(),
+        batch,
+        trial_index=11,
+        batch_index=3,
+        is_regression=False,
+        metric_profile="mrpc",
+    )
+
+    assert contribution.trial_index == 11
+    assert contribution.batch_index == 3
+    assert contribution.sample_count == 2
+    assert contribution.metric1 == 1.0
+    assert contribution.metric2 == 1.0
+    assert np.array_equal(contribution.predictions, np.array([1, 0]))
+    assert np.array_equal(contribution.labels, np.array([1, 0]))
