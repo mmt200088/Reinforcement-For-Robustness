@@ -80,8 +80,27 @@ class ElasticRLScalingABTests(unittest.TestCase):
             "diagnostics_jsonl_sizes": {"episodes.jsonl": int(timestamp * 10)},
             "candidate_store_size": int(timestamp * 20),
             "store_file_fingerprints": {"candidate_store.jsonl": str(timestamp)},
-            "cuda_rng_state_all": [torch.tensor([int(timestamp)])],
-            "cuda_rng_state_by_role": [torch.tensor([int(timestamp)])],
+            "cuda_rng_state_all": [
+                torch.tensor([9], dtype=torch.uint8),
+                *[
+                    torch.tensor(
+                        [int(timestamp) + role],
+                        dtype=torch.uint8,
+                    )
+                    for role in range(1, int(timestamp))
+                ],
+            ],
+            "cuda_rng_role_registry_version": 1,
+            "cuda_rng_state_by_role": [
+                torch.tensor([9], dtype=torch.uint8),
+                *[
+                    torch.tensor(
+                        [int(timestamp) + role],
+                        dtype=torch.uint8,
+                    )
+                    for role in range(1, int(timestamp))
+                ],
+            ],
             "cuda_rng_active_role_count": int(timestamp),
             "torch_rng_state": torch.tensor([9], dtype=torch.uint8),
             "numpy_rng_state": ("MT19937", [1, 2, 3], 0, 0, 0.0),

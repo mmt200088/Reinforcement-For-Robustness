@@ -94,8 +94,6 @@ _EFFICIENCY_TELEMETRY_KEYS = {
     "details_file_sizes",
     "store_file_fingerprints",
     "cuda_rng_state_all",
-    "cuda_rng_role_registry_version",
-    "cuda_rng_state_by_role",
     "cuda_rng_active_role_count",
 }
 _EFFICIENCY_KEY_SUFFIXES = (
@@ -155,11 +153,20 @@ def _is_efficiency_telemetry_key(key: object) -> bool:
 def canonicalize(value: Any) -> Any:
     """Drop only fields that are expected to vary with execution efficiency."""
     if isinstance(value, Mapping):
-        return {
-            str(key): canonicalize(item)
-            for key, item in value.items()
-            if not _is_efficiency_telemetry_key(key)
-        }
+        normalized: Dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text.strip().lower() == "cuda_rng_state_by_role":
+                roles = list(item or ())
+                normalized[key_text] = {
+                    "learner": (
+                        canonicalize(roles[0]) if roles else None
+                    ),
+                }
+                continue
+            if not _is_efficiency_telemetry_key(key):
+                normalized[key_text] = canonicalize(item)
+        return normalized
     if isinstance(value, list):
         return [canonicalize(item) for item in value]
     if isinstance(value, tuple):
