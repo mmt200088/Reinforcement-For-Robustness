@@ -419,10 +419,17 @@ class ProbeWorker:
             self,
             batch_set_key: str = "F1",
             ) -> Tuple[int, int]:
-        """Measure per-forward CUDA noise RNG consumption on one sample."""
+        """Return the first resident batch's calibrated RNG consumption."""
+        return self.calibrate_batch_rng_plan(batch_set_key)[0]
+
+    def calibrate_batch_rng_plan(
+            self,
+            batch_set_key: str = "F1",
+            ) -> Tuple[Tuple[int, int], ...]:
+        """Measure CUDA noise RNG consumption once per resident batch shape."""
         normalized = _normalize_batch_set_key(batch_set_key)
         try:
-            batch = self.probe_batch_sets[normalized][0]
+            probe_batches = self.probe_batch_sets[normalized]
         except KeyError as exc:
             raise KeyError(
                 f"unknown probe batch-set {normalized!r}; "
@@ -431,27 +438,48 @@ class ProbeWorker:
         if self.device.type != "cuda":
             raise RuntimeError("probe batch RNG offsets require a CUDA device")
 
-        sample_kwargs = {
-            key: value[:1] if isinstance(value, torch.Tensor) else value
-            for key, value in probe_batch_to_model_kwargs(batch).items()
-        }
+        def shape_signature(batch: Any) -> Tuple[Any, ...]:
+            return tuple(
+                (
+                    str(key),
+                    tuple(int(size) for size in value.shape),
+                    str(value.dtype),
+                )
+                if isinstance(value, torch.Tensor)
+                else (str(key), type(value).__name__)
+                for key, value in probe_batch_to_model_kwargs(batch).items()
+            )
+
+        deltas_by_shape: Dict[Tuple[Any, ...], Tuple[int, int]] = {}
+        plan: List[Tuple[int, int]] = []
         was_training = bool(self.model.training)
         with torch.cuda.device(self.device):
-            reseed_noise_rng_for_device(self.device, 0)
-            start_offsets = noise_rng_offsets_for_device(self.device)
             if was_training:
                 self.model.eval()
             try:
                 with torch.inference_mode():
-                    self.model(**sample_kwargs)
+                    for batch in probe_batches:
+                        signature = shape_signature(batch)
+                        deltas = deltas_by_shape.get(signature)
+                        if deltas is None:
+                            reseed_noise_rng_for_device(self.device, 0)
+                            start_offsets = noise_rng_offsets_for_device(
+                                self.device
+                            )
+                            self.model(**probe_batch_to_model_kwargs(batch))
+                            end_offsets = noise_rng_offsets_for_device(
+                                self.device
+                            )
+                            deltas = (
+                                int(end_offsets[0] - start_offsets[0]),
+                                int(end_offsets[1] - start_offsets[1]),
+                            )
+                            deltas_by_shape[signature] = deltas
+                        plan.append(deltas)
             finally:
                 if was_training:
                     self.model.train()
-            end_offsets = noise_rng_offsets_for_device(self.device)
-        return (
-            int(end_offsets[0] - start_offsets[0]),
-            int(end_offsets[1] - start_offsets[1]),
-        )
+        return tuple(plan)
 
     def run_trial_batch(
             self,
@@ -630,15 +658,15 @@ def _probe_process_main(
             elif operation == "run_trial_batches":
                 base_seed = int(payload["base_seed"])
                 batch_set_key = str(payload["batch_set_key"])
-                expected_offset_deltas = tuple(
-                    int(value)
-                    for value in payload["expected_offset_deltas"]
-                )
                 batch_results = []
                 fallback_reason = None
                 for task in payload["tasks"]:
                     trial_index = int(task["trial_index"])
                     batch_index = int(task["batch_index"])
+                    expected_offset_deltas = tuple(
+                        int(value)
+                        for value in task["expected_offset_deltas"]
+                    )
                     try:
                         contribution = worker.run_trial_batch(
                             trial_index,
@@ -1522,29 +1550,41 @@ class ProbeRunner:
             ) -> List[Tuple[float, float, float]]:
         batch_count = len(self._batch_sets[batch_set_key])
         try:
-            offset_deltas = tuple(
-                int(value)
-                for value in self.workers[0].calibrate_batch_rng_offsets(
-                    batch_set_key
-                )
+            offset_plan = tuple(
+                tuple(int(value) for value in deltas)
+                for deltas
+                in self.workers[0].calibrate_batch_rng_plan(batch_set_key)
             )
         except BaseException as exc:  # noqa: BLE001
             if is_recoverable_gpu_failure(exc):
                 raise ElasticGPUFailure(
                     device=self.workers[0].device,
                     role="learner-primary",
-                    operation="calibrate_batch_rng_offsets",
+                    operation="calibrate_batch_rng_plan",
                     cause=exc,
                 ) from exc
             return self._run_whole_trials_processes(
                 k, base_seed, batch_set_key,
             )
-        if len(offset_deltas) != 2 or any(
-                value < 0 for value in offset_deltas
+        if (
+                len(offset_plan) != batch_count
+                or any(len(deltas) != 2 for deltas in offset_plan)
+                or any(
+                    value < 0
+                    for deltas in offset_plan
+                    for value in deltas
+                )
                 ):
             return self._run_whole_trials_processes(
                 k, base_seed, batch_set_key,
             )
+        start_offsets: List[Tuple[int, int]] = []
+        noise_offset = 0
+        truncation_offset = 0
+        for noise_delta, truncation_delta in offset_plan:
+            start_offsets.append((noise_offset, truncation_offset))
+            noise_offset += int(noise_delta)
+            truncation_offset += int(truncation_delta)
 
         task_assignments = _split_trial_batch_tasks_cached(
             k, batch_count, self.num_workers,
@@ -1563,14 +1603,15 @@ class ProbeRunner:
 
         def task_payload(
                 tasks: Sequence[Tuple[int, int]],
-                ) -> List[Dict[str, int]]:
+                ) -> List[Dict[str, Any]]:
             return [
                 {
                     "trial_index": int(trial_index),
                     "batch_index": int(batch_index),
-                    "noise_offset": int(batch_index * offset_deltas[0]),
-                    "truncation_offset": int(
-                        batch_index * offset_deltas[1]
+                    "noise_offset": int(start_offsets[batch_index][0]),
+                    "truncation_offset": int(start_offsets[batch_index][1]),
+                    "expected_offset_deltas": list(
+                        offset_plan[batch_index]
                     ),
                 }
                 for trial_index, batch_index in tasks
@@ -1588,7 +1629,6 @@ class ProbeRunner:
                     "tasks": task_payload(tasks),
                     "base_seed": int(base_seed),
                     "batch_set_key": batch_set_key,
-                    "expected_offset_deltas": list(offset_deltas),
                 })
                 submitted.append((worker_index, worker))
             except BaseException as exc:  # noqa: BLE001
@@ -1601,11 +1641,9 @@ class ProbeRunner:
                     trial_index,
                     base_seed,
                     batch_index=batch_index,
-                    noise_offset=int(batch_index * offset_deltas[0]),
-                    truncation_offset=int(
-                        batch_index * offset_deltas[1]
-                    ),
-                    expected_offset_deltas=offset_deltas,
+                    noise_offset=int(start_offsets[batch_index][0]),
+                    truncation_offset=int(start_offsets[batch_index][1]),
+                    expected_offset_deltas=offset_plan[batch_index],
                     batch_set_key=batch_set_key,
                 )
                 self._accept_trial_batch_payload(
