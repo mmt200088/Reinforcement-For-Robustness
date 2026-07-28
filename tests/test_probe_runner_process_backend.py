@@ -491,6 +491,89 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             [0, 4],
         )
 
+    def test_all_healthy_five_gpu_single_group_stays_on_grouped_trials(self):
+        events = []
+        runner, _remotes = self._runner_with_process_count(
+            events,
+            process_count=4,
+        )
+        runner._batch_sets["F1"] = ("b0", "b1", "b2", "b3")
+
+        results = runner.run_action_trial_groups(
+            [object()],
+            base_seeds=[41],
+            k=5,
+        )
+
+        self.assertEqual([len(row) for row in results], [5])
+        submissions = [
+            event[1]
+            for event in events
+            if event[0] == "remote-submit"
+        ]
+        self.assertEqual(
+            submissions,
+            ["run_action_trial_groups"] * 4,
+        )
+        self.assertFalse(any(
+            event[0] in {"local-calibrate-plan", "local-run-batch"}
+            for event in events
+        ))
+        self.assertTrue(runner.last_diagnostics.multi_action)
+        self.assertEqual(runner.last_diagnostics.action_count, 1)
+        self.assertEqual(runner.last_diagnostics.trials_per_action, 5)
+
+    def test_degraded_four_gpu_single_group_uses_exact_batch_sharding(self):
+        events = []
+        action = object()
+        runner, _remotes = self._runner_with_process_count(
+            events,
+            process_count=3,
+        )
+        runner._batch_sets["F1"] = ("b0", "b1", "b2", "b3")
+
+        results = runner.run_action_trial_groups(
+            [action],
+            base_seeds=[41],
+            k=5,
+        )
+
+        self.assertEqual(
+            results,
+            [[
+                (float(trial_index), 1.0, 1.0)
+                for trial_index in range(5)
+            ]],
+        )
+        submissions = [
+            event[1]
+            for event in events
+            if event[0] == "remote-submit"
+        ]
+        self.assertEqual(
+            submissions,
+            ["install"] * 3 + ["run_trial_batches"] * 3,
+        )
+        self.assertEqual(events.count(("local-install", action)), 1)
+        self.assertEqual(events.count(("local-calibrate-plan", "F1")), 1)
+        self.assertFalse(any(
+            event[:2] == ("remote-submit", "run_action_trial_groups")
+            for event in events
+        ))
+        diagnostics = runner.last_diagnostics
+        self.assertTrue(diagnostics.multi_action)
+        self.assertEqual(diagnostics.action_count, 1)
+        self.assertEqual(diagnostics.trials_per_action, 5)
+        self.assertEqual(
+            diagnostics.per_worker_action_trial_indices,
+            [
+                [(0, 0), (0, 4)],
+                [(0, 1)],
+                [(0, 2)],
+                [(0, 3)],
+            ],
+        )
+
     def test_multi_action_remote_work_overlaps_primary_worker(self):
         events = []
         runner, _remote = self._runner(events)
