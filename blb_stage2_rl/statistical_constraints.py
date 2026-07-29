@@ -11,12 +11,12 @@ from typing import Mapping, Sequence
 import numpy as np
 
 _CHANNELS = ("loss", "metric1", "metric2")
-_MINIMUM_BASELINE_TRIALS = 25
+_MINIMUM_BASELINE_TRIALS = 15
 _MAX_BOOTSTRAP_INDEX_ELEMENTS = 1_000_000
 
 
 class InsufficientBaselineTrials(ValueError):
-    """Raised when baseline calibration has fewer than 25 pooled trials."""
+    """Raised when baseline calibration has fewer than 15 pooled trials."""
 
     def __init__(self, trial_count: int) -> None:
         self.trial_count = int(trial_count)

@@ -444,17 +444,26 @@ def test_candidate_assessment_chunks_bootstrap_without_changing_result(monkeypat
     assert max(rows * columns for rows, columns in observed_index_shapes) <= 64
 
 
-def test_build_baseline_reference_requires_at_least_25_pooled_trials():
+def test_build_baseline_reference_requires_at_least_15_pooled_trials():
     groups, *_ = _baseline_groups()
 
     with pytest.raises(InsufficientBaselineTrials):
         build_baseline_reference(
-            groups[:4],
+            groups[:2],
             precision_tolerance=0.001,
             stability_multiplier=2.0,
             bootstrap_samples=64,
             seed=17,
         )
+
+    reference = build_baseline_reference(
+        groups[:3],
+        precision_tolerance=0.001,
+        stability_multiplier=2.0,
+        bootstrap_samples=64,
+        seed=17,
+    )
+    assert reference.trial_count == 15
 
 
 def test_degenerate_baseline_reports_every_zero_variance_channel():
