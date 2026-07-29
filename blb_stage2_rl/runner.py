@@ -674,12 +674,10 @@ class BLBStage2TrainConfig:
                 "convergence_min_episodes must be at least 90000"
             )
     # 环境
-    # Bumped 3→5 on 2026-05-18: 3 trials gave loss_std a ~50% sampling error,
-    # making one outlier trial blow up the std and trip priority-2 (stability)
-    # falsely. 5 trials reduces the relative SE to ~35% so loss_std rank-orders
-    # actions more reliably. ~+67% per-step forward compute, +30% total
-    # wall-time. See diagnostics_summary.md (s1t0.005 run) for the symptom.
-    num_trials_per_step: int = 5
+    # Online stability uses three trials. Candidate promotion and final
+    # selection retain independent grouped banks, so expensive evidence is
+    # concentrated on promising actions rather than every PPO episode.
+    num_trials_per_step: int = 3
     probe_batch_count: int = 4
     # Keep the historical deterministic simulator as the default. The
     # ring-aware stochastic backend is enabled only by an explicit flag.
@@ -769,20 +767,20 @@ class BLBStage2TrainConfig:
     # atomic-unit locks; episode results depend only on the global index).
     stage2_workers_per_device: int = 1
     # Fast online reward mode: collect terminal actions and evaluate distinct
-    # actions concurrently across reward_devices. Default online K mirrors the
-    # normal K=5 training reward; CLI can still override it explicitly.
+    # actions concurrently across reward_devices. The default K=3 protocol
+    # batches four actions so 12 trial tasks divide evenly across four GPUs.
     fast_reward_mode_enabled: bool = False
-    online_num_trials_per_step: int = 5
+    online_num_trials_per_step: int = 3
     terminal_eval_batch_size: int = 4
     protected_k1_enabled: bool = False
     protected_k1_guard_sigma: float = 4.0
     protected_k1_audit_fraction: float = 0.02
-    promotion_validation_trials: int = 25
+    promotion_validation_trials: int = 15
     promotion_margin_window: float = 0.25
     final_selection_top_n: int = 20
-    final_selection_validation_trials: int = 25
+    final_selection_validation_trials: int = 15
     baseline_groups: int = 5
-    baseline_trials_per_group: int = 5
+    baseline_trials_per_group: int = 3
     constraint_bootstrap_samples: int = 4096
     online_constraint_probability: float = 0.50
     promotion_constraint_probability: float = 0.80

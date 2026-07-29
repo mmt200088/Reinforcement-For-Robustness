@@ -78,7 +78,7 @@ GA / Greedy：
   --stage1-accuracy-tolerance FLOAT    Stage-1 指标约束百分比（默认 0.005 即 0.5%）
   --stage2-limit-tolerance FLOAT       Stage-2 指标约束百分比（以 baseline 为基准，默认 0.05 即 5%；loss 允许上浮 5%、metric 允许下降 5%）
   --stage2-stability-tolerance FLOAT   Stage-2 稳定性约束倍率（BLB-RL：阈值 = baseline 探针 std × 该值；默认 1.2 即 1.2×；可设 5.0 表示 5×/500% 的宽松门。GA/greedy 路径仍按 fraction 解释）
-  --stage2-k-trials INT                Stage-2 稳定性评测噪声试验次数 K（默认 5；每次评测在同一份探针上跑 K 个独立噪声种子）
+  --stage2-k-trials INT                Stage-2 稳定性评测噪声试验次数 K（默认 3；每次评测在同一份探针上跑 K 个独立噪声种子）
   --stage2-probe-size INT              Stage-2 稳定性评测探针子集大小（默认 256；用分层采样从验证集中抽取 K 次 trial 共用的固定子集）
   --blb-v3-reward-devices STR          Stage-2 RL 奖励探针并行 GPU 列表（弹性模式默认 auto；如 "0,1" → 把 K 次 trial 在两张卡上并行执行）
   --stage1-rl-devices STR              Stage-1 RL 数据并行采样 GPU 列表（弹性模式默认 auto；如 "0,1,2,3" → 4 张卡各采集 PPO_UPDATE_INTERVAL/4 个完整 episode 后再 PPO 更新）
@@ -192,8 +192,8 @@ GA / Greedy：
   --blb-v3-static-invalid-level-mask-enabled true|false
                                           训练前用 Rescale optimizer 预扫描并屏蔽本地 invalid level
   --blb-v3-fast-reward-mode-enabled true|false
-                                          在线 K=1、按 terminal batch 把不同 action 分配到多 GPU
-  --blb-v3-online-k-trials N              fast reward mode 在线每 action trial 数（默认 5）
+                                          按 terminal batch 把不同 action/trial 分配到多 GPU
+  --blb-v3-online-k-trials N              fast reward mode 在线每 action trial 数（默认 3）
   --blb-v3-terminal-eval-batch-size N     fast reward mode 每批 terminal action 数
   --blb-v3-protected-k1-enabled true|false
                                           K=1 仅提前拒绝极端精度失败，其余保持精确 K=5
@@ -532,7 +532,7 @@ STAGE2_LIMIT_TOLERANCE="0.05"; S_STAGE2_LIMIT_TOLERANCE="false"
 STAGE2_STABILITY_TOLERANCE="1.2"; S_STAGE2_STABILITY_TOLERANCE="false"
 STAGE2_STABILITY_MULTIPLIER="2.0"; S_STAGE2_STABILITY_MULTIPLIER="false"
 STAGE2_COMMUNICATION_IMPORTANCE_RATIO="1.0"; S_STAGE2_COMMUNICATION_IMPORTANCE_RATIO="false"
-STAGE2_K_TRIALS="5"; S_STAGE2_K_TRIALS="false"
+STAGE2_K_TRIALS="3"; S_STAGE2_K_TRIALS="false"
 STAGE2_PROBE_SIZE="256"; S_STAGE2_PROBE_SIZE="false"
 STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
 BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT="Rescale_optimizer"
@@ -570,17 +570,17 @@ BLB_V3_ACTION_MASK_FILE=""; S_BLB_V3_ACTION_MASK_FILE="false"
 BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="0"; S_BLB_V3_ACTION_MASK_BASELINE_LOGIT_BONUS="false"
 BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED=""; S_BLB_V3_STATIC_INVALID_LEVEL_MASK_ENABLED="false"
 BLB_V3_FAST_REWARD_MODE_ENABLED="false"; S_BLB_V3_FAST_REWARD_MODE_ENABLED="false"
-BLB_V3_ONLINE_K_TRIALS="5"; S_BLB_V3_ONLINE_K_TRIALS="false"
+BLB_V3_ONLINE_K_TRIALS="3"; S_BLB_V3_ONLINE_K_TRIALS="false"
 BLB_V3_TERMINAL_EVAL_BATCH_SIZE="4"; S_BLB_V3_TERMINAL_EVAL_BATCH_SIZE="false"
 BLB_V3_PROTECTED_K1_ENABLED="false"; S_BLB_V3_PROTECTED_K1_ENABLED="false"
 BLB_V3_PROTECTED_K1_GUARD_SIGMA="4.0"; S_BLB_V3_PROTECTED_K1_GUARD_SIGMA="false"
 BLB_V3_PROTECTED_K1_AUDIT_FRACTION="0.02"; S_BLB_V3_PROTECTED_K1_AUDIT_FRACTION="false"
-BLB_V3_PROMOTION_VALIDATION_TRIALS="25"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="false"
+BLB_V3_PROMOTION_VALIDATION_TRIALS="15"; S_BLB_V3_PROMOTION_VALIDATION_TRIALS="false"
 BLB_V3_FINAL_SELECTION_TOP_N="20"; S_BLB_V3_FINAL_SELECTION_TOP_N="false"
-BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="25"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="false"
+BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="15"; S_BLB_V3_FINAL_SELECTION_VALIDATION_TRIALS="false"
 BLB_V3_PROMOTION_MARGIN_WINDOW="0.25"; S_BLB_V3_PROMOTION_MARGIN_WINDOW="false"
 BLB_V3_BASELINE_GROUPS="5"; S_BLB_V3_BASELINE_GROUPS="false"
-BLB_V3_BASELINE_TRIALS_PER_GROUP="5"; S_BLB_V3_BASELINE_TRIALS_PER_GROUP="false"
+BLB_V3_BASELINE_TRIALS_PER_GROUP="3"; S_BLB_V3_BASELINE_TRIALS_PER_GROUP="false"
 BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES="4096"; S_BLB_V3_CONSTRAINT_BOOTSTRAP_SAMPLES="false"
 BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="0.50"; S_BLB_V3_ONLINE_CONSTRAINT_PROBABILITY="false"
 BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="0.80"; S_BLB_V3_PROMOTION_CONSTRAINT_PROBABILITY="false"

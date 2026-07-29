@@ -32,7 +32,7 @@ STAGE1_RECORD_SOURCE="${STAGE1_RECORD_SOURCE:-Parting Chapter/stage1/record}"
 MODEL_TYPE="${MODEL_TYPE:-bert-base}"
 MODEL_DIR_LABEL="${MODEL_TYPE//-/ }"
 EPISODES_AB="${EPISODES_AB:-600}"
-KTRIALS="${KTRIALS:-5}"
+KTRIALS="${KTRIALS:-3}"
 PROBE_SIZE="${PROBE_SIZE:-256}"
 ROLLOUT_SIZE="${ROLLOUT_SIZE:-120}"
 PPO_UPDATE_INTERVAL="${PPO_UPDATE_INTERVAL:-120}"
@@ -42,7 +42,7 @@ STAGE1_ACCURACY_TOLERANCE="${STAGE1_ACCURACY_TOLERANCE:-0.001}"
 STAGE2_LIMIT_TOLERANCE="${STAGE2_LIMIT_TOLERANCE:-0.001}"
 STAGE2_STABILITY_TOLERANCE="${STAGE2_STABILITY_TOLERANCE:-1.2}"
 STAGE2_STABILITY_MULTIPLIER="${STAGE2_STABILITY_MULTIPLIER:-2.0}"
-ONLINE_KTRIALS="${ONLINE_KTRIALS:-5}"
+ONLINE_KTRIALS="${ONLINE_KTRIALS:-3}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-200}"
 EVAL_INTERVAL="${EVAL_INTERVAL:-100}"
 CALIBRATE_BASELINE_SAMPLES="${CALIBRATE_BASELINE_SAMPLES:-8}"
@@ -140,6 +140,7 @@ build_case_command() {
     --stage2-rollout-size "$ROLLOUT_SIZE"
     --stage2-k-trials "$KTRIALS"
     --blb-v3-online-k-trials "$ONLINE_KTRIALS"
+    --blb-v3-terminal-eval-batch-size 4
     --stage2-probe-size "$PROBE_SIZE"
     --batch-size "$BATCH_SIZE"
     --stage1-accuracy-tolerance "$STAGE1_ACCURACY_TOLERANCE"
@@ -147,10 +148,10 @@ build_case_command() {
     --stage2-stability-tolerance "$STAGE2_STABILITY_TOLERANCE"
     --stage2-stability-multiplier "$STAGE2_STABILITY_MULTIPLIER"
     --stage2-calibrate-baseline-samples "$CALIBRATE_BASELINE_SAMPLES"
-    --blb-v3-promotion-validation-trials 25
-    --blb-v3-final-selection-validation-trials 25
+    --blb-v3-promotion-validation-trials 15
+    --blb-v3-final-selection-validation-trials 15
     --blb-v3-baseline-groups 5
-    --blb-v3-baseline-trials-per-group 5
+    --blb-v3-baseline-trials-per-group 3
     --blb-v3-constraint-bootstrap-samples 4096
     --blb-v3-online-constraint-probability 0.50
     --blb-v3-promotion-constraint-probability 0.80

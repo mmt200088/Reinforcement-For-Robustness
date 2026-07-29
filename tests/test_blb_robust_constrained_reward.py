@@ -244,7 +244,7 @@ def test_robust_breakdown_exposes_probability_q_signal_and_cost_fields():
         constraint_assessment=_assessment(),
     )
     assert isinstance(result, RewardBreakdown)
-    assert result.constraint_policy == "bootstrap_5x5_v1"
+    assert result.constraint_policy == "bootstrap_5x3_v1"
     assert result.loss_precision_probability == 0.9
     assert result.metric1_precision_probability == 0.9
     assert result.metric2_precision_probability == 0.9
@@ -271,7 +271,7 @@ def test_compute_reward_dispatches_only_when_robust_design_is_selected():
     )
     assert result.priority == 3
     assert result.variable_cost == 0.25
-    assert result.constraint_policy == "bootstrap_5x5_v1"
+    assert result.constraint_policy == "bootstrap_5x3_v1"
 
 
 def test_compute_reward_canonicalizes_robust_design_without_routing_unknown_names():
@@ -284,7 +284,7 @@ def test_compute_reward_canonicalizes_robust_design_without_routing_unknown_name
             external_cost_score=0.25,
             constraint_assessment=_assessment(),
         )
-        assert result.constraint_policy == "bootstrap_5x5_v1"
+        assert result.constraint_policy == "bootstrap_5x3_v1"
 
     result = compute_reward(
         EpisodeMetrics(), SimpleNamespace(any_invalid=False),
@@ -686,7 +686,7 @@ def test_env_terminal_dispatch_canonicalizes_only_known_robust_spelling():
             external_cost_rank=0.5,
             info={},
         )
-        assert breakdown.constraint_policy == "bootstrap_5x5_v1"
+        assert breakdown.constraint_policy == "bootstrap_5x3_v1"
 
     env = _runtime_env(env_module, reward_module, statistical_constraints)
     env.reward_weights.reward_design = "robust-constrained"

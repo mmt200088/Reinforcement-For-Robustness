@@ -219,17 +219,17 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         self.assertIs(events[0][2]["decoded"], action1)
         self.assertTrue(runner.last_diagnostics.multi_action)
 
-    def test_grouped_action_trials_balance_four_actions_by_five_trials(self):
-        assignments = _probe_runner._split_action_trial_tasks_cached(4, 5, 4)
+    def test_grouped_action_trials_balance_four_actions_by_three_trials(self):
+        assignments = _probe_runner._split_action_trial_tasks_cached(4, 3, 4)
 
-        self.assertEqual([len(tasks) for tasks in assignments], [5, 5, 5, 5])
+        self.assertEqual([len(tasks) for tasks in assignments], [3, 3, 3, 3])
         self.assertEqual(
             assignments[0],
-            ((0, 0), (0, 4), (1, 3), (2, 2), (3, 1)),
+            ((0, 0), (1, 1), (2, 2)),
         )
         self.assertEqual(
             sorted(task for tasks in assignments for task in tasks),
-            [(action_idx, trial_idx) for action_idx in range(4) for trial_idx in range(5)],
+            [(action_idx, trial_idx) for action_idx in range(4) for trial_idx in range(3)],
         )
 
     def test_grouped_action_trials_preserve_action_and_trial_order(self):

@@ -57,6 +57,12 @@ _LAUNCHER_LOCK_FD_ENV = "BLB_STAGE2_RUN_LOCK_FD"
 _LAUNCHER_LOCK_PATH_ENV = "BLB_STAGE2_RUN_LOCK_PATH"
 DEFAULT_CONVERGENCE_PATIENCE_UPDATES = 100
 DEFAULT_CONVERGENCE_MIN_EPISODES = 90_000
+LAYERWISE_VALIDATION_BANK_GROUPS = 5
+LAYERWISE_VALIDATION_TRIALS_PER_GROUP = 3
+LAYERWISE_VALIDATION_BANK_TRIALS = (
+    LAYERWISE_VALIDATION_BANK_GROUPS
+    * LAYERWISE_VALIDATION_TRIALS_PER_GROUP
+)
 StrictSelectionKey = tuple[tuple[float, ...], tuple[int, ...], str]
 ResourceObjective = tuple[float, float]
 _FINAL_REVALIDATION_PASSED = "final_revalidation_passed"
@@ -579,24 +585,38 @@ def point_constraints_pass(
 
 
 def validate_layerwise_validation_bank_config(train_cfg: Any) -> tuple[int, int]:
-    """Fail before calibration unless the fixed A/B/C 25-trial contract is used."""
-    baseline_groups = int(getattr(train_cfg, "baseline_groups", 5))
-    trials_per_group = int(getattr(train_cfg, "baseline_trials_per_group", 5))
-    promotion_trials = int(getattr(train_cfg, "promotion_validation_trials", 25))
+    """Fail before calibration unless the fixed A/B/C 15-trial contract is used."""
+    baseline_groups = int(getattr(
+        train_cfg, "baseline_groups", LAYERWISE_VALIDATION_BANK_GROUPS,
+    ))
+    trials_per_group = int(getattr(
+        train_cfg,
+        "baseline_trials_per_group",
+        LAYERWISE_VALIDATION_TRIALS_PER_GROUP,
+    ))
+    promotion_trials = int(getattr(
+        train_cfg,
+        "promotion_validation_trials",
+        LAYERWISE_VALIDATION_BANK_TRIALS,
+    ))
     final_trials = int(
-        getattr(train_cfg, "final_selection_validation_trials", 25)
+        getattr(
+            train_cfg,
+            "final_selection_validation_trials",
+            LAYERWISE_VALIDATION_BANK_TRIALS,
+        )
     )
     if (
-            baseline_groups != 5
-            or trials_per_group != 5
-            or promotion_trials != 25
-            or final_trials != 25
+            baseline_groups != LAYERWISE_VALIDATION_BANK_GROUPS
+            or trials_per_group != LAYERWISE_VALIDATION_TRIALS_PER_GROUP
+            or promotion_trials != LAYERWISE_VALIDATION_BANK_TRIALS
+            or final_trials != LAYERWISE_VALIDATION_BANK_TRIALS
     ):
         raise ValueError(
-            "layerwise validation requires fixed A=25, B=25, C=25 banks "
-            "(baseline_groups=5, baseline_trials_per_group=5, "
-            "promotion_validation_trials=25, "
-            "final_selection_validation_trials=25)"
+            "layerwise validation requires fixed A=15, B=15, C=15 banks "
+            "(baseline_groups=5, baseline_trials_per_group=3, "
+            "promotion_validation_trials=15, "
+            "final_selection_validation_trials=15)"
         )
     return baseline_groups, trials_per_group
 
@@ -715,8 +735,11 @@ class LayerwiseValidationBanks:
         banks = (self.bank_a, self.bank_b, self.bank_c)
         if tuple(bank.label for bank in banks) != ("A", "B", "C"):
             raise ValueError("validation banks must be ordered A, B, C")
-        if any(bank.trial_count != 25 for bank in banks):
-            raise ValueError("validation banks A, B, and C must each contain exactly 25 trials")
+        trial_counts = {bank.trial_count for bank in banks}
+        if len(trial_counts) != 1:
+            raise ValueError(
+                "validation banks A, B, and C must contain equal trial counts"
+            )
         all_probe_seeds: set[int] = set()
         all_trial_seeds: set[int] = set()
         for bank in banks:
@@ -3762,7 +3785,7 @@ def train_layerwise(
     absolute_start = int(getattr(train_cfg, "absolute_episode_start", 0))
     base_seed = getattr(train_cfg, "seed", None)
     expected_online_trials = int(
-        getattr(train_cfg, "online_num_trials_per_step", 5)
+        getattr(train_cfg, "online_num_trials_per_step", 3)
     )
     if expected_online_trials <= 0:
         raise ValueError("online_num_trials_per_step must be positive")
@@ -3839,9 +3862,9 @@ def train_layerwise(
     final_probability = float(
         getattr(train_cfg, "final_constraint_probability", 0.95)
     )
-    promotion_trials = int(getattr(train_cfg, "promotion_validation_trials", 25))
+    promotion_trials = int(getattr(train_cfg, "promotion_validation_trials", 15))
     final_validation_trials = int(
-        getattr(train_cfg, "final_selection_validation_trials", 25)
+        getattr(train_cfg, "final_selection_validation_trials", 15)
     )
     if not 0.0 < online_probability <= promotion_probability <= final_probability <= 1.0:
         raise ValueError(

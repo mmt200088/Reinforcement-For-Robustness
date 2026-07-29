@@ -124,8 +124,11 @@ class Stage2Stage1AlignmentDefaultsTest(unittest.TestCase):
         self.assertEqual(defaults["fusion_exploration_epsilon"], 0.0)
         self.assertEqual(defaults["fusion_exploration_epsilon_k"], 0.0)
         self.assertEqual(defaults["reward_design"], "robust_constrained")
-        self.assertEqual(defaults["num_trials_per_step"], 5)
-        self.assertEqual(defaults["online_num_trials_per_step"], 5)
+        self.assertEqual(defaults["num_trials_per_step"], 3)
+        self.assertEqual(defaults["online_num_trials_per_step"], 3)
+        self.assertEqual(defaults["baseline_trials_per_group"], 3)
+        self.assertEqual(defaults["promotion_validation_trials"], 15)
+        self.assertEqual(defaults["final_selection_validation_trials"], 15)
 
     def test_rl_tune_entrypoint_defaults_do_not_reenable_stage2_scaffolds(self):
         defaults = _function_literal_defaults("rl_tune.py", "train")
@@ -135,7 +138,14 @@ class Stage2Stage1AlignmentDefaultsTest(unittest.TestCase):
         self.assertIs(defaults["blb_v3_fusion_neighbor_curriculum"], False)
         self.assertEqual(defaults["blb_v3_fusion_probe_interval"], 0)
         self.assertEqual(defaults["blb_v3_fusion_exploration_epsilon"], 0.0)
-        self.assertEqual(defaults["blb_v3_online_k_trials"], 5)
+        self.assertEqual(defaults["blb_v3_online_k_trials"], 3)
+        self.assertEqual(defaults["blb_v3_baseline_trials_per_group"], 3)
+        self.assertEqual(defaults["blb_v3_promotion_validation_trials"], 15)
+        self.assertEqual(defaults["blb_v3_final_selection_validation_trials"], 15)
+        self.assertEqual(defaults["blb_v3_online_k_trials"], 3)
+        self.assertEqual(defaults["blb_v3_baseline_trials_per_group"], 3)
+        self.assertEqual(defaults["blb_v3_promotion_validation_trials"], 15)
+        self.assertEqual(defaults["blb_v3_final_selection_validation_trials"], 15)
 
     def test_evaluator_constructor_defaults_do_not_reenable_stage2_scaffolds(self):
         defaults = _class_method_literal_defaults(
@@ -176,7 +186,9 @@ class Stage2Stage1AlignmentDefaultsTest(unittest.TestCase):
         self.assertIs(defaults["static_invalid_level_mask_enabled"], False)
         self.assertIs(defaults["empirical_invalid_level_mask_enabled"], False)
         self.assertEqual(defaults["reward_design"], "stage1_aligned")
-        self.assertEqual(defaults["online_num_trials_per_step"], 5)
+        self.assertEqual(defaults["online_num_trials_per_step"], 3)
+        self.assertEqual(defaults["promotion_validation_trials"], 15)
+        self.assertEqual(defaults["final_selection_validation_trials"], 15)
 
     def test_reward_weights_default_to_stage1_aligned(self):
         reward_mod = _load_module_standalone(

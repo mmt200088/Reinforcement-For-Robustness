@@ -1357,7 +1357,7 @@ def compute_reward(
             loss_ok=bool(probabilities["loss_precision_probability"] >= 0.5) and not invalid,
             cost_score=float(variable_cost) if stab_ok else 0.0,
             variable_cost=float(variable_cost),
-            constraint_policy="bootstrap_5x5_v1",
+            constraint_policy="bootstrap_5x3_v1",
             q_precision=float(q_precision),
             q_stability=float(q_stability),
             precision_signal=float(precision_signal),

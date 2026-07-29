@@ -270,15 +270,15 @@ class SequentialTrainConfig:
     empirical_invalid_level_min_rate: float = 0.80
     empirical_invalid_level_max_valid: int = 0
     fast_reward_mode_enabled: bool = False
-    online_num_trials_per_step: int = 5
+    online_num_trials_per_step: int = 3
     terminal_eval_batch_size: int = 4
     protected_k1_enabled: bool = False
     protected_k1_guard_sigma: float = 4.0
     protected_k1_audit_fraction: float = 0.02
-    promotion_validation_trials: int = 25
+    promotion_validation_trials: int = 15
     promotion_margin_window: float = 0.25
     final_selection_top_n: int = 20
-    final_selection_validation_trials: int = 25
+    final_selection_validation_trials: int = 15
     online_constraint_probability: float = 0.50
     promotion_constraint_probability: float = 0.80
     final_constraint_probability: float = 0.95
@@ -1896,7 +1896,7 @@ def train_sequential(
         getattr(train_cfg, "fast_reward_mode_enabled", False)
     )
     online_num_trials_per_step = max(
-        1, int(getattr(train_cfg, "online_num_trials_per_step", 5) or 5)
+        1, int(getattr(train_cfg, "online_num_trials_per_step", 3) or 3)
     )
     terminal_eval_batch_size = max(
         1, int(getattr(train_cfg, "terminal_eval_batch_size", 1) or 1)
@@ -3632,7 +3632,7 @@ def _collect_robust_baseline_reference(
         stability_multiplier: float,
         bootstrap_samples: int,
         baseline_groups: int = 5,
-        trials_per_group: int = 5,
+        trials_per_group: int = 3,
         max_groups: int = 10,
         group_index_start: int = 0,
         ) -> Tuple["BaselineReference", Dict[str, Any]]:
@@ -3673,8 +3673,8 @@ def _collect_robust_baseline_reference(
             raise ValueError("robust baseline group counts must be positive and ordered")
         if group_start < 0:
             raise ValueError("robust baseline group_index_start must be nonnegative")
-        if required_groups * group_trials < 25:
-            raise ValueError("robust baseline calibration requires at least 25 total trials")
+        if required_groups * group_trials < 15:
+            raise ValueError("robust baseline calibration requires at least 15 total trials")
         base_env.env_cfg.num_trials_per_step = group_trials
         for local_group_idx in range(group_limit):
             group_idx = group_start + local_group_idx
@@ -3889,7 +3889,7 @@ def _build_layerwise_candidate_identity_context(
         decode_version=LAYERWISE_DECODE_VERSION,
         dataset=str(train_cfg.profile),
         model=model_type,
-        metric_policy_version="robust_bootstrap_5x5_v1",
+        metric_policy_version="robust_bootstrap_5x3_v1",
         threshold_policy_hash=sha256_json(threshold_policy),
         mask_schedule_hash=sha256_json(schedule),
     )
@@ -4198,10 +4198,12 @@ def _run_layerwise_training_branch(
             "F1": {
                 "split": "validation_full_stratified_probe",
                 "example_count": int(online_probe_example_count),
-                "trials_per_episode": int(train_cfg.num_trials_per_step),
+                "trials_per_episode": int(
+                    train_cfg.online_num_trials_per_step
+                ),
                 "baseline_trial_count": int(
                     getattr(train_cfg, "baseline_groups", 5)
-                    * getattr(train_cfg, "baseline_trials_per_group", 5)
+                    * getattr(train_cfg, "baseline_trials_per_group", 3)
                 ),
                 "roles": ["ppo_reward", "advantage", "promotion_prefilter"],
                 "authoritative": False,
@@ -4295,16 +4297,18 @@ def _run_layerwise_training_branch(
         identity_context,
         algorithm_contract_hash,
         {
-            "online_trials_per_episode": int(train_cfg.num_trials_per_step),
+            "online_trials_per_episode": int(
+                train_cfg.online_num_trials_per_step
+            ),
             "promotion_validation_trials": int(
-                getattr(train_cfg, "promotion_validation_trials", 25)
+                getattr(train_cfg, "promotion_validation_trials", 15)
             ),
             "final_selection_validation_trials": int(
-                getattr(train_cfg, "final_selection_validation_trials", 25)
+                getattr(train_cfg, "final_selection_validation_trials", 15)
             ),
             "baseline_groups": int(getattr(train_cfg, "baseline_groups", 5)),
             "baseline_trials_per_group": int(
-                getattr(train_cfg, "baseline_trials_per_group", 5)
+                getattr(train_cfg, "baseline_trials_per_group", 3)
             ),
             "constraint_bootstrap_samples": int(
                 getattr(train_cfg, "constraint_bootstrap_samples", 4096)
@@ -4484,7 +4488,7 @@ def _run_layerwise_training_branch(
         convergence_patience_updates=convergence_patience_updates,
         ppo=ppo,
         rl_algo="ppo",
-        online_num_trials_per_step=int(train_cfg.num_trials_per_step),
+        online_num_trials_per_step=int(train_cfg.online_num_trials_per_step),
         terminal_eval_batch_size=int(train_cfg.terminal_eval_batch_size),
         protected_k1_enabled=bool(
             getattr(train_cfg, "protected_k1_enabled", False)
@@ -4496,10 +4500,10 @@ def _run_layerwise_training_branch(
             getattr(train_cfg, "protected_k1_audit_fraction", 0.02)
         ),
         promotion_validation_trials=int(
-            getattr(train_cfg, "promotion_validation_trials", 25)
+            getattr(train_cfg, "promotion_validation_trials", 15)
         ),
         final_selection_validation_trials=int(
-            getattr(train_cfg, "final_selection_validation_trials", 25)
+            getattr(train_cfg, "final_selection_validation_trials", 15)
         ),
         online_constraint_probability=float(
             getattr(train_cfg, "online_constraint_probability", 0.50)
@@ -4738,10 +4742,10 @@ def _run_layerwise_training_branch(
         "entropy_regularization": layerwise_entropy_regularization,
         "termination": layerwise_termination,
         "ppo_mode": layerwise_ppo_mode,
-        "stage2_k_trials": int(train_cfg.num_trials_per_step),
+        "stage2_k_trials": int(train_cfg.online_num_trials_per_step),
         "baseline_groups": int(getattr(train_cfg, "baseline_groups", 5)),
         "baseline_trials_per_group": int(
-            getattr(train_cfg, "baseline_trials_per_group", 5)
+            getattr(train_cfg, "baseline_trials_per_group", 3)
         ),
         "constraint_bootstrap_samples": int(
             getattr(train_cfg, "constraint_bootstrap_samples", 4096)
@@ -6490,7 +6494,7 @@ def _run_sequential_via_runner_locked(
                 getattr(train_cfg, "baseline_groups", 5)
             )
             configured_baseline_trials = int(
-                getattr(train_cfg, "baseline_trials_per_group", 5)
+                getattr(train_cfg, "baseline_trials_per_group", 3)
             )
         robust_reference, robust_summary = _collect_robust_baseline_reference(
             base_env=base_env,
@@ -7058,7 +7062,7 @@ def _run_sequential_via_runner_locked(
         f"min_rate={float(getattr(train_cfg, 'empirical_invalid_level_min_rate', 0.80)):.2f}    "
         f"max_valid={int(getattr(train_cfg, 'empirical_invalid_level_max_valid', 0))}",
         f"Fast reward mode：enabled={bool(getattr(train_cfg, 'fast_reward_mode_enabled', False))}    "
-        f"online_k={int(getattr(train_cfg, 'online_num_trials_per_step', 5))}    "
+        f"online_k={int(getattr(train_cfg, 'online_num_trials_per_step', 3))}    "
         f"terminal_eval_batch_size={int(getattr(train_cfg, 'terminal_eval_batch_size', 4))}    "
         f"promotion_validation_trials={int(getattr(train_cfg, 'promotion_validation_trials', 4))}    "
         f"final_selection_top_n={int(getattr(train_cfg, 'final_selection_top_n', 20))}    "
@@ -7351,7 +7355,7 @@ def _run_sequential_via_runner_locked(
         ),
         "static_skeletons_archive": str(ss_baseline_obj.archive_path),
         "fast_reward_mode_enabled": bool(getattr(train_cfg, "fast_reward_mode_enabled", False)),
-        "online_num_trials_per_step": int(getattr(train_cfg, "online_num_trials_per_step", 5)),
+        "online_num_trials_per_step": int(getattr(train_cfg, "online_num_trials_per_step", 3)),
         "terminal_eval_batch_size": int(getattr(train_cfg, "terminal_eval_batch_size", 4)),
         "protected_k1_enabled": bool(
             getattr(train_cfg, "protected_k1_enabled", False)

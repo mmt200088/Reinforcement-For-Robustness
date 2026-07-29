@@ -749,7 +749,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             label="A", reference=reference((101, 102, 103, 104)),
             probe_seeds=(101, 102, 103, 104), trials_per_probe=5,
         )
-        with self.assertRaisesRegex(ValueError, "exactly 25 trials"):
+        with self.assertRaisesRegex(ValueError, "equal trial counts"):
             layerwise_runner.LayerwiseValidationBanks(
                 bank_a=short_bank_a,
                 bank_b=bank_b,
@@ -764,31 +764,31 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 ),
             )
 
-    def test_layerwise_validation_bank_config_is_fixed_to_25_25_25(self):
+    def test_layerwise_validation_bank_config_is_fixed_to_five_by_three(self):
         from blb_stage2_rl.layerwise_runner import (
             validate_layerwise_validation_bank_config,
         )
 
         valid = types.SimpleNamespace(
             baseline_groups=5,
-            baseline_trials_per_group=5,
-            promotion_validation_trials=25,
-            final_selection_validation_trials=25,
+            baseline_trials_per_group=3,
+            promotion_validation_trials=15,
+            final_selection_validation_trials=15,
         )
         self.assertEqual(
-            validate_layerwise_validation_bank_config(valid), (5, 5),
+            validate_layerwise_validation_bank_config(valid), (5, 3),
         )
 
         for field, value in (
             ("baseline_groups", 4),
-            ("baseline_trials_per_group", 4),
-            ("promotion_validation_trials", 20),
-            ("final_selection_validation_trials", 20),
+            ("baseline_trials_per_group", 5),
+            ("promotion_validation_trials", 25),
+            ("final_selection_validation_trials", 25),
         ):
             invalid = types.SimpleNamespace(**vars(valid))
             setattr(invalid, field, value)
             with self.subTest(field=field), self.assertRaisesRegex(
-                    ValueError, "A=25, B=25, C=25",
+                    ValueError, "A=15, B=15, C=15",
             ):
                 validate_layerwise_validation_bank_config(invalid)
 
@@ -2900,7 +2900,7 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         ):
             self.assertIn(field, branch_source)
 
-    def test_layerwise_online_trial_count_uses_authoritative_stage2_k_trials(self):
+    def test_layerwise_online_trial_count_uses_explicit_online_trial_config(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(
             encoding="utf-8",
         )
@@ -2913,15 +2913,13 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         branch_source = ast.get_source_segment(source, branch)
 
         self.assertIn(
-            "online_num_trials_per_step=int(train_cfg.num_trials_per_step)",
+            "online_num_trials_per_step=int("
+            "train_cfg.online_num_trials_per_step"
+            ")",
             branch_source,
         )
         self.assertIn(
-            '"stage2_k_trials": int(train_cfg.num_trials_per_step)',
-            branch_source,
-        )
-        self.assertNotIn(
-            'getattr(train_cfg, "online_num_trials_per_step", 5)',
+            '"stage2_k_trials": int(train_cfg.online_num_trials_per_step)',
             branch_source,
         )
 
@@ -3513,6 +3511,7 @@ class LayerwiseRolloutTests(unittest.TestCase):
     def test_exact_terminal_batch_size_uses_only_the_cross_episode_imbalance(self):
         from blb_stage2_rl.layerwise_runner import resolve_exact_terminal_batch_size
 
+        self.assertEqual(resolve_exact_terminal_batch_size(4, 3, 4), 4)
         self.assertEqual(resolve_exact_terminal_batch_size(4, 5, 4), 4)
         self.assertEqual(resolve_exact_terminal_batch_size(2, 5, 4), 2)
         self.assertEqual(resolve_exact_terminal_batch_size(4, 5, 5), 1)

@@ -698,7 +698,7 @@ def run_substage_via_runner(
             # Per-substage anchor: short forced-baseline so the fresh policy
             # has a warm start. Keep modest (default 30) since horizon=12.
             fast_reward_mode_enabled=bool(getattr(train_cfg, "fast_reward_mode_enabled", False)),
-            online_num_trials_per_step=int(getattr(train_cfg, "online_num_trials_per_step", 5)),
+            online_num_trials_per_step=int(getattr(train_cfg, "online_num_trials_per_step", 3)),
             terminal_eval_batch_size=int(getattr(train_cfg, "terminal_eval_batch_size", 1)),
             promotion_validation_trials=int(promotion_trials),
         )

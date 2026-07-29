@@ -2368,17 +2368,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_reward_devices="",
                   stage2_rl_devices="",
                   blb_v3_fast_reward_mode_enabled=False,
-                  blb_v3_online_k_trials=5,
+                  blb_v3_online_k_trials=3,
                   blb_v3_terminal_eval_batch_size=4,
                   blb_v3_protected_k1_enabled=False,
                   blb_v3_protected_k1_guard_sigma=4.0,
                   blb_v3_protected_k1_audit_fraction=0.02,
-                  blb_v3_promotion_validation_trials=25,
+                  blb_v3_promotion_validation_trials=15,
                   blb_v3_final_selection_top_n=20,
-                  blb_v3_final_selection_validation_trials=25,
+                  blb_v3_final_selection_validation_trials=15,
                   blb_v3_promotion_margin_window=0.25,
                   blb_v3_baseline_groups=5,
-                  blb_v3_baseline_trials_per_group=5,
+                  blb_v3_baseline_trials_per_group=3,
                   blb_v3_constraint_bootstrap_samples=4096,
                   blb_v3_online_constraint_probability=0.50,
                   blb_v3_promotion_constraint_probability=0.80,
@@ -2642,7 +2642,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         # Stage-2 稳定性评测：K 次噪声 trial 在同一份固定分层探针上评测
         #   stage2_k_trials: 噪声 trial 次数（K）
         #   stage2_probe_size: 探针子集大小
-        self.stage2_k_trials = max(1, int(stage2_k_trials)) if stage2_k_trials is not None else 5
+        self.stage2_k_trials = max(1, int(stage2_k_trials)) if stage2_k_trials is not None else 3
         self.stage2_probe_size = max(1, int(stage2_probe_size)) if stage2_probe_size is not None else 256
         
         self.search_algorithm = search_algorithm or "rl"
@@ -3139,7 +3139,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             self.blb_v3_online_k_trials = max(1, int(blb_v3_online_k_trials))
         except Exception:
-            self.blb_v3_online_k_trials = 5
+            self.blb_v3_online_k_trials = 3
         try:
             self.blb_v3_terminal_eval_batch_size = max(1, int(blb_v3_terminal_eval_batch_size))
         except Exception:
@@ -3157,7 +3157,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         try:
             self.blb_v3_promotion_validation_trials = max(1, int(blb_v3_promotion_validation_trials))
         except Exception:
-            self.blb_v3_promotion_validation_trials = 4
+            self.blb_v3_promotion_validation_trials = 15
         try:
             self.blb_v3_final_selection_top_n = max(1, int(blb_v3_final_selection_top_n))
         except Exception:
@@ -3167,7 +3167,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 1, int(blb_v3_final_selection_validation_trials)
             )
         except Exception:
-            self.blb_v3_final_selection_validation_trials = 20
+            self.blb_v3_final_selection_validation_trials = 15
         self.blb_v3_min_convergence_episodes = int(
             blb_v3_min_convergence_episodes
         )
