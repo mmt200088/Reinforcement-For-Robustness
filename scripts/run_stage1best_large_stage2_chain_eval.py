@@ -361,8 +361,6 @@ def _build_evaluator(args, deps: Mapping[str, Any], output_dir: Path):
         test_data=validation_data,
         data_collator=collator,
         batch_size=int(args.batch_size),
-        stage1_rl_episodes=0,
-        stage1_entropy_stop_threshold=0.1,
         stage2_rl_episodes=0,
         stage1_rl_episodes_specified=False,
         stage2_rl_episodes_specified=False,

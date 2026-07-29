@@ -89,8 +89,7 @@ class Stage1BestLargeStage2ChainEvalTest(unittest.TestCase):
         self.assertIn("final_config_fingerprint", source)
         self.assertIn('if str(profile) != "mrpc_large"', source)
         self.assertIn("expected exactly fusion counts", source)
-        self.assertIn("stage1_entropy_stop_threshold=0.1", source)
-        self.assertIn("stage1_rl_episodes_specified=False", source)
+        self.assertNotIn("stage1_rl_episodes=0", source)
         self.assertIn("stage2_rl_episodes_specified=False", source)
         self.assertNotIn(
             "try:\n        evaluator.reversible_handler."
