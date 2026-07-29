@@ -209,7 +209,7 @@ class LayerwiseFusionMapSemanticsTest(unittest.TestCase):
 
         result = layerwise.apply_layer_action(
             baseline,
-            [0, 0, 0, 0, 0, 0],
+            [0, 0],
             spec,
             fusion_map,
         )
@@ -222,7 +222,10 @@ class LayerwiseFusionMapSemanticsTest(unittest.TestCase):
             self.assertEqual(option.fusion_count, 1)
         self.assertNotIn(3, result.fusion_option_ids)
         self.assertEqual(list(result.full_vector[32:39]), block3_sf)
-        self.assertEqual(int(result.full_vector[39]), 0)
+        expected_block3_k_index = layerwise.K_LEVELS.index(
+            layerwise.precision_preset(0).k_by_block[2]
+        )
+        self.assertEqual(int(result.full_vector[39]), expected_block3_k_index)
 
 
 class GroupMinNoiseOptionsTest(unittest.TestCase):
