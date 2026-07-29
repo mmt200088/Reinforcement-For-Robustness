@@ -415,6 +415,7 @@ def _runtime_modules():
     action_space.layer_dims = lambda *_args, **_kwargs: []
     action_space.make_all_max_action_vector = lambda layers: np.full(int(layers), 9)
     action_space.parse_config_name = lambda _name: (0, "", -1)
+    action_space.validate_action_vector = lambda *_args, **_kwargs: None
 
     candidate_store = types.ModuleType(f"{package_name}.candidate_store")
     candidate_store.action_hash = lambda action: "".join(
