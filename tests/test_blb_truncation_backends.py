@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest import mock
 import unittest
 
 try:
@@ -67,6 +68,59 @@ class TruncationBackendTests(unittest.TestCase):
         expected = torch.trunc(x * 64) / 64
         actual = _apply_truncation(x, 6, "binary")
         self.assertTrue(torch.equal(actual, expected))
+
+    def test_cuda_binary_k_domain_uses_exact_fused_kernel_without_rng_or_mutation(
+            self,
+            ):
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA unavailable")
+
+        import function_handler as handler
+
+        finite = torch.linspace(
+            -4096.125,
+            4096.125,
+            steps=4097,
+            device="cuda",
+            dtype=torch.float32,
+        )
+        edges = torch.tensor(
+            [
+                -torch.finfo(torch.float32).max,
+                -torch.finfo(torch.float32).tiny,
+                -0.0,
+                0.0,
+                torch.finfo(torch.float32).tiny,
+                torch.finfo(torch.float32).max,
+            ],
+            device="cuda",
+            dtype=torch.float32,
+        )
+        x = torch.cat((finite, edges))
+        input_bits = x.view(torch.int32).clone()
+
+        for k in range(6, 14):
+            scale = 2.0 ** k
+            expected = torch.trunc(x * scale) / scale
+            rng_before = torch.cuda.get_rng_state(x.device)
+            with mock.patch.object(
+                torch,
+                "trunc",
+                side_effect=AssertionError(
+                    "CUDA binary fast path fell back to torch.trunc"
+                ),
+            ):
+                actual = handler._apply_truncation(x, k, "binary")
+            torch.cuda.synchronize(x.device)
+            rng_after = torch.cuda.get_rng_state(x.device)
+
+            self.assertNotEqual(actual.data_ptr(), x.data_ptr(), k)
+            self.assertTrue(
+                torch.equal(actual.view(torch.int32), expected.view(torch.int32)),
+                k,
+            )
+            self.assertTrue(torch.equal(x.view(torch.int32), input_bits), k)
+            self.assertTrue(torch.equal(rng_after, rng_before), k)
 
     def test_rotation_repeat_count_executes_independent_noise_for_every_rotation(self):
         import function_handler as fh
