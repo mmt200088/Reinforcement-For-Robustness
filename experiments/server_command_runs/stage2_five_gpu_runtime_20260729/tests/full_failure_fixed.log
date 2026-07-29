@@ -1,0 +1,6 @@
+test_fixed_fusion_blocks_and_block3_k_restore (tests.test_blb_fusion_count_map.LayerwiseFusionMapSemanticsTest.test_fixed_fusion_blocks_and_block3_k_restore) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK

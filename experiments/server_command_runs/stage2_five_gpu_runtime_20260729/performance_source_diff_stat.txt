@@ -1,0 +1,26 @@
+ blb_stage2_rl/block3_fused_cuda.py                 |   88 +-
+ blb_stage2_rl/block5_fused_cuda.py                 |   10 +
+ blb_stage2_rl/diagnostics.py                       |    6 +
+ blb_stage2_rl/env.py                               |   20 +
+ blb_stage2_rl/inference_eval.py                    |  136 ++
+ blb_stage2_rl/probe_runner.py                      |  785 ++++++++-
+ blb_stage2_rl/sequential_runner.py                 |   80 +
+ blb_stage2_rl/truncation_fused_cuda.py             |   81 +
+ ...26-07-28-stage2-five-gpu-near-linear-runtime.md | 1728 ++++++++++++++++++++
+ ...8-stage2-five-gpu-near-linear-runtime-design.md |  329 ++++
+ function_handler.py                                |  193 ++-
+ scripts/elastic_rl_scaling_ab.py                   |   23 +-
+ scripts/stage2_ngpu_ab_compare.py                  |    2 +
+ scripts/stage2_ngpu_speed_ab.sh                    |   23 +
+ tests/test_blb_block3_cuda_fusion.py               |   87 +
+ tests/test_blb_block5_cuda_fusion.py               |    6 +
+ tests/test_blb_layerwise_runner.py                 |    8 +
+ tests/test_blb_probe_metric_aggregation.py         |  122 ++
+ tests/test_blb_truncation_backends.py              |   54 +
+ tests/test_elastic_gpu_supervisor.py               |   22 +
+ tests/test_elastic_rl_scaling_ab.py                |   76 +-
+ tests/test_function_handler_cuda_rng_offsets.py    |  250 +++
+ tests/test_probe_runner_process_backend.py         |  506 ++++++
+ tests/test_stage2_ngpu_ab_compare.py               |    4 +
+ tests/test_stage2_ngpu_speed_targeted_first.py     |   26 +
+ 25 files changed, 4633 insertions(+), 32 deletions(-)

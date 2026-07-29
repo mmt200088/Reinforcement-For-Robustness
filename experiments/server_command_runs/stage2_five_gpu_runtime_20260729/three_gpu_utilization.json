@@ -1,0 +1,137 @@
+{
+  "episodes": 120,
+  "gpu_utilization": {
+    "cuda:0": {
+      "active_sample_rate": 0.9893390191897654,
+      "max_memory_mib": 6084.0,
+      "max_util_pct": 100.0,
+      "mean_util_pct": 97.09808102345416,
+      "samples": 1876
+    },
+    "cuda:1": {
+      "active_sample_rate": 0.8800639658848614,
+      "max_memory_mib": 6509.0,
+      "max_util_pct": 100.0,
+      "mean_util_pct": 87.30756929637526,
+      "samples": 1876
+    },
+    "cuda:2": {
+      "active_sample_rate": 0.8880597014925373,
+      "max_memory_mib": 6509.0,
+      "max_util_pct": 100.0,
+      "mean_util_pct": 88.37366737739872,
+      "samples": 1876
+    },
+    "cuda:3": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 1.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 1876
+    },
+    "cuda:4": {
+      "active_sample_rate": 0.0,
+      "max_memory_mib": 1.0,
+      "max_util_pct": 0.0,
+      "mean_util_pct": 0.0,
+      "samples": 1876
+    }
+  },
+  "hot_path_wall_seconds": {},
+  "idle_visible_devices": [],
+  "policy_rollout_wall_seconds": {
+    "count": 120,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "probe_device_sets": [
+    [
+      "cuda:0",
+      "cuda:1",
+      "cuda:2"
+    ]
+  ],
+  "probe_episode_counts_by_device": {
+    "cuda:0": 120,
+    "cuda:1": 120,
+    "cuda:2": 120
+  },
+  "probe_trial_counts_by_device": {
+    "cuda:0": 200,
+    "cuda:1": 200,
+    "cuda:2": 200
+  },
+  "probe_trial_splits": [
+    [
+      1,
+      2,
+      2
+    ],
+    [
+      2,
+      1,
+      2
+    ],
+    [
+      2,
+      2,
+      1
+    ]
+  ],
+  "probe_wall_seconds_by_device": {
+    "cuda:0": {
+      "count": 120,
+      "max": 3.6748910973547027,
+      "mean": 3.6458981851193437,
+      "min": 3.6360168386794007
+    },
+    "cuda:1": {
+      "count": 120,
+      "max": 3.6748910973547027,
+      "mean": 3.6458981851193437,
+      "min": 3.6360168386794007
+    },
+    "cuda:2": {
+      "count": 120,
+      "max": 3.6748910973547027,
+      "mean": 3.6458981851193437,
+      "min": 3.6360168386794007
+    }
+  },
+  "recommendations": [
+    "Check whether reward probes are balanced across visible GPUs."
+  ],
+  "replan_wall_seconds": {
+    "count": 120,
+    "max": 0.0,
+    "mean": 0.0,
+    "min": 0.0
+  },
+  "sampled_active_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2"
+  ],
+  "terminal_probe_wall_seconds": {
+    "count": 120,
+    "max": 3.6748910973547027,
+    "mean": 3.6458981851193437,
+    "min": 3.6360168386794007
+  },
+  "unattributed_visible_devices": [],
+  "used_probe_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2"
+  ],
+  "visible_devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2"
+  ],
+  "warnings": [
+    "cuda:3 max utilization 0.0% below 10.0%.",
+    "cuda:4 max utilization 0.0% below 10.0%."
+  ]
+}

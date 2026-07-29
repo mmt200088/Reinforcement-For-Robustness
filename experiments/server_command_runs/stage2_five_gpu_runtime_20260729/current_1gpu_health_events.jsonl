@@ -1,0 +1,2 @@
+{"created_at": "2026-07-29T07:51:33.377106+00:00", "cuda_visible_devices": ["GPU-5ee16157-c7e4-7d62-6fef-6382a43301c3"], "event": "launch", "healthy_tokens": ["0"], "logical_device_spec": "0", "quarantined_tokens": [], "restart_count": 0, "resume": false}
+{"created_at": "2026-07-29T10:44:02.781953+00:00", "event": "exit", "restart_count": 0, "return_code": 0}

@@ -1,0 +1,49 @@
+2026-07-29 19:07:29 +0800	63a80e2c474afafd4ab22e38a3c67fcdd45422a8	origin/codex/stage2-five-gpu-runtime-20260728	test(stage2): update fusion map action fixture
+2026-07-28 15:09:38 +0800	117f94590eb8bf22d40ff1f47abc518cebf53b74	origin/codex/stage2-k-presets-network-budget-20260728	fix: disable stage2 training in Paean final eval
+2026-07-28 15:09:38 +0800	117f94590eb8bf22d40ff1f47abc518cebf53b74	origin/jk_standard_rl	fix: disable stage2 training in Paean final eval
+2026-07-27 23:54:03 +0800	ad810c1724da759d23ef4ed6f1077dc2b24d3b52	origin/codex/stage2-18-group-eval-20260727	docs: archive stage2 27-group evaluation evidence
+2026-07-27 22:14:17 +0800	54dfeaa085fc2aa8da9523fb4707451fbde01634	origin/codex/all-agents-k6-13-integrated-20260727	test: record stage2 K6 K7 server gate
+2026-07-27 19:32:56 +0800	88e6978defeea4725f49490201b6583245c1b37f	origin/codex/truncation-k6-13-20260727	test: inject shared final-eval action validator
+2026-07-27 16:20:00 +0800	15aa8d85c7f1a99501cef232fcd83af2fa0468fe	origin/codex/task6-docs-k6-13	docs: record stage2 k6 to k13 contract
+2026-07-27 14:03:41 +0800	1f32a793cda54b72e19319fa172eb51c458d7198	origin/codex/all-agents-elastic-rl-integrated-20260727	docs(elastic): archive dedicated three-GPU evidence
+2026-07-27 11:14:26 +0800	eee7d21513ffee103359d97e37acc33a31346000	origin/codex/elastic-rl-gpu-scheduling-20260726	docs(elastic): include server test logs
+2026-07-26 15:25:37 +0800	efc7e1055ce95f119e374187f8ad563c24e5c848	origin/codex/l0-block1-k-rl-20260726	feat(stage2): enable layer0 block1 truncation K
+2026-07-26 02:54:33 +0800	264e4002860818e87c1933006df678af8464d1c2	origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725	feat(stage2): add protected K1 terminal screening
+2026-07-25 04:18:16 +0800	e1a1bba96502ef5a49bdae1749f0434908f97452	origin/codex/stage1best-large-stage2-training-20260725	Fix large-profile fusion checkpoint reconstruction
+2026-07-25 01:32:29 +0800	41b57eae9cd3299945c2bc0d9f924f1e3637a4cc	origin/codex/stage1best-large-stage2-chain-eval-20260725	docs: signal completion for downstream agent
+2026-07-24 23:49:20 +0800	39abb31bbed11614033a5042e9722987116aac2d	origin/codex/rl-end-to-end-runtime-optimization-20260724	docs: archive RL runtime optimization evidence
+2026-07-24 15:24:02 +0800	accc27d65b6e99435913c3f1bed8629e755742e8	origin/codex/all-agents-integrated-20260724	docs: require aggregate server source sync
+2026-07-24 14:52:44 +0800	2356a58fabf20ad1744be0f7d998acfcad9232a2	origin/codex/stage2-runtime-efficiency-integrated-3d89	docs: record integrated Stage-2 runtime verification
+2026-07-22 16:54:28 +0800	3d89b99dd609a67799811a4bf995000bafe1436c	origin/codex/stage2-small-a2d-index-integrated	bench(stage2): reject larger probe batches under exact parity
+2026-07-22 16:54:28 +0800	3d89b99dd609a67799811a4bf995000bafe1436c	origin/codex/stage2-terminal-probe-opt-97079	bench(stage2): reject larger probe batches under exact parity
+2026-07-21 23:43:48 +0800	c28e7304c96d98fe349ec3653c6bb54a01debd76	origin/codex/candidate-index-on-stage2-small	perf(stage2): index latest promotion status
+2026-07-21 23:19:33 +0800	a8c026a78c81ad985f47c1f2e88b02aad241e215	origin/codex/candidate-promotion-index-d3fa013b	Add Stage-2 candidate promotion index evidence
+2026-07-21 16:46:25 +0800	ed2e89f2fa3f667eca1d06135c1f4748b9957076	origin/codex/block3-runtime-wiring	test: align Block3 freeze guards with shared helpers
+2026-07-21 15:07:03 +0800	bc9de82e22e5602155766f7117086f766ff7588a	origin/codex/stage2-network-ablation-v10	docs: clarify stage2 network ablation strategy
+2026-07-20 12:04:32 +0800	5fbd2332839576f9025c6a87ca211fa1a31bcfd5	origin/codex/server-artifact-evacuation-20260720	archive final installed stage2 configuration
+2026-07-19 21:49:48 +0800	13e923da134a960b5026281b6df3ed3fb4003fc6	origin/codex/stage2-glue-ep114240	Add Stage-2 MRPC two-seed GLUE submissions
+2026-07-18 16:48:19 +0800	6268ee02fdbf070065ea04f72966cffc0461300f	origin/codex/stage2-rl-runtime-opt-48b03e8	docs: close Stage-2 runtime optimization audit
+2026-07-18 12:42:23 +0800	fa4ee9cbd27d6265238f8d1091b712e14ee86066	origin/codex/stage2-k-convergence	docs(server): record Stage2 cleanup verification
+2026-07-17 15:23:13 +0800	c49fed05f0bac59b2471143a8d3e41c65c2b93d1	origin/codex/five-profile-fusion-audit	Add BERT-base MRPC to fusion SF audit
+2026-07-12 21:27:43 +0800	24e919cea64f22b1b869b9bf22d57bbb776bac5e	origin/codex/fixed-b2-b5-fusion	fix(stage2): persist effective PPO diagnostics
+2026-07-12 21:00:01 +0800	aff4d1ccc7ae1d2e8dabef97d9466a28e0e5948b	origin/codex/block-sf-audit	Add MRPC actual installed SF audit report
+2026-07-10 23:17:48 +0800	ffa58a5de4fc5997acbd1ca89805da5d0419187b	origin/codex/green-task5-map-aware-gate-20260710	Make boosted fusion replay test map-aware
+2026-07-10 22:11:13 +0800	f19736112c12b62b29b2958158bb751ca806b4a2	origin/codex/green-paean-plot-defer-20260710	Defer redundant Paean action plots
+2026-07-10 22:08:49 +0800	4b08e19d18a308dbf409926550db090e2d3b0c89	origin/codex/red-paean-plot-defer-20260710	Test deferred Paean plot rendering
+2026-07-10 21:46:39 +0800	381d4a81b9802289fb306e29d64720b5a1813390	origin/codex/green-paean-action-batch-20260710	Prune unused Paean random search
+2026-07-10 21:45:27 +0800	34cfb4c1431c00a4000a0861f751ab3a51ee0f72	origin/codex/red-paean-fixed-workload-20260710	Test fixed-action workload pruning
+2026-07-10 21:41:55 +0800	3fe6004c95195ed08fbaf884f56b6ecc3a5dd8cb	origin/codex/red-paean-noise-rng-20260710	Test isolated Paean noise RNG
+2026-07-10 21:21:30 +0800	2312cec43f3f23d5b85484c605101e57557b12d1	origin/codex/red-paean-action-batch-workload-20260710	Test Paean batch workload accounting
+2026-07-10 21:18:04 +0800	6ce18c4bb3122a8de496a13ae4cd99405d895ced	origin/codex/red-paean-action-batch-rng-20260710	Refine Paean batch RNG parity test
+2026-07-10 21:09:04 +0800	897b273b79721033f1414e846b0a012d29a5461e	origin/codex/red-paean-action-batch-20260710	Test batched Paean action evaluation
+2026-07-10 20:56:52 +0800	85c81a25bb7feb8cd834998ce3be26ff354b534f	origin/codex/green-rescale-compact-scan-20260710	Stream Rescale compact scale propagation
+2026-07-10 20:54:25 +0800	57f67d91ae16cb90eb39342b1091946f5b7b5837	origin/codex/red-rescale-compact-scan-20260710	Test incremental Rescale compact propagation
+2026-07-10 20:46:23 +0800	2907e63388c5d58b0e4e6f1e80b37f50aaa2d83c	origin/codex/green-rescale-scalar-state-20260710	Avoid scalar deepcopy in Rescale sessions
+2026-07-10 20:43:53 +0800	0fc84b66cd737e4395ce9201a3e2442b6d3ecc03	origin/codex/red-rescale-scalar-state-20260710	Test scalar Rescale state restoration
+2026-07-10 20:32:00 +0800	78cfec9672db58935f1e2e1c7b7cae5ed0c88be5	origin/codex/green-stage2-plot-default-20260710	Defer Stage-2 plot rendering by default
+2026-07-10 15:51:56 +0800	84f274ac8c315e3084b5ca9ba78ab4f91e20d13c	origin/codex/red-stage2-plot-default-20260710	Test deferred Stage-2 plot rendering default
+2026-05-30 14:45:14 +0800	024bc52dd39ea095d046bc4e9be6a3c1a80aff69	origin/codex/stage1-base-rte-report	Add Stage-1 unbounded base RTE report
+2026-05-29 22:03:55 +0800	e5f77b7ca02479743f47f5b9e9b138d1e80b91f5	origin/codex/stage1-unbounded-entropy	Add Stage-1 unbounded base SST2 report
+2026-05-29 00:29:44 +0800	07fb87aaf53a3bf2ab27b9cf69fa1f6ba32c39ec	origin/codex/stage1-large-mrpc-report	Add Stage-1 large MRPC final report
+2026-01-03 18:12:27 +0800	3a7400560ed66bfb42424f414bb3f360ff3e9f56	origin/main	change things
+2025-11-24 13:21:50 +0800	ba155379fe1f71e37ab7918f833d349f2451f5b1	origin/bert-large	Create README.md

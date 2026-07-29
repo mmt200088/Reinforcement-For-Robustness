@@ -1,0 +1,10 @@
+  origin/bert-large
+  origin/codex/all-agents-k6-13-integrated-20260727
+  origin/codex/block-sf-audit
+  origin/codex/candidate-index-on-stage2-small
+  origin/codex/five-profile-fusion-audit
+  origin/codex/stage1best-large-stage2-chain-eval-20260725
+  origin/codex/stage2-glue-ep114240
+  origin/codex/stage2-network-ablation-v10
+  origin/codex/stage2-rl-runtime-opt-48b03e8
+  origin/main

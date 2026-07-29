@@ -1,0 +1,47 @@
+test_binary_k6_matches_exact_signed_grid_contract (tests.test_blb_truncation_backends.TruncationBackendTests.test_binary_k6_matches_exact_signed_grid_contract) ... ok
+test_block1_executes_k_on_variance_before_rsqrt (tests.test_blb_truncation_backends.TruncationBackendTests.test_block1_executes_k_on_variance_before_rsqrt) ... ok
+test_block1_truncation_only_executes_k_without_sampling_gaussian_noise (tests.test_blb_truncation_backends.TruncationBackendTests.test_block1_truncation_only_executes_k_without_sampling_gaussian_noise) ... ok
+test_block2_hook_executes_k_from_the_materialized_cfg (tests.test_blb_truncation_backends.TruncationBackendTests.test_block2_hook_executes_k_from_the_materialized_cfg) ... ok
+test_block3_executes_k_after_the_polynomial (tests.test_blb_truncation_backends.TruncationBackendTests.test_block3_executes_k_after_the_polynomial) ... ok
+test_block4_executes_k_on_variance_before_rsqrt (tests.test_blb_truncation_backends.TruncationBackendTests.test_block4_executes_k_on_variance_before_rsqrt) ... ok
+test_block5_executes_k_after_polynomial_gelu (tests.test_blb_truncation_backends.TruncationBackendTests.test_block5_executes_k_after_polynomial_gelu) ... ok
+test_bridge_installs_layer0_block1_truncation_only_cfg (tests.test_blb_truncation_backends.TruncationBackendTests.test_bridge_installs_layer0_block1_truncation_only_cfg) ... ok
+test_cuda_binary_k_domain_uses_exact_fused_kernel_without_rng_or_mutation (tests.test_blb_truncation_backends.TruncationBackendTests.test_cuda_binary_k_domain_uses_exact_fused_kernel_without_rng_or_mutation) ... ok
+test_invalid_backend_and_invalid_parameters_fail_loudly (tests.test_blb_truncation_backends.TruncationBackendTests.test_invalid_backend_and_invalid_parameters_fail_loudly) ... ok
+test_legacy_binary_is_bit_for_bit_unchanged_for_signed_values (tests.test_blb_truncation_backends.TruncationBackendTests.test_legacy_binary_is_bit_for_bit_unchanged_for_signed_values) ... ok
+test_none_k_is_identity_for_every_backend (tests.test_blb_truncation_backends.TruncationBackendTests.test_none_k_is_identity_for_every_backend) ... ok
+test_rotation_repeat_count_executes_independent_noise_for_every_rotation (tests.test_blb_truncation_backends.TruncationBackendTests.test_rotation_repeat_count_executes_independent_noise_for_every_rotation) ... ok
+test_stochastic_ring_is_empirically_unbiased_for_both_signs (tests.test_blb_truncation_backends.TruncationBackendTests.test_stochastic_ring_is_empirically_unbiased_for_both_signs) ... ok
+test_stochastic_ring_outputs_adjacent_k_grid_points (tests.test_blb_truncation_backends.TruncationBackendTests.test_stochastic_ring_outputs_adjacent_k_grid_points) ... ok
+test_truncation_rng_is_reproducible_and_isolated_from_gaussian_rng (tests.test_blb_truncation_backends.TruncationBackendTests.test_truncation_rng_is_reproducible_and_isolated_from_gaussian_rng) ... ok
+test_two_complement_ring_wrap_is_applied_before_truncation (tests.test_blb_truncation_backends.TruncationBackendTests.test_two_complement_ring_wrap_is_applied_before_truncation) ... ok
+test_degree4_cuda_fast_path_matches_eager_and_rng_state_bitwise (tests.test_blb_block3_cuda_fusion.Block3CudaFusionTest.test_degree4_cuda_fast_path_matches_eager_and_rng_state_bitwise) ... ok
+test_degree6_cuda_fast_path_matches_eager_and_rng_state_bitwise (tests.test_blb_block3_cuda_fusion.Block3CudaFusionTest.test_degree6_cuda_fast_path_matches_eager_and_rng_state_bitwise) ... ok
+test_noise_workspace_reuses_storage_on_the_same_cuda_stream (tests.test_blb_block3_cuda_fusion.Block3CudaFusionTest.test_noise_workspace_reuses_storage_on_the_same_cuda_stream) ... ok
+test_degree4_cuda_fast_path_matches_eager_and_rng_state_bitwise (tests.test_blb_block5_cuda_fusion.Block5CudaFusionTest.test_degree4_cuda_fast_path_matches_eager_and_rng_state_bitwise) ... ok
+test_noise_workspace_reuses_storage_on_the_same_cuda_stream (tests.test_blb_block5_cuda_fusion.Block5CudaFusionTest.test_noise_workspace_reuses_storage_on_the_same_cuda_stream) ... ok
+test_real_five_gpu_registration_failure_cleans_pending_children (tests.test_probe_runner_process_backend.ProbeRunnerFiveGpuIntegrationTest.test_real_five_gpu_registration_failure_cleans_pending_children) ... Traceback (most recent call last):
+  File "/usr/lib/python3.11/multiprocessing/resource_sharer.py", line 138, in _serve
+    with self._listener.accept() as conn:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/multiprocessing/connection.py", line 482, in accept
+    deliver_challenge(c, self._authkey)
+  File "/usr/lib/python3.11/multiprocessing/connection.py", line 757, in deliver_challenge
+    response = connection.recv_bytes(256)        # reject large message
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/multiprocessing/connection.py", line 216, in recv_bytes
+    buf = self._recv_bytes(maxlength)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/multiprocessing/connection.py", line 430, in _recv_bytes
+    buf = self._recv(4)
+          ^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/multiprocessing/connection.py", line 395, in _recv
+    chunk = read(handle, remaining)
+            ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 5.158s
+
+OK

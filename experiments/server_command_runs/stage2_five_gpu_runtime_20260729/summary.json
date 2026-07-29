@@ -1,0 +1,259 @@
+{
+  "aggregate_base": "117f9459",
+  "elastic_scaling_evidence": {
+    "five_gpu": {
+      "device_count": 5,
+      "n_gpu_episodes": 120,
+      "n_gpu_episodes_per_hour": 193.548,
+      "n_gpu_terminal_probe_seconds_per_episode": 2.053,
+      "n_gpu_wall_seconds": 2232.0,
+      "one_gpu_episodes": 120,
+      "one_gpu_episodes_per_hour": 41.715,
+      "one_gpu_terminal_probe_seconds_per_episode": 9.987,
+      "one_gpu_wall_seconds": 10356.0,
+      "parallel_efficiency": 0.928,
+      "ppo_update_equality": "PASS",
+      "quality_effect_equality": "PASS",
+      "speedup": 4.64,
+      "strict_diagnostic_equality": "PASS"
+    },
+    "five_gpu_strict_equal": true,
+    "four_gpu": {
+      "device_count": 4,
+      "n_gpu_episodes": 120,
+      "n_gpu_episodes_per_hour": 134.874,
+      "n_gpu_terminal_probe_seconds_per_episode": 2.79,
+      "n_gpu_wall_seconds": 3203.0,
+      "one_gpu_episodes": 120,
+      "one_gpu_episodes_per_hour": 38.62,
+      "one_gpu_terminal_probe_seconds_per_episode": 10.798,
+      "one_gpu_wall_seconds": 11186.0,
+      "parallel_efficiency": 0.873,
+      "ppo_update_equality": "PASS",
+      "quality_effect_equality": "PASS",
+      "speedup": 3.492,
+      "strict_diagnostic_equality": "PASS"
+    },
+    "four_gpu_strict_equal": true,
+    "note": "Three/four GPU gates predate the final exact CUDA fusion; the final matched one/five GPU gate uses the performance source above.",
+    "three_gpu": {
+      "device_count": 3,
+      "n_gpu_episodes": 120,
+      "n_gpu_episodes_per_hour": 106.09,
+      "n_gpu_terminal_probe_seconds_per_episode": 3.646,
+      "n_gpu_wall_seconds": 4072.0,
+      "one_gpu_episodes": 120,
+      "one_gpu_episodes_per_hour": 38.62,
+      "one_gpu_terminal_probe_seconds_per_episode": 10.798,
+      "one_gpu_wall_seconds": 11186.0,
+      "parallel_efficiency": 0.916,
+      "ppo_update_equality": "PASS",
+      "quality_effect_equality": "PASS",
+      "speedup": 2.747,
+      "strict_diagnostic_equality": "PASS"
+    },
+    "three_gpu_strict_equal": true
+  },
+  "final_test_evidence_source": {
+    "commit": "63a80e2c474afafd4ab22e38a3c67fcdd45422a8",
+    "tracked_clean": true,
+    "tree": "3f46c47aa0c0da19fad70642396bb034d4311dbf"
+  },
+  "five_gpu_all_healthy_path": {
+    "episode_counts_by_device": {
+      "cuda:0": 120,
+      "cuda:1": 120,
+      "cuda:2": 120,
+      "cuda:3": 120,
+      "cuda:4": 120
+    },
+    "gpu3_enabled": true,
+    "health_events": [
+      {
+        "created_at": "2026-07-29T07:11:51.717308+00:00",
+        "cuda_visible_devices": [
+          "GPU-5ee16157-c7e4-7d62-6fef-6382a43301c3",
+          "GPU-4545217d-240d-87c7-3372-8dd4ac66748b",
+          "GPU-c87864a0-3df8-176b-5233-6af60ad11110",
+          "GPU-9443792e-0956-5bec-eb86-adec16d63e66",
+          "GPU-fe933141-2102-5a42-a198-230d8c55ac3b"
+        ],
+        "event": "launch",
+        "healthy_tokens": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "logical_device_spec": "0,1,2,3,4",
+        "quarantined_tokens": [],
+        "restart_count": 0,
+        "resume": false
+      },
+      {
+        "created_at": "2026-07-29T07:48:57.984821+00:00",
+        "event": "exit",
+        "restart_count": 0,
+        "return_code": 0
+      }
+    ],
+    "idle_visible_devices": [],
+    "mean_utilization_percent": {
+      "cuda:0": 91.01461988304094,
+      "cuda:1": 91.98148148148148,
+      "cuda:2": 93.05458089668616,
+      "cuda:3": 93.60623781676414,
+      "cuda:4": 94.2300194931774
+    },
+    "trial_counts_by_device": {
+      "cuda:0": 120,
+      "cuda:1": 120,
+      "cuda:2": 120,
+      "cuda:3": 120,
+      "cuda:4": 120
+    },
+    "used_probe_devices": [
+      "cuda:0",
+      "cuda:1",
+      "cuda:2",
+      "cuda:3",
+      "cuda:4"
+    ],
+    "visible_devices": [
+      "cuda:0",
+      "cuda:1",
+      "cuda:2",
+      "cuda:3",
+      "cuda:4"
+    ]
+  },
+  "matched_current_scaling": {
+    "device_count": 5,
+    "n_gpu_episodes": 120,
+    "n_gpu_episodes_per_hour": 193.548,
+    "n_gpu_terminal_probe_seconds_per_episode": 2.053,
+    "n_gpu_wall_seconds": 2232.0,
+    "one_gpu_episodes": 120,
+    "one_gpu_episodes_per_hour": 41.715,
+    "one_gpu_terminal_probe_seconds_per_episode": 9.987,
+    "one_gpu_wall_seconds": 10356.0,
+    "parallel_efficiency": 0.928,
+    "ppo_update_equality": "PASS",
+    "quality_effect_equality": "PASS",
+    "speedup": 4.64,
+    "strict_diagnostic_equality": "PASS"
+  },
+  "objective": "Stage-2 BERT-large MRPC runtime-only optimization with exact scientific-state parity",
+  "performance_source": {
+    "commit": "b9e1e50f03c61e95e3bbde3a46a09a4bf3092a9b",
+    "tree": "505d0c9fc7b5d596925b722cdfca572f1495cfc0"
+  },
+  "primary_evidence_files": [
+    "current_1v5_gate.txt",
+    "current_1v5_strict_equivalence.json",
+    "current_5gpu_utilization.json",
+    "current_5gpu_health_events.jsonl",
+    "tests/cuda_targeted.log",
+    "tests/focused_unittest_green.log",
+    "tests/focused_pytest_green.log",
+    "tests/full_unittest_green.log"
+  ],
+  "runtime_gain_over_previous_source": {
+    "cross_source_reference_only": true,
+    "current_five_gpu_vs_previous_single_gpu_reference": 5.011648745519714,
+    "current_matched_scaling_speedup": 4.64,
+    "five_gpu_speedup": 1.0761648745519714,
+    "five_gpu_wall_reduction_fraction": 0.07077435470441296,
+    "previous_commit": "fc5da5c8db3a82538ced8a5bca7215882797b6f1",
+    "previous_matched_scaling_speedup": 4.657,
+    "previous_tree": "798581d9904c0292cd9ed73837cf3a3e01e2d6a1",
+    "single_gpu_speedup": 1.0801467748165314,
+    "single_gpu_wall_reduction_fraction": 0.07419989272304661
+  },
+  "schema_version": 1,
+  "semantic_guarantee": {
+    "actions_unchanged": true,
+    "candidate_state_unchanged": true,
+    "checkpoint_state_unchanged": true,
+    "ppo_state_unchanged": true,
+    "reward_metrics_unchanged": true,
+    "rng_state_unchanged": true,
+    "structured_training_data_unchanged": true,
+    "trial_order_unchanged": true
+  },
+  "single_gpu_control": {
+    "health_events": [
+      {
+        "created_at": "2026-07-29T07:51:33.377106+00:00",
+        "cuda_visible_devices": [
+          "GPU-5ee16157-c7e4-7d62-6fef-6382a43301c3"
+        ],
+        "event": "launch",
+        "healthy_tokens": [
+          "0"
+        ],
+        "logical_device_spec": "0",
+        "quarantined_tokens": [],
+        "restart_count": 0,
+        "resume": false
+      },
+      {
+        "created_at": "2026-07-29T10:44:02.781953+00:00",
+        "event": "exit",
+        "restart_count": 0,
+        "return_code": 0
+      }
+    ],
+    "mean_utilization_percent": 98.76766417290108,
+    "trial_counts_by_device": {
+      "cuda:0": 600
+    },
+    "used_probe_devices": [
+      "cuda:0"
+    ]
+  },
+  "strict_scientific_equivalence": {
+    "candidate": "/hy-tmp/stage2_five_gpu_runtime_20260729/final_scaling_b9e1e50f_1v5_e120/persistent_many",
+    "compared": {
+      "candidate_records": 739,
+      "checkpoint": true,
+      "diagnostic_episodes": 120,
+      "diagnostic_ppo": 1,
+      "structured_episodes": 120,
+      "structured_ppo": 1,
+      "structured_steps": 0
+    },
+    "control": "/hy-tmp/stage2_five_gpu_runtime_20260729/final_matched_b9e1e50f_1v5_e120_retry1/persistent_one",
+    "diffs": [],
+    "equal": true
+  },
+  "tests": {
+    "baseline_files_unchanged_diff_rc": 0,
+    "cuda_targeted": {
+      "passed": 23,
+      "ran": 23
+    },
+    "cuda_targeted_rc": 0,
+    "fixture_note": "The initial full-suite error was an obsolete six-slot test fixture already present at aggregate base 117f9459; production files were byte-identical across the baseline comparison. The fixture now follows the existing two-slot contract.",
+    "focused_pytest": {
+      "passed": 8,
+      "ran": 8
+    },
+    "focused_pytest_rc": 0,
+    "focused_unittest": {
+      "passed": 289,
+      "ran": 289,
+      "skipped": 1
+    },
+    "focused_unittest_rc": 0,
+    "full_unittest_before_fixture_fix_rc": 1,
+    "full_unittest_final": {
+      "passed": 1933,
+      "ran": 1933,
+      "skipped": 3
+    },
+    "full_unittest_final_rc": 0,
+    "stale_fixture_targeted_fix_rc": 0
+  }
+}

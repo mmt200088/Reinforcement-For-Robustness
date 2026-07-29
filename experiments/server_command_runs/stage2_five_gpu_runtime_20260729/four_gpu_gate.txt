@@ -1,0 +1,46 @@
+==== Stage-2 N-GPU A/B Verdict ====
+1GPU episodes: 120
+NGPU episodes: 120
+quality/effect equality: PASS
+strict diagnostic equality: PASS
+PPO update equality: PASS
+PPO update counts: 1GPU=1 NGPU=1
+wall source: wall file
+1GPU wall_s: 11186.000
+NGPU wall_s: 3203.000
+1GPU episodes/hour: 38.620
+NGPU episodes/hour: 134.874
+speedup: 3.492x
+NGPU distinct probe devices: 4
+speedup/device_count: 0.873
+NGPU device episode balance min/max: 120/120
+NGPU probe critical-path lower bound_s: 334.838
+NGPU probe-bound ceiling episodes/hour: 1290.177
+NGPU wall/probe_bound ratio: 9.566
+NGPU probe ceiling utilization: 0.105
+NGPU component critical-path lower bound_s: 334.838
+NGPU component-bound ceiling episodes/hour: 1290.177
+NGPU wall/component_bound ratio: 9.566
+NGPU component ceiling utilization: 0.105
+NGPU policy diagnostic critical-path sum_s: 0.000
+1GPU terminal probe mean_s/episode: 10.798
+NGPU terminal probe mean_s/episode: 2.790
+NGPU/1GPU terminal probe mean ratio: 0.258
+1GPU policy rollout mean_s/episode: 0.000
+NGPU policy rollout mean_s/episode: 0.000
+NGPU/1GPU policy rollout mean ratio: n/a
+NGPU worker-local probe noise scopes detected: False
+NGPU worker-local CUDA probe streams detected: False
+NGPU cpu policy mode detected: False
+
+1GPU device breakdown:
+  cuda:0: {'episodes': 120.0, 'trials': 600.0, 'probe_s': 1295.7441632787231, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 1295.7441632787231}
+NGPU device breakdown:
+  cuda:0: {'episodes': 120.0, 'trials': 150.0, 'probe_s': 334.8377667685272, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 334.8377667685272}
+  cuda:1: {'episodes': 120.0, 'trials': 150.0, 'probe_s': 334.8377667685272, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 334.8377667685272}
+  cuda:2: {'episodes': 120.0, 'trials': 150.0, 'probe_s': 334.8377667685272, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 334.8377667685272}
+  cuda:3: {'episodes': 120.0, 'trials': 150.0, 'probe_s': 334.8377667685272, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 334.8377667685272}
+
+1GPU rollout timing log: n/a
+NGPU rollout timing log: n/a
+[OK] speedup >= 3.000x

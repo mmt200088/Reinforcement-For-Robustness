@@ -1,0 +1,15 @@
+{
+  "candidate": "/hy-tmp/stage2_five_gpu_runtime_20260728/final_scaling_fc5da5c8_1v5_e120/persistent_many",
+  "compared": {
+    "candidate_records": 739,
+    "checkpoint": true,
+    "diagnostic_episodes": 120,
+    "diagnostic_ppo": 1,
+    "structured_episodes": 120,
+    "structured_ppo": 1,
+    "structured_steps": 0
+  },
+  "control": "/hy-tmp/stage2_five_gpu_runtime_20260728/final_scaling_fc5da5c8_1v5_e120/persistent_one",
+  "diffs": [],
+  "equal": true
+}

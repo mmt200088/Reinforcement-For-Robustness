@@ -1,0 +1,45 @@
+==== Stage-2 N-GPU A/B Verdict ====
+1GPU episodes: 120
+NGPU episodes: 120
+quality/effect equality: PASS
+strict diagnostic equality: PASS
+PPO update equality: PASS
+PPO update counts: 1GPU=1 NGPU=1
+wall source: wall file
+1GPU wall_s: 11186.000
+NGPU wall_s: 4072.000
+1GPU episodes/hour: 38.620
+NGPU episodes/hour: 106.090
+speedup: 2.747x
+NGPU distinct probe devices: 3
+speedup/device_count: 0.916
+NGPU device episode balance min/max: 120/120
+NGPU probe critical-path lower bound_s: 437.508
+NGPU probe-bound ceiling episodes/hour: 987.411
+NGPU wall/probe_bound ratio: 9.307
+NGPU probe ceiling utilization: 0.107
+NGPU component critical-path lower bound_s: 437.508
+NGPU component-bound ceiling episodes/hour: 987.411
+NGPU wall/component_bound ratio: 9.307
+NGPU component ceiling utilization: 0.107
+NGPU policy diagnostic critical-path sum_s: 0.000
+1GPU terminal probe mean_s/episode: 10.798
+NGPU terminal probe mean_s/episode: 3.646
+NGPU/1GPU terminal probe mean ratio: 0.338
+1GPU policy rollout mean_s/episode: 0.000
+NGPU policy rollout mean_s/episode: 0.000
+NGPU/1GPU policy rollout mean ratio: n/a
+NGPU worker-local probe noise scopes detected: False
+NGPU worker-local CUDA probe streams detected: False
+NGPU cpu policy mode detected: False
+
+1GPU device breakdown:
+  cuda:0: {'episodes': 120.0, 'trials': 600.0, 'probe_s': 1295.7441632787231, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 1295.7441632787231}
+NGPU device breakdown:
+  cuda:0: {'episodes': 120.0, 'trials': 200.0, 'probe_s': 437.50778221432125, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 437.50778221432125}
+  cuda:1: {'episodes': 120.0, 'trials': 200.0, 'probe_s': 437.50778221432125, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 437.50778221432125}
+  cuda:2: {'episodes': 120.0, 'trials': 200.0, 'probe_s': 437.50778221432125, 'policy_s': 0.0, 'optimizer_s': 0.0, 'component_s': 437.50778221432125}
+
+1GPU rollout timing log: n/a
+NGPU rollout timing log: n/a
+[OK] speedup >= 2.200x
