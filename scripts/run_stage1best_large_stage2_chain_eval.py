@@ -464,6 +464,7 @@ def _build_stage2_runtime(
     evaluator.apply_configuration(gelu, softmax)
     evaluator.reversible_handler.restore_layer_input_noise(
         layer_indices=list(range(int(evaluator.total_layers))),
+        layer_name="model." + evaluator.layers_attribute,
     )
 
     profile = deps["resolve_stage2_profile"](

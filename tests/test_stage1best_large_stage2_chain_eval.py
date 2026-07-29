@@ -91,6 +91,10 @@ class Stage1BestLargeStage2ChainEvalTest(unittest.TestCase):
         self.assertIn("expected exactly fusion counts", source)
         self.assertNotIn("stage1_rl_episodes=0", source)
         self.assertIn("stage2_rl_episodes_specified=False", source)
+        self.assertIn(
+            'layer_name="model." + evaluator.layers_attribute',
+            source,
+        )
         self.assertNotIn(
             "try:\n        evaluator.reversible_handler."
             "restore_layer_input_noise",
