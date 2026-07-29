@@ -581,6 +581,91 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
             [((0, 2),)] * 3,
         )
 
+    def test_validation_bank_accepts_immutable_materialized_overrides(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_action import LayerwiseMaterialization
+        from blb_stage2_rl.layerwise_runner import (
+            _collect_fixed_validation_bank,
+        )
+        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+
+        banks = _three_validation_banks()
+        materialized = LayerwiseMaterialization(
+            mode="compute_only",
+            full_vector=np.asarray([1, 2]),
+            action_matrix=((1, 2),),
+            boosted_overrides={
+                (4, 0): {
+                    "v_mask_rescale_sf": 47,
+                    "output_truncation_k": 13,
+                },
+            },
+        )
+
+        class FullValidationEnv:
+            probe_noise_seed = None
+            probe_runner = None
+
+            def __init__(self):
+                self.prepared_overrides = None
+
+            def prepare_action_for_terminal_probe(
+                    self, _action, *, boosted_overrides, **_kwargs,
+            ):
+                self.prepared_overrides = boosted_overrides
+                return {}
+
+            def evaluate_prepared_terminal_batch(
+                    self, _prepared, *, num_trials_per_action, **_kwargs,
+            ):
+                seeds = [
+                    derive_probe_trial_seed(self.probe_noise_seed, trial_idx)
+                    for trial_idx in range(num_trials_per_action)
+                ]
+                info = {
+                    "statistical_trials": {
+                        "loss": [0.30] * num_trials_per_action,
+                        "metric1": [0.90] * num_trials_per_action,
+                        "metric2": [0.80] * num_trials_per_action,
+                        "seeds": seeds,
+                    },
+                }
+                return [(None, 0.0, True, info)]
+
+        full_env = FullValidationEnv()
+        online_env = types.SimpleNamespace(
+            communication_importance_ratio=1.0,
+            base=types.SimpleNamespace(),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            evidence, fresh_count = _collect_fixed_validation_bank(
+                env=online_env,
+                full_base_env=full_env,
+                candidate_store=CandidateStore(
+                    Path(td) / "candidate_store.jsonl",
+                ),
+                action_indices=materialized.full_vector,
+                full_identity_context={
+                    "action_space_version": "test",
+                    "fidelity": "F4",
+                },
+                action_matrix=materialized.action_matrix,
+                boosted_overrides=materialized.boosted_overrides,
+                bootstrap_seed=17,
+                episode_reward=1.0,
+                validation_banks=banks,
+                bank_label="A",
+            )
+
+        self.assertEqual(fresh_count, 25)
+        self.assertEqual(evidence.trial_count, 25)
+        self.assertIsInstance(full_env.prepared_overrides, dict)
+        self.assertIsInstance(full_env.prepared_overrides[(4, 0)], dict)
+        self.assertEqual(
+            full_env.prepared_overrides[(4, 0)]["output_truncation_k"],
+            13,
+        )
+
     def test_three_validation_banks_are_disjoint_and_pool_in_order(self):
         import blb_stage2_rl.layerwise_runner as layerwise_runner
         from blb_stage2_rl.seed_utils import derive_probe_trial_seed

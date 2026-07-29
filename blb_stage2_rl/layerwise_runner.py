@@ -1089,7 +1089,9 @@ def _strict_best_snapshot(
         "reward": (
             None if best.get("reward") is None else float(best["reward"])
         ),
-        "boosted_overrides": copy.deepcopy(best["boosted_overrides"]),
+        "boosted_overrides": _copy_boosted_overrides(
+            best["boosted_overrides"]
+        ),
         "promotion_evidence": promotion_evidence,
         "axis_counterfactuals": copy.deepcopy(
             best.get("axis_counterfactuals")
@@ -1734,6 +1736,18 @@ def _serialize_boosted_overrides(overrides: Mapping[Any, Any]) -> list[dict[str,
     return rows
 
 
+def _copy_boosted_overrides(
+        overrides: Mapping[Any, Any],
+        ) -> dict[tuple[int, int], dict[str, int]]:
+    return {
+        (int(block_idx), int(layer_idx)): {
+            str(field_name): int(field_value)
+            for field_name, field_value in fields.items()
+        }
+        for (block_idx, layer_idx), fields in overrides.items()
+    }
+
+
 def _deserialize_boosted_overrides(rows: Any) -> dict[tuple[int, int], dict[str, int]]:
     if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
         raise ValueError("boosted_overrides must be a sequence of rows")
@@ -2226,7 +2240,7 @@ def _collect_fixed_validation_bank(
             external_cost_score=cost,
             external_cost_rank=cost,
             external_resource_objective=resource,
-            boosted_overrides=copy.deepcopy(dict(boosted_overrides)),
+            boosted_overrides=_copy_boosted_overrides(boosted_overrides),
         )
         remaining_groups = [
             (group_index, int(bank.probe_seeds[group_index]))
@@ -3008,7 +3022,9 @@ def promote_candidate_if_eligible(
                     external_cost_score=cost,
                     external_cost_rank=cost,
                     external_resource_objective=resource,
-                    boosted_overrides=copy.deepcopy(dict(boosted_overrides)),
+                    boosted_overrides=_copy_boosted_overrides(
+                        boosted_overrides
+                    ),
                 )
                 evaluated = full_base_env.evaluate_prepared_terminal_batch(
                     [prepared],
@@ -3605,7 +3621,7 @@ def _collect_layerwise_episode(
                 "deferred layerwise terminal prepared probe is invalid"
             )
         runtime_info: Mapping[str, Any] = {}
-        boosted_overrides = copy.deepcopy(
+        boosted_overrides = _copy_boosted_overrides(
             pending_probe.get("boosted_overrides") or {}
         )
     else:
@@ -3613,7 +3629,7 @@ def _collect_layerwise_episode(
         runtime_info = (
             runtime_value if isinstance(runtime_value, Mapping) else {}
         )
-        boosted_overrides = copy.deepcopy(
+        boosted_overrides = _copy_boosted_overrides(
             getattr(env, "boosted_overrides", {}) or {}
         )
     return _LayerwiseEpisodeDraft(
@@ -4444,7 +4460,7 @@ def train_layerwise(
                     ),
                     "action_matrix": action_matrix,
                     "full_vector": full_vector,
-                    "boosted_overrides": copy.deepcopy(
+                    "boosted_overrides": _copy_boosted_overrides(
                         episode_boosted_overrides
                     ),
                     "reward": (
@@ -5069,7 +5085,7 @@ def train_layerwise(
             else float(strict_best["reward"])
         ),
         "best_boosted_overrides": (
-            copy.deepcopy(strict_best["boosted_overrides"])
+            _copy_boosted_overrides(strict_best["boosted_overrides"])
             if strict_best is not None else None
         ),
         "best_promotion_evidence": (

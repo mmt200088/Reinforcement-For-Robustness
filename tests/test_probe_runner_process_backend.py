@@ -1367,6 +1367,37 @@ class ProbeBackendSelectionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "BLB_STAGE2_PROBE_BACKEND"):
             resolve_probe_backend("asyncio")
 
+    def test_command_timeout_defaults_to_five_minutes(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                _probe_runner.resolve_probe_command_timeout_seconds(),
+                300.0,
+            )
+
+    def test_command_timeout_supports_positive_environment_override(self):
+        with mock.patch.dict(
+                os.environ,
+                {"BLB_STAGE2_PROBE_COMMAND_TIMEOUT_SECONDS": "45.5"},
+                clear=True,
+                ):
+            self.assertEqual(
+                _probe_runner.resolve_probe_command_timeout_seconds(),
+                45.5,
+            )
+
+    def test_command_timeout_rejects_invalid_environment_values(self):
+        for raw in ("0", "-1", "not-a-number"):
+            with self.subTest(raw=raw), mock.patch.dict(
+                    os.environ,
+                    {"BLB_STAGE2_PROBE_COMMAND_TIMEOUT_SECONDS": raw},
+                    clear=True,
+                    ):
+                with self.assertRaisesRegex(
+                        ValueError,
+                        "BLB_STAGE2_PROBE_COMMAND_TIMEOUT_SECONDS",
+                        ):
+                    _probe_runner.resolve_probe_command_timeout_seconds()
+
 
 @unittest.skipUnless(
     _GPU_INTEGRATION_READY,

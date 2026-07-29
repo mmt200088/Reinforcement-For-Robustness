@@ -30,6 +30,7 @@ Design:
 from __future__ import annotations
 
 import copy
+import math
 import multiprocessing as mp
 import os
 import signal
@@ -59,7 +60,7 @@ except Exception:  # pragma: no cover — torch-free import path
 
 
 _PROCESS_STARTUP_TIMEOUT_SECONDS = 300.0
-_PROCESS_COMMAND_TIMEOUT_SECONDS = 3600.0
+_DEFAULT_PROCESS_COMMAND_TIMEOUT_SECONDS = 300.0
 
 
 def resolve_probe_backend(spec: Optional[str] = None) -> str:
@@ -78,6 +79,26 @@ def resolve_probe_backend(spec: Optional[str] = None) -> str:
         raise ValueError(
             "BLB_STAGE2_PROBE_BACKEND must be 'process' or 'thread', "
             f"got {raw!r}"
+        )
+    return value
+
+
+def resolve_probe_command_timeout_seconds() -> float:
+    """Bound a stalled replica command without changing healthy execution."""
+    env_name = "BLB_STAGE2_PROBE_COMMAND_TIMEOUT_SECONDS"
+    raw = os.environ.get(
+        env_name,
+        str(_DEFAULT_PROCESS_COMMAND_TIMEOUT_SECONDS),
+    )
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{env_name} must be a positive finite number, got {raw!r}"
+        ) from exc
+    if not math.isfinite(value) or value <= 0.0:
+        raise ValueError(
+            f"{env_name} must be a positive finite number, got {raw!r}"
         )
     return value
 
@@ -584,7 +605,8 @@ class _ProcessProbeWorker:
             )
         try:
             message = self._receive_message(
-                _PROCESS_COMMAND_TIMEOUT_SECONDS if timeout is None else timeout
+                resolve_probe_command_timeout_seconds()
+                if timeout is None else timeout
             )
         finally:
             self._pending_operation = None
