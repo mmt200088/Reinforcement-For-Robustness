@@ -85,6 +85,12 @@ class Block3CudaFusionTest(unittest.TestCase):
                     handler,
                     "_try_block3_fused_cuda",
                     side_effect=tracked_fast_path,
+                ), mock.patch.object(
+                    handler,
+                    "_apply_truncation",
+                    side_effect=AssertionError(
+                        "Block3 fast path launched standalone truncation"
+                    ),
                 ):
                     actual = forward(x)
                     actual_next = handler._sample_independent_gaussian(
@@ -160,6 +166,12 @@ class Block3CudaFusionTest(unittest.TestCase):
                 handler,
                 "_try_block3_fused_cuda",
                 side_effect=tracked_fast_path,
+            ), mock.patch.object(
+                handler,
+                "_apply_truncation",
+                side_effect=AssertionError(
+                    "Block3 fast path launched standalone truncation"
+                ),
             ):
                 actual = forward(x)
                 actual_next = handler._sample_independent_gaussian(
