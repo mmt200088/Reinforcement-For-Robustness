@@ -415,7 +415,9 @@ def _runtime_modules():
     action_space.layer_dims = lambda *_args, **_kwargs: []
     action_space.make_all_max_action_vector = lambda layers: np.full(int(layers), 9)
     action_space.parse_config_name = lambda _name: (0, "", -1)
-    action_space.validate_action_vector = lambda *_args, **_kwargs: None
+    action_space.validate_action_vector = (
+        lambda action, *_args, **_kwargs: np.asarray(action)
+    )
 
     candidate_store = types.ModuleType(f"{package_name}.candidate_store")
     candidate_store.action_hash = lambda action: "".join(
@@ -529,8 +531,12 @@ def test_prepared_terminal_runtime_assesses_trials_deterministically_and_threads
     signals = SimpleNamespace(any_invalid=False, total_bits_sum=100.0, total_fusion_count=0.0)
     decoded_actions = []
     for _layer_idx in range(12):
-        k_by_block = {1: 13, 2: 13, 3: 13, 4: 13, 5: 13}
-        decoded_actions.append(layerwise_action.LayerwiseDecodedAction(1, k_by_block))
+        k_by_block = {1: 11, 2: 10, 3: 10, 4: 12, 5: 11}
+        decoded_actions.append(
+            layerwise_action.LayerwiseDecodedAction(
+                1, k_by_block, precision_preset_index=0,
+            )
+        )
     resource = layerwise_action.compute_variable_cost(decoded_actions)
     variable_cost = resource.ppo_resource_score
     assert resource.compute_saving == 1.0
