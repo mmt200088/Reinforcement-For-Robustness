@@ -156,6 +156,54 @@ def _sample_independent_gaussian(reference: Tensor, std: float) -> Tensor:
 #   decimal：trunc(x · 10^k) / 10^k      （保留 k 位十进制小数）
 # k=None  → 不截断（仅用于明确关闭某个 truncation 点）。
 
+_BINARY_TRUNCATION_FUSED_CUDA_ENABLED = str(
+    _os.environ.get("BLB_STAGE2_TRUNCATION_FUSED_CUDA", "1")
+).strip().lower() not in {"0", "false", "no", "off"}
+_BINARY_TRUNCATION_FUSED_CUDA_IMPL = None
+_BINARY_TRUNCATION_FUSED_CUDA_RESOLVED = False
+
+
+def _resolve_binary_truncation_fused_cuda_impl():
+    global _BINARY_TRUNCATION_FUSED_CUDA_IMPL
+    global _BINARY_TRUNCATION_FUSED_CUDA_RESOLVED
+    if not _BINARY_TRUNCATION_FUSED_CUDA_RESOLVED:
+        _BINARY_TRUNCATION_FUSED_CUDA_RESOLVED = True
+        try:
+            from blb_stage2_rl.truncation_fused_cuda import (
+                binary_truncation_cuda,
+                is_available,
+            )
+
+            if is_available():
+                _BINARY_TRUNCATION_FUSED_CUDA_IMPL = binary_truncation_cuda
+        except (ImportError, ModuleNotFoundError):
+            _BINARY_TRUNCATION_FUSED_CUDA_IMPL = None
+    return _BINARY_TRUNCATION_FUSED_CUDA_IMPL
+
+
+def _try_binary_truncation_fused_cuda(
+        x: Tensor,
+        k: int,
+        ) -> Optional[Tensor]:
+    """Run the exact CUDA specialization for the active K domain."""
+    target_k = int(k)
+    if (
+            not _BINARY_TRUNCATION_FUSED_CUDA_ENABLED
+            or target_k < 6
+            or target_k > 13
+            or not x.is_cuda
+            or x.dtype != torch.float32
+            or x.requires_grad
+            or not x.is_contiguous()
+            or int(x.numel()) == 0
+    ):
+        return None
+    implementation = _resolve_binary_truncation_fused_cuda_impl()
+    if implementation is None:
+        return None
+    return implementation(x, target_k)
+
+
 def _apply_truncation(
         x: Tensor,
         k: Optional[int],
@@ -176,6 +224,9 @@ def _apply_truncation(
         return x
     normalized_mode = str(mode).strip().lower()
     if normalized_mode == "binary":
+        fused = _try_binary_truncation_fused_cuda(x, int(k))
+        if fused is not None:
+            return fused
         scale = 2.0 ** int(k)
         return torch.trunc(x * scale) / scale
     if normalized_mode == "decimal":
