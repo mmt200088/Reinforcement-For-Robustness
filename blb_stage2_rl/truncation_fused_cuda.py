@@ -39,6 +39,13 @@ if triton is not None:
 
 
     @triton.jit
+    def binary_truncation_rn_f32(value, scale):
+        scaled = _mul_rn_f32(value, scale)
+        truncated = libdevice.trunc(scaled)
+        return _div_rn_f32(truncated, scale)
+
+
+    @triton.jit
     def _binary_truncation_kernel(
             x_ptr,
             out_ptr,
@@ -49,9 +56,7 @@ if triton is not None:
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < numel
         value = tl.load(x_ptr + offsets, mask=mask)
-        scaled = _mul_rn_f32(value, scale)
-        truncated = libdevice.trunc(scaled)
-        out = _div_rn_f32(truncated, scale)
+        out = binary_truncation_rn_f32(value, scale)
         tl.store(out_ptr + offsets, out, mask=mask)
 
 

@@ -181,11 +181,11 @@ def _resolve_binary_truncation_fused_cuda_impl():
     return _BINARY_TRUNCATION_FUSED_CUDA_IMPL
 
 
-def _try_binary_truncation_fused_cuda(
+def _binary_truncation_fused_cuda_target_k(
         x: Tensor,
         k: int,
-        ) -> Optional[Tensor]:
-    """Run the exact CUDA specialization for the active K domain."""
+        ) -> Optional[int]:
+    """Return the supported exact-CUDA K, otherwise ``None``."""
     target_k = int(k)
     if (
             not _BINARY_TRUNCATION_FUSED_CUDA_ENABLED
@@ -198,10 +198,38 @@ def _try_binary_truncation_fused_cuda(
             or int(x.numel()) == 0
     ):
         return None
+    return target_k
+
+
+def _try_binary_truncation_fused_cuda(
+        x: Tensor,
+        k: int,
+        ) -> Optional[Tensor]:
+    """Run the exact CUDA specialization for the active K domain."""
+    target_k = _binary_truncation_fused_cuda_target_k(x, k)
+    if target_k is None:
+        return None
     implementation = _resolve_binary_truncation_fused_cuda_impl()
     if implementation is None:
         return None
     return implementation(x, target_k)
+
+
+def _configured_binary_truncation_fused_cuda_scale(
+        x: Tensor,
+        cfg,
+        ) -> Optional[float]:
+    """Return a fusion scale only when the materialized cfg is eligible."""
+    if cfg is None:
+        return None
+    mode = str(getattr(cfg, "output_truncation_mode", "binary")).strip().lower()
+    k = getattr(cfg, "output_truncation_k", None)
+    if mode != "binary" or k is None:
+        return None
+    target_k = _binary_truncation_fused_cuda_target_k(x, int(k))
+    if target_k is None:
+        return None
+    return float(2 ** target_k)
 
 
 def _apply_truncation(
@@ -272,8 +300,15 @@ def _apply_truncation(
     return decoded.to(dtype=x.dtype)
 
 
-def _apply_configured_truncation(x: Tensor, cfg) -> Tensor:
+def _apply_configured_truncation(
+        x: Tensor,
+        cfg,
+        *,
+        binary_already_applied: bool = False,
+        ) -> Tensor:
     """Apply the backend carried by one final, materialized block config."""
+    if binary_already_applied:
+        return x
     if cfg is None:
         return x
     return _apply_truncation(
@@ -1701,7 +1736,12 @@ def _resolve_block3_fused_cuda_impl(degree: int):
     return _BLOCK3_FUSED_CUDA_IMPLS.get(int(degree))
 
 
-def _try_block3_fused_cuda(x: Tensor, cfg: Block3NoiseConfig) -> Optional[Tensor]:
+def _try_block3_fused_cuda(
+        x: Tensor,
+        cfg: Block3NoiseConfig,
+        *,
+        truncation_scale: Optional[float] = None,
+        ) -> Optional[Tensor]:
     """Run an exact degree-4/6 CUDA specialization, or return ``None``."""
     degree = int(getattr(cfg, "degree", 0))
     square_rescales = tuple(getattr(cfg, "square_rescales", ()) or ())
@@ -1747,7 +1787,11 @@ def _try_block3_fused_cuda(x: Tensor, cfg: Block3NoiseConfig) -> Optional[Tensor
         noise = noise_slab[index]
         noise.normal_(0.0, float(std), generator=generator)
         noises.append(noise)
-    return implementation(x, noises)
+    return implementation(
+        x,
+        noises,
+        truncation_scale=truncation_scale,
+    )
 
 
 def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
@@ -1766,9 +1810,21 @@ def _make_block3_approximation_exponential(cfg: Block3NoiseConfig):
     sq_rescales = cfg.square_rescales  # tuple len == degree
 
     def block3_approx_exp(x: Tensor) -> Tensor:
-        fused = _try_block3_fused_cuda(x, cfg)
+        truncation_scale = _configured_binary_truncation_fused_cuda_scale(
+            x,
+            cfg,
+        )
+        fused = _try_block3_fused_cuda(
+            x,
+            cfg,
+            truncation_scale=truncation_scale,
+        )
         if fused is not None:
-            return _apply_configured_truncation(fused, cfg)
+            return _apply_configured_truncation(
+                fused,
+                cfg,
+                binary_already_applied=truncation_scale is not None,
+            )
         # 1. fresh on softmax 输入 x
         x = _sample_and_add_gaussian_for_point(x, cfg.x_fresh)
         # 2. encode on 1/2^n（CKKS smulcp 的 plaintext-side 噪声；按 1/D / γ 同方式 per-slot）
@@ -2552,6 +2608,8 @@ def _try_block5_fused_cuda(
         x: Tensor,
         cfg: Block5NoiseConfig,
         coeff_dict,
+        *,
+        truncation_scale: Optional[float] = None,
         ) -> Optional[Tensor]:
     """Run the exact degree-4 CUDA specialization, or return ``None``."""
     power_rescales = tuple(getattr(cfg, "gelu_power_rescales", ()) or ())
@@ -2632,6 +2690,7 @@ def _try_block5_fused_cuda(
         negative_coefficients,
         positive_coefficients,
         generator,
+        truncation_scale,
     )
 
 
@@ -2709,9 +2768,22 @@ def _make_block5_gelu_forward(original_gelu, cfg5: Block5NoiseConfig):
         return result
 
     def block5_gelu_forward(x: Tensor) -> Tensor:
-        fused = _try_block5_fused_cuda(x, cfg5, coeff_dict)
+        truncation_scale = _configured_binary_truncation_fused_cuda_scale(
+            x,
+            cfg5,
+        )
+        fused = _try_block5_fused_cuda(
+            x,
+            cfg5,
+            coeff_dict,
+            truncation_scale=truncation_scale,
+        )
         if fused is not None:
-            return _apply_configured_truncation(fused, cfg5)
+            return _apply_configured_truncation(
+                fused,
+                cfg5,
+                binary_already_applied=truncation_scale is not None,
+            )
         powers = _compute_powers(x)
         # 两段多项式（共享 powers）：负段 sign=1，正段 sign=0
         y1 = _compute_polynomial(powers, coeff_dict[1], x)   # [-2.7, 0)
