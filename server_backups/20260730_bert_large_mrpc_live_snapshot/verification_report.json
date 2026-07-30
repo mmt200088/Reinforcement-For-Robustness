@@ -1,0 +1,130 @@
+{
+  "candidate_store": {
+    "fidelities": {
+      "F1": 12056,
+      "F4": 9059,
+      "None": 4
+    },
+    "record_types": {
+      "candidate_identity_context_v1": 4,
+      "candidate_promotion_status_v2": 679,
+      "candidate_trial_group_v2": 20436
+    },
+    "rows": 21119,
+    "valid": {
+      "False": 657,
+      "None": 4,
+      "True": 20458
+    }
+  },
+  "checkpoint": {
+    "episode": 12000,
+    "loads_with_torch": true
+  },
+  "checks": {
+    "all_small_files_sha256_matched": true,
+    "all_streams_json_valid_and_raw_hash_matched": true,
+    "episode_mirror_semantics": {
+      "common_fields_equal": true,
+      "rows": 12032,
+      "structured_only_key_occurrences": {
+        "best_reward_so_far": 12032,
+        "is_new_best": 12032
+      }
+    },
+    "ppo_mirror_semantics": {
+      "common_fields_equal": true,
+      "rows": 100,
+      "structured_only_key_occurrences": {}
+    },
+    "training_alive_during_snapshot": true
+  },
+  "schema_version": 1,
+  "snapshot_bounds": {
+    "streams/diagnostics_episodes.jsonl.gz": {
+      "first": {
+        "episode": 0,
+        "timestamp": 1785357575.0735273
+      },
+      "last": {
+        "episode": 12031,
+        "timestamp": 1785402811.6922507
+      },
+      "raw_complete_bytes": 177090572,
+      "rows": 12032
+    },
+    "streams/diagnostics_pareto_frontier.jsonl.gz": {
+      "first": {
+        "episode": 1254
+      },
+      "last": {
+        "episode": 10077
+      },
+      "raw_complete_bytes": 4961293,
+      "rows": 6
+    },
+    "streams/diagnostics_ppo_updates.jsonl.gz": {
+      "first": {
+        "completed_episodes": 120,
+        "timestamp": 1785358578.8699653,
+        "update": 1
+      },
+      "last": {
+        "completed_episodes": 12000,
+        "timestamp": 1785402746.9729238,
+        "update": 100
+      },
+      "raw_complete_bytes": 21066371,
+      "rows": 100
+    },
+    "streams/diagnostics_top_candidates.jsonl.gz": {
+      "first": {
+        "episode": 515
+      },
+      "last": {
+        "episode": 2028
+      },
+      "raw_complete_bytes": 16538952,
+      "rows": 20
+    },
+    "streams/progress_candidate_store.jsonl.gz": {
+      "first": {
+        "created_at": "2026-07-29T20:39:35+00:00",
+        "record_type": "candidate_identity_context_v1"
+      },
+      "last": {
+        "created_at": "2026-07-30T09:14:17+00:00",
+        "fidelity": "F1",
+        "record_type": "candidate_trial_group_v2"
+      },
+      "raw_complete_bytes": 338506139,
+      "rows": 21119
+    },
+    "streams/structured_episodes.jsonl.gz": {
+      "first": {
+        "episode": 0,
+        "timestamp": 1785357575.0735273
+      },
+      "last": {
+        "episode": 12031,
+        "timestamp": 1785402811.6922507
+      },
+      "raw_complete_bytes": 177860128,
+      "rows": 12032
+    },
+    "streams/structured_ppo_updates.jsonl.gz": {
+      "first": {
+        "completed_episodes": 120,
+        "timestamp": 1785358578.8699653,
+        "update": 1
+      },
+      "last": {
+        "completed_episodes": 12000,
+        "timestamp": 1785402746.9729238,
+        "update": 100
+      },
+      "raw_complete_bytes": 21066371,
+      "rows": 100
+    }
+  }
+}
