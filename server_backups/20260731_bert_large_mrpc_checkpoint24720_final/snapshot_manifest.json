@@ -1,0 +1,331 @@
+{
+  "schema_version": 3,
+  "snapshot_kind": "stopped_atomic_checkpoint_boundary_final",
+  "created_at_utc": "2026-07-30T17:02:28.563818+00:00",
+  "repo_commit": "0764e71025ee887327d63364052935d770c489f9",
+  "run_path": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730",
+  "structured_writer_path": "/hy-tmp/Reinforcement-For-Robustness/rl_training_data_points/stage2/bert-large/mrpc_large/Parting_Chapter_persistent_rl_bert-large_mrpc_s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730__20260729T203926290679Z__pid4022538",
+  "checkpoint": {
+    "episode": 24720,
+    "ppo_update_count": 206,
+    "planned_total_episodes": 150000,
+    "loads_with_torch": true,
+    "policy_network_variant": "shared_gtrxl_small_v1",
+    "algorithm_revision": "network_weighted_hml_three_bank_convergence_v12",
+    "strict_best_present": true,
+    "strict_pareto_frontier_count": 6,
+    "archive_path": "small_files/run/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt",
+    "bytes": 8630264,
+    "sha256": "74abf305204ffaa5ad06a653f9bcd90027c62e2b0394f35bf035816d94f6caa7"
+  },
+  "stop": {
+    "checkpoint_boundary_exact": true,
+    "post_checkpoint_tail_records": 0,
+    "process_stopped": true,
+    "status_snapshot": {
+      "completed_episodes": 24600,
+      "lag_vs_checkpoint": 120,
+      "note": "Raw status write followed checkpoint replacement; external boundary stop froze before status refresh. Checkpoint and append streams are authoritative."
+    },
+    "evidence_path": "stop_evidence/stop_runtime.txt"
+  },
+  "verification_checks": {
+    "checkpoint_file_fingerprints_match": true,
+    "all_checkpoint_stream_sizes_exact": true,
+    "all_jsonl_rows_valid_and_newline_terminated": true,
+    "episode_mirror_common_fields_equal": true,
+    "ppo_mirror_exact": true,
+    "checkpoint_episode_matches_rows": true,
+    "checkpoint_update_matches_rows": true,
+    "status_not_ahead_of_checkpoint": true,
+    "process_stopped": true
+  },
+  "streams": {
+    "streams/progress_candidate_store.jsonl.gz": {
+      "rows": 34792,
+      "raw_bytes": 478605570,
+      "raw_sha256": "f9bc901aad008c43a81f5c230146e079053f57e3dc5c5d26c26d1f454b8f785a",
+      "first": {
+        "record_type": "candidate_identity_context_v1",
+        "created_at": "2026-07-29T20:39:35+00:00"
+      },
+      "last": {
+        "record_type": "candidate_trial_group_v2",
+        "fidelity": "F1",
+        "created_at": "2026-07-30T16:48:47+00:00",
+        "candidate_key": "355a3bfb9beaf5be0714163884572f57cb6684bc13177891b4dc5c8d263bf711",
+        "action_hash": "991ecf3ff66e0ff19c2a26259347d1f5e809163c2b637b41bc22e2507cb8f876"
+      },
+      "record_types": {
+        "candidate_identity_context_v1": 4,
+        "candidate_trial_group_v2": 34065,
+        "candidate_promotion_status_v2": 723
+      },
+      "fidelities": {
+        "None": 4,
+        "F1": 24720,
+        "F4": 10068
+      },
+      "valid": {
+        "None": 4,
+        "True": 34096,
+        "False": 692
+      },
+      "source_path": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730/stage2_noise/progress/candidate_store.jsonl",
+      "restore_target": "run/stage2_noise/progress/candidate_store.jsonl",
+      "compressed_bytes": 17787937,
+      "compressed_sha256": "c6537f1d53b6867ce7783a942a536a6f41791722acf02a3c10f2bbae69041a24"
+    },
+    "streams/diagnostics_episodes.jsonl.gz": {
+      "rows": 24720,
+      "raw_bytes": 364043361,
+      "raw_sha256": "b7f55ca0211949766b61aafe8086bcfa29f2abbdac4d4aefbb1fff1348821f0a",
+      "first": {
+        "episode": 0,
+        "timestamp": 1785357575.0735273
+      },
+      "last": {
+        "episode": 24719,
+        "timestamp": 1785430134.18973
+      },
+      "source_path": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730/stage2_noise/progress/diagnostics/episodes.jsonl",
+      "restore_target": "run/stage2_noise/progress/diagnostics/episodes.jsonl",
+      "compressed_bytes": 15468380,
+      "compressed_sha256": "73b4edcaf65ed9ca0282f0f21dea7d83242f91bf18d37cd7609f6270d832a511"
+    },
+    "streams/diagnostics_ppo_updates.jsonl.gz": {
+      "rows": 206,
+      "raw_bytes": 52544302,
+      "raw_sha256": "8bb2414ea25004685f09dad3b2440f1bcb82c944fa4a631085064dcd43c22f44",
+      "first": {
+        "completed_episodes": 120,
+        "update": 1,
+        "timestamp": 1785358578.8699653
+      },
+      "last": {
+        "completed_episodes": 24720,
+        "update": 206,
+        "timestamp": 1785430134.3177364
+      },
+      "source_path": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730/stage2_noise/progress/diagnostics/ppo_updates.jsonl",
+      "restore_target": "run/stage2_noise/progress/diagnostics/ppo_updates.jsonl",
+      "compressed_bytes": 3684445,
+      "compressed_sha256": "8cccd0788bb051ec3f1eb0e825ebf100ffafb5276b9690af8c4e37c03c95c6c0"
+    },
+    "streams/diagnostics_pareto_frontier.jsonl.gz": {
+      "rows": 7,
+      "raw_bytes": 5784497,
+      "raw_sha256": "5cc5720f49251d7930e4fff30c90fc532330b8e00eb86d4955665ce33d005e11",
+      "first": {
+        "episode": 1254
+      },
+      "last": {
+        "episode": 21332
+      },
+      "source_path": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730/stage2_noise/progress/diagnostics/pareto_frontier.jsonl",
+      "restore_target": "run/stage2_noise/progress/diagnostics/pareto_frontier.jsonl",
+      "compressed_bytes": 247029,
+      "compressed_sha256": "ff8a015a667e6e61e79b88d16fe02e6a4ab3f9000aaf8a093693d78c64fb2431"
+    },
+    "streams/diagnostics_top_candidates.jsonl.gz": {
+      "rows": 20,
+      "raw_bytes": 16529980,
+      "raw_sha256": "f58f66642701baa55eb1e6aae0807f588c92d1d269e653a1e095f62d3bb7e8ec",
+      "first": {
+        "episode": 515
+      },
+      "last": {
+        "episode": 20959
+      },
+      "source_path": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-large/mrpc/s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730/stage2_noise/progress/diagnostics/top_candidates.jsonl",
+      "restore_target": "run/stage2_noise/progress/diagnostics/top_candidates.jsonl",
+      "compressed_bytes": 706223,
+      "compressed_sha256": "54f9b71cb6abaed5b91893e8a156018f143a5b0a220b8c5317ad1ad5044c63fe"
+    },
+    "streams/structured_episodes.jsonl.gz": {
+      "rows": 24720,
+      "raw_bytes": 365624948,
+      "raw_sha256": "d0708d484d27d5b82eb65e4e17ddedad2a8553cc31a751b222a617735ef9b1c9",
+      "first": {
+        "episode": 0,
+        "timestamp": 1785357575.0735273
+      },
+      "last": {
+        "episode": 24719,
+        "timestamp": 1785430134.18973
+      },
+      "source_path": "/hy-tmp/Reinforcement-For-Robustness/rl_training_data_points/stage2/bert-large/mrpc_large/Parting_Chapter_persistent_rl_bert-large_mrpc_s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730__20260729T203926290679Z__pid4022538/episodes.jsonl",
+      "restore_target": "structured/episodes.jsonl",
+      "compressed_bytes": 15486950,
+      "compressed_sha256": "3d0c2393bcd6d9723959396ef1ea465ea3e7eafd1727e15df643694ed8a9005b"
+    },
+    "streams/structured_ppo_updates.jsonl.gz": {
+      "rows": 206,
+      "raw_bytes": 52544302,
+      "raw_sha256": "2cf095746dd3ab3a1ac8cff7531b68dc4645b1ef54b1b37b18b11a4dbaa4f22f",
+      "first": {
+        "completed_episodes": 120,
+        "update": 1,
+        "timestamp": 1785358578.8699653
+      },
+      "last": {
+        "completed_episodes": 24720,
+        "update": 206,
+        "timestamp": 1785430134.3177364
+      },
+      "source_path": "/hy-tmp/Reinforcement-For-Robustness/rl_training_data_points/stage2/bert-large/mrpc_large/Parting_Chapter_persistent_rl_bert-large_mrpc_s1t0.001_s2t0.001_s2st2.0__bertlarge_mrpc_stage2_k3_4gpu_0764e710_20260730__20260729T203926290679Z__pid4022538/ppo_updates.jsonl",
+      "restore_target": "structured/ppo_updates.jsonl",
+      "compressed_bytes": 3726970,
+      "compressed_sha256": "f9866fe4bda66311b59f1f8211f25b092e608d668c48212a6171d0357eedef85"
+    }
+  },
+  "small_files": [
+    {
+      "scope": "run",
+      "relative_path": "logs/blb_stage2_rl.log",
+      "archive_path": "small_files/run/logs/blb_stage2_rl.log",
+      "bytes": 25699,
+      "sha256": "5e5bd856a1ca53d0189dd1ebfdb537f822622a737f650f1191282bd3b283a23a"
+    },
+    {
+      "scope": "run",
+      "relative_path": "metadata.json",
+      "archive_path": "small_files/run/metadata.json",
+      "bytes": 673,
+      "sha256": "eeb8b393b708d3b6ef32cb8cf6bcf094cafcc1268f309006c653168a010b9f72"
+    },
+    {
+      "scope": "run",
+      "relative_path": "rl.pid",
+      "archive_path": "small_files/run/rl.pid",
+      "bytes": 8,
+      "sha256": "710417179459cd4d12026ba16bb7eae5af5b8e393cef9c8813811ef72d0519bf"
+    },
+    {
+      "scope": "run",
+      "relative_path": "run.pid",
+      "archive_path": "small_files/run/run.pid",
+      "bytes": 8,
+      "sha256": "710417179459cd4d12026ba16bb7eae5af5b8e393cef9c8813811ef72d0519bf"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage1/pruning_search_log.txt",
+      "archive_path": "small_files/run/stage1/pruning_search_log.txt",
+      "bytes": 1527,
+      "sha256": "de0238378808b9a92303f9772ddcaed14f0b4b3970f521f58d7c77c2de2e6856"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/.blb_status_v9li8v2_.tmp",
+      "archive_path": "small_files/run/stage2_noise/progress/.blb_status_v9li8v2_.tmp",
+      "bytes": 16391,
+      "sha256": "6668dab883ebd042e806f3d3b09e96a563a1b22754da96028d36f9c8ad3b4f4c"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/blb_stage2_live_summary.md",
+      "archive_path": "small_files/run/stage2_noise/progress/blb_stage2_live_summary.md",
+      "bytes": 1223,
+      "sha256": "05b270bfb7e25e1c797aa4c323061d994b303808eed3d173d7a32e85c3bf2dac"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt",
+      "archive_path": "small_files/run/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt",
+      "bytes": 8630264,
+      "sha256": "74abf305204ffaa5ad06a653f9bcd90027c62e2b0394f35bf035816d94f6caa7"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/blb_stage2_status.json",
+      "archive_path": "small_files/run/stage2_noise/progress/blb_stage2_status.json",
+      "bytes": 708430,
+      "sha256": "26dd3c926b7ac35e26d1100b530515e245acc96394c434c8c10692324a84c02b"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/diagnostics/action_histogram.npz",
+      "archive_path": "small_files/run/stage2_noise/progress/diagnostics/action_histogram.npz",
+      "bytes": 897802,
+      "sha256": "c1a89cf0134eccc50cf66dd18e73b26ddf172f21e4e6f1b77a59ad5425d8b1d8"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/diagnostics/baseline_action_vec.json",
+      "archive_path": "small_files/run/stage2_noise/progress/diagnostics/baseline_action_vec.json",
+      "bytes": 1180020,
+      "sha256": "a8e88702bdb46c6bf7e1c03bb70c3f7be461be62cca869b7456c41e3720a0631"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/diagnostics/best_action_vec.json",
+      "archive_path": "small_files/run/stage2_noise/progress/diagnostics/best_action_vec.json",
+      "bytes": 1283560,
+      "sha256": "d8dc097bf13fae5540dab2b19fd1e6fdd3028fd009de051aecb1ea67695bb620"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/diagnostics/blb_stage2_health.log",
+      "archive_path": "small_files/run/stage2_noise/progress/diagnostics/blb_stage2_health.log",
+      "bytes": 5129,
+      "sha256": "9109e25b75368e938c45b8cc7a2ac8fa77a1d900ca08d5bc9e975288045917cc"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/diagnostics/diagnostics_summary.md",
+      "archive_path": "small_files/run/stage2_noise/progress/diagnostics/diagnostics_summary.md",
+      "bytes": 33948,
+      "sha256": "fdea7f089c60bb7a136ff1c6dc4d63a1de109f67fb308876d08b038ea66507f2"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/diagnostics/first_invalid_counts.json",
+      "archive_path": "small_files/run/stage2_noise/progress/diagnostics/first_invalid_counts.json",
+      "bytes": 2,
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/diagnostics/pareto_frontier.html",
+      "archive_path": "small_files/run/stage2_noise/progress/diagnostics/pareto_frontier.html",
+      "bytes": 5193,
+      "sha256": "494dbc04b5641cfb89d22a256a3c48feead96b1ac775d96f4d80334b172f360d"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/diagnostics/pareto_frontier.json",
+      "archive_path": "small_files/run/stage2_noise/progress/diagnostics/pareto_frontier.json",
+      "bytes": 10527255,
+      "sha256": "4f1ae0231251dde72db6dffd4dec918668707351cd516192163ec2d74993fb0b"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/layerwise_run_manifest.json",
+      "archive_path": "small_files/run/stage2_noise/progress/layerwise_run_manifest.json",
+      "bytes": 74164,
+      "sha256": "6d166d789f47b4a4c759b992bc4be8fc06d475cc5c70704da24d2b211aa537a7"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/progress/rl_data_points_run_id.txt",
+      "archive_path": "small_files/run/stage2_noise/progress/rl_data_points_run_id.txt",
+      "bytes": 157,
+      "sha256": "04ed9a61469e0c1c4df6a3d9f105c1c8fa01415d77914f169f034c40efe5d16d"
+    },
+    {
+      "scope": "run",
+      "relative_path": "stage2_noise/pruning_search_log.txt",
+      "archive_path": "small_files/run/stage2_noise/pruning_search_log.txt",
+      "bytes": 5917,
+      "sha256": "d3b674d4b383b7b9e5d99d62b22c6267e9051a8c54d9ce20126eee45cc0717d8"
+    },
+    {
+      "scope": "structured",
+      "relative_path": "manifest.json",
+      "archive_path": "small_files/structured/manifest.json",
+      "bytes": 100654,
+      "sha256": "398a821a93877f77b875bcd887d65462e7dbc7f0220d6b45795fe33817212dc6"
+    }
+  ]
+}

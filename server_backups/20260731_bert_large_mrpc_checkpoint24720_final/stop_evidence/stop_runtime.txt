@@ -1,0 +1,11 @@
+started_at=2026-07-31T00:45:21+08:00
+pid=4022538
+before_episode=24600
+before_signature=1785429895:8630200:2318597545
+boundary_detected_at=2026-07-31T00:48:57+08:00
+after_episode=24720
+after_update=206
+last_analysis_episode=24719
+descendants=4022714 4022810 4022940 4023073 
+stopped_at=2026-07-31T00:49:00+08:00
+parent_alive=false
