@@ -611,6 +611,34 @@ class EpisodeTraceMigrationTest(unittest.TestCase):
 
 
 class RegeneratorEndToEndTest(unittest.TestCase):
+    def test_layerwise_action_table_decodes_bert_large_hml_actions(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_hml_table_test",
+            "scripts/blb_regen_stage2_outputs.py",
+        )
+        action_matrix = [[0, 0], [1, 1], [1, 2]]
+        action_matrix.extend([[0, 0] for _ in range(21)])
+
+        rows = regen._layerwise_action_table(action_matrix)
+
+        self.assertEqual(len(rows), 24)
+        self.assertEqual(rows[0]["precision_preset"], "high")
+        self.assertEqual(
+            [rows[0][f"k_b{block_idx}"] for block_idx in range(1, 6)],
+            [11, 10, 10, 12, 11],
+        )
+        self.assertEqual(rows[1]["block4_fusion"], 1)
+        self.assertEqual(rows[1]["precision_preset"], "medium")
+        self.assertEqual(
+            [rows[1][f"k_b{block_idx}"] for block_idx in range(1, 6)],
+            [9, 8, 8, 10, 9],
+        )
+        self.assertEqual(rows[2]["precision_preset"], "low")
+        self.assertEqual(
+            [rows[2][f"k_b{block_idx}"] for block_idx in range(1, 6)],
+            [7, 6, 6, 8, 7],
+        )
+
     def test_layerwise_action_table_decodes_all_twelve_layers_and_block3_k(self):
         regen = _load_standalone(
             "blb_regen_layerwise_table_test", "scripts/blb_regen_stage2_outputs.py"

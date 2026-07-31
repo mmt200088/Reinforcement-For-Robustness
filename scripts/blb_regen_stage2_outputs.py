@@ -70,11 +70,45 @@ def _layerwise_k_levels():
     return tuple(mod.validate_exact_k_domain(mod.K_LEVELS))
 
 
+def _load_layerwise_action_module():
+    """Load the canonical H/M/L action codec without importing torch."""
+    module_name = "blb_layerwise_action_standalone"
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        return existing
+    module_dir = os.path.join(_REPO_ROOT, "blb_stage2_rl")
+    if module_dir not in sys.path:
+        sys.path.insert(0, module_dir)
+    path = os.path.join(module_dir, "layerwise_action.py")
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _layerwise_action_table(action_matrix):
-    """Decode the compact 12x6 policy matrix into one readable row per layer."""
+    """Decode current H/M/L or historical policy actions into readable rows."""
     matrix = [list(row) for row in action_matrix]
+    if matrix and all(len(row) == 2 for row in matrix):
+        descriptions = _load_layerwise_action_module().describe_layerwise_action_matrix(
+            matrix,
+        )
+        rows = []
+        for item in descriptions:
+            k_by_block = item["truncation_k_by_block"]
+            rows.append({
+                "layer": int(item["layer_idx"]),
+                "block4_fusion": int(item["block4_fusion_count"]),
+                "precision_preset": str(item["precision_preset_name"]),
+                **{
+                    f"k_b{block_idx}": int(k_by_block[f"block{block_idx}"])
+                    for block_idx in range(1, 6)
+                },
+            })
+        return rows
     if len(matrix) != 12 or any(len(row) != 6 for row in matrix):
-        raise ValueError("layerwise action matrix must be 12x6")
+        raise ValueError("layerwise action matrix must be num_layers x 2 or legacy 12x6")
     k_levels = _layerwise_k_levels()
     rows = []
     for layer_idx, raw_row in enumerate(matrix):
@@ -363,6 +397,7 @@ def _write_layerwise_html_report(
         "<h2>Selected Layerwise Configuration</h2>",
         _html_table((
             ("layer", "Layer"), ("block4_fusion", "Block4 Fusion"),
+            ("precision_preset", "Precision Preset"),
             ("k_b1", "K B1"), ("k_b2", "K B2"), ("k_b3", "K B3"),
             ("k_b4", "K B4"), ("k_b5", "K B5"),
         ), action_rows),
