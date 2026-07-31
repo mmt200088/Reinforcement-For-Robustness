@@ -595,12 +595,44 @@ class BLBStage2TrainConfig:
     # but any non-PPO value is rejected at construction and runner handoff.
     rl_algo: str = "ppo"
     grpo_kl_beta: float = 0.0
+    # Search baselines share the exact layerwise environment and constraints.
+    # ``ppo`` preserves the existing training path byte-for-byte.
+    search_backend: str = "ppo"
+    search_evaluation_budget: int = 0
+    search_initial_design_size: int = 8
+    search_candidate_pool_size: int = 512
+    search_population_size: int = 24
+    search_patience_generations: int = 5
+    search_mutation_max_coordinates: int = 3
+    search_rf_n_estimators: int = 128
+    search_rf_min_samples_leaf: int = 2
+    search_full_validation: bool = True
 
     def __post_init__(self) -> None:
         self.rl_algo = _normalize_supported_rl_algo(
             self.rl_algo, context="BLBStage2TrainConfig.rl_algo"
         )
         self.grpo_kl_beta = 0.0
+        from .search_baselines import normalize_search_backend
+
+        self.search_backend = normalize_search_backend(self.search_backend)
+        for field_name in (
+                "search_initial_design_size",
+                "search_candidate_pool_size",
+                "search_population_size",
+                "search_patience_generations",
+                "search_mutation_max_coordinates",
+                "search_rf_n_estimators",
+                "search_rf_min_samples_leaf",
+        ):
+            value = int(getattr(self, field_name))
+            if value <= 0:
+                raise ValueError(f"{field_name} must be positive")
+            setattr(self, field_name, value)
+        self.search_evaluation_budget = int(self.search_evaluation_budget)
+        if self.search_evaluation_budget < 0:
+            raise ValueError("search_evaluation_budget must be nonnegative")
+        self.search_full_validation = bool(self.search_full_validation)
         self.validate_decision_granularity()
         self.validate_reward_design()
         self.validate_policy_network_variant()
@@ -2856,6 +2888,34 @@ class BLBStage2RLRunner:
         network_variant = getattr(ev, "blb_v3_policy_network_variant", None)
         if network_variant not in (None, ""):
             cfg.policy_network_variant = str(network_variant)
+        from .search_baselines import normalize_search_backend
+
+        cfg.search_backend = normalize_search_backend(
+            getattr(ev, "blb_v3_search_backend", cfg.search_backend)
+        )
+        for cfg_field, attr_name in (
+                ("search_evaluation_budget", "blb_v3_search_evaluation_budget"),
+                ("search_initial_design_size", "blb_v3_search_initial_design_size"),
+                ("search_candidate_pool_size", "blb_v3_search_candidate_pool_size"),
+                ("search_population_size", "blb_v3_search_population_size"),
+                ("search_patience_generations", "blb_v3_search_patience_generations"),
+                (
+                    "search_mutation_max_coordinates",
+                    "blb_v3_search_mutation_max_coordinates",
+                ),
+                ("search_rf_n_estimators", "blb_v3_search_rf_n_estimators"),
+                ("search_rf_min_samples_leaf", "blb_v3_search_rf_min_samples_leaf"),
+        ):
+            value = getattr(ev, attr_name, None)
+            if value not in (None, ""):
+                setattr(cfg, cfg_field, int(value))
+        search_full_validation = getattr(
+            ev, "blb_v3_search_full_validation", None,
+        )
+        if search_full_validation not in (None, ""):
+            cfg.search_full_validation = str(
+                search_full_validation
+            ).strip().lower() in ("1", "true", "yes", "on")
         # 6) rollout_size / save_interval / eval_interval：直接从 evaluator 取（如果有挂）
         for cfg_field, attr_name in (
                 ("rollout_size", "blb_v3_rollout_size"),
@@ -3213,16 +3273,36 @@ class BLBStage2RLRunner:
         cfg.validate_reward_design()
         cfg.validate_policy_network_variant()
         cfg.validate_robust_constraint_config()
-        from .layerwise_runner import validate_stage2_episode_limit_mode
-        validate_stage2_episode_limit_mode(
-            int(cfg.total_episodes),
-            fusion_count_action=bool(cfg.fusion_count_action),
-            decision_granularity=cfg.decision_granularity,
-            reward_design=cfg.reward_design,
-            sequential_rl=bool(cfg.sequential_rl),
-            substage_mode=bool(cfg.substage_mode),
-            stage2_rl_variant="blb_v3",
-        )
+        if cfg.search_backend == "ppo":
+            from .layerwise_runner import validate_stage2_episode_limit_mode
+            validate_stage2_episode_limit_mode(
+                int(cfg.total_episodes),
+                fusion_count_action=bool(cfg.fusion_count_action),
+                decision_granularity=cfg.decision_granularity,
+                reward_design=cfg.reward_design,
+                sequential_rl=bool(cfg.sequential_rl),
+                substage_mode=bool(cfg.substage_mode),
+                stage2_rl_variant="blb_v3",
+            )
+        else:
+            if not (
+                    bool(cfg.sequential_rl)
+                    and bool(cfg.fusion_count_action)
+                    and cfg.decision_granularity == "layer"
+                    and cfg.reward_design == "robust_constrained"
+                    and not bool(cfg.substage_mode)
+            ):
+                raise ValueError(
+                    "Stage-2 search baselines require the canonical layerwise "
+                    "robust fusion-count action path"
+                )
+            if int(cfg.search_evaluation_budget) <= 0:
+                cfg.search_evaluation_budget = int(cfg.total_episodes)
+            if int(cfg.search_evaluation_budget) <= 0:
+                raise ValueError(
+                    "non-PPO search requires --blb-v3-search-evaluation-budget "
+                    "or a positive Stage-2 episode budget"
+                )
         return cfg
 
     def _build_probe_batches(

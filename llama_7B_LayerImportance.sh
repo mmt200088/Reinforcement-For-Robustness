@@ -143,6 +143,17 @@ GA / Greedy：
   --stage2-rl-variant blb_v3|legacy_v2    Stage-2 RL 实现；默认 blb_v3，legacy_v2 可复现实验旧路径
   --blb-v3-policy-network-variant NAME    Stage-2 actor-critic 网络；默认 shared_gtrxl_small_v1
                                           可选 shared_gtrxl_v1、separate_critic_gtrxl_v1、separate_critic_mlp_v1
+  --blb-v3-search-backend NAME            ppo|bo_rf|greedy|coinn_ga；默认 ppo
+  --blb-v3-search-evaluation-budget N      非 PPO 搜索真实模型评估预算
+  --blb-v3-search-initial-design-size N    BO-RF 初始设计大小
+  --blb-v3-search-candidate-pool-size N    BO-RF acquisition 候选池大小
+  --blb-v3-search-population-size N        COINN 风格 GA 种群大小
+  --blb-v3-search-patience-generations N   COINN 风格 GA 无改进停止代数
+  --blb-v3-search-mutation-max-coordinates N
+                                          COINN 风格 GA 单次相邻变异坐标上限
+  --blb-v3-search-rf-n-estimators N        BO-RF 随机森林树数
+  --blb-v3-search-rf-min-samples-leaf N    BO-RF 叶节点最小样本数
+  --blb-v3-search-full-validation BOOL     最终执行 validation_full 联合+双轴门禁
   --stage2-rollout-size N                 BLB v3 PPO rollout 大小；默认跟随 --ppo-update-interval
   --stage2-save-interval N                BLB v3 live checkpoint 保存间隔
   --stage2-eval-interval N                BLB v3 训练日志评估间隔
@@ -538,6 +549,16 @@ STAGE2_RL_VARIANT="blb_v3"; S_STAGE2_RL_VARIANT="false"
 BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT="Rescale_optimizer"
 BLB_V3_SEED=""; S_BLB_V3_SEED="false"
 BLB_V3_POLICY_NETWORK_VARIANT="shared_gtrxl_small_v1"; S_BLB_V3_POLICY_NETWORK_VARIANT="false"
+BLB_V3_SEARCH_BACKEND="ppo"; S_BLB_V3_SEARCH_BACKEND="false"
+BLB_V3_SEARCH_EVALUATION_BUDGET="0"; S_BLB_V3_SEARCH_EVALUATION_BUDGET="false"
+BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="8"; S_BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="false"
+BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="512"; S_BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="false"
+BLB_V3_SEARCH_POPULATION_SIZE="24"; S_BLB_V3_SEARCH_POPULATION_SIZE="false"
+BLB_V3_SEARCH_PATIENCE_GENERATIONS="5"; S_BLB_V3_SEARCH_PATIENCE_GENERATIONS="false"
+BLB_V3_SEARCH_MUTATION_MAX_COORDINATES="3"; S_BLB_V3_SEARCH_MUTATION_MAX_COORDINATES="false"
+BLB_V3_SEARCH_RF_N_ESTIMATORS="128"; S_BLB_V3_SEARCH_RF_N_ESTIMATORS="false"
+BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="2"; S_BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="false"
+BLB_V3_SEARCH_FULL_VALIDATION="true"; S_BLB_V3_SEARCH_FULL_VALIDATION="false"
 BLB_V3_REWARD_DEVICES=""; S_BLB_V3_REWARD_DEVICES="false"
 STAGE1_RL_DEVICES=""; S_STAGE1_RL_DEVICES="false"
 STAGE2_RL_DEVICES=""; S_STAGE2_RL_DEVICES="false"
@@ -780,6 +801,16 @@ while [ "$#" -gt 0 ]; do
     --stage2-rollout-size|--blb-v3-rollout-size) needv "$@"; BLB_V3_ROLLOUT_SIZE="$2"; S_BLB_V3_ROLLOUT_SIZE="true"; shift 2 ;;
     --blb-v3-seed) needv "$@"; BLB_V3_SEED="$2"; S_BLB_V3_SEED="true"; shift 2 ;;
     --blb-v3-policy-network-variant) needv "$@"; BLB_V3_POLICY_NETWORK_VARIANT="$2"; S_BLB_V3_POLICY_NETWORK_VARIANT="true"; shift 2 ;;
+    --blb-v3-search-backend) needv "$@"; BLB_V3_SEARCH_BACKEND="$2"; S_BLB_V3_SEARCH_BACKEND="true"; shift 2 ;;
+    --blb-v3-search-evaluation-budget) needv "$@"; BLB_V3_SEARCH_EVALUATION_BUDGET="$2"; S_BLB_V3_SEARCH_EVALUATION_BUDGET="true"; shift 2 ;;
+    --blb-v3-search-initial-design-size) needv "$@"; BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="$2"; S_BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="true"; shift 2 ;;
+    --blb-v3-search-candidate-pool-size) needv "$@"; BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="$2"; S_BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="true"; shift 2 ;;
+    --blb-v3-search-population-size) needv "$@"; BLB_V3_SEARCH_POPULATION_SIZE="$2"; S_BLB_V3_SEARCH_POPULATION_SIZE="true"; shift 2 ;;
+    --blb-v3-search-patience-generations) needv "$@"; BLB_V3_SEARCH_PATIENCE_GENERATIONS="$2"; S_BLB_V3_SEARCH_PATIENCE_GENERATIONS="true"; shift 2 ;;
+    --blb-v3-search-mutation-max-coordinates) needv "$@"; BLB_V3_SEARCH_MUTATION_MAX_COORDINATES="$2"; S_BLB_V3_SEARCH_MUTATION_MAX_COORDINATES="true"; shift 2 ;;
+    --blb-v3-search-rf-n-estimators) needv "$@"; BLB_V3_SEARCH_RF_N_ESTIMATORS="$2"; S_BLB_V3_SEARCH_RF_N_ESTIMATORS="true"; shift 2 ;;
+    --blb-v3-search-rf-min-samples-leaf) needv "$@"; BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="$2"; S_BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="true"; shift 2 ;;
+    --blb-v3-search-full-validation) needv "$@"; BLB_V3_SEARCH_FULL_VALIDATION="$2"; S_BLB_V3_SEARCH_FULL_VALIDATION="true"; shift 2 ;;
     --blb-v3-reward-devices) needv "$@"; BLB_V3_REWARD_DEVICES="$2"; S_BLB_V3_REWARD_DEVICES="true"; shift 2 ;;
     --stage1-rl-devices) needv "$@"; STAGE1_RL_DEVICES="$2"; S_STAGE1_RL_DEVICES="true"; shift 2 ;;
     --stage2-rl-devices) needv "$@"; STAGE2_RL_DEVICES="$2"; S_STAGE2_RL_DEVICES="true"; shift 2 ;;
@@ -880,6 +911,7 @@ GA_COMPARE_FINAL_EVAL_SOURCE="$(printf '%s' "$GA_COMPARE_FINAL_EVAL_SOURCE" | tr
 COMPARE_CONFIG_MODE="$(printf '%s' "$COMPARE_CONFIG_MODE" | tr '[:upper:]' '[:lower:]')"
 STAGE2_RL_VARIANT="$(printf '%s' "$STAGE2_RL_VARIANT" | tr '[:upper:]' '[:lower:]')"
 BLB_V3_POLICY_NETWORK_VARIANT="$(printf '%s' "$BLB_V3_POLICY_NETWORK_VARIANT" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
+BLB_V3_SEARCH_BACKEND="$(printf '%s' "$BLB_V3_SEARCH_BACKEND" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
 BLB_V3_ACTION_MASK_MODE="$(printf '%s' "$BLB_V3_ACTION_MASK_MODE" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
 BLB_V3_DECISION_GRANULARITY="$(printf '%s' "$BLB_V3_DECISION_GRANULARITY" | tr '[:upper:]' '[:lower:]')"
 BLB_V3_REWARD_DESIGN="$(printf '%s' "$BLB_V3_REWARD_DESIGN" | tr '[:upper:]' '[:lower:]' | tr '-' '_')"
@@ -911,6 +943,12 @@ esac
 case "$BLB_V3_POLICY_NETWORK_VARIANT" in
   shared_gtrxl_small_v1|shared_gtrxl_v1|separate_critic_gtrxl_v1|separate_critic_mlp_v1) ;;
   *) err "--blb-v3-policy-network-variant 只支持 shared_gtrxl_small_v1、shared_gtrxl_v1、separate_critic_gtrxl_v1 或 separate_critic_mlp_v1。" ;;
+esac
+case "$BLB_V3_SEARCH_BACKEND" in
+  ppo|bo_rf|greedy|coinn_ga) ;;
+  smac|smac_rf|bayes_rf|bayesian_rf) BLB_V3_SEARCH_BACKEND="bo_rf" ;;
+  ga|genetic|coinn) BLB_V3_SEARCH_BACKEND="coinn_ga" ;;
+  *) err "--blb-v3-search-backend 只支持 ppo、bo_rf、greedy 或 coinn_ga。" ;;
 esac
 
 case "$RUN_MODE" in
@@ -1077,6 +1115,16 @@ is_pos_num "$STAGE2_COMMUNICATION_IMPORTANCE_RATIO" || err "--stage2-communicati
 is_pos_int "$STAGE2_K_TRIALS" || err "--stage2-k-trials 必须是正整数，当前为：$STAGE2_K_TRIALS"
 is_pos_int "$STAGE2_PROBE_SIZE" || err "--stage2-probe-size 必须是正整数，当前为：$STAGE2_PROBE_SIZE"
 is_pos_int "$PPO_UPDATE_INTERVAL_VAL" || err "--ppo-update-interval 必须是正整数，当前为：$PPO_UPDATE_INTERVAL_VAL"
+is_nonneg_int "$BLB_V3_SEARCH_EVALUATION_BUDGET" || err "--blb-v3-search-evaluation-budget 必须是非负整数"
+is_pos_int "$BLB_V3_SEARCH_INITIAL_DESIGN_SIZE" || err "--blb-v3-search-initial-design-size 必须是正整数"
+is_pos_int "$BLB_V3_SEARCH_CANDIDATE_POOL_SIZE" || err "--blb-v3-search-candidate-pool-size 必须是正整数"
+is_pos_int "$BLB_V3_SEARCH_POPULATION_SIZE" || err "--blb-v3-search-population-size 必须是正整数"
+is_pos_int "$BLB_V3_SEARCH_PATIENCE_GENERATIONS" || err "--blb-v3-search-patience-generations 必须是正整数"
+is_pos_int "$BLB_V3_SEARCH_MUTATION_MAX_COORDINATES" || err "--blb-v3-search-mutation-max-coordinates 必须是正整数"
+is_pos_int "$BLB_V3_SEARCH_RF_N_ESTIMATORS" || err "--blb-v3-search-rf-n-estimators 必须是正整数"
+is_pos_int "$BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF" || err "--blb-v3-search-rf-min-samples-leaf 必须是正整数"
+is_bool "$BLB_V3_SEARCH_FULL_VALIDATION" || err "--blb-v3-search-full-validation 必须是 true/false"
+[ "$BLB_V3_SEARCH_BACKEND" = "ppo" ] || [ "$BLB_V3_SEARCH_EVALUATION_BUDGET" -gt 0 ] || err "非 PPO 搜索必须设置正的 --blb-v3-search-evaluation-budget"
 [ -n "$BLB_V3_ROLLOUT_SIZE" ] || BLB_V3_ROLLOUT_SIZE="$PPO_UPDATE_INTERVAL_VAL"
 is_pos_int "$BLB_V3_ROLLOUT_SIZE" || err "--stage2-rollout-size 必须是正整数，当前为：$BLB_V3_ROLLOUT_SIZE"
 [ -z "$BLB_V3_SAVE_INTERVAL" ] || is_pos_int "$BLB_V3_SAVE_INTERVAL" || err "--stage2-save-interval 必须是正整数，当前为：$BLB_V3_SAVE_INTERVAL"
@@ -1867,6 +1915,7 @@ else
       CMD+=(--blb_v3_seed "$BLB_V3_SEED")
     fi
     CMD+=(--blb_v3_policy_network_variant "$BLB_V3_POLICY_NETWORK_VARIANT")
+    CMD+=(--blb_v3_search_backend "$BLB_V3_SEARCH_BACKEND" --blb_v3_search_evaluation_budget "$BLB_V3_SEARCH_EVALUATION_BUDGET" --blb_v3_search_initial_design_size "$BLB_V3_SEARCH_INITIAL_DESIGN_SIZE" --blb_v3_search_candidate_pool_size "$BLB_V3_SEARCH_CANDIDATE_POOL_SIZE" --blb_v3_search_population_size "$BLB_V3_SEARCH_POPULATION_SIZE" --blb_v3_search_patience_generations "$BLB_V3_SEARCH_PATIENCE_GENERATIONS" --blb_v3_search_mutation_max_coordinates "$BLB_V3_SEARCH_MUTATION_MAX_COORDINATES" --blb_v3_search_rf_n_estimators "$BLB_V3_SEARCH_RF_N_ESTIMATORS" --blb_v3_search_rf_min_samples_leaf "$BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF" --blb_v3_search_full_validation "$BLB_V3_SEARCH_FULL_VALIDATION")
     # Two-GPU reward probe parallelism (--blb-v3-reward-devices "0,1")
     if [ -n "$BLB_V3_REWARD_DEVICES" ]; then
       CMD+=(--blb_v3_reward_devices "$BLB_V3_REWARD_DEVICES")

@@ -4112,6 +4112,374 @@ def _run_layerwise_training_branch(
             "layerwise F1 probe must contain exactly 256 stratified examples; "
             f"received {online_probe_example_count}"
         )
+    from .search_baselines import normalize_search_backend
+
+    search_backend = normalize_search_backend(
+        getattr(train_cfg, "search_backend", "ppo")
+    )
+    if search_backend != "ppo":
+        if resume_checkpoint_path:
+            raise RuntimeError(
+                "non-PPO Stage-2 search does not support checkpoint resume; "
+                "use a fresh search output directory"
+            )
+        from .search_baseline_runner import (
+            canonical_strict_validation,
+            run_layerwise_search_baseline,
+        )
+
+        search_output_dir = os.path.join(
+            blb_progress_dir, f"search_{search_backend}",
+        )
+        communication_ratio = float(
+            layerwise_env.communication_importance_ratio
+        )
+        search_contract = {
+            "schema_version": "stage2_search_baseline_contract_v1",
+            "search_backend": search_backend,
+            "action_space_version": layerwise_action_space_version(
+                layerwise_horizon
+            ),
+            "decode_version": LAYERWISE_DECODE_VERSION,
+            "cost_model_revision": LAYERWISE_COST_MODEL_REVISION,
+            "communication_importance_ratio": communication_ratio,
+            "compute_axis_denominator": int(
+                max_compute_saving_units(layerwise_horizon)
+            ),
+            "communication_axis_denominator": int(
+                max_communication_saving_units(layerwise_horizon)
+            ),
+            "resource_credit_mode": "separable_weighted_per_slot_v1",
+            "strict_resource_order": [
+                "weighted_score", "balance_tiebreak",
+            ],
+            "online_gate": (
+                "six_bootstrap_probabilities_at_online_threshold"
+            ),
+            "strict_gate": (
+                "joint_six_point_plus_compute_and_communication_"
+                "counterfactual_six_point_v1"
+            ),
+            "bootstrap_probability_role_at_f4": (
+                "diagnostic_tiebreak_only"
+            ),
+            "validation_banks": (
+                authoritative_validation_banks.contract_payload()
+            ),
+            "online_constraint_probability": float(
+                getattr(train_cfg, "online_constraint_probability", 0.50)
+            ),
+            "promotion_constraint_probability": float(
+                getattr(train_cfg, "promotion_constraint_probability", 0.80)
+            ),
+            "final_constraint_probability": float(
+                getattr(train_cfg, "final_constraint_probability", 0.95)
+            ),
+            "search_config": {
+                "evaluation_budget": int(
+                    train_cfg.search_evaluation_budget
+                ),
+                "initial_design_size": int(
+                    train_cfg.search_initial_design_size
+                ),
+                "candidate_pool_size": int(
+                    train_cfg.search_candidate_pool_size
+                ),
+                "population_size": int(
+                    train_cfg.search_population_size
+                ),
+                "patience_generations": int(
+                    train_cfg.search_patience_generations
+                ),
+                "mutation_max_coordinates": int(
+                    train_cfg.search_mutation_max_coordinates
+                ),
+                "rf_n_estimators": int(
+                    train_cfg.search_rf_n_estimators
+                ),
+                "rf_min_samples_leaf": int(
+                    train_cfg.search_rf_min_samples_leaf
+                ),
+            },
+        }
+        search_contract_hash = sha256_json(search_contract)
+        search_manifest = {
+            "profile": str(train_cfg.profile),
+            "model_type": str(getattr(evaluator, "model_type", "") or ""),
+            "num_layers": int(layerwise_horizon),
+            "fixed_gelu": [
+                int(value) for value in np.asarray(fixed_gelu).reshape(-1)
+            ],
+            "fixed_softmax": [
+                int(value) for value in np.asarray(fixed_softmax).reshape(-1)
+            ],
+            "fixed_label": str(fixed_label),
+            "fixed_source": str(fixed_source),
+            "online_fidelity": {
+                "split": "validation_full_stratified_probe",
+                "example_count": int(online_probe_example_count),
+                "trials_per_action": int(
+                    base_env.env_cfg.num_trials_per_step
+                ),
+            },
+            "constraint_limits": {
+                "loss": float(robust_reference.loss_limit),
+                "metric1": float(robust_reference.metric1_limit),
+                "metric2": float(robust_reference.metric2_limit),
+                "loss_std": float(robust_reference.loss_std_limit),
+                "metric1_std": float(robust_reference.metric1_std_limit),
+                "metric2_std": float(robust_reference.metric2_std_limit),
+            },
+            "scientific_status": (
+                "full_search_with_validation_full_gate"
+                if bool(getattr(train_cfg, "search_full_validation", True))
+                else "smoke_only_no_validation_full_gate"
+            ),
+            "algorithm_contract": search_contract,
+            "algorithm_contract_hash": search_contract_hash,
+        }
+        strict_validator = None
+        if bool(getattr(train_cfg, "search_full_validation", True)):
+            strict_candidate_store = CandidateStore(os.path.join(
+                search_output_dir, "strict_candidate_store.jsonl",
+            ))
+            strict_identity_context = (
+                _build_layerwise_candidate_identity_context(
+                    train_cfg=train_cfg,
+                    evaluator=evaluator,
+                    fusion_map=fusion_map,
+                    max_sfs=max_sfs,
+                    fixed_gelu=fixed_gelu,
+                    fixed_softmax=fixed_softmax,
+                    robust_reference=robust_reference,
+                    authoritative_robust_reference=(
+                        authoritative_robust_reference
+                    ),
+                    validation_banks=authoritative_validation_banks,
+                    probe_example_count=int(online_probe_example_count),
+                    authoritative_example_count=int(
+                        authoritative_validation_example_count
+                    ),
+                    schedule=layerwise_env.schedule,
+                    static_skeletons_baseline=(
+                        static_skeletons_baseline
+                    ),
+                    algorithm_contract=search_contract,
+                    algorithm_contract_hash=search_contract_hash,
+                )
+            )
+            search_manifest["strict_identity_context_hash"] = sha256_json(
+                strict_identity_context
+            )
+            search_manifest["strict_candidate_store"] = os.fspath(
+                strict_candidate_store.path
+            )
+
+            def strict_validator(search_result):
+                return canonical_strict_validation(
+                    result=search_result,
+                    layerwise_env=layerwise_env,
+                    promotion_base_env=promotion_base_env,
+                    candidate_store=strict_candidate_store,
+                    identity_context=strict_identity_context,
+                    validation_banks=authoritative_validation_banks,
+                    top_n=int(train_cfg.final_selection_top_n),
+                    communication_importance_ratio=communication_ratio,
+                    promotion_probability=float(getattr(
+                        train_cfg,
+                        "promotion_constraint_probability",
+                        0.80,
+                    )),
+                    final_probability=float(getattr(
+                        train_cfg,
+                        "final_constraint_probability",
+                        0.95,
+                    )),
+                )
+
+        run_lock.bind_context(sha256_json({
+            **search_manifest,
+            "search_backend": search_backend,
+            "evaluation_budget": int(
+                train_cfg.search_evaluation_budget
+            ),
+            "seed": int(train_cfg.seed),
+        }))
+        status.set_phase(f"Stage-2 {search_backend} search")
+        search_run = run_layerwise_search_baseline(
+            backend=search_backend,
+            layerwise_env=layerwise_env,
+            robust_reference=robust_reference,
+            output_dir=search_output_dir,
+            evaluation_budget=int(train_cfg.search_evaluation_budget),
+            seed=int(train_cfg.seed),
+            initial_design_size=int(train_cfg.search_initial_design_size),
+            candidate_pool_size=int(train_cfg.search_candidate_pool_size),
+            population_size=int(train_cfg.search_population_size),
+            patience_generations=int(train_cfg.search_patience_generations),
+            mutation_max_coordinates=int(
+                train_cfg.search_mutation_max_coordinates
+            ),
+            rf_n_estimators=int(train_cfg.search_rf_n_estimators),
+            rf_min_samples_leaf=int(train_cfg.search_rf_min_samples_leaf),
+            communication_importance_ratio=float(
+                layerwise_env.communication_importance_ratio
+            ),
+            manifest=search_manifest,
+            strict_validator=strict_validator,
+        )
+        selected = search_run["selected"]
+        selected_metadata = dict(selected.metadata)
+        best_full_vector = [
+            int(value)
+            for value in selected_metadata.get("pending_full_vector", [])
+        ]
+        best_action_matrix = [
+            [int(value) for value in row]
+            for row in selected.action_matrix
+        ]
+        if not best_full_vector:
+            raise RuntimeError(
+                "search baseline selected action has no materialized full vector"
+            )
+        best_layer_configurations = describe_layerwise_action_matrix(
+            best_action_matrix
+        )
+        limits = selected.limits.as_dict()
+        status.update_after_episode(
+            int(search_run["result"].evaluation_count),
+            float(selected.reward or 0.0),
+            {
+                "priority": 3 if selected.feasible else 1,
+                "invalid": not bool(selected.valid),
+                "search_backend": search_backend,
+            },
+        )
+        if not bool(search_run["scientific_export_allowed"]):
+            status.set_phase(
+                f"Stage-2 {search_backend} smoke-only search complete"
+            )
+            return {
+                "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
+                "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
+                "status": "smoke_only_complete",
+                "scientific_status": (
+                    "smoke_only_no_validation_full_gate"
+                ),
+                "search_backend": search_backend,
+                "blb_v3_profile": str(train_cfg.profile),
+                "blb_v3_total_episodes": int(
+                    search_run["result"].evaluation_count
+                ),
+                "rl_variant": (
+                    f"blb_v3_layerwise_search_{search_backend}_smoke"
+                ),
+                "limit_loss": float(limits["loss_max"]),
+                "limit_p": float(limits["metric1_min"]),
+                "limit_s": float(limits["metric2_min"]),
+                "selection_diagnostics": {
+                    "selection_mode": (
+                        "smoke_only_layerwise_search_baseline"
+                    ),
+                    "scientific_export_allowed": False,
+                    "smoke_candidate_full_vector": best_full_vector,
+                    "smoke_candidate_action_matrix": best_action_matrix,
+                    "smoke_candidate_layer_configurations": (
+                        best_layer_configurations
+                    ),
+                    "smoke_candidate_evaluation": selected.as_dict(),
+                    "artifact_paths": search_run["artifact_paths"],
+                },
+                "layerwise_summary": {
+                    **search_run["result"].as_dict(),
+                    "scientific_export_allowed": False,
+                    "smoke_candidate": selected.as_dict(),
+                    "artifact_paths": search_run["artifact_paths"],
+                },
+            }
+        fixed_config = build_fusion_fixed_config(
+            best_full_vector,
+            profile=str(train_cfg.profile),
+            num_layers=int(evaluator.total_layers),
+            gelu=np.asarray(fixed_gelu, dtype=int),
+            softmax=np.asarray(fixed_softmax, dtype=int),
+            fusion_map=fusion_map,
+            source=f"stage2_{search_backend}_best",
+        )
+        best_action_group = dict(fixed_config["group"])
+        best_action_group["policy_actions"] = best_action_matrix
+        best_action_group["boosted_overrides"] = selected_metadata.get(
+            "boosted_overrides", []
+        )
+        legacy_best = _build_legacy_compatible_best_noise_config(evaluator)
+        status.set_best(
+            float(selected.reward or 0.0),
+            best_action_vec=best_full_vector,
+            best_breakdown=selected.as_dict(),
+            best_episode=int(search_run["result"].evaluation_count),
+        )
+        status.set_phase(f"Stage-2 {search_backend} search complete")
+        return {
+            "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
+            "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
+            "best_noise_config": {
+                key: value.copy() for key, value in legacy_best.items()
+            },
+            "stable_search_best_noise_config": {
+                key: value.copy() for key, value in legacy_best.items()
+            },
+            "stable_joint_best_noise_config": {
+                key: value.copy() for key, value in legacy_best.items()
+            },
+            "status": "completed",
+            "scientific_status": (
+                "full_search_with_validation_full_gate"
+            ),
+            "search_backend": search_backend,
+            "rl_variant": f"blb_v3_layerwise_search_{search_backend}",
+            "blb_v3_best_action_vec": best_full_vector,
+            "blb_v3_best_action_group": best_action_group,
+            "blb_v3_layerwise_best_action_group": best_action_group,
+            "blb_v3_layerwise_best_configuration": (
+                best_layer_configurations
+            ),
+            "blb_v3_best_reward": float(selected.reward or 0.0),
+            "blb_v3_profile": str(train_cfg.profile),
+            "blb_v3_fusion_count_action": True,
+            "blb_v3_total_episodes": int(
+                search_run["result"].evaluation_count
+            ),
+            "limit_loss": float(limits["loss_max"]),
+            "limit_p": float(limits["metric1_min"]),
+            "limit_s": float(limits["metric2_min"]),
+            "proxy_limit_loss": float(limits["loss_max"]),
+            "proxy_limit_p": float(limits["metric1_min"]),
+            "proxy_limit_s": float(limits["metric2_min"]),
+            "search_limits": {
+                "loss": float(limits["loss_max"]),
+                "metric1": float(limits["metric1_min"]),
+                "metric2": float(limits["metric2_min"]),
+                "loss_std": float(limits["loss_std_max"]),
+                "metric1_std": float(limits["metric1_std_max"]),
+                "metric2_std": float(limits["metric2_std_max"]),
+            },
+            "selection_diagnostics": {
+                "selection_mode": (
+                    "layerwise_constrained_search_baseline"
+                ),
+                "best_action_matrix": best_action_matrix,
+                "best_layer_configurations": best_layer_configurations,
+                "best_evaluation": selected.as_dict(),
+                "strict_validation": search_run["strict_validation"],
+                "artifact_paths": search_run["artifact_paths"],
+            },
+            "layerwise_summary": {
+                **search_run["result"].as_dict(),
+                "selected": selected.as_dict(),
+                "strict_validation": search_run["strict_validation"],
+                "artifact_paths": search_run["artifact_paths"],
+            },
+        }
     policy_cfg = SequentialPolicyConfig(
         state_dim=int(layerwise_env.state_dim),
         max_step_dim=len(LAYERWISE_SLOT_NAMES),

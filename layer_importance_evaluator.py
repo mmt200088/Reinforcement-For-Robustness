@@ -2395,6 +2395,16 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_decision_granularity="layer",
                   blb_v3_reward_design="robust_constrained",
                   blb_v3_policy_network_variant="shared_gtrxl_small_v1",
+                  blb_v3_search_backend="ppo",
+                  blb_v3_search_evaluation_budget=0,
+                  blb_v3_search_initial_design_size=8,
+                  blb_v3_search_candidate_pool_size=512,
+                  blb_v3_search_population_size=24,
+                  blb_v3_search_patience_generations=5,
+                  blb_v3_search_mutation_max_coordinates=3,
+                  blb_v3_search_rf_n_estimators=128,
+                  blb_v3_search_rf_min_samples_leaf=2,
+                  blb_v3_search_full_validation=True,
                   blb_v3_fusion_neighbor_curriculum=False,
                   blb_v3_fusion_probe_interval=0,
                   blb_v3_fusion_exploration_epsilon=0.0,
@@ -2939,6 +2949,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         if (
             (not self.skip_noise_rl)
             and self.search_algorithm != "ga"
+            and str(blb_v3_search_backend or "ppo").strip().lower() == "ppo"
             and self.stage2_rl_episodes != 0
             and self.stage2_rl_episodes < PPO_UPDATE_INTERVAL
         ):
@@ -3235,7 +3246,44 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.blb_v3_policy_network_variant = normalize_policy_network_variant(
             blb_v3_policy_network_variant
         )
-        if not self.skip_noise_rl and self.search_algorithm != "ga":
+        from blb_stage2_rl.search_baselines import normalize_search_backend
+
+        self.blb_v3_search_backend = normalize_search_backend(
+            blb_v3_search_backend
+        )
+        self.blb_v3_search_evaluation_budget = int(
+            blb_v3_search_evaluation_budget
+        )
+        self.blb_v3_search_initial_design_size = int(
+            blb_v3_search_initial_design_size
+        )
+        self.blb_v3_search_candidate_pool_size = int(
+            blb_v3_search_candidate_pool_size
+        )
+        self.blb_v3_search_population_size = int(
+            blb_v3_search_population_size
+        )
+        self.blb_v3_search_patience_generations = int(
+            blb_v3_search_patience_generations
+        )
+        self.blb_v3_search_mutation_max_coordinates = int(
+            blb_v3_search_mutation_max_coordinates
+        )
+        self.blb_v3_search_rf_n_estimators = int(
+            blb_v3_search_rf_n_estimators
+        )
+        self.blb_v3_search_rf_min_samples_leaf = int(
+            blb_v3_search_rf_min_samples_leaf
+        )
+        self.blb_v3_search_full_validation = self._coerce_bool_flag(
+            blb_v3_search_full_validation,
+            "blb_v3_search_full_validation",
+        )
+        if (
+                not self.skip_noise_rl
+                and self.search_algorithm != "ga"
+                and self.blb_v3_search_backend == "ppo"
+        ):
             validate_stage2_episode_limit_mode(
                 self.stage2_rl_episodes,
                 fusion_count_action=self.blb_v3_fusion_count_action,
@@ -5255,6 +5303,11 @@ class LayerImportanceEvaluator(TrainerCallback):
         """Detach the Stage-2 best payload before handing it to final-eval."""
         if not isinstance(noise_stage_result, Mapping):
             raise TypeError("Stage-2 search result must be a mapping")
+        if str(noise_stage_result.get("status", "")) == "smoke_only_complete":
+            raise ValueError(
+                "smoke-only Stage-2 search cannot be handed to final evaluation; "
+                "rerun with the canonical validation_full gate enabled"
+            )
 
         is_layerwise = str(
             noise_stage_result.get("rl_variant", "") or ""
