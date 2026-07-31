@@ -1,0 +1,16 @@
+diff --git a/finish.md b/finish.md
+deleted file mode 100644
+index 18064734..00000000
+--- a/finish.md
++++ /dev/null
+@@ -1,10 +0,0 @@
+-# Finished
+-
+-Status: complete
+-
+-The Stage-1-best BERT-large MRPC to Stage-2 production-chain work is complete.
+-The source changes were integrated into the latest aggregate, verified locally,
+-pushed to Git, and synchronized to the GPU server.
+-
+-This file is the explicit handoff signal for the waiting agent. The authoritative
+-completion revision is the Git commit that contains this file.

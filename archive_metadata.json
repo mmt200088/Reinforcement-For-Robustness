@@ -2,8 +2,31 @@
   "archive_branch": "codex/server-data-cloud-archive-20260731",
   "base_branch": "codex/local-primary-head-backup-20260731",
   "base_commit": "c78aa8a80abd8718d0e123589e2c54ac13485ad2",
-  "base_tracked_data_file_count": 1808,
-  "base_tracked_manifest_sha256": "cbc1ed81a7deaf605760950004c4e6cf84c7ad12776afd0d60782c3fe699fefe",
+  "base_data_prefixes": [
+    "experiments/",
+    "reports/",
+    "Parting Chapter/",
+    "Previous Chapter/",
+    "Previous Chapter Server Reserve/",
+    "glue_submission/",
+    "gelu_analysis/",
+    "Prelude Chapter/",
+    "Paean/outputs/",
+    "experiment/outputs/",
+    "Model_analysis/model_statistics/weight_hist_out/",
+    "tmp/",
+    "rl_training_data_points/"
+  ],
+  "base_data_root_files": [
+    "README_replan_interface.html",
+    "commonsense_170k.json",
+    "pruning_search_log_eval.txt",
+    "rl_agent_checkpoint_BertForSequenceClassification.pt",
+    "计算图.pptx"
+  ],
+  "base_tracked_data_file_count": 3484,
+  "base_tracked_logical_bytes": 6627280693,
+  "base_tracked_manifest_sha256": "8f9d89a2e29b847066a852a8e39a7795671a5a754c2966e04e5176eb105cfecd",
   "created_utc": "2026-07-31T07:56:35Z",
   "credential_scan": {
     "github_token": 0,
@@ -23,6 +46,8 @@
   "overlay_unique_bytes": 2738234839,
   "overlay_unique_object_count": 1292,
   "payload_sha256": "dff12efb92d0b9bb6650b8a83efec04dcc0beec6a5005b06d6724604098634a8",
+  "preserved_worktree_diff": "stage1best_chain_consumed_marker.patch",
   "schema_version": 1,
-  "source_worktree": "/Users/pengjunkai/Desktop/PPTI/Local/Reinforcement-For-Robustness"
+  "source_worktree": "/Users/pengjunkai/Desktop/PPTI/Local/Reinforcement-For-Robustness",
+  "worktree_inventory_file": "local_worktree_inventory.json"
 }

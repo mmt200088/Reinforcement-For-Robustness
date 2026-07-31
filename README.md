@@ -51,9 +51,15 @@ apply the same overlay command to that checkout.
 ## Inventory
 
 - `archive_metadata.json`: immutable provenance and aggregate counts.
-- `base_tracked_manifest.jsonl`: Git blob identity of every tracked data file.
+- `base_tracked_manifest.jsonl`: Git blob identity and size of every tracked
+  data file, including historical chapters, experiment outputs, submissions,
+  reports, checkpoints, and analysis outputs.
 - `overlay_manifest.jsonl`: path, size, mode, time, Git blob, and SHA-256 for
   every overlay file.
+- `local_worktree_inventory.json`: every local worktree, branch/commit, size,
+  dirty state, and the remote refs that preserve its commit.
+- `stage1best_chain_consumed_marker.patch`: the sole inactive-worktree change,
+  preserving the intentional deletion of an already-consumed `finish.md`.
 - `chunks.json`: ordered payload chunks and their hashes.
 - `SHA256SUMS`: control-file and payload-chunk hashes.
 - `overlay_objects.tar.gz.part-*`: deduplicated content-addressed payload.

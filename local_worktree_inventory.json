@@ -1,0 +1,563 @@
+{
+  "created_utc": "2026-07-31T08:10:00Z",
+  "primary_repo": "/Users/pengjunkai/Desktop/PPTI/Local/Reinforcement-For-Robustness",
+  "worktree_count": 30,
+  "worktrees": [
+    {
+      "HEAD": "c78aa8a80abd8718d0e123589e2c54ac13485ad2",
+      "branch": "refs/heads/jk_standard_rl",
+      "remote_refs_containing_head": [],
+      "size_kib": 15007380,
+      "tracked_changes": [
+        " M .vscode/extensions.json",
+        " M .vscode/settings.json",
+        " M AGENTS.md",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/blb_stage2_best_action_full.json\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/blb_stage2_best_action_full.md\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/blb_stage2_report.md\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/blb_stage2_reward_paper.pdf\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/blb_stage2_reward_paper.png\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/blb_stage2_status.json\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/blb_stage2_training_curve.npz\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/blb_stage2_training_curve.png\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/diagnostics/action_histogram.npz\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/diagnostics/best_action_vec.json\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/diagnostics/diagnostics_summary.md\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/diagnostics/pareto_frontier.html\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/diagnostics/pareto_frontier.json\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/diagnostics/pareto_frontier.jsonl\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/diagnostics/ppo_updates.jsonl\"",
+        " M \"Parting Chapter/stage2/bert base mrpc/progress/diagnostics/top_candidates.jsonl\"",
+        " M experiments/index.md",
+        " M reports/.DS_Store"
+      ],
+      "untracked_count": 1763,
+      "worktree": "/Users/pengjunkai/Desktop/PPTI/Local/Reinforcement-For-Robustness"
+    },
+    {
+      "HEAD": "3a7400560ed66bfb42424f414bb3f360ff3e9f56",
+      "detached": true,
+      "remote_refs_containing_head": [
+        "origin/main"
+      ],
+      "size_kib": 94604,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.codex/worktrees/9e9b/Reinforcement-For-Robustness"
+    },
+    {
+      "HEAD": "a2d3543cff5974c83fa69c2e17b6a368830b43c1",
+      "branch": "refs/heads/codex/block3-runtime-wiring",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-integrated-20260724",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/candidate-promotion-index-d3fa013b",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/stage2-small-a2d-index-integrated",
+        "origin/codex/stage2-terminal-probe-opt-97079",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7490644,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.codex/worktrees/Reinforcement-For-Robustness/stage2-k-convergence"
+    },
+    {
+      "HEAD": "54dfeaa085fc2aa8da9523fb4707451fbde01634",
+      "branch": "refs/heads/codex/all-agents-k6-13-integrated-20260727",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-k6-13-integrated-20260727"
+      ],
+      "size_kib": 7493904,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/all-agents-k6-13-integrated-20260727"
+    },
+    {
+      "HEAD": "88e6978defeea4725f49490201b6583245c1b37f",
+      "branch": "refs/heads/codex/truncation-k6-13-20260727",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7495916,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/bert-large-mrpc-exact-probe-scheduling-20260725"
+    },
+    {
+      "HEAD": "aff4d1ccc7ae1d2e8dabef97d9466a28e0e5948b",
+      "branch": "refs/heads/codex/block-sf-audit",
+      "remote_refs_containing_head": [
+        "origin/codex/block-sf-audit"
+      ],
+      "size_kib": 6695264,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/block-sf-audit"
+    },
+    {
+      "HEAD": "c28e7304c96d98fe349ec3653c6bb54a01debd76",
+      "branch": "refs/heads/codex/candidate-index-on-stage2-small",
+      "remote_refs_containing_head": [
+        "origin/codex/candidate-index-on-stage2-small"
+      ],
+      "size_kib": 7486812,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/candidate-index-on-stage2-small"
+    },
+    {
+      "HEAD": "a8c026a78c81ad985f47c1f2e88b02aad241e215",
+      "branch": "refs/heads/codex/candidate-promotion-index-d3fa013b",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-integrated-20260724",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/candidate-promotion-index-d3fa013b",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/stage2-small-a2d-index-integrated",
+        "origin/codex/stage2-terminal-probe-opt-97079",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7488148,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/candidate-promotion-index-d3fa013b"
+    },
+    {
+      "HEAD": "1f32a793cda54b72e19319fa172eb51c458d7198",
+      "branch": "refs/heads/codex/all-agents-elastic-rl-integrated-20260727",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7493064,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/elastic-rl-gpu-scheduling-20260726"
+    },
+    {
+      "HEAD": "c49fed05f0bac59b2471143a8d3e41c65c2b93d1",
+      "branch": "refs/heads/codex/five-profile-fusion-audit",
+      "remote_refs_containing_head": [
+        "origin/codex/five-profile-fusion-audit"
+      ],
+      "size_kib": 6798340,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/five-profile-fusion-audit"
+    },
+    {
+      "HEAD": "24e919cea64f22b1b869b9bf22d57bbb776bac5e",
+      "branch": "refs/heads/codex/fixed-b2-b5-fusion",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-integrated-20260724",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/block3-runtime-wiring",
+        "origin/codex/candidate-index-on-stage2-small",
+        "origin/codex/candidate-promotion-index-d3fa013b",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/five-profile-fusion-audit",
+        "origin/codex/fixed-b2-b5-fusion",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+        "origin/codex/server-artifact-evacuation-20260720",
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-glue-ep114240",
+        "origin/codex/stage2-k-convergence",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-network-ablation-v10",
+        "origin/codex/stage2-rl-runtime-opt-48b03e8",
+        "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/stage2-small-a2d-index-integrated",
+        "origin/codex/stage2-terminal-probe-opt-97079",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 6663920,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/fixed-b2-b5-fusion"
+    },
+    {
+      "HEAD": "a1cec2751dfc294ea5f93917b707045a27e2dd18",
+      "detached": true,
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-integrated-20260724",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/block3-runtime-wiring",
+        "origin/codex/candidate-index-on-stage2-small",
+        "origin/codex/candidate-promotion-index-d3fa013b",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/five-profile-fusion-audit",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+        "origin/codex/server-artifact-evacuation-20260720",
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-glue-ep114240",
+        "origin/codex/stage2-k-convergence",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-network-ablation-v10",
+        "origin/codex/stage2-rl-runtime-opt-48b03e8",
+        "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/stage2-small-a2d-index-integrated",
+        "origin/codex/stage2-terminal-probe-opt-97079",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 6784924,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/runtime-optimization"
+    },
+    {
+      "HEAD": "41b57eae9cd3299945c2bc0d9f924f1e3637a4cc",
+      "branch": "refs/heads/codex/stage1best-large-stage2-chain-eval-20260725",
+      "remote_refs_containing_head": [
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725"
+      ],
+      "size_kib": 7491656,
+      "tracked_changes": [
+        " D finish.md"
+      ],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage1best-large-stage2-chain-eval-20260725"
+    },
+    {
+      "HEAD": "e1a1bba96502ef5a49bdae1749f0434908f97452",
+      "branch": "refs/heads/codex/stage1best-large-stage2-training-20260725",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7491640,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage1best-large-stage2-training-20260725"
+    },
+    {
+      "HEAD": "ad810c1724da759d23ef4ed6f1077dc2b24d3b52",
+      "branch": "refs/heads/codex/stage2-18-group-eval-20260727",
+      "remote_refs_containing_head": [
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7502044,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-18-group-eval-20260727"
+    },
+    {
+      "HEAD": "13e923da134a960b5026281b6df3ed3fb4003fc6",
+      "branch": "refs/heads/codex/stage2-glue-ep114240",
+      "remote_refs_containing_head": [
+        "origin/codex/stage2-glue-ep114240"
+      ],
+      "size_kib": 6797516,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-glue-ep114240"
+    },
+    {
+      "HEAD": "6268ee02fdbf070065ea04f72966cffc0461300f",
+      "branch": "refs/heads/codex/stage2-rl-runtime-opt-48b03e8",
+      "remote_refs_containing_head": [
+        "origin/codex/stage2-rl-runtime-opt-48b03e8"
+      ],
+      "size_kib": 6790384,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-rl-runtime-opt-48b03e8"
+    },
+    {
+      "HEAD": "2356a58fabf20ad1744be0f7d998acfcad9232a2",
+      "branch": "refs/heads/codex/stage2-runtime-efficiency-integrated-3d89",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-integrated-20260724",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7488488,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-runtime-efficiency-integrated-3d89"
+    },
+    {
+      "HEAD": "97079f6e4bf5cc2ece62b9d7fcb371b3da7168a3",
+      "branch": "refs/heads/codex/stage2-small-a2d-index-integrated",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-integrated-20260724",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/stage2-small-a2d-index-integrated",
+        "origin/codex/stage2-terminal-probe-opt-97079",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7488216,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-small-a2d-index-integrated"
+    },
+    {
+      "HEAD": "761cddecace57246b3ecf587af6060cd8c1f8b33",
+      "branch": "refs/heads/codex/stage2-task4-bounded-history-red",
+      "remote_refs_containing_head": [],
+      "size_kib": 6784760,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-task4-bounded-history-red"
+    },
+    {
+      "HEAD": "d7ed3a99ffd7be47fb9f17a2f27ea2b48647a5c2",
+      "branch": "refs/heads/codex/stage2-task5-compact-candidate-red",
+      "remote_refs_containing_head": [],
+      "size_kib": 6784812,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-task5-compact-candidate-red"
+    },
+    {
+      "HEAD": "3d89b99dd609a67799811a4bf995000bafe1436c",
+      "branch": "refs/heads/codex/stage2-terminal-probe-opt-97079",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-integrated-20260724",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/stage2-small-a2d-index-integrated",
+        "origin/codex/stage2-terminal-probe-opt-97079",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 7488340,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-terminal-probe-opt-97079"
+    },
+    {
+      "HEAD": "a8be52a846d854ea293956ddd43726465c8d106f",
+      "branch": "refs/heads/codex/stage2-three-bank-gate",
+      "remote_refs_containing_head": [
+        "origin/codex/all-agents-elastic-rl-integrated-20260727",
+        "origin/codex/all-agents-integrated-20260724",
+        "origin/codex/all-agents-k6-13-integrated-20260727",
+        "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+        "origin/codex/bert-large-mrpc-final-archive-20260731",
+        "origin/codex/block3-runtime-wiring",
+        "origin/codex/candidate-index-on-stage2-small",
+        "origin/codex/candidate-promotion-index-d3fa013b",
+        "origin/codex/elastic-rl-gpu-scheduling-20260726",
+        "origin/codex/l0-block1-k-rl-20260726",
+        "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+        "origin/codex/server-artifact-evacuation-20260720",
+        "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+        "origin/codex/stage1best-large-stage2-training-20260725",
+        "origin/codex/stage2-18-group-eval-20260727",
+        "origin/codex/stage2-five-gpu-runtime-20260728",
+        "origin/codex/stage2-k-presets-network-budget-20260728",
+        "origin/codex/stage2-large-throughput",
+        "origin/codex/stage2-network-ablation-v10",
+        "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+        "origin/codex/stage2-search-baselines-20260731",
+        "origin/codex/stage2-small-a2d-index-integrated",
+        "origin/codex/stage2-terminal-probe-opt-97079",
+        "origin/codex/task6-docs-k6-13",
+        "origin/codex/truncation-k6-13-20260727",
+        "origin/jk_standard_rl"
+      ],
+      "size_kib": 6795420,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/stage2-three-bank-gate"
+    },
+    {
+      "HEAD": "4c992ad754756d122816050ddb3963fc57e74789",
+      "branch": "refs/heads/codex/task-6a-probe-telemetry-red",
+      "remote_refs_containing_head": [],
+      "size_kib": 6784820,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/task-6a-probe-telemetry-red"
+    },
+    {
+      "HEAD": "50773a8c60bf7daa8ec453053743d052c46aec15",
+      "branch": "refs/heads/codex/task-6b-red-telemetry",
+      "remote_refs_containing_head": [],
+      "size_kib": 6784824,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/task-6b-red-telemetry"
+    },
+    {
+      "HEAD": "7fce21b095de4c0066ccd161c24cdfba16b835f3",
+      "branch": "refs/heads/codex/task-6c-runtime-gate-impl",
+      "remote_refs_containing_head": [],
+      "size_kib": 6784884,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/task-6c-runtime-gate-impl"
+    },
+    {
+      "HEAD": "3a77c39fcaadeab3fb71755108b92ce2afb41fb4",
+      "branch": "refs/heads/codex/task-6d-gate-hardening-red",
+      "remote_refs_containing_head": [
+        "origin/codex/stage2-rl-runtime-opt-48b03e8"
+      ],
+      "size_kib": 6784888,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/task-6d-gate-hardening-red"
+    },
+    {
+      "HEAD": "2cde04365be0f916c800eea661608c2e4c122c2c",
+      "branch": "refs/heads/codex/truncation-k-doc-width-subagent-d",
+      "remote_refs_containing_head": [],
+      "size_kib": 7492856,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/truncation-k-doc-width-subagent-d"
+    },
+    {
+      "HEAD": "bd26d251c3374cb760391a1d22cab029df5e5714",
+      "branch": "refs/heads/codex/truncation-k-exact-coercion-subagent-b",
+      "remote_refs_containing_head": [],
+      "size_kib": 7492864,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/truncation-k-exact-coercion-subagent-b"
+    },
+    {
+      "HEAD": "a02ec502771a8859f768d84123bbbf1d2e5be662",
+      "branch": "refs/heads/codex/truncation-k6-collector-p1-20260727",
+      "remote_refs_containing_head": [],
+      "size_kib": 7492860,
+      "tracked_changes": [],
+      "untracked_count": 0,
+      "worktree": "/Users/pengjunkai/.config/superpowers/worktrees/Reinforcement-For-Robustness/truncation-k6-collector-p1-20260727"
+    }
+  ]
+}
