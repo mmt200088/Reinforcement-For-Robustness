@@ -1,0 +1,21 @@
+{
+  "parts": [
+    {
+      "bytes": 83886080,
+      "name": "overlay_objects.tar.gz.part-000",
+      "sha256": "977651d4c47726271feff4e120319d865d5462bb8b54e98a274b4bd7d2d30fba"
+    },
+    {
+      "bytes": 83886080,
+      "name": "overlay_objects.tar.gz.part-001",
+      "sha256": "dcdb0098f4656254c205ab815c70b357aeae88d206cc73822a7fab382aeee8b2"
+    },
+    {
+      "bytes": 80512669,
+      "name": "overlay_objects.tar.gz.part-002",
+      "sha256": "82df1b3120a90269bcd8b3ece82cc61864294d68bface5484ceb1d4a75512af1"
+    }
+  ],
+  "payload_bytes": 248284829,
+  "payload_sha256": "dff12efb92d0b9bb6650b8a83efec04dcc0beec6a5005b06d6724604098634a8"
+}
