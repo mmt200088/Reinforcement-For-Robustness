@@ -80,10 +80,10 @@ class HealthResolverTest(unittest.TestCase):
             canary=lambda token: canary_calls.append(token) or True,
         )
 
-        self.assertEqual(canary_calls, ["3"])
+        self.assertEqual(canary_calls, ["0", "3", "4"])
         self.assertEqual(resolved.healthy_tokens, ("0", "3", "4"))
         self.assertEqual(resolved.quarantined_tokens, ())
-        self.assertEqual(resolved.cuda_verified_tokens, ("3",))
+        self.assertEqual(resolved.cuda_verified_tokens, ("0", "3", "4"))
         self.assertEqual(
             resolved.healthy_visibility_tokens,
             ("0", "3", "4"),
@@ -95,17 +95,33 @@ class HealthResolverTest(unittest.TestCase):
 
     def test_startup_canary_failure_keeps_reset_device_quarantined(self):
         canary_calls = []
+        outcomes = {"0": True, "3": False, "4": True}
 
         resolved = resolve_startup_health_snapshot(
             parse_nvidia_smi_csv(GPU_CSV),
             candidate_tokens=["0", "3", "4"],
-            canary=lambda token: canary_calls.append(token) or False,
+            canary=lambda token: (
+                canary_calls.append(token) or outcomes[token]
+            ),
         )
 
-        self.assertEqual(canary_calls, ["3"])
+        self.assertEqual(canary_calls, ["0", "3", "4"])
         self.assertEqual(resolved.healthy_tokens, ("0", "4"))
         self.assertEqual(resolved.quarantined_tokens, ("3",))
-        self.assertEqual(resolved.cuda_verified_tokens, ())
+        self.assertEqual(resolved.cuda_verified_tokens, ("0", "4"))
+
+    def test_startup_canary_quarantines_nvml_healthy_cuda_dead_device(self):
+        outcomes = {"0": True, "3": True, "4": False}
+
+        resolved = resolve_startup_health_snapshot(
+            parse_nvidia_smi_csv(GPU_CSV),
+            candidate_tokens=["0", "3", "4"],
+            canary=lambda token: outcomes[token],
+        )
+
+        self.assertEqual(resolved.healthy_tokens, ("0", "3"))
+        self.assertEqual(resolved.quarantined_tokens, ("4",))
+        self.assertEqual(resolved.cuda_verified_tokens, ("0", "3"))
 
 
 class ChildCommandTest(unittest.TestCase):
@@ -303,7 +319,7 @@ class SupervisorRestartTest(unittest.TestCase):
                 query_records=lambda: records,
                 process_runner=finish_once,
                 recovery_interval=0.0,
-                canary=lambda token: token == "3",
+                canary=lambda token: token in {"0", "3", "4"},
             )
 
         self.assertEqual(rc, 0)
@@ -352,17 +368,18 @@ class SupervisorRestartTest(unittest.TestCase):
                 process_runner=fake_run,
                 max_restarts=2,
                 recovery_interval=0.0,
+                canary=lambda _token: True,
             )
 
         self.assertEqual(rc, 0)
         self.assertEqual(len(launches), 2)
         self.assertEqual(
             launches[0][1]["CUDA_VISIBLE_DEVICES"],
-            "GPU-a,GPU-b,GPU-c,GPU-e",
+            "0,1,2,4",
         )
         self.assertEqual(
             launches[1][1]["CUDA_VISIBLE_DEVICES"],
-            "GPU-a,GPU-c,GPU-e",
+            "0,2,4",
         )
         self.assertEqual(
             launches[1][0][-2:],
@@ -395,6 +412,7 @@ class SupervisorRestartTest(unittest.TestCase):
                 process_runner=always_restart,
                 max_restarts=1,
                 recovery_interval=0.0,
+                canary=lambda _token: True,
             )
 
         self.assertEqual(rc, ELASTIC_GPU_RESTART_EXIT_CODE)
@@ -416,6 +434,7 @@ class SupervisorRestartTest(unittest.TestCase):
                 process_runner=fail_once,
                 max_restarts=8,
                 recovery_interval=0.0,
+                canary=lambda _token: True,
             )
 
         self.assertEqual(rc, 2)

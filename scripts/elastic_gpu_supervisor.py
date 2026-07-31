@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Run RL against the healthy physical GPUs without importing Torch.
+"""Run RL against CUDA-verified physical GPUs without importing Torch.
 
-Normal startup performs one batched ``nvidia-smi`` query. Devices marked for
-recovery are admitted only when an isolated CUDA canary confirms that they can
-execute real work. Healthy devices are remapped through ``CUDA_VISIBLE_DEVICES``
-and the child receives dense logical device IDs. A reserved child exit can
-quarantine one failed device and resume the same run directory.
+Normal startup performs one batched ``nvidia-smi`` query, then requires every
+candidate to execute an isolated CUDA canary. Passing devices are remapped
+through ``CUDA_VISIBLE_DEVICES`` and the child receives dense logical device
+IDs. A reserved child exit can quarantine one failed device and resume the same
+run directory.
 """
 from __future__ import annotations
 
@@ -125,13 +125,15 @@ class HealthSnapshot:
                     "recovery_action": record.recovery_action,
                     "healthy": token in self.healthy_tokens,
                     "health_source": (
-                        "nvidia_smi"
-                        if record.is_healthy
-                        else (
+                        (
                             "cuda_canary_override"
-                            if token in self.cuda_verified_tokens
-                            else "quarantined"
+                            if not record.is_healthy
+                            else "cuda_canary"
                         )
+                        if token in self.cuda_verified_tokens
+                        else "nvidia_smi"
+                        if record.is_healthy
+                        else "quarantined"
                     ),
                 }
                 for token, record in zip(
@@ -215,6 +217,7 @@ def resolve_health_snapshot(
     *,
     candidate_tokens: Iterable[object],
     cuda_verified_tokens: Iterable[object] = (),
+    require_cuda_verified: bool = False,
 ) -> HealthSnapshot:
     candidates = tuple(str(token).strip() for token in candidate_tokens)
     if not candidates or any(not token for token in candidates):
@@ -235,7 +238,11 @@ def resolve_health_snapshot(
     healthy = tuple(
         token
         for token, record in zip(candidates, selected)
-        if record.is_healthy or token in cuda_verified
+        if (
+            token in cuda_verified
+            if require_cuda_verified
+            else record.is_healthy or token in cuda_verified
+        )
     )
     quarantined = tuple(
         token
@@ -261,7 +268,7 @@ def resolve_startup_health_snapshot(
     candidate_tokens: Iterable[object],
     canary: Callable[[str], bool],
 ) -> HealthSnapshot:
-    """Confirm NVML-recovery candidates with isolated CUDA execution."""
+    """Require isolated CUDA execution for every startup candidate."""
     candidates = tuple(str(token).strip() for token in candidate_tokens)
     selected = tuple(
         _record_for_token(records, token) for token in candidates
@@ -269,12 +276,13 @@ def resolve_startup_health_snapshot(
     cuda_verified = tuple(
         token
         for token, record in zip(candidates, selected)
-        if not record.is_healthy and canary(record.index)
+        if canary(record.index)
     )
     return resolve_health_snapshot(
         records,
         candidate_tokens=candidates,
         cuda_verified_tokens=cuda_verified,
+        require_cuda_verified=True,
     )
 
 
