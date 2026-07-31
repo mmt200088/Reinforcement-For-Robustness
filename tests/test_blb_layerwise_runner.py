@@ -2502,6 +2502,35 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertIn("with LayerwiseRunLock(blb_progress_dir)", public_source)
         self.assertIn("_run_sequential_via_runner_locked(", public_source)
 
+    def test_layerwise_branch_wires_checkpoint_boundary_graceful_stop(self):
+        source = Path("blb_stage2_rl/sequential_runner.py").read_text(
+            encoding="utf-8",
+        )
+        tree = ast.parse(source)
+        branch = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_layerwise_training_branch"
+        )
+        branch_source = ast.get_source_segment(source, branch)
+        train_call = next(
+            node for node in ast.walk(branch)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "train_layerwise"
+        )
+
+        self.assertIn(
+            "install_graceful_stop_handler(log_fn=log)",
+            branch_source,
+        )
+        self.assertIn("consume_stop_flag_file(stop_flag_path)", branch_source)
+        self.assertIn("status.mark_stopped(", branch_source)
+        self.assertIn(
+            "stop_requested",
+            {keyword.arg for keyword in train_call.keywords},
+        )
+
     def test_launcher_locks_stage2_directory_before_fresh_cleanup(self):
         source = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
         stage2 = source[source.index(
@@ -4135,6 +4164,48 @@ class LayerwiseRolloutTests(unittest.TestCase):
         self.assertEqual(
             ppo_updates,
             [(8, 8), (16, 16), (24, 24), (32, 32), (37, 37)],
+        )
+
+    def test_graceful_stop_waits_for_the_next_ppo_checkpoint_boundary(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        completed = []
+        ppo_updates = []
+
+        with tempfile.TemporaryDirectory() as td:
+            summary = train_layerwise(
+                env=_FakeLayerwiseEnv(evidence_mode="missing", invalid=True),
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(total_episodes=10, update_every=3),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=_FakeBuffer(),
+                ppo_update_fn=lambda *_args, **_kwargs: {"entropy": 0.0},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+                on_episode_end=lambda record: completed.append(
+                    record.episode_index
+                ),
+                on_ppo_update_end=lambda metrics, count, _record: (
+                    ppo_updates.append((count, metrics["completed_episodes"]))
+                ),
+                stop_requested=lambda: bool(ppo_updates),
+                retain_history=False,
+            )
+
+        self.assertEqual(completed, [0, 1, 2])
+        self.assertEqual(ppo_updates, [(3, 3)])
+        self.assertEqual(summary["completed_episodes"], 3)
+        self.assertTrue(summary["graceful_stopped"])
+        self.assertEqual(summary["termination_reason"], "graceful_stop")
+        self.assertEqual(
+            summary["convergence_state"]["termination_reason"],
+            "graceful_stop",
         )
 
     def test_train_bounded_history_preserves_nonzero_resume_callback_identities(self):

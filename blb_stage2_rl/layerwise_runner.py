@@ -3718,6 +3718,7 @@ def train_layerwise(
         ppo_update_fn: Optional[Callable[..., Mapping[str, Any]]] = None,
         assess_candidate_fn: Callable[..., Any] = assess_candidate,
         step_adapter_fn: Optional[Callable[[Any, int, int], tuple[np.ndarray, np.ndarray]]] = None,
+        stop_requested: Optional[Callable[[], bool]] = None,
         retain_history: bool = True,
         ) -> dict[str, Any]:
     """Collect layerwise episodes and update the shared PPO policy."""
@@ -3994,6 +3995,7 @@ def train_layerwise(
 
     local_episode = 0
     finalized_drafts: list[_LayerwiseEpisodeDraft] = []
+    graceful_stopped = False
     while not convergence_state.converged and (
             unbounded_training or local_episode < total_episodes
     ):
@@ -4957,6 +4959,13 @@ def train_layerwise(
                 on_ppo_update_end(ppo_metrics, absolute_start + completed, record)
             rollout_buffer.clear()
             entropy_samples.clear()
+            if stop_requested is not None and stop_requested():
+                graceful_stopped = True
+                convergence_state = replace(
+                    convergence_state,
+                    termination_reason="graceful_stop",
+                )
+                break
 
     maximum_boundary_reached = bool(
         validation_banks is not None
@@ -5011,7 +5020,11 @@ def train_layerwise(
             ),
         )
 
-    if not unbounded_training and not convergence_state.converged:
+    if (
+            not graceful_stopped
+            and not unbounded_training
+            and not convergence_state.converged
+    ):
         if validation_banks is None:
             strict_revalidation_status = "not_applicable_bounded"
             convergence_state = replace(
@@ -5136,6 +5149,7 @@ def train_layerwise(
         "strict_revalidation_passed": convergence_state.strict_revalidation_passed,
         "strict_revalidation_status": strict_revalidation_status,
         "termination_reason": convergence_state.termination_reason,
+        "graceful_stopped": graceful_stopped,
         "recommended_extension_episodes": 0,
         "completed_episodes": absolute_start + local_episode,
     }

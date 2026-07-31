@@ -5842,6 +5842,26 @@ def _run_layerwise_training_branch(
     status.set_phase(
         f"PPO training ({layerwise_horizon}-step layerwise robust)"
     )
+    from noise_rl_module_v2 import (
+        NOISE_STAGE_STOP_FLAG_FILENAME,
+        consume_stop_flag_file,
+        install_graceful_stop_handler,
+        is_graceful_stop_requested,
+        reset_graceful_stop_state,
+        uninstall_graceful_stop_handler,
+    )
+
+    stop_flag_path = os.path.join(
+        blb_progress_dir,
+        NOISE_STAGE_STOP_FLAG_FILENAME,
+    )
+    reset_graceful_stop_state()
+    consume_stop_flag_file(stop_flag_path)
+    install_graceful_stop_handler(log_fn=log)
+    log(
+        f"  {bullet} [graceful-stop] Ctrl+C or create {stop_flag_path}; "
+        "the layerwise run will stop after the next PPO checkpoint boundary."
+    )
     training_completed = False
     completion_status = "failed"
     summary: Dict[str, Any]
@@ -5858,6 +5878,7 @@ def _run_layerwise_training_branch(
             optimizer=optimizer,
             on_episode_end=on_layerwise_episode,
             on_ppo_update_end=on_layerwise_update,
+            stop_requested=lambda: is_graceful_stop_requested(stop_flag_path),
             retain_history=False,
         )
         summary_completed_episodes = int(summary.get(
@@ -5891,7 +5912,9 @@ def _run_layerwise_training_branch(
             strict_best=summary.get("strict_best"),
             convergence_state=summary.get("convergence_state"),
         )
-        if summary.get("converged", False):
+        if summary.get("graceful_stopped", False):
+            completion_status = "graceful_stop"
+        elif summary.get("converged", False):
             completion_status = "converged"
         elif requested_total_episodes > 0:
             completion_status = "max_episodes_reached"
@@ -5979,6 +6002,7 @@ def _run_layerwise_training_branch(
                                     )
                             ):
                                 promotion_runner.close()
+    uninstall_graceful_stop_handler()
     status.set_phase(completion_status)
 
     bank_b_best = dict(summary.get("bank_b_best") or {})
@@ -6101,6 +6125,18 @@ def _run_layerwise_training_branch(
     )
     stage2_data_writer.write_summary(compact_summary)
     stage2_data_writer.close()
+    if summary.get("graceful_stopped", False):
+        consume_stop_flag_file(stop_flag_path)
+        status.mark_stopped(
+            reason="checkpoint-boundary graceful stop",
+            completed_episodes=int(completed_episode_count),
+        )
+        log(
+            f"  [graceful-stop] checkpoint saved at episode "
+            f"{int(completed_episode_count)} -> {save_path}; "
+            "launch again with the same parameters to resume."
+        )
+        raise SystemExit(0)
 
     curve_series = {
         "returns": [], "loss": [], "metric1": [], "metric2": [],
