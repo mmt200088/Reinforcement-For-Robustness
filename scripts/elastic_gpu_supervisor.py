@@ -86,7 +86,7 @@ class HealthSnapshot:
 
     @property
     def visibility_mode(self) -> str:
-        return "index" if self.cuda_verified_tokens else "uuid"
+        return "uuid"
 
     @property
     def healthy_visibility_tokens(self) -> tuple[str, ...]:
@@ -278,7 +278,7 @@ def resolve_startup_health_snapshot(
     cuda_verified = tuple(
         token
         for token, record in zip(candidates, selected)
-        if canary(record.index)
+        if canary(record.uuid)
     )
     return resolve_health_snapshot(
         records,
