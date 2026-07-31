@@ -554,12 +554,27 @@ def run_child_foreground(
     """Run the learner in front and forward launcher stop signals to it."""
     lock_fd_text = str(env.get("BLB_STAGE2_RUN_LOCK_FD", "")).strip()
     pass_fds = (int(lock_fd_text),) if lock_fd_text else ()
-    child = subprocess.Popen(
-        list(command),
-        env=dict(env),
-        pass_fds=pass_fds,
-    )
     previous_handlers: dict[int, object] = {}
+    pending_signals: list[int] = []
+    in_main_thread = threading.current_thread() is threading.main_thread()
+
+    def capture_until_child_starts(signum: int, _frame: object) -> None:
+        pending_signals.append(signum)
+
+    if in_main_thread:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, capture_until_child_starts)
+    try:
+        child = subprocess.Popen(
+            list(command),
+            env=dict(env),
+            pass_fds=pass_fds,
+        )
+    except BaseException:
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)
+        raise
 
     def forward(signum: int, _frame: object) -> None:
         try:
@@ -567,10 +582,11 @@ def run_child_foreground(
         except ProcessLookupError:
             pass
 
-    if threading.current_thread() is threading.main_thread():
+    if in_main_thread:
         for signum in (signal.SIGINT, signal.SIGTERM):
-            previous_handlers[signum] = signal.getsignal(signum)
             signal.signal(signum, forward)
+        for signum in pending_signals:
+            forward(signum, None)
     try:
         return_code = child.wait()
     finally:

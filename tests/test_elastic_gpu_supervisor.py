@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -150,6 +151,28 @@ class ChildCommandTest(unittest.TestCase):
                 )
             finally:
                 os.close(lock_fd)
+
+        self.assertEqual(completed.returncode, 0)
+
+    @unittest.skipUnless(hasattr(signal, "SIGINT"), "requires POSIX signals")
+    def test_foreground_child_does_not_inherit_ignored_stop_signals(self):
+        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            completed = run_child_foreground(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import signal, sys; "
+                        "sys.exit(9 if signal.getsignal(signal.SIGINT) "
+                        "== signal.SIG_IGN else 0)"
+                    ),
+                ],
+                env=os.environ.copy(),
+                check=False,
+            )
+        finally:
+            signal.signal(signal.SIGINT, previous)
 
         self.assertEqual(completed.returncode, 0)
 
