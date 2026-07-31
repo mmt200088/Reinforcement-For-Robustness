@@ -1,0 +1,11 @@
+{
+  "parts": [
+    {
+      "bytes": 12777476,
+      "name": "ignored_overlay_objects.tar.gz.part-000",
+      "sha256": "d3eef7eae3556ec564592827c83788fc4735b338b48e8731cbe72045651e136a"
+    }
+  ],
+  "payload_bytes": 12777476,
+  "payload_sha256": "d3eef7eae3556ec564592827c83788fc4735b338b48e8731cbe72045651e136a"
+}

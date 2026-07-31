@@ -39,6 +39,19 @@
     ".DS_Store",
     "empty root file named ="
   ],
+  "ignored_overlay_credential_scan": {
+    "github_token": 0,
+    "openai_key": 0,
+    "password_assignment": 0,
+    "private_key": 0,
+    "sshpass": 0
+  },
+  "ignored_overlay_file_count": 337,
+  "ignored_overlay_logical_bytes": 1372904244,
+  "ignored_overlay_manifest_sha256": "b7bd7806790123657fe8e5c58e1422f00e5ac6855ff9c395c0d5530c3bebbb26",
+  "ignored_overlay_payload_sha256": "d3eef7eae3556ec564592827c83788fc4735b338b48e8731cbe72045651e136a",
+  "ignored_overlay_unique_bytes": 1372859028,
+  "ignored_overlay_unique_object_count": 328,
   "latest_main_commit_at_archive": "2cd9dbcaab5802bdb4c6959b567b775a600a6296",
   "overlay_file_count": 1767,
   "overlay_logical_bytes": 3572364465,

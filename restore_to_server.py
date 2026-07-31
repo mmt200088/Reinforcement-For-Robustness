@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import stat
 import tarfile
 import tempfile
 
@@ -51,6 +50,23 @@ def read_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
+def overlay_specs(archive_dir: Path) -> list[tuple[str, Path, Path]]:
+    specs = [
+        (
+            "overlay",
+            archive_dir / "overlay_manifest.jsonl",
+            archive_dir / "chunks.json",
+        )
+    ]
+    ignored_manifest = archive_dir / "ignored_overlay_manifest.jsonl"
+    ignored_chunks = archive_dir / "ignored_chunks.json"
+    if ignored_manifest.is_file() or ignored_chunks.is_file():
+        if not ignored_manifest.is_file() or not ignored_chunks.is_file():
+            raise FileNotFoundError("incomplete ignored-overlay control files")
+        specs.append(("ignored_overlay", ignored_manifest, ignored_chunks))
+    return specs
+
+
 def verify_control_files(archive_dir: Path) -> None:
     sums = archive_dir / "SHA256SUMS"
     for line in sums.read_text(encoding="ascii").splitlines():
@@ -87,31 +103,37 @@ def verify_base(archive_dir: Path, target: Path) -> None:
 
 
 def verify_overlay(archive_dir: Path, target: Path) -> None:
-    rows = read_jsonl(archive_dir / "overlay_manifest.jsonl")
     failures: list[str] = []
-    for row in rows:
-        path = safe_target(target, row["path"])
-        if not path.is_file():
-            failures.append(f"missing: {row['path']}")
-            continue
-        actual = sha256_file(path)
-        if actual != row["sha256"]:
-            failures.append(
-                f"sha256 mismatch: {row['path']} {actual} != {row['sha256']}"
-            )
+    total_files = 0
+    for _, manifest_path, _ in overlay_specs(archive_dir):
+        rows = read_jsonl(manifest_path)
+        total_files += len(rows)
+        for row in rows:
+            path = safe_target(target, row["path"])
+            if not path.is_file():
+                failures.append(f"missing: {row['path']}")
+                continue
+            actual = sha256_file(path)
+            if actual != row["sha256"]:
+                failures.append(
+                    f"sha256 mismatch: {row['path']} {actual} != {row['sha256']}"
+                )
     if failures:
         sample = "\n".join(failures[:20])
         raise RuntimeError(
             f"overlay verification failed for {len(failures)} file(s):\n{sample}"
         )
-    print(f"OVERLAY_VERIFY_OK files={len(rows)}")
+    print(f"OVERLAY_VERIFY_OK files={total_files}")
 
 
-def extract_objects(archive_dir: Path, temporary_dir: Path) -> Path:
-    chunk_manifest = json.loads(
-        (archive_dir / "chunks.json").read_text(encoding="utf-8")
-    )
-    payload = temporary_dir / "overlay_objects.tar.gz"
+def extract_objects(
+    archive_dir: Path,
+    temporary_dir: Path,
+    overlay_name: str,
+    chunks_path: Path,
+) -> Path:
+    chunk_manifest = json.loads(chunks_path.read_text(encoding="utf-8"))
+    payload = temporary_dir / f"{overlay_name}_objects.tar.gz"
     with payload.open("wb") as output:
         for part in chunk_manifest["parts"]:
             path = archive_dir / part["name"]
@@ -127,7 +149,7 @@ def extract_objects(archive_dir: Path, temporary_dir: Path) -> Path:
             f"{actual_payload} != {chunk_manifest['payload_sha256']}"
         )
 
-    object_root = temporary_dir / "payload"
+    object_root = temporary_dir / f"{overlay_name}_payload"
     object_root.mkdir()
     with tarfile.open(payload, "r:gz") as archive:
         for member in archive.getmembers():
@@ -139,38 +161,47 @@ def extract_objects(archive_dir: Path, temporary_dir: Path) -> Path:
 
 
 def restore(archive_dir: Path, target: Path) -> None:
-    rows = read_jsonl(archive_dir / "overlay_manifest.jsonl")
+    all_rows: list[dict] = []
     with tempfile.TemporaryDirectory(prefix="rfr-data-restore-") as temporary:
-        object_root = extract_objects(archive_dir, Path(temporary))
-        verified_objects: set[str] = set()
-        for row in rows:
-            digest = row["sha256"]
-            source = object_root / row["object_path"]
-            if digest not in verified_objects:
-                actual = sha256_file(source)
-                if actual != digest:
-                    raise RuntimeError(
-                        f"payload object checksum mismatch: {digest} != {actual}"
-                    )
-                verified_objects.add(digest)
+        for overlay_name, manifest_path, chunks_path in overlay_specs(archive_dir):
+            rows = read_jsonl(manifest_path)
+            all_rows.extend(rows)
+            object_root = extract_objects(
+                archive_dir,
+                Path(temporary),
+                overlay_name,
+                chunks_path,
+            )
+            verified_objects: set[str] = set()
+            for row in rows:
+                digest = row["sha256"]
+                source = object_root / row["object_path"]
+                if digest not in verified_objects:
+                    actual = sha256_file(source)
+                    if actual != digest:
+                        raise RuntimeError(
+                            f"payload object checksum mismatch: {digest} != {actual}"
+                        )
+                    verified_objects.add(digest)
 
-            destination = safe_target(target, row["path"])
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            temporary_destination = destination.with_name(
-                f".{destination.name}.rfr-restore-tmp"
-            )
-            shutil.copyfile(source, temporary_destination)
-            os.chmod(temporary_destination, int(row["mode"]))
-            os.utime(
-                temporary_destination,
-                ns=(int(row["mtime_ns"]), int(row["mtime_ns"])),
-            )
-            os.replace(temporary_destination, destination)
+                destination = safe_target(target, row["path"])
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                temporary_destination = destination.with_name(
+                    f".{destination.name}.rfr-restore-tmp"
+                )
+                shutil.copyfile(source, temporary_destination)
+                os.chmod(temporary_destination, int(row["mode"]))
+                os.utime(
+                    temporary_destination,
+                    ns=(int(row["mtime_ns"]), int(row["mtime_ns"])),
+                )
+                os.replace(temporary_destination, destination)
 
     verify_overlay(archive_dir, target)
     print(
         "RESTORE_OK "
-        f"files={len(rows)} unique_objects={len({row['sha256'] for row in rows})}"
+        f"files={len(all_rows)} "
+        f"unique_objects={len({row['sha256'] for row in all_rows})}"
     )
 
 

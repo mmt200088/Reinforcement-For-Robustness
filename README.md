@@ -10,8 +10,9 @@ the immutable base branch:
 
 The base commit preserves every tracked file. The overlay preserves every
 current untracked or modified experiment, report, Stage-1/Stage-2 result, and
-supporting data file. Content is deduplicated by SHA-256 and split into chunks
-below GitHub's 100 MiB per-file limit.
+supporting data file. A second overlay preserves research logs and generated
+documents hidden by `.gitignore`. Content is deduplicated by SHA-256 and split
+into chunks below GitHub's 100 MiB per-file limit.
 
 ## Exact server restore
 
@@ -63,8 +64,11 @@ apply the same overlay command to that checkout.
 - `server_restore_evidence.json`: GitHub-to-server download hashes and the
   successful base, overlay, and combined restore verification markers.
 - `chunks.json`: ordered payload chunks and their hashes.
+- `ignored_overlay_manifest.jsonl` and `ignored_chunks.json`: equivalent
+  inventory and chunk metadata for ignored logs and generated documents.
 - `SHA256SUMS`: control-file and payload-chunk hashes.
 - `overlay_objects.tar.gz.part-*`: deduplicated content-addressed payload.
+- `ignored_overlay_objects.tar.gz.part-*`: deduplicated ignored-file payload.
 - `restore_to_server.py`: restore and verification tool.
 
 Finder metadata (`.DS_Store`) and the empty accidental root file named `=` are
