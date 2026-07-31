@@ -1,0 +1,54 @@
+{
+  "checks": [
+    {
+      "files": 11,
+      "name": "archive_sha256sums",
+      "result": "PASS"
+    },
+    {
+      "files": 3484,
+      "marker": "BASE_VERIFY_OK files=3484",
+      "name": "base_file_git_blob_verification",
+      "result": "PASS"
+    },
+    {
+      "files": 1767,
+      "marker": "RESTORE_OK files=1767 unique_objects=1292",
+      "name": "overlay_sha256_verification_empty_target",
+      "result": "PASS"
+    },
+    {
+      "files": 1767,
+      "marker": "RESTORE_OK files=1767 unique_objects=1292",
+      "name": "base_plus_overlay_exact_restore",
+      "result": "PASS"
+    }
+  ],
+  "cloud_refs": {
+    "base": "c78aa8a80abd8718d0e123589e2c54ac13485ad2",
+    "overlay": "463a91418558b7872cf7a5e8a5f2e37278cdcbae"
+  },
+  "downloads": {
+    "base_branch_tar": {
+      "bytes": 1978995967,
+      "sha256": "b50f4bf6e5489cf1404f2c36a8edb626b483606c7e2caf166ab425c2683bdb2e"
+    },
+    "overlay_branch_tar": {
+      "bytes": 244550935,
+      "sha256": "a10a6b046ec253e0ebd117269f26e98401c005dcf8024a7fdf1b219195a92dd9"
+    }
+  },
+  "notes": [
+    "A normal large HTTPS git clone encountered server-side GnuTLS timeout; codeload HTTPS succeeded and read the same immutable branch contents from GitHub.",
+    "The restore test ran in an isolated /hy-tmp directory and did not alter the active source tree or training job."
+  ],
+  "restored_sizes": {
+    "base_plus_overlay": "9.6G",
+    "overlay_only": "3.4G"
+  },
+  "schema_version": 1,
+  "server": "i-1.gpushare.com:43567",
+  "training_process_observed_running_after_test": true,
+  "transport": "GitHub codeload HTTPS from the named Git branches",
+  "verified_utc": "2026-07-31T08:32:08Z"
+}

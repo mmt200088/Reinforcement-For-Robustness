@@ -60,6 +60,8 @@ apply the same overlay command to that checkout.
   dirty state, and the remote refs that preserve its commit.
 - `stage1best_chain_consumed_marker.patch`: the sole inactive-worktree change,
   preserving the intentional deletion of an already-consumed `finish.md`.
+- `server_restore_evidence.json`: GitHub-to-server download hashes and the
+  successful base, overlay, and combined restore verification markers.
 - `chunks.json`: ordered payload chunks and their hashes.
 - `SHA256SUMS`: control-file and payload-chunk hashes.
 - `overlay_objects.tar.gz.part-*`: deduplicated content-addressed payload.
