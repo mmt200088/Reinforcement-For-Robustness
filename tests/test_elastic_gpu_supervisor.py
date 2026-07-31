@@ -122,6 +122,10 @@ class HealthResolverTest(unittest.TestCase):
         self.assertEqual(resolved.healthy_tokens, ("0", "3"))
         self.assertEqual(resolved.quarantined_tokens, ("4",))
         self.assertEqual(resolved.cuda_verified_tokens, ("0", "3"))
+        self.assertEqual(
+            resolved.to_record()["devices"][2]["health_source"],
+            "cuda_canary_failed",
+        )
 
 
 class ChildCommandTest(unittest.TestCase):

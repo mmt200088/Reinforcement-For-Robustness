@@ -131,6 +131,8 @@ class HealthSnapshot:
                             else "cuda_canary"
                         )
                         if token in self.cuda_verified_tokens
+                        else "cuda_canary_failed"
+                        if token in self.quarantined_tokens and record.is_healthy
                         else "nvidia_smi"
                         if record.is_healthy
                         else "quarantined"
