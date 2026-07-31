@@ -221,6 +221,7 @@ def _line_chart_svg(title, series, *, y_domain=None):
 
 def _write_layerwise_html_report(
         out_dir, *, summary, baseline, curve_paths, layerwise_curves=None,
+        progress_snapshot=None,
 ):
     """Write a compact auditable report for the robust layerwise result."""
     os.makedirs(out_dir, exist_ok=True)
@@ -360,6 +361,40 @@ def _write_layerwise_html_report(
         "<p><strong>No strict feasible candidate selected.</strong> "
         "Baseline and evidence status remain available below.</p>"
     )
+    snapshot = progress_snapshot or {}
+    snapshot_rows = [
+        {"field": "Status", "value": snapshot.get("status", "-")},
+        {
+            "field": "Completed episodes",
+            "value": (
+                f"{int(snapshot['completed_episodes'])} / "
+                f"{int(snapshot['planned_episodes'])} "
+                f"({float(snapshot['progress_percent']):.2f}%)"
+                if snapshot.get("planned_episodes")
+                else snapshot.get("completed_episodes", "-")
+            ),
+        },
+        {"field": "PPO updates", "value": snapshot.get("ppo_updates", "-")},
+        {
+            "field": "Latest PPO-window throughput",
+            "value": (
+                f"{float(snapshot['latest_window_episodes_per_hour']):.2f} episodes/hour"
+                if snapshot.get("latest_window_episodes_per_hour") is not None
+                else "-"
+            ),
+        },
+        {
+            "field": "Recent two-window throughput",
+            "value": (
+                f"{float(snapshot['recent_window_episodes_per_hour']):.2f} episodes/hour"
+                if snapshot.get("recent_window_episodes_per_hour") is not None
+                else "-"
+            ),
+        },
+        {"field": "Block4 entropy", "value": snapshot.get("block4_entropy", "-")},
+        {"field": "Precision-preset entropy", "value": snapshot.get("k_entropy", "-")},
+        {"field": "Converged", "value": snapshot.get("converged", False)},
+    ]
     document = "".join([
         "<!doctype html><html><head><meta charset='utf-8'><title>Stage-2 Layerwise Robust PPO</title>",
         "<style>body{font-family:Arial,sans-serif;margin:28px;color:#202124}h1,h2{letter-spacing:0}",
@@ -369,6 +404,8 @@ def _write_layerwise_html_report(
         ".line-chart text{font-size:12px;fill:#3c4043}</style></head><body>",
         "<h1>Stage-2 Layerwise Robust PPO</h1>",
         candidate_status,
+        "<h2>Training Snapshot</h2>",
+        _html_table((("field", "Field"), ("value", "Value")), snapshot_rows),
         "<h2>Best Dual-Resource Objective</h2>",
         _html_table((("resource", "Resource"), ("value", "Value")), resource_rows),
         f"<p><strong>Compatibility PPO score:</strong> {cost_text}</p>",
@@ -482,6 +519,54 @@ def _read_layerwise_curves(progress_dir):
         "entropy": entropy,
         "fresh_constraint_probabilities": fresh_probabilities,
         "pooled_constraint_probabilities": pooled_probabilities,
+    }
+
+
+def _read_layerwise_progress_snapshot(progress_dir, summary):
+    """Summarize checkpoint progress using completed PPO-window wall time."""
+    updates = []
+    try:
+        for row in iter_jsonl(
+                _progress_jsonl_path(progress_dir, "ppo_updates.jsonl"),
+                gzip_fallback=True,
+        ):
+            updates.append(row)
+            if len(updates) > 3:
+                updates.pop(0)
+    except FileNotFoundError:
+        updates = []
+    latest = updates[-1] if updates else {}
+    completed = int(
+        latest.get("completed_episodes", summary.get("completed_episodes", 0)) or 0
+    )
+    planned = int(
+        summary.get("planned_episodes", summary.get("total_episodes", 0)) or 0
+    )
+    window_rates = []
+    for previous, current in zip(updates, updates[1:]):
+        episode_delta = int(current.get("completed_episodes", 0) or 0) - int(
+            previous.get("completed_episodes", 0) or 0
+        )
+        elapsed = float(current.get("elapsed_sec", 0.0) or 0.0)
+        if episode_delta > 0 and elapsed > 0.0:
+            window_rates.append((episode_delta, elapsed))
+
+    def combined_rate(windows):
+        episodes = sum(item[0] for item in windows)
+        seconds = sum(item[1] for item in windows)
+        return None if seconds <= 0.0 else episodes / seconds * 3600.0
+
+    return {
+        "status": summary.get("status", "running"),
+        "completed_episodes": completed,
+        "planned_episodes": planned,
+        "progress_percent": (100.0 * completed / planned if planned else 0.0),
+        "ppo_updates": int(latest.get("update", summary.get("ppo_update_count", 0)) or 0),
+        "latest_window_episodes_per_hour": combined_rate(window_rates[-1:]),
+        "recent_window_episodes_per_hour": combined_rate(window_rates[-2:]),
+        "block4_entropy": latest.get("block4_entropy", summary.get("block4_entropy")),
+        "k_entropy": latest.get("k_entropy", summary.get("k_entropy")),
+        "converged": bool(latest.get("converged", summary.get("converged", False))),
     }
 
 
@@ -795,6 +880,9 @@ def main(argv=None):
             baseline=baselines,
             curve_paths=curve_paths,
             layerwise_curves=_read_layerwise_curves(progress_dir),
+            progress_snapshot=_read_layerwise_progress_snapshot(
+                progress_dir, layerwise_summary,
+            ),
         )
         print(f"[regen]   layerwise_html → {html_path}")
     print("[regen] done.")

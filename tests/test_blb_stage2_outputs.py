@@ -611,6 +611,61 @@ class EpisodeTraceMigrationTest(unittest.TestCase):
 
 
 class RegeneratorEndToEndTest(unittest.TestCase):
+    def test_layerwise_progress_snapshot_uses_completed_ppo_window_wall_time(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_progress_snapshot_test",
+            "scripts/blb_regen_stage2_outputs.py",
+        )
+        updates = [
+            {
+                "update": 55,
+                "completed_episodes": 6600,
+                "elapsed_sec": 660.0,
+                "block4_entropy": 0.68,
+                "k_entropy": 0.44,
+                "converged": False,
+            },
+            {
+                "update": 56,
+                "completed_episodes": 6720,
+                "elapsed_sec": 600.0,
+                "block4_entropy": 0.67,
+                "k_entropy": 0.43,
+                "converged": False,
+            },
+            {
+                "update": 57,
+                "completed_episodes": 6840,
+                "elapsed_sec": 720.0,
+                "block4_entropy": 0.66,
+                "k_entropy": 0.41,
+                "converged": False,
+            },
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            progress = Path(td)
+            diagnostics = progress / "diagnostics"
+            diagnostics.mkdir()
+            (diagnostics / "ppo_updates.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in updates),
+                encoding="utf-8",
+            )
+            snapshot = regen._read_layerwise_progress_snapshot(
+                str(progress),
+                {"planned_episodes": 50000, "status": "running"},
+            )
+
+        self.assertEqual(snapshot["completed_episodes"], 6840)
+        self.assertEqual(snapshot["ppo_updates"], 57)
+        self.assertAlmostEqual(snapshot["progress_percent"], 13.68)
+        self.assertAlmostEqual(snapshot["latest_window_episodes_per_hour"], 600.0)
+        self.assertAlmostEqual(
+            snapshot["recent_window_episodes_per_hour"],
+            240.0 / 1320.0 * 3600.0,
+        )
+        self.assertEqual(snapshot["block4_entropy"], 0.66)
+        self.assertEqual(snapshot["k_entropy"], 0.41)
+
     def test_layerwise_action_table_decodes_bert_large_hml_actions(self):
         regen = _load_standalone(
             "blb_regen_layerwise_hml_table_test",
