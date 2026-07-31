@@ -1,8 +1,8 @@
 {
   "checks": [
     {
-      "files": 11,
-      "name": "archive_sha256sums",
+      "files": 15,
+      "name": "archive_sha256sums_final",
       "result": "PASS"
     },
     {
@@ -14,19 +14,20 @@
     {
       "files": 1767,
       "marker": "RESTORE_OK files=1767 unique_objects=1292",
-      "name": "overlay_sha256_verification_empty_target",
+      "name": "primary_overlay_sha256_restore",
       "result": "PASS"
     },
     {
-      "files": 1767,
-      "marker": "RESTORE_OK files=1767 unique_objects=1292",
-      "name": "base_plus_overlay_exact_restore",
+      "files": 2104,
+      "marker": "RESTORE_OK files=2104 unique_objects=1619",
+      "name": "primary_plus_ignored_overlays_sha256_restore",
       "result": "PASS"
     }
   ],
   "cloud_refs": {
     "base": "c78aa8a80abd8718d0e123589e2c54ac13485ad2",
-    "overlay": "463a91418558b7872cf7a5e8a5f2e37278cdcbae"
+    "overlay": "463a91418558b7872cf7a5e8a5f2e37278cdcbae",
+    "overlay_content": "8ab47d39d7b2f448dd57cfdfebbd6ea907a8f470"
   },
   "downloads": {
     "base_branch_tar": {
@@ -34,15 +35,17 @@
       "sha256": "b50f4bf6e5489cf1404f2c36a8edb626b483606c7e2caf166ab425c2683bdb2e"
     },
     "overlay_branch_tar": {
-      "bytes": 244550935,
-      "sha256": "a10a6b046ec253e0ebd117269f26e98401c005dcf8024a7fdf1b219195a92dd9"
+      "bytes": 250286304,
+      "sha256": "b8d7336611fe53b2a8caa9456457ac1e40fdeda80a603197594f2ff744b33192"
     }
   },
   "notes": [
     "A normal large HTTPS git clone encountered server-side GnuTLS timeout; codeload HTTPS succeeded and read the same immutable branch contents from GitHub.",
-    "The restore test ran in an isolated /hy-tmp directory and did not alter the active source tree or training job."
+    "The restore test ran in an isolated /hy-tmp directory and did not alter the active source tree or training job.",
+    "A second GitHub-to-server download after adding 337 ignored logs/documents passed all 15 control checks and restored all 2,104 overlay paths."
   ],
   "restored_sizes": {
+    "all_overlays_empty_target": "4.7G",
     "base_plus_overlay": "9.6G",
     "overlay_only": "3.4G"
   },
@@ -50,5 +53,5 @@
   "server": "i-1.gpushare.com:43567",
   "training_process_observed_running_after_test": true,
   "transport": "GitHub codeload HTTPS from the named Git branches",
-  "verified_utc": "2026-07-31T08:32:08Z"
+  "verified_utc": "2026-07-31T08:43:31Z"
 }
