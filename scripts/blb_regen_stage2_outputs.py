@@ -460,6 +460,63 @@ def _read_layerwise_summary(progress_dir):
     merged = dict(manifest) if isinstance(manifest, dict) else {}
     if isinstance(summary, dict):
         merged.update(summary)
+    latest_update = None
+    try:
+        for row in iter_jsonl(
+                _progress_jsonl_path(progress_dir, "ppo_updates.jsonl"),
+                gzip_fallback=True,
+        ):
+            latest_update = row
+    except FileNotFoundError:
+        pass
+    if latest_update is not None:
+        for key in (
+                "completed_episodes", "block4_entropy", "k_entropy",
+                "stall_update_windows", "selected_action_identity",
+                "selected_action_stable_update_windows", "converged",
+                "extension_required", "plateau_ready",
+                "strict_revalidation_passed", "strict_revalidation_status",
+                "termination_reason",
+        ):
+            if key in latest_update:
+                merged[key] = latest_update[key]
+        merged["ppo_update_count"] = int(latest_update.get("update", 0) or 0)
+        frontier = latest_update.get("strict_pareto_frontier") or []
+        if frontier:
+            best = frontier[0]
+            merged.update({
+                "strict_pareto_frontier": frontier,
+                "best_action_matrix": best.get("action_matrix"),
+                "best_layer_configurations": best.get("layer_configurations"),
+                "best_full_vector": best.get("full_vector"),
+                "best_assessment": best.get("assessment"),
+                "best_metrics": best.get("metrics"),
+                "best_resource_objective": {
+                    key: best.get(key)
+                    for key in (
+                        "compute_saving", "communication_saving", "robust_floor",
+                        "secondary_progress", "ppo_resource_score",
+                        "compute_shapley_credit", "communication_shapley_credit",
+                        "fusion_count", "removed_k_bits", "layer_resource_rewards",
+                        "slot_resource_rewards",
+                    )
+                },
+                "best_variable_cost": best.get("variable_cost"),
+                "best_reward": best.get("reward"),
+                "best_promotion_evidence": best.get("promotion_evidence"),
+                "best_axis_counterfactuals": best.get("axis_counterfactuals"),
+                "final_evidence": merged.get("final_evidence") or {
+                    "status": "running_not_final_certified",
+                    "required_probability": "pending",
+                    "required_trial_count": "pending",
+                },
+            })
+    if not isinstance(merged.get("baseline_reference"), dict):
+        baseline_references = merged.get("baseline_references") or {}
+        if isinstance(baseline_references, dict) and isinstance(
+                baseline_references.get("F1"), dict,
+        ):
+            merged["baseline_reference"] = baseline_references["F1"]
     return merged
 
 

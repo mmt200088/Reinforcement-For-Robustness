@@ -611,6 +611,65 @@ class EpisodeTraceMigrationTest(unittest.TestCase):
 
 
 class RegeneratorEndToEndTest(unittest.TestCase):
+    def test_layerwise_running_summary_uses_latest_strict_frontier(self):
+        regen = _load_standalone(
+            "blb_regen_layerwise_running_summary_test",
+            "scripts/blb_regen_stage2_outputs.py",
+        )
+        matrix = [[1, 0] for _ in range(24)]
+        candidate = {
+            "candidate_key": "strict-a",
+            "action_matrix": matrix,
+            "layer_configurations": [{"layer_idx": idx} for idx in range(24)],
+            "full_vector": [1, 2, 3],
+            "assessment": {"loss_precision_probability": 0.99},
+            "metrics": {"loss_mean": 0.56, "metric1_mean": 0.73},
+            "compute_saving": 0.5,
+            "communication_saving": 0.25,
+            "robust_floor": 0.25,
+            "secondary_progress": 0.375,
+            "ppo_resource_score": 0.25001,
+            "compute_shapley_credit": 0.1,
+            "communication_shapley_credit": 0.15,
+            "fusion_count": 12,
+            "removed_k_bits": 24,
+            "layer_resource_rewards": [],
+            "slot_resource_rewards": [],
+            "variable_cost": 0.25,
+            "reward": 1.2,
+            "promotion_evidence": {"status": "promoted"},
+            "axis_counterfactuals": {},
+        }
+        with tempfile.TemporaryDirectory() as td:
+            progress = Path(td)
+            diagnostics = progress / "diagnostics"
+            diagnostics.mkdir()
+            (progress / "layerwise_run_manifest.json").write_text(json.dumps({
+                "schema_version": "stage2_layerwise_robust_run_v5",
+                "status": "running",
+                "planned_episodes": 50000,
+                "baseline_references": {
+                    "F1": {"pooled": {"loss_mean": 0.57}}
+                },
+            }), encoding="utf-8")
+            (diagnostics / "ppo_updates.jsonl").write_text(json.dumps({
+                "update": 58,
+                "completed_episodes": 6960,
+                "block4_entropy": 0.65,
+                "k_entropy": 0.39,
+                "strict_pareto_frontier": [candidate],
+                "converged": False,
+            }) + "\n", encoding="utf-8")
+
+            summary = regen._read_layerwise_summary(str(progress))
+
+        self.assertEqual(summary["completed_episodes"], 6960)
+        self.assertEqual(summary["best_action_matrix"], matrix)
+        self.assertEqual(summary["best_metrics"]["loss_mean"], 0.56)
+        self.assertEqual(summary["best_resource_objective"]["compute_saving"], 0.5)
+        self.assertEqual(summary["baseline_reference"]["pooled"]["loss_mean"], 0.57)
+        self.assertEqual(summary["final_evidence"]["status"], "running_not_final_certified")
+
     def test_layerwise_progress_snapshot_uses_completed_ppo_window_wall_time(self):
         regen = _load_standalone(
             "blb_regen_layerwise_progress_snapshot_test",
