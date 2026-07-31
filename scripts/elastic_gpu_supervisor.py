@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Run RL against the healthy physical GPUs without importing Torch.
 
-Normal startup performs one batched ``nvidia-smi`` query. Healthy devices are
-remapped through ``CUDA_VISIBLE_DEVICES`` and the child receives dense logical
-device IDs. A reserved child exit can quarantine one failed device and resume
-the same run directory. Recovery canaries execute only in isolated subprocesses
-for devices that are already quarantined.
+Normal startup performs one batched ``nvidia-smi`` query. Devices marked for
+recovery are admitted only when an isolated CUDA canary confirms that they can
+execute real work. Healthy devices are remapped through ``CUDA_VISIBLE_DEVICES``
+and the child receives dense logical device IDs. A reserved child exit can
+quarantine one failed device and resume the same run directory.
 """
 from __future__ import annotations
 
@@ -78,25 +78,30 @@ class HealthSnapshot:
     healthy_tokens: tuple[str, ...]
     quarantined_tokens: tuple[str, ...]
     records: tuple[GPUHealthRecord, ...]
+    cuda_verified_tokens: tuple[str, ...] = ()
 
     @property
     def logical_device_spec(self) -> str:
         return ",".join(str(index) for index in range(len(self.healthy_tokens)))
 
     @property
+    def visibility_mode(self) -> str:
+        return "index" if self.cuda_verified_tokens else "uuid"
+
+    @property
     def healthy_visibility_tokens(self) -> tuple[str, ...]:
+        attribute = self.visibility_mode
         return tuple(
-            record.uuid
-            for record in self.records
-            if record.is_healthy
+            getattr(_record_for_token(self.records, token), attribute)
+            for token in self.healthy_tokens
         )
 
     @property
     def quarantined_visibility_tokens(self) -> tuple[str, ...]:
+        attribute = self.visibility_mode
         return tuple(
-            record.uuid
-            for record in self.records
-            if not record.is_healthy
+            getattr(_record_for_token(self.records, token), attribute)
+            for token in self.quarantined_tokens
         )
 
     def to_record(self) -> dict[str, object]:
@@ -110,15 +115,29 @@ class HealthSnapshot:
             "quarantined_visibility_tokens": list(
                 self.quarantined_visibility_tokens
             ),
+            "cuda_verified_tokens": list(self.cuda_verified_tokens),
+            "visibility_mode": self.visibility_mode,
             "logical_device_spec": self.logical_device_spec,
             "devices": [
                 {
                     "index": record.index,
                     "uuid": record.uuid,
                     "recovery_action": record.recovery_action,
-                    "healthy": record.is_healthy,
+                    "healthy": token in self.healthy_tokens,
+                    "health_source": (
+                        "nvidia_smi"
+                        if record.is_healthy
+                        else (
+                            "cuda_canary_override"
+                            if token in self.cuda_verified_tokens
+                            else "quarantined"
+                        )
+                    ),
                 }
-                for record in self.records
+                for token, record in zip(
+                    self.candidate_tokens,
+                    self.records,
+                )
             ],
         }
 
@@ -195,12 +214,20 @@ def resolve_health_snapshot(
     records: Sequence[GPUHealthRecord],
     *,
     candidate_tokens: Iterable[object],
+    cuda_verified_tokens: Iterable[object] = (),
 ) -> HealthSnapshot:
     candidates = tuple(str(token).strip() for token in candidate_tokens)
     if not candidates or any(not token for token in candidates):
         raise ValueError("at least one non-empty candidate GPU token is required")
     if len(set(candidates)) != len(candidates):
         raise ValueError("candidate GPU tokens must be unique")
+    cuda_verified = tuple(
+        str(token).strip() for token in cuda_verified_tokens
+    )
+    if len(set(cuda_verified)) != len(cuda_verified):
+        raise ValueError("CUDA-verified GPU tokens must be unique")
+    if any(token not in candidates for token in cuda_verified):
+        raise ValueError("CUDA-verified GPU tokens must be candidates")
 
     selected = tuple(
         _record_for_token(records, token) for token in candidates
@@ -208,12 +235,12 @@ def resolve_health_snapshot(
     healthy = tuple(
         token
         for token, record in zip(candidates, selected)
-        if record.is_healthy
+        if record.is_healthy or token in cuda_verified
     )
     quarantined = tuple(
         token
-        for token, record in zip(candidates, selected)
-        if not record.is_healthy
+        for token in candidates
+        if token not in healthy
     )
     if not healthy:
         raise RuntimeError(
@@ -224,6 +251,30 @@ def resolve_health_snapshot(
         healthy_tokens=healthy,
         quarantined_tokens=quarantined,
         records=selected,
+        cuda_verified_tokens=cuda_verified,
+    )
+
+
+def resolve_startup_health_snapshot(
+    records: Sequence[GPUHealthRecord],
+    *,
+    candidate_tokens: Iterable[object],
+    canary: Callable[[str], bool],
+) -> HealthSnapshot:
+    """Confirm NVML-recovery candidates with isolated CUDA execution."""
+    candidates = tuple(str(token).strip() for token in candidate_tokens)
+    selected = tuple(
+        _record_for_token(records, token) for token in candidates
+    )
+    cuda_verified = tuple(
+        token
+        for token, record in zip(candidates, selected)
+        if not record.is_healthy and canary(record.index)
+    )
+    return resolve_health_snapshot(
+        records,
+        candidate_tokens=candidates,
+        cuda_verified_tokens=cuda_verified,
     )
 
 
@@ -363,13 +414,13 @@ def isolated_cuda_canary(
     *,
     timeout_seconds: float = 30.0,
 ) -> bool:
-    """Run a tiny synchronized CUDA operation in a disposable process."""
+    """Run a synchronized CUDA matrix operation in a disposable process."""
     canary = (
         "import torch\n"
         "assert torch.cuda.is_available()\n"
-        "x = torch.ones(1, device='cuda:0')\n"
-        "y = x + 1\n"
-        "assert float(y.item()) == 2.0\n"
+        "x = torch.ones((2048, 2048), device='cuda:0', dtype=torch.float16)\n"
+        "y = x @ x\n"
+        "assert float(y[0, 0].item()) == 2048.0\n"
         "torch.cuda.synchronize()\n"
     )
     env = os.environ.copy()
@@ -580,9 +631,10 @@ def run_supervised(
                 },
             )
             return ELASTIC_GPU_RESTART_EXIT_CODE
-        snapshot = resolve_health_snapshot(
+        snapshot = resolve_startup_health_snapshot(
             records,
             candidate_tokens=eligible_candidates,
+            canary=canary,
         )
         permanently_quarantined.update(snapshot.quarantined_tokens)
         live_tokens = tuple(
@@ -603,9 +655,12 @@ def run_supervised(
             for original_index, token in enumerate(candidates)
             if token in current_index
         }
-        visibility_tokens = _visibility_tokens_for_candidates(
-            records,
-            live_tokens,
+        visibility_tokens = tuple(
+            getattr(
+                _record_for_token(records, token),
+                snapshot.visibility_mode,
+            )
+            for token in live_tokens
         )
         launch_command = build_child_command(
             command,
@@ -627,6 +682,9 @@ def run_supervised(
                 "healthy_tokens": list(live_tokens),
                 "cuda_visible_devices": list(visibility_tokens),
                 "quarantined_tokens": sorted(permanently_quarantined),
+                "cuda_verified_tokens": list(
+                    snapshot.cuda_verified_tokens
+                ),
                 "logical_device_spec": logical_spec,
                 "resume": should_resume,
             },
@@ -772,9 +830,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     started = time.perf_counter()
     records = query_nvidia_smi_records()
     candidates = _candidate_tokens(records, args.candidate_devices)
-    snapshot = resolve_health_snapshot(
+    snapshot = resolve_startup_health_snapshot(
         records,
         candidate_tokens=candidates,
+        canary=isolated_cuda_canary,
     )
     elapsed = time.perf_counter() - started
     health_payload = {

@@ -11,6 +11,7 @@ from scripts.elastic_gpu_supervisor import (
     build_child_command,
     parse_nvidia_smi_csv,
     resolve_health_snapshot,
+    resolve_startup_health_snapshot,
     run_child_foreground,
     run_supervised,
 )
@@ -68,6 +69,42 @@ class HealthResolverTest(unittest.TestCase):
             resolve_health_snapshot(records, candidate_tokens=["GPU-missing"])
         with self.assertRaisesRegex(RuntimeError, "no healthy GPU"):
             resolve_health_snapshot(records, candidate_tokens=["3"])
+
+    def test_startup_canary_admits_cuda_working_reset_device(self):
+        canary_calls = []
+
+        resolved = resolve_startup_health_snapshot(
+            parse_nvidia_smi_csv(GPU_CSV),
+            candidate_tokens=["0", "3", "4"],
+            canary=lambda token: canary_calls.append(token) or True,
+        )
+
+        self.assertEqual(canary_calls, ["3"])
+        self.assertEqual(resolved.healthy_tokens, ("0", "3", "4"))
+        self.assertEqual(resolved.quarantined_tokens, ())
+        self.assertEqual(resolved.cuda_verified_tokens, ("3",))
+        self.assertEqual(
+            resolved.healthy_visibility_tokens,
+            ("0", "3", "4"),
+        )
+        self.assertEqual(
+            resolved.to_record()["devices"][1]["health_source"],
+            "cuda_canary_override",
+        )
+
+    def test_startup_canary_failure_keeps_reset_device_quarantined(self):
+        canary_calls = []
+
+        resolved = resolve_startup_health_snapshot(
+            parse_nvidia_smi_csv(GPU_CSV),
+            candidate_tokens=["0", "3", "4"],
+            canary=lambda token: canary_calls.append(token) or False,
+        )
+
+        self.assertEqual(canary_calls, ["3"])
+        self.assertEqual(resolved.healthy_tokens, ("0", "4"))
+        self.assertEqual(resolved.quarantined_tokens, ("3",))
+        self.assertEqual(resolved.cuda_verified_tokens, ())
 
 
 class ChildCommandTest(unittest.TestCase):
@@ -222,6 +259,38 @@ class RecoveryMonitorTest(unittest.TestCase):
 
 
 class SupervisorRestartTest(unittest.TestCase):
+    def test_supervisor_launches_cuda_verified_reset_device(self):
+        records = parse_nvidia_smi_csv(GPU_CSV)
+        launches = []
+
+        def finish_once(command, *, env, check):
+            launches.append((list(command), dict(env), check))
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc = run_supervised(
+                child_command=[
+                    "python",
+                    "rl_tune.py",
+                    "--blb_v3_reward_devices",
+                    "auto",
+                ],
+                run_dir=Path(tmp),
+                candidate_tokens=("0", "3", "4"),
+                query_records=lambda: records,
+                process_runner=finish_once,
+                recovery_interval=0.0,
+                canary=lambda token: token == "3",
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(launches), 1)
+        self.assertEqual(
+            launches[0][1]["CUDA_VISIBLE_DEVICES"],
+            "0,3,4",
+        )
+        self.assertEqual(launches[0][0][-1], "0,1,2")
+
     def test_reserved_exit_quarantines_failed_device_and_resumes(self):
         records = parse_nvidia_smi_csv(GPU_CSV)
         with tempfile.TemporaryDirectory() as tmp:
