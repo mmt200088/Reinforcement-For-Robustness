@@ -1,0 +1,145 @@
+{
+  "full_verification": {
+    "checkpoint": {
+      "episode": 33720,
+      "planned_total_episodes": 50000,
+      "policy_network_variant": "shared_gtrxl_small_v1",
+      "ppo_update_count": 281,
+      "profile": "rte_large",
+      "sha256": "36956ac271a9590530b96f0e6382032def6b8583ba3f5e713bc1ad036439824e",
+      "structured_run_id": "Parting_Chapter_persistent_rl_bert-large_rte_s1t0.001_s2t0.001_s2st2.0__bertlarge_rte_stage2_k3_4gpu_a9559610_20260731__20260730T175703654438Z__pid4037261"
+    },
+    "jsonl_validation": {
+      "run/stage2_noise/progress/candidate_store.jsonl": {
+        "bytes": 1264936109,
+        "first": {},
+        "last": {
+          "candidate_key": "488d146cf989fe918556ebf73c5b423cfc450bdc455b8b38f5e9f74ba3a26deb"
+        },
+        "rows": 76679
+      },
+      "run/stage2_noise/progress/diagnostics/episodes.jsonl": {
+        "bytes": 491696261,
+        "first": {
+          "episode": 0,
+          "timestamp": 1785434226.2632315
+        },
+        "last": {
+          "episode": 33719,
+          "timestamp": 1785586375.8010695
+        },
+        "rows": 33720
+      },
+      "run/stage2_noise/progress/diagnostics/pareto_frontier.jsonl": {
+        "bytes": 4953216,
+        "first": {
+          "episode": 1062
+        },
+        "last": {
+          "episode": 27381
+        },
+        "rows": 6
+      },
+      "run/stage2_noise/progress/diagnostics/ppo_updates.jsonl": {
+        "bytes": 24711730,
+        "first": {
+          "timestamp": 1785434791.7423644,
+          "update": 1
+        },
+        "last": {
+          "timestamp": 1785586375.9250398,
+          "update": 281
+        },
+        "rows": 281
+      },
+      "run/stage2_noise/progress/diagnostics/top_candidates.jsonl": {
+        "bytes": 16537043,
+        "first": {
+          "episode": 113
+        },
+        "last": {
+          "episode": 1230
+        },
+        "rows": 20
+      },
+      "structured/episodes.jsonl": {
+        "bytes": 493820672,
+        "first": {
+          "episode": 0,
+          "timestamp": 1785434226.2632315
+        },
+        "last": {
+          "episode": 33719,
+          "timestamp": 1785586375.8010695
+        },
+        "rows": 33720
+      },
+      "structured/ppo_updates.jsonl": {
+        "bytes": 24711730,
+        "first": {
+          "timestamp": 1785434791.7423644,
+          "update": 1
+        },
+        "last": {
+          "timestamp": 1785586375.9250398,
+          "update": 281
+        },
+        "rows": 281
+      }
+    },
+    "manifest_file_count": 52,
+    "raw_bytes": 2357705497,
+    "restored_inventory_exact": true,
+    "root_file_counts": {
+      "report": 9,
+      "run": 39,
+      "structured": 4
+    },
+    "schema": "rfr_archive_verification_v2",
+    "source_inventory_exact": true,
+    "standalone_report": {
+      "embedded_pngs": 3,
+      "headings": [
+        "Training Snapshot",
+        "Best Dual-Resource Objective",
+        "Strict Resource Pareto Frontier",
+        "Best Metrics",
+        "Baseline",
+        "Baseline vs Selected Best",
+        "Baseline Trial Distributions",
+        "Best Pooled Ranking Constraint Probabilities",
+        "Promotion Evidence",
+        "Final Revalidation Evidence",
+        "Selected Layerwise Configuration",
+        "Policy Entropy by Action Type",
+        "Fresh Five-Trial Reward Constraint Probabilities",
+        "Pooled Ranking and Promotion Constraint Probabilities",
+        "Other Curves"
+      ],
+      "layer_rows": 24,
+      "path": "report/bert_large_rte_stage2_graceful_stop_33720_final_report.html"
+    },
+    "status": "VERIFY_OK",
+    "status_phase": "\u5df2\u505c\u6b62\uff1acheckpoint-boundary graceful stop"
+  },
+  "gzip_streams_verified": 7,
+  "remote_branch": "codex/bert-large-rte-final-archive-20260801",
+  "remote_commit": "a6e48bdb02b47c1567f950fe0227685c8bb049da",
+  "remote_ref_matched": true,
+  "restore": {
+    "archive_schema": "rfr_full_run_snapshot_v2",
+    "file_count": 52,
+    "output_dir": "/hy-tmp/cloud_verify_rte_restore_33720",
+    "raw_bytes": 2357705497,
+    "roots": [
+      "report",
+      "run",
+      "structured"
+    ],
+    "schema": "rfr_snapshot_restore_verification_v2",
+    "status": "RESTORE_OK"
+  },
+  "schema": "rfr_cloud_restore_verification_v1",
+  "sha256_entries_verified": 63,
+  "verified_at": "2026-08-01T12:43:41.330908+00:00"
+}
