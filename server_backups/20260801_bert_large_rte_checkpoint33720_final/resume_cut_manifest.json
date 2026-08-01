@@ -1,0 +1,21 @@
+{
+  "checkpoint_relative_path": "run/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt",
+  "checkpoint_sha256": "36956ac271a9590530b96f0e6382032def6b8583ba3f5e713bc1ad036439824e",
+  "completed_episodes": 33720,
+  "phase": "\u5df2\u505c\u6b62\uff1acheckpoint-boundary graceful stop",
+  "ppo_update_count": 281,
+  "resumable": true,
+  "row_counts": {
+    "run/stage2_noise/progress/candidate_store.jsonl": 76679,
+    "run/stage2_noise/progress/diagnostics/episodes.jsonl": 33720,
+    "run/stage2_noise/progress/diagnostics/pareto_frontier.jsonl": 6,
+    "run/stage2_noise/progress/diagnostics/ppo_updates.jsonl": 281,
+    "run/stage2_noise/progress/diagnostics/top_candidates.jsonl": 20,
+    "structured/episodes.jsonl": 33720,
+    "structured/ppo_updates.jsonl": 281
+  },
+  "schema": "rfr_stage2_resume_cut_v2",
+  "source_launch_command": "run/launch_evidence/launch_command.sh",
+  "status": "graceful_stop",
+  "stopped_at": "2026-08-01T20:13:02.087964"
+}

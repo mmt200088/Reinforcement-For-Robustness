@@ -1,0 +1,4 @@
+selected_physical_gpus=0,1,2,3
+excluded_physical_gpu=4
+prelaunch_health=GPUs 0-3 passed independent PyTorch allocation + 4096x4096 FP16 matmul + synchronize; GPU4 failed CUDA visibility/allocation probe.
+health_evidence=/hy-tmp/gpu_health_rte_prelaunch_20260731

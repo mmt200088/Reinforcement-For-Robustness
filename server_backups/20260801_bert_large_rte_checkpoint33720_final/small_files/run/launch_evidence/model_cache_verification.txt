@@ -1,0 +1,2 @@
+snapshot_revision=dd4dccbdbafa4321b0842869e1f102121c8e69dfmodel_sha256=fffce8ee375d7cf56f621863798766404942a914b52a2f4b8a310b306aed5138
+offline_model_id_load=bert,24_layers,2_labels,vocab30522

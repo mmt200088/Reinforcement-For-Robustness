@@ -1,0 +1,13 @@
+{
+  "archive_schema": "rfr_full_run_snapshot_v2",
+  "file_count": 52,
+  "output_dir": "/hy-tmp/verify_restore_bert_large_rte_33720",
+  "raw_bytes": 2357705497,
+  "roots": [
+    "report",
+    "run",
+    "structured"
+  ],
+  "schema": "rfr_snapshot_restore_verification_v2",
+  "status": "RESTORE_OK"
+}

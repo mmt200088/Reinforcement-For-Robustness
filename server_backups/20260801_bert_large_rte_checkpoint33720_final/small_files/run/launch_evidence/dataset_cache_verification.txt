@@ -1,0 +1,2 @@
+RTE_SPLITS=train:2490,validation:277,test:3000
+source=nyu-mll/glue@hf-mirror.com
