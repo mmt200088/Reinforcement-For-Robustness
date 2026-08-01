@@ -1,0 +1,9 @@
+launch_time=2026-07-31T01:45:21+08:00
+server_head=0764e71025ee887327d63364052935d770c489f9
+fetched_mainline=a9559610df1cfddecaba40e969896468cc8e0de0
+runtime_diff_count=0
+runtime_source_note=server HEAD is fully materialized; runtime bytes equal fetched a9559610; a9559610 adds archives/reports only
+model=yoshitomo-matsubara/bert-large-uncased-rte
+dataset=rte
+profile=rte_large
+max_episodes=50000

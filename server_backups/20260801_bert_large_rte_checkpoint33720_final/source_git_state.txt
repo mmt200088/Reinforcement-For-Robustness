@@ -1,0 +1,38 @@
+captured_at=2026-08-01T20:29:08.327367+08:00
+source_repo=/hy-tmp/Reinforcement-For-Robustness
+$ git rev-parse HEAD
+exit=0
+0764e71025ee887327d63364052935d770c489f9
+
+$ git status --short
+exit=0
+ M Model_analysis/model_statistics/weight_hist_out/plots/BERT-Base-MRPC_ALL_Attn_O_bias_magnitude_bar.png
+M  blb_stage2_rl/layerwise_runner.py
+M  blb_stage2_rl/runner.py
+A  blb_stage2_rl/search_baseline_runner.py
+A  blb_stage2_rl/search_baselines.py
+M  blb_stage2_rl/sequential_runner.py
+M  layer_importance_evaluator.py
+M  llama_7B_LayerImportance.sh
+M  rl_tune.py
+ M scripts/blb_regen_stage2_outputs.py
+M  scripts/elastic_gpu_supervisor.py
+M  tests/test_blb_layerwise_runner.py
+A  tests/test_blb_search_backend_wiring.py
+A  tests/test_blb_search_baseline_runner.py
+A  tests/test_blb_search_baselines.py
+ M tests/test_blb_stage2_outputs.py
+M  tests/test_elastic_gpu_supervisor.py
+?? "Parting Chapter/persistent/rl/bert-large/"
+?? rl_training_data_points/stage2/bert-large/
+
+launch_source_provenance:
+launch_time=2026-07-31T01:45:21+08:00
+server_head=0764e71025ee887327d63364052935d770c489f9
+fetched_mainline=a9559610df1cfddecaba40e969896468cc8e0de0
+runtime_diff_count=0
+runtime_source_note=server HEAD is fully materialized; runtime bytes equal fetched a9559610; a9559610 adds archives/reports only
+model=yoshitomo-matsubara/bert-large-uncased-rte
+dataset=rte
+profile=rte_large
+max_episodes=50000
