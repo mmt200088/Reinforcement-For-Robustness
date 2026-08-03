@@ -1,0 +1,19 @@
+captured_at=2026-08-03T15:42:18.318128+08:00
+graceful_stop_request=STOP_RL marker; exact marker timestamp was not separately persisted
+graceful_stop_boundary=35280
+graceful_stop_updates=294
+$ pgrep -af bert-large.*sst2
+exit=0
+18702 python3 /hy-tmp/build_bert_large_sst2_archive_20260803.py --run /hy-tmp/RFR_sst2_stage2_1b34e949/Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801 --structured /hy-tmp/RFR_sst2_stage2_1b34e949/rl_training_data_points/stage2/bert-large/sst2_large/Parting_Chapter_persistent_rl_bert-large_sst2_s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801__20260801T131315828231Z__pid4082132 --report /hy-tmp/rfr_cloud_archive_reports_20260803_153156/sst2 --archive /hy-tmp/rfr_cloud_archive_rte_sst2_20260803_153156/server_backups/20260803_bert_large_sst2_checkpoint35280_final --source-repo /hy-tmp/RFR_sst2_stage2_1b34e949
+
+$ nvidia-smi --query-gpu=index,uuid,utilization.gpu,memory.used --format=csv,noheader
+exit=0
+0, GPU-5ee16157-c7e4-7d62-6fef-6382a43301c3, 100 %, 8421 MiB
+1, GPU-4545217d-240d-87c7-3372-8dd4ac66748b, [N/A], 5345 MiB
+2, GPU-c87864a0-3df8-176b-5233-6af60ad11110, 100 %, 9286 MiB
+3, GPU-9443792e-0956-5bec-eb86-adec16d63e66, 100 %, 9286 MiB
+4, GPU-fe933141-2102-5a42-a198-230d8c55ac3b, 100 %, 9286 MiB
+
+graceful_log_markers:
+  * [graceful-stop] Ctrl+C or create Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801/stage2_noise/progress/STOP_RL; the layerwise run will stop after the next PPO checkpoint boundary.
+  [graceful-stop] checkpoint saved at episode 35280 -> Parting Chapter/persistent/rl/bert-large/sst2/s1t0.001_s2t0.001_s2st2.0__bertlarge_sst2_stage2_k3_4gpu_1b34e949_20260801/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt; launch again with the same parameters to resume.

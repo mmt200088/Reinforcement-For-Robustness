@@ -1,0 +1,8 @@
+captured_at=2026-08-03T15:48:16.373336+08:00
+archived_run_processes=[]
+note=current GPU snapshot belongs to other active work and is not historical telemetry for the stopped SST2 run
+0, GPU-5ee16157-c7e4-7d62-6fef-6382a43301c3, 100 %, 8421 MiB
+1, GPU-4545217d-240d-87c7-3372-8dd4ac66748b, [N/A], 5345 MiB
+2, GPU-c87864a0-3df8-176b-5233-6af60ad11110, 100 %, 9286 MiB
+3, GPU-9443792e-0956-5bec-eb86-adec16d63e66, 100 %, 9286 MiB
+4, GPU-fe933141-2102-5a42-a198-230d8c55ac3b, 100 %, 9286 MiB

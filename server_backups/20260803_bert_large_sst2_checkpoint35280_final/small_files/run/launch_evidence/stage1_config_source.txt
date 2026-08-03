@@ -1,0 +1,11 @@
+config_key=sst2_stage1_best_20260626
+gelu=[1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,4,1,1,4,1,1,1]
+softmax=[6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6]
+historical_html_sha256=e9fab28cdc4ae68eb5b9031030108a7bcd6faf40c387245f72ee171b01434271
+historical_source=bert-large sst2 Stage1 PPO entropy<0.1 report 20260626
+historical_validation_full_loss=0.228760753
+historical_validation_full_accuracy=0.936927
+historical_validation_full_positive_f1=0.937993
+historical_validation_full_weighted_f1=0.936928
+historical_validation_full_n=872
+newer_record_audit=No newer bert-large SST2 Stage1 record found in origin/jk_standard_rl, stage1best branches, server-data-cloud archive, or server /hy-tmp; 20260626 HTML remains authoritative.
