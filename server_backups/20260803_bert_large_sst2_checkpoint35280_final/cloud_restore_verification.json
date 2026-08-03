@@ -1,0 +1,22 @@
+{
+  "archive_path": "server_backups/20260803_bert_large_sst2_checkpoint35280_final",
+  "branch": "codex/bert-large-rte-sst2-training-archives-20260803",
+  "checks": {
+    "fresh_clone_from_github": true,
+    "gzip_test_pass": true,
+    "restore_status": "RESTORE_OK",
+    "restored_file_count": 44,
+    "restored_raw_bytes": 1717213197,
+    "restored_roots": [
+      "report",
+      "run",
+      "structured"
+    ],
+    "sha256sums_pass": true
+  },
+  "remote": "git@github.com:mmt200088/Reinforcement-For-Robustness.git",
+  "schema": "rfr_cloud_restore_verification_v3",
+  "status": "CLOUD_RESTORE_OK",
+  "verified_at": "2026-08-03T07:57:07.485057+00:00",
+  "verified_commit": "73a8387a41021025b7c60439efa257771f0824f9"
+}
