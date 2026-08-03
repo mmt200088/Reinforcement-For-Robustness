@@ -66,6 +66,10 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   state, and final summary. PNG/NPZ outputs are inspection artifacts only; do
   not launch new RL training with this structured writer disabled unless the
   user explicitly waives the requirement.
+- Stage-2 RL HTML reports must clearly show the selected best configuration's
+  fusion-count and truncation-K decisions, broken down by layer and block. Do
+  not rely only on aggregate fusion totals or nested JSON; include a compact
+  human-readable table with every relevant block position.
 - For the current Stage-2 RL collapse task, operate in goal mode rather than
   one-shot bugfix mode. The goal is not just "tests pass"; RL must train after
   the anchor without collapse, the reward curve must look like a normal RL

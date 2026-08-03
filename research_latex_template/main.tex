@@ -1,0 +1,65 @@
+\documentclass[UTF8,11pt,a4paper,fontset=fandol]{ctexart}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage[nameinlink,capitalize]{cleveref}
+\usepackage[
+  backend=biber,
+  style=gb7714-2015,
+  gbnamefmt=lowercase
+]{biblatex}
+
+\addbibresource{references.bib}
+
+\title{科研论文 LaTeX 模板}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+这是一个可直接用于科研写作的本地 LaTeX 模板。默认使用 XeLaTeX 和
+Biber，适合中文、英文或中英混排论文。
+\end{abstract}
+
+\section{Introduction}
+
+LaTeX is still the standard toolchain for papers with equations, references,
+figures, and reproducible builds \cite{lamport1986latex}. For machine learning
+papers, citation and equation-heavy drafts are easier to maintain in a Git-backed
+LaTeX project \cite{vaswani2017attention}.
+
+\section{Method}
+
+Use equations directly:
+\begin{equation}
+  \operatorname{softmax}(x_i) =
+  \frac{\exp(x_i)}{\sum_{j=1}^{n}\exp(x_j)}.
+\end{equation}
+
+\section{Results}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Example result table}
+  \label{tab:results}
+  \begin{tabular}{lrr}
+    \toprule
+    Method & Accuracy & Cost \\
+    \midrule
+    Baseline & 87.5 & 1.00 \\
+    Proposed & 88.1 & 0.72 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+See \cref{tab:results} for a compact table example.
+
+\printbibliography
+
+\end{document}

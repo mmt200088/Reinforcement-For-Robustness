@@ -1,0 +1,5 @@
+$pdf_mode = 5;
+$bibtex_use = 2;
+$out_dir = 'build';
+$aux_dir = 'build';
+$success_cmd = 'echo "PDF built: build/main.pdf"';
