@@ -1,0 +1,3 @@
+source=stage1_validation_4configs_glue_submission_report.html::sst2_stage1_best_20260625
+gelu=[1,1,1,1,1,4,1,2,1,1,1,1]
+softmax=[6,6,6,6,6,6,6,6,6,6,6,6]

@@ -1,0 +1,15 @@
+{
+  "file_count": 49,
+  "output_dir": "/hy-tmp/bert_base_sst2_archive_restore_test_20260804",
+  "raw_bytes": 1954954807,
+  "roots": [
+    "report",
+    "run",
+    "stage1_reference",
+    "structured",
+    "supplemental_report",
+    "tooling"
+  ],
+  "schema": "rfr_snapshot_restore_verification_v3",
+  "status": "RESTORE_OK"
+}

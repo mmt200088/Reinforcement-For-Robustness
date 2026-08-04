@@ -1,0 +1,76 @@
+{
+  "audit_result": "No BERT-base SST-2 July Stage-1 final report or final_config was found in the local report set, all fetched Git refs, the five-GPU server, or the single-GPU server at capture time.",
+  "backup_is_validity_endorsement": false,
+  "captured_at": "2026-08-04T17:45:00+08:00",
+  "installed_in_archived_run": {
+    "gelu": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      4,
+      1,
+      2,
+      1,
+      1,
+      1,
+      1
+    ],
+    "matches_supplied_html": true,
+    "softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ]
+  },
+  "model": "BERT-base SST-2",
+  "required_resolution": "Obtain the authoritative July BERT-base SST-2 Stage-1 artifact and compare vectors before treating this Stage-2 run as scientifically valid.",
+  "schema": "rfr_stage1_provenance_audit_v1",
+  "status": "UNRESOLVED_PENDING_AUTHORITATIVE_JULY_ARTIFACT",
+  "supplied_html": {
+    "config_key": "sst2_stage1_best_20260625",
+    "filename": "stage1_validation_4configs_glue_submission_report.html",
+    "gelu": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      4,
+      1,
+      2,
+      1,
+      1,
+      1,
+      1
+    ],
+    "local_birth_time": "2026-06-26T00:05:02+08:00",
+    "sha256": "37952610c4714e5de39c8d6880b3c8c685be6468634e0a9dbfa53ee08eeb60ce",
+    "softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "source": "bert base sst2 1 20260625/final_config.json"
+  },
+  "user_requirement": "latest Stage-1 best configuration should be the July result"
+}

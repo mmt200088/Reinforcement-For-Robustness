@@ -1,0 +1,1261 @@
+{
+  "algorithm_revision": "network_weighted_hml_three_bank_convergence_v12",
+  "archive_scope": "complete 50k historical training snapshot",
+  "backup_is_validity_endorsement": false,
+  "baseline_reference": {
+    "authoritative_validation_full": {
+      "banks": {
+        "A": {
+          "bootstrap": {
+            "samples": 4096,
+            "seed": 42
+          },
+          "group_count": 5,
+          "groups": [
+            {
+              "group_index": 1000,
+              "group_probe_seed": 9223369374594418853,
+              "loss_trials": [
+                0.27910497483857183,
+                0.28008785686635096,
+                0.27976851165294647
+              ],
+              "metric1_trials": [
+                0.9220183497175164,
+                0.9231651387083422,
+                0.9220183497175164
+              ],
+              "metric2_trials": [
+                0.9220183497175164,
+                0.9231651387083422,
+                0.9220183497175164
+              ],
+              "trial_seeds": [
+                9223369374594418853,
+                9223369377110143252,
+                9223369378681338823
+              ]
+            },
+            {
+              "group_index": 1001,
+              "group_probe_seed": 9223369376165613078,
+              "loss_trials": [
+                0.27737544873438846,
+                0.28066762331702294,
+                0.27886779872922723
+              ],
+              "metric1_trials": [
+                0.9231651387083422,
+                0.9208715607266907,
+                0.9220183497175164
+              ],
+              "metric2_trials": [
+                0.9231651387083422,
+                0.9208715607266907,
+                0.9220183497175164
+              ],
+              "trial_seeds": [
+                9223369376165613078,
+                9223369374455707559,
+                9223369381474450804
+              ]
+            },
+            {
+              "group_index": 1002,
+              "group_probe_seed": 9223369373444064327,
+              "loss_trials": [
+                0.27777130389158877,
+                0.27431155891593445,
+                0.27724376792481187
+              ],
+              "metric1_trials": [
+                0.9243119276991678,
+                0.9243119276991678,
+                0.9243119276991678
+              ],
+              "metric2_trials": [
+                0.9243119276991678,
+                0.9243119276991678,
+                0.9243119276991678
+              ],
+              "trial_seeds": [
+                9223369373444064327,
+                9223369371801271798,
+                9223369369079723813
+              ]
+            },
+            {
+              "group_index": 1003,
+              "group_probe_seed": 9223369367499062704,
+              "loss_trials": [
+                0.27691450756077374,
+                0.2783252401362865,
+                0.2771784350139285
+              ],
+              "metric1_trials": [
+                0.9243119276991678,
+                0.9231651387083422,
+                0.9254587166899935
+              ],
+              "metric2_trials": [
+                0.9243119276991678,
+                0.9231651387083422,
+                0.9254587166899935
+              ],
+              "trial_seeds": [
+                9223369367499062704,
+                9223369369146835969,
+                9223369370794643154
+              ]
+            },
+            {
+              "group_index": 1004,
+              "group_probe_seed": 9223369369139590113,
+              "loss_trials": [
+                0.2806311330390633,
+                0.28111104626174366,
+                0.2785301578974505
+              ],
+              "metric1_trials": [
+                0.9266055056808191,
+                0.9243119276991678,
+                0.9220183497175164
+              ],
+              "metric2_trials": [
+                0.9266055056808191,
+                0.9243119276991678,
+                0.9220183497175164
+              ],
+              "trial_seeds": [
+                9223369369139590113,
+                9223369366492400208,
+                9223369373499408515
+              ]
+            }
+          ],
+          "limits": {
+            "loss": 0.278804483609658,
+            "loss_std": 0.003620891692356365,
+            "metric1": 0.9225474781567897,
+            "metric1_std": 0.0030608332076495722,
+            "metric2": 0.9225474781567897,
+            "metric2_std": 0.0030608332076495722
+          },
+          "ok": true,
+          "pooled": {
+            "limits": {
+              "loss": 0.278804483609658,
+              "loss_std": 0.003620891692356365,
+              "metric1": 0.9225474781567897,
+              "metric1_std": 0.0030608332076495722,
+              "metric2": 0.9225474781567897,
+              "metric2_std": 0.0030608332076495722
+            },
+            "loss_mean": 0.278525957652006,
+            "loss_std": 0.0018104458461781826,
+            "metric1_mean": 0.9234709491058957,
+            "metric1_std": 0.0015304166038247861,
+            "metric2_mean": 0.9234709491058957,
+            "metric2_std": 0.0015304166038247861,
+            "trial_count": 15
+          },
+          "precision_tolerance": 0.001,
+          "stability_multiplier": 2.0,
+          "threshold_source": "robust_all_max_blb_baseline",
+          "trial_count": 15
+        },
+        "B": {
+          "bootstrap": {
+            "samples": 4096,
+            "seed": 42
+          },
+          "group_count": 5,
+          "groups": [
+            {
+              "group_index": 2000,
+              "group_probe_seed": 9223366720425372765,
+              "loss_trials": [
+                0.2815989446612673,
+                0.27639198070819226,
+                0.27415892310919016
+              ],
+              "metric1_trials": [
+                0.9231651387083422,
+                0.9231651387083422,
+                0.9243119276991678
+              ],
+              "metric2_trials": [
+                0.9231651387083422,
+                0.9231651387083422,
+                0.9243119276991678
+              ],
+              "trial_seeds": [
+                9223366720425372765,
+                9223366722674382316,
+                9223366724256259903
+              ]
+            },
+            {
+              "group_index": 2001,
+              "group_probe_seed": 9223366722063803790,
+              "loss_trials": [
+                0.27729049851314735,
+                0.2797071719798473,
+                0.27544426747144907
+              ],
+              "metric1_trials": [
+                0.9254587166899935,
+                0.9243119276991678,
+                0.9266055056808191
+              ],
+              "metric2_trials": [
+                0.9254587166899935,
+                0.9243119276991678,
+                0.9266055056808191
+              ],
+              "trial_seeds": [
+                9223366722063803790,
+                9223366720019946559,
+                9223366726961026796
+              ]
+            },
+            {
+              "group_index": 2002,
+              "group_probe_seed": 9223366719342124031,
+              "loss_trials": [
+                0.27794860433274454,
+                0.2792020851592405,
+                0.2779196286146794
+              ],
+              "metric1_trials": [
+                0.9231651387083422,
+                0.9243119276991678,
+                0.9208715607266907
+              ],
+              "metric2_trials": [
+                0.9231651387083422,
+                0.9243119276991678,
+                0.9208715607266907
+              ],
+              "trial_seeds": [
+                9223366719342124031,
+                9223366717365510734,
+                9223366714717300893
+              ]
+            },
+            {
+              "group_index": 2003,
+              "group_probe_seed": 9223366712331899176,
+              "loss_trials": [
+                0.2814661248698147,
+                0.2811240275655318,
+                0.2787590268828453
+              ],
+              "metric1_trials": [
+                0.9243119276991678,
+                0.9208715607266907,
+                0.9254587166899935
+              ],
+              "metric2_trials": [
+                0.9243119276991678,
+                0.9208715607266907,
+                0.9254587166899935
+              ],
+              "trial_seeds": [
+                9223366712331899176,
+                9223366714711074969,
+                9223366717367542346
+              ]
+            },
+            {
+              "group_index": 2004,
+              "group_probe_seed": 9223366713905190553,
+              "loss_trials": [
+                0.2818331492876788,
+                0.28047609465931533,
+                0.27761558873937764
+              ],
+              "metric1_trials": [
+                0.9208715607266907,
+                0.9220183497175164,
+                0.9254587166899935
+              ],
+              "metric2_trials": [
+                0.9208715607266907,
+                0.9220183497175164,
+                0.9254587166899935
+              ],
+              "trial_seeds": [
+                9223366713905190553,
+                9223366712056639272,
+                9223366717992199675
+              ]
+            }
+          ],
+          "limits": {
+            "loss": 0.2790078035113917,
+            "loss_std": 0.004691755880962456,
+            "metric1": 0.9227002304503676,
+            "metric1_std": 0.0036574171067826292,
+            "metric2": 0.9227002304503676,
+            "metric2_std": 0.0036574171067826292
+          },
+          "ok": true,
+          "pooled": {
+            "limits": {
+              "loss": 0.2790078035113917,
+              "loss_std": 0.004691755880962456,
+              "metric1": 0.9227002304503676,
+              "metric1_std": 0.0036574171067826292,
+              "metric2": 0.9227002304503676,
+              "metric2_std": 0.0036574171067826292
+            },
+            "loss_mean": 0.27872907443695477,
+            "loss_std": 0.002345877940481228,
+            "metric1_mean": 0.9236238543046723,
+            "metric1_std": 0.0018287085533913146,
+            "metric2_mean": 0.9236238543046723,
+            "metric2_std": 0.0018287085533913146,
+            "trial_count": 15
+          },
+          "precision_tolerance": 0.001,
+          "stability_multiplier": 2.0,
+          "threshold_source": "robust_all_max_blb_baseline",
+          "trial_count": 15
+        },
+        "C": {
+          "bootstrap": {
+            "samples": 4096,
+            "seed": 42
+          },
+          "group_count": 5,
+          "groups": [
+            {
+              "group_index": 3000,
+              "group_probe_seed": 9223364066322514933,
+              "loss_trials": [
+                0.27521545945777803,
+                0.28079099221787324,
+                0.2773881013923829
+              ],
+              "metric1_trials": [
+                0.9243119276991678,
+                0.9254587166899935,
+                0.9197247717358651
+              ],
+              "metric2_trials": [
+                0.9243119276991678,
+                0.9254587166899935,
+                0.9197247717358651
+              ],
+              "trial_seeds": [
+                9223364066322514933,
+                9223364068238621252,
+                9223364069878100119
+              ]
+            },
+            {
+              "group_index": 3001,
+              "group_probe_seed": 9223364067895867686,
+              "loss_trials": [
+                0.27590092428780477,
+                0.2799894925924616,
+                0.276039891901913
+              ],
+              "metric1_trials": [
+                0.9231651387083422,
+                0.9231651387083422,
+                0.9254587166899935
+              ],
+              "metric2_trials": [
+                0.9231651387083422,
+                0.9231651387083422,
+                0.9254587166899935
+              ],
+              "trial_seeds": [
+                9223364067895867686,
+                9223364065584185495,
+                9223364072532478532
+              ]
+            },
+            {
+              "group_index": 3002,
+              "group_probe_seed": 9223364065181531799,
+              "loss_trials": [
+                0.27619840252563493,
+                0.2808644362135765,
+                0.278936781057524
+              ],
+              "metric1_trials": [
+                0.9208715607266907,
+                0.9243119276991678,
+                0.9231651387083422
+              ],
+              "metric2_trials": [
+                0.9208715607266907,
+                0.9243119276991678,
+                0.9231651387083422
+              ],
+              "trial_seeds": [
+                9223364065181531799,
+                9223364062929749798,
+                9223364060283768309
+              ]
+            },
+            {
+              "group_index": 3003,
+              "group_probe_seed": 9223364058162918592,
+              "loss_trials": [
+                0.2803892860992239,
+                0.2789066718258989,
+                0.28070453438190146
+              ],
+              "metric1_trials": [
+                0.9231651387083422,
+                0.9231651387083422,
+                0.9243119276991678
+              ],
+              "metric2_trials": [
+                0.9231651387083422,
+                0.9231651387083422,
+                0.9243119276991678
+              ],
+              "trial_seeds": [
+                9223364058162918592,
+                9223364060275314033,
+                9223364062921426850
+              ]
+            },
+            {
+              "group_index": 3004,
+              "group_probe_seed": 9223364059736205873,
+              "loss_trials": [
+                0.2792704203123346,
+                0.27587895696863124,
+                0.2776028476997253
+              ],
+              "metric1_trials": [
+                0.9208715607266907,
+                0.9266055056808191,
+                0.9243119276991678
+              ],
+              "metric2_trials": [
+                0.9208715607266907,
+                0.9266055056808191,
+                0.9243119276991678
+              ],
+              "trial_seeds": [
+                9223364059736205873,
+                9223364057620878208,
+                9223364063562602835
+              ]
+            }
+          ],
+          "limits": {
+            "loss": 0.2785500850755732,
+            "loss_std": 0.004121712075250124,
+            "metric1": 0.9225474781567896,
+            "metric1_std": 0.0037252784981767644,
+            "metric2": 0.9225474781567896,
+            "metric2_std": 0.0037252784981767644
+          },
+          "ok": true,
+          "pooled": {
+            "limits": {
+              "loss": 0.2785500850755732,
+              "loss_std": 0.004121712075250124,
+              "metric1": 0.9225474781567896,
+              "metric1_std": 0.0037252784981767644,
+              "metric2": 0.9225474781567896,
+              "metric2_std": 0.0037252784981767644
+            },
+            "loss_mean": 0.27827181326231093,
+            "loss_std": 0.002060856037625062,
+            "metric1_mean": 0.9234709491058956,
+            "metric1_std": 0.0018626392490883822,
+            "metric2_mean": 0.9234709491058956,
+            "metric2_std": 0.0018626392490883822,
+            "trial_count": 15
+          },
+          "precision_tolerance": 0.001,
+          "stability_multiplier": 2.0,
+          "threshold_source": "robust_all_max_blb_baseline",
+          "trial_count": 15
+        }
+      },
+      "bootstrap_probability_role": "diagnostic_tiebreak_only",
+      "contract": {
+        "banks": {
+          "A": {
+            "probe_seeds": [
+              9223369374594418853,
+              9223369376165613078,
+              9223369373444064327,
+              9223369367499062704,
+              9223369369139590113
+            ],
+            "trial_count": 15,
+            "trial_seeds": [
+              9223369374594418853,
+              9223369377110143252,
+              9223369378681338823,
+              9223369376165613078,
+              9223369374455707559,
+              9223369381474450804,
+              9223369373444064327,
+              9223369371801271798,
+              9223369369079723813,
+              9223369367499062704,
+              9223369369146835969,
+              9223369370794643154,
+              9223369369139590113,
+              9223369366492400208,
+              9223369373499408515
+            ],
+            "trials_per_probe": 3
+          },
+          "B": {
+            "probe_seeds": [
+              9223366720425372765,
+              9223366722063803790,
+              9223366719342124031,
+              9223366712331899176,
+              9223366713905190553
+            ],
+            "trial_count": 15,
+            "trial_seeds": [
+              9223366720425372765,
+              9223366722674382316,
+              9223366724256259903,
+              9223366722063803790,
+              9223366720019946559,
+              9223366726961026796,
+              9223366719342124031,
+              9223366717365510734,
+              9223366714717300893,
+              9223366712331899176,
+              9223366714711074969,
+              9223366717367542346,
+              9223366713905190553,
+              9223366712056639272,
+              9223366717992199675
+            ],
+            "trials_per_probe": 3
+          },
+          "C": {
+            "probe_seeds": [
+              9223364066322514933,
+              9223364067895867686,
+              9223364065181531799,
+              9223364058162918592,
+              9223364059736205873
+            ],
+            "trial_count": 15,
+            "trial_seeds": [
+              9223364066322514933,
+              9223364068238621252,
+              9223364069878100119,
+              9223364067895867686,
+              9223364065584185495,
+              9223364072532478532,
+              9223364065181531799,
+              9223364062929749798,
+              9223364060283768309,
+              9223364058162918592,
+              9223364060275314033,
+              9223364062921426850,
+              9223364059736205873,
+              9223364057620878208,
+              9223364063562602835
+            ],
+            "trials_per_probe": 3
+          }
+        },
+        "bootstrap_probability_role": "diagnostic_tiebreak_only",
+        "final_trial_count": 45,
+        "hard_gate": "joint_six_point_plus_compute_and_communication_counterfactual_six_point_v1",
+        "promotion_trial_count": 30,
+        "schema_version": "layerwise_validation_banks_v1"
+      },
+      "example_count": 872,
+      "fidelity": "F4",
+      "final_reference_abc": {
+        "limits": {
+          "loss": 0.2787874573988743,
+          "loss_std": 0.004089526078837735,
+          "metric1": 0.9225983955879822,
+          "metric1_std": 0.0034167322103899897,
+          "metric2": 0.9225983955879822,
+          "metric2_std": 0.0034167322103899897
+        },
+        "loss_mean": 0.2785089484504239,
+        "loss_std": 0.0020447630394188677,
+        "metric1_mean": 0.9235219175054876,
+        "metric1_std": 0.0017083661051949949,
+        "metric2_mean": 0.9235219175054876,
+        "metric2_std": 0.0017083661051949949,
+        "trial_count": 45
+      },
+      "hard_gate": "joint_six_point_plus_compute_and_communication_counterfactual_six_point_v1",
+      "ok": true,
+      "promotion_reference_ab": {
+        "limits": {
+          "loss": 0.27890614356052484,
+          "loss_std": 0.004122962240120542,
+          "metric1": 0.9226238543035788,
+          "metric1_std": 0.0033173368912266265,
+          "metric2": 0.9226238543035788,
+          "metric2_std": 0.0033173368912266265
+        },
+        "loss_mean": 0.2786275160444804,
+        "loss_std": 0.002061481120060271,
+        "metric1_mean": 0.9235474017052842,
+        "metric1_std": 0.0016586684456133133,
+        "metric2_mean": 0.9235474017052842,
+        "metric2_std": 0.0016586684456133133,
+        "trial_count": 30
+      },
+      "schema_version": "stage2_validation_banks_v1",
+      "split": "validation_full"
+    },
+    "bootstrap": {
+      "samples": 4096,
+      "seed": 42
+    },
+    "group_count": 5,
+    "groups": [
+      {
+        "group_index": 0,
+        "group_probe_seed": 9223372029836031245,
+        "loss_trials": [
+          0.3620949387550354,
+          0.3675203360617161,
+          0.37134650349617004
+        ],
+        "metric1_trials": [
+          0.890625,
+          0.890625,
+          0.890625
+        ],
+        "metric2_trials": [
+          0.890625,
+          0.890625,
+          0.890625
+        ],
+        "trial_seeds": [
+          9223372029836031245,
+          9223372031545904316,
+          9223372034200340079
+        ]
+      },
+      {
+        "group_index": 1,
+        "group_probe_seed": 9223372031409449854,
+        "loss_trials": [
+          0.3594938889145851,
+          0.3642980419099331,
+          0.3690343126654625
+        ],
+        "metric1_trials": [
+          0.89453125,
+          0.890625,
+          0.890625
+        ],
+        "metric2_trials": [
+          0.89453125,
+          0.890625,
+          0.890625
+        ],
+        "trial_seeds": [
+          9223372031409449854,
+          9223372028891468495,
+          9223372034824738844
+        ]
+      },
+      {
+        "group_index": 2,
+        "group_probe_seed": 9223372024390705327,
+        "loss_trials": [
+          0.35955433920025826,
+          0.3729441463947296,
+          0.36488429829478264
+        ],
+        "metric1_trials": [
+          0.89453125,
+          0.89453125,
+          0.890625
+        ],
+        "metric2_trials": [
+          0.89453125,
+          0.89453125,
+          0.890625
+        ],
+        "trial_seeds": [
+          9223372024390705327,
+          9223372026237032734,
+          9223372020303762381
+        ]
+      },
+      {
+        "group_index": 3,
+        "group_probe_seed": 9223372021669160472,
+        "loss_trials": [
+          0.36326731741428375,
+          0.36366962268948555,
+          0.36704543232917786
+        ],
+        "metric1_trials": [
+          0.890625,
+          0.89453125,
+          0.88671875
+        ],
+        "metric2_trials": [
+          0.890625,
+          0.89453125,
+          0.88671875
+        ],
+        "trial_seeds": [
+          9223372021669160472,
+          9223372023582597033,
+          9223372025223124346
+        ]
+      },
+      {
+        "group_index": 4,
+        "group_probe_seed": 9223372023240350793,
+        "loss_trials": [
+          0.365468867123127,
+          0.358896940946579,
+          0.3635472506284714
+        ],
+        "metric1_trials": [
+          0.890625,
+          0.89453125,
+          0.890625
+        ],
+        "metric2_trials": [
+          0.890625,
+          0.89453125,
+          0.890625
+        ],
+        "trial_seeds": [
+          9223372023240350793,
+          9223372020928161272,
+          9223372027877568299
+        ]
+      }
+    ],
+    "limit_tolerance": 0.001,
+    "limits": {
+      "loss": 0.3652359535373747,
+      "loss_std": 0.008336110293608338,
+      "metric1": 0.8907750000000001,
+      "metric1_std": 0.0046376315601926845,
+      "metric2": 0.8907750000000001,
+      "metric2_std": 0.0046376315601926845
+    },
+    "loss_mean": 0.36487108245491984,
+    "loss_std": 0.004168055146804169,
+    "loss_std_threshold": 0.008336110293608338,
+    "loss_threshold": 0.3652359535373747,
+    "metric1_mean": 0.8916666666666667,
+    "metric1_std": 0.0023188157800963422,
+    "metric1_std_threshold": 0.0046376315601926845,
+    "metric1_threshold": 0.8907750000000001,
+    "metric2_mean": 0.8916666666666667,
+    "metric2_std": 0.0023188157800963422,
+    "metric2_std_threshold": 0.0046376315601926845,
+    "metric2_threshold": 0.8907750000000001,
+    "ok": true,
+    "pooled": {
+      "limits": {
+        "loss": 0.3652359535373747,
+        "loss_std": 0.008336110293608338,
+        "metric1": 0.8907750000000001,
+        "metric1_std": 0.0046376315601926845,
+        "metric2": 0.8907750000000001,
+        "metric2_std": 0.0046376315601926845
+      },
+      "loss_mean": 0.36487108245491984,
+      "loss_std": 0.004168055146804169,
+      "metric1_mean": 0.8916666666666667,
+      "metric1_std": 0.0023188157800963422,
+      "metric2_mean": 0.8916666666666667,
+      "metric2_std": 0.0023188157800963422,
+      "trial_count": 15
+    },
+    "precision_tolerance": 0.001,
+    "robust_reference": {
+      "bootstrap": {
+        "samples": 4096,
+        "seed": 42
+      },
+      "group_count": 5,
+      "groups": [
+        {
+          "group_index": 0,
+          "group_probe_seed": 9223372029836031245,
+          "loss_trials": [
+            0.3620949387550354,
+            0.3675203360617161,
+            0.37134650349617004
+          ],
+          "metric1_trials": [
+            0.890625,
+            0.890625,
+            0.890625
+          ],
+          "metric2_trials": [
+            0.890625,
+            0.890625,
+            0.890625
+          ],
+          "trial_seeds": [
+            9223372029836031245,
+            9223372031545904316,
+            9223372034200340079
+          ]
+        },
+        {
+          "group_index": 1,
+          "group_probe_seed": 9223372031409449854,
+          "loss_trials": [
+            0.3594938889145851,
+            0.3642980419099331,
+            0.3690343126654625
+          ],
+          "metric1_trials": [
+            0.89453125,
+            0.890625,
+            0.890625
+          ],
+          "metric2_trials": [
+            0.89453125,
+            0.890625,
+            0.890625
+          ],
+          "trial_seeds": [
+            9223372031409449854,
+            9223372028891468495,
+            9223372034824738844
+          ]
+        },
+        {
+          "group_index": 2,
+          "group_probe_seed": 9223372024390705327,
+          "loss_trials": [
+            0.35955433920025826,
+            0.3729441463947296,
+            0.36488429829478264
+          ],
+          "metric1_trials": [
+            0.89453125,
+            0.89453125,
+            0.890625
+          ],
+          "metric2_trials": [
+            0.89453125,
+            0.89453125,
+            0.890625
+          ],
+          "trial_seeds": [
+            9223372024390705327,
+            9223372026237032734,
+            9223372020303762381
+          ]
+        },
+        {
+          "group_index": 3,
+          "group_probe_seed": 9223372021669160472,
+          "loss_trials": [
+            0.36326731741428375,
+            0.36366962268948555,
+            0.36704543232917786
+          ],
+          "metric1_trials": [
+            0.890625,
+            0.89453125,
+            0.88671875
+          ],
+          "metric2_trials": [
+            0.890625,
+            0.89453125,
+            0.88671875
+          ],
+          "trial_seeds": [
+            9223372021669160472,
+            9223372023582597033,
+            9223372025223124346
+          ]
+        },
+        {
+          "group_index": 4,
+          "group_probe_seed": 9223372023240350793,
+          "loss_trials": [
+            0.365468867123127,
+            0.358896940946579,
+            0.3635472506284714
+          ],
+          "metric1_trials": [
+            0.890625,
+            0.89453125,
+            0.890625
+          ],
+          "metric2_trials": [
+            0.890625,
+            0.89453125,
+            0.890625
+          ],
+          "trial_seeds": [
+            9223372023240350793,
+            9223372020928161272,
+            9223372027877568299
+          ]
+        }
+      ],
+      "limits": {
+        "loss": 0.3652359535373747,
+        "loss_std": 0.008336110293608338,
+        "metric1": 0.8907750000000001,
+        "metric1_std": 0.0046376315601926845,
+        "metric2": 0.8907750000000001,
+        "metric2_std": 0.0046376315601926845
+      },
+      "ok": true,
+      "pooled": {
+        "limits": {
+          "loss": 0.3652359535373747,
+          "loss_std": 0.008336110293608338,
+          "metric1": 0.8907750000000001,
+          "metric1_std": 0.0046376315601926845,
+          "metric2": 0.8907750000000001,
+          "metric2_std": 0.0046376315601926845
+        },
+        "loss_mean": 0.36487108245491984,
+        "loss_std": 0.004168055146804169,
+        "metric1_mean": 0.8916666666666667,
+        "metric1_std": 0.0023188157800963422,
+        "metric2_mean": 0.8916666666666667,
+        "metric2_std": 0.0023188157800963422,
+        "trial_count": 15
+      },
+      "precision_tolerance": 0.001,
+      "stability_multiplier": 2.0,
+      "threshold_source": "robust_all_max_blb_baseline",
+      "trial_count": 15
+    },
+    "stability_floor": 0.0,
+    "stability_multiplier": 2.0,
+    "stability_tolerance": 2.0,
+    "threshold_source": "robust_all_max_blb_baseline",
+    "trial_count": 15
+  },
+  "best_layer_configurations": [
+    {
+      "block4_fusion_count": 0,
+      "layer_idx": 0,
+      "precision_preset_index": 0,
+      "precision_preset_name": "high",
+      "truncation_k_by_block": {
+        "block1": 11,
+        "block2": 10,
+        "block3": 10,
+        "block4": 12,
+        "block5": 11
+      }
+    },
+    {
+      "block4_fusion_count": 0,
+      "layer_idx": 1,
+      "precision_preset_index": 0,
+      "precision_preset_name": "high",
+      "truncation_k_by_block": {
+        "block1": 11,
+        "block2": 10,
+        "block3": 10,
+        "block4": 12,
+        "block5": 11
+      }
+    },
+    {
+      "block4_fusion_count": 0,
+      "layer_idx": 2,
+      "precision_preset_index": 2,
+      "precision_preset_name": "low",
+      "truncation_k_by_block": {
+        "block1": 7,
+        "block2": 6,
+        "block3": 6,
+        "block4": 8,
+        "block5": 7
+      }
+    },
+    {
+      "block4_fusion_count": 0,
+      "layer_idx": 3,
+      "precision_preset_index": 2,
+      "precision_preset_name": "low",
+      "truncation_k_by_block": {
+        "block1": 7,
+        "block2": 6,
+        "block3": 6,
+        "block4": 8,
+        "block5": 7
+      }
+    },
+    {
+      "block4_fusion_count": 0,
+      "layer_idx": 4,
+      "precision_preset_index": 2,
+      "precision_preset_name": "low",
+      "truncation_k_by_block": {
+        "block1": 7,
+        "block2": 6,
+        "block3": 6,
+        "block4": 8,
+        "block5": 7
+      }
+    },
+    {
+      "block4_fusion_count": 1,
+      "layer_idx": 5,
+      "precision_preset_index": 2,
+      "precision_preset_name": "low",
+      "truncation_k_by_block": {
+        "block1": 7,
+        "block2": 6,
+        "block3": 6,
+        "block4": 8,
+        "block5": 7
+      }
+    },
+    {
+      "block4_fusion_count": 0,
+      "layer_idx": 6,
+      "precision_preset_index": 0,
+      "precision_preset_name": "high",
+      "truncation_k_by_block": {
+        "block1": 11,
+        "block2": 10,
+        "block3": 10,
+        "block4": 12,
+        "block5": 11
+      }
+    },
+    {
+      "block4_fusion_count": 0,
+      "layer_idx": 7,
+      "precision_preset_index": 2,
+      "precision_preset_name": "low",
+      "truncation_k_by_block": {
+        "block1": 7,
+        "block2": 6,
+        "block3": 6,
+        "block4": 8,
+        "block5": 7
+      }
+    },
+    {
+      "block4_fusion_count": 1,
+      "layer_idx": 8,
+      "precision_preset_index": 0,
+      "precision_preset_name": "high",
+      "truncation_k_by_block": {
+        "block1": 11,
+        "block2": 10,
+        "block3": 10,
+        "block4": 12,
+        "block5": 11
+      }
+    },
+    {
+      "block4_fusion_count": 1,
+      "layer_idx": 9,
+      "precision_preset_index": 1,
+      "precision_preset_name": "medium",
+      "truncation_k_by_block": {
+        "block1": 9,
+        "block2": 8,
+        "block3": 8,
+        "block4": 10,
+        "block5": 9
+      }
+    },
+    {
+      "block4_fusion_count": 1,
+      "layer_idx": 10,
+      "precision_preset_index": 0,
+      "precision_preset_name": "high",
+      "truncation_k_by_block": {
+        "block1": 11,
+        "block2": 10,
+        "block3": 10,
+        "block4": 12,
+        "block5": 11
+      }
+    },
+    {
+      "block4_fusion_count": 1,
+      "layer_idx": 11,
+      "precision_preset_index": 1,
+      "precision_preset_name": "medium",
+      "truncation_k_by_block": {
+        "block1": 9,
+        "block2": 8,
+        "block3": 8,
+        "block4": 10,
+        "block5": 9
+      }
+    }
+  ],
+  "best_metrics": {
+    "loss_mean": 0.27701987918697973,
+    "loss_std": 0.002420085755620959,
+    "metric1_mean": 0.923980632591442,
+    "metric1_std": 0.002054673876177226,
+    "metric2_mean": 0.923980632591442,
+    "metric2_std": 0.002054673876177226
+  },
+  "best_resource_objective": {
+    "communication_saving": 0.5,
+    "communication_shapley_credit": 0.25,
+    "compute_saving": 0.4166666666666667,
+    "compute_shapley_credit": 0.20833333333333334,
+    "fusion_count": 5,
+    "layer_resource_rewards": [
+      0.0,
+      0.0,
+      0.041666666666666664,
+      0.041666666666666664,
+      0.041666666666666664,
+      0.08333333333333333,
+      0.0,
+      0.041666666666666664,
+      0.041666666666666664,
+      0.0625,
+      0.041666666666666664,
+      0.0625
+    ],
+    "ppo_resource_score": 0.45833333333333337,
+    "removed_k_bits": 252,
+    "robust_floor": 0.4166666666666667,
+    "secondary_progress": 0.45833333333333337,
+    "slot_resource_rewards": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.041666666666666664
+      ],
+      [
+        0.0,
+        0.041666666666666664
+      ],
+      [
+        0.0,
+        0.041666666666666664
+      ],
+      [
+        0.041666666666666664,
+        0.041666666666666664
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.041666666666666664
+      ],
+      [
+        0.041666666666666664,
+        0.0
+      ],
+      [
+        0.041666666666666664,
+        0.020833333333333332
+      ],
+      [
+        0.041666666666666664,
+        0.0
+      ],
+      [
+        0.041666666666666664,
+        0.020833333333333332
+      ]
+    ]
+  },
+  "best_reward": 1.4589149866266766,
+  "block4_entropy": 0.17160492179179443,
+  "checkpoint": {
+    "algorithm_contract_hash": "3e5a6b1b85b1fea7e6061667fb93f6b9e5277f520208b7db65f82fcfca03fc8a",
+    "algorithm_revision": "network_weighted_hml_three_bank_convergence_v12",
+    "bytes": 8790648,
+    "episode": 50000,
+    "planned_total_episodes": 50000,
+    "policy_network_variant": "shared_gtrxl_small_v1",
+    "ppo_update_count": 417,
+    "profile": "sst2",
+    "run_context_hash": "ad31df9bfb3f45131a538f4b7ae02c2dcd21c34621762103dde6a5203c118fdb",
+    "sha256": "2133ce171d205e5563079cdc3b45eab8fb37dd7d91fea9392c36df019be1d092",
+    "structured_run_id": "Parting_Chapter_persistent_rl_bert-base_sst2_s1t0.001_s2t0.001_s2st2.0__bertbase_sst2_stage2_k3_4gpu_stage1best20260625_1b34e949_20260803__20260803T061259584620Z__pid4193405"
+  },
+  "completed_episodes": 50000,
+  "converged": false,
+  "fixed_gelu": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    4,
+    1,
+    2,
+    1,
+    1,
+    1,
+    1
+  ],
+  "fixed_softmax": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "fixed_source": "manual",
+  "phase": "max_episodes_reached",
+  "policy_network_variant": "shared_gtrxl_small_v1",
+  "ppo_update_count": 417,
+  "precision_preset_entropy": 0.12570064059382755,
+  "profile": "sst2",
+  "row_counts": {
+    "candidate_store": 54151,
+    "pareto_frontier": 7,
+    "run_episodes": 50000,
+    "run_ppo_updates": 417,
+    "structured_episodes": 50000,
+    "structured_ppo_updates": 417,
+    "top_candidates": 20
+  },
+  "schema": "rfr_bert_base_sst2_stage2_training_summary_v1",
+  "scientific_validity": "UNRESOLVED_PENDING_AUTHORITATIVE_JULY_ARTIFACT",
+  "started_at": "2026-08-03T14:12:12.259327",
+  "strict_revalidation_status": "passed",
+  "termination_reason": "max_episodes_reached",
+  "total_episodes": 50000,
+  "updated_at": "2026-08-04T01:50:56.115456"
+}

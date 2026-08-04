@@ -1,0 +1,10 @@
+Stage-2 layerwise robust PPO search status
+completed_episodes: 50000
+converged: False
+block4_entropy: 0.17160492179179443
+k_entropy: 0.12570064059382755
+stall_update_windows: 206
+final_evidence_status: strict_revalidation_passed
+P1: 15102
+P2: 2796
+P3: 32102

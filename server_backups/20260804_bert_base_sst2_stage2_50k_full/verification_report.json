@@ -1,0 +1,66 @@
+{
+  "checkpoint": {
+    "algorithm_contract_hash": "3e5a6b1b85b1fea7e6061667fb93f6b9e5277f520208b7db65f82fcfca03fc8a",
+    "algorithm_revision": "network_weighted_hml_three_bank_convergence_v12",
+    "bytes": 8790648,
+    "episode": 50000,
+    "planned_total_episodes": 50000,
+    "policy_network_variant": "shared_gtrxl_small_v1",
+    "ppo_update_count": 417,
+    "profile": "sst2",
+    "run_context_hash": "ad31df9bfb3f45131a538f4b7ae02c2dcd21c34621762103dde6a5203c118fdb",
+    "sha256": "2133ce171d205e5563079cdc3b45eab8fb37dd7d91fea9392c36df019be1d092",
+    "structured_run_id": "Parting_Chapter_persistent_rl_bert-base_sst2_s1t0.001_s2t0.001_s2st2.0__bertbase_sst2_stage2_k3_4gpu_stage1best20260625_1b34e949_20260803__20260803T061259584620Z__pid4193405"
+  },
+  "checks": {
+    "all_snapshot_files_restored": true,
+    "candidate_store_54151": true,
+    "checkpoint_episode_50000": true,
+    "checkpoint_updates_417": true,
+    "installed_matches_supplied_html": true,
+    "largest_git_blob_below_100mb": true,
+    "manifest_completed_50000": true,
+    "restore_status_ok": true,
+    "run_episodes_50000": true,
+    "run_ppo_updates_417": true,
+    "stage1_provenance_marked_unresolved": true,
+    "status_completed_50000": true,
+    "structured_episodes_50000": true,
+    "structured_ppo_updates_417": true,
+    "summary_completed_50000": true
+  },
+  "largest_archive_payload": {
+    "archive_bytes": 32090398,
+    "archive_path": "streams/structured__9b15f2ae294f__episodes.jsonl.gz",
+    "archive_sha256": "c642d05a4a809b2a89a610a2842098da4538b44abb720b2ff86b0cfae4f0a70c",
+    "mode": 420,
+    "mtime_ns": 1785779450611058626,
+    "raw_bytes": 584742544,
+    "raw_ends_with_newline": true,
+    "raw_lines": 50000,
+    "raw_sha256": "6919e4a67b0b77d6eb74e66c9416293a0fb2d13d94cf2350843bf469b55b6ec2",
+    "relative_path": "episodes.jsonl",
+    "root": "structured",
+    "source_path": "/hy-tmp/RFR_sst2_stage2_1b34e949/rl_training_data_points/stage2/bert-base/sst2/Parting_Chapter_persistent_rl_bert-base_sst2_s1t0.001_s2t0.001_s2st2.0__bertbase_sst2_stage2_k3_4gpu_stage1best20260625_1b34e949_20260803__20260803T061259584620Z__pid4193405/episodes.jsonl",
+    "storage": "gzip"
+  },
+  "row_counts": {
+    "candidate_store": 54151,
+    "pareto_frontier": 7,
+    "run_episodes": 50000,
+    "run_ppo_updates": 417,
+    "structured_episodes": 50000,
+    "structured_ppo_updates": 417,
+    "top_candidates": 20
+  },
+  "schema": "rfr_full_snapshot_verification_v1",
+  "snapshot_totals": {
+    "archive_bytes": 140502975,
+    "file_count": 49,
+    "gzip_file_count": 8,
+    "raw_bytes": 1954954807,
+    "small_file_count": 41
+  },
+  "stage1_provenance_status": "UNRESOLVED_PENDING_AUTHORITATIVE_JULY_ARTIFACT",
+  "status": "VERIFY_OK"
+}

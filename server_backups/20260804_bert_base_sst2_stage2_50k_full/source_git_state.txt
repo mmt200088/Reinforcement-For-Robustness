@@ -1,0 +1,16 @@
+captured_at=2026-08-04T17:50:00+08:00
+training_source_commit=1b34e94936ec19f92a1715ccaf7020049cf926c1
+training_source_tree=b43505118859b3de4a49a88530f835ae081e56fa
+run_evidence_source_commit=1b34e94936ec19f92a1715ccaf7020049cf926c1
+archive_base_commit=6c36532a47349ffc43d38616a030b37dd1b29153
+archive_base_tree=500c52b104391995602eca9b191e7c1fe7c8de33
+training_source_status_at_archive:
+ M "Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_PID"
+ M "Parting Chapter/persistent/rl/bert-base/mrpc/LATEST_RUN_DIR"
+?? "Parting Chapter/persistent/rl/bert-base/mrpc/.s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_1b34e949_after_sst2.stage2_rl.lock"
+?? "Parting Chapter/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_1b34e949_after_sst2/"
+?? "Parting Chapter/persistent/rl/bert-base/sst2/"
+?? "Parting Chapter/persistent/rl/bert-large/"
+?? reports/generated/
+?? rl_training_data_points/stage2/bert-base/sst2/
+?? rl_training_data_points/stage2/bert-large/
