@@ -1,0 +1,8 @@
+{
+  "source_commit": "2f3e997584119d6eb5c35c115bdee91151da68b2",
+  "source_tree": "d3d8fd7dcd9d9a73316ac34f59ddc5d851acdf89",
+  "unittest": {"passed": 17, "failed": 0, "exit_code": 0},
+  "git_check_ignore": {"pattern": ".gitignore:54:/tmp/", "path": "tmp/pdfs/example.png", "exit_code": 0},
+  "py_compile_exit_code": 0,
+  "bash_n_exit_code": 0
+}
