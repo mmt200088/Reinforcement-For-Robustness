@@ -51,6 +51,7 @@ __pycache__/
 # Local scratch dirs used by regression/smoke tests.
 .tmp-tests/
 tmp_tests/
+/tmp/
 
 # Local GPT handoff / sync package metadata. Regenerate with the handoff zip.
 _sync_metadata/
