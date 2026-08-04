@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -390,6 +391,88 @@ class PushPolicyTest(unittest.TestCase):
             result = guard.validate_pre_push(fixture.repo, [update], remote="origin", env=env)
 
         self.assertEqual(result[0]["role"], "canonical")
+
+    def test_task_source_push_is_allowed_before_handoff_tip(self):
+        guard = _load_guard_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            fixture = GitFixture(Path(td))
+            branch = "codex/task-source-20260804"
+            _git(fixture.repo, "switch", "-c", branch, "origin/jk_standard_rl")
+            source_commit = fixture.commit_file("src/source.py", "VALUE = 1\n", "source work")
+            update = guard.PushUpdate(
+                local_ref=f"refs/heads/{branch}",
+                local_sha=source_commit,
+                remote_ref=f"refs/heads/{branch}",
+                remote_sha=ZERO_SHA,
+            )
+
+            result = guard.validate_pre_push(fixture.repo, [update], remote="origin", env={})
+
+        self.assertEqual(result, [{"branch": branch, "role": "task", "action": "update"}])
+
+    def test_archive_branch_cannot_claim_deployment_eligibility(self):
+        guard = _load_guard_module()
+
+        with tempfile.TemporaryDirectory() as td:
+            fixture = GitFixture(Path(td))
+            branch = "codex/archive-old"
+            _git(fixture.repo, "switch", "-c", branch, "origin/jk_standard_rl")
+            claim = fixture.repo / "agent_handoffs" / "archive-claim.json"
+            _write_json(claim, {"deployment_eligible": True})
+            _git(fixture.repo, "add", str(claim.relative_to(fixture.repo)))
+            _git(fixture.repo, "commit", "-m", "invalid archive claim")
+            tip = _git(fixture.repo, "rev-parse", "HEAD")
+            update = guard.PushUpdate(
+                local_ref=f"refs/heads/{branch}",
+                local_sha=tip,
+                remote_ref=f"refs/heads/{branch}",
+                remote_sha=ZERO_SHA,
+            )
+
+            with self.assertRaisesRegex(guard.GuardError, "cannot claim"):
+                guard.validate_pre_push(fixture.repo, [update], remote="origin", env={})
+
+
+class HookIntegrationTest(unittest.TestCase):
+    def test_real_hook_allows_task_push_and_blocks_ordinary_canonical_push(self):
+        with tempfile.TemporaryDirectory() as td:
+            fixture = GitFixture(Path(td))
+            scripts = fixture.repo / "scripts"
+            hooks = fixture.repo / ".githooks"
+            scripts.mkdir()
+            hooks.mkdir()
+            shutil.copy2(GUARD_PATH, scripts / "repo_sync_guard.py")
+            shutil.copy2(REPO_ROOT / ".githooks" / "pre-push", hooks / "pre-push")
+            os.chmod(hooks / "pre-push", 0o755)
+            _git(fixture.repo, "config", "core.hooksPath", ".githooks")
+
+            branch = "codex/task-hook-20260804"
+            _git(fixture.repo, "switch", "-c", branch, "origin/jk_standard_rl")
+            fixture.commit_file("src/hook.py", "VALUE = 1\n", "task source")
+            task_push = subprocess.run(
+                ["git", "push", "-u", "origin", branch],
+                cwd=fixture.repo,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(task_push.returncode, 0, task_push.stderr)
+
+            _git(fixture.repo, "switch", "jk_standard_rl")
+            fixture.commit_file("README.md", "unauthorized\n", "unauthorized canonical")
+            canonical_push = subprocess.run(
+                ["git", "push", "origin", "jk_standard_rl"],
+                cwd=fixture.repo,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        self.assertNotEqual(canonical_push.returncode, 0)
+        self.assertIn("aggregator-authorized", canonical_push.stderr)
 
 
 class ServerAndResultPolicyTest(unittest.TestCase):

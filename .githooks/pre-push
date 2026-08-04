@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+exec python3 "${repo_root}/scripts/repo_sync_guard.py" \
+  --repo "${repo_root}" \
+  pre-push \
+  --remote-name "$1" \
+  --remote-url "$2"

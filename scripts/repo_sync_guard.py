@@ -1002,6 +1002,153 @@ def parse_push_updates(text: str) -> list[PushUpdate]:
     return updates
 
 
+def _branch_from_head_ref(ref: str, *, field: str) -> str:
+    prefix = "refs/heads/"
+    if not ref.startswith(prefix) or len(ref) == len(prefix):
+        raise GuardError(f"{field} must name refs/heads/*, found {ref!r}")
+    return ref[len(prefix) :]
+
+
+def _tip_changed_paths(repo: Path, commit: str) -> list[str]:
+    parents = commit_parents(repo, commit)
+    if len(parents) != 1:
+        return []
+    return changed_paths(repo, parents[0], commit)
+
+
+def _validate_non_source_eligibility_claims(
+    repo: Path,
+    *,
+    commit: str,
+    branch: str,
+) -> None:
+    for path in _tip_changed_paths(repo, commit):
+        if not path.startswith("agent_handoffs/") or not path.endswith(".json"):
+            continue
+        payload = _json_from_commit(repo, commit, path)
+        if payload.get("aggregate_eligible") is True or payload.get("deployment_eligible") is True:
+            raise GuardError(
+                f"{branch_role(branch)} branch {branch} cannot claim aggregate or deployment eligibility"
+            )
+
+
+def _validate_task_push(repo: Path, *, branch: str, commit: str) -> None:
+    tip_paths = _tip_changed_paths(repo, commit)
+    handoffs = [
+        path
+        for path in tip_paths
+        if path.startswith("agent_handoffs/tasks/") and path.endswith(".json")
+    ]
+    if not handoffs:
+        return
+    if len(handoffs) != 1 or tip_paths != handoffs:
+        raise GuardError("task handoff tip must change exactly one task handoff file")
+    validate_task_handoff(
+        repo,
+        handoffs[0],
+        branch_tip=commit,
+        expected_branch=branch,
+    )
+
+
+def _validate_aggregate_push(repo: Path, *, branch: str, commit: str) -> None:
+    tip_paths = _tip_changed_paths(repo, commit)
+    manifests = [
+        path
+        for path in tip_paths
+        if path.startswith("agent_handoffs/aggregates/") and path.endswith(".json")
+    ]
+    if not manifests:
+        return
+    if len(manifests) != 1 or tip_paths != manifests:
+        raise GuardError("aggregate manifest tip must change exactly one aggregate manifest file")
+    validate_aggregate_manifest(
+        repo,
+        manifests[0],
+        aggregate_tip=commit,
+        expected_branch=branch,
+    )
+
+
+def validate_pre_push(
+    repo: Path | str,
+    updates: Sequence[PushUpdate],
+    *,
+    remote: str = DEFAULT_REMOTE,
+    env: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    root = repository_root(repo)
+    environment = os.environ if env is None else env
+    results: list[dict[str, Any]] = []
+    for update in updates:
+        remote_branch = _branch_from_head_ref(update.remote_ref, field="remote_ref")
+        target_role = branch_role(remote_branch)
+        if update.local_sha == ZERO_SHA:
+            if target_role == "canonical":
+                raise GuardError("canonical branch deletion is forbidden")
+            results.append({"branch": remote_branch, "role": target_role, "action": "delete"})
+            continue
+        local_commit = git_commit(root, update.local_sha)
+        if local_commit != update.local_sha:
+            raise GuardError(f"pre-push local SHA is not a commit: {update.local_sha}")
+
+        if target_role == "canonical":
+            if environment.get("RFR_AGGREGATOR_AUTHORIZED") != "1":
+                raise GuardError("canonical push is not explicitly aggregator-authorized")
+            manifest_path = environment.get("RFR_AGGREGATE_MANIFEST")
+            if not manifest_path:
+                raise GuardError("canonical push requires RFR_AGGREGATE_MANIFEST")
+            if update.remote_sha == ZERO_SHA:
+                raise GuardError("canonical branch creation through pre-push is forbidden")
+            local_branch = _branch_from_head_ref(update.local_ref, field="local_ref")
+            if branch_role(local_branch) != "aggregate":
+                raise GuardError("canonical source must be pushed from a codex/aggregate-* branch")
+            current_heads = remote_heads(root, remote)
+            current_heads.pop(local_branch, None)
+            payload = validate_aggregate_manifest(
+                root,
+                manifest_path,
+                aggregate_tip=update.local_sha,
+                expected_branch=local_branch,
+                current_heads=current_heads,
+            )
+            if payload["canonical_branch"] != remote_branch:
+                raise GuardError("aggregate manifest canonical branch does not match push target")
+            if payload["base_commit"] != update.remote_sha:
+                raise GuardError(
+                    "aggregate base does not equal remote canonical old SHA: "
+                    f"base={payload['base_commit']}, remote_old={update.remote_sha}"
+                )
+            if not is_ancestor(root, update.remote_sha, update.local_sha):
+                raise GuardError("canonical update is not a fast-forward")
+            results.append(
+                {
+                    "branch": remote_branch,
+                    "role": "canonical",
+                    "action": "fast_forward",
+                    "manifest": manifest_path,
+                }
+            )
+            continue
+
+        local_branch = _branch_from_head_ref(update.local_ref, field="local_ref")
+        if local_branch != remote_branch:
+            raise GuardError("noncanonical pushes must preserve the local branch name")
+        local_role = branch_role(local_branch)
+        if local_role == "task":
+            _validate_task_push(root, branch=local_branch, commit=update.local_sha)
+        elif local_role == "aggregate":
+            _validate_aggregate_push(root, branch=local_branch, commit=update.local_sha)
+        elif local_role in {"archive", "recovery", "result", "experiment"}:
+            _validate_non_source_eligibility_claims(
+                root,
+                commit=update.local_sha,
+                branch=local_branch,
+            )
+        results.append({"branch": remote_branch, "role": local_role, "action": "update"})
+    return results
+
+
 def _status_payload(repo: Path, *, remote: str, canonical: str) -> dict[str, Any]:
     head = git_commit(repo)
     tree = git_tree(repo)
@@ -1197,6 +1344,21 @@ def command_result_check(args: argparse.Namespace) -> dict[str, Any]:
     )
 
 
+def command_pre_push(args: argparse.Namespace) -> dict[str, Any]:
+    updates = parse_push_updates(sys.stdin.read())
+    validated = validate_pre_push(
+        repository_root(args.repo),
+        updates,
+        remote=args.remote_name,
+    )
+    return {
+        "ok": True,
+        "remote_name": args.remote_name,
+        "remote_url": args.remote_url,
+        "updates": validated,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=".", help="repository checkout path")
@@ -1276,6 +1438,12 @@ def build_parser() -> argparse.ArgumentParser:
     result_check.add_argument("--require-remote", action="store_true")
     result_check.add_argument("--json", action="store_true", dest="as_json")
     result_check.set_defaults(handler=command_result_check)
+
+    pre_push = subparsers.add_parser("pre-push", help="validate Git pre-push update records")
+    pre_push.add_argument("--remote-name", required=True)
+    pre_push.add_argument("--remote-url", required=True)
+    pre_push.add_argument("--json", action="store_true", dest="as_json")
+    pre_push.set_defaults(handler=command_pre_push)
     return parser
 
 
