@@ -612,6 +612,12 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 encoding="utf-8",
             )
             fake_python3.chmod(0o755)
+            fake_nvidia_smi = fakebin / "nvidia-smi"
+            fake_nvidia_smi.write_text(
+                "#!/usr/bin/env bash\nexit 0\n",
+                encoding="utf-8",
+            )
+            fake_nvidia_smi.chmod(0o755)
 
             env = os.environ.copy()
             env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
