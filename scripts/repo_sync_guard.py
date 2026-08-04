@@ -23,6 +23,18 @@ TASK_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 TASK_STATUSES = {"in_progress", "completed", "superseded", "rejected", "archive"}
 VERIFICATION_OUTCOMES = {"passed", "failed", "not_run"}
+HEAD_DISPOSITIONS = {
+    "included",
+    "already_ancestor",
+    "patch_equivalent",
+    "superseded",
+    "rejected",
+    "archive_only",
+    "recovery_only",
+    "result_only",
+    "in_progress",
+    "needs_review",
+}
 BRANCH_ROLES = {
     "canonical",
     "task",
@@ -490,6 +502,491 @@ def validate_task_handoff(
     return committed_payload
 
 
+AGGREGATE_MANIFEST_FIELDS = {
+    "schema_version",
+    "record_type",
+    "aggregate_id",
+    "canonical_branch",
+    "aggregate_branch",
+    "base_commit",
+    "base_tree",
+    "source_commit",
+    "source_tree",
+    "remote",
+    "snapshot_at",
+    "created_at",
+    "heads",
+    "verification",
+    "server_evidence",
+    "canonical_eligible",
+    "deployment_eligible",
+}
+
+HEAD_FIELDS = {"branch", "commit", "role", "disposition", "reason", "handoff"}
+
+ROLE_DISPOSITIONS = {
+    "canonical": {"already_ancestor"},
+    "task": {
+        "included",
+        "already_ancestor",
+        "patch_equivalent",
+        "superseded",
+        "rejected",
+        "in_progress",
+        "needs_review",
+    },
+    "aggregate": {"already_ancestor", "superseded", "rejected", "needs_review"},
+    "result": {"result_only", "rejected", "needs_review"},
+    "archive": {"archive_only", "rejected", "needs_review"},
+    "recovery": {"recovery_only", "rejected", "needs_review"},
+    "experiment": {"superseded", "rejected", "needs_review"},
+    "legacy": {
+        "already_ancestor",
+        "patch_equivalent",
+        "superseded",
+        "rejected",
+        "archive_only",
+        "recovery_only",
+        "result_only",
+        "in_progress",
+        "needs_review",
+    },
+}
+
+
+def _validate_head_entry(value: Any, index: int) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise GuardError(f"heads[{index}] must be an object")
+    _require_keys(
+        value,
+        required=HEAD_FIELDS - {"handoff"},
+        allowed=HEAD_FIELDS,
+        context=f"heads[{index}]",
+    )
+    branch = value["branch"]
+    if not isinstance(branch, str) or not branch:
+        raise GuardError(f"heads[{index}].branch must be a nonempty string")
+    require_sha(value["commit"], f"heads[{index}].commit")
+    role = value["role"]
+    if role not in BRANCH_ROLES:
+        raise GuardError(f"heads[{index}].role is invalid: {role!r}")
+    actual_role = branch_role(branch)
+    if role != actual_role:
+        raise GuardError(
+            f"heads[{index}] role mismatch for {branch}: declared={role}, actual={actual_role}"
+        )
+    disposition = value["disposition"]
+    if disposition not in HEAD_DISPOSITIONS:
+        raise GuardError(f"heads[{index}].disposition is invalid: {disposition!r}")
+    if disposition not in ROLE_DISPOSITIONS[role]:
+        raise GuardError(f"{role} branch {branch} cannot use disposition {disposition}")
+    if not isinstance(value["reason"], str) or not value["reason"].strip():
+        raise GuardError(f"heads[{index}].reason must be a nonempty string")
+    handoff = value.get("handoff")
+    if handoff is not None and (not isinstance(handoff, str) or not handoff):
+        raise GuardError(f"heads[{index}].handoff must be a nonempty string or null")
+    if disposition == "included" and not handoff:
+        raise GuardError(f"included task branch {branch} requires a handoff path")
+    if disposition != "included" and handoff is not None:
+        raise GuardError(f"non-included branch {branch} must use handoff=null")
+    return dict(value)
+
+
+def validate_aggregate_payload(
+    payload: Mapping[str, Any],
+    *,
+    current_heads: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    _require_keys(
+        payload,
+        required=AGGREGATE_MANIFEST_FIELDS,
+        allowed=AGGREGATE_MANIFEST_FIELDS,
+        context="aggregate manifest",
+    )
+    if payload["schema_version"] != SCHEMA_VERSION:
+        raise GuardError(
+            f"unsupported aggregate manifest schema_version: {payload['schema_version']!r}"
+        )
+    if payload["record_type"] != "aggregate_manifest":
+        raise GuardError("aggregate manifest record_type must be 'aggregate_manifest'")
+    aggregate_id = payload["aggregate_id"]
+    if not isinstance(aggregate_id, str) or TASK_ID_RE.fullmatch(aggregate_id) is None:
+        raise GuardError("aggregate_id must contain lowercase letters, digits, and hyphens")
+    canonical = payload["canonical_branch"]
+    if canonical != DEFAULT_CANONICAL:
+        raise GuardError(f"canonical_branch must be {DEFAULT_CANONICAL}")
+    aggregate_branch = payload["aggregate_branch"]
+    if not isinstance(aggregate_branch, str) or branch_role(aggregate_branch) != "aggregate":
+        raise GuardError("aggregate_branch must use codex/aggregate-*")
+    for field in ("base_commit", "base_tree", "source_commit", "source_tree"):
+        require_sha(payload[field], field)
+    if not isinstance(payload["remote"], str) or not payload["remote"]:
+        raise GuardError("remote must be a nonempty string")
+    _require_timestamp(payload["snapshot_at"], "snapshot_at")
+    _require_timestamp(payload["created_at"], "created_at")
+    _validate_verification(payload["verification"], require_passed=True)
+    _require_string_list(payload["server_evidence"], "server_evidence")
+    if payload["canonical_eligible"] is not True:
+        raise GuardError("final aggregate manifest must be canonical eligible")
+    if payload["deployment_eligible"] is not True:
+        raise GuardError("final aggregate manifest must be deployment eligible")
+    raw_heads = payload["heads"]
+    if not isinstance(raw_heads, list) or not raw_heads:
+        raise GuardError("aggregate manifest heads must be a nonempty array")
+    entries = [_validate_head_entry(item, index) for index, item in enumerate(raw_heads)]
+    names = [entry["branch"] for entry in entries]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise GuardError("aggregate manifest contains duplicate branches: " + ", ".join(duplicates))
+    unresolved = [entry["branch"] for entry in entries if entry["disposition"] == "needs_review"]
+    if unresolved:
+        raise GuardError("aggregate manifest contains needs_review branches: " + ", ".join(unresolved))
+
+    if current_heads is not None:
+        declared = {entry["branch"]: entry["commit"] for entry in entries}
+        current = dict(current_heads)
+        missing = sorted(set(current) - set(declared))
+        extra = sorted(set(declared) - set(current))
+        if missing:
+            raise GuardError("aggregate manifest is missing remote heads: " + ", ".join(missing))
+        if extra:
+            raise GuardError("aggregate manifest contains heads absent from snapshot: " + ", ".join(extra))
+        stale = sorted(branch for branch in current if current[branch] != declared[branch])
+        if stale:
+            details = ", ".join(
+                f"{branch} declared={declared[branch]} current={current[branch]}" for branch in stale
+            )
+            raise GuardError("aggregate snapshot is stale; remote heads changed or advanced: " + details)
+    return dict(payload)
+
+
+def validate_aggregate_manifest(
+    repo: Path | str,
+    manifest_path: Path | str,
+    *,
+    aggregate_tip: str | None = None,
+    expected_branch: str | None = None,
+    remote: str | None = None,
+    require_remote: bool = False,
+    current_heads: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    root = repository_root(repo)
+    relative = _relative_record_path(root, manifest_path)
+    if not relative.startswith("agent_handoffs/aggregates/") or not relative.endswith(".json"):
+        raise GuardError("aggregate manifest must be under agent_handoffs/aggregates/*.json")
+    tip = git_commit(root, aggregate_tip or "HEAD")
+    committed_raw = _json_from_commit(root, tip, relative)
+    payload = validate_aggregate_payload(committed_raw)
+
+    candidate_path = root / relative
+    if aggregate_tip is None and candidate_path.exists():
+        working_payload = validate_aggregate_payload(read_json_file(candidate_path))
+        if working_payload != payload:
+            raise GuardError("working aggregate manifest differs from the manifest committed at tip")
+
+    aggregate_branch = expected_branch or payload["aggregate_branch"]
+    if payload["aggregate_branch"] != aggregate_branch:
+        raise GuardError(
+            f"manifest aggregate_branch {payload['aggregate_branch']} does not match {aggregate_branch}"
+        )
+    if aggregate_tip is None and current_branch(root) != aggregate_branch:
+        raise GuardError(f"current branch does not match aggregate branch {aggregate_branch}")
+
+    source_commit = require_sha(payload["source_commit"], "source_commit")
+    source_tree = require_sha(payload["source_tree"], "source_tree")
+    base_commit = require_sha(payload["base_commit"], "base_commit")
+    base_tree = require_sha(payload["base_tree"], "base_tree")
+    if git_tree(root, source_commit) != source_tree:
+        raise GuardError("aggregate source_tree does not match source_commit")
+    if git_tree(root, base_commit) != base_tree:
+        raise GuardError("aggregate base_tree does not match base_commit")
+    if not is_ancestor(root, base_commit, source_commit):
+        raise GuardError("aggregate base_commit is not an ancestor of source_commit")
+    parents = commit_parents(root, tip)
+    if parents != [source_commit]:
+        raise GuardError("aggregate tip must have exactly source_commit as its only parent")
+    tip_paths = changed_paths(root, source_commit, tip)
+    if tip_paths != [relative]:
+        raise GuardError(
+            "aggregate tip must be a manifest-only commit; changed paths: " + ", ".join(tip_paths)
+        )
+
+    heads_for_validation = current_heads
+    if require_remote:
+        if not remote:
+            raise GuardError("remote is required when require_remote=True")
+        if payload["remote"] != remote:
+            raise GuardError(
+                f"manifest remote {payload['remote']} does not match requested remote {remote}"
+            )
+        aggregate_remote_tip = remote_head(root, remote, aggregate_branch)
+        if aggregate_remote_tip != tip:
+            raise GuardError(
+                f"local/remote aggregate tip mismatch: local={tip}, remote={aggregate_remote_tip}"
+            )
+        fetched_heads = remote_heads(root, remote)
+        fetched_heads.pop(aggregate_branch, None)
+        heads_for_validation = fetched_heads
+    validate_aggregate_payload(payload, current_heads=heads_for_validation)
+
+    for entry in payload["heads"]:
+        if entry["disposition"] != "included":
+            continue
+        handoff = validate_task_handoff(
+            root,
+            entry["handoff"],
+            branch_tip=entry["commit"],
+            expected_branch=entry["branch"],
+        )
+        if handoff["status"] != "completed" or handoff["aggregate_eligible"] is not True:
+            raise GuardError(f"included branch {entry['branch']} lacks a completed eligible handoff")
+        if not is_ancestor(root, entry["commit"], source_commit):
+            raise GuardError(f"included branch {entry['branch']} is not integrated into aggregate source")
+    return payload
+
+
+def _default_head_disposition(
+    repo: Path,
+    *,
+    branch: str,
+    commit: str,
+    source_commit: str,
+    canonical: str,
+) -> dict[str, Any]:
+    role = branch_role(branch, canonical)
+    if role == "canonical" and is_ancestor(repo, commit, source_commit):
+        disposition = "already_ancestor"
+        reason = "canonical snapshot is an ancestor of aggregate source"
+    elif role == "aggregate" and is_ancestor(repo, commit, source_commit):
+        disposition = "already_ancestor"
+        reason = "prior aggregate is an ancestor of aggregate source"
+    elif role == "archive":
+        disposition = "archive_only"
+        reason = "branch role excludes source integration"
+    elif role == "recovery":
+        disposition = "recovery_only"
+        reason = "branch role requires manual recovery review and excludes direct integration"
+    elif role == "result":
+        disposition = "result_only"
+        reason = "server result branch is artifact-only"
+    else:
+        disposition = "needs_review"
+        reason = "no safe disposition can be inferred from Git role and ancestry alone"
+    return {
+        "branch": branch,
+        "commit": commit,
+        "role": role,
+        "disposition": disposition,
+        "reason": reason,
+        "handoff": None,
+    }
+
+
+def build_aggregate_draft(
+    repo: Path | str,
+    *,
+    aggregate_id: str,
+    aggregate_branch: str,
+    remote: str,
+    canonical: str,
+    heads: Mapping[str, str],
+    timestamp: str,
+) -> dict[str, Any]:
+    root = repository_root(repo)
+    if branch_role(aggregate_branch, canonical) != "aggregate":
+        raise GuardError("aggregate draft branch must use codex/aggregate-*")
+    if current_branch(root) != aggregate_branch:
+        raise GuardError(f"aggregate draft must be created on {aggregate_branch}")
+    source_commit = git_commit(root)
+    source_tree = git_tree(root)
+    if canonical not in heads:
+        raise GuardError(f"remote snapshot does not contain canonical branch {canonical}")
+    base_commit = heads[canonical]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "record_type": "aggregate_manifest",
+        "aggregate_id": aggregate_id,
+        "canonical_branch": canonical,
+        "aggregate_branch": aggregate_branch,
+        "base_commit": base_commit,
+        "base_tree": git_tree(root, base_commit),
+        "source_commit": source_commit,
+        "source_tree": source_tree,
+        "remote": remote,
+        "snapshot_at": timestamp,
+        "created_at": timestamp,
+        "heads": [
+            _default_head_disposition(
+                root,
+                branch=branch,
+                commit=commit,
+                source_commit=source_commit,
+                canonical=canonical,
+            )
+            for branch, commit in sorted(heads.items())
+            if branch != aggregate_branch
+        ],
+        "verification": [
+            {
+                "command": "aggregate verification pending",
+                "outcome": "not_run",
+                "evidence": "complete before manifest-only commit",
+            }
+        ],
+        "server_evidence": [],
+        "canonical_eligible": True,
+        "deployment_eligible": True,
+    }
+
+
+def write_json_atomic(path: Path | str, payload: Mapping[str, Any]) -> None:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".tmp")
+    data = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    try:
+        temporary.write_text(data, encoding="utf-8")
+        os.replace(temporary, destination)
+    except OSError as exc:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise GuardError(f"could not write aggregate draft {destination}: {exc}") from exc
+
+
+def check_local_sync(
+    repo: Path | str,
+    *,
+    remote: str = DEFAULT_REMOTE,
+    canonical: str = DEFAULT_CANONICAL,
+    apply: bool = False,
+) -> dict[str, Any]:
+    root = repository_root(repo)
+    require_tracked_clean(root, "canonical checkout")
+    branch = current_branch(root)
+    if branch != canonical:
+        raise GuardError(f"local-sync must run on canonical branch {canonical}, found {branch}")
+    local_commit = git_commit(root)
+    remote_commit = remote_head(root, remote, canonical)
+    if remote_commit is None:
+        raise GuardError(f"remote canonical branch does not exist: {remote}/{canonical}")
+    if local_commit != remote_commit:
+        if not apply:
+            raise GuardError(
+                f"local canonical is not current: local={local_commit}, remote={remote_commit}; "
+                "rerun with --apply only after preserving dirty work"
+            )
+        fetch_all_heads(root, remote)
+        tracked_remote = git_commit(root, f"refs/remotes/{remote}/{canonical}")
+        if tracked_remote != remote_commit:
+            raise GuardError("fetched remote-tracking canonical does not match remote canonical tip")
+        if not is_ancestor(root, local_commit, remote_commit):
+            raise GuardError("local canonical diverged from remote; fast-forward is impossible")
+        run_git(root, "merge", "--ff-only", f"refs/remotes/{remote}/{canonical}")
+        local_commit = git_commit(root)
+    local_tree = git_tree(root)
+    remote_tree = git_tree(root, remote_commit)
+    if local_commit != remote_commit or local_tree != remote_tree:
+        raise GuardError("local canonical commit/tree parity check failed")
+    require_tracked_clean(root, "canonical checkout after local-sync")
+    return {
+        "ok": True,
+        "branch": canonical,
+        "commit": local_commit,
+        "tree": local_tree,
+        "remote": remote,
+        "applied": apply,
+        "tracked_clean": True,
+    }
+
+
+def check_server_state(
+    repo: Path | str,
+    *,
+    expected_commit: str,
+    expected_tree: str,
+    remote: str = DEFAULT_REMOTE,
+    canonical: str = DEFAULT_CANONICAL,
+    sync: bool = False,
+) -> dict[str, Any]:
+    root = repository_root(repo)
+    expected_commit = require_sha(expected_commit, "expected_commit")
+    expected_tree = require_sha(expected_tree, "expected_tree")
+    require_tracked_clean(root, "server source checkout")
+    remote_commit = remote_head(root, remote, canonical)
+    if remote_commit != expected_commit:
+        raise GuardError(
+            f"expected server commit is not remote canonical tip: expected={expected_commit}, "
+            f"remote={remote_commit}"
+        )
+    if sync:
+        fetch_all_heads(root, remote)
+        fetched = git_commit(root, f"refs/remotes/{remote}/{canonical}")
+        if fetched != expected_commit:
+            raise GuardError("fetched canonical commit does not match expected commit")
+        if git_tree(root, fetched) != expected_tree:
+            raise GuardError("fetched canonical tree does not match expected tree")
+        run_git(root, "switch", "--detach", expected_commit)
+    head = git_commit(root)
+    tree = git_tree(root)
+    if head != expected_commit:
+        raise GuardError(f"server HEAD mismatch: expected={expected_commit}, actual={head}")
+    if tree != expected_tree:
+        raise GuardError(f"server tree mismatch: expected={expected_tree}, actual={tree}")
+    require_tracked_clean(root, "server source checkout after synchronization")
+    return {
+        "ok": True,
+        "commit": head,
+        "tree": tree,
+        "remote_canonical_commit": remote_commit,
+        "tracked_clean": True,
+        "synchronized": sync,
+    }
+
+
+def check_result_branch(
+    repo: Path | str,
+    *,
+    base_commit: str,
+    allowed_prefixes: Sequence[str],
+    remote: str | None = None,
+    require_remote: bool = False,
+) -> dict[str, Any]:
+    root = repository_root(repo)
+    require_tracked_clean(root, "result checkout")
+    branch = current_branch(root)
+    if branch_role(branch) != "result":
+        raise GuardError("result-check requires a codex/result-* branch")
+    base_commit = require_sha(base_commit, "base_commit")
+    head = git_commit(root)
+    if not is_ancestor(root, base_commit, head):
+        raise GuardError("result branch base_commit is not an ancestor of HEAD")
+    scopes = [_validate_scope(prefix) for prefix in allowed_prefixes]
+    if not scopes:
+        raise GuardError("result-check requires at least one allowed path prefix")
+    paths = changed_paths(root, base_commit, head)
+    disallowed = [path for path in paths if not any(_path_in_scope(path, scope) for scope in scopes)]
+    if disallowed:
+        raise GuardError("result branch changed paths outside allowed scopes: " + ", ".join(disallowed))
+    if require_remote:
+        if not remote:
+            raise GuardError("remote is required when require_remote=True")
+        remote_tip = remote_head(root, remote, branch)
+        if remote_tip != head:
+            raise GuardError(f"result branch local/remote mismatch: local={head}, remote={remote_tip}")
+    return {
+        "ok": True,
+        "branch": branch,
+        "base_commit": base_commit,
+        "commit": head,
+        "tree": git_tree(root),
+        "changed_paths": paths,
+        "allowed_prefixes": list(scopes),
+        "remote_parity": require_remote,
+    }
+
+
 def parse_push_updates(text: str) -> list[PushUpdate]:
     updates: list[PushUpdate] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
@@ -592,6 +1089,114 @@ def command_agent_finish(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def command_aggregate_preflight(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(args.repo)
+    require_tracked_clean(repo, "aggregate source checkout")
+    if args.fetch:
+        fetch_all_heads(repo, args.remote)
+    heads = remote_heads(repo, args.remote)
+    if args.canonical not in heads:
+        raise GuardError(f"remote snapshot does not contain canonical branch {args.canonical}")
+    branch = current_branch(repo)
+    if branch_role(branch, args.canonical) != "aggregate":
+        raise GuardError("aggregate-preflight must run from a codex/aggregate-* branch")
+    result: dict[str, Any] = {
+        "ok": True,
+        "aggregate_branch": branch,
+        "remote": args.remote,
+        "canonical": args.canonical,
+        "remote_head_count": len(heads),
+        "heads": heads,
+    }
+    if args.write_draft:
+        timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+        draft = build_aggregate_draft(
+            repo,
+            aggregate_id=args.aggregate_id,
+            aggregate_branch=branch,
+            remote=args.remote,
+            canonical=args.canonical,
+            heads=heads,
+            timestamp=timestamp,
+        )
+        destination = Path(args.write_draft)
+        if not destination.is_absolute():
+            destination = repo / destination
+        relative = _relative_record_path(repo, destination)
+        if not relative.startswith("agent_handoffs/aggregates/") or not relative.endswith(".json"):
+            raise GuardError("aggregate draft must be written under agent_handoffs/aggregates/*.json")
+        write_json_atomic(destination, draft)
+        result["draft_manifest"] = relative
+        result["needs_review"] = [
+            entry["branch"] for entry in draft["heads"] if entry["disposition"] == "needs_review"
+        ]
+    return result
+
+
+def command_aggregate_finalize(args: argparse.Namespace) -> dict[str, Any]:
+    repo = repository_root(args.repo)
+    require_tracked_clean(repo, "aggregate checkout")
+    if args.fetch:
+        fetch_all_heads(repo, args.remote)
+    payload = validate_aggregate_manifest(
+        repo,
+        args.manifest,
+        remote=args.remote,
+        require_remote=True,
+    )
+    canonical_tip = remote_head(repo, args.remote, payload["canonical_branch"])
+    if canonical_tip != payload["base_commit"]:
+        raise GuardError(
+            "remote canonical advanced after aggregate base: "
+            f"base={payload['base_commit']}, remote={canonical_tip}"
+        )
+    aggregate_tip = git_commit(repo)
+    if not is_ancestor(repo, canonical_tip, aggregate_tip):
+        raise GuardError("aggregate tip is not a fast-forward of remote canonical")
+    return {
+        "ok": True,
+        "aggregate_branch": payload["aggregate_branch"],
+        "aggregate_commit": aggregate_tip,
+        "aggregate_tree": git_tree(repo),
+        "canonical_branch": payload["canonical_branch"],
+        "canonical_old_commit": canonical_tip,
+        "remote_parity": True,
+        "canonical_fast_forward_command": (
+            f"git push {args.remote} {payload['aggregate_branch']}:{payload['canonical_branch']}"
+        ),
+    }
+
+
+def command_local_sync(args: argparse.Namespace) -> dict[str, Any]:
+    return check_local_sync(
+        repository_root(args.repo),
+        remote=args.remote,
+        canonical=args.canonical,
+        apply=args.apply,
+    )
+
+
+def command_server_check(args: argparse.Namespace) -> dict[str, Any]:
+    return check_server_state(
+        repository_root(args.repo),
+        expected_commit=args.expected_commit,
+        expected_tree=args.expected_tree,
+        remote=args.remote,
+        canonical=args.canonical,
+        sync=args.sync,
+    )
+
+
+def command_result_check(args: argparse.Namespace) -> dict[str, Any]:
+    return check_result_branch(
+        repository_root(args.repo),
+        base_commit=args.base_commit,
+        allowed_prefixes=args.allowed_prefix,
+        remote=args.remote,
+        require_remote=args.require_remote,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=".", help="repository checkout path")
@@ -616,6 +1221,61 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("--remote", default=DEFAULT_REMOTE)
     finish.add_argument("--json", action="store_true", dest="as_json")
     finish.set_defaults(handler=command_agent_finish)
+
+    aggregate_preflight = subparsers.add_parser(
+        "aggregate-preflight",
+        help="refresh and snapshot every remote head for one aggregate cycle",
+    )
+    aggregate_preflight.add_argument("--aggregate-id", required=True)
+    aggregate_preflight.add_argument("--remote", default=DEFAULT_REMOTE)
+    aggregate_preflight.add_argument("--canonical", default=DEFAULT_CANONICAL)
+    aggregate_preflight.add_argument("--fetch", action="store_true")
+    aggregate_preflight.add_argument("--write-draft")
+    aggregate_preflight.add_argument("--json", action="store_true", dest="as_json")
+    aggregate_preflight.set_defaults(handler=command_aggregate_preflight)
+
+    aggregate_finalize = subparsers.add_parser(
+        "aggregate-finalize",
+        help="revalidate a pushed aggregate and emit its canonical fast-forward command",
+    )
+    aggregate_finalize.add_argument("--manifest", required=True)
+    aggregate_finalize.add_argument("--remote", default=DEFAULT_REMOTE)
+    aggregate_finalize.add_argument("--fetch", action="store_true")
+    aggregate_finalize.add_argument("--json", action="store_true", dest="as_json")
+    aggregate_finalize.set_defaults(handler=command_aggregate_finalize)
+
+    local_sync = subparsers.add_parser(
+        "local-sync",
+        help="verify or explicitly fast-forward the clean local canonical checkout",
+    )
+    local_sync.add_argument("--remote", default=DEFAULT_REMOTE)
+    local_sync.add_argument("--canonical", default=DEFAULT_CANONICAL)
+    local_sync.add_argument("--apply", action="store_true")
+    local_sync.add_argument("--json", action="store_true", dest="as_json")
+    local_sync.set_defaults(handler=command_local_sync)
+
+    server_check = subparsers.add_parser(
+        "server-check",
+        help="verify or Git-synchronize a clean server checkout to exact canonical source",
+    )
+    server_check.add_argument("--expected-commit", required=True)
+    server_check.add_argument("--expected-tree", required=True)
+    server_check.add_argument("--remote", default=DEFAULT_REMOTE)
+    server_check.add_argument("--canonical", default=DEFAULT_CANONICAL)
+    server_check.add_argument("--sync", action="store_true")
+    server_check.add_argument("--json", action="store_true", dest="as_json")
+    server_check.set_defaults(handler=command_server_check)
+
+    result_check = subparsers.add_parser(
+        "result-check",
+        help="validate an artifact-only server result branch",
+    )
+    result_check.add_argument("--base-commit", required=True)
+    result_check.add_argument("--allowed-prefix", action="append", required=True)
+    result_check.add_argument("--remote", default=DEFAULT_REMOTE)
+    result_check.add_argument("--require-remote", action="store_true")
+    result_check.add_argument("--json", action="store_true", dest="as_json")
+    result_check.set_defaults(handler=command_result_check)
     return parser
 
 
