@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "source_commit": "4fdda9de769a001399a1b649afa176651442ad5a",
+  "source_tree": "833f98cfb35d5913aee421d268f72e16feeaed50",
+  "red_contract_commit": "60221431",
+  "red_unittest_exit_code": 1,
+  "first_final_unittest_exit_code": 1,
+  "final_unittest_tests": 17,
+  "final_unittest_exit_code": 0,
+  "py_compile_exit_code": 0,
+  "bash_n_exit_code": 0,
+  "tracked_clean_before_results": true,
+  "verdict": "passed"
+}
