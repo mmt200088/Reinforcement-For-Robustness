@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(git rev-parse --show-toplevel)"
-exec python3 "${repo_root}/scripts/repo_sync_guard.py" \
-  --repo "${repo_root}" \
+worktree_root="$(git rev-parse --show-toplevel)"
+hook_dir="$(cd "$(dirname "$0")" && pwd)"
+policy_root="$(cd "${hook_dir}/.." && pwd)"
+
+exec python3 "${policy_root}/scripts/repo_sync_guard.py" \
+  --repo "${worktree_root}" \
   pre-push \
   --remote-name "$1" \
   --remote-url "$2"

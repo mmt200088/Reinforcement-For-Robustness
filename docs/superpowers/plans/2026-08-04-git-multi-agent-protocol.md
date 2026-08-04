@@ -254,7 +254,9 @@ Expected: fast-forward succeeds; the pre-push hook validates authorization and m
 bash scripts/install_git_protocol_hooks.sh
 ```
 
-Expected: `git config --get core.hooksPath` prints `.githooks`.
+Expected: `git config --get core.hooksPath` prints the absolute `.githooks`
+directory in the canonical primary checkout, so every linked worktree uses the
+same policy implementation.
 
 - [ ] On the server, run `server-check --sync` using the final canonical commit/tree, then rerun `server-check` verify-only.
 - [ ] Verify and record all three endpoints:
