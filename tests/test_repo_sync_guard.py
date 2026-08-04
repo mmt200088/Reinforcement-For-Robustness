@@ -257,6 +257,8 @@ class TaskHandoffTest(unittest.TestCase):
             handoff, payload = fixture.make_completed_task()
             payload["changed_scopes"] = ["docs/"]
             _write_json(handoff, payload)
+            _git(fixture.repo, "add", str(handoff.relative_to(fixture.repo)))
+            _git(fixture.repo, "commit", "--amend", "--no-edit")
 
             with self.assertRaisesRegex(guard.GuardError, "scope"):
                 guard.validate_task_handoff(fixture.repo, handoff)
