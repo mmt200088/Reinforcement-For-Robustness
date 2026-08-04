@@ -1,0 +1,54 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "82f7b2486c15d7bba3db735076c50ea41fc0a165",
+  "base_tree": "8f58dfd71ec88d4239d7ff2d0e8ab203a5221e09",
+  "branch": "codex/task-git-protocol-20260804",
+  "branch_role": "task",
+  "changed_scopes": [
+    ".githooks/",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "agent_handoffs/",
+    "docs/GIT_MULTI_AGENT_PROTOCOL.md",
+    "docs/superpowers/plans/",
+    "docs/superpowers/specs/",
+    "scripts/install_git_protocol_hooks.sh",
+    "scripts/repo_sync_guard.py",
+    "tests/test_repo_sync_guard.py"
+  ],
+  "completed_at": "2026-08-04T16:26:26+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [],
+  "source_commit": "2fd3ece9ea655826d584ad59814f737ec7c66f9b",
+  "source_tree": "4af6c2169579988a69e719e24f0cbb9593465d5a",
+  "started_at": "2026-08-04T02:31:12+08:00",
+  "status": "completed",
+  "supersedes": [
+    "codex/git-multi-agent-protocol-20260804"
+  ],
+  "task_id": "git-multi-agent-protocol-20260804",
+  "verification": [
+    {
+      "command": "python3 -m py_compile scripts/repo_sync_guard.py tests/test_repo_sync_guard.py",
+      "evidence": "local static syntax gate; project tests intentionally deferred to server aggregate candidate",
+      "outcome": "passed"
+    },
+    {
+      "command": "bash -n .githooks/pre-push scripts/install_git_protocol_hooks.sh",
+      "evidence": "local shell syntax gate",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m json.tool agent_handoffs/schema.json",
+      "evidence": "local JSON syntax gate",
+      "outcome": "passed"
+    },
+    {
+      "command": "git diff --check 82f7b2486c15d7bba3db735076c50ea41fc0a165..2fd3ece9ea655826d584ad59814f737ec7c66f9b",
+      "evidence": "local committed-range whitespace gate",
+      "outcome": "passed"
+    }
+  ]
+}
