@@ -46,7 +46,7 @@
 ```bash
 git add tests/test_repo_sync_guard.py agent_handoffs/schema.json agent_handoffs/tasks/.gitkeep agent_handoffs/aggregates/.gitkeep
 git commit -m "test: define multi-agent git protocol contract"
-git push origin codex/git-multi-agent-protocol-20260804
+git push origin codex/task-git-protocol-20260804
 ```
 
 Expected: the branch pushes successfully; the new tests cannot import `scripts.repo_sync_guard` yet and therefore fail when executed on the server candidate checkout.
@@ -78,7 +78,7 @@ Expected: both commands exit 0; no project code or test suite runs locally.
 ```bash
 git add scripts/repo_sync_guard.py tests/test_repo_sync_guard.py
 git commit -m "feat: validate repository and task handoff state"
-git push origin codex/git-multi-agent-protocol-20260804
+git push origin codex/task-git-protocol-20260804
 ```
 
 ## Task 3: Implement Aggregate, Local, Server, and Result Gates
@@ -109,7 +109,7 @@ Expected: both commands exit 0.
 ```bash
 git add scripts/repo_sync_guard.py tests/test_repo_sync_guard.py
 git commit -m "feat: enforce aggregate and server source parity"
-git push origin codex/git-multi-agent-protocol-20260804
+git push origin codex/task-git-protocol-20260804
 ```
 
 ## Task 4: Add Pre-Push Enforcement and Hook Installation
@@ -142,7 +142,7 @@ Expected: every command exits 0.
 ```bash
 git add .githooks/pre-push scripts/install_git_protocol_hooks.sh scripts/repo_sync_guard.py tests/test_repo_sync_guard.py
 git commit -m "feat: guard canonical pushes with repository hooks"
-git push origin codex/git-multi-agent-protocol-20260804
+git push origin codex/task-git-protocol-20260804
 ```
 
 ## Task 5: Publish the Shared Human Protocol
@@ -174,7 +174,7 @@ Expected: both commands exit 0.
 ```bash
 git add docs/GIT_MULTI_AGENT_PROTOCOL.md agent_handoffs/README.md AGENTS.md CLAUDE.md tests/test_repo_sync_guard.py
 git commit -m "docs: establish mandatory multi-agent git workflow"
-git push origin codex/git-multi-agent-protocol-20260804
+git push origin codex/task-git-protocol-20260804
 ```
 
 ## Task 6: Publish This Task's Completed Handoff
@@ -284,4 +284,3 @@ Expected: both exit 0 and report exact canonical parity without modifying files.
 - [ ] Confirm no destructive Git operation was used and the original dirty-state recovery branch remains reachable remotely.
 - [ ] Confirm focused server tests, aggregate manifest completeness, authorized canonical fast-forward, local hook installation, and local/remote/server commit/tree/clean parity.
 - [ ] Use `superpowers:finishing-a-development-branch` and `superpowers:verification-before-completion` before reporting completion.
-
