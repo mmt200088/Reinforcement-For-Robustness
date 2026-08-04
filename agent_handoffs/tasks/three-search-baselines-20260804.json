@@ -5,6 +5,7 @@
   "branch": "codex/task-three-search-baselines-20260804",
   "branch_role": "task",
   "changed_scopes": [
+    "agent_handoffs/tasks/",
     "blb_stage2_rl/",
     "layer_importance_evaluator.py",
     "llama_7B_LayerImportance.sh",
@@ -17,8 +18,8 @@
   "record_type": "task_handoff",
   "schema_version": 1,
   "server_evidence": [],
-  "source_commit": "4a2ce3d0d60c6e04af6e10ff158691590ef34ece",
-  "source_tree": "bcdfdba4182d8cc63f19e441513d4fed6133d892",
+  "source_commit": "869cf1608631b23bc0c52cc08e28b391896cfeae",
+  "source_tree": "2f8c136c2081c1df9d59d57641e52f45affc4321",
   "started_at": "2026-08-04T22:32:36+08:00",
   "status": "in_progress",
   "supersedes": [],
