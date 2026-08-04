@@ -32,6 +32,42 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("blb_v3_search_evaluation_budget", keywords)
         self.assertIn("blb_v3_search_full_validation", keywords)
 
+    def test_one_backend_drives_serial_stage1_and_stage2_comparators(self):
+        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("from stage1_rl.search_runner import run_stage1_search", evaluator)
+        self.assertIn("backend=backend", evaluator)
+        self.assertIn('self.stage2_fixed_config_source = "stage1_result"', evaluator)
+        self.assertIn(
+            'f"stage1_{self.blb_v3_search_backend}_result"',
+            evaluator,
+        )
+        self.assertIn("two_stage_search_final_v1", evaluator)
+        self.assertIn("stage1_bound_into_stage2", evaluator)
+        self.assertIn(
+            "two-stage comparator must run both Stage-1 and Stage-2",
+            evaluator,
+        )
+        self.assertIn(
+            "formal two-stage comparator requires full Stage-2 strict",
+            evaluator,
+        )
+        self.assertIn("formal two-stage comparator must strictly validate top 5", evaluator)
+        self.assertIn("baseline=5x3, online=3, strict banks=15 each", evaluator)
+        self.assertIn("precision tolerance ", evaluator)
+        self.assertIn("0.001 in both stages", evaluator)
+
+        runner = (
+            ROOT / "blb_stage2_rl" / "sequential_runner.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("expected_stage1_source", runner)
+        self.assertIn("two-stage comparator must bind its own Stage-1 result", runner)
+        self.assertNotIn(
+            "non-PPO Stage-2 search does not support checkpoint resume",
+            runner,
+        )
+
     def test_evaluator_and_train_config_preserve_ppo_default(self):
         evaluator_tree = ast.parse(
             (ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
@@ -86,6 +122,14 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
         self.assertIn("ppo|bo_rf|greedy|coinn_ga", launcher)
         self.assertIn("--blb_v3_search_backend", launcher)
+        self.assertIn("run bo_rf", launcher)
+        self.assertIn("run coinn_ga", launcher)
+        self.assertIn("--stage1-accuracy-tolerance 0.001", launcher)
+        self.assertIn("--stage2-limit-tolerance 0.001", launcher)
+        self.assertIn("--stage2-stability-multiplier 2.0", launcher)
+        self.assertIn("--blb-v3-final-selection-top-n 5", launcher)
+        self.assertIn("--blb-v3-search-mutation-max-coordinates 4", launcher)
+        self.assertIn("_PERSISTENT_ALGORITHM=\"$BLB_V3_SEARCH_BACKEND\"", launcher)
         self.assertIn("--blb_v3_search_rf_n_estimators", launcher)
         self.assertIn(
             "--blb_v3_search_mutation_max_coordinates", launcher,
@@ -98,10 +142,12 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("search_backend != \"ppo\"", runner)
         self.assertIn("search_full_validation", runner)
         self.assertIn(
-            'if not bool(search_run["scientific_export_allowed"])',
+            'if search_run["strict_validation"] is None',
             runner,
         )
         self.assertIn("smoke_only_complete", runner)
+        self.assertIn("completed_infeasible", runner)
+        self.assertIn("full_search_strict_least_violating", runner)
 
         baseline_runner = (
             ROOT / "blb_stage2_rl" / "search_baseline_runner.py"

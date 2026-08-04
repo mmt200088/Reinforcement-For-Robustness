@@ -5,8 +5,9 @@ usage() {
 cat <<'EOF'
 用法：
   bash llama_7B_LayerImportance.sh run rl [常用参数] [高级参数]
-  bash llama_7B_LayerImportance.sh run ga [常用参数] [高级参数]
+  bash llama_7B_LayerImportance.sh run bo_rf [常用参数] [高级参数]
   bash llama_7B_LayerImportance.sh run greedy [常用参数] [高级参数]
+  bash llama_7B_LayerImportance.sh run coinn_ga [常用参数] [高级参数]
   bash llama_7B_LayerImportance.sh eval [Paean final eval 独立参数]
   bash llama_7B_LayerImportance.sh compare [常用参数] [高级参数]
   bash llama_7B_LayerImportance.sh general train [常用参数] [高级参数]
@@ -30,21 +31,20 @@ cat <<'EOF'
 普通用户常用参数（建议优先使用）：
   --preset NAME
   --dataset DATASET          mrpc|sst2|stsb|cola|qnli|rte|wnli
-  --algorithm ALG            rl|ga|greedy（eval 可用；run 子命令由 run 后面的算法决定）
+  --algorithm ALG            rl|bo_rf|greedy|coinn_ga（eval 可用；run 子命令由 run 后面的算法决定）
   --fresh                    等价于 --fresh-start
   --budget N                 训练兼容路径/compare 的随机对照数量；独立 Paean final eval 需同时传 --random
   --eval-repeat N            训练兼容路径的重复次数；compare 等价于 --stage2-compare-repeats；被动 final_eval 由 preset 控制
   --batch-size N
 
 高层动作：
-  --mode stage1-only         【run rl 必选其一】只运行 Stage-1 搜索，写 Parting Chapter/stage1/{combo}/
-  --mode stage2-only         【run rl 必选其一】只运行 Stage-2 搜索，正式结果写
+  --mode stage1-only         【PPO run rl 必选其一】只运行 Stage-1 搜索，写 Parting Chapter/stage1/{combo}/
+  --mode stage2-only         【PPO run rl 必选其一】只运行 Stage-2 搜索，正式结果写
                              Parting Chapter/persistent/rl/{model}/{dataset}/{constraint_slug}/stage2_noise/progress/；
                              前置配置当前默认 all4；可用 stage1_result/json/manual 显式切换
   --mode train / eval / search-only
-                             链式模式已移除（2026-06-01 解耦）。run rl 必须显式 stage1-only / stage2-only。
-                             最终评估请用独立工具：'eval' 子命令转交 Paean，或后续独立 final-eval。
-                             注：GA / greedy / general-rl 仍沿用旧的 --mode train/eval/stage*-only 语义。
+                             PPO 链式模式已移除。bo_rf / greedy / coinn_ga 子命令固定使用 train，
+                             严格串行执行同算法 Stage-1 → 绑定结果 → 同算法 Stage-2。
 
 预算简写：
   --episodes S1,S2           RL：设置 Stage-1 / Stage-2 episode 数；也可传单个 N 表示两阶段相同
@@ -148,9 +148,9 @@ GA / Greedy：
   --blb-v3-search-initial-design-size N    BO-RF 初始设计大小
   --blb-v3-search-candidate-pool-size N    BO-RF acquisition 候选池大小
   --blb-v3-search-population-size N        COINN 风格 GA 种群大小
-  --blb-v3-search-patience-generations N   COINN 风格 GA 无改进停止代数
+  --blb-v3-search-patience-generations N   BO-RF 无全局改进的原生收敛窗口
   --blb-v3-search-mutation-max-coordinates N
-                                          COINN 风格 GA 单次相邻变异坐标上限
+                                          comparator 固定为 4（每层变异概率仍为 1/L）
   --blb-v3-search-rf-n-estimators N        BO-RF 随机森林树数
   --blb-v3-search-rf-min-samples-leaf N    BO-RF 叶节点最小样本数
   --blb-v3-search-full-validation BOOL     最终执行 validation_full 联合+双轴门禁
@@ -402,9 +402,10 @@ translate_subcommand_args(){
       fi
       case "$sub" in
         rl|ppo) SUBCOMMAND_ARGS=(--search-algorithm rl "${args[@]:2}") ;;
-        ga|genetic) SUBCOMMAND_ARGS=(--search-algorithm ga "${args[@]:2}") ;;
-        greedy|greedy-search|greedy_search) SUBCOMMAND_ARGS=(--search-algorithm greedy "${args[@]:2}") ;;
-        *) err "run 子命令只支持 rl / ga / greedy，当前为：$sub" ;;
+        bo|bo-rf|bo_rf|bayesian) SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend bo_rf --blb-v3-search-evaluation-budget 50000 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}") ;;
+        ga|genetic|coinn|coinn-ga|coinn_ga) SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend coinn_ga --blb-v3-search-evaluation-budget 45664 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}") ;;
+        greedy|greedy-search|greedy_search) SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend greedy --blb-v3-search-evaluation-budget 2176782336 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}") ;;
+        *) err "run 子命令只支持 rl / bo_rf / greedy / coinn_ga，当前为：$sub" ;;
       esac
       ;;
     eval)
@@ -551,10 +552,10 @@ BLB_V3_SEED=""; S_BLB_V3_SEED="false"
 BLB_V3_POLICY_NETWORK_VARIANT="shared_gtrxl_small_v1"; S_BLB_V3_POLICY_NETWORK_VARIANT="false"
 BLB_V3_SEARCH_BACKEND="ppo"; S_BLB_V3_SEARCH_BACKEND="false"
 BLB_V3_SEARCH_EVALUATION_BUDGET="0"; S_BLB_V3_SEARCH_EVALUATION_BUDGET="false"
-BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="8"; S_BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="false"
-BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="512"; S_BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="false"
-BLB_V3_SEARCH_POPULATION_SIZE="24"; S_BLB_V3_SEARCH_POPULATION_SIZE="false"
-BLB_V3_SEARCH_PATIENCE_GENERATIONS="5"; S_BLB_V3_SEARCH_PATIENCE_GENERATIONS="false"
+BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="64"; S_BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="false"
+BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="2048"; S_BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="false"
+BLB_V3_SEARCH_POPULATION_SIZE="64"; S_BLB_V3_SEARCH_POPULATION_SIZE="false"
+BLB_V3_SEARCH_PATIENCE_GENERATIONS="100"; S_BLB_V3_SEARCH_PATIENCE_GENERATIONS="false"
 BLB_V3_SEARCH_MUTATION_MAX_COORDINATES="3"; S_BLB_V3_SEARCH_MUTATION_MAX_COORDINATES="false"
 BLB_V3_SEARCH_RF_N_ESTIMATORS="128"; S_BLB_V3_SEARCH_RF_N_ESTIMATORS="false"
 BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="2"; S_BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="false"
@@ -1030,19 +1031,29 @@ case "$GENERAL_MODE" in train|infer|search) ;; *) err "general-rl 模式必须�
 # final-eval 改为独立工具。Stage-1 仍使用解耦 record 布局；Stage-2 正式 RL
 # 使用旧 persistent/rl 约束 slug 布局，保证训练中间结果和回传都来自同一持久化目录。
 if [ "$SEARCH_ALGORITHM" = "rl" ]; then
-  case "$RUN_MODE" in
-    stage1-only|stage2-only) : ;;
-    *) err "run rl 现在必须显式指定 --mode stage1-only 或 --mode stage2-only。链式 train / eval / search-only 已移除：Stage-1 与 Stage-2 各自独立运行（各自独立的持久化目录 + record 归档）。最终评估请用独立工具（'eval' 子命令转交 Paean，或后续独立 final-eval）。" ;;
-  esac
-  if [ "$S_FRESH_STAGE1" = "true" ] || [ "$S_FRESH_STAGE2" = "true" ]; then
-    err "解耦后每个 stage 是独立运行，--fresh-stage1 / --fresh-stage2 已移除。请在对应 --mode 下用 --fresh 重开该 stage。"
-  fi
-  if [ "$RUN_MODE" = "stage1-only" ]; then
-    DECOUPLED_LAYOUT="true"
+  if [ "$BLB_V3_SEARCH_BACKEND" = "ppo" ]; then
+    case "$RUN_MODE" in
+      stage1-only|stage2-only) : ;;
+      *) err "run rl 现在必须显式指定 --mode stage1-only 或 --mode stage2-only。链式 train / eval / search-only 已移除：Stage-1 与 Stage-2 各自独立运行（各自独立的持久化目录 + record 归档）。最终评估请用独立工具（'eval' 子命令转交 Paean，或后续独立 final-eval）。" ;;
+    esac
+    if [ "$S_FRESH_STAGE1" = "true" ] || [ "$S_FRESH_STAGE2" = "true" ]; then
+      err "解耦后每个 stage 是独立运行，--fresh-stage1 / --fresh-stage2 已移除。请在对应 --mode 下用 --fresh 重开该 stage。"
+    fi
+    if [ "$RUN_MODE" = "stage1-only" ]; then
+      DECOUPLED_LAYOUT="true"
+    else
+      DECOUPLED_LAYOUT="false"
+    fi
+    SKIP_FINAL_EVAL="true"
   else
+    [ "$RUN_MODE" = "train" ] || err "BO / Greedy / COINN-GA comparator 必须使用串行 --mode train：先完成该算法 Stage-1，再绑定结果运行同算法 Stage-2。"
+    [ "$SKIP_STAGE1_SEARCH" = "false" ] || err "两阶段 comparator 不能跳过 Stage-1。"
+    [ "$SKIP_NOISE_SEARCH" = "false" ] || err "两阶段 comparator 不能跳过 Stage-2。"
+    [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ] || err "两阶段 comparator 的 Stage-2 必须绑定 stage1_result。"
+    [ "$BLB_V3_SEARCH_FULL_VALIDATION" = "true" ] || err "正式两阶段 comparator 必须启用 --blb-v3-search-full-validation true。"
+    [ "$BLB_V3_FINAL_SELECTION_TOP_N" = "5" ] || err "正式两阶段 comparator 必须严格复核 top 5 候选。"
     DECOUPLED_LAYOUT="false"
   fi
-  SKIP_FINAL_EVAL="true"
 fi
 
 if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$RUN_MODE" = "stage1-only" ] && [ "$S_BATCH_SIZE" = "false" ]; then
@@ -1396,7 +1407,7 @@ else
   [ "$S_RESUME_FROM" = "false" ] || [ "$FINAL_EVAL_ONLY" = "true" ] || err "rl / ga / greedy 训练模式已改用持久化目录自动续训练，不再支持手动 --resume-from。续训练时直接运行相同参数即可；首次运行请加 --fresh-start。--mode eval 可使用 --resume-from 指向已有结果目录。"
   _EARLY_CONSTRAINT_SLUG="s1t${STAGE1_ACCURACY_TOLERANCE}_s2t${STAGE2_LIMIT_TOLERANCE}_s2st${_STAGE2_PERSISTED_STABILITY_VALUE}"
   _EARLY_PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${_EARLY_CONSTRAINT_SLUG}"
-  if [ "$SEARCH_ALGORITHM" = "rl" ]; then
+  if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$BLB_V3_SEARCH_BACKEND" = "ppo" ]; then
     [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "rl 模式不使用 GA 代数参数，请移除 --stage1-search-generations / --stage2-search-generations。"
     _stage1_unbounded_entropy_stop="false"
     if is_pos_int "$STAGE1_EPISODES"; then
@@ -1420,6 +1431,10 @@ else
       [ "$SKIP_STAGE1_SEARCH" = "true" ] || [ "$_stage1_unbounded_entropy_stop" = "true" ] || [ "$STAGE1_EPISODES" -ge 170 ] || err "rl 的 Stage-1 回合数至少需要 170。"
       [ "$SKIP_NOISE_SEARCH" = "true" ] || [ "$STAGE2_EPISODES" -eq 0 ] || [ "$STAGE2_EPISODES" -ge 170 ] || err "rl 的有界 Stage-2 回合数至少需要 170；0 表示训练到自然收敛。"
     fi
+  elif [ "$SEARCH_ALGORITHM" = "rl" ]; then
+    [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] || err "两阶段 comparator 使用算法原生停止规则，不接受旧版 generation 参数。"
+    [ "$S_STAGE1_EPISODES" = "false" ] || err "两阶段 comparator 的 Stage-1 不使用 PPO episode 参数。"
+    is_pos_int "$BLB_V3_SEARCH_EVALUATION_BUDGET" || err "两阶段 comparator 必须通过 --blb-v3-search-evaluation-budget 提供正的 Stage-2 真实推理预算。"
   else
     [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] || err "ga / greedy 模式不再使用 episode 作为搜索预算，请改用 --stage1-search-generations / --stage2-search-generations。"
     is_pos_int "$STAGE1_GENERATIONS" || err "--stage1-search-generations 必须是正整数"
@@ -1580,7 +1595,11 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
       mkdir -p "${PERSISTENT_DIR}/logs"
     fi
   else
-    PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"
+    _PERSISTENT_ALGORITHM="$SEARCH_ALGORITHM"
+    if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$BLB_V3_SEARCH_BACKEND" != "ppo" ]; then
+      _PERSISTENT_ALGORITHM="$BLB_V3_SEARCH_BACKEND"
+    fi
+    PERSISTENT_DIR="${PERSISTENT_ROOT}/${_PERSISTENT_ALGORITHM}/${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"
     _BLB_STAGE2_LOCK_DIR="$(dirname "$PERSISTENT_DIR")"
     mkdir -p "$_BLB_STAGE2_LOCK_DIR"
     BLB_STAGE2_RUN_LOCK_PATH="${_BLB_STAGE2_LOCK_DIR}/.$(basename "$PERSISTENT_DIR").stage2_rl.lock"

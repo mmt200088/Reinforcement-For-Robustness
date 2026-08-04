@@ -1,8 +1,9 @@
 """Constrained non-RL baselines for the canonical Stage-2 layerwise action.
 
-The optimizers in this module are deliberately torch-free.  They operate on
-one ``(Block4 fusion, H/M/L truncation preset)`` row per Transformer layer and
-delegate every model interaction to a caller-supplied evaluator.
+The public runtime action remains one ``(Block4 fusion, H/M/L preset)`` row per
+Transformer layer. Search operators encode each row as one atomic six-valued
+categorical gene so crossover, mutation, and neighborhoods never split a
+layer's coupled decision.
 """
 
 from __future__ import annotations
@@ -10,17 +11,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import itertools
 import math
+import re
 from typing import Any, Callable, Iterable, Iterator, Mapping, Optional, Sequence
 
 import numpy as np
 
-from .layerwise_action import compute_variable_cost_from_action_matrix
+from .layerwise_action import (
+    LAYER_GENE_CARDINALITY,
+    compute_variable_cost_from_action_matrix,
+    decode_layerwise_action_genes,
+    encode_layerwise_action_matrix,
+)
 from .precision_presets import validate_communication_importance_ratio
 
 
 ActionMatrix = tuple[tuple[int, int], ...]
 EvaluationFn = Callable[[ActionMatrix], "SearchEvaluation"]
 SurrogateFactory = Callable[[int], Any]
+CheckpointCallback = Callable[[tuple["SearchEvaluation", ...]], None]
 
 SUPPORTED_SEARCH_BACKENDS = ("ppo", "bo_rf", "greedy", "coinn_ga")
 CONSTRAINT_NAMES = (
@@ -40,18 +48,38 @@ CONSTRAINT_PROBABILITY_NAMES = (
     "metric2_stability_probability",
 )
 _EPS = 1.0e-12
+_GA_CROSSOVER_PROBABILITY = 0.9
+_GA_MUTATION_MAX_LAYERS = 4
+_GA_OFFSPRING_ATTEMPTS = 64
 
 
 def normalize_search_backend(value: Any) -> str:
-    normalized = str(value or "ppo").strip().lower().replace("-", "_")
+    normalized = re.sub(
+        r"[^a-z0-9]+", "_", str(value or "ppo").strip().lower(),
+    ).strip("_")
     aliases = {
+        "policy": "ppo",
+        "policy_gradient": "ppo",
+        "bayes": "bo_rf",
         "bayes_rf": "bo_rf",
+        "bayesian": "bo_rf",
+        "bayesian_optimization": "bo_rf",
         "bayesian_rf": "bo_rf",
+        "bo": "bo_rf",
+        "borf": "bo_rf",
+        "random_forest_bo": "bo_rf",
+        "rf_bo": "bo_rf",
         "smac": "bo_rf",
         "smac_rf": "bo_rf",
+        "greedy_search": "greedy",
+        "hill_climb": "greedy",
+        "hill_climbing": "greedy",
+        "coinn": "coinn_ga",
+        "coinnga": "coinn_ga",
+        "coinn_style_ga": "coinn_ga",
         "ga": "coinn_ga",
         "genetic": "coinn_ga",
-        "coinn": "coinn_ga",
+        "genetic_algorithm": "coinn_ga",
     }
     normalized = aliases.get(normalized, normalized)
     if normalized not in SUPPORTED_SEARCH_BACKENDS:
@@ -89,6 +117,13 @@ class ConstraintLimits:
             "metric2_std_max": float(self.metric2_std_max),
         }
 
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "ConstraintLimits":
+        return cls(**{
+            name: float(payload[name])
+            for name in cls.__dataclass_fields__
+        })
+
 
 @dataclass(frozen=True)
 class SearchMetrics:
@@ -113,12 +148,19 @@ class SearchMetrics:
             for name in CONSTRAINT_NAMES
         }
 
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "SearchMetrics":
+        return cls(**{
+            name: float(payload[name])
+            for name in CONSTRAINT_NAMES
+        })
+
 
 def _owned_action_matrix(action_matrix: Sequence[Sequence[int]]) -> ActionMatrix:
-    return tuple(
-        (int(row[0]), int(row[1]))
-        for row in action_matrix
-    )
+    rows = tuple(tuple(int(value) for value in row) for row in action_matrix)
+    if any(len(row) != 2 for row in rows):
+        raise ValueError("action_matrix rows must contain two coordinates")
+    return tuple((row[0], row[1]) for row in rows)
 
 
 @dataclass(frozen=True)
@@ -201,6 +243,11 @@ class SearchEvaluation:
         return tuple(min(value, -1.0) for value in margins)
 
     @property
+    def inference_performed(self) -> bool:
+        """Whether this unique candidate consumed one model-inference quota."""
+        return bool(self.metadata.get("inference_performed", True))
+
+    @property
     def feasible(self) -> bool:
         return bool(
             self.valid
@@ -209,7 +256,22 @@ class SearchEvaluation:
 
     @property
     def normalized_violation(self) -> float:
-        return float(sum(max(0.0, -value) for value in self.constraint_margins))
+        return float(sum(
+            max(0.0, -value) for value in self.constraint_margins
+        ))
+
+    @property
+    def failed_constraint_count(self) -> int:
+        return int(sum(
+            value < -_EPS for value in self.constraint_margins
+        ))
+
+    @property
+    def worst_normalized_violation(self) -> float:
+        return float(max(
+            (max(0.0, -value) for value in self.constraint_margins),
+            default=0.0,
+        ))
 
     @property
     def constraint_margins(self) -> tuple[float, ...]:
@@ -239,6 +301,7 @@ class SearchEvaluation:
             "metrics": self.metrics.as_dict(),
             "limits": self.limits.as_dict(),
             "valid": bool(self.valid),
+            "inference_performed": bool(self.inference_performed),
             "feasible": bool(self.feasible),
             "raw_margins": [float(value) for value in self.raw_margins],
             "normalized_margins": [
@@ -259,7 +322,11 @@ class SearchEvaluation:
             "constraint_margins": [
                 float(value) for value in self.constraint_margins
             ],
+            "failed_constraint_count": int(self.failed_constraint_count),
             "normalized_violation": float(self.normalized_violation),
+            "worst_normalized_violation": float(
+                self.worst_normalized_violation
+            ),
             "reward": None if self.reward is None else float(self.reward),
             "communication_importance_ratio": float(
                 self.communication_importance_ratio
@@ -276,23 +343,61 @@ class SearchEvaluation:
             "metadata": dict(self.metadata),
         }
 
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "SearchEvaluation":
+        probability_payload = payload.get("constraint_probabilities") or {}
+        if isinstance(probability_payload, Mapping):
+            probabilities = tuple(
+                float(probability_payload[name])
+                for name in CONSTRAINT_PROBABILITY_NAMES
+                if name in probability_payload
+            )
+        else:
+            probabilities = tuple(float(value) for value in probability_payload)
+        return cls(
+            action_matrix=tuple(
+                tuple(int(value) for value in row)
+                for row in payload["action_matrix"]
+            ),
+            metrics=SearchMetrics.from_dict(payload["metrics"]),
+            limits=ConstraintLimits.from_dict(payload["limits"]),
+            valid=bool(payload.get("valid", True)),
+            reward=(
+                None
+                if payload.get("reward") is None
+                else float(payload["reward"])
+            ),
+            communication_importance_ratio=float(
+                payload.get("communication_importance_ratio", 1.0)
+            ),
+            constraint_probabilities=probabilities,
+            gate_probability=(
+                None
+                if payload.get("gate_probability") is None
+                else float(payload["gate_probability"])
+            ),
+            metadata=dict(payload.get("metadata") or {}),
+        )
+
 
 class LayerwiseSearchSpace:
-    """Discrete ``num_layers x 2`` Stage-2 policy space."""
+    """Discrete Stage-2 space with atomic six-valued per-layer genes."""
 
     def __init__(self, num_layers: int):
         self.num_layers = int(num_layers)
         if self.num_layers < 1:
             raise ValueError("num_layers must be positive")
+        # Preserve the legacy flattened runtime-coordinate contract.
         self.dimensions = tuple(
             value
             for _layer_idx in range(self.num_layers)
             for value in (2, 3)
         )
+        self.gene_dimensions = (LAYER_GENE_CARDINALITY,) * self.num_layers
 
     @property
     def cardinality(self) -> int:
-        return int(math.prod(self.dimensions))
+        return int(LAYER_GENE_CARDINALITY ** self.num_layers)
 
     @property
     def safe_action(self) -> ActionMatrix:
@@ -301,6 +406,13 @@ class LayerwiseSearchSpace:
     @property
     def max_resource_action(self) -> ActionMatrix:
         return tuple((1, 2) for _ in range(self.num_layers))
+
+    @property
+    def uniform_anchors(self) -> tuple[ActionMatrix, ...]:
+        return tuple(
+            self.from_genes((gene,) * self.num_layers)
+            for gene in range(LAYER_GENE_CARDINALITY)
+        )
 
     def validate(self, action_matrix: Sequence[Sequence[int]]) -> ActionMatrix:
         rows = tuple(tuple(int(value) for value in row) for row in action_matrix)
@@ -323,24 +435,51 @@ class LayerwiseSearchSpace:
         return _owned_action_matrix(rows)
 
     def flatten(self, action_matrix: Sequence[Sequence[int]]) -> tuple[int, ...]:
+        """Return the legacy ``2 * num_layers`` coordinate representation."""
         action = self.validate(action_matrix)
         return tuple(value for row in action for value in row)
 
     def unflatten(self, values: Sequence[int]) -> ActionMatrix:
+        """Decode legacy coordinates, or atomic genes when one per layer."""
         flat = tuple(int(value) for value in values)
+        if len(flat) == self.num_layers:
+            return self.from_genes(flat)
         if len(flat) != 2 * self.num_layers:
             raise ValueError(
-                f"flat action must contain {2 * self.num_layers} values"
+                f"flat action must contain {self.num_layers} genes or "
+                f"{2 * self.num_layers} legacy values"
             )
-        return self.validate(
-            tuple((flat[2 * index], flat[2 * index + 1])
-                  for index in range(self.num_layers))
+        return self.validate(tuple(
+            (flat[2 * index], flat[2 * index + 1])
+            for index in range(self.num_layers)
+        ))
+
+    def genes(self, action_matrix: Sequence[Sequence[int]]) -> tuple[int, ...]:
+        return encode_layerwise_action_matrix(self.validate(action_matrix))
+
+    def from_genes(self, genes: Sequence[int]) -> ActionMatrix:
+        values = tuple(int(value) for value in genes)
+        if len(values) != self.num_layers:
+            raise ValueError(
+                f"atomic action must contain {self.num_layers} layer genes, "
+                f"got {len(values)}"
+            )
+        return self.validate(decode_layerwise_action_genes(values))
+
+    def one_hot(self, action_matrix: Sequence[Sequence[int]]) -> np.ndarray:
+        genes = self.genes(action_matrix)
+        features = np.zeros(
+            self.num_layers * LAYER_GENE_CARDINALITY,
+            dtype=float,
         )
+        for layer_idx, gene in enumerate(genes):
+            features[layer_idx * LAYER_GENE_CARDINALITY + gene] = 1.0
+        return features
 
     def random_action(self, rng: np.random.Generator) -> ActionMatrix:
-        return self.unflatten(tuple(
-            int(rng.integers(dimension))
-            for dimension in self.dimensions
+        return self.from_genes(tuple(
+            int(rng.integers(LAYER_GENE_CARDINALITY))
+            for _ in range(self.num_layers)
         ))
 
     def all_actions(self, *, max_cardinality: int = 100_000) -> Iterator[ActionMatrix]:
@@ -349,26 +488,39 @@ class LayerwiseSearchSpace:
                 f"action space cardinality {self.cardinality} exceeds "
                 f"enumeration cap {int(max_cardinality)}"
             )
-        for values in itertools.product(
-                *(range(dimension) for dimension in self.dimensions)
+        for genes in itertools.product(
+                range(LAYER_GENE_CARDINALITY), repeat=self.num_layers,
         ):
-            yield self.unflatten(values)
+            yield self.from_genes(genes)
 
     def neighbors(self, action_matrix: Sequence[Sequence[int]]) -> Iterator[ActionMatrix]:
-        flat = list(self.flatten(action_matrix))
-        for index, (current, dimension) in enumerate(zip(flat, self.dimensions)):
-            if index % 2 == 0:
-                alternatives: Iterable[int] = (1 - current,)
-            else:
-                alternatives = (
-                    value
-                    for value in (current - 1, current + 1)
-                    if 0 <= value < dimension
-                )
-            for alternative in alternatives:
-                candidate = flat[:]
-                candidate[index] = int(alternative)
-                yield self.unflatten(candidate)
+        """Yield full-layer 1-opt alternatives, five per layer."""
+        genes = list(self.genes(action_matrix))
+        for layer_idx, current in enumerate(genes):
+            for alternative in range(LAYER_GENE_CARDINALITY):
+                if alternative == current:
+                    continue
+                candidate = genes[:]
+                candidate[layer_idx] = alternative
+                yield self.from_genes(candidate)
+
+    def two_opt_neighbors(
+            self,
+            action_matrix: Sequence[Sequence[int]],
+            ) -> Iterator[ActionMatrix]:
+        """Yield exhaustive alternatives changing exactly two whole layers."""
+        genes = list(self.genes(action_matrix))
+        for left, right in itertools.combinations(range(self.num_layers), 2):
+            for left_gene in range(LAYER_GENE_CARDINALITY):
+                if left_gene == genes[left]:
+                    continue
+                for right_gene in range(LAYER_GENE_CARDINALITY):
+                    if right_gene == genes[right]:
+                        continue
+                    candidate = genes[:]
+                    candidate[left] = left_gene
+                    candidate[right] = right_gene
+                    yield self.from_genes(candidate)
 
     def mutate(
             self,
@@ -377,14 +529,55 @@ class LayerwiseSearchSpace:
             *,
             max_coordinates: int = 1,
             ) -> ActionMatrix:
-        candidate = self.validate(action_matrix)
-        count = int(rng.integers(1, max(1, int(max_coordinates)) + 1))
-        for _ in range(count):
-            neighbors = tuple(self.neighbors(candidate))
-            if not neighbors:
-                break
-            candidate = neighbors[int(rng.integers(len(neighbors)))]
-        return candidate
+        """Replacement-mutate one or more whole layer genes."""
+        genes = list(self.genes(action_matrix))
+        maximum = min(self.num_layers, max(1, int(max_coordinates)))
+        count = int(rng.integers(1, maximum + 1))
+        indices = np.asarray(
+            rng.choice(self.num_layers, size=count, replace=False),
+            dtype=int,
+        ).reshape(-1)
+        for layer_idx in indices:
+            current = genes[int(layer_idx)]
+            replacement = int(rng.integers(LAYER_GENE_CARDINALITY - 1))
+            if replacement >= current:
+                replacement += 1
+            genes[int(layer_idx)] = replacement
+        return self.from_genes(genes)
+
+    def crossover(
+            self,
+            first: Sequence[Sequence[int]],
+            second: Sequence[Sequence[int]],
+            rng: np.random.Generator,
+            *,
+            mode: str,
+            ) -> ActionMatrix:
+        """Cross parents only at whole-layer gene boundaries."""
+        left = np.asarray(self.genes(first), dtype=int)
+        right = np.asarray(self.genes(second), dtype=int)
+        if mode == "uniform":
+            mask = np.asarray(rng.random(self.num_layers) < 0.5, dtype=bool)
+            child = np.where(mask, right, left)
+        elif mode == "two_point":
+            if self.num_layers < 2:
+                child = np.asarray(
+                    [right[0] if rng.random() < 0.5 else left[0]],
+                    dtype=int,
+                )
+            else:
+                cuts = np.sort(np.asarray(
+                    rng.choice(
+                        self.num_layers + 1, size=2, replace=False,
+                    ),
+                    dtype=int,
+                ))
+                start, stop = int(cuts[0]), int(cuts[1])
+                child = left.copy()
+                child[start:stop] = right[start:stop]
+        else:
+            raise ValueError("crossover mode must be 'two_point' or 'uniform'")
+        return self.from_genes(tuple(int(value) for value in child))
 
 
 def candidate_rank_key(evaluation: SearchEvaluation) -> tuple[float, ...]:
@@ -393,14 +586,13 @@ def candidate_rank_key(evaluation: SearchEvaluation) -> tuple[float, ...]:
         -float(value)
         for value in LayerwiseSearchSpace(
             len(evaluation.action_matrix)
-        ).flatten(evaluation.action_matrix)
+        ).genes(evaluation.action_matrix)
     )
-    constraint_margins = tuple(sorted(evaluation.constraint_margins))
     point_margins = tuple(sorted(evaluation.normalized_margins))
     confidence = tuple(sorted(evaluation.constraint_probabilities))
     if evaluation.feasible:
         return (
-            1.0,
+            2.0,
             float(resource.ppo_resource_score),
             float(resource.robust_floor),
             *confidence,
@@ -408,9 +600,10 @@ def candidate_rank_key(evaluation: SearchEvaluation) -> tuple[float, ...]:
             *lexicographic,
         )
     return (
-        0.0,
+        1.0 if evaluation.valid else 0.0,
+        -float(evaluation.failed_constraint_count),
         -float(evaluation.normalized_violation),
-        *constraint_margins,
+        -float(evaluation.worst_normalized_violation),
         float(resource.ppo_resource_score),
         float(resource.robust_floor),
         *lexicographic,
@@ -421,15 +614,20 @@ def candidate_rank_key(evaluation: SearchEvaluation) -> tuple[float, ...]:
 class SearchConfig:
     evaluation_budget: int
     seed: int = 42
-    initial_design_size: int = 8
+    initial_design_size: int = 64
     candidate_pool_size: int = 512
-    population_size: int = 24
-    patience_generations: int = 5
+    # Kept for runner/config compatibility. The Stage-2 GA uses ga_population_size.
+    population_size: int = 64
+    patience_generations: int = 20
     mutation_max_coordinates: int = 3
     rf_n_estimators: int = 128
     rf_min_samples_leaf: int = 2
     acquisition_exploration: float = 0.05
     communication_importance_ratio: float = 1.0
+    ga_population_size: int = 64
+    ga_elite_count: int = 7
+    ga_generations: int = 800
+    observation_attempt_limit: Optional[int] = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -437,9 +635,17 @@ class SearchConfig:
                 "candidate_pool_size", "population_size",
                 "patience_generations", "mutation_max_coordinates",
                 "rf_n_estimators", "rf_min_samples_leaf",
+                "ga_population_size", "ga_elite_count", "ga_generations",
         ):
             if int(getattr(self, name)) <= 0:
                 raise ValueError(f"{name} must be positive")
+        if int(self.ga_elite_count) >= int(self.ga_population_size):
+            raise ValueError("ga_elite_count must be smaller than ga_population_size")
+        if (
+                self.observation_attempt_limit is not None
+                and int(self.observation_attempt_limit) <= 0
+        ):
+            raise ValueError("observation_attempt_limit must be positive")
         if not math.isfinite(float(self.acquisition_exploration)):
             raise ValueError("acquisition_exploration must be finite")
         if float(self.acquisition_exploration) < 0.0:
@@ -452,6 +658,21 @@ class SearchConfig:
             ),
         )
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            name: getattr(self, name)
+            for name in self.__dataclass_fields__
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "SearchConfig":
+        names = set(cls.__dataclass_fields__)
+        return cls(**{
+            name: payload[name]
+            for name in names
+            if name in payload
+        })
+
 
 @dataclass(frozen=True)
 class SearchResult:
@@ -463,16 +684,47 @@ class SearchResult:
 
     @property
     def evaluation_count(self) -> int:
+        return int(sum(
+            item.inference_performed for item in self.observations
+        ))
+
+    @property
+    def observation_count(self) -> int:
         return len(self.observations)
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": "stage2_layerwise_search_result_v2",
             "algorithm": str(self.algorithm),
             "evaluation_count": int(self.evaluation_count),
+            "observation_count": int(self.observation_count),
             "termination_reason": str(self.termination_reason),
             "best": self.best.as_dict(),
             "history": [dict(row) for row in self.history],
         }
+
+    @classmethod
+    def from_dict(
+            cls,
+            payload: Mapping[str, Any],
+            *,
+            observations: Iterable[SearchEvaluation] = (),
+            ) -> "SearchResult":
+        rows = tuple(observations)
+        best_payload = payload.get("best")
+        if best_payload is None:
+            if not rows:
+                raise ValueError("serialized search result has no best candidate")
+            best = max(rows, key=candidate_rank_key)
+        else:
+            best = SearchEvaluation.from_dict(best_payload)
+        return cls(
+            algorithm=normalize_search_backend(payload["algorithm"]),
+            best=best,
+            observations=rows,
+            history=tuple(dict(row) for row in payload.get("history", ())),
+            termination_reason=str(payload.get("termination_reason", "unknown")),
+        )
 
 
 class _EvaluationCache:
@@ -481,16 +733,67 @@ class _EvaluationCache:
             space: LayerwiseSearchSpace,
             evaluator: EvaluationFn,
             budget: int,
+            observation_attempt_limit: Optional[int] = None,
+            *,
+            preload: Iterable[SearchEvaluation] = (),
+            checkpoint_callback: Optional[CheckpointCallback] = None,
             ):
         self.space = space
         self.evaluator = evaluator
         self.budget = min(int(budget), int(space.cardinality))
+        default_attempt_limit = max(1024, 10 * self.budget)
+        configured_limit = (
+            default_attempt_limit
+            if observation_attempt_limit is None
+            else int(observation_attempt_limit)
+        )
+        self.observation_attempt_limit = min(
+            int(space.cardinality), configured_limit,
+        )
         self._by_action: dict[ActionMatrix, SearchEvaluation] = {}
         self._ordered: list[SearchEvaluation] = []
+        self._inference_count = 0
+        self.checkpoint_callback = checkpoint_callback
+        for evaluation in preload:
+            self.add_preloaded(evaluation)
+        if self._inference_count > self.budget:
+            raise ValueError("preloaded observations exceed the inference budget")
+        if self.observation_count > self.observation_attempt_limit:
+            raise ValueError("preloaded observations exceed the observation guard")
+
+    def add_preloaded(self, evaluation: SearchEvaluation) -> None:
+        if not isinstance(evaluation, SearchEvaluation):
+            raise TypeError("preloaded rows must be SearchEvaluation objects")
+        owned = self.space.validate(evaluation.action_matrix)
+        previous = self._by_action.get(owned)
+        if previous is not None:
+            if previous.as_dict() != evaluation.as_dict():
+                raise ValueError("conflicting preloaded evaluation for one action")
+            return
+        self._by_action[owned] = evaluation
+        self._ordered.append(evaluation)
+        if evaluation.inference_performed:
+            self._inference_count += 1
 
     @property
     def remaining(self) -> int:
-        return max(0, self.budget - len(self._ordered))
+        return max(0, self.budget - self._inference_count)
+
+    @property
+    def evaluation_count(self) -> int:
+        return int(self._inference_count)
+
+    @property
+    def observation_count(self) -> int:
+        return len(self._ordered)
+
+    @property
+    def observation_guard_reached(self) -> bool:
+        return self.observation_count >= self.observation_attempt_limit
+
+    @property
+    def can_observe(self) -> bool:
+        return bool(self.remaining > 0 and not self.observation_guard_reached)
 
     @property
     def observations(self) -> tuple[SearchEvaluation, ...]:
@@ -499,13 +802,18 @@ class _EvaluationCache:
     def contains(self, action: Sequence[Sequence[int]]) -> bool:
         return self.space.validate(action) in self._by_action
 
+    def get(self, action: Sequence[Sequence[int]]) -> Optional[SearchEvaluation]:
+        return self._by_action.get(self.space.validate(action))
+
     def evaluate(self, action: Sequence[Sequence[int]]) -> SearchEvaluation:
         owned = self.space.validate(action)
         cached = self._by_action.get(owned)
         if cached is not None:
             return cached
         if self.remaining <= 0:
-            raise RuntimeError("search evaluation budget exhausted")
+            raise RuntimeError("search model-inference budget exhausted")
+        if self.observation_guard_reached:
+            raise RuntimeError("search observation attempt guard exhausted")
         observed = self.evaluator(owned)
         if not isinstance(observed, SearchEvaluation):
             raise TypeError("search evaluator must return SearchEvaluation")
@@ -515,12 +823,25 @@ class _EvaluationCache:
             )
         self._by_action[owned] = observed
         self._ordered.append(observed)
+        if observed.inference_performed:
+            self._inference_count += 1
+        if self.checkpoint_callback is not None:
+            self.checkpoint_callback(self.observations)
         return observed
 
     def best(self) -> SearchEvaluation:
         if not self._ordered:
             raise RuntimeError("search produced no observations")
-        return max(self._ordered, key=candidate_rank_key)
+        valid = [item for item in self._ordered if item.valid]
+        return max(valid or self._ordered, key=candidate_rank_key)
+
+
+def _cache_stop_reason(cache: _EvaluationCache) -> str:
+    if cache.remaining <= 0:
+        return "evaluation_budget"
+    if cache.observation_guard_reached:
+        return "observation_attempt_guard"
+    return "candidate_space_exhausted"
 
 
 def _resource_score(
@@ -535,7 +856,105 @@ def _resource_score(
     )
 
 
-def _initial_design(
+def _hamming_distance(
+        space: LayerwiseSearchSpace,
+        first: ActionMatrix,
+        second: ActionMatrix,
+        ) -> int:
+    return int(sum(
+        left != right
+        for left, right in zip(space.genes(first), space.genes(second))
+    ))
+
+
+def _maximin_candidate(
+        space: LayerwiseSearchSpace,
+        selected: Sequence[ActionMatrix],
+        forbidden: set[ActionMatrix],
+        rng: np.random.Generator,
+        *,
+        sample_size: int = 512,
+        ) -> Optional[ActionMatrix]:
+    candidates: list[ActionMatrix] = []
+    if space.cardinality <= 100_000:
+        candidates = [
+            action for action in space.all_actions()
+            if action not in forbidden
+        ]
+    else:
+        seen: set[ActionMatrix] = set()
+        attempts = 0
+        target = min(int(sample_size), space.cardinality - len(forbidden))
+        while len(candidates) < target and attempts < max(1000, 30 * target):
+            attempts += 1
+            action = space.random_action(rng)
+            if action in forbidden or action in seen:
+                continue
+            candidates.append(action)
+            seen.add(action)
+    if not candidates:
+        return None
+    candidate_genes = np.asarray(
+        [space.genes(action) for action in candidates], dtype=np.int8,
+    )
+    if selected:
+        reference_genes = np.asarray(
+            [space.genes(action) for action in selected], dtype=np.int8,
+        )
+        distances = np.sum(
+            candidate_genes[:, None, :] != reference_genes[None, :, :],
+            axis=2,
+        )
+        minimum_distances = distances.min(axis=1)
+        total_distances = distances.sum(axis=1)
+    else:
+        minimum_distances = np.full(
+            len(candidates), space.num_layers, dtype=int,
+        )
+        total_distances = np.zeros(len(candidates), dtype=int)
+    selected_index = max(
+        range(len(candidates)),
+        key=lambda index: (
+            int(minimum_distances[index]),
+            int(total_distances[index]),
+            tuple(-int(value) for value in candidate_genes[index]),
+        ),
+    )
+    return candidates[selected_index]
+
+
+def _balanced_one_layer_actions(
+        space: LayerwiseSearchSpace,
+        ) -> Iterator[ActionMatrix]:
+    base = [0] * space.num_layers
+    layer_counts = [0] * space.num_layers
+    alternative_counts = [0] * (LAYER_GENE_CARDINALITY - 1)
+    unused = {
+        (layer_idx, alternative)
+        for layer_idx in range(space.num_layers)
+        for alternative in range(1, LAYER_GENE_CARDINALITY)
+    }
+    while unused:
+        layer_idx, alternative = min(
+            unused,
+            key=lambda pair: (
+                layer_counts[pair[0]],
+                alternative_counts[pair[1] - 1],
+                ((pair[1] - 1) - pair[0])
+                % (LAYER_GENE_CARDINALITY - 1),
+                pair[0],
+                pair[1],
+            ),
+        )
+        unused.remove((layer_idx, alternative))
+        layer_counts[layer_idx] += 1
+        alternative_counts[alternative - 1] += 1
+        genes = base[:]
+        genes[layer_idx] = alternative
+        yield space.from_genes(genes)
+
+
+def _structured_initial_design(
         space: LayerwiseSearchSpace,
         rng: np.random.Generator,
         count: int,
@@ -550,24 +969,17 @@ def _initial_design(
             candidates.append(owned)
             seen.add(owned)
 
-    add(space.safe_action)
-    add(space.max_resource_action)
-    add(tuple((1, 0) for _ in range(space.num_layers)))
-    add(tuple((0, 2) for _ in range(space.num_layers)))
-    add(tuple(
-        (layer_idx % 2, 1)
-        for layer_idx in range(space.num_layers)
-    ))
-
-    if space.cardinality <= max(256, 4 * target):
-        for action in space.all_actions(max_cardinality=max(256, space.cardinality)):
-            add(action)
-            if len(candidates) >= target:
-                break
-    attempts = 0
-    while len(candidates) < target and attempts < max(100, 20 * target):
-        attempts += 1
-        add(space.random_action(rng))
+    for anchor in space.uniform_anchors:
+        add(anchor)
+    for action in itertools.islice(_balanced_one_layer_actions(space), 30):
+        add(action)
+    while len(candidates) < target:
+        candidate = _maximin_candidate(
+            space, candidates, seen, rng,
+        )
+        if candidate is None:
+            break
+        add(candidate)
     return candidates
 
 
@@ -583,80 +995,138 @@ def _best_history_row(
     return {
         "iteration": int(iteration),
         "phase": str(phase),
-        "evaluations": len(cache.observations),
+        "evaluations": int(cache.evaluation_count),
+        "observations": int(cache.observation_count),
         "best_action_matrix": [list(row) for row in best.action_matrix],
         "best_feasible": bool(best.feasible),
+        "best_valid": bool(best.valid),
+        "best_failed_constraints": int(best.failed_constraint_count),
         "best_violation": float(best.normalized_violation),
+        "best_worst_violation": float(best.worst_normalized_violation),
         "best_resource_score": float(resource.ppo_resource_score),
         "best_robust_floor": float(resource.robust_floor),
         **extra,
     }
 
 
+def _evaluate_full_neighborhood(
+        cache: _EvaluationCache,
+        actions: Iterable[ActionMatrix],
+        ) -> tuple[list[SearchEvaluation], bool]:
+    neighborhood = [cache.space.validate(action) for action in actions]
+    pending = [action for action in neighborhood if not cache.contains(action)]
+    for action in pending:
+        if not cache.can_observe:
+            break
+        cache.evaluate(action)
+    complete = all(cache.contains(action) for action in neighborhood)
+    observed = [
+        item
+        for action in neighborhood
+        for item in (cache.get(action),)
+        if item is not None
+    ]
+    return observed, complete
+
+
 def _run_greedy(
         space: LayerwiseSearchSpace,
         evaluator: EvaluationFn,
         config: SearchConfig,
+        *,
+        preload: Iterable[SearchEvaluation] = (),
+        checkpoint_callback: Optional[CheckpointCallback] = None,
         ) -> SearchResult:
-    cache = _EvaluationCache(space, evaluator, config.evaluation_budget)
-    current = cache.evaluate(space.safe_action)
-    history = [_best_history_row(cache, phase="initial", iteration=0)]
-    iteration = 0
-    termination = "local_optimum"
-    while cache.remaining > 0:
-        iteration += 1
-        current_score = _resource_score(
-            current.action_matrix,
-            config.communication_importance_ratio,
-        )
-        neighbors = [
-            action
-            for action in space.neighbors(current.action_matrix)
-            if _resource_score(
-                action, config.communication_importance_ratio,
-            ) > current_score + _EPS
-            and not cache.contains(action)
-        ]
-        neighbors.sort(
-            key=lambda action: (
-                _resource_score(
-                    action, config.communication_importance_ratio,
-                ),
-                tuple(-value for value in space.flatten(action)),
-            ),
-            reverse=True,
-        )
-        evaluated = [
-            cache.evaluate(action)
-            for action in neighbors[:cache.remaining]
-        ]
-        if not evaluated:
+    cache = _EvaluationCache(
+        space,
+        evaluator,
+        config.evaluation_budget,
+        config.observation_attempt_limit,
+        preload=preload,
+        checkpoint_callback=checkpoint_callback,
+    )
+    history: list[dict[str, Any]] = []
+    anchors: list[SearchEvaluation] = []
+    for anchor_idx, action in enumerate(space.uniform_anchors):
+        if not cache.can_observe:
             break
+        anchors.append(cache.evaluate(action))
+        history.append(_best_history_row(
+            cache,
+            phase="uniform_anchor",
+            iteration=anchor_idx,
+            anchor_gene=int(anchor_idx),
+        ))
+    if not anchors:
+        raise RuntimeError("greedy search could not evaluate an anchor")
 
-        if current.feasible:
-            improvements = [
-                item for item in evaluated
-                if item.feasible
-                and candidate_rank_key(item) > candidate_rank_key(current)
-            ]
-        else:
-            improvements = [
-                item for item in evaluated
-                if candidate_rank_key(item) > candidate_rank_key(current)
-            ]
-        if not improvements:
+    termination = "verified_local_optima"
+    scan_index = 0
+    for start_index, start in enumerate(anchors):
+        current = start
+        while True:
+            scan_index += 1
+            one_evaluated, one_complete = _evaluate_full_neighborhood(
+                cache, space.neighbors(current.action_matrix),
+            )
+            one_candidates = [current, *one_evaluated]
+            one_best = max(one_candidates, key=candidate_rank_key)
+            one_improved = (
+                candidate_rank_key(one_best) > candidate_rank_key(current)
+            )
             history.append(_best_history_row(
-                cache, phase="neighbor_scan", iteration=iteration,
-                accepted=False,
+                cache,
+                phase="greedy_1opt",
+                iteration=scan_index,
+                start_index=int(start_index),
+                neighborhood_complete=bool(one_complete),
+                accepted=bool(one_improved and one_complete),
+            ))
+            if not one_complete:
+                termination = _cache_stop_reason(cache)
+                break
+            if one_improved:
+                current = one_best
+                continue
+
+            two_evaluated, two_complete = _evaluate_full_neighborhood(
+                cache, space.two_opt_neighbors(current.action_matrix),
+            )
+            two_candidates = [current, *two_evaluated]
+            two_best = max(two_candidates, key=candidate_rank_key)
+            two_improved = (
+                candidate_rank_key(two_best) > candidate_rank_key(current)
+            )
+            history.append(_best_history_row(
+                cache,
+                phase="greedy_2opt",
+                iteration=scan_index,
+                start_index=int(start_index),
+                neighborhood_complete=bool(two_complete),
+                accepted=bool(two_improved and two_complete),
+            ))
+            if not two_complete:
+                termination = _cache_stop_reason(cache)
+                break
+            if two_improved:
+                current = two_best
+                # The next loop always returns to exhaustive 1-opt.
+                continue
+
+            # Both neighborhoods for this exact point were exhaustively scanned.
+            history.append(_best_history_row(
+                cache,
+                phase="greedy_final_verification",
+                iteration=scan_index,
+                start_index=int(start_index),
+                one_opt_improvement=False,
+                two_opt_improvement=False,
             ))
             break
-        current = max(improvements, key=candidate_rank_key)
-        history.append(_best_history_row(
-            cache, phase="neighbor_scan", iteration=iteration,
-            accepted=True,
-        ))
-    if cache.remaining <= 0:
-        termination = "evaluation_budget"
+        if termination in ("evaluation_budget", "observation_attempt_guard"):
+            break
+    if termination != "verified_local_optima" and not cache.can_observe:
+        termination = _cache_stop_reason(cache)
     return SearchResult(
         algorithm="greedy",
         best=cache.best(),
@@ -666,9 +1136,7 @@ def _run_greedy(
     )
 
 
-def _default_surrogate_factory(
-        config: SearchConfig,
-        ) -> SurrogateFactory:
+def _default_surrogate_factory(config: SearchConfig) -> SurrogateFactory:
     def factory(seed: int) -> Any:
         try:
             from sklearn.ensemble import RandomForestRegressor
@@ -695,40 +1163,64 @@ def _candidate_pool(
         *,
         pool_size: int,
         ) -> list[ActionMatrix]:
-    target = min(int(pool_size), int(space.cardinality) - len(cache.observations))
+    unseen_count = int(space.cardinality) - len(cache.observations)
+    target = min(int(pool_size), unseen_count)
     if target <= 0:
         return []
-    if space.cardinality <= 100_000:
-        return [
+    if unseen_count <= target and space.cardinality <= 100_000:
+        pool = [
             action for action in space.all_actions()
             if not cache.contains(action)
-        ][:target]
+        ]
+        order = np.asarray(rng.permutation(len(pool)), dtype=int).reshape(-1)
+        return [pool[int(index)] for index in order]
 
     pool: list[ActionMatrix] = []
     seen: set[ActionMatrix] = set()
 
     def add(action: ActionMatrix) -> None:
         owned = space.validate(action)
-        if (
-                owned not in seen
-                and not cache.contains(owned)
-                and len(pool) < target
-        ):
+        if owned not in seen and not cache.contains(owned) and len(pool) < target:
             pool.append(owned)
             seen.add(owned)
 
-    ranked = sorted(
-        cache.observations,
-        key=candidate_rank_key,
-        reverse=True,
-    )
-    for observation in ranked[:8]:
-        for neighbor in space.neighbors(observation.action_matrix):
-            add(neighbor)
+    # Half of every pool is globally uniform, avoiding categorical prefix bias.
+    global_target = max(1, target // 2)
     attempts = 0
-    while len(pool) < target and attempts < max(1000, 30 * target):
+    while len(pool) < global_target and attempts < max(1000, 40 * target):
         attempts += 1
         add(space.random_action(rng))
+
+    # One quarter is atomic local search around feasibility-ranked incumbents.
+    ranked = sorted(cache.observations, key=candidate_rank_key, reverse=True)
+    local_candidates: list[ActionMatrix] = []
+    for observation in ranked[:min(16, len(ranked))]:
+        local_candidates.extend(space.neighbors(observation.action_matrix))
+    if local_candidates:
+        order = np.asarray(
+            rng.permutation(len(local_candidates)), dtype=int,
+        ).reshape(-1)
+        local_limit = min(target, global_target + max(1, target // 4))
+        for index in order:
+            add(local_candidates[int(index)])
+            if len(pool) >= local_limit:
+                break
+
+    # The remainder is uniform again, independent of incumbent quality.
+    attempts = 0
+    while len(pool) < target and attempts < max(2000, 80 * target):
+        attempts += 1
+        add(space.random_action(rng))
+    if len(pool) < target and space.cardinality <= 100_000:
+        remaining = [
+            action for action in space.all_actions()
+            if action not in seen and not cache.contains(action)
+        ]
+        order = np.asarray(rng.permutation(len(remaining)), dtype=int).reshape(-1)
+        for index in order:
+            add(remaining[int(index)])
+            if len(pool) >= target:
+                break
     return pool
 
 
@@ -749,28 +1241,44 @@ def _run_bo_rf(
         evaluator: EvaluationFn,
         config: SearchConfig,
         surrogate_factory: Optional[SurrogateFactory],
+        *,
+        preload: Iterable[SearchEvaluation] = (),
+        checkpoint_callback: Optional[CheckpointCallback] = None,
         ) -> SearchResult:
     rng = np.random.default_rng(int(config.seed))
-    cache = _EvaluationCache(space, evaluator, config.evaluation_budget)
+    cache = _EvaluationCache(
+        space,
+        evaluator,
+        config.evaluation_budget,
+        config.observation_attempt_limit,
+        preload=preload,
+        checkpoint_callback=checkpoint_callback,
+    )
     history: list[dict[str, Any]] = []
-    design = _initial_design(
+    design = _structured_initial_design(
         space,
         rng,
         min(config.initial_design_size, cache.budget),
     )
     for action in design:
-        if cache.remaining <= 0:
+        if not cache.can_observe:
             break
         cache.evaluate(action)
-    history.append(_best_history_row(cache, phase="initial_design", iteration=0))
+    history.append(_best_history_row(
+        cache, phase="structured_initial_design", iteration=0,
+        design_size=int(cache.observation_count),
+        design_inferences=int(cache.evaluation_count),
+    ))
 
     factory = surrogate_factory or _default_surrogate_factory(config)
     iteration = 0
-    while cache.remaining > 0:
+    no_improvement = 0
+    termination = "candidate_space_exhausted"
+    while cache.can_observe:
         iteration += 1
         observations = cache.observations
         features = np.asarray(
-            [space.flatten(item.action_matrix) for item in observations],
+            [space.one_hot(item.action_matrix) for item in observations],
             dtype=float,
         )
         targets = np.asarray(
@@ -788,7 +1296,7 @@ def _run_bo_rf(
         if not pool:
             break
         pool_features = np.asarray(
-            [space.flatten(action) for action in pool],
+            [space.one_hot(action) for action in pool],
             dtype=float,
         )
         tree_predictions = _tree_predictions(model, pool_features)
@@ -797,26 +1305,28 @@ def _run_bo_rf(
                 "BO-RF surrogate must predict six constraint margins"
             )
         feasible_probability = np.mean(
-            np.all(tree_predictions >= 0.0, axis=2),
-            axis=0,
+            np.all(tree_predictions >= 0.0, axis=2), axis=0,
         )
         predicted_mean = tree_predictions.mean(axis=0)
         predicted_std = tree_predictions.std(axis=0)
+        predicted_violation = np.mean(
+            np.sum(np.maximum(0.0, -tree_predictions), axis=2), axis=0,
+        )
         feasible_observations = [item for item in observations if item.feasible]
         incumbent_resource = max(
             (_resource_score(
                 item.action_matrix, config.communication_importance_ratio,
-            )
-             for item in feasible_observations),
+            ) for item in feasible_observations),
             default=0.0,
         )
-        acquisition = []
+        acquisition: list[float] = []
         for index, action in enumerate(pool):
             resource = _resource_score(
                 action, config.communication_importance_ratio,
             )
             probability = float(feasible_probability[index])
             uncertainty = float(np.mean(predicted_std[index]))
+            violation = float(predicted_violation[index])
             predicted_floor = float(np.min(predicted_mean[index]))
             if feasible_observations:
                 improvement = max(0.0, resource - incumbent_resource)
@@ -825,10 +1335,12 @@ def _run_bo_rf(
                     + float(config.acquisition_exploration) * uncertainty
                     + 1.0e-9
                 )
-                value += 1.0e-6 * resource
+                value -= 0.05 * (1.0 - probability) * violation
+                value += 1.0e-6 * probability * resource
             else:
                 value = (
                     probability
+                    - violation
                     + 0.05 * predicted_floor
                     + 0.01 * resource
                     + float(config.acquisition_exploration) * uncertainty
@@ -838,26 +1350,40 @@ def _run_bo_rf(
             range(len(pool)),
             key=lambda index: (
                 acquisition[index],
+                float(feasible_probability[index]),
+                -float(predicted_violation[index]),
                 _resource_score(
                     pool[index], config.communication_importance_ratio,
                 ),
-                tuple(-value for value in space.flatten(pool[index])),
+                tuple(-value for value in space.genes(pool[index])),
             ),
         )
+        previous_best = cache.best()
         selected = pool[selected_index]
-        cache.evaluate(selected)
+        observed = cache.evaluate(selected)
+        improved = (
+            candidate_rank_key(cache.best()) > candidate_rank_key(previous_best)
+        )
+        if observed.inference_performed:
+            no_improvement = 0 if improved else no_improvement + 1
         history.append(_best_history_row(
             cache,
-            phase="constrained_ei",
+            phase="feasibility_aware_acquisition",
             iteration=iteration,
             acquisition=float(acquisition[selected_index]),
-            predicted_feasibility=float(
-                feasible_probability[selected_index]
-            ),
+            predicted_feasibility=float(feasible_probability[selected_index]),
+            predicted_violation=float(predicted_violation[selected_index]),
+            improved=bool(improved),
+            inference_performed=bool(observed.inference_performed),
+            no_improvement_iterations=int(no_improvement),
         ))
-    termination = (
-        "evaluation_budget" if cache.remaining <= 0 else "candidate_space_exhausted"
-    )
+        if no_improvement >= int(config.patience_generations):
+            termination = "bo_no_improvement"
+            break
+    if cache.remaining <= 0:
+        termination = "evaluation_budget"
+    elif cache.observation_guard_reached:
+        termination = "observation_attempt_guard"
     return SearchResult(
         algorithm="bo_rf",
         best=cache.best(),
@@ -867,126 +1393,335 @@ def _run_bo_rf(
     )
 
 
-def _ga_fitness(evaluation: SearchEvaluation) -> float:
-    if evaluation.feasible:
-        return 2.0 + float(evaluation.resource.ppo_resource_score)
-    return max(1.0e-9, math.exp(-evaluation.normalized_violation))
+def _tournament_parent(
+        population: Sequence[SearchEvaluation],
+        rng: np.random.Generator,
+        ) -> SearchEvaluation:
+    size = min(3, len(population))
+    indices = np.asarray(
+        rng.choice(len(population), size=size, replace=False), dtype=int,
+    ).reshape(-1)
+    return max(
+        (population[int(index)] for index in indices),
+        key=candidate_rank_key,
+    )
+
+
+def _diverse_second_parent(
+        space: LayerwiseSearchSpace,
+        population: Sequence[SearchEvaluation],
+        first: SearchEvaluation,
+        rng: np.random.Generator,
+        ) -> SearchEvaluation:
+    distances = [
+        (
+            item,
+            _hamming_distance(
+                space, first.action_matrix, item.action_matrix,
+            ),
+        )
+        for item in population
+        if item.action_matrix != first.action_matrix
+    ]
+    eligible = [item for item, distance in distances if distance >= 2]
+    if not eligible:
+        eligible = [item for item, distance in distances if distance >= 1]
+    if not eligible:
+        return first
+    size = min(3, len(eligible))
+    indices = np.asarray(
+        rng.choice(len(eligible), size=size, replace=False), dtype=int,
+    ).reshape(-1)
+    sampled = [eligible[int(index)] for index in indices]
+    return max(sampled, key=candidate_rank_key)
+
+
+def _replacement_mutation(
+        space: LayerwiseSearchSpace,
+        action: ActionMatrix,
+        rng: np.random.Generator,
+        *,
+        force: bool,
+        ) -> ActionMatrix:
+    genes = list(space.genes(action))
+    probability = 1.0 / float(space.num_layers)
+    selected = [
+        index for index in range(space.num_layers)
+        if float(rng.random()) < probability
+    ]
+    if len(selected) > _GA_MUTATION_MAX_LAYERS:
+        chosen = np.asarray(
+            rng.choice(
+                selected, size=_GA_MUTATION_MAX_LAYERS, replace=False,
+            ),
+            dtype=int,
+        ).reshape(-1)
+        selected = [int(value) for value in chosen]
+    if force and not selected:
+        selected = [int(rng.integers(space.num_layers))]
+    for layer_idx in selected:
+        current = genes[layer_idx]
+        replacement = int(rng.integers(LAYER_GENE_CARDINALITY - 1))
+        if replacement >= current:
+            replacement += 1
+        genes[layer_idx] = replacement
+    return space.from_genes(genes)
+
+
+def _mean_pairwise_distance(
+        space: LayerwiseSearchSpace,
+        actions: Sequence[ActionMatrix],
+        ) -> float:
+    if len(actions) < 2:
+        return 0.0
+    total = 0
+    count = 0
+    genes = [space.genes(action) for action in actions]
+    for left, right in itertools.combinations(genes, 2):
+        total += sum(a != b for a, b in zip(left, right))
+        count += 1
+    return float(total) / float(count)
+
+
+def _population_diversity(
+        space: LayerwiseSearchSpace,
+        population: Sequence[SearchEvaluation],
+        ) -> tuple[float, float]:
+    actions = [item.action_matrix for item in population]
+    unique_ratio = float(len(set(actions))) / float(max(1, len(actions)))
+    return unique_ratio, _mean_pairwise_distance(space, actions)
+
+
+def _make_ga_child(
+        space: LayerwiseSearchSpace,
+        population: Sequence[SearchEvaluation],
+        rng: np.random.Generator,
+        forbidden: set[ActionMatrix],
+        ) -> tuple[Optional[ActionMatrix], bool]:
+    for _attempt in range(_GA_OFFSPRING_ATTEMPTS):
+        first = _tournament_parent(population, rng)
+        second = _diverse_second_parent(space, population, first, rng)
+        crossed = float(rng.random()) < _GA_CROSSOVER_PROBABILITY
+        if crossed:
+            mode = "two_point" if float(rng.random()) < 0.5 else "uniform"
+            child = space.crossover(
+                first.action_matrix, second.action_matrix, rng, mode=mode,
+            )
+        else:
+            child = first.action_matrix
+        child = _replacement_mutation(
+            space, child, rng, force=not crossed,
+        )
+        if child in forbidden:
+            child = _replacement_mutation(
+                space, child, rng, force=True,
+            )
+        if child not in forbidden:
+            return child, False
+    immigrant = _maximin_candidate(
+        space,
+        [item.action_matrix for item in population],
+        forbidden,
+        rng,
+    )
+    return immigrant, immigrant is not None
 
 
 def _run_coinn_ga(
         space: LayerwiseSearchSpace,
         evaluator: EvaluationFn,
         config: SearchConfig,
+        *,
+        preload: Iterable[SearchEvaluation] = (),
+        checkpoint_callback: Optional[CheckpointCallback] = None,
         ) -> SearchResult:
     rng = np.random.default_rng(int(config.seed))
-    cache = _EvaluationCache(space, evaluator, config.evaluation_budget)
+    cache = _EvaluationCache(
+        space,
+        evaluator,
+        config.evaluation_budget,
+        config.observation_attempt_limit,
+        preload=preload,
+        checkpoint_callback=checkpoint_callback,
+    )
     population_target = min(
-        int(config.population_size),
+        int(config.ga_population_size),
         int(space.cardinality),
         int(cache.budget),
     )
-    population = _initial_design(space, rng, population_target)
-    history: list[dict[str, Any]] = []
-    incumbent: Optional[SearchEvaluation] = None
-    stagnation = 0
-    generation = 0
-    termination = "evaluation_budget"
-
-    while population and cache.remaining > 0:
-        generation += 1
-        generation_observations = [
-            cache.evaluate(action)
-            for action in population[:cache.remaining]
-        ]
-        if not generation_observations:
-            break
-        generation_best = max(
-            generation_observations,
-            key=candidate_rank_key,
-        )
-        improved = bool(
-            incumbent is None
-            or candidate_rank_key(generation_best)
-            > candidate_rank_key(incumbent)
-        )
-        if improved:
-            incumbent = generation_best
-            stagnation = 0
+    elite_count = min(
+        int(config.ga_elite_count), max(0, population_target - 1),
+    )
+    structured = _structured_initial_design(
+        space, rng, population_target,
+    )
+    population: list[SearchEvaluation] = []
+    structured_index = 0
+    while len(population) < population_target and cache.can_observe:
+        if structured_index < len(structured):
+            action = structured[structured_index]
+            structured_index += 1
         else:
-            stagnation += 1
+            forbidden = {
+                item.action_matrix for item in cache.observations
+            }
+            action = _maximin_candidate(
+                space,
+                [item.action_matrix for item in population],
+                forbidden,
+                rng,
+            )
+            if action is None:
+                break
+        observed = cache.evaluate(action)
+        if observed.inference_performed:
+            population.append(observed)
+
+    history: list[dict[str, Any]] = [_best_history_row(
+        cache,
+        phase="ga_initial_population",
+        iteration=0,
+        population_size=len(population),
+        population_target=int(population_target),
+        elite_count=int(elite_count),
+        structured_observations=int(min(structured_index, len(structured))),
+        non_inference_observations=int(
+            cache.observation_count - cache.evaluation_count
+        ),
+    )]
+    completed_generations = 0
+    termination = "generation_limit"
+    if len(population) < population_target:
+        termination = _cache_stop_reason(cache)
+
+    while (
+            len(population) == population_target
+            and completed_generations < int(config.ga_generations)
+    ):
+        ranked = sorted(population, key=candidate_rank_key, reverse=True)
+        elites = ranked[:elite_count]
+        offspring_target = population_target - elite_count
+        if offspring_target <= 0:
+            termination = "candidate_space_exhausted"
+            break
+        if cache.remaining < offspring_target:
+            termination = "evaluation_budget"
+            break
+        if space.cardinality - cache.observation_count < offspring_target:
+            termination = "candidate_space_exhausted"
+            break
+
+        unique_ratio, mean_distance = _population_diversity(space, population)
+        diversity_triggered = (
+            unique_ratio < 0.60 or mean_distance < 2.0
+        )
+        immigrant_target = (
+            min(offspring_target, max(1, math.ceil(population_target * 0.10)))
+            if diversity_triggered else 0
+        )
+        normal_target = offspring_target - immigrant_target
+        offspring: list[SearchEvaluation] = []
+        forbidden = {
+            item.action_matrix for item in cache.observations
+        }
+        fallback_immigrants = 0
+        observation_start = cache.observation_count
+        previous_best = cache.best()
+        generation_failed = False
+
+        while len(offspring) < normal_target:
+            if not cache.can_observe:
+                generation_failed = True
+                break
+            child, used_immigrant = _make_ga_child(
+                space, population, rng, forbidden,
+            )
+            if child is None:
+                termination = "candidate_space_exhausted"
+                generation_failed = True
+                break
+            forbidden.add(child)
+            observed = cache.evaluate(child)
+            if used_immigrant:
+                fallback_immigrants += 1
+            if observed.inference_performed:
+                offspring.append(observed)
+
+        while not generation_failed and len(offspring) < offspring_target:
+            if not cache.can_observe:
+                generation_failed = True
+                break
+            immigrant = _maximin_candidate(
+                space,
+                [item.action_matrix for item in population]
+                + [item.action_matrix for item in offspring],
+                forbidden,
+                rng,
+            )
+            if immigrant is None:
+                termination = "candidate_space_exhausted"
+                generation_failed = True
+                break
+            forbidden.add(immigrant)
+            observed = cache.evaluate(immigrant)
+            if observed.inference_performed:
+                offspring.append(observed)
+
+        if generation_failed or len(offspring) != offspring_target:
+            if termination != "candidate_space_exhausted":
+                termination = _cache_stop_reason(cache)
+            history.append(_best_history_row(
+                cache,
+                phase="ga_generation_aborted",
+                iteration=completed_generations + 1,
+                generation=int(completed_generations + 1),
+                inference_reaching_offspring=int(len(offspring)),
+                offspring_target=int(offspring_target),
+                generation_observations=int(
+                    cache.observation_count - observation_start
+                ),
+            ))
+            break
+
+        population = [*elites, *offspring]
+        if len(population) != population_target:
+            raise RuntimeError("GA population refill did not preserve its size")
+        if any(not item.inference_performed for item in population):
+            raise RuntimeError("GA parent population contains a non-inference candidate")
+        completed_generations += 1
+        improved = (
+            candidate_rank_key(cache.best()) > candidate_rank_key(previous_best)
+        )
+        generation_observations = cache.observation_count - observation_start
         history.append(_best_history_row(
             cache,
-            phase="population",
-            iteration=generation,
-            generation=int(generation),
-            population_evaluated=len(generation_observations),
+            phase="ga_update_generation",
+            iteration=completed_generations,
+            generation=int(completed_generations),
+            population_size=int(population_target),
+            elite_count=int(elite_count),
+            elite_actions=[
+                [list(row) for row in item.action_matrix]
+                for item in elites
+            ],
+            offspring_evaluated=int(len(offspring)),
+            offspring_observations=int(generation_observations),
+            non_inference_offspring_observations=int(
+                generation_observations - len(offspring)
+            ),
+            expected_evaluations=int(
+                population_target + completed_generations * offspring_target
+            ),
             improved=bool(improved),
-            stagnation=int(stagnation),
+            unique_ratio=float(unique_ratio),
+            mean_pairwise_distance=float(mean_distance),
+            diversity_triggered=bool(diversity_triggered),
+            diversity_immigrants=int(immigrant_target),
+            fallback_immigrants=int(fallback_immigrants),
         ))
-        if cache.remaining <= 0:
-            break
-        if stagnation >= int(config.patience_generations):
-            termination = "coinn_stagnation"
-            break
 
-        ranked = sorted(
-            generation_observations,
-            key=candidate_rank_key,
-            reverse=True,
-        )
-        elite_count = min(max(1, population_target // 5), len(ranked))
-        next_population: list[ActionMatrix] = []
-        next_seen: set[ActionMatrix] = set()
-
-        def add(action: ActionMatrix) -> None:
-            owned = space.validate(action)
-            if (
-                    owned not in next_seen
-                    and not cache.contains(owned)
-                    and len(next_population) < population_target
-            ):
-                next_population.append(owned)
-                next_seen.add(owned)
-
-        for elite in ranked[:elite_count]:
-            for neighbor in space.neighbors(elite.action_matrix):
-                add(neighbor)
-                if len(next_population) >= elite_count:
-                    break
-
-        fitness = np.asarray(
-            [_ga_fitness(item) for item in generation_observations],
-            dtype=float,
-        )
-        probabilities = fitness / fitness.sum()
-        attempts = 0
-        while (
-                len(next_population) < population_target
-                and attempts < max(200, 40 * population_target)
-        ):
-            attempts += 1
-            parent = generation_observations[
-                int(rng.choice(len(generation_observations), p=probabilities))
-            ]
-            child = space.mutate(
-                parent.action_matrix,
-                rng,
-                max_coordinates=config.mutation_max_coordinates,
-            )
-            add(child)
-        while len(next_population) < population_target:
-            candidate = space.random_action(rng)
-            before = len(next_population)
-            add(candidate)
-            if len(next_population) == before and (
-                    len(cache.observations) + len(next_population)
-                    >= space.cardinality
-            ):
-                break
-        population = next_population
-
-    if cache.remaining > 0 and not population:
-        termination = "candidate_space_exhausted"
+    if completed_generations >= int(config.ga_generations):
+        termination = "generation_limit"
     return SearchResult(
         algorithm="coinn_ga",
         best=cache.best(),
@@ -1003,21 +1738,58 @@ def run_search(
         config: SearchConfig,
         *,
         surrogate_factory: Optional[SurrogateFactory] = None,
+        preload: Iterable[SearchEvaluation] = (),
+        checkpoint_callback: Optional[CheckpointCallback] = None,
         ) -> SearchResult:
     normalized = normalize_search_backend(backend)
+    preloaded_by_action: dict[ActionMatrix, SearchEvaluation] = {}
+    for evaluation in preload:
+        owned = space.validate(evaluation.action_matrix)
+        previous = preloaded_by_action.get(owned)
+        if previous is not None and previous.as_dict() != evaluation.as_dict():
+            raise ValueError("conflicting preloaded evaluation for one action")
+        preloaded_by_action.setdefault(owned, evaluation)
+    preload_rows = tuple(preloaded_by_action.values())
+    effective_budget = min(int(config.evaluation_budget), int(space.cardinality))
+    if sum(item.inference_performed for item in preload_rows) >= effective_budget:
+        valid = [item for item in preload_rows if item.valid]
+        return SearchResult(
+            algorithm=normalized,
+            best=max(valid or preload_rows, key=candidate_rank_key),
+            observations=preload_rows,
+            history=(),
+            termination_reason="evaluation_budget",
+        )
     if normalized == "ppo":
         raise ValueError(
             "run_search implements non-RL baselines only; PPO uses the "
             "existing layerwise trainer"
         )
     if normalized == "greedy":
-        return _run_greedy(space, evaluator, config)
+        return _run_greedy(
+            space,
+            evaluator,
+            config,
+            preload=preload_rows,
+            checkpoint_callback=checkpoint_callback,
+        )
     if normalized == "bo_rf":
         return _run_bo_rf(
-            space, evaluator, config, surrogate_factory,
+            space,
+            evaluator,
+            config,
+            surrogate_factory,
+            preload=preload_rows,
+            checkpoint_callback=checkpoint_callback,
         )
     if normalized == "coinn_ga":
-        return _run_coinn_ga(space, evaluator, config)
+        return _run_coinn_ga(
+            space,
+            evaluator,
+            config,
+            preload=preload_rows,
+            checkpoint_callback=checkpoint_callback,
+        )
     raise AssertionError(f"unhandled search backend {normalized}")
 
 

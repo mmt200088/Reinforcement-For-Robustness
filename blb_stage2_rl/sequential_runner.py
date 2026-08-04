@@ -4118,10 +4118,12 @@ def _run_layerwise_training_branch(
         getattr(train_cfg, "search_backend", "ppo")
     )
     if search_backend != "ppo":
-        if resume_checkpoint_path:
+        expected_stage1_source = f"stage1_{search_backend}_result"
+        if str(fixed_source) != expected_stage1_source:
             raise RuntimeError(
-                "non-PPO Stage-2 search does not support checkpoint resume; "
-                "use a fresh search output directory"
+                "two-stage comparator must bind its own Stage-1 result before "
+                f"Stage-2: expected fixed_source={expected_stage1_source!r}, "
+                f"got {str(fixed_source)!r}"
             )
         from .search_baseline_runner import (
             canonical_strict_validation,
@@ -4215,6 +4217,10 @@ def _run_layerwise_training_branch(
             ],
             "fixed_label": str(fixed_label),
             "fixed_source": str(fixed_source),
+            "stage1_backend": search_backend,
+            "stage1_bound_into_stage2": bool(
+                str(fixed_source) == f"stage1_{search_backend}_result"
+            ),
             "online_fidelity": {
                 "split": "validation_full_stratified_probe",
                 "example_count": int(online_probe_example_count),
@@ -4355,7 +4361,7 @@ def _run_layerwise_training_branch(
                 "search_backend": search_backend,
             },
         )
-        if not bool(search_run["scientific_export_allowed"]):
+        if search_run["strict_validation"] is None:
             status.set_phase(
                 f"Stage-2 {search_backend} smoke-only search complete"
             )
@@ -4418,6 +4424,17 @@ def _run_layerwise_training_branch(
             best_breakdown=selected.as_dict(),
             best_episode=int(search_run["result"].evaluation_count),
         )
+        formal_feasible = bool(search_run["manifest"].get(
+            "formal_feasible", False,
+        ))
+        completion_status = (
+            "completed" if formal_feasible else "completed_infeasible"
+        )
+        scientific_status = (
+            "full_search_with_validation_full_gate"
+            if formal_feasible
+            else "full_search_strict_least_violating"
+        )
         status.set_phase(f"Stage-2 {search_backend} search complete")
         return {
             "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
@@ -4431,9 +4448,11 @@ def _run_layerwise_training_branch(
             "stable_joint_best_noise_config": {
                 key: value.copy() for key, value in legacy_best.items()
             },
-            "status": "completed",
-            "scientific_status": (
-                "full_search_with_validation_full_gate"
+            "status": completion_status,
+            "scientific_status": scientific_status,
+            "formal_feasible": formal_feasible,
+            "scientific_export_allowed": bool(
+                search_run["scientific_export_allowed"]
             ),
             "search_backend": search_backend,
             "rl_variant": f"blb_v3_layerwise_search_{search_backend}",

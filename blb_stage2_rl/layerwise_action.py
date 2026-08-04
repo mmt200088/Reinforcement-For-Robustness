@@ -49,6 +49,58 @@ LAYERWISE_SLOT_NAMES = (
     "block4_fusion",
     "truncation_precision",
 )
+LAYER_GENE_CARDINALITY = 6
+
+
+def encode_layer_gene(layer_action: Sequence[int]) -> int:
+    """Encode one public ``(fusion, preset)`` row as one atomic gene."""
+    values = tuple(int(value) for value in layer_action)
+    if len(values) != len(LAYERWISE_SLOT_NAMES):
+        raise ValueError(
+            f"layer action expects {len(LAYERWISE_SLOT_NAMES)} slots, "
+            f"got {len(values)}"
+        )
+    fusion, preset = values
+    if fusion not in (0, 1):
+        raise ValueError(f"Block4 fusion index {fusion} outside [0, 2)")
+    if not 0 <= preset < len(PRECISION_PRESETS):
+        raise ValueError(
+            f"precision preset index {preset} outside "
+            f"[0, {len(PRECISION_PRESETS)})"
+        )
+    return int(3 * fusion + preset)
+
+
+def decode_layer_gene(gene: int) -> Tuple[int, int]:
+    """Decode one atomic six-valued gene to the public runtime row."""
+    value = int(gene)
+    if not 0 <= value < LAYER_GENE_CARDINALITY:
+        raise ValueError(
+            f"layer gene {value} outside [0, {LAYER_GENE_CARDINALITY})"
+        )
+    fusion, preset = divmod(value, len(PRECISION_PRESETS))
+    return int(fusion), int(preset)
+
+
+def encode_layerwise_action_matrix(
+        action_matrix: Sequence[Sequence[int]],
+        ) -> Tuple[int, ...]:
+    """Encode a nonempty public action matrix as atomic per-layer genes."""
+    rows = tuple(tuple(int(value) for value in row) for row in action_matrix)
+    if not rows:
+        raise ValueError("action_matrix must contain at least one layer")
+    return tuple(encode_layer_gene(row) for row in rows)
+
+
+def decode_layerwise_action_genes(
+        genes: Sequence[int],
+        ) -> Tuple[Tuple[int, int], ...]:
+    """Decode atomic per-layer genes to the public Stage-2 action matrix."""
+    values = tuple(int(value) for value in genes)
+    if not values:
+        raise ValueError("layer genes must contain at least one layer")
+    return tuple(decode_layer_gene(value) for value in values)
+
 
 def _validate_k_levels() -> Tuple[int, ...]:
     return validate_exact_k_domain(K_LEVELS)
