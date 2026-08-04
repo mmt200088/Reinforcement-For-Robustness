@@ -1,0 +1,56 @@
+{
+  "backup_is_validity_endorsement": false,
+  "checkpoint": {
+    "algorithm_revision": "network_weighted_hml_three_bank_convergence_v12",
+    "bytes": 8790648,
+    "episode": 50000,
+    "policy_network_variant": "shared_gtrxl_small_v1",
+    "ppo_update_count": 417,
+    "profile": "sst2",
+    "sha256": "2133ce171d205e5563079cdc3b45eab8fb37dd7d91fea9392c36df019be1d092"
+  },
+  "checks": {
+    "candidate_store_54151": true,
+    "checkpoint_episode_50000": true,
+    "checkpoint_updates_417": true,
+    "clone_is_expected_fix_commit": true,
+    "gzip_stream_count": true,
+    "remote_matches_clone": true,
+    "restore_file_count": true,
+    "restore_raw_bytes": true,
+    "run_episodes_50000": true,
+    "run_ppo_updates_417": true,
+    "sha256_entries_verified": true,
+    "structured_episodes_50000": true,
+    "structured_ppo_updates_417": true
+  },
+  "clone_commit": "a4607269efce12db2090c6cc93777c07dc478263",
+  "clone_tree": "552962784f7f8a37e53ca278441b701b896d5ba2",
+  "remote_branch": "codex/bert-base-sst2-stage2-archive-20260804",
+  "remote_commit": "a4607269efce12db2090c6cc93777c07dc478263",
+  "restore": {
+    "file_count": 49,
+    "raw_bytes": 1954954807,
+    "roots": [
+      "report",
+      "run",
+      "stage1_reference",
+      "structured",
+      "supplemental_report",
+      "tooling"
+    ]
+  },
+  "row_counts": {
+    "candidate_store": 54151,
+    "pareto_frontier": 7,
+    "run_episodes": 50000,
+    "run_ppo_updates": 417,
+    "structured_episodes": 50000,
+    "structured_ppo_updates": 417,
+    "top_candidates": 20
+  },
+  "schema": "rfr_cloud_restore_verification_v1",
+  "scientific_validity": "UNRESOLVED_PENDING_AUTHORITATIVE_JULY_ARTIFACT",
+  "status": "VERIFY_OK",
+  "verified_at": "2026-08-04T18:19:50.229380+08:00"
+}
