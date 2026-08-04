@@ -1,0 +1,63 @@
+{
+  "aggregate_eligible": false,
+  "base_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "base_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "branch": "codex/task-three-search-baselines-20260804",
+  "branch_role": "task",
+  "changed_scopes": [
+    "blb_stage2_rl/",
+    "layer_importance_evaluator.py",
+    "llama_7B_LayerImportance.sh",
+    "rl_tune.py",
+    "stage1_rl/",
+    "tests/"
+  ],
+  "completed_at": null,
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [],
+  "source_commit": "a22f65a0a04c277e231deb8007ff11babe047252",
+  "source_tree": "1a998e0a8e12c89f1a074ed93234aa73ab9459bf",
+  "started_at": "2026-08-04T22:32:36+08:00",
+  "status": "in_progress",
+  "supersedes": [],
+  "task_id": "three-search-baselines-20260804",
+  "verification": [
+    {
+      "command": "PYTHONPATH=<task-worktree> python3 tests/test_stage1_search_baselines.py -v",
+      "evidence": "local: 12 tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=<task-worktree> python3 tests/test_blb_search_baselines.py -v",
+      "evidence": "local: 22 tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=<task-worktree> python3 tests/test_blb_search_baseline_runner.py -v",
+      "evidence": "local: 21 tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=<task-worktree> python3 tests/test_blb_search_backend_wiring.py -v",
+      "evidence": "local: 4 tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m py_compile <modified-python-files> && bash -n llama_7B_LayerImportance.sh && git diff --check",
+      "evidence": "local: passed with no output",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=<task-worktree> python3 tests/test_stage2_persistent_launcher.py -v",
+      "evidence": "local: 19 passed, 1 failed; pre-existing test_stage2_launcher_auto_forwards_visible_gpus did not observe the intercepted elastic supervisor",
+      "outcome": "failed"
+    },
+    {
+      "command": "server project gates from Git-synchronized canonical aggregate",
+      "evidence": "not run by ordinary task agent; protocol reserves canonical aggregation and server synchronization for the sole Aggregator",
+      "outcome": "not_run"
+    }
+  ]
+}
