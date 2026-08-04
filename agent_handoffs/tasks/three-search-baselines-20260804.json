@@ -17,8 +17,8 @@
   "record_type": "task_handoff",
   "schema_version": 1,
   "server_evidence": [],
-  "source_commit": "a22f65a0a04c277e231deb8007ff11babe047252",
-  "source_tree": "1a998e0a8e12c89f1a074ed93234aa73ab9459bf",
+  "source_commit": "4a2ce3d0d60c6e04af6e10ff158691590ef34ece",
+  "source_tree": "bcdfdba4182d8cc63f19e441513d4fed6133d892",
   "started_at": "2026-08-04T22:32:36+08:00",
   "status": "in_progress",
   "supersedes": [],
@@ -51,8 +51,8 @@
     },
     {
       "command": "PYTHONPATH=<task-worktree> python3 tests/test_stage2_persistent_launcher.py -v",
-      "evidence": "local: 19 passed, 1 failed; pre-existing test_stage2_launcher_auto_forwards_visible_gpus did not observe the intercepted elastic supervisor",
-      "outcome": "failed"
+      "evidence": "local: 20 tests passed after isolating GPU detection with a deterministic fake nvidia-smi fixture",
+      "outcome": "passed"
     },
     {
       "command": "server project gates from Git-synchronized canonical aggregate",
