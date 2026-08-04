@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Mandatory Git protocol
+
+Before modifying source, read `docs/GIT_MULTI_AGENT_PROTOCOL.md` and run the
+appropriate `scripts/repo_sync_guard.py` boundary command. Ordinary agents use
+isolated `codex/task-*` worktrees, publish a completed handoff, and never push
+`jk_standard_rl`. Only one explicit aggregator may advance canonical after an
+all-head manifest and server verification. Server source is synchronized only
+through Git at the exact canonical commit/tree and is never patched directly.
+Do not bypass `.githooks/pre-push` with `--no-verify`.
+
 ## What this project is
 
 A research codebase that searches for an optimal noise / approximation configuration for **CKKS + MPC privacy-preserving inference** of BERT (and to a lesser extent GPT-2). Two search phases per task:

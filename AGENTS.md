@@ -5,6 +5,16 @@ It should describe the code as it exists, not as older docs or comments once
 described it. When this file conflicts with current code, verify with the code
 and update this file.
 
+## Mandatory Git Protocol
+
+Before modifying source, read `docs/GIT_MULTI_AGENT_PROTOCOL.md` and run the
+appropriate `scripts/repo_sync_guard.py` boundary command. Ordinary agents use
+isolated `codex/task-*` worktrees, publish a completed handoff, and never push
+`jk_standard_rl`. Only one explicit aggregator may advance canonical after an
+all-head manifest and server verification. Server source is synchronized only
+through Git at the exact canonical commit/tree and is never patched directly.
+Do not bypass `.githooks/pre-push` with `--no-verify`.
+
 ## Operating Discipline
 
 For future work in this repository, follow the local `karpathy-guidelines` and
