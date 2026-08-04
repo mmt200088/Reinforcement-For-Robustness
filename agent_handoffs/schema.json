@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mmt200088/Reinforcement-For-Robustness/agent_handoffs/schema.json",
+  "title": "RFR multi-agent Git protocol records",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/taskHandoff"
+    },
+    {
+      "$ref": "#/$defs/aggregateManifest"
+    }
+  ],
+  "$defs": {
+    "gitObjectId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "outcome"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "enum": [
+            "passed",
+            "failed",
+            "not_run"
+          ]
+        },
+        "evidence": {
+          "type": "string"
+        }
+      }
+    },
+    "headDisposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch",
+        "commit",
+        "role",
+        "disposition",
+        "reason"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "role": {
+          "enum": [
+            "canonical",
+            "task",
+            "aggregate",
+            "result",
+            "archive",
+            "recovery",
+            "experiment",
+            "legacy"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "included",
+            "already_ancestor",
+            "patch_equivalent",
+            "superseded",
+            "rejected",
+            "archive_only",
+            "recovery_only",
+            "result_only",
+            "in_progress",
+            "needs_review"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "taskHandoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "record_type",
+        "task_id",
+        "branch",
+        "branch_role",
+        "base_commit",
+        "base_tree",
+        "source_commit",
+        "source_tree",
+        "status",
+        "changed_scopes",
+        "verification",
+        "server_evidence",
+        "supersedes",
+        "aggregate_eligible",
+        "deployment_eligible",
+        "started_at",
+        "completed_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "record_type": {
+          "const": "task_handoff"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "branch": {
+          "type": "string",
+          "pattern": "^codex/task-[A-Za-z0-9._/-]+$"
+        },
+        "branch_role": {
+          "const": "task"
+        },
+        "base_commit": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "base_tree": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "source_tree": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "status": {
+          "enum": [
+            "in_progress",
+            "completed",
+            "superseded",
+            "rejected",
+            "archive"
+          ]
+        },
+        "changed_scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "verification": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/verification"
+          }
+        },
+        "server_evidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "supersedes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "aggregate_eligible": {
+          "type": "boolean"
+        },
+        "deployment_eligible": {
+          "const": false
+        },
+        "started_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "completed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "aggregateManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "record_type",
+        "aggregate_id",
+        "canonical_branch",
+        "aggregate_branch",
+        "base_commit",
+        "base_tree",
+        "source_commit",
+        "source_tree",
+        "remote",
+        "snapshot_at",
+        "created_at",
+        "heads",
+        "verification",
+        "server_evidence",
+        "canonical_eligible",
+        "deployment_eligible"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "record_type": {
+          "const": "aggregate_manifest"
+        },
+        "aggregate_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "canonical_branch": {
+          "const": "jk_standard_rl"
+        },
+        "aggregate_branch": {
+          "type": "string",
+          "pattern": "^codex/aggregate-[A-Za-z0-9._/-]+$"
+        },
+        "base_commit": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "base_tree": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "source_tree": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "remote": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshot_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "heads": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/headDisposition"
+          }
+        },
+        "verification": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/verification"
+          }
+        },
+        "server_evidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "canonical_eligible": {
+          "const": true
+        },
+        "deployment_eligible": {
+          "const": true
+        }
+      }
+    }
+  }
+}
