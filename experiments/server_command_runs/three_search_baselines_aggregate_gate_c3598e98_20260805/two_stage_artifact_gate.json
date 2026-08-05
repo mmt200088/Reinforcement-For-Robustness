@@ -1,0 +1,19 @@
+{
+  "artifact_path": "/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/two_stage_harness_run/two_stage_search_final.json",
+  "final_eval_status": "failed_optional",
+  "formal_feasible": true,
+  "ok": true,
+  "round_trip_equal": true,
+  "schema_version": "two_stage_search_final_v2",
+  "seeds": {
+    "paean": 41,
+    "stage1": 41,
+    "stage2": 83
+  },
+  "stage1_bound_into_stage2": true,
+  "stage1_produced_selection_hash": "90f7562cdac62776303ff90a4b900e3a8072393bcf11bf76270a9de077992f6f",
+  "stage2_consumed_selection_hash": "90f7562cdac62776303ff90a4b900e3a8072393bcf11bf76270a9de077992f6f",
+  "status": "complete_strict_feasible",
+  "strict_evaluated_candidate_count": 5,
+  "strict_requested_top_n": 5
+}

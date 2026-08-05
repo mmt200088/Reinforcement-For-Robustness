@@ -1,0 +1,92 @@
+{
+  "canonical_baseline": {
+    "commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+    "tree": "500c52b104391995602eca9b191e7c1fe7c8de33"
+  },
+  "decision": {
+    "aggregate_eligible": false,
+    "canonical_advanced": false,
+    "formal_search_started": false,
+    "handoff_completed": false,
+    "required_next_action": "return_to_task_agent_for_local_fix_and_new_handoff",
+    "rl_rerun": false
+  },
+  "evidence": {
+    "candidate_targeted": "true_regression_recheck.log.gz",
+    "canonical_targeted": "canonical_targeted_baseline2.log.gz",
+    "focused": "focused_exit_codes.txt",
+    "full_candidate": "full_pytest_materialized.log.gz",
+    "gpu_after": "gpu_after.csv",
+    "real_bert_gpu": "real_bert_gpu_gate.json",
+    "two_stage_artifact": "two_stage_artifact_gate.json"
+  },
+  "failed_gate": {
+    "candidate_result": {
+      "failed": 13,
+      "passed": 2097,
+      "seconds": 118.15,
+      "skipped": 14,
+      "subtests_passed": 388
+    },
+    "command": "CUDA_VISIBLE_DEVICES='' PYTHONPATH=$PWD python3 -m pytest -q",
+    "matched_targeted_comparison": {
+      "candidate": {
+        "failed": 13,
+        "passed": 15
+      },
+      "canonical": {
+        "failed": 12,
+        "passed": 16
+      },
+      "new_failure": "tests/test_blb_layerwise_runner.py::LayerwiseDispatchRulesTests::test_launcher_locks_stage2_directory_before_fresh_cleanup"
+    },
+    "new_failure_diagnosis": "The task changed the Stage-2 persistent-directory construction from the literal SEARCH_ALGORITHM path to _PERSISTENT_ALGORITHM. The flock call is still present and precedes fresh cleanup, but the mandatory static guard anchors on the former literal and can no longer locate that protected block. An ordinary task agent must restore/update the guarded contract locally and rerun the complete server gate.",
+    "preexisting_canonical_failures": [
+      "tests/test_blb_fusion_count_map.py::LayerwiseFusionMapSemanticsTest::test_fixed_fusion_blocks_and_block3_k_restore",
+      "tests/test_blb_robust_baseline.py (9 tests)",
+      "tests/test_sequential_smoke.py::RewardDesignV2RegressionTest::test_default_num_trials_bumped_to_five",
+      "tests/test_stage2_ngpu_speed_targeted_first.py::Stage2NgpuSpeedTargetedFirstTests::test_ab_prints_layerwise_production_commands_without_touching_gpus"
+    ]
+  },
+  "gate_status": "failed_mandatory_project_regression",
+  "passed_gates": {
+    "bash_syntax": true,
+    "five_gpu_cuda": {
+      "all_finite": true,
+      "gpu_count": 5,
+      "model": "NVIDIA GeForce RTX 4090"
+    },
+    "focused_unittest_counts": [
+      20,
+      27,
+      27,
+      4,
+      20,
+      22
+    ],
+    "git_diff_check": true,
+    "python_compile": true,
+    "real_bert_mrpc_forward": {
+      "batch_size": 8,
+      "dataset": "GLUE MRPC",
+      "model_id": "textattack/bert-base-uncased-MRPC",
+      "num_hidden_layers": 12
+    },
+    "two_stage_artifact": {
+      "authoritative_result_retained": true,
+      "optional_paean_status": "failed_optional",
+      "round_trip_equal": true,
+      "schema_version": "two_stage_search_final_v2",
+      "stage1_bound_into_stage2": true,
+      "strict_evaluated_candidate_count": 5,
+      "strict_requested_top_n": 5
+    }
+  },
+  "schema_version": "aggregate_server_gate_v1",
+  "source": {
+    "commit": "c3598e98064558cef1f39cfa15c9468e65dbf9f9",
+    "tracked_clean_after_gates": true,
+    "tree": "24b3596d0632efe5b73cddb7182c47719ca51520"
+  },
+  "task_id": "three-search-baselines-20260804"
+}

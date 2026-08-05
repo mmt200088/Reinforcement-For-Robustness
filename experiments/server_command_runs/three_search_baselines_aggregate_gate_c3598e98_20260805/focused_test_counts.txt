@@ -1,0 +1,12 @@
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_blb_search_backend_wiring.log:Ran 4 tests in 0.162s
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_blb_search_backend_wiring.log:OK
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_blb_search_baseline_runner.log:Ran 27 tests in 0.904s
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_blb_search_baseline_runner.log:OK
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_blb_search_baselines.log:Ran 27 tests in 1.888s
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_blb_search_baselines.log:OK
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_layerwise_promotion.log:Ran 22 tests in 0.251s
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_layerwise_promotion.log:OK
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_stage1_search_baselines.log:Ran 20 tests in 1.171s
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_stage1_search_baselines.log:OK
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_stage2_persistent_launcher.log:Ran 20 tests in 20.106s
+/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/test_stage2_persistent_launcher.log:OK

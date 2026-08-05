@@ -1,0 +1,484 @@
+{
+  "backend": "greedy",
+  "final_eval": {
+    "error": "RuntimeError('intentional optional Paean gate failure')",
+    "executed": false,
+    "result": null,
+    "role": "separate_from_authoritative_internal_strict_F4",
+    "status": "failed_optional"
+  },
+  "formal_feasible": true,
+  "formal_scientific_complete": true,
+  "identity": {
+    "dataset": "mrpc",
+    "experiment_protocol": "bert_base_mrpc_v12",
+    "model": "textattack/bert-base-uncased-MRPC",
+    "num_layers": 12,
+    "paean_seed": 41,
+    "protocol_hash": "e75f16619c9adfd581621bd3957fa12cb9ec0606c9759dc5c851438179dbc35f",
+    "stage1_search_seed": 41,
+    "stage2_search_seed": 83
+  },
+  "schema_version": "two_stage_search_final_v2",
+  "stage1": {
+    "backend": "greedy",
+    "evaluation": {
+      "action": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "cost": 12.0,
+      "feasible": true,
+      "gelu_degrees": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "metrics": {
+        "loss": 0.9,
+        "metric1": 0.9,
+        "metric2": 0.85
+      },
+      "softmax_degrees": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "valid": true
+    },
+    "formal_feasible": true,
+    "gelu_degrees": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "result_path": "/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/two_stage_harness_run/stage1_comparator/greedy/result.json",
+    "search_accounting": {
+      "model_inference_count": 777,
+      "observation_count": 777,
+      "search_wall_seconds": 12.5,
+      "termination_reason": "verified_local_optimum"
+    },
+    "selection_provenance": {
+      "action": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "backend": "greedy",
+      "gelu_degrees": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "result_path": "/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/two_stage_harness_run/stage1_comparator/greedy/result.json",
+      "result_sha256": "b656e89987ad8e75a6c72bca64219f7bc756cf5909ec5c4105c7dda25560801f",
+      "selection_hash": "90f7562cdac62776303ff90a4b900e3a8072393bcf11bf76270a9de077992f6f",
+      "softmax_degrees": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ]
+    },
+    "selection_status": "feasible",
+    "softmax_degrees": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "valid": true
+  },
+  "stage1_bound_into_stage2": true,
+  "stage1_produced_selection_hash": "90f7562cdac62776303ff90a4b900e3a8072393bcf11bf76270a9de077992f6f",
+  "stage2": {
+    "action_matrix": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ]
+    ],
+    "artifact_paths": {
+      "manifest": "manifest.json"
+    },
+    "backend": "greedy",
+    "best_action_group": {
+      "policy_actions": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    "formal_feasible": true,
+    "full_vector": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "online_best": {
+      "action_matrix": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    "scientific_export_allowed": true,
+    "search_accounting": {
+      "online_trial_count": 300,
+      "seed": 83,
+      "strict_communication_trial_count": 225,
+      "strict_compute_trial_count": 225,
+      "strict_joint_trial_count": 225,
+      "termination_reason": "verified_local_optimum"
+    },
+    "selected_evaluation": {
+      "materializable": true,
+      "valid": true
+    },
+    "selected_violations": {
+      "aggregate": {
+        "failed_constraint_count": 0,
+        "total_normalized_violation": 0.0,
+        "worst_normalized_violation": 0.0
+      }
+    },
+    "selection_status": "strict_feasible",
+    "stage1_consumed_provenance": {
+      "action": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "backend": "greedy",
+      "gelu_degrees": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "result_path": "/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/two_stage_harness_run/stage1_comparator/greedy/result.json",
+      "result_sha256": "b656e89987ad8e75a6c72bca64219f7bc756cf5909ec5c4105c7dda25560801f",
+      "selection_hash": "90f7562cdac62776303ff90a4b900e3a8072393bcf11bf76270a9de077992f6f",
+      "softmax_degrees": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ]
+    },
+    "stage1_produced_provenance": {
+      "action": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "backend": "greedy",
+      "gelu_degrees": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "result_path": "/hy-tmp/rfr_three_search_baselines_gate_c3598e98_20260805/two_stage_harness_run/stage1_comparator/greedy/result.json",
+      "result_sha256": "b656e89987ad8e75a6c72bca64219f7bc756cf5909ec5c4105c7dda25560801f",
+      "selection_hash": "90f7562cdac62776303ff90a4b900e3a8072393bcf11bf76270a9de077992f6f",
+      "softmax_degrees": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ]
+    },
+    "strict_validation_summary": {
+      "eligible_online_candidate_count": 5,
+      "hard_gate": "point_gated",
+      "requested_top_n": 5,
+      "strict_evaluated_candidate_count": 5,
+      "validation_banks": {
+        "A": 15,
+        "B": 15,
+        "C": 15
+      }
+    },
+    "valid": true
+  },
+  "stage2_consumed_selection_hash": "90f7562cdac62776303ff90a4b900e3a8072393bcf11bf76270a9de077992f6f",
+  "status": "complete_strict_feasible"
+}

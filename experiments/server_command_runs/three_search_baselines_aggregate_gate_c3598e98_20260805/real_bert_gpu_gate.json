@@ -1,0 +1,91 @@
+{
+  "batch_size": 8,
+  "cuda_version": "12.8",
+  "dataset": "GLUE MRPC",
+  "dataset_source": "/hy-tmp/glue_local/mrpc",
+  "forward_seconds": 1.0237421350029763,
+  "gpu_count": 5,
+  "gpu_results": [
+    {
+      "capability": [
+        8,
+        9
+      ],
+      "checksum": 8345.666015625,
+      "finite": true,
+      "index": 0,
+      "name": "NVIDIA GeForce RTX 4090"
+    },
+    {
+      "capability": [
+        8,
+        9
+      ],
+      "checksum": 8345.666015625,
+      "finite": true,
+      "index": 1,
+      "name": "NVIDIA GeForce RTX 4090"
+    },
+    {
+      "capability": [
+        8,
+        9
+      ],
+      "checksum": 8345.666015625,
+      "finite": true,
+      "index": 2,
+      "name": "NVIDIA GeForce RTX 4090"
+    },
+    {
+      "capability": [
+        8,
+        9
+      ],
+      "checksum": 8345.666015625,
+      "finite": true,
+      "index": 3,
+      "name": "NVIDIA GeForce RTX 4090"
+    },
+    {
+      "capability": [
+        8,
+        9
+      ],
+      "checksum": 8345.666015625,
+      "finite": true,
+      "index": 4,
+      "name": "NVIDIA GeForce RTX 4090"
+    }
+  ],
+  "labels": [
+    1,
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    1
+  ],
+  "logits_shape": [
+    8,
+    2
+  ],
+  "loss": 0.46372106671333313,
+  "model_id": "textattack/bert-base-uncased-MRPC",
+  "model_name_or_path": "textattack/bert-base-uncased-MRPC",
+  "num_hidden_layers": 12,
+  "ok": true,
+  "predictions": [
+    1,
+    0,
+    0,
+    1,
+    0,
+    1,
+    1,
+    1
+  ],
+  "torch_version": "2.9.1+cu128",
+  "validation_rows": 408
+}
