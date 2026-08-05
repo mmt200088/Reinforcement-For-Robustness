@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/hy-tmp/Reinforcement-For-Robustness/scripts/elastic_gpu_supervisor.py", line 911, in <module>
+    raise SystemExit(main())
+  File "/hy-tmp/Reinforcement-For-Robustness/scripts/elastic_gpu_supervisor.py", line 859, in main
+    snapshot = resolve_startup_health_snapshot(
+  File "/hy-tmp/Reinforcement-For-Robustness/scripts/elastic_gpu_supervisor.py", line 283, in resolve_startup_health_snapshot
+    return resolve_health_snapshot(
+  File "/hy-tmp/Reinforcement-For-Robustness/scripts/elastic_gpu_supervisor.py", line 255, in resolve_health_snapshot
+    raise RuntimeError(
+RuntimeError: no healthy GPU remains after recovery-action filtering

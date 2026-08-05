@@ -1,0 +1,16 @@
+{
+  "schema": "stage2_training_source_provenance_v1",
+  "model": "bert-base",
+  "dataset": "rte",
+  "source_commit": "1b34e94936ec19f92a1715ccaf7020049cf926c1",
+  "source_tree": "b43505118859b3de4a49a88530f835ae081e56fa",
+  "run_root": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-base/rte/s1t0.001_s2t0.001_s2st2.0__bertbase_rte_stage2_k3_1gpu_1b34e949_20260731",
+  "structured_root": "/hy-tmp/Reinforcement-For-Robustness/rl_training_data_points/stage2/bert-base/rte/Parting_Chapter_persistent_rl_bert-base_rte_s1t0.001_s2t0.001_s2st2.0__bertbase_rte_stage2_k3_1gpu_1b34e949_20260731__20260731T133132514904Z__pid228317",
+  "run_basename": "s1t0.001_s2t0.001_s2st2.0__bertbase_rte_stage2_k3_1gpu_1b34e949_20260731",
+  "profile": "rte",
+  "completion": {
+    "episodes": 50000,
+    "ppo_updates": 417,
+    "phase": "max_episodes_reached"
+  }
+}

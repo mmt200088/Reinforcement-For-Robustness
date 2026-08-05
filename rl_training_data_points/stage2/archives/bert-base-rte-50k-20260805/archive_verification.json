@@ -1,0 +1,44 @@
+{
+  "schema": "stage2_full_training_archive_verification_v1",
+  "status": "PASS",
+  "restore": {
+    "file_count": 39,
+    "output_dir": "/hy-tmp/rfr-restore-verify-bert-base-rte-50k-20260805",
+    "raw_bytes": 1780721758,
+    "roots": [
+      "run",
+      "structured"
+    ],
+    "schema": "rfr_snapshot_restore_verification_v3",
+    "status": "RESTORE_OK"
+  },
+  "snapshot_totals": {
+    "archive_bytes": 99168209,
+    "file_count": 39,
+    "gzip_file_count": 8,
+    "raw_bytes": 1780721758,
+    "small_file_count": 31
+  },
+  "training": {
+    "completed_episodes": 50000,
+    "planned_episodes": 50000,
+    "ppo_updates": 417,
+    "phase": "max_episodes_reached"
+  },
+  "streams": {
+    "run_episodes_rows": 50000,
+    "structured_episodes_rows": 50000,
+    "run_ppo_updates_rows": 417,
+    "structured_ppo_updates_rows": 417,
+    "candidate_store_rows": 76061,
+    "pareto_frontier_rows": 4,
+    "top_candidates_rows": 20
+  },
+  "checks": {
+    "all_archive_sha256_match_manifest": true,
+    "restore_all_raw_sha256_match_manifest": true,
+    "stage1_configuration_exact_match": true,
+    "completed_episode_count_matches": true,
+    "ppo_update_count_matches": true
+  }
+}

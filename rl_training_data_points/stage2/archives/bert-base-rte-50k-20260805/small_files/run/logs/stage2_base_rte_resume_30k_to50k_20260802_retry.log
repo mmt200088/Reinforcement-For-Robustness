@@ -1,0 +1,112 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/huggingface_hub/file_download.py:942: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 8308f187-3120-4476-9884-c673528cf130)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json
+Retrying in 1s [Retry 1/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 8e914628-8acb-4093-ba93-4b0008c0a70d)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json
+Retrying in 2s [Retry 2/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 0766975a-eb3f-44dd-8d6c-2361b599f416)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json
+Retrying in 4s [Retry 3/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 74324a50-7d44-4f27-914e-6d6efd116df4)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json
+Retrying in 8s [Retry 4/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 7ec800b5-c77c-4117-8aec-38d2fb81cd4e)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json
+Retrying in 8s [Retry 5/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 8e954b34-fec8-456b-b3a5-c2487822ef60)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/tokenizer_config.json
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 10a3c57d-cc8f-465e-9d4d-11af75862478)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/config.json
+Retrying in 1s [Retry 1/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 627efe8f-2701-4ac3-a612-e64938517eb6)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/config.json
+Retrying in 2s [Retry 2/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: dcfbc436-3189-4d5b-873b-6957e94a0222)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/config.json
+Retrying in 4s [Retry 3/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: 7cb61280-ca8c-4098-8c2d-5c57b09211e4)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/config.json
+Retrying in 8s [Retry 4/5].
+'(MaxRetryError('HTTPSConnectionPool(host=\'huggingface.co\', port=443): Max retries exceeded with url: /textattack/bert-base-uncased-RTE/resolve/main/config.json (Caused by NewConnectionError("HTTPSConnection(host=\'huggingface.co\', port=443): Failed to establish a new connection: [Errno 101] Network is unreachable"))'), '(Request ID: d8dd80ea-e8df-4184-a146-993759ee2ca9)')' thrown while requesting HEAD https://huggingface.co/textattack/bert-base-uncased-RTE/resolve/main/config.json
+Retrying in 8s [Retry 5/5].
+[PPO] ppo_update_interval=120 (batch=1440 steps, details chunk=360 episodes)
+Finetuning model with params:
+base_model: textattack/bert-base-uncased-RTE
+data_path: rte
+output_dir: Parting Chapter/persistent/rl/bert-base/rte/s1t0.001_s2t0.001_s2st2.0__bertbase_rte_stage2_k3_1gpu_1b34e949_20260731
+batch_size: 64
+micro_batch_size: 64
+num_epochs: 1
+learning_rate: 0.0002
+rl_lr: 0.0001
+stage1_rl_lr: 0.0001
+stage2_rl_lr: 5e-05
+cutoff_len: 256
+val_set_size: 120
+use_gradient_checkpointing: False
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_modules: None
+Wdecompose_target_modules: None
+bottleneck_size: 256
+non_linearity: tanh
+adapter_dropout: 0.0
+use_parallel_adapter: True
+use_adapterp: False
+train_on_inputs: True
+scaling: 1.0
+adapter_name: lora
+target_modules: ['q_proj', 'k_proj', 'v_proj', 'up_proj', 'down_proj']
+final_eval_config_source: search
+final_eval_config_path: glue_final_configs_best_ppo.json
+manual_stage1_gelu: 
+manual_stage1_softmax: 
+manual_stage2_noise: 
+stage1_rl_episodes: 51000
+stage1_entropy_stop_threshold: None
+stage2_rl_episodes: 50000
+stage1_rl_episodes_specified: False
+stage2_rl_episodes_specified: True
+skip_noise_rl: False
+final_eval_repeat_n: 50
+final_eval_preset: default
+final_eval_output_root: 
+final_eval_run_name: 
+final_eval_random_enabled: False
+final_eval_action_config: 
+final_eval_action_ranges: 
+final_eval_action_fixed: 
+final_eval_require_rescale_optimizer: False
+skip_stage1_rl: True
+skip_final_eval: True
+final_eval_only: False
+group_by_length: False
+wandb_project: 
+wandb_run_name: 
+wandb_watch: 
+wandb_log_model: 
+resume_from_checkpoint: None
+resume_run_dir: Parting Chapter/persistent/rl/bert-base/rte/s1t0.001_s2t0.001_s2st2.0__bertbase_rte_stage2_k3_1gpu_1b34e949_20260731
+stage2_rl_variant: blb_v3
+blb_v3_rescale_invoker_kind: in_process
+blb_v3_inproc_rescale_optimizer_root: Rescale_optimizer
+blb_v3_warmstart_anchor_episodes: None
+blb_v3_warmstart_neighbor_ramp_episodes: None
+blb_v3_warmstart_neighbor_max_mutations: None
+blb_v3_warmstart_neighbor_max_radius: None
+blb_v3_warmstart_neighbor_sampling: None
+blb_v3_guarded_radius2_enabled: None
+blb_v3_guarded_radius2_min_episode: None
+blb_v3_guarded_radius2_stall_window: None
+blb_v3_guarded_radius2_max_mutations: None
+blb_v3_guarded_radius2_episode_fraction: None
+blb_v3_guarded_radius2_cooldown_episodes: None
+blb_v3_static_invalid_level_mask_enabled: None
+blb_v3_warmstart_baseline_bias: None
+blb_v3_warmstart_bias_gain: None
+blb_v3_ent_coef: None
+blb_v3_ent_coef_anchor: None
+blb_v3_ent_coef_ramp_episodes: None
+blb_v3_action_mask_enabled: False
+blb_v3_action_mask_mode: none
+blb_v3_action_mask_file: 
+blb_v3_action_mask_baseline_logit_bonus: 0.0
+blb_v3_action_mask_source: 
+

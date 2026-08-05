@@ -1,0 +1,11 @@
+{
+  "file_count": 39,
+  "output_dir": "/hy-tmp/rfr-restore-verify-bert-base-rte-50k-20260805",
+  "raw_bytes": 1780721758,
+  "roots": [
+    "run",
+    "structured"
+  ],
+  "schema": "rfr_snapshot_restore_verification_v3",
+  "status": "RESTORE_OK"
+}

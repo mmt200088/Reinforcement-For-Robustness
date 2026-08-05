@@ -1,0 +1,78 @@
+{
+  "schema": "stage1_configuration_audit_v1",
+  "status": "PASS",
+  "model": "bert-base",
+  "dataset": "rte",
+  "authoritative_report": {
+    "filename": "stage1_validation_4configs_glue_submission_report.html",
+    "sha256": "37952610c4714e5de39c8d6880b3c8c685be6468634e0a9dbfa53ee08eeb60ce"
+  },
+  "expected": {
+    "gelu": [
+      1,
+      1,
+      1,
+      4,
+      1,
+      1,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ]
+  },
+  "installed": {
+    "gelu": [
+      1,
+      1,
+      1,
+      4,
+      1,
+      1,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "fixed_source": "manual",
+    "fixed_label": "Stage-1 config (manual; softmax fixed deg6)"
+  },
+  "exact_match": true,
+  "runtime_evidence": {
+    "root": "run",
+    "relative_path": "stage2_noise/progress/layerwise_run_manifest.json",
+    "sha256": "1c40abe1288c192caceacffbd3a51da34c6f25b0ae9e4389a411754ce6795e91"
+  }
+}
