@@ -9,6 +9,9 @@ from blb_stage2_rl.seed_utils import derive_baseline_group_probe_seed
 from blb_stage2_rl.statistical_constraints import DegenerateBaselineVariance
 
 
+TEST_TRIALS_PER_GROUP = 3
+
+
 class FakeBaseEnv:
     def __init__(self, group_metrics):
         self.env_cfg = SimpleNamespace(num_trials_per_step=2)
@@ -34,20 +37,22 @@ class FakeBaseEnv:
 
 
 def _metrics(group_idx, *, degenerate_until=0):
+    seed_start = group_idx * TEST_TRIALS_PER_GROUP
+    trial_seeds = tuple(range(seed_start, seed_start + TEST_TRIALS_PER_GROUP))
     if group_idx < degenerate_until:
-        values = np.ones(5)
+        values = np.ones(TEST_TRIALS_PER_GROUP)
         return EpisodeMetrics(
             loss_trials=tuple(values),
             metric1_trials=tuple(values),
             metric2_trials=tuple(values),
-            trial_seeds=tuple(range(group_idx * 5, group_idx * 5 + 5)),
+            trial_seeds=trial_seeds,
         )
-    trial = np.arange(5, dtype=float)
+    trial = np.arange(TEST_TRIALS_PER_GROUP, dtype=float)
     return EpisodeMetrics(
         loss_trials=tuple(0.2 + group_idx * 0.01 + trial * 0.001),
         metric1_trials=tuple(0.8 + group_idx * 0.01 + trial * 0.001),
         metric2_trials=tuple(0.7 + group_idx * 0.01 + trial * 0.001),
-        trial_seeds=tuple(range(group_idx * 5, group_idx * 5 + 5)),
+        trial_seeds=trial_seeds,
     )
 
 
@@ -69,7 +74,7 @@ def test_healthy_baseline_collects_five_disjoint_groups_and_restores_env_state()
 
     reference, summary = _collect(env)
 
-    assert reference.trial_count == 25
+    assert reference.trial_count == 15
     assert len(summary["groups"]) == 5
     assert env.group_seeds == [derive_baseline_group_probe_seed(42, i) for i in range(5)]
     assert len(set(env.group_seeds)) == 5
@@ -85,7 +90,7 @@ def test_degenerate_channels_extend_one_group_at_a_time_until_recovered():
 
     reference, summary = _collect(env)
 
-    assert reference.trial_count == 30
+    assert reference.trial_count == 18
     assert len(summary["groups"]) == 6
     assert env.group_seeds == [derive_baseline_group_probe_seed(42, i) for i in range(6)]
 
@@ -144,7 +149,7 @@ def test_summary_includes_raw_groups_and_direct_two_x_std_limits():
     assert first_group["loss_trials"] == list(expected_metrics.loss_trials)
     assert first_group["metric1_trials"] == list(expected_metrics.metric1_trials)
     assert first_group["metric2_trials"] == list(expected_metrics.metric2_trials)
-    assert summary["pooled"]["trial_count"] == 25
+    assert summary["pooled"]["trial_count"] == 15
     assert summary["bootstrap"] == {"samples": 64, "seed": 42}
     assert summary["limits"]["loss_std"] == pytest.approx(reference.loss_std * 2.0)
     assert summary["limits"]["metric1_std"] == pytest.approx(reference.metric1_std * 2.0)
@@ -269,7 +274,7 @@ def test_collection_canonicalizes_robust_design_and_restores_display_value(rewar
 
     reference, _summary = _collect(env)
 
-    assert reference.trial_count == 25
+    assert reference.trial_count == 15
     assert observed_designs == ["stage1_aligned"] * 5
     assert env.reward_weights.reward_design == reward_design
     assert env.statistical_reference is original_reference
@@ -289,7 +294,7 @@ def test_collection_does_not_bypass_unknown_reward_design():
 
     reference, _summary = _collect(env)
 
-    assert reference.trial_count == 25
+    assert reference.trial_count == 15
     assert observed_designs == ["robust-constrained"] * 5
     assert env.reward_weights.reward_design == "robust-constrained"
 
@@ -334,7 +339,8 @@ def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate()
     env._build_state = lambda: np.asarray([0.0], dtype=np.float32)
     group_index = {"value": 0}
 
-    def evaluate_probe(_trial_count):
+    def evaluate_probe(trial_count):
+        assert trial_count == TEST_TRIALS_PER_GROUP
         metrics = _metrics(group_index["value"])
         group_index["value"] += 1
         return metrics
@@ -377,7 +383,7 @@ def test_collection_bypasses_robust_dispatch_then_restores_loud_candidate_gate()
         bootstrap_samples=64,
     )
 
-    assert reference.trial_count == 25
+    assert reference.trial_count == 15
     assert env.reward_weights.reward_design == " ROBUST_CONSTRAINED "
     assert env.statistical_reference is None
     with pytest.raises(RuntimeError, match="statistical_reference"):

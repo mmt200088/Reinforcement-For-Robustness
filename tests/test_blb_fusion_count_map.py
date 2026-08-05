@@ -38,6 +38,25 @@ except Exception:
     _ASPACE_OK = False
 
 
+_BLOCK_SLOT_COUNTS = {1: 9, 2: 23, 3: 8, 4: 17, 5: 16}
+_BLOCK_OFFSETS = {1: 0, 2: 9, 3: 32, 4: 40, 5: 57}
+_LAYER_WIDTH = 73
+
+
+def _legacy_all_max(num_layers: int = 12) -> list[int]:
+    """Build a valid legacy compatibility vector without requiring torch."""
+    if _ASPACE_OK:
+        return list(_aspace.make_all_max_action_vector(num_layers))
+    vector = [14] * (num_layers * _LAYER_WIDTH + 1)
+    k_baseline_idx = layerwise.K_LEVELS.index(13)
+    for layer_idx in range(num_layers):
+        base = layer_idx * _LAYER_WIDTH
+        for block_idx, count in _BLOCK_SLOT_COUNTS.items():
+            vector[base + _BLOCK_OFFSETS[block_idx] + count - 1] = k_baseline_idx
+    vector[-1] = 4
+    return vector
+
+
 def _function_region(source: str, name: str) -> str:
     start = source.index(f"def {name}(")
     next_def = source.find("\ndef ", start + 1)
@@ -204,12 +223,12 @@ class LayerwiseFusionMapSemanticsTest(unittest.TestCase):
     def test_fixed_fusion_blocks_and_block3_k_restore(self):
         fusion_map = fcm.FusionCountMap.load("mrpc")
         spec = layerwise.layerwise_schedule(12, fusion_map)[0]
-        baseline = [14] * (12 * 73 + 1)
+        baseline = _legacy_all_max()
         block3_sf = baseline[32:39]
 
         result = layerwise.apply_layer_action(
             baseline,
-            [0, 0, 0, 0, 0, 0],
+            [0, 0],
             spec,
             fusion_map,
         )
@@ -220,9 +239,12 @@ class LayerwiseFusionMapSemanticsTest(unittest.TestCase):
                 if int(option.option_id) == int(result.fusion_option_ids[block_idx])
             )
             self.assertEqual(option.fusion_count, 1)
+        expected_block3_k_index = layerwise.K_LEVELS.index(
+            layerwise.precision_preset(0).k_by_block[2]
+        )
         self.assertNotIn(3, result.fusion_option_ids)
         self.assertEqual(list(result.full_vector[32:39]), block3_sf)
-        self.assertEqual(int(result.full_vector[39]), 0)
+        self.assertEqual(int(result.full_vector[39]), expected_block3_k_index)
 
 
 class GroupMinNoiseOptionsTest(unittest.TestCase):

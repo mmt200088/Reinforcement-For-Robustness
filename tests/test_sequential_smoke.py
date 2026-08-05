@@ -2560,11 +2560,22 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
         # which gate is firing without re-running the optimizer.
         self.assertIn("terminal_metrics: loss_mean=", src)
 
-    def test_default_num_trials_bumped_to_five(self):
-        src = open("blb_stage2_rl/runner.py", encoding="utf-8").read()
-        # The default lives in BLBStage2TrainConfig and flows down through
-        # BLBStage2EnvConfig.num_trials_per_step → env._eval_on_probe(k).
-        self.assertIn("num_trials_per_step: int = 5", src)
+    def test_default_num_trials_uses_three_trial_grouped_protocol(self):
+        src = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        config_class = next(
+            node for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == "BLBStage2TrainConfig"
+        )
+        field = next(
+            node for node in config_class.body
+            if isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "num_trials_per_step"
+        )
+
+        self.assertEqual(ast.literal_eval(field.value), 3)
 
 
 class WarmstartFixedRegressionTest(unittest.TestCase):
