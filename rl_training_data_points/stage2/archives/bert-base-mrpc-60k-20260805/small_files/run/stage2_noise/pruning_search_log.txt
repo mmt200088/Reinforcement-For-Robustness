@@ -1,0 +1,224 @@
+================================================================================
+【二阶段噪声 RL 日志】二阶段噪声 RL 日志开始（Stage-2 noise RL log started）
+================================================================================
+【学习率配置】
+  - 一阶段 PPO 学习率（Stage-1 PPO LR）：raw=0.0001 -> 0.0001（直接指定（direct））
+  - 二阶段 PPO 学习率（Stage-2 PPO LR）：raw=5e-05 -> 5e-05（直接指定（direct））
+【训练轮数配置】
+  - 一阶段 RL 回合数（stage-1 episodes）：51000
+  - 二阶段噪声 RL 回合数（stage-2 episodes）：50000
+【输出目录】
+  - 本次运行根目录（run_output_dir）：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804
+
+════════════════════════════════════════════════════════════════════
+  阶段 5 · 二阶段噪声强化学习（BLB v3 · 12-step layerwise robust）
+════════════════════════════════════════════════════════════════════
+  * 模式（mode）：horizon=12 layerwise，max_step_dim=2
+  * 固定 GELU/Softmax 来源（source）：manual    标签（label）：Stage-1 config (manual; softmax fixed deg6)
+  * GELU 离散阶数向量:   [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
+  * Softmax 离散阶数向量: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  * 训练概览：profile='mrpc'    total_episodes=50000    PPO 更新间隔（rollout_size）= 120    seed=42
+  * BLB 持久化目录：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/progress
+  * 详细诊断：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/details/ （每 360 回合一文件，记录每回合错误/动作变化）
+  * 奖励暴跌警告：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/warning.txt （PPO rollout 平均奖励较上一次跌幅 > 0.30 时记录）
+  * 评估子集：batch 数 = 4
+  * Rescale_optimizer 根目录：Rescale_optimizer
+  * Rescale optimizer 模式：in_process_real
+  * calibrated static_skeletons baseline loaded from /hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json (sha256=ec5f0515a2fbee12f1214188e4d9ddce6dc1e9f8ec3551e937fd6fd0b253231b)
+  [multi-gpu] reward probe enabled: devices=[0, 1, 2, 3]
+  [multi-gpu] [probe-runner] worker 0: cuda:0 (primary, reusing env.bridge)
+  [multi-gpu] [probe-runner] backend=process
+  [multi-gpu] [probe-runner] worker 1: cuda:1 (persistent process pid=62413)
+  [multi-gpu] [probe-runner] worker 2: cuda:2 (persistent process pid=62414)
+  [multi-gpu] [probe-runner] worker 3: cuda:3 (persistent process pid=62415)
+  * [ADR-015] reward_design=robust_constrained（tiered 回滚路径）
+  * F4 authoritative validation: split=validation_full examples=408 batches=7 devices=[0, 1, 2, 3]
+  * 基线噪声预热（noisy baseline preflight）：K=15  m1(noisy)=0.8701  m2(noisy)=0.8681  loss_mean(noisy)=0.3664  std(loss/m1/m2)=0.0033/0.0038/0.0038
+  * 校准后硬约束阈值（calibrated gates）：m1_threshold=0.8692  m2_threshold=0.8672  loss_threshold=0.3667  std_thresholds(loss/m1/m2)=0.0065/0.0075/0.0076  (limit_tol=0.0010, stab_tol=2.0000; loss 越低越好，允许相对上浮 limit_tol；m1/m2 越高越好，允许相对下降 limit_tol；std 越低越好，× stab_tol)
+  * 稳定阈值校准来源（stab calibration source）：multiplier formula: loss_std=0.0000 × tol=1.2000 → loss_std_threshold=0.0100; m1_std=0.0000 × tol=1.2000 → m1_std_threshold=0.0100; m2_std=0.0000 × tol=1.2000 → m2_std_threshold=0.0100 (floor=0.0100)
+  * Multi-GPU BLB install cache：enabled (devices=[0, 1, 2, 3]; wrappers/hooks stay installed and cfgs update in-place)
+
+  【基线信号（baseline cost / reward / metrics）】
+  ────
+  · 成本基线（baseline cost）：total_bits=15509, fusion=0, avg_k=13.00
+  · 指标基线（baseline metrics）：loss=0.3664, m1=0.8701, m2=0.8681
+  · 奖励权重（reward weights, v2-style rdv2）：cost_weight=1, lambda_stab=1, invalid_penalty=5, clip=[-5.0, 5.0], tier=[20.0, +20.0], baseline_metric1=0.8701
+  · 硬约束阈值（acc=hard, stab=soft cap for excess penalty）：m1_threshold=0.8692, m2_threshold=0.8672, loss_threshold=0.3667, std_thresholds(loss/m1/m2)=0.0065/0.0075/0.0076
+  · static_skeletons archive：/hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json
+  ────
+  * Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。
+  * Fusion-count action ENABLED：map graphs=7, max_options=2；per-slot radius2 停用，block 粒度 safe-neighbor curriculum 停用（对照组：全开）
+  * Stage-2 policy network: shared_gtrxl_small_v1 (total=692,615, shared=675,648, actor_only=8,646, critic_only=8,321)
+  * [data-points] layerwise Stage-2 → /hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/rl_training_data_points/stage2/bert-base/mrpc/rfr_stage2_runs_5c222da6_persistent_rl_bert-base_mrpc_s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804__20260803T184402328504Z__pid62130
+  * [graceful-stop] Ctrl+C or create /hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/progress/STOP_RL; the layerwise run will stop after the next PPO checkpoint boundary.
+
+================================================================================
+【二阶段噪声 RL 续训日志】时间：2026-08-04T16:37:20.650670
+================================================================================
+【学习率配置】
+  - 一阶段 PPO 学习率（Stage-1 PPO LR）：raw=0.0001 -> 0.0001（直接指定（direct））
+  - 二阶段 PPO 学习率（Stage-2 PPO LR）：raw=5e-05 -> 5e-05（直接指定（direct））
+【训练轮数配置】
+  - 一阶段 RL 回合数（stage-1 episodes）：51000
+  - 二阶段噪声 RL 回合数（stage-2 episodes）：50000
+【输出目录】
+  - 本次运行根目录（run_output_dir）：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804
+
+════════════════════════════════════════════════════════════════════
+  阶段 5 · 二阶段噪声强化学习（BLB v3 · 12-step layerwise robust）
+════════════════════════════════════════════════════════════════════
+  * 模式（mode）：horizon=12 layerwise，max_step_dim=2
+  * 固定 GELU/Softmax 来源（source）：manual    标签（label）：Stage-1 config (manual; softmax fixed deg6)
+  * GELU 离散阶数向量:   [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
+  * Softmax 离散阶数向量: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  * 训练概览：profile='mrpc'    total_episodes=50000    PPO 更新间隔（rollout_size）= 120    seed=42
+  * BLB 持久化目录：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/progress
+  * 详细诊断：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/details/ （每 360 回合一文件，记录每回合错误/动作变化）
+  * 奖励暴跌警告：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/warning.txt （PPO rollout 平均奖励较上一次跌幅 > 0.30 时记录）
+  * 评估子集：batch 数 = 4
+  * Rescale_optimizer 根目录：Rescale_optimizer
+  * Rescale optimizer 模式：in_process_real
+  * calibrated static_skeletons baseline loaded from /hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json (sha256=ec5f0515a2fbee12f1214188e4d9ddce6dc1e9f8ec3551e937fd6fd0b253231b)
+  [multi-gpu] reward probe enabled: devices=[0, 1, 2, 3]
+  [multi-gpu] [probe-runner] worker 0: cuda:0 (primary, reusing env.bridge)
+  [multi-gpu] [probe-runner] backend=process
+  [multi-gpu] [probe-runner] worker 1: cuda:1 (persistent process pid=4606)
+  [multi-gpu] [probe-runner] worker 2: cuda:2 (persistent process pid=4607)
+  [multi-gpu] [probe-runner] worker 3: cuda:3 (persistent process pid=4608)
+  * [ADR-015] reward_design=robust_constrained（tiered 回滚路径）
+  * F4 authoritative validation: split=validation_full examples=408 batches=7 devices=[0, 1, 2, 3]
+  * 基线噪声预热（noisy baseline preflight）：K=15  m1(noisy)=0.8701  m2(noisy)=0.8681  loss_mean(noisy)=0.3664  std(loss/m1/m2)=0.0033/0.0038/0.0038
+  * 校准后硬约束阈值（calibrated gates）：m1_threshold=0.8692  m2_threshold=0.8672  loss_threshold=0.3667  std_thresholds(loss/m1/m2)=0.0065/0.0075/0.0076  (limit_tol=0.0010, stab_tol=2.0000; loss 越低越好，允许相对上浮 limit_tol；m1/m2 越高越好，允许相对下降 limit_tol；std 越低越好，× stab_tol)
+  * 稳定阈值校准来源（stab calibration source）：multiplier formula: loss_std=0.0000 × tol=1.2000 → loss_std_threshold=0.0100; m1_std=0.0000 × tol=1.2000 → m1_std_threshold=0.0100; m2_std=0.0000 × tol=1.2000 → m2_std_threshold=0.0100 (floor=0.0100)
+  * Multi-GPU BLB install cache：enabled (devices=[0, 1, 2, 3]; wrappers/hooks stay installed and cfgs update in-place)
+
+  【基线信号（baseline cost / reward / metrics）】
+  ────
+  · 成本基线（baseline cost）：total_bits=15509, fusion=0, avg_k=13.00
+  · 指标基线（baseline metrics）：loss=0.3664, m1=0.8701, m2=0.8681
+  · 奖励权重（reward weights, v2-style rdv2）：cost_weight=1, lambda_stab=1, invalid_penalty=5, clip=[-5.0, 5.0], tier=[20.0, +20.0], baseline_metric1=0.8701
+  · 硬约束阈值（acc=hard, stab=soft cap for excess penalty）：m1_threshold=0.8692, m2_threshold=0.8672, loss_threshold=0.3667, std_thresholds(loss/m1/m2)=0.0065/0.0075/0.0076
+  · static_skeletons archive：/hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json
+  ────
+  * Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。
+  * Fusion-count action ENABLED：map graphs=7, max_options=2；per-slot radius2 停用，block 粒度 safe-neighbor curriculum 停用（对照组：全开）
+  * Stage-2 policy network: shared_gtrxl_small_v1 (total=692,615, shared=675,648, actor_only=8,646, critic_only=8,321)
+  * layerwise resume @ episode 40080
+  * [data-points] layerwise Stage-2 → /hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/rl_training_data_points/stage2/bert-base/mrpc/rfr_stage2_runs_5c222da6_persistent_rl_bert-base_mrpc_s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804__20260803T184402328504Z__pid62130
+  * [graceful-stop] Ctrl+C or create /hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/progress/STOP_RL; the layerwise run will stop after the next PPO checkpoint boundary.
+
+================================================================================
+【二阶段噪声 RL 续训日志】时间：2026-08-04T19:54:29.057886
+================================================================================
+【学习率配置】
+  - 一阶段 PPO 学习率（Stage-1 PPO LR）：raw=0.0001 -> 0.0001（直接指定（direct））
+  - 二阶段 PPO 学习率（Stage-2 PPO LR）：raw=5e-05 -> 5e-05（直接指定（direct））
+【训练轮数配置】
+  - 一阶段 RL 回合数（stage-1 episodes）：51000
+  - 二阶段噪声 RL 回合数（stage-2 episodes）：50000
+【输出目录】
+  - 本次运行根目录（run_output_dir）：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804
+
+════════════════════════════════════════════════════════════════════
+  阶段 5 · 二阶段噪声强化学习（BLB v3 · 12-step layerwise robust）
+════════════════════════════════════════════════════════════════════
+  * 模式（mode）：horizon=12 layerwise，max_step_dim=2
+  * 固定 GELU/Softmax 来源（source）：manual    标签（label）：Stage-1 config (manual; softmax fixed deg6)
+  * GELU 离散阶数向量:   [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
+  * Softmax 离散阶数向量: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  * 训练概览：profile='mrpc'    total_episodes=50000    PPO 更新间隔（rollout_size）= 120    seed=42
+  * BLB 持久化目录：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/progress
+  * 详细诊断：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/details/ （每 360 回合一文件，记录每回合错误/动作变化）
+  * 奖励暴跌警告：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/warning.txt （PPO rollout 平均奖励较上一次跌幅 > 0.30 时记录）
+  * 评估子集：batch 数 = 4
+  * Rescale_optimizer 根目录：Rescale_optimizer
+  * Rescale optimizer 模式：in_process_real
+  * calibrated static_skeletons baseline loaded from /hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json (sha256=ec5f0515a2fbee12f1214188e4d9ddce6dc1e9f8ec3551e937fd6fd0b253231b)
+  [multi-gpu] reward probe enabled: devices=[0, 1, 2, 3]
+  [multi-gpu] [probe-runner] worker 0: cuda:0 (primary, reusing env.bridge)
+  [multi-gpu] [probe-runner] backend=process
+  [multi-gpu] [probe-runner] worker 1: cuda:1 (persistent process pid=12124)
+  [multi-gpu] [probe-runner] worker 2: cuda:2 (persistent process pid=12125)
+  [multi-gpu] [probe-runner] worker 3: cuda:3 (persistent process pid=12126)
+  * [ADR-015] reward_design=robust_constrained（tiered 回滚路径）
+  * F4 authoritative validation: split=validation_full examples=408 batches=7 devices=[0, 1, 2, 3]
+  * 基线噪声预热（noisy baseline preflight）：K=15  m1(noisy)=0.8701  m2(noisy)=0.8681  loss_mean(noisy)=0.3664  std(loss/m1/m2)=0.0033/0.0038/0.0038
+  * 校准后硬约束阈值（calibrated gates）：m1_threshold=0.8692  m2_threshold=0.8672  loss_threshold=0.3667  std_thresholds(loss/m1/m2)=0.0065/0.0075/0.0076  (limit_tol=0.0010, stab_tol=2.0000; loss 越低越好，允许相对上浮 limit_tol；m1/m2 越高越好，允许相对下降 limit_tol；std 越低越好，× stab_tol)
+  * 稳定阈值校准来源（stab calibration source）：multiplier formula: loss_std=0.0000 × tol=1.2000 → loss_std_threshold=0.0100; m1_std=0.0000 × tol=1.2000 → m1_std_threshold=0.0100; m2_std=0.0000 × tol=1.2000 → m2_std_threshold=0.0100 (floor=0.0100)
+  * Multi-GPU BLB install cache：enabled (devices=[0, 1, 2, 3]; wrappers/hooks stay installed and cfgs update in-place)
+
+  【基线信号（baseline cost / reward / metrics）】
+  ────
+  · 成本基线（baseline cost）：total_bits=15509, fusion=0, avg_k=13.00
+  · 指标基线（baseline metrics）：loss=0.3664, m1=0.8701, m2=0.8681
+  · 奖励权重（reward weights, v2-style rdv2）：cost_weight=1, lambda_stab=1, invalid_penalty=5, clip=[-5.0, 5.0], tier=[20.0, +20.0], baseline_metric1=0.8701
+  · 硬约束阈值（acc=hard, stab=soft cap for excess penalty）：m1_threshold=0.8692, m2_threshold=0.8672, loss_threshold=0.3667, std_thresholds(loss/m1/m2)=0.0065/0.0075/0.0076
+  · static_skeletons archive：/hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json
+  ────
+  * Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。
+  * Fusion-count action ENABLED：map graphs=7, max_options=2；per-slot radius2 停用，block 粒度 safe-neighbor curriculum 停用（对照组：全开）
+  * Stage-2 policy network: shared_gtrxl_small_v1 (total=692,615, shared=675,648, actor_only=8,646, critic_only=8,321)
+  * layerwise resume @ episode 42480
+  * [data-points] layerwise Stage-2 → /hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/rl_training_data_points/stage2/bert-base/mrpc/rfr_stage2_runs_5c222da6_persistent_rl_bert-base_mrpc_s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804__20260803T184402328504Z__pid62130
+  * [graceful-stop] Ctrl+C or create /hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/progress/STOP_RL; the layerwise run will stop after the next PPO checkpoint boundary.
+  [BLB曲线][信息] PNG/PDF 渲染已延后；设置 RFR_STAGE2_RENDER_PLOTS=1 或 render_plots=True 可启用。
+
+[信息] 统一最终评估已跳过（--skip-final-eval）。
+
+================================================================================
+【二阶段噪声 RL 续训日志】时间：2026-08-04T23:01:38.290400
+================================================================================
+【学习率配置】
+  - 一阶段 PPO 学习率（Stage-1 PPO LR）：raw=0.0001 -> 0.0001（直接指定（direct））
+  - 二阶段 PPO 学习率（Stage-2 PPO LR）：raw=5e-05 -> 5e-05（直接指定（direct））
+【训练轮数配置】
+  - 一阶段 RL 回合数（stage-1 episodes）：51000
+  - 二阶段噪声 RL 回合数（stage-2 episodes）：60000
+【输出目录】
+  - 本次运行根目录（run_output_dir）：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804
+
+════════════════════════════════════════════════════════════════════
+  阶段 5 · 二阶段噪声强化学习（BLB v3 · 12-step layerwise robust）
+════════════════════════════════════════════════════════════════════
+  * 模式（mode）：horizon=12 layerwise，max_step_dim=2
+  * 固定 GELU/Softmax 来源（source）：manual    标签（label）：Stage-1 config (manual; softmax fixed deg6)
+  * GELU 离散阶数向量:   [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]
+  * Softmax 离散阶数向量: [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  * 训练概览：profile='mrpc'    total_episodes=60000    PPO 更新间隔（rollout_size）= 120    seed=42
+  * BLB 持久化目录：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/progress
+  * 详细诊断：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/details/ （每 360 回合一文件，记录每回合错误/动作变化）
+  * 奖励暴跌警告：/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/warning.txt （PPO rollout 平均奖励较上一次跌幅 > 0.30 时记录）
+  * 评估子集：batch 数 = 4
+  * Rescale_optimizer 根目录：Rescale_optimizer
+  * Rescale optimizer 模式：in_process_real
+  * calibrated static_skeletons baseline loaded from /hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json (sha256=ec5f0515a2fbee12f1214188e4d9ddce6dc1e9f8ec3551e937fd6fd0b253231b)
+  [multi-gpu] reward probe enabled: devices=[0, 1, 2, 3]
+  [multi-gpu] [probe-runner] worker 0: cuda:0 (primary, reusing env.bridge)
+  [multi-gpu] [probe-runner] backend=process
+  [multi-gpu] [probe-runner] worker 1: cuda:1 (persistent process pid=19474)
+  [multi-gpu] [probe-runner] worker 2: cuda:2 (persistent process pid=19475)
+  [multi-gpu] [probe-runner] worker 3: cuda:3 (persistent process pid=19476)
+  * [ADR-015] reward_design=robust_constrained（tiered 回滚路径）
+  * F4 authoritative validation: split=validation_full examples=408 batches=7 devices=[0, 1, 2, 3]
+  * 基线噪声预热（noisy baseline preflight）：K=15  m1(noisy)=0.8701  m2(noisy)=0.8681  loss_mean(noisy)=0.3664  std(loss/m1/m2)=0.0033/0.0038/0.0038
+  * 校准后硬约束阈值（calibrated gates）：m1_threshold=0.8692  m2_threshold=0.8672  loss_threshold=0.3667  std_thresholds(loss/m1/m2)=0.0065/0.0075/0.0076  (limit_tol=0.0010, stab_tol=2.0000; loss 越低越好，允许相对上浮 limit_tol；m1/m2 越高越好，允许相对下降 limit_tol；std 越低越好，× stab_tol)
+  * 稳定阈值校准来源（stab calibration source）：multiplier formula: loss_std=0.0000 × tol=1.2000 → loss_std_threshold=0.0100; m1_std=0.0000 × tol=1.2000 → m1_std_threshold=0.0100; m2_std=0.0000 × tol=1.2000 → m2_std_threshold=0.0100 (floor=0.0100)
+  * Multi-GPU BLB install cache：enabled (devices=[0, 1, 2, 3]; wrappers/hooks stay installed and cfgs update in-place)
+
+  【基线信号（baseline cost / reward / metrics）】
+  ────
+  · 成本基线（baseline cost）：total_bits=15509, fusion=0, avg_k=13.00
+  · 指标基线（baseline metrics）：loss=0.3664, m1=0.8701, m2=0.8681
+  · 奖励权重（reward weights, v2-style rdv2）：cost_weight=1, lambda_stab=1, invalid_penalty=5, clip=[-5.0, 5.0], tier=[20.0, +20.0], baseline_metric1=0.8701
+  · 硬约束阈值（acc=hard, stab=soft cap for excess penalty）：m1_threshold=0.8692, m2_threshold=0.8672, loss_threshold=0.3667, std_thresholds(loss/m1/m2)=0.0065/0.0075/0.0076
+  · static_skeletons archive：/hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Rescale_optimizer/configs/mrpc/static_skeletons_mrpc.json
+  ────
+  * Adaptive scalar cost reward：P1/P2 不吃 cost；P3 中 fusion/K 使用区间式 boost，total_bits 使用弱线性项；Pareto frontier 仅用于诊断/探索统计。
+  * Fusion-count action ENABLED：map graphs=7, max_options=2；per-slot radius2 停用，block 粒度 safe-neighbor curriculum 停用（对照组：全开）
+  * Stage-2 policy network: shared_gtrxl_small_v1 (total=692,615, shared=675,648, actor_only=8,646, critic_only=8,321)
+  * layerwise resume @ episode 50000
+  * [data-points] layerwise Stage-2 → /hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/rl_training_data_points/stage2/bert-base/mrpc/rfr_stage2_runs_5c222da6_persistent_rl_bert-base_mrpc_s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804__20260803T184402328504Z__pid62130
+  * [graceful-stop] Ctrl+C or create /hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804/stage2_noise/progress/STOP_RL; the layerwise run will stop after the next PPO checkpoint boundary.
+  [BLB曲线][信息] PNG/PDF 渲染已延后；设置 RFR_STAGE2_RENDER_PLOTS=1 或 render_plots=True 可启用。
+
+[信息] 统一最终评估已跳过（--skip-final-eval）。

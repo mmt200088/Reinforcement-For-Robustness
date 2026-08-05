@@ -1,0 +1,11 @@
+{
+  "file_count": 64,
+  "output_dir": "/hy-tmp/rfr-restore-verify-bert-base-mrpc-60k-20260805",
+  "raw_bytes": 2245565240,
+  "roots": [
+    "run",
+    "structured"
+  ],
+  "schema": "rfr_snapshot_restore_verification_v3",
+  "status": "RESTORE_OK"
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "stage2_training_source_provenance_v1",
+  "model": "bert-base",
+  "dataset": "mrpc",
+  "source_commit": "5c222da6186b8a60244b46029bbc8dac79befb34",
+  "source_tree": "20c3280a25fa4376471e846c2053ca03e8bb55c4",
+  "run_root": "/hy-tmp/rfr_stage2_runs_5c222da6/persistent/rl/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804",
+  "structured_root": "/hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/rl_training_data_points/stage2/bert-base/mrpc/rfr_stage2_runs_5c222da6_persistent_rl_bert-base_mrpc_s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804__20260803T184402328504Z__pid62130",
+  "run_basename": "s1t0.001_s2t0.001_s2st2.0__bertbase_mrpc_stage2_k3_4gpu_stage1best20260624_5c222da6_20260804",
+  "profile": "mrpc",
+  "completion": {
+    "episodes": 60000,
+    "ppo_updates": 501,
+    "phase": "max_episodes_reached"
+  }
+}

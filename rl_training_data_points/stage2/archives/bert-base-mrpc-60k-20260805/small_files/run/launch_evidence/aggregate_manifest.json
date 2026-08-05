@@ -1,0 +1,496 @@
+{
+  "base_commit": "82f7b2486c15d7bba3db735076c50ea41fc0a165",
+  "candidate_commit": "5c222da6186b8a60244b46029bbc8dac79befb34",
+  "candidate_tree": "20c3280a25fa4376471e846c2053ca03e8bb55c4",
+  "canonical_branch": "jk_standard_rl",
+  "created_at": "2026-08-03T18:38:42.219948+00:00",
+  "included_branches": [
+    "origin/codex/git-multi-agent-protocol-20260804"
+  ],
+  "protected_uncommitted_local_state": {
+    "action": "preserved and excluded from aggregate",
+    "disposition": "in_progress",
+    "paths": [
+      "CLAUDE.md"
+    ]
+  },
+  "remote_heads": [
+    {
+      "commit": "3a7400560ed66bfb42424f414bb3f360ff3e9f56",
+      "disposition": "superseded",
+      "note": "older divergent source or experiment, superseded by current canonical aggregate",
+      "ref": "origin",
+      "subject": "change things"
+    },
+    {
+      "commit": "ba155379fe1f71e37ab7918f833d349f2451f5b1",
+      "disposition": "superseded",
+      "note": "older divergent source or experiment, superseded by current canonical aggregate",
+      "ref": "origin/bert-large",
+      "subject": "Create README.md"
+    },
+    {
+      "commit": "1f32a793cda54b72e19319fa172eb51c458d7198",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/all-agents-elastic-rl-integrated-20260727",
+      "subject": "docs(elastic): archive dedicated three-GPU evidence"
+    },
+    {
+      "commit": "accc27d65b6e99435913c3f1bed8629e755742e8",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/all-agents-integrated-20260724",
+      "subject": "docs: require aggregate server source sync"
+    },
+    {
+      "commit": "54dfeaa085fc2aa8da9523fb4707451fbde01634",
+      "disposition": "superseded",
+      "note": "older divergent source or experiment, superseded by current canonical aggregate",
+      "ref": "origin/codex/all-agents-k6-13-integrated-20260727",
+      "subject": "test: record stage2 K6 K7 server gate"
+    },
+    {
+      "commit": "264e4002860818e87c1933006df678af8464d1c2",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+      "subject": "feat(stage2): add protected K1 terminal screening"
+    },
+    {
+      "commit": "a9559610df1cfddecaba40e969896468cc8e0de0",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/bert-large-mrpc-final-archive-20260731",
+      "subject": "archive stopped bert-large mrpc stage2 run"
+    },
+    {
+      "commit": "377cfb1266806d87e123602b5f805157f0ddcd7d",
+      "disposition": "archive_only",
+      "note": "historical/cloud archive branch; artifacts only",
+      "ref": "origin/codex/bert-large-rte-final-archive-20260801",
+      "subject": "record cloud restore verification for rte archive"
+    },
+    {
+      "commit": "82f7b2486c15d7bba3db735076c50ea41fc0a165",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/bert-large-rte-sst2-training-archives-20260803",
+      "subject": "record cloud restore verification for sst2 archive"
+    },
+    {
+      "commit": "aff4d1ccc7ae1d2e8dabef97d9466a28e0e5948b",
+      "disposition": "result_only",
+      "note": "experiment/evaluation evidence branch; not source aggregate input",
+      "ref": "origin/codex/block-sf-audit",
+      "subject": "Add MRPC actual installed SF audit report"
+    },
+    {
+      "commit": "ed2e89f2fa3f667eca1d06135c1f4748b9957076",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/block3-runtime-wiring",
+      "subject": "test: align Block3 freeze guards with shared helpers"
+    },
+    {
+      "commit": "c28e7304c96d98fe349ec3653c6bb54a01debd76",
+      "disposition": "superseded",
+      "note": "older divergent source or experiment, superseded by current canonical aggregate",
+      "ref": "origin/codex/candidate-index-on-stage2-small",
+      "subject": "perf(stage2): index latest promotion status"
+    },
+    {
+      "commit": "a8c026a78c81ad985f47c1f2e88b02aad241e215",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/candidate-promotion-index-d3fa013b",
+      "subject": "Add Stage-2 candidate promotion index evidence"
+    },
+    {
+      "commit": "eee7d21513ffee103359d97e37acc33a31346000",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/elastic-rl-gpu-scheduling-20260726",
+      "subject": "docs(elastic): include server test logs"
+    },
+    {
+      "commit": "c49fed05f0bac59b2471143a8d3e41c65c2b93d1",
+      "disposition": "result_only",
+      "note": "experiment/evaluation evidence branch; not source aggregate input",
+      "ref": "origin/codex/five-profile-fusion-audit",
+      "subject": "Add BERT-base MRPC to fusion SF audit"
+    },
+    {
+      "commit": "24e919cea64f22b1b869b9bf22d57bbb776bac5e",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/fixed-b2-b5-fusion",
+      "subject": "fix(stage2): persist effective PPO diagnostics"
+    },
+    {
+      "commit": "5c222da6186b8a60244b46029bbc8dac79befb34",
+      "disposition": "included",
+      "note": "completed docs-only protocol design; sole new branch after canonical refresh",
+      "ref": "origin/codex/git-multi-agent-protocol-20260804",
+      "subject": "docs: design multi-agent git synchronization protocol"
+    },
+    {
+      "commit": "381d4a81b9802289fb306e29d64720b5a1813390",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/green-paean-action-batch-20260710",
+      "subject": "Prune unused Paean random search"
+    },
+    {
+      "commit": "f19736112c12b62b29b2958158bb751ca806b4a2",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/green-paean-plot-defer-20260710",
+      "subject": "Defer redundant Paean action plots"
+    },
+    {
+      "commit": "85c81a25bb7feb8cd834998ce3be26ff354b534f",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/green-rescale-compact-scan-20260710",
+      "subject": "Stream Rescale compact scale propagation"
+    },
+    {
+      "commit": "2907e63388c5d58b0e4e6f1e80b37f50aaa2d83c",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/green-rescale-scalar-state-20260710",
+      "subject": "Avoid scalar deepcopy in Rescale sessions"
+    },
+    {
+      "commit": "78cfec9672db58935f1e2e1c7b7cae5ed0c88be5",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/green-stage2-plot-default-20260710",
+      "subject": "Defer Stage-2 plot rendering by default"
+    },
+    {
+      "commit": "ffa58a5de4fc5997acbd1ca89805da5d0419187b",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/green-task5-map-aware-gate-20260710",
+      "subject": "Make boosted fusion replay test map-aware"
+    },
+    {
+      "commit": "efc7e1055ce95f119e374187f8ad563c24e5c848",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/l0-block1-k-rl-20260726",
+      "subject": "feat(stage2): enable layer0 block1 truncation K"
+    },
+    {
+      "commit": "37e1af3fab38d886aff11843c383457ec2f03dfc",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-dirty-recovery-20260803",
+      "subject": "archive local primary dirty state before refresh"
+    },
+    {
+      "commit": "c78aa8a80abd8718d0e123589e2c54ac13485ad2",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-primary-head-backup-20260731",
+      "subject": "Align stage2 RL training and diagnostics"
+    },
+    {
+      "commit": "761cddecace57246b3ecf587af6060cd8c1f8b33",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-worktree-backups-20260731/stage2-task4-bounded-history-red",
+      "subject": "fix: bound resumed Stage-2 diagnostics state"
+    },
+    {
+      "commit": "d7ed3a99ffd7be47fb9f17a2f27ea2b48647a5c2",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-worktree-backups-20260731/stage2-task5-compact-candidate-red",
+      "subject": "fix: refresh compact candidate store lifecycle"
+    },
+    {
+      "commit": "4c992ad754756d122816050ddb3963fc57e74789",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-worktree-backups-20260731/task-6a-probe-telemetry-red",
+      "subject": "feat: expose probe pool telemetry"
+    },
+    {
+      "commit": "50773a8c60bf7daa8ec453053743d052c46aec15",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-worktree-backups-20260731/task-6b-red-telemetry",
+      "subject": "fix: persist layerwise candidate bytes on episode rows"
+    },
+    {
+      "commit": "7fce21b095de4c0066ccd161c24cdfba16b835f3",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-worktree-backups-20260731/task-6c-runtime-gate-impl",
+      "subject": "perf: add Stage-2 runtime optimization gate"
+    },
+    {
+      "commit": "2cde04365be0f916c800eea661608c2e4c122c2c",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-worktree-backups-20260731/truncation-k-doc-width-subagent-d",
+      "subject": "docs: mark stale stage2 width examples"
+    },
+    {
+      "commit": "bd26d251c3374cb760391a1d22cab029df5e5714",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-worktree-backups-20260731/truncation-k-exact-coercion-subagent-b",
+      "subject": "test: cover public truncation K import"
+    },
+    {
+      "commit": "a02ec502771a8859f768d84123bbbf1d2e5be662",
+      "disposition": "recovery_only",
+      "note": "recovery or worktree backup; not deployable source",
+      "ref": "origin/codex/local-worktree-backups-20260731/truncation-k6-collector-p1-20260727",
+      "subject": "fix: derive layerwise collector K width"
+    },
+    {
+      "commit": "897b273b79721033f1414e846b0a012d29a5461e",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-paean-action-batch-20260710",
+      "subject": "Test batched Paean action evaluation"
+    },
+    {
+      "commit": "6ce18c4bb3122a8de496a13ae4cd99405d895ced",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-paean-action-batch-rng-20260710",
+      "subject": "Refine Paean batch RNG parity test"
+    },
+    {
+      "commit": "2312cec43f3f23d5b85484c605101e57557b12d1",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-paean-action-batch-workload-20260710",
+      "subject": "Test Paean batch workload accounting"
+    },
+    {
+      "commit": "34cfb4c1431c00a4000a0861f751ab3a51ee0f72",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-paean-fixed-workload-20260710",
+      "subject": "Test fixed-action workload pruning"
+    },
+    {
+      "commit": "3fe6004c95195ed08fbaf884f56b6ecc3a5dd8cb",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-paean-noise-rng-20260710",
+      "subject": "Test isolated Paean noise RNG"
+    },
+    {
+      "commit": "4b08e19d18a308dbf409926550db090e2d3b0c89",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-paean-plot-defer-20260710",
+      "subject": "Test deferred Paean plot rendering"
+    },
+    {
+      "commit": "57f67d91ae16cb90eb39342b1091946f5b7b5837",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-rescale-compact-scan-20260710",
+      "subject": "Test incremental Rescale compact propagation"
+    },
+    {
+      "commit": "0fc84b66cd737e4395ce9201a3e2442b6d3ecc03",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-rescale-scalar-state-20260710",
+      "subject": "Test scalar Rescale state restoration"
+    },
+    {
+      "commit": "84f274ac8c315e3084b5ca9ba78ab4f91e20d13c",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/red-stage2-plot-default-20260710",
+      "subject": "Test deferred Stage-2 plot rendering default"
+    },
+    {
+      "commit": "39abb31bbed11614033a5042e9722987116aac2d",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/rl-end-to-end-runtime-optimization-20260724",
+      "subject": "docs: archive RL runtime optimization evidence"
+    },
+    {
+      "commit": "1b34e94936ec19f92a1715ccaf7020049cf926c1",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/rte-gpu-canary-health",
+      "subject": "Report live Stage-2 strict frontier"
+    },
+    {
+      "commit": "5fbd2332839576f9025c6a87ca211fa1a31bcfd5",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/server-artifact-evacuation-20260720",
+      "subject": "archive final installed stage2 configuration"
+    },
+    {
+      "commit": "f0545112589ea97f63d1fc914a6be6db98f5d7bc",
+      "disposition": "archive_only",
+      "note": "historical/cloud archive branch; artifacts only",
+      "ref": "origin/codex/server-data-cloud-archive-20260731",
+      "subject": "finalize complete overlay server restore evidence"
+    },
+    {
+      "commit": "024bc52dd39ea095d046bc4e9be6a3c1a80aff69",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage1-base-rte-report",
+      "subject": "Add Stage-1 unbounded base RTE report"
+    },
+    {
+      "commit": "07fb87aaf53a3bf2ab27b9cf69fa1f6ba32c39ec",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage1-large-mrpc-report",
+      "subject": "Add Stage-1 large MRPC final report"
+    },
+    {
+      "commit": "e5f77b7ca02479743f47f5b9e9b138d1e80b91f5",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage1-unbounded-entropy",
+      "subject": "Add Stage-1 unbounded base SST2 report"
+    },
+    {
+      "commit": "41b57eae9cd3299945c2bc0d9f924f1e3637a4cc",
+      "disposition": "result_only",
+      "note": "experiment/evaluation evidence branch; not source aggregate input",
+      "ref": "origin/codex/stage1best-large-stage2-chain-eval-20260725",
+      "subject": "docs: signal completion for downstream agent"
+    },
+    {
+      "commit": "e1a1bba96502ef5a49bdae1749f0434908f97452",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage1best-large-stage2-training-20260725",
+      "subject": "Fix large-profile fusion checkpoint reconstruction"
+    },
+    {
+      "commit": "ad810c1724da759d23ef4ed6f1077dc2b24d3b52",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage2-18-group-eval-20260727",
+      "subject": "docs: archive stage2 27-group evaluation evidence"
+    },
+    {
+      "commit": "e48121b170e2dbcb8d466e0b1a57313928759e3a",
+      "disposition": "result_only",
+      "note": "experiment/evaluation evidence branch; not source aggregate input",
+      "ref": "origin/codex/stage2-five-gpu-runtime-20260728",
+      "subject": "docs(stage2): archive five GPU runtime evidence"
+    },
+    {
+      "commit": "13e923da134a960b5026281b6df3ed3fb4003fc6",
+      "disposition": "result_only",
+      "note": "experiment/evaluation evidence branch; not source aggregate input",
+      "ref": "origin/codex/stage2-glue-ep114240",
+      "subject": "Add Stage-2 MRPC two-seed GLUE submissions"
+    },
+    {
+      "commit": "fa4ee9cbd27d6265238f8d1091b712e14ee86066",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage2-k-convergence",
+      "subject": "docs(server): record Stage2 cleanup verification"
+    },
+    {
+      "commit": "117f94590eb8bf22d40ff1f47abc518cebf53b74",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage2-k-presets-network-budget-20260728",
+      "subject": "fix: disable stage2 training in Paean final eval"
+    },
+    {
+      "commit": "0764e71025ee887327d63364052935d770c489f9",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage2-large-throughput",
+      "subject": "Align baseline statistics with three-trial protocol"
+    },
+    {
+      "commit": "bc9de82e22e5602155766f7117086f766ff7588a",
+      "disposition": "superseded",
+      "note": "older divergent source or experiment, superseded by current canonical aggregate",
+      "ref": "origin/codex/stage2-network-ablation-v10",
+      "subject": "docs: clarify stage2 network ablation strategy"
+    },
+    {
+      "commit": "6268ee02fdbf070065ea04f72966cffc0461300f",
+      "disposition": "superseded",
+      "note": "older divergent source or experiment, superseded by current canonical aggregate",
+      "ref": "origin/codex/stage2-rl-runtime-opt-48b03e8",
+      "subject": "docs: close Stage-2 runtime optimization audit"
+    },
+    {
+      "commit": "2356a58fabf20ad1744be0f7d998acfcad9232a2",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage2-runtime-efficiency-integrated-3d89",
+      "subject": "docs: record integrated Stage-2 runtime verification"
+    },
+    {
+      "commit": "2cd9dbcaab5802bdb4c6959b567b775a600a6296",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage2-search-baselines-20260731",
+      "subject": "Archive Stage-2 search baseline smoke evidence"
+    },
+    {
+      "commit": "3d89b99dd609a67799811a4bf995000bafe1436c",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage2-small-a2d-index-integrated",
+      "subject": "bench(stage2): reject larger probe batches under exact parity"
+    },
+    {
+      "commit": "3d89b99dd609a67799811a4bf995000bafe1436c",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/stage2-terminal-probe-opt-97079",
+      "subject": "bench(stage2): reject larger probe batches under exact parity"
+    },
+    {
+      "commit": "15aa8d85c7f1a99501cef232fcd83af2fa0468fe",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/task6-docs-k6-13",
+      "subject": "docs: record stage2 k6 to k13 contract"
+    },
+    {
+      "commit": "88e6978defeea4725f49490201b6583245c1b37f",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/codex/truncation-k6-13-20260727",
+      "subject": "test: inject shared final-eval action validator"
+    },
+    {
+      "commit": "82f7b2486c15d7bba3db735076c50ea41fc0a165",
+      "disposition": "already_ancestor",
+      "note": "commit already contained in aggregate candidate",
+      "ref": "origin/jk_standard_rl",
+      "subject": "record cloud restore verification for sst2 archive"
+    },
+    {
+      "commit": "3a7400560ed66bfb42424f414bb3f360ff3e9f56",
+      "disposition": "superseded",
+      "note": "older divergent source or experiment, superseded by current canonical aggregate",
+      "ref": "origin/main",
+      "subject": "change things"
+    }
+  ],
+  "schema": "rfr.aggregate-audit.v1-bootstrap"
+}

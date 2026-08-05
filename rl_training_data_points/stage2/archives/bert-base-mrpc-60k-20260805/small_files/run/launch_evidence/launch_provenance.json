@@ -1,0 +1,68 @@
+{
+  "created_at": "2026-08-03T18:43:03.155638+00:00",
+  "gpu": {
+    "quarantined_physical_gpu": 1,
+    "quarantined_uuid": "GPU-4545217d-240d-87c7-3372-8dd4ac66748b",
+    "visible_uuids": [
+      "GPU-5ee16157-c7e4-7d62-6fef-6382a43301c3",
+      "GPU-c87864a0-3df8-176b-5233-6af60ad11110",
+      "GPU-9443792e-0956-5bec-eb86-adec16d63e66",
+      "GPU-fe933141-2102-5a42-a198-230d8c55ac3b"
+    ]
+  },
+  "source": {
+    "branch": "jk_standard_rl",
+    "commit": "5c222da6186b8a60244b46029bbc8dac79befb34",
+    "tracked_status": "",
+    "tree": "20c3280a25fa4376471e846c2053ca03e8bb55c4"
+  },
+  "stage1_authority": {
+    "comparison": "exact_match",
+    "config_key": "mrpc_stage1_best_20260624",
+    "gelu": [
+      1,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      2,
+      1,
+      1,
+      1
+    ],
+    "html_sha256": "37952610c4714e5de39c8d6880b3c8c685be6468634e0a9dbfa53ee08eeb60ce",
+    "local_html_path": "/Users/pengjunkai/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_vhqjcac281i111_a7bb/msg/file/2026-06/stage1_validation_4configs_glue_submission_report.html",
+    "repo_config_path": "/hy-tmp/rfr-stage2-aggregate-82f7b248-minimal/Model_analysis/configs/approx_per_dataset.json",
+    "repo_config_sha256": "db2c7556218681413cb3f5caf3512c50c0b851cce1fca1ed24e7aa003c17208e",
+    "softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "source_record": "bert base mrpc 1 20260624/final_config.json"
+  },
+  "training": {
+    "dataset": "mrpc",
+    "max_episodes": 50000,
+    "model_checkpoint": "textattack/bert-base-uncased-MRPC",
+    "online_trials": 3,
+    "policy_network_variant": "shared_gtrxl_small_v1",
+    "precision_tolerance": 0.001,
+    "probe_backend": "process",
+    "reward_design": "robust_constrained",
+    "stability_multiplier": 2.0,
+    "validation_size": 408
+  }
+}
