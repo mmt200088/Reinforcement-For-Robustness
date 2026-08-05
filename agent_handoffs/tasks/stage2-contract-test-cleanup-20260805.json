@@ -16,11 +16,47 @@
   "record_type": "task_handoff",
   "schema_version": 1,
   "server_evidence": [],
-  "source_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
-  "source_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "source_commit": "09e1ac8c9eace1b0598933693c5dcd67b765dcf8",
+  "source_tree": "041d598e5ccb9771da27fcbc7bf3a95c468dec3a",
   "started_at": "2026-08-05T23:37:07+08:00",
   "status": "in_progress",
   "supersedes": [],
   "task_id": "stage2-contract-test-cleanup-20260805",
-  "verification": []
+  "verification": [
+    {
+      "command": "PYTHONPATH=<cleanup-worktree> python3 -m unittest tests.test_blb_fusion_count_map -q",
+      "evidence": "local: 32 tests passed, 13 skipped; the two-slot fusion fixture now uses a valid compatibility vector and derives Block3 K from preset 0",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=<cleanup-worktree> python3 -m unittest tests.test_blb_layerwise_action -q",
+      "evidence": "local: 23 tests passed; two-slot atomic action, H/M/L K derivation, and fusion ownership remain intact",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=<cleanup-worktree> python3 -m unittest tests.test_sequential_smoke.RewardDesignV2RegressionTest.test_default_num_trials_uses_three_trial_grouped_protocol -v",
+      "evidence": "local: passed; AST-scoped check resolves BLBStage2TrainConfig.num_trials_per_step to 3",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=<cleanup-worktree> python3 -m unittest tests.test_stage2_ngpu_speed_targeted_first.Stage2NgpuSpeedTargetedFirstTests.test_ab_prints_layerwise_production_commands_without_touching_gpus -v",
+      "evidence": "local: passed; effective commands assert K=3, baseline 5x3, A/B strict 15/15, and terminal batch 4 without invoking nvidia-smi",
+      "outcome": "passed"
+    },
+    {
+      "command": "torch-free fixture contract check for tests/test_blb_robust_baseline.py",
+      "evidence": "local: TEST_TRIALS_PER_GROUP=3, each raw channel and seed tuple has length 3, five-group count is 15, and sixth-group recovery count is 18; exact pytest remains reserved for the complete server environment",
+      "outcome": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "evidence": "local: passed with no output",
+      "outcome": "passed"
+    },
+    {
+      "command": "complete CPU/no-GPU pytest suite from Git-synchronized aggregate source",
+      "evidence": "not run locally because the system Python lacks pytest/torch; sole Aggregator must combine this cleanup source with the comparator source and run the mandatory exact-tree server suite",
+      "outcome": "not_run"
+    }
+  ]
 }
