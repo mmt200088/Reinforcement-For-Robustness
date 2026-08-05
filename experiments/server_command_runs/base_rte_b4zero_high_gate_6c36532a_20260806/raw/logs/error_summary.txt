@@ -1,0 +1,51 @@
+[Time]
+2026-08-06 00:08:11
+
+[Program]
+rl_tune.py
+
+[Status]
+failed
+
+[Message]
+RuntimeError: no search candidate passed the validation_full joint and resource-axis gates; online search and strict-validation evidence were preserved under /hy-tmp/rfr-base-rte-b4zero-high-gate-results-20260805/rl/bert-base/rte/s1t0.005_s2t0.001_s2st2.0/stage2_noise/progress/search_greedy
+
+[Run Output Dir]
+/hy-tmp/rfr-base-rte-b4zero-high-gate-results-20260805/rl/bert-base/rte/s1t0.005_s2t0.001_s2st2.0
+
+[Command]
+rl_tune.py --base_model textattack/bert-base-uncased-RTE --data_path rte --output_dir /hy-tmp/rfr-base-rte-b4zero-high-gate-results-20260805/rl/bert-base/rte/s1t0.005_s2t0.001_s2st2.0 --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]' --stage1_rl_episodes 51000 --stage2_rl_episodes 170 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified true --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --stage2_fixed_config_source manual --stage2_fixed_config_path '' --stage2_manual_gelu '[1,1,1,4,1,1,2,1,1,1,1,1]' --stage2_manual_softmax '[6,6,6,6,6,6,6,6,6,6,6,6]' --final_eval_random_seed 42 --final_eval_permutation_trials 10 --final_eval_cost_equivalent_trials 10 --final_eval_budget_equivalent_trials 10 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 50 --final_eval_preset default --skip_noise_rl false --skip_stage1_rl true --skip_final_eval true --final_eval_only false --resume_run_dir '' --stage1_rl_lr 1e-4 --stage2_rl_lr 1e-4 --stage1_accuracy_tolerance 0.005 --stage2_limit_tolerance 0.001 --stage2_stability_tolerance 1.2 --stage2_stability_multiplier 2.0 --stage2_communication_importance_ratio 1.0 --stage2_k_trials 3 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 120 --decoupled_layout false --stage1_run_id '' --blb_v3_seed 20260725 --blb_v3_policy_network_variant shared_gtrxl_small_v1 --blb_v3_search_backend greedy --blb_v3_search_evaluation_budget 1 --blb_v3_search_initial_design_size 8 --blb_v3_search_candidate_pool_size 512 --blb_v3_search_population_size 24 --blb_v3_search_patience_generations 5 --blb_v3_search_mutation_max_coordinates 3 --blb_v3_search_rf_n_estimators 128 --blb_v3_search_rf_min_samples_leaf 2 --blb_v3_search_full_validation true --blb_v3_reward_devices 0 --blb_v3_baseline_groups 5 --blb_v3_baseline_trials_per_group 3 --blb_v3_constraint_bootstrap_samples 4096 --blb_v3_online_constraint_probability 0.50 --blb_v3_promotion_constraint_probability 0.80 --blb_v3_final_constraint_probability 0.95 --blb_v3_min_convergence_episodes 90000 --blb_v3_convergence_patience_updates 100 --blb_v3_sequential_rl true --rl_algo ppo --blb_v3_decision_granularity layer --blb_v3_reward_design robust_constrained --blb_v3_truncation_backend binary --blb_v3_truncation_ring_bits 43 --blb_v3_truncation_source_fractional_bits 24
+
+[Traceback]
+Traceback (most recent call last):
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/runtime_error_reporter.py", line 163, in run_fire_entrypoint
+    fire_module.Fire(target)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 141, in Fire
+    component_trace = _Fire(component, args, parsed_flag_args, context, name)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 475, in _Fire
+    component, remaining_args = _CallAndUpdateTrace(
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/fire/core.py", line 691, in _CallAndUpdateTrace
+    component = fn(*varargs, **kwargs)
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/rl_tune.py", line 1537, in train
+    eval_results = trainer.evaluate(eval_dataset=val_data)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer.py", line 3035, in evaluate
+    self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output.metrics)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer_callback.py", line 396, in on_evaluate
+    return self.call_event("on_evaluate", args, state, control, metrics=metrics)
+  File "/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/trainer_callback.py", line 414, in call_event
+    result = getattr(callback, event)(
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/layer_importance_evaluator.py", line 8112, in on_evaluate
+    noise_stage_result = self.run_noise_rl_stage(
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/layer_importance_evaluator.py", line 5601, in run_noise_rl_stage
+    return runner.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source,
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/blb_stage2_rl/runner.py", line 938, in run
+    return run_sequential_via_runner(
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/blb_stage2_rl/sequential_runner.py", line 6356, in run_sequential_via_runner
+    return _run_sequential_via_runner_locked(
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/blb_stage2_rl/sequential_runner.py", line 7200, in _run_sequential_via_runner_locked
+    return _run_layerwise_training_branch(
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/blb_stage2_rl/sequential_runner.py", line 4309, in _run_layerwise_training_branch
+    search_run = run_layerwise_search_baseline(
+  File "/hy-tmp/rfr-base-rte-b4zero-high-gate-20260805/blb_stage2_rl/search_baseline_runner.py", line 720, in run_layerwise_search_baseline
+    raise RuntimeError(
+RuntimeError: no search candidate passed the validation_full joint and resource-axis gates; online search and strict-validation evidence were preserved under /hy-tmp/rfr-base-rte-b4zero-high-gate-results-20260805/rl/bert-base/rte/s1t0.005_s2t0.001_s2st2.0/stage2_noise/progress/search_greedy

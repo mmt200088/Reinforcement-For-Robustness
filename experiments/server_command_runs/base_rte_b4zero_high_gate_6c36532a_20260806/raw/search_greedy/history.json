@@ -1,0 +1,61 @@
+[
+  {
+    "best_action_matrix": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ]
+    ],
+    "best_feasible": false,
+    "best_resource_score": 0.0,
+    "best_robust_floor": 0.0,
+    "best_violation": 0.533203125,
+    "evaluations": 1,
+    "iteration": 0,
+    "phase": "initial"
+  }
+]

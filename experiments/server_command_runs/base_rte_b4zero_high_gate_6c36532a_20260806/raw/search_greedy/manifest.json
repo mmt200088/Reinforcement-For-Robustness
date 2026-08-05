@@ -1,0 +1,198 @@
+{
+  "algorithm_contract": {
+    "action_space_version": "stage2_layerwise_12x2_hml_v3",
+    "bootstrap_probability_role_at_f4": "diagnostic_tiebreak_only",
+    "communication_axis_denominator": 12,
+    "communication_importance_ratio": 1.0,
+    "compute_axis_denominator": 12,
+    "cost_model_revision": "network_weighted_compute_communication_v3",
+    "decode_version": "layerwise_hml_action_v3",
+    "final_constraint_probability": 0.95,
+    "online_constraint_probability": 0.5,
+    "online_gate": "six_bootstrap_probabilities_at_online_threshold",
+    "promotion_constraint_probability": 0.8,
+    "resource_credit_mode": "separable_weighted_per_slot_v1",
+    "schema_version": "stage2_search_baseline_contract_v1",
+    "search_backend": "greedy",
+    "search_config": {
+      "candidate_pool_size": 512,
+      "evaluation_budget": 1,
+      "initial_design_size": 8,
+      "mutation_max_coordinates": 3,
+      "patience_generations": 5,
+      "population_size": 24,
+      "rf_min_samples_leaf": 2,
+      "rf_n_estimators": 128
+    },
+    "strict_gate": "joint_six_point_plus_compute_and_communication_counterfactual_six_point_v1",
+    "strict_resource_order": [
+      "weighted_score",
+      "balance_tiebreak"
+    ],
+    "validation_banks": {
+      "banks": {
+        "A": {
+          "probe_seeds": [
+            9223369374610485242,
+            9223369376183642441,
+            9223369373462094616,
+            9223369367519304431,
+            9223369369126278334
+          ],
+          "trial_count": 15,
+          "trial_seeds": [
+            9223369374610485242,
+            9223369377127634507,
+            9223369378701057176,
+            9223369376183642441,
+            9223369374471229688,
+            9223369381487745579,
+            9223369373462094616,
+            9223369371816794793,
+            9223369369093017722,
+            9223369367519304431,
+            9223369369160147806,
+            9223369370810182029,
+            9223369369126278334,
+            9223369366472158479,
+            9223369373481396188
+          ],
+          "trials_per_probe": 3
+        },
+        "B": {
+          "probe_seeds": [
+            9223366720442862338,
+            9223366722049835729,
+            9223366719328304288,
+            9223366712311789175,
+            9223366713885471174
+          ],
+          "trial_count": 15,
+          "trial_seeds": [
+            9223366720442862338,
+            9223366722690446003,
+            9223366724270094432,
+            9223366722049835729,
+            9223366720000359264,
+            9223366726943404467,
+            9223366719328304288,
+            9223366717345776913,
+            9223366714699796418,
+            9223366712311789175,
+            9223366714697633734,
+            9223366717352133909,
+            9223366713885471174,
+            9223366712042801271,
+            9223366717976134308
+          ],
+          "trials_per_probe": 3
+        },
+        "C": {
+          "probe_seeds": [
+            9223364066309088426,
+            9223364067882557049,
+            9223364065161271752,
+            9223364058178311071,
+            9223364059751730542
+          ],
+          "trial_count": 15,
+          "trial_seeds": [
+            9223364066309088426,
+            9223364068218494235,
+            9223364069859940296,
+            9223364067882557049,
+            9223364065563944904,
+            9223364072514465051,
+            9223364065161271752,
+            9223364062916452473,
+            9223364060268243626,
+            9223364058178311071,
+            9223364060293474862,
+            9223364062941552893,
+            9223364059751730542,
+            9223364057638909151,
+            9223364063582862860
+          ],
+          "trials_per_probe": 3
+        }
+      },
+      "bootstrap_probability_role": "diagnostic_tiebreak_only",
+      "final_trial_count": 45,
+      "hard_gate": "joint_six_point_plus_compute_and_communication_counterfactual_six_point_v1",
+      "promotion_trial_count": 30,
+      "schema_version": "layerwise_validation_banks_v1"
+    }
+  },
+  "algorithm_contract_hash": "6976b7654cfc3b673157b2b72ada22fd8d53250b79319e9f71dd300695cbb305",
+  "communication_importance_ratio": 1.0,
+  "completed_at": "2026-08-06T00:08:11",
+  "constraint_limits": {
+    "loss": 0.7619471091419457,
+    "loss_std": 0.014054367524510166,
+    "metric1": 0.71985234375,
+    "metric1_std": 0.010591903986513653,
+    "metric2": 0.71985234375,
+    "metric2_std": 0.010591903986513653
+  },
+  "evaluation_budget": 1,
+  "evaluation_count": 1,
+  "fixed_gelu": [
+    1,
+    1,
+    1,
+    4,
+    1,
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "fixed_label": "Stage-1 config (manual; softmax fixed deg6)",
+  "fixed_softmax": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "fixed_source": "manual",
+  "model_type": "",
+  "num_layers": 12,
+  "online_fidelity": {
+    "example_count": 256,
+    "split": "validation_full_stratified_probe",
+    "trials_per_action": 3
+  },
+  "profile": "rte",
+  "schema_version": "stage2_layerwise_search_baseline_v1",
+  "scientific_status": "full_search_with_validation_full_gate",
+  "search_backend": "greedy",
+  "search_config": {
+    "candidate_pool_size": 512,
+    "initial_design_size": 8,
+    "mutation_max_coordinates": 3,
+    "patience_generations": 5,
+    "population_size": 24,
+    "rf_min_samples_leaf": 2,
+    "rf_n_estimators": 128
+  },
+  "seed": 20260725,
+  "started_at": "2026-08-06T00:08:09",
+  "status": "complete_no_strict_feasible",
+  "strict_candidate_store": "/hy-tmp/rfr-base-rte-b4zero-high-gate-results-20260805/rl/bert-base/rte/s1t0.005_s2t0.001_s2st2.0/stage2_noise/progress/search_greedy/strict_candidate_store.jsonl",
+  "strict_identity_context_hash": "9f04a96466d5763d66423a950b841dd7f9af646f3305faee610687eebedb80ec",
+  "strict_validation_enabled": true,
+  "strict_validation_passed": false,
+  "strict_validation_requested": true,
+  "termination_reason": "evaluation_budget"
+}

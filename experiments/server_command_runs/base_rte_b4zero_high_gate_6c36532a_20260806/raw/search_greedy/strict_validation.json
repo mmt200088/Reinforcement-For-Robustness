@@ -1,0 +1,103 @@
+{
+  "bootstrap_probability_role": "diagnostic_tiebreak_only",
+  "candidate_store": "/hy-tmp/rfr-base-rte-b4zero-high-gate-results-20260805/rl/bert-base/rte/s1t0.005_s2t0.001_s2st2.0/stage2_noise/progress/search_greedy/strict_candidate_store.jsonl",
+  "hard_gate": "joint_six_point_plus_compute_and_communication_counterfactual_six_point_v1",
+  "joint_and_axis_counterfactual_gate": true,
+  "records": [],
+  "schema_version": "stage2_search_strict_validation_v1",
+  "selected": null,
+  "split": "validation_full",
+  "validation_banks": {
+    "banks": {
+      "A": {
+        "probe_seeds": [
+          9223369374610485242,
+          9223369376183642441,
+          9223369373462094616,
+          9223369367519304431,
+          9223369369126278334
+        ],
+        "trial_count": 15,
+        "trial_seeds": [
+          9223369374610485242,
+          9223369377127634507,
+          9223369378701057176,
+          9223369376183642441,
+          9223369374471229688,
+          9223369381487745579,
+          9223369373462094616,
+          9223369371816794793,
+          9223369369093017722,
+          9223369367519304431,
+          9223369369160147806,
+          9223369370810182029,
+          9223369369126278334,
+          9223369366472158479,
+          9223369373481396188
+        ],
+        "trials_per_probe": 3
+      },
+      "B": {
+        "probe_seeds": [
+          9223366720442862338,
+          9223366722049835729,
+          9223366719328304288,
+          9223366712311789175,
+          9223366713885471174
+        ],
+        "trial_count": 15,
+        "trial_seeds": [
+          9223366720442862338,
+          9223366722690446003,
+          9223366724270094432,
+          9223366722049835729,
+          9223366720000359264,
+          9223366726943404467,
+          9223366719328304288,
+          9223366717345776913,
+          9223366714699796418,
+          9223366712311789175,
+          9223366714697633734,
+          9223366717352133909,
+          9223366713885471174,
+          9223366712042801271,
+          9223366717976134308
+        ],
+        "trials_per_probe": 3
+      },
+      "C": {
+        "probe_seeds": [
+          9223364066309088426,
+          9223364067882557049,
+          9223364065161271752,
+          9223364058178311071,
+          9223364059751730542
+        ],
+        "trial_count": 15,
+        "trial_seeds": [
+          9223364066309088426,
+          9223364068218494235,
+          9223364069859940296,
+          9223364067882557049,
+          9223364065563944904,
+          9223364072514465051,
+          9223364065161271752,
+          9223364062916452473,
+          9223364060268243626,
+          9223364058178311071,
+          9223364060293474862,
+          9223364062941552893,
+          9223364059751730542,
+          9223364057638909151,
+          9223364063582862860
+        ],
+        "trials_per_probe": 3
+      }
+    },
+    "bootstrap_probability_role": "diagnostic_tiebreak_only",
+    "final_trial_count": 45,
+    "hard_gate": "joint_six_point_plus_compute_and_communication_counterfactual_six_point_v1",
+    "promotion_trial_count": 30,
+    "schema_version": "layerwise_validation_banks_v1"
+  }
+}

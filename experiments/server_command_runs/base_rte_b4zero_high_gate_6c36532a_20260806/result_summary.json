@@ -1,0 +1,174 @@
+{
+  "actual_installed_action": {
+    "applied_before_forward": true,
+    "boosted_override_count": 24,
+    "fixed_fusion_note": "The current Stage-2 policy controls Block4 only; Block2 and Block5 are fixed at fusion option 1.",
+    "fusion_option_ids_per_layer": {
+      "block2": 1,
+      "block4": 0,
+      "block5": 1
+    },
+    "model_uses_replan_config": true,
+    "replan_applied_config_count": 59,
+    "replan_error_counts": {
+      "apply": 0,
+      "invalid": 0,
+      "missing_compact": 0,
+      "missing_decoded_cfg": 0
+    },
+    "replan_expected_config_count": 59
+  },
+  "baseline_metrics": {
+    "derivation": "exactly reconstructed from persisted constraint limits using tolerance=0.001 and stability_multiplier=2.0",
+    "loss_mean": 0.7611859232187271,
+    "loss_std": 0.007027183762255083,
+    "metric1_mean": 0.7205729166666667,
+    "metric1_std": 0.005295951993256827,
+    "metric2_mean": 0.7205729166666667,
+    "metric2_std": 0.005295951993256827
+  },
+  "candidate_metrics": {
+    "loss_mean": 0.7629802400867144,
+    "loss_std": 0.005342826737804811,
+    "metric1_mean": 0.71875,
+    "metric1_std": 0.00390625,
+    "metric2_mean": 0.71875,
+    "metric2_std": 0.00390625
+  },
+  "candidate_minus_baseline": {
+    "loss_mean": 0.0017943168679872556,
+    "loss_std": -0.0016843570244502717,
+    "metric1_mean": -0.001822916666666674,
+    "metric1_std": -0.0013897019932568267,
+    "metric2_mean": -0.001822916666666674,
+    "metric2_std": -0.0013897019932568267
+  },
+  "candidate_relative_change_percent": {
+    "loss_mean": 0.23572649115735916,
+    "loss_std": -23.969161493931775,
+    "metric1_mean": -0.2529815684857256,
+    "metric1_std": -26.240834415158815,
+    "metric2_mean": -0.2529815684857256,
+    "metric2_std": -26.240834415158815
+  },
+  "constraint_checks": {
+    "loss_precision": false,
+    "loss_stability": true,
+    "metric1_precision": false,
+    "metric1_stability": true,
+    "metric2_precision": false,
+    "metric2_stability": true
+  },
+  "constraint_limits": {
+    "loss_max": 0.7619471091419457,
+    "loss_std_max": 0.014054367524510166,
+    "metric1_min": 0.71985234375,
+    "metric1_std_max": 0.010591903986513653,
+    "metric2_min": 0.71985234375,
+    "metric2_std_max": 0.010591903986513653
+  },
+  "constraint_probabilities": {
+    "loss_precision_probability": 0.36376953125,
+    "loss_stability_probability": 0.99853515625,
+    "metric1_precision_probability": 0.301513671875,
+    "metric1_stability_probability": 1.0,
+    "metric2_precision_probability": 0.301513671875,
+    "metric2_stability_probability": 1.0
+  },
+  "evaluation_scope": {
+    "baseline_groups": 5,
+    "baseline_total_trials": 15,
+    "baseline_trials_per_group": 3,
+    "candidate_trials": 3,
+    "full_validation_f4_executed": false,
+    "full_validation_f4_reason": "candidate failed online six-constraint eligibility and was not promoted",
+    "online_example_count": 256,
+    "online_gate_probability": 0.5,
+    "online_split": "validation_full_stratified_probe",
+    "precision_tolerance_fraction": 0.001,
+    "precision_tolerance_percent": 0.1,
+    "stability_multiplier": 2.0
+  },
+  "online_feasible": false,
+  "provenance": {
+    "checkpoint": "textattack/bert-base-uncased-RTE",
+    "completed_at": "2026-08-06T00:08:11",
+    "profile": "rte",
+    "seed": 20260725,
+    "source_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+    "source_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+    "started_at": "2026-08-06T00:08:09"
+  },
+  "requested_policy_action": {
+    "block4_fusion_count": 0,
+    "layers": 12,
+    "per_layer_action": [
+      0,
+      0
+    ],
+    "precision_preset": "high",
+    "truncation_k_by_block": {
+      "block1": 11,
+      "block2": 10,
+      "block3": 10,
+      "block4": 12,
+      "block5": 11
+    }
+  },
+  "resource": {
+    "communication_saving": 0.0,
+    "compute_saving": 0.0,
+    "fusion_count": 0,
+    "ppo_resource_score": 0.0,
+    "removed_k_bits": 132,
+    "robust_floor": 0.0,
+    "secondary_progress": 0.0
+  },
+  "reward": -3.252896361965665,
+  "schema_version": "base_rte_b4zero_high_gate_evidence_v1",
+  "stage1_prerequisite": {
+    "gelu": [
+      1,
+      1,
+      1,
+      4,
+      1,
+      1,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "source": "manual"
+  },
+  "strict_gate": {
+    "name": "joint_six_point_plus_compute_and_communication_counterfactual_six_point_v1",
+    "passed": false,
+    "reached": false,
+    "records": 0,
+    "selected": null
+  },
+  "verdict": {
+    "full_validation_f4": "NOT_REACHED",
+    "online_six_constraint_gate": "FAIL",
+    "overall_candidate": "REJECTED",
+    "precision": "FAIL",
+    "stability": "PASS"
+  }
+}
