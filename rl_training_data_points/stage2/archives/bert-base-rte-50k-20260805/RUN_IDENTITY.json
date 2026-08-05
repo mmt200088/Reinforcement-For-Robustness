@@ -1,0 +1,31 @@
+{
+  "schema": "rfr_stage2_run_identity_v1",
+  "run_id": "bert-base-rte-stage2-0p1pct-50k-20260731",
+  "display_label": "BERT-base RTE Stage-2 historical 0.1% precision run",
+  "lifecycle": "completed_historical_reference",
+  "model": "bert-base",
+  "checkpoint": "textattack/bert-base-uncased-RTE",
+  "dataset": "rte",
+  "planned_episodes": 50000,
+  "completed_episodes": 50000,
+  "stage2_precision_tolerance": 0.001,
+  "stage2_precision_tolerance_percent": 0.1,
+  "stage2_stability_multiplier": 2.0,
+  "stage2_stability_percent": 200,
+  "source_commit": "1b34e94936ec19f92a1715ccaf7020049cf926c1",
+  "source_tree": "b43505118859b3de4a49a88530f835ae081e56fa",
+  "server_run_root": "/hy-tmp/Reinforcement-For-Robustness/Parting Chapter/persistent/rl/bert-base/rte/s1t0.001_s2t0.001_s2st2.0__bertbase_rte_stage2_k3_1gpu_1b34e949_20260731",
+  "archive_name": "bert-base-rte-50k-20260805",
+  "result_branch": "codex/result-stage2-bert-base-rte-50k-20260805",
+  "result_commit_before_label": "5fe8162bf525b11b76cf28c720471880a8de9efe",
+  "candidate_interpretation": {
+    "online_reward_leader_found": true,
+    "online_reward_leader_episode": 208,
+    "strict_bank_b_confirmed_candidate_found": false,
+    "strict_revalidation_status": "no_bank_b_confirmed_candidate",
+    "formal_final_selection": "baseline_fallback"
+  },
+  "comparison_group": "historical_0p1pct",
+  "do_not_mix_with_run_id": "bert-base-rte-stage2-0p5pct-50k-20260806",
+  "identity_note": "All files below this archive root belong to the completed 0.1% precision run. Group plots, metrics, candidates, and streams by run_id before analysis."
+}

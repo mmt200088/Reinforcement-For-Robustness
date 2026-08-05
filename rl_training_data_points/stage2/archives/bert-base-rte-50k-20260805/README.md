@@ -1,5 +1,11 @@
 # BERT-base RTE Stage-2 full training archive
 
+Run identity: `bert-base-rte-stage2-0p1pct-50k-20260731`
+
+This is the completed **0.1% precision / 200% stability** historical run. It is
+not the 0.5% precision rerun started on 2026-08-06. See
+`RUN_IDENTITY.json` before consuming any stream or generating cross-run plots.
+
 Status: PASS
 
 - Episodes: 50,000 / 50,000
