@@ -18,8 +18,8 @@
   "record_type": "task_handoff",
   "schema_version": 1,
   "server_evidence": [],
-  "source_commit": "869cf1608631b23bc0c52cc08e28b391896cfeae",
-  "source_tree": "2f8c136c2081c1df9d59d57641e52f45affc4321",
+  "source_commit": "c3598e98064558cef1f39cfa15c9468e65dbf9f9",
+  "source_tree": "24b3596d0632efe5b73cddb7182c47719ca51520",
   "started_at": "2026-08-04T22:32:36+08:00",
   "status": "in_progress",
   "supersedes": [],
@@ -27,22 +27,27 @@
   "verification": [
     {
       "command": "PYTHONPATH=<task-worktree> python3 tests/test_stage1_search_baselines.py -v",
-      "evidence": "local: 12 tests passed",
+      "evidence": "local: 20 tests passed after protocol, resume-integrity, callback-compatibility, BO-acquisition, elite-diversity, and cumulative-runtime regressions",
       "outcome": "passed"
     },
     {
       "command": "PYTHONPATH=<task-worktree> python3 tests/test_blb_search_baselines.py -v",
-      "evidence": "local: 22 tests passed",
+      "evidence": "local: 27 tests passed after full-loop constrained-BO, Hamming-diverse elites, mutation-cap, and callback-compatibility regressions",
       "outcome": "passed"
     },
     {
       "command": "PYTHONPATH=<task-worktree> python3 tests/test_blb_search_baseline_runner.py -v",
-      "evidence": "local: 21 tests passed",
+      "evidence": "local: 27 tests passed after eligible-top5, strict-infrastructure fail-closed, formal-GA completion, artifact-integrity, trial/runtime-accounting, and interrupted-resume regressions",
       "outcome": "passed"
     },
     {
       "command": "PYTHONPATH=<task-worktree> python3 tests/test_blb_search_backend_wiring.py -v",
-      "evidence": "local: 4 tests passed",
+      "evidence": "local: 4 tests passed; v12 identity/budget, hashed produced-consumed provenance, separate seeds, artifact-v2 accounting, and optional-Paean boundary are wired",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=<task-worktree> python3 -m unittest tests.test_blb_layerwise_runner.LayerwisePromotionTests -v",
+      "evidence": "local: 22 promotion/certification tests passed, including terminal axis evidence recovery for both promotion and Bank-C certification",
       "outcome": "passed"
     },
     {
