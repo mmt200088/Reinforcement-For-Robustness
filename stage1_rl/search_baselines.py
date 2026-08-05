@@ -12,6 +12,8 @@ random-forest surrogate is requested.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
+import heapq
 import itertools
 import math
 from typing import Any, Callable, Iterable, Iterator, Mapping, Optional, Sequence
@@ -23,6 +25,7 @@ Stage1Action = tuple[int, ...]
 EvaluationFn = Callable[[Stage1Action], "SearchEvaluation"]
 SurrogateFactory = Callable[[int], Any]
 CheckpointCallback = Callable[[tuple["SearchEvaluation", ...]], None]
+IncrementalCheckpointCallback = Callable[["SearchEvaluation", int], None]
 
 GENE_CATEGORIES = (0, 1, 2)
 GELU_DEGREES = (4, 2, 1)
@@ -301,15 +304,15 @@ class SearchEvaluation:
         object.__setattr__(self, "valid", bool(self.valid))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
-    @property
+    @cached_property
     def gelu_degrees(self) -> tuple[int, ...]:
         return Stage1SearchSpace(len(self.action)).decode_gelu(self.action)
 
-    @property
+    @cached_property
     def softmax_degrees(self) -> tuple[int, ...]:
         return Stage1SearchSpace(len(self.action)).fixed_softmax()
 
-    @property
+    @cached_property
     def raw_margins(self) -> tuple[float, ...]:
         return (
             float(self.constraints.loss_max - self.loss),
@@ -317,7 +320,7 @@ class SearchEvaluation:
               for value, minimum in zip(self.metrics, self.constraints.metric_mins)),
         )
 
-    @property
+    @cached_property
     def normalized_margins(self) -> tuple[float, ...]:
         scales = (
             max(abs(float(self.constraints.loss_max)), 1.0e-12),
@@ -326,30 +329,30 @@ class SearchEvaluation:
         )
         return tuple(margin / scale for margin, scale in zip(self.raw_margins, scales))
 
-    @property
+    @cached_property
     def constraint_margins(self) -> tuple[float, ...]:
         margins = self.normalized_margins
         if self.valid:
             return margins
         return tuple(min(value, -1.0) for value in margins)
 
-    @property
+    @cached_property
     def violations(self) -> tuple[float, ...]:
         return tuple(max(0.0, -margin) for margin in self.constraint_margins)
 
-    @property
+    @cached_property
     def failed_constraint_count(self) -> int:
         return sum(int(value > _EPS) for value in self.violations)
 
-    @property
+    @cached_property
     def total_violation(self) -> float:
         return float(sum(self.violations))
 
-    @property
+    @cached_property
     def worst_violation(self) -> float:
         return float(max(self.violations, default=0.0))
 
-    @property
+    @cached_property
     def feasible(self) -> bool:
         return bool(self.valid and self.failed_constraint_count == 0)
 
@@ -590,13 +593,18 @@ class _EvaluationCache:
             evaluation_cap: int,
             preload: Iterable[SearchEvaluation] = (),
             checkpoint_callback: Optional[CheckpointCallback] = None,
+            incremental_checkpoint_callback: Optional[
+                IncrementalCheckpointCallback
+            ] = None,
             ):
         self.space = space
         self.evaluator = evaluator
         self.cap = min(int(evaluation_cap), int(space.cardinality))
         self.checkpoint_callback = checkpoint_callback
+        self.incremental_checkpoint_callback = incremental_checkpoint_callback
         self._by_action: dict[Stage1Action, SearchEvaluation] = {}
         self._ordered: list[SearchEvaluation] = []
+        self._best: Optional[SearchEvaluation] = None
         for evaluation in preload:
             self.add_preloaded(evaluation)
         if len(self._ordered) > self.cap:
@@ -605,6 +613,10 @@ class _EvaluationCache:
     @property
     def remaining(self) -> int:
         return max(0, self.cap - len(self._ordered))
+
+    @property
+    def observation_count(self) -> int:
+        return len(self._ordered)
 
     @property
     def observations(self) -> tuple[SearchEvaluation, ...]:
@@ -616,6 +628,15 @@ class _EvaluationCache:
     def get(self, action: Sequence[int]) -> Optional[SearchEvaluation]:
         return self._by_action.get(self.space.validate(action))
 
+    def _record(self, evaluation: SearchEvaluation) -> None:
+        self._by_action[evaluation.action] = evaluation
+        self._ordered.append(evaluation)
+        if (
+                self._best is None
+                or candidate_rank_key(evaluation) > candidate_rank_key(self._best)
+        ):
+            self._best = evaluation
+
     def add_preloaded(self, evaluation: SearchEvaluation) -> None:
         if not isinstance(evaluation, SearchEvaluation):
             raise TypeError("preload entries must be SearchEvaluation instances")
@@ -625,8 +646,7 @@ class _EvaluationCache:
             if previous.as_dict() != evaluation.as_dict():
                 raise ValueError("conflicting preloaded evaluations for one action")
             return
-        self._by_action[action] = evaluation
-        self._ordered.append(evaluation)
+        self._record(evaluation)
 
     def evaluate(self, action: Sequence[int]) -> SearchEvaluation:
         owned = self.space.validate(action)
@@ -640,16 +660,17 @@ class _EvaluationCache:
             raise TypeError("Stage-1 search evaluator must return SearchEvaluation")
         if evaluation.action != owned:
             raise ValueError("Stage-1 evaluator returned a different action")
-        self._by_action[owned] = evaluation
-        self._ordered.append(evaluation)
+        self._record(evaluation)
+        if self.incremental_checkpoint_callback is not None:
+            self.incremental_checkpoint_callback(evaluation, len(self._ordered))
         if self.checkpoint_callback is not None:
             self.checkpoint_callback(self.observations)
         return evaluation
 
     def best(self) -> SearchEvaluation:
-        if not self._ordered:
+        if self._best is None:
             raise RuntimeError("Stage-1 search produced no observations")
-        return max(self._ordered, key=candidate_rank_key)
+        return self._best
 
 
 # ---------------------------------------------------------------------------
@@ -807,7 +828,7 @@ def _history_row(
     return {
         "phase": str(phase),
         "iteration": int(iteration),
-        "evaluations": int(len(cache.observations)),
+        "evaluations": int(cache.observation_count),
         "best_action": list(best.action),
         "best_gelu_degrees": list(best.gelu_degrees),
         "best_feasible": bool(best.feasible),
@@ -850,6 +871,9 @@ def _run_greedy(
         config: SearchConfig,
         preload: Iterable[SearchEvaluation],
         checkpoint_callback: Optional[CheckpointCallback],
+        incremental_checkpoint_callback: Optional[
+            IncrementalCheckpointCallback
+        ],
         ) -> SearchResult:
     cache = _EvaluationCache(
         space=space,
@@ -857,6 +881,7 @@ def _run_greedy(
         evaluation_cap=config.evaluation_cap,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
+        incremental_checkpoint_callback=incremental_checkpoint_callback,
     )
     history: list[dict[str, Any]] = []
     all_verified = True
@@ -1009,7 +1034,7 @@ def _bo_candidate_pool(
         rng: np.random.Generator,
         pool_size: int,
         ) -> list[Stage1Action]:
-    remaining_space = int(space.cardinality) - len(cache.observations)
+    remaining_space = int(space.cardinality) - cache.observation_count
     target = min(int(pool_size), remaining_space)
     if target <= 0:
         return []
@@ -1029,8 +1054,12 @@ def _bo_candidate_pool(
             pool.append(owned)
             seen.add(owned)
 
-    ranked = sorted(cache.observations, key=candidate_rank_key, reverse=True)
-    for observation in ranked[:min(16, len(ranked))]:
+    ranked = heapq.nlargest(
+        min(16, cache.observation_count),
+        cache.observations,
+        key=candidate_rank_key,
+    )
+    for observation in ranked:
         for neighbor in space.one_opt_neighbors(observation.action):
             add(neighbor)
         for neighbor in space.two_opt_neighbors(observation.action):
@@ -1061,6 +1090,37 @@ def _cost_hint(evaluator: EvaluationFn, action: Stage1Action) -> float:
     return -float(sum(action))
 
 
+def _bo_acquisition_key(
+        *,
+        has_feasible_incumbent: bool,
+        probability_of_feasibility: float,
+        expected_improvement: float,
+        expected_failed_constraints: float,
+        expected_total_violation: float,
+        expected_worst_violation: float,
+        exploration_tiebreak: float,
+        objective_tiebreak: float,
+        deterministic_tiebreak: tuple[int, ...],
+        ) -> tuple[Any, ...]:
+    if has_feasible_incumbent:
+        return (
+            float(probability_of_feasibility) * float(expected_improvement),
+            float(probability_of_feasibility),
+            float(exploration_tiebreak),
+            float(objective_tiebreak),
+            deterministic_tiebreak,
+        )
+    return (
+        -float(expected_failed_constraints),
+        -float(expected_total_violation),
+        -float(expected_worst_violation),
+        float(probability_of_feasibility),
+        float(exploration_tiebreak),
+        float(objective_tiebreak),
+        deterministic_tiebreak,
+    )
+
+
 def _run_bo_rf(
         *,
         space: Stage1SearchSpace,
@@ -1069,6 +1129,9 @@ def _run_bo_rf(
         surrogate_factory: Optional[SurrogateFactory],
         preload: Iterable[SearchEvaluation],
         checkpoint_callback: Optional[CheckpointCallback],
+        incremental_checkpoint_callback: Optional[
+            IncrementalCheckpointCallback
+        ],
         ) -> SearchResult:
     rng = np.random.default_rng(int(config.seed))
     cache = _EvaluationCache(
@@ -1077,6 +1140,7 @@ def _run_bo_rf(
         evaluation_cap=config.evaluation_cap,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
+        incremental_checkpoint_callback=incremental_checkpoint_callback,
     )
     history: list[dict[str, Any]] = []
     design = structured_maximin_initial_design(
@@ -1127,8 +1191,17 @@ def _run_bo_rf(
         feasibility_probability = np.mean(
             np.all(tree_predictions >= 0.0, axis=2), axis=0,
         )
-        predicted_mean = tree_predictions.mean(axis=0)
         predicted_std = tree_predictions.std(axis=0)
+        predicted_violations = np.maximum(0.0, -tree_predictions)
+        predicted_failed = np.mean(
+            np.sum(tree_predictions < 0.0, axis=2), axis=0,
+        )
+        predicted_total_violation = np.mean(
+            np.sum(predicted_violations, axis=2), axis=0,
+        )
+        predicted_worst_violation = np.mean(
+            np.max(predicted_violations, axis=2), axis=0,
+        )
         feasible_observations = [item for item in observations if item.feasible]
         incumbent_cost = min(
             (_cost_hint(evaluator, item.action) for item in feasible_observations),
@@ -1136,37 +1209,39 @@ def _run_bo_rf(
         )
         candidate_costs = [_cost_hint(evaluator, action) for action in pool]
         acquisition: list[float] = []
+        acquisition_keys: list[tuple[Any, ...]] = []
         for index, action in enumerate(pool):
             probability = float(feasibility_probability[index])
             uncertainty = float(np.mean(predicted_std[index]))
-            predicted_margins = predicted_mean[index]
-            predicted_failed = float(np.sum(predicted_margins < 0.0))
-            predicted_total_violation = float(np.sum(np.maximum(0.0, -predicted_margins)))
             candidate_cost = float(candidate_costs[index])
-            if feasible_observations:
-                improvement = max(0.0, incumbent_cost - candidate_cost)
-                value = probability * (
-                    improvement
-                    + float(config.acquisition_exploration) * uncertainty
-                    + 1.0e-9
-                )
-                value -= 1.0e-6 * candidate_cost
-            else:
-                value = (
-                    10.0 * probability
-                    - predicted_failed
-                    - predicted_total_violation
-                    - 0.01 * candidate_cost
-                    + float(config.acquisition_exploration) * uncertainty
-                )
+            deterministic = tuple(-value for value in action)
+            improvement = max(0.0, incumbent_cost - candidate_cost)
+            value = (
+                probability * improvement
+                if feasible_observations
+                else -float(predicted_failed[index])
+            )
+            key = _bo_acquisition_key(
+                has_feasible_incumbent=bool(feasible_observations),
+                probability_of_feasibility=probability,
+                expected_improvement=improvement,
+                expected_failed_constraints=float(predicted_failed[index]),
+                expected_total_violation=float(
+                    predicted_total_violation[index]
+                ),
+                expected_worst_violation=float(
+                    predicted_worst_violation[index]
+                ),
+                exploration_tiebreak=(
+                    float(config.acquisition_exploration) * uncertainty
+                ),
+                objective_tiebreak=-candidate_cost,
+                deterministic_tiebreak=deterministic,
+            )
             acquisition.append(float(value))
+            acquisition_keys.append(key)
         selected_index = max(
-            range(len(pool)),
-            key=lambda index: (
-                acquisition[index],
-                -candidate_costs[index],
-                tuple(-value for value in pool[index]),
-            ),
+            range(len(pool)), key=acquisition_keys.__getitem__,
         )
         selected = cache.evaluate(pool[selected_index])
         new_key = candidate_rank_key(cache.best())
@@ -1182,7 +1257,19 @@ def _run_bo_rf(
             iteration=iteration,
             selected_action=list(selected.action),
             acquisition=float(acquisition[selected_index]),
+            acquisition_mode=(
+                "probability_of_feasibility_times_expected_improvement"
+                if feasible_observations
+                else "lexicographic_predicted_violation"
+            ),
             predicted_feasibility=float(feasibility_probability[selected_index]),
+            predicted_failed_constraints=float(predicted_failed[selected_index]),
+            predicted_total_violation=float(
+                predicted_total_violation[selected_index]
+            ),
+            predicted_worst_violation=float(
+                predicted_worst_violation[selected_index]
+            ),
             no_improvement=int(no_improvement),
             improved=bool(improved),
         ))
@@ -1217,6 +1304,54 @@ def _population_diversity(
     ]
     mean_distance = float(np.mean(distances)) if distances else 0.0
     return float(unique_ratio), mean_distance
+
+
+def _select_hamming_diverse_elites(
+        space: Stage1SearchSpace,
+        population: Sequence[SearchEvaluation],
+        elite_count: int,
+        ) -> list[SearchEvaluation]:
+    """Keep the best incumbent, then prefer feasible elites at distance >= 2."""
+
+    target = min(int(elite_count), len(population))
+    if target <= 0:
+        return []
+    ranked = sorted(population, key=candidate_rank_key, reverse=True)
+    feasible = [item for item in ranked if item.feasible]
+    pools = (feasible, ranked)
+    selected: list[SearchEvaluation] = []
+    selected_actions: set[Stage1Action] = set()
+    for pool in pools:
+        remaining = [
+            item for item in pool if item.action not in selected_actions
+        ]
+        while remaining and len(selected) < target:
+            if not selected:
+                chosen = remaining[0]
+            else:
+                distance_two = [
+                    item for item in remaining
+                    if all(
+                        space.hamming_distance(item.action, owned.action) >= 2
+                        for owned in selected
+                    )
+                ]
+                distance_one = [
+                    item for item in remaining
+                    if all(
+                        space.hamming_distance(item.action, owned.action) >= 1
+                        for owned in selected
+                    )
+                ]
+                chosen = (distance_two or distance_one or remaining)[0]
+            selected.append(chosen)
+            selected_actions.add(chosen.action)
+            remaining = [
+                item for item in remaining if item.action != chosen.action
+            ]
+        if len(selected) >= target:
+            break
+    return selected
 
 
 def _tournament(
@@ -1388,6 +1523,9 @@ def _run_coinn_ga(
         config: SearchConfig,
         preload: Iterable[SearchEvaluation],
         checkpoint_callback: Optional[CheckpointCallback],
+        incremental_checkpoint_callback: Optional[
+            IncrementalCheckpointCallback
+        ],
         ) -> SearchResult:
     rng = np.random.default_rng(int(config.seed))
     cache = _EvaluationCache(
@@ -1396,6 +1534,7 @@ def _run_coinn_ga(
         evaluation_cap=config.evaluation_cap,
         preload=preload,
         checkpoint_callback=checkpoint_callback,
+        incremental_checkpoint_callback=incremental_checkpoint_callback,
     )
     population_size = min(
         int(config.ga_population_size),
@@ -1427,6 +1566,21 @@ def _run_coinn_ga(
         anchors=min(3, len(initial_actions)),
         one_layer_reductions=min(2 * space.num_layers, max(0, len(initial_actions) - 3)),
         maximin_count=max(0, len(initial_actions) - 3 - 2 * space.num_layers),
+        initialization_provenance=[
+            {
+                "action": list(action),
+                "source": (
+                    "uniform_anchor"
+                    if index < 3
+                    else (
+                        "one_layer_reduction_from_all4"
+                        if index < 3 + 2 * space.num_layers
+                        else "categorical_maximin"
+                    )
+                ),
+            }
+            for index, action in enumerate(initial_actions)
+        ],
         unique_ratio=float(unique_ratio),
         mean_pairwise_distance=float(mean_distance),
     ))
@@ -1437,8 +1591,9 @@ def _run_coinn_ga(
         if cache.remaining <= 0:
             termination = "evaluation_cap"
             break
-        ranked = sorted(population, key=candidate_rank_key, reverse=True)
-        elites = ranked[:elite_count]
+        elites = _select_hamming_diverse_elites(
+            space, population, elite_count,
+        )
         offspring_target = min(population_size - elite_count, cache.remaining)
         unique_ratio, mean_distance = _population_diversity(space, population)
         diversity_triggered = bool(
@@ -1493,6 +1648,9 @@ def _run_coinn_ga(
             iteration=generation,
             generation=generation,
             elite_count=len(elites),
+            feasible_elite_count=sum(item.feasible for item in elites),
+            elite_actions=[list(item.action) for item in elites],
+            elite_policy="best_incumbent_then_hamming_distance_2",
             new_unique_evaluations=len(offspring),
             diversity_triggered=bool(diversity_triggered),
             scheduled_immigrants=int(immigrant_target),
@@ -1529,6 +1687,9 @@ def run_search(
         surrogate_factory: Optional[SurrogateFactory] = None,
         preload: Iterable[SearchEvaluation] = (),
         checkpoint_callback: Optional[CheckpointCallback] = None,
+        incremental_checkpoint_callback: Optional[
+            IncrementalCheckpointCallback
+        ] = None,
         ) -> SearchResult:
     """Run one canonical non-RL Stage-1 search backend."""
 
@@ -1553,6 +1714,7 @@ def run_search(
             config=cfg,
             preload=preload_tuple,
             checkpoint_callback=checkpoint_callback,
+            incremental_checkpoint_callback=incremental_checkpoint_callback,
         )
     if normalized == "bo_rf":
         return _run_bo_rf(
@@ -1562,6 +1724,7 @@ def run_search(
             surrogate_factory=surrogate_factory,
             preload=preload_tuple,
             checkpoint_callback=checkpoint_callback,
+            incremental_checkpoint_callback=incremental_checkpoint_callback,
         )
     if normalized == "coinn_ga":
         return _run_coinn_ga(
@@ -1570,6 +1733,7 @@ def run_search(
             config=cfg,
             preload=preload_tuple,
             checkpoint_callback=checkpoint_callback,
+            incremental_checkpoint_callback=incremental_checkpoint_callback,
         )
     raise AssertionError(f"unhandled Stage-1 search backend {normalized}")
 

@@ -2679,6 +2679,7 @@ def _promote_candidate_through_validation_banks(
             "promotion_already_attempted", trial_count, 0,
             evidence, assessment,
             None if evidence is None else _metrics_from_trials(evidence.trials),
+            latest_metadata.get("axis_counterfactuals"),
         )
     if int(priority) != 3:
         return PromotionResult(
@@ -3223,6 +3224,7 @@ def certify_candidate_with_bank_c(
             evidence,
             None,
             None if evidence is None else _metrics_from_trials(evidence.trials),
+            latest_metadata.get("axis_counterfactuals"),
         )
     retryable_ab_evidence = False
     if latest_status == _FINAL_REVALIDATION_RETRYABLE:

@@ -13,6 +13,7 @@ from jsonl_utils import read_jsonl, recover_jsonl_file, write_jsonl_rows
 
 from .search_baselines import (
     FIXED_SOFTMAX_DEGREE,
+    GELU_DEGREES,
     SearchConfig,
     SearchEvaluation,
     SearchResult,
@@ -233,25 +234,36 @@ def _checkpoint_payload(
         observation_store: Optional[Mapping[str, Any]],
         result: Optional[SearchResult] = None,
         best_evaluation: Optional[SearchEvaluation] = None,
+        latest_evaluation: Optional[SearchEvaluation] = None,
+        observation_count: Optional[int] = None,
+        search_wall_seconds: Optional[float] = None,
         contract: Optional[Mapping[str, Any]] = None,
         ) -> dict[str, Any]:
     if best_evaluation is None and observations:
         best_evaluation = max(observations, key=candidate_rank_key)
+    if latest_evaluation is None and observations:
+        latest_evaluation = observations[-1]
+    count = len(observations) if observation_count is None else int(observation_count)
     best = None if best_evaluation is None else best_evaluation.as_dict()
-    latest = None if not observations else observations[-1].as_dict()
+    latest = None if latest_evaluation is None else latest_evaluation.as_dict()
     return {
         "schema_version": "stage1_gelu_search_checkpoint_v2",
         "status": str(status),
         "backend": normalize_search_backend(backend),
         "config": config.as_dict(),
         "contract": dict(contract or {}),
-        "observation_count": len(observations),
+        "observation_count": count,
         "observation_store": None if observation_store is None else dict(observation_store),
         "best": best,
         "latest": latest,
         "result": None if result is None else _compact_result(result),
         "resume_semantics": _REPLAY_SEMANTICS,
         "optimizer_state_restored": False,
+        "search_wall_seconds": (
+            None
+            if search_wall_seconds is None
+            else float(search_wall_seconds)
+        ),
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
@@ -305,7 +317,7 @@ def save_search_checkpoint(
                     if not observations
                     else {
                         "num_layers": len(observations[0].action),
-                        "gelu_degree_categories": [4, 2, 1],
+                        "gelu_degree_categories": list(GELU_DEGREES),
                         "fixed_softmax_degree": int(FIXED_SOFTMAX_DEGREE),
                         "constraints": observations[0].constraints.as_dict(),
                         "split": "validation_full",
@@ -350,13 +362,11 @@ def load_search_preload(path: str | Path) -> tuple[SearchEvaluation, ...]:
     resolved = _resolve_store(source, payload)
     if resolved is not None:
         observation_path, store = resolved
-        committed_size = store.get("committed_size")
-        recover_jsonl_file(
-            observation_path,
-            committed_size=(
-                None if committed_size is None else int(committed_size)
-            ),
-        )
+        # The JSONL row is fsynced before checkpoint metadata is published.
+        # A crash may therefore leave a valid append-only suffix beyond the last
+        # checkpoint interval; recover the complete suffix instead of truncating
+        # it to stale checkpoint metadata.
+        recover_jsonl_file(observation_path)
         rows = read_jsonl(
             observation_path,
             errors="raise",
@@ -364,10 +374,10 @@ def load_search_preload(path: str | Path) -> tuple[SearchEvaluation, ...]:
             missing_ok=False,
         )
         expected = int(store.get("observation_count", payload.get("observation_count", len(rows))))
-        if len(rows) != expected:
+        if len(rows) < expected:
             raise RuntimeError(
-                "Stage-1 checkpoint observation count does not match JSONL: "
-                f"{len(rows)} != {expected}"
+                "Stage-1 checkpoint observation JSONL is shorter than metadata: "
+                f"{len(rows)} < {expected}"
             )
         return tuple(SearchEvaluation.from_dict(item) for item in rows)
 
@@ -382,18 +392,68 @@ def load_search_preload(path: str | Path) -> tuple[SearchEvaluation, ...]:
     )
 
 
+def _without_search_runtime_marker(
+        evaluation: SearchEvaluation,
+        ) -> dict[str, Any]:
+    payload = evaluation.as_dict()
+    metadata = dict(payload.get("metadata") or {})
+    metadata.pop("search_cumulative_wall_seconds", None)
+    payload["metadata"] = metadata
+    return payload
+
+
 def load_completed_search_result(output_dir: str | Path) -> SearchResult:
     output = Path(output_dir)
     payload = read_json_file(output / "result.json")
+    manifest = read_json_file(output / "manifest.json")
     if not isinstance(payload, Mapping):
         raise ValueError("Stage-1 completed result must be a JSON object")
+    if not isinstance(manifest, Mapping):
+        raise ValueError("Stage-1 completed manifest must be a JSON object")
     observations = load_search_preload(output / "observations.jsonl")
     history = read_json_file(output / "history.json", default=[])
-    return SearchResult.from_dict({
+    result = SearchResult.from_dict({
         **dict(payload),
         "observations": [item.as_dict() for item in observations],
         "history": list(history or []),
     })
+    if result.algorithm != normalize_search_backend(manifest.get("backend")):
+        raise RuntimeError(
+            "Stage-1 completed backend does not match manifest"
+        )
+    if result.config.as_dict() != SearchConfig.from_dict(
+            manifest.get("config") or {}
+    ).as_dict():
+        raise RuntimeError(
+            "Stage-1 completed search config does not match manifest"
+        )
+    expected_count = int(manifest.get("evaluation_count", -1))
+    expected_unique = int(manifest.get("unique_evaluation_count", -1))
+    if result.evaluation_count != expected_count:
+        raise RuntimeError(
+            "Stage-1 completed observation count does not match manifest: "
+            f"{result.evaluation_count} != {expected_count}"
+        )
+    if result.unique_evaluation_count != expected_unique:
+        raise RuntimeError(
+            "Stage-1 completed unique count does not match manifest"
+        )
+    if str(result.termination_reason) != str(manifest.get("termination_reason")):
+        raise RuntimeError(
+            "Stage-1 completed termination reason does not match manifest"
+        )
+    matching = [
+        item for item in observations if item.action == result.best.action
+    ]
+    if (
+            len(matching) != 1
+            or _without_search_runtime_marker(matching[0])
+            != _without_search_runtime_marker(result.best)
+    ):
+        raise RuntimeError(
+            "Stage-1 completed best evaluation is absent or stale in JSONL"
+        )
+    return result
 
 
 def _validate_preload_contract(
@@ -470,6 +530,11 @@ def persist_search_result(
         "schema_version": "stage1_gelu_search_manifest_v1",
         "status": "complete",
         "backend": result.algorithm,
+        "formal_feasible": bool(result.best.feasible),
+        "selection_status": (
+            "feasible" if result.best.feasible else "least_violating"
+        ),
+        "scientific_export_allowed": bool(result.best.feasible),
         "evaluation_count": result.evaluation_count,
         "unique_evaluation_count": result.unique_evaluation_count,
         "termination_reason": result.termination_reason,
@@ -543,9 +608,11 @@ class Stage1SearchRunner:
             preload_path: Optional[str | Path] = None,
             ) -> SearchResult:
         normalized = normalize_search_backend(backend)
+        run_started_monotonic = time.perf_counter()
+        prior_search_wall_seconds = 0.0
         contract = {
             "num_layers": self.adapter.space.num_layers,
-            "gelu_degree_categories": [4, 2, 1],
+            "gelu_degree_categories": list(GELU_DEGREES),
             "fixed_softmax_degree": int(FIXED_SOFTMAX_DEGREE),
             "constraints": self.adapter.constraints.as_dict(),
             "split": "validation_full",
@@ -560,6 +627,12 @@ class Stage1SearchRunner:
         ):
             preload_path = self.output_dir / "checkpoint.json"
         preload_rows = list(preload)
+        if preload_rows and normalized in ("bo_rf", "coinn_ga"):
+            raise RuntimeError(
+                f"partial {normalized} resume is disabled because exact "
+                "surrogate/population state is not available; use a completed "
+                "artifact or restart fresh"
+            )
         if preload_path is not None:
             _validate_preload_contract(
                 preload_path,
@@ -568,6 +641,10 @@ class Stage1SearchRunner:
                 contract=contract,
             )
             preload_metadata = read_json_file(preload_path)
+            if isinstance(preload_metadata, Mapping):
+                prior_search_wall_seconds = float(
+                    preload_metadata.get("search_wall_seconds", 0.0) or 0.0
+                )
             if (
                     isinstance(preload_metadata, Mapping)
                     and str(preload_metadata.get("status")) == "complete"
@@ -584,6 +661,16 @@ class Stage1SearchRunner:
                 )
             preload_rows.extend(load_search_preload(preload_path))
         preload_rows = _deduplicate_preload(preload_rows)
+        if preload_rows:
+            prior_search_wall_seconds = max(
+                prior_search_wall_seconds,
+                max(
+                    float(item.metadata.get(
+                        "search_cumulative_wall_seconds", 0.0,
+                    ) or 0.0)
+                    for item in preload_rows
+                ),
+            )
         self.adapter.evaluation_count = len(preload_rows)
 
         checkpoint_path: Optional[Path] = None
@@ -620,23 +707,31 @@ class Stage1SearchRunner:
                 committed_size = recover_jsonl_file(observation_path)
 
         def progress_payload(
-                observations: Sequence[SearchEvaluation],
+                *,
+                observation_count: int,
                 status: str,
+                latest_evaluation: Optional[SearchEvaluation] = None,
                 result: Optional[SearchResult] = None,
                 ) -> dict[str, Any]:
             return _checkpoint_payload(
                 backend=normalized,
                 config=self.config,
-                observations=observations,
+                observations=(),
+                observation_count=int(observation_count),
+                latest_evaluation=latest_evaluation,
                 status=status,
                 observation_store=_observation_store(
                     observation_path=observation_path,
                     metadata_path=checkpoint_path,
-                    observation_count=len(observations),
+                    observation_count=int(observation_count),
                     committed_size=committed_size,
                 ),
                 result=result,
                 best_evaluation=best_so_far,
+                search_wall_seconds=float(
+                    prior_search_wall_seconds
+                    + time.perf_counter() - run_started_monotonic
+                ),
                 contract=contract,
             )
 
@@ -647,32 +742,52 @@ class Stage1SearchRunner:
                 self.checkpoint_callback(to_jsonable(payload, preserve_native=True))
 
         if preload_rows or checkpoint_path is not None:
-            publish(progress_payload(preload_rows, "running"))
+            publish(progress_payload(
+                observation_count=len(preload_rows),
+                latest_evaluation=(None if not preload_rows else preload_rows[-1]),
+                status="running",
+            ))
 
-        def on_observation(observations: tuple[SearchEvaluation, ...]) -> None:
+        def on_observation(
+                observation: SearchEvaluation,
+                observation_count: int,
+                ) -> None:
             nonlocal best_so_far, committed_size, persisted_count
-            new_observations = observations[persisted_count:]
-            for observation in new_observations:
-                if (
-                        best_so_far is None
-                        or candidate_rank_key(observation)
-                        > candidate_rank_key(best_so_far)
-                ):
-                    best_so_far = observation
-                if observation_path is not None:
-                    committed_size = _append_jsonl_row(
-                        observation_path,
-                        observation.as_dict(),
-                    )
-            persisted_count = len(observations)
-            notify = bool(
-                len(observations) == 1
-                or len(observations) % self.checkpoint_interval == 0
+            if int(observation_count) != persisted_count + 1:
+                raise RuntimeError(
+                    "Stage-1 observation callback count is not append-only"
+                )
+            if (
+                    best_so_far is None
+                    or candidate_rank_key(observation)
+                    > candidate_rank_key(best_so_far)
+            ):
+                best_so_far = observation
+            if observation_path is not None:
+                observation_payload = observation.as_dict()
+                observation_metadata = dict(
+                    observation_payload.get("metadata") or {}
+                )
+                observation_metadata["search_cumulative_wall_seconds"] = float(
+                    prior_search_wall_seconds
+                    + time.perf_counter() - run_started_monotonic
+                )
+                observation_payload["metadata"] = observation_metadata
+                committed_size = _append_jsonl_row(
+                    observation_path,
+                    observation_payload,
+                )
+            persisted_count = int(observation_count)
+            publish_checkpoint = bool(
+                observation_count == 1
+                or observation_count % self.checkpoint_interval == 0
             )
-            publish(
-                progress_payload(observations, "running"),
-                notify=notify,
-            )
+            if publish_checkpoint:
+                publish(progress_payload(
+                    observation_count=observation_count,
+                    latest_evaluation=observation,
+                    status="running",
+                ))
 
         result = run_search(
             normalized,
@@ -681,7 +796,7 @@ class Stage1SearchRunner:
             self.config,
             surrogate_factory=surrogate_factory,
             preload=preload_rows,
-            checkpoint_callback=on_observation,
+            incremental_checkpoint_callback=on_observation,
         )
         if observation_path is not None and persisted_count != result.evaluation_count:
             raise RuntimeError("observation JSONL did not receive every unique evaluation")
@@ -692,17 +807,27 @@ class Stage1SearchRunner:
                 manifest={
                     **self.manifest,
                     "split": "validation_full",
-                    "gelu_degree_categories": [4, 2, 1],
+                    "gelu_degree_categories": list(GELU_DEGREES),
                     "softmax_degrees": [FIXED_SOFTMAX_DEGREE] * self.adapter.space.num_layers,
                     "constraints": self.adapter.constraints.as_dict(),
                     "preloaded_observation_count": len(preload_rows),
+                    "search_wall_seconds": float(
+                        prior_search_wall_seconds
+                        + time.perf_counter() - run_started_monotonic
+                    ),
+                    "model_inference_count": int(result.evaluation_count),
                 },
                 write_observations=False,
                 contract=contract,
             )
         elif self.checkpoint_callback is not None:
             self.checkpoint_callback(to_jsonable(
-                progress_payload(result.observations, "complete", result=result),
+                progress_payload(
+                    observation_count=result.evaluation_count,
+                    latest_evaluation=result.observations[-1],
+                    status="complete",
+                    result=result,
+                ),
                 preserve_native=True,
             ))
         return result

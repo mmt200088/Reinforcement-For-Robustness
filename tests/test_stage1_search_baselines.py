@@ -44,6 +44,10 @@ Stage1SearchSpace = _search_baselines.Stage1SearchSpace
 candidate_rank_key = _search_baselines.candidate_rank_key
 run_search = _search_baselines.run_search
 structured_maximin_initial_design = _search_baselines.structured_maximin_initial_design
+_bo_acquisition_key = _search_baselines._bo_acquisition_key
+_select_hamming_diverse_elites = (
+    _search_baselines._select_hamming_diverse_elites
+)
 _tournament = _search_baselines._tournament
 Stage1EvaluatorAdapter = _search_runner.Stage1EvaluatorAdapter
 Stage1SearchRunner = _search_runner.Stage1SearchRunner
@@ -106,6 +110,28 @@ class _FakeForest(_MeanTree):
             _MeanTree([]).fit(features, targets),
         ]
         return self
+
+
+class _ScriptedConstraintForest:
+    def fit(self, _features, targets):
+        self.output_count = np.asarray(targets).shape[1]
+        self.estimators_ = [self]
+        return self
+
+    def predict(self, features):
+        rows = np.asarray(features).reshape(-1, 2, 3)
+        genes = np.argmax(rows, axis=2)
+        result = []
+        for action in genes:
+            margins = np.full(self.output_count, 0.1, dtype=float)
+            if tuple(action) == (0, 1):
+                margins[0] = -2.0
+            elif tuple(action) == (0, 2):
+                margins[:2] = -0.01
+            else:
+                margins[:] = -1.0
+            result.append(margins)
+        return np.asarray(result)
 
 
 class _AllContestantsRng:
@@ -241,6 +267,19 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
             for row in result.history
         ))
 
+    def test_legacy_checkpoint_callback_still_receives_observation_tuple(self):
+        snapshots = []
+        run_search(
+            "greedy",
+            Stage1SearchSpace(1),
+            lambda action: _evaluation(action),
+            SearchConfig(evaluation_cap=3),
+            checkpoint_callback=snapshots.append,
+        )
+
+        self.assertEqual([len(row) for row in snapshots], [1, 2, 3])
+        self.assertTrue(all(isinstance(row, tuple) for row in snapshots))
+
     def test_bo_uses_one_hot_features_and_hard_cap(self):
         space = Stage1SearchSpace(2)
         shapes = []
@@ -268,6 +307,85 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
         self.assertTrue(shapes)
         self.assertTrue(all(shape[1] == 6 for shape in shapes))
         self.assertEqual(result.termination_reason, "evaluation_cap")
+
+    def test_bo_acquisition_preserves_constraint_lexicographic_order(self):
+        fewer_failed = _bo_acquisition_key(
+            has_feasible_incumbent=False,
+            probability_of_feasibility=0.0,
+            expected_improvement=0.0,
+            expected_failed_constraints=1.0,
+            expected_total_violation=2.0,
+            expected_worst_violation=2.0,
+            exploration_tiebreak=0.0,
+            objective_tiebreak=-100.0,
+            deterministic_tiebreak=(0,),
+        )
+        more_failed = _bo_acquisition_key(
+            has_feasible_incumbent=False,
+            probability_of_feasibility=1.0,
+            expected_improvement=0.0,
+            expected_failed_constraints=2.0,
+            expected_total_violation=0.02,
+            expected_worst_violation=0.01,
+            exploration_tiebreak=100.0,
+            objective_tiebreak=100.0,
+            deterministic_tiebreak=(0,),
+        )
+        self.assertGreater(fewer_failed, more_failed)
+
+        pof_zero = _bo_acquisition_key(
+            has_feasible_incumbent=True,
+            probability_of_feasibility=0.0,
+            expected_improvement=100.0,
+            expected_failed_constraints=0.0,
+            expected_total_violation=0.0,
+            expected_worst_violation=0.0,
+            exploration_tiebreak=0.0,
+            objective_tiebreak=100.0,
+            deterministic_tiebreak=(0,),
+        )
+        positive_pof = _bo_acquisition_key(
+            has_feasible_incumbent=True,
+            probability_of_feasibility=0.5,
+            expected_improvement=1.0,
+            expected_failed_constraints=0.0,
+            expected_total_violation=0.0,
+            expected_worst_violation=0.0,
+            exploration_tiebreak=0.0,
+            objective_tiebreak=0.0,
+            deterministic_tiebreak=(0,),
+        )
+        self.assertGreater(positive_pof, pof_zero)
+
+    def test_bo_uses_lexicographic_prediction_in_full_search_loop(self):
+        space = Stage1SearchSpace(2)
+        result = run_search(
+            "bo_rf",
+            space,
+            lambda action: _evaluation(action, loss=1.2),
+            SearchConfig(
+                evaluation_cap=4,
+                bo_initial_design_size=3,
+                bo_candidate_pool_size=9,
+                bo_no_improvement_patience=10,
+            ),
+            surrogate_factory=lambda _seed: _ScriptedConstraintForest(),
+        )
+
+        self.assertEqual(result.observations[-1].action, (0, 1))
+
+    def test_elites_keep_incumbent_and_prefer_hamming_distance_two(self):
+        space = Stage1SearchSpace(3)
+        incumbent = _evaluation((0, 0, 0), cost=1.0)
+        close = _evaluation((0, 0, 1), cost=2.0)
+        diverse = _evaluation((1, 1, 0), cost=3.0)
+
+        elites = _select_hamming_diverse_elites(
+            space, [close, diverse, incumbent], 2,
+        )
+
+        self.assertEqual(elites[0].action, incumbent.action)
+        self.assertEqual(elites[1].action, diverse.action)
 
     def test_parent_b_prefers_distance_two_then_relaxes_to_distance_one(self):
         parent_a = (0, 0, 0)
@@ -469,6 +587,149 @@ class AdapterAndPersistenceTests(unittest.TestCase):
                         greedy_max_starts=2,
                     ),
                     output_dir=tmpdir,
+                ).run("greedy")
+
+    def test_partial_bo_preload_is_rejected_without_surrogate_state(self):
+        constraints = Stage1Constraints(
+            baseline_loss=0.5,
+            baseline_metrics=(0.8,),
+            loss_max=0.505,
+            metric_mins=(0.79,),
+        )
+        with self.assertRaisesRegex(RuntimeError, "partial bo_rf resume"):
+            Stage1SearchRunner(
+                adapter=Stage1EvaluatorAdapter(
+                    evaluator=_FakeRealEvaluator(),
+                    num_layers=1,
+                    constraints=constraints,
+                ),
+                config=SearchConfig(evaluation_cap=3),
+            ).run("bo_rf", preload=[_evaluation((0,))])
+
+    def test_checkpoint_recovers_fsynced_suffix_after_stale_metadata(self):
+        constraints = Stage1Constraints(
+            baseline_loss=0.5,
+            baseline_metrics=(0.8,),
+            loss_max=0.505,
+            metric_mins=(0.79,),
+        )
+        real = _FakeRealEvaluator()
+        original = real.stage1_evaluate
+
+        def fail_on_third(*args, **kwargs):
+            if len(real.calls) >= 2:
+                raise RuntimeError("interrupted")
+            return original(*args, **kwargs)
+
+        real.stage1_evaluate = fail_on_third
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(RuntimeError, "interrupted"):
+                Stage1SearchRunner(
+                    adapter=Stage1EvaluatorAdapter(
+                        evaluator=real,
+                        num_layers=1,
+                        constraints=constraints,
+                    ),
+                    config=SearchConfig(
+                        evaluation_cap=3, greedy_max_starts=3,
+                    ),
+                    output_dir=tmpdir,
+                    manifest={"task": "stale-checkpoint"},
+                    checkpoint_interval=50,
+                ).run("greedy")
+
+            with open(
+                    os.path.join(tmpdir, "checkpoint.json"),
+                    encoding="utf-8",
+            ) as handle:
+                checkpoint = json.load(handle)
+            self.assertEqual(checkpoint["observation_count"], 1)
+            recovered = load_search_preload(os.path.join(
+                tmpdir, "checkpoint.json",
+            ))
+            self.assertEqual(len(recovered), 2)
+            self.assertGreaterEqual(
+                recovered[-1].metadata["search_cumulative_wall_seconds"],
+                float(checkpoint.get("search_wall_seconds", 0.0) or 0.0),
+            )
+
+    def test_completed_resume_rejects_mismatched_backend_metadata(self):
+        constraints = Stage1Constraints(
+            baseline_loss=0.5,
+            baseline_metrics=(0.8,),
+            loss_max=0.505,
+            metric_mins=(0.79,),
+        )
+        config = SearchConfig(evaluation_cap=3, greedy_max_starts=3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Stage1SearchRunner(
+                adapter=Stage1EvaluatorAdapter(
+                    evaluator=_FakeRealEvaluator(),
+                    num_layers=1,
+                    constraints=constraints,
+                ),
+                config=config,
+                output_dir=tmpdir,
+                manifest={"task": "integrity-backend"},
+            ).run("greedy")
+            result_path = os.path.join(tmpdir, "result.json")
+            with open(result_path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            payload["algorithm"] = "bo_rf"
+            with open(result_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+
+            with self.assertRaisesRegex(
+                    RuntimeError, "backend does not match manifest",
+            ):
+                Stage1SearchRunner(
+                    adapter=Stage1EvaluatorAdapter(
+                        evaluator=_FakeRealEvaluator(),
+                        num_layers=1,
+                        constraints=constraints,
+                    ),
+                    config=config,
+                    output_dir=tmpdir,
+                    manifest={"task": "integrity-backend"},
+                ).run("greedy")
+
+    def test_completed_resume_rejects_truncated_observation_journal(self):
+        constraints = Stage1Constraints(
+            baseline_loss=0.5,
+            baseline_metrics=(0.8,),
+            loss_max=0.505,
+            metric_mins=(0.79,),
+        )
+        config = SearchConfig(evaluation_cap=3, greedy_max_starts=3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Stage1SearchRunner(
+                adapter=Stage1EvaluatorAdapter(
+                    evaluator=_FakeRealEvaluator(),
+                    num_layers=1,
+                    constraints=constraints,
+                ),
+                config=config,
+                output_dir=tmpdir,
+                manifest={"task": "integrity"},
+            ).run("greedy")
+            observation_path = os.path.join(tmpdir, "observations.jsonl")
+            with open(observation_path, encoding="utf-8") as handle:
+                first = next(handle)
+            with open(observation_path, "w", encoding="utf-8") as handle:
+                handle.write(first)
+
+            with self.assertRaisesRegex(
+                    RuntimeError, "observation count does not match manifest",
+            ):
+                Stage1SearchRunner(
+                    adapter=Stage1EvaluatorAdapter(
+                        evaluator=_FakeRealEvaluator(),
+                        num_layers=1,
+                        constraints=constraints,
+                    ),
+                    config=config,
+                    output_dir=tmpdir,
+                    manifest={"task": "integrity"},
                 ).run("greedy")
 
 

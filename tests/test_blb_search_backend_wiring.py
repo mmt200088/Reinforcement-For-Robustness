@@ -43,7 +43,7 @@ class SearchBackendWiringTests(unittest.TestCase):
             'f"stage1_{self.blb_v3_search_backend}_result"',
             evaluator,
         )
-        self.assertIn("two_stage_search_final_v1", evaluator)
+        self.assertIn("two_stage_search_final_v2", evaluator)
         self.assertIn("stage1_bound_into_stage2", evaluator)
         self.assertIn(
             "two-stage comparator must run both Stage-1 and Stage-2",
@@ -57,6 +57,22 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("baseline=5x3, online=3, strict banks=15 each", evaluator)
         self.assertIn("precision tolerance ", evaluator)
         self.assertIn("0.001 in both stages", evaluator)
+        self.assertIn("12-layer", evaluator)
+        self.assertIn("evaluation budget/safety cap", evaluator)
+        self.assertIn("selection_provenance", evaluator)
+        self.assertIn("result_sha256", evaluator)
+        self.assertIn("search_accounting", evaluator)
+        self.assertIn("selected_violations", evaluator)
+        self.assertIn("formal_scientific_complete", evaluator)
+        self.assertIn("stage1_produced_selection_hash", evaluator)
+        self.assertIn("stage2_consumed_selection_hash", evaluator)
+        self.assertIn("failed_optional", evaluator)
+        self.assertIn("stage1_search_seed", evaluator)
+        self.assertIn("stage2_search_seed", evaluator)
+        self.assertLess(
+            evaluator.index("optional final-eval failed"),
+            evaluator.index("two_stage_search_final_v2"),
+        )
 
         runner = (
             ROOT / "blb_stage2_rl" / "sequential_runner.py"
@@ -124,6 +140,9 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("--blb_v3_search_backend", launcher)
         self.assertIn("run bo_rf", launcher)
         self.assertIn("run coinn_ga", launcher)
+        self.assertIn(
+            'ga|genetic) SUBCOMMAND_ARGS=(--search-algorithm ga', launcher,
+        )
         self.assertIn("--stage1-accuracy-tolerance 0.001", launcher)
         self.assertIn("--stage2-limit-tolerance 0.001", launcher)
         self.assertIn("--stage2-stability-multiplier 2.0", launcher)

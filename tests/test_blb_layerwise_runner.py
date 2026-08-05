@@ -5666,6 +5666,87 @@ class LayerwisePromotionTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def test_terminal_axis_failure_restores_counterfactual_payload(self):
+        from blb_stage2_rl.layerwise_runner import (
+            _promote_candidate_through_validation_banks,
+        )
+
+        axis_payload = {
+            "compute": {"point_pass": False, "banks": {"A": {}}},
+            "communication": {"point_pass": True, "banks": {"A": {}}},
+        }
+        store = types.SimpleNamespace(
+            trial_evidence_for_action=lambda *_args, **_kwargs: None,
+        )
+        banks = types.SimpleNamespace(final_trial_count=45)
+        with mock.patch(
+                "blb_stage2_rl.layerwise_runner._latest_promotion_status",
+                return_value=(
+                    "axis_counterfactual_point_failed",
+                    {"axis_counterfactuals": axis_payload},
+                ),
+        ):
+            restored = _promote_candidate_through_validation_banks(
+                env=types.SimpleNamespace(base=object()),
+                promotion_base_env=None,
+                candidate_store=store,
+                action_indices=(1, 2, 3),
+                identity_context={"profile": "mrpc"},
+                action_matrix=((0, 0),),
+                assessment={},
+                priority=3,
+                variable_cost=0.0,
+                frontier_cost=None,
+                frontier_candidates=None,
+                boosted_overrides={},
+                bootstrap_seed=17,
+                episode_reward=0.0,
+                assess_candidate_fn=lambda *_args, **_kwargs: {},
+                promotion_probability=0.8,
+                validation_banks=banks,
+            )
+
+        self.assertEqual(restored.status, "promotion_already_attempted")
+        self.assertEqual(restored.axis_counterfactuals, axis_payload)
+
+    def test_terminal_certification_failure_restores_counterfactual_payload(self):
+        from blb_stage2_rl.layerwise_runner import certify_candidate_with_bank_c
+
+        axis_payload = {
+            "compute": {"point_pass": False, "banks": {"A": {}}},
+            "communication": {"point_pass": True, "banks": {"A": {}}},
+        }
+        store = types.SimpleNamespace(
+            trial_evidence_for_action=lambda *_args, **_kwargs: None,
+        )
+        banks = types.SimpleNamespace(final_trial_count=45)
+        with mock.patch(
+                "blb_stage2_rl.layerwise_runner._latest_promotion_status",
+                return_value=(
+                    "axis_counterfactual_point_failed",
+                    {"axis_counterfactuals": axis_payload},
+                ),
+        ):
+            restored = certify_candidate_with_bank_c(
+                env=types.SimpleNamespace(base=object()),
+                promotion_base_env=None,
+                candidate_store=store,
+                identity_context={"profile": "mrpc"},
+                candidate={
+                    "full_vector": [1, 2, 3],
+                    "action_matrix": [[0, 0]],
+                    "boosted_overrides": {},
+                },
+                bootstrap_seed=17,
+                final_probability=0.95,
+                validation_banks=banks,
+            )
+
+        self.assertEqual(
+            restored.status, "final_certification_already_attempted",
+        )
+        self.assertEqual(restored.axis_counterfactuals, axis_payload)
+
     def _store_with_five(self, root, seeds=None):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import evidence_identity_context

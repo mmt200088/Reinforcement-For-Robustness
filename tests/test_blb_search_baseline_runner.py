@@ -12,6 +12,7 @@ from blb_stage2_rl.search_baseline_runner import (
     LayerwiseRuntimeEvaluator,
     canonical_strict_validation,
     limits_from_reference,
+    load_search_preload,
     persist_search_result,
     run_layerwise_search_baseline,
 )
@@ -429,6 +430,13 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             self.assertEqual(
                 run["manifest"]["search_config"]["population_size"], 4,
             )
+            self.assertEqual(
+                run["manifest"]["inference_reaching_candidate_count"], 2,
+            )
+            self.assertEqual(
+                run["manifest"]["online_candidate_trial_count"], 6,
+            )
+            self.assertGreaterEqual(run["manifest"]["total_wall_seconds"], 0.0)
             with open(
                     run["artifact_paths"]["observations"],
                     encoding="utf-8",
@@ -479,6 +487,81 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 second["result"].evaluation_count,
                 first["result"].evaluation_count,
             )
+
+    def test_completed_resume_rejects_truncated_observation_journal(self):
+        kwargs = {
+            "backend": "greedy",
+            "robust_reference": _Reference(),
+            "evaluation_budget": 2,
+            "seed": 17,
+            "initial_design_size": 2,
+            "candidate_pool_size": 8,
+            "population_size": 4,
+            "patience_generations": 5,
+            "mutation_max_coordinates": 1,
+            "rf_n_estimators": 8,
+            "rf_min_samples_leaf": 1,
+            "communication_importance_ratio": 1.0,
+            "manifest": {"profile": "mrpc"},
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            first = run_layerwise_search_baseline(
+                layerwise_env=_LayerwiseEnv(),
+                output_dir=tmpdir,
+                **kwargs,
+            )
+            observation_path = first["artifact_paths"]["observations"]
+            with open(observation_path, encoding="utf-8") as handle:
+                first_row = next(handle)
+            with open(observation_path, "w", encoding="utf-8") as handle:
+                handle.write(first_row)
+
+            with self.assertRaisesRegex(
+                    RuntimeError, "observation count does not match manifest",
+            ):
+                run_layerwise_search_baseline(
+                    layerwise_env=_LayerwiseEnv(),
+                    output_dir=tmpdir,
+                    **kwargs,
+                )
+
+    def test_completed_resume_rejects_mismatched_termination_metadata(self):
+        kwargs = {
+            "backend": "greedy",
+            "robust_reference": _Reference(),
+            "evaluation_budget": 2,
+            "seed": 17,
+            "initial_design_size": 2,
+            "candidate_pool_size": 8,
+            "population_size": 4,
+            "patience_generations": 5,
+            "mutation_max_coordinates": 1,
+            "rf_n_estimators": 8,
+            "rf_min_samples_leaf": 1,
+            "communication_importance_ratio": 1.0,
+            "manifest": {"profile": "mrpc"},
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            first = run_layerwise_search_baseline(
+                layerwise_env=_LayerwiseEnv(),
+                output_dir=tmpdir,
+                **kwargs,
+            )
+            summary_path = first["artifact_paths"]["summary"]
+            with open(summary_path, encoding="utf-8") as handle:
+                summary = json.load(handle)
+            summary["termination_reason"] = "tampered"
+            with open(summary_path, "w", encoding="utf-8") as handle:
+                json.dump(summary, handle)
+
+            with self.assertRaisesRegex(
+                    RuntimeError, "termination reason does not match manifest",
+            ):
+                run_layerwise_search_baseline(
+                    layerwise_env=_LayerwiseEnv(),
+                    output_dir=tmpdir,
+                    **kwargs,
+                )
 
     def test_strict_phase_resume_does_not_repeat_online_search(self):
         def completed_strict(result):
@@ -545,6 +628,102 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             self.assertTrue(resumed["scientific_export_allowed"])
             self.assertEqual(
                 resumed["manifest"]["strict_trial_count"], 45,
+            )
+            self.assertEqual(resumed["manifest"]["strict_attempt_count"], 2)
+            self.assertGreaterEqual(
+                resumed["manifest"]["strict_attempt_wall_seconds_total"],
+                resumed["manifest"]["last_strict_attempt_wall_seconds"],
+            )
+
+    def test_formal_ga_cannot_complete_after_observation_guard(self):
+        evaluation = _search_evaluation(((0, 0), (0, 0)))
+        incomplete = SearchResult(
+            algorithm="coinn_ga",
+            best=evaluation,
+            observations=(evaluation,),
+            history=(),
+            termination_reason="observation_attempt_guard",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+                "blb_stage2_rl.search_baseline_runner.run_search",
+                return_value=incomplete,
+        ), patch(
+                "blb_stage2_rl.search_baseline_runner.persist_search_result",
+                return_value={
+                    "manifest": os.path.join(tmpdir, "manifest.json"),
+                    "observations": os.path.join(tmpdir, "observations.jsonl"),
+                    "history": os.path.join(tmpdir, "history.json"),
+                    "summary": os.path.join(tmpdir, "summary.json"),
+                },
+        ):
+            with self.assertRaisesRegex(
+                    RuntimeError, "did not complete exactly 800 generations",
+            ):
+                run_layerwise_search_baseline(
+                    backend="coinn_ga",
+                    layerwise_env=_LayerwiseEnv(),
+                    robust_reference=_Reference(),
+                    output_dir=tmpdir,
+                    evaluation_budget=45_664,
+                    seed=17,
+                    initial_design_size=64,
+                    candidate_pool_size=2_048,
+                    population_size=64,
+                    patience_generations=100,
+                    mutation_max_coordinates=4,
+                    rf_n_estimators=128,
+                    rf_min_samples_leaf=2,
+                    communication_importance_ratio=1.0,
+                    manifest={"profile": "mrpc"},
+                    strict_validator=lambda _result: {},
+                )
+
+    def test_greedy_resume_accumulates_pre_interruption_online_time(self):
+        kwargs = {
+            "backend": "greedy",
+            "robust_reference": _Reference(),
+            "evaluation_budget": 2,
+            "seed": 17,
+            "initial_design_size": 2,
+            "candidate_pool_size": 8,
+            "population_size": 4,
+            "patience_generations": 5,
+            "mutation_max_coordinates": 1,
+            "rf_n_estimators": 8,
+            "rf_min_samples_leaf": 1,
+            "communication_importance_ratio": 1.0,
+            "manifest": {"profile": "mrpc"},
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            def interrupted_search(_backend, space, evaluator, _config, **_kwargs):
+                evaluator(space.safe_action)
+                raise RuntimeError("online interrupted")
+
+            with patch(
+                    "blb_stage2_rl.search_baseline_runner.run_search",
+                    side_effect=interrupted_search,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "online interrupted"):
+                    run_layerwise_search_baseline(
+                        layerwise_env=_LayerwiseEnv(),
+                        output_dir=tmpdir,
+                        **kwargs,
+                    )
+            preload = load_search_preload(os.path.join(
+                tmpdir, "observations.jsonl",
+            ))
+            interrupted_wall = float(
+                preload[-1].metadata["search_cumulative_wall_seconds"]
+            )
+
+            resumed = run_layerwise_search_baseline(
+                layerwise_env=_LayerwiseEnv(),
+                output_dir=tmpdir,
+                **kwargs,
+            )
+            self.assertGreaterEqual(
+                resumed["manifest"]["online_search_wall_seconds"],
+                interrupted_wall,
             )
 
     def test_partial_bo_and_ga_resume_fail_closed_without_exact_state(self):
@@ -779,7 +958,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 candidate_store=store,
                 identity_context={"profile": "mrpc"},
                 validation_banks=banks,
-                top_n=5,
+                top_n=1,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
@@ -1048,6 +1227,58 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             strict["selected"]["metadata"]["strict_trial_count"], 30,
         )
 
+    def test_strict_validation_requires_full_eligible_top_n(self):
+        valid = _search_evaluation(((0, 0), (0, 0)))
+        invalid = _search_evaluation(
+            ((1, 2), (1, 2)), valid=False, materializable=False,
+        )
+        with self.assertRaisesRegex(RuntimeError, "eligible=1 requested=2"):
+            canonical_strict_validation(
+                result=_search_result(valid, invalid),
+                layerwise_env=object(),
+                promotion_base_env=object(),
+                candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
+                identity_context={"profile": "mrpc"},
+                validation_banks=_validation_banks(),
+                top_n=2,
+                communication_importance_ratio=1.0,
+                promotion_probability=0.8,
+                final_probability=0.95,
+            )
+
+    def test_strict_infrastructure_failure_is_not_least_violating(self):
+        promotion = _promotion_result(
+            status="failed_evaluation",
+            trial_count=15,
+            metrics={
+                "loss_mean": 1.0,
+                "metric1_mean": 0.90,
+                "metric2_mean": 0.85,
+                "loss_std": 0.01,
+                "metric1_std": 0.01,
+                "metric2_std": 0.01,
+            },
+        )
+        with patch(
+                "blb_stage2_rl.layerwise_runner."
+                "promote_candidate_if_eligible",
+                return_value=promotion,
+        ), self.assertRaisesRegex(RuntimeError, "infrastructure evaluation failed"):
+            canonical_strict_validation(
+                result=_search_result(
+                    _search_evaluation(((0, 0), (0, 0))),
+                ),
+                layerwise_env=object(),
+                promotion_base_env=object(),
+                candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
+                identity_context={"profile": "mrpc"},
+                validation_banks=_validation_banks(),
+                top_n=1,
+                communication_importance_ratio=1.0,
+                promotion_probability=0.8,
+                final_probability=0.95,
+            )
+
     def test_invalid_and_nonmaterializable_candidates_cannot_be_selected(self):
         invalid = _search_evaluation(
             ((1, 2), (1, 2)), valid=False, materializable=False,
@@ -1079,7 +1310,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
                 identity_context={"profile": "mrpc"},
                 validation_banks=_validation_banks(),
-                top_n=2,
+                top_n=1,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
@@ -1090,11 +1321,9 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             strict["selected"]["action_matrix"],
             [list(row) for row in materializable.action_matrix],
         )
-        skipped = next(
-            record for record in strict["records"]
-            if not record["materializable"]
-        )
-        self.assertFalse(skipped["selection_eligible"])
+        self.assertEqual(strict["requested_top_n"], 1)
+        self.assertEqual(strict["eligible_online_candidate_count"], 1)
+        self.assertEqual(len(strict["records"]), 1)
 
     def test_point_gated_strict_selection_round_trips_without_probabilities(self):
         def strict_validator(result):

@@ -16,8 +16,11 @@ from blb_stage2_rl.search_baselines import (
     SearchConfig,
     SearchEvaluation,
     SearchMetrics,
+    _bo_acquisition_key,
     _diverse_second_parent,
     _hamming_distance,
+    _replacement_mutation,
+    _select_hamming_diverse_elites,
     _structured_initial_design,
     candidate_rank_key,
     normalize_search_backend,
@@ -105,6 +108,27 @@ class _TinyForest(_MeanTree):
             _MeanTree().fit(array, targets),
         ]
         return self
+
+
+class _ScriptedConstraintForest:
+    def fit(self, _features, _targets):
+        self.estimators_ = [self]
+        return self
+
+    def predict(self, features):
+        rows = np.asarray(features).reshape(-1, 2, 6)
+        genes = np.argmax(rows, axis=2)
+        result = []
+        for action in genes:
+            margins = np.full(6, 0.1, dtype=float)
+            if tuple(action) == (0, 1):
+                margins[0] = -2.0
+            elif tuple(action) == (0, 2):
+                margins[:2] = -0.01
+            else:
+                margins[:] = -1.0
+            result.append(margins)
+        return np.asarray(result)
 
 
 class AtomicLayerGeneTests(unittest.TestCase):
@@ -289,6 +313,20 @@ class ConstraintAndRankingTests(unittest.TestCase):
 
 
 class GreedySearchTests(unittest.TestCase):
+    def test_legacy_checkpoint_callback_still_receives_observation_tuple(self):
+        space = LayerwiseSearchSpace(1)
+        snapshots = []
+        run_search(
+            "greedy",
+            space,
+            lambda action: _evaluation(action),
+            SearchConfig(evaluation_budget=space.cardinality),
+            checkpoint_callback=snapshots.append,
+        )
+
+        self.assertEqual([len(row) for row in snapshots], list(range(1, 7)))
+        self.assertTrue(all(isinstance(row, tuple) for row in snapshots))
+
     def test_greedy_uses_six_anchors_accepts_two_opt_then_returns_to_one_opt(self):
         space = LayerwiseSearchSpace(3)
         target_genes = (0, 1, 2)
@@ -384,6 +422,77 @@ class BayesianSearchTests(unittest.TestCase):
         self.assertEqual(result.evaluation_count, 8)
         self.assertLess(result.evaluation_count, 20)
 
+    def test_bo_acquisition_preserves_constraint_lexicographic_order(self):
+        fewer_failed = _bo_acquisition_key(
+            has_feasible_incumbent=False,
+            probability_of_feasibility=0.0,
+            expected_improvement=0.0,
+            expected_failed_constraints=1.0,
+            expected_total_violation=2.0,
+            expected_worst_violation=2.0,
+            exploration_tiebreak=0.0,
+            objective_tiebreak=0.0,
+            deterministic_tiebreak=(0,),
+        )
+        more_failed = _bo_acquisition_key(
+            has_feasible_incumbent=False,
+            probability_of_feasibility=1.0,
+            expected_improvement=0.0,
+            expected_failed_constraints=2.0,
+            expected_total_violation=0.02,
+            expected_worst_violation=0.01,
+            exploration_tiebreak=100.0,
+            objective_tiebreak=100.0,
+            deterministic_tiebreak=(0,),
+        )
+        self.assertGreater(fewer_failed, more_failed)
+
+        pof_zero = _bo_acquisition_key(
+            has_feasible_incumbent=True,
+            probability_of_feasibility=0.0,
+            expected_improvement=100.0,
+            expected_failed_constraints=0.0,
+            expected_total_violation=0.0,
+            expected_worst_violation=0.0,
+            exploration_tiebreak=0.0,
+            objective_tiebreak=100.0,
+            deterministic_tiebreak=(0,),
+        )
+        positive_pof = _bo_acquisition_key(
+            has_feasible_incumbent=True,
+            probability_of_feasibility=0.5,
+            expected_improvement=1.0,
+            expected_failed_constraints=0.0,
+            expected_total_violation=0.0,
+            expected_worst_violation=0.0,
+            exploration_tiebreak=0.0,
+            objective_tiebreak=0.0,
+            deterministic_tiebreak=(0,),
+        )
+        self.assertGreater(positive_pof, pof_zero)
+
+    def test_bo_uses_lexicographic_prediction_in_full_search_loop(self):
+        space = LayerwiseSearchSpace(2)
+        result = run_search(
+            "bo_rf",
+            space,
+            lambda action: _probability_evaluation(
+                action, (-0.1,) * 6,
+            ),
+            SearchConfig(
+                evaluation_budget=7,
+                seed=17,
+                initial_design_size=6,
+                candidate_pool_size=36,
+                patience_generations=10,
+            ),
+            surrogate_factory=lambda _seed: _ScriptedConstraintForest(),
+        )
+
+        self.assertEqual(
+            space.genes(result.observations[-1].action_matrix), (0, 1),
+        )
+
     def test_structured_p64_design_is_six_anchors_thirty_balanced_then_maximin(self):
         space = LayerwiseSearchSpace(7)
         design = _structured_initial_design(
@@ -412,6 +521,34 @@ class BayesianSearchTests(unittest.TestCase):
 
 
 class GeneticSearchTests(unittest.TestCase):
+    def test_replacement_mutation_honors_configured_layer_cap(self):
+        space = LayerwiseSearchSpace(12)
+        base = space.from_genes((0,) * 12)
+        for seed in range(100):
+            mutated = _replacement_mutation(
+                space,
+                base,
+                np.random.default_rng(seed),
+                force=True,
+                max_layers=4,
+            )
+            changed = _hamming_distance(space, base, mutated)
+            self.assertGreaterEqual(changed, 1)
+            self.assertLessEqual(changed, 4)
+
+    def test_elites_keep_incumbent_and_prefer_hamming_distance_two(self):
+        space = LayerwiseSearchSpace(3)
+        incumbent = _evaluation(space.from_genes((5, 5, 5)))
+        close = _evaluation(space.from_genes((5, 5, 4)))
+        diverse = _evaluation(space.from_genes((4, 4, 5)))
+
+        elites = _select_hamming_diverse_elites(
+            space, [close, diverse, incumbent], 2,
+        )
+
+        self.assertEqual(elites[0].action_matrix, incumbent.action_matrix)
+        self.assertEqual(elites[1].action_matrix, diverse.action_matrix)
+
     def test_ga_retains_seven_elites_and_has_exact_update_accounting(self):
         space = LayerwiseSearchSpace(3)
         calls = []
@@ -441,9 +578,9 @@ class GeneticSearchTests(unittest.TestCase):
             if row["phase"] == "ga_update_generation"
         ]
         self.assertEqual(len(updates), 2)
-        initial_elites = sorted(
-            result.observations[:64], key=candidate_rank_key, reverse=True,
-        )[:7]
+        initial_elites = _select_hamming_diverse_elites(
+            space, result.observations[:64], 7,
+        )
         expected_first = [
             [list(layer) for layer in item.action_matrix]
             for item in initial_elites
@@ -453,9 +590,9 @@ class GeneticSearchTests(unittest.TestCase):
             *initial_elites,
             *result.observations[64:64 + 57],
         ]
-        second_elites = sorted(
-            first_updated_population, key=candidate_rank_key, reverse=True,
-        )[:7]
+        second_elites = _select_hamming_diverse_elites(
+            space, first_updated_population, 7,
+        )
         expected_second = [
             [list(layer) for layer in item.action_matrix]
             for item in second_elites

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import heapq
 import json
 import os
 import time
@@ -369,7 +370,7 @@ def persist_search_result(
         output_dir: str,
         result: SearchResult,
         manifest: Mapping[str, Any],
-        observation_rows: Sequence[Mapping[str, Any]],
+        observation_rows: Optional[Sequence[Mapping[str, Any]]] = None,
         ) -> dict[str, str]:
     """Write the complete compact evidence needed to replay search figures."""
     os.makedirs(output_dir, exist_ok=True)
@@ -380,16 +381,22 @@ def persist_search_result(
         "summary": os.path.join(output_dir, "summary.json"),
     }
     _atomic_json(paths["manifest"], dict(manifest))
-    observations_tmp = paths["observations"] + ".tmp"
-    with open(observations_tmp, "w", encoding="utf-8") as handle:
-        for row in observation_rows:
-            handle.write(json.dumps(
-                to_jsonable(row, stringify_unknown=True),
-                ensure_ascii=False,
-                sort_keys=True,
-            ))
-            handle.write("\n")
-    os.replace(observations_tmp, paths["observations"])
+    if observation_rows is not None:
+        observations_tmp = paths["observations"] + ".tmp"
+        with open(observations_tmp, "w", encoding="utf-8") as handle:
+            for row in observation_rows:
+                handle.write(json.dumps(
+                    to_jsonable(row, stringify_unknown=True),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ))
+                handle.write("\n")
+        os.replace(observations_tmp, paths["observations"])
+    elif not os.path.isfile(paths["observations"]):
+        raise RuntimeError(
+            "Stage-2 observation journal is missing at result persistence"
+        )
+    recover_jsonl_file(paths["observations"])
     _atomic_json(paths["history"], list(result.history))
     _atomic_json(paths["summary"], result.as_dict())
     return paths
@@ -432,6 +439,16 @@ def load_search_preload(path: str) -> tuple[SearchEvaluation, ...]:
     return tuple(ordered)
 
 
+def _without_search_runtime_marker(
+        evaluation: SearchEvaluation,
+        ) -> dict[str, Any]:
+    payload = evaluation.as_dict()
+    metadata = dict(payload.get("metadata") or {})
+    metadata.pop("search_cumulative_wall_seconds", None)
+    payload["metadata"] = metadata
+    return payload
+
+
 def _load_persisted_search_result(output_dir: str) -> SearchResult:
     observations = load_search_preload(os.path.join(
         output_dir, "observations.jsonl",
@@ -460,6 +477,16 @@ def _completed_search_run(
         if os.path.exists(strict_path)
         else None
     )
+    strict_required = bool(
+        manifest.get(
+            "strict_validation_enabled",
+            manifest.get("strict_validation_requested", False),
+        )
+    )
+    if strict_required and strict_validation is None:
+        raise RuntimeError(
+            "Stage-2 completed strict-validation artifact is missing"
+        )
     selected_payload = read_json_file(selected_path)
     selected = (
         None
@@ -469,6 +496,82 @@ def _completed_search_run(
             communication_importance_ratio,
         )
     )
+    if selected is None and str(manifest.get("status")) in {
+            "complete", "complete_no_strict_feasible", "smoke_only_complete",
+    }:
+        raise RuntimeError(
+            "Stage-2 completed final-selected artifact is missing"
+        )
+    if result.algorithm != normalize_search_backend(
+            manifest.get("search_backend")
+    ):
+        raise RuntimeError(
+            "Stage-2 completed algorithm does not match manifest"
+        )
+    if str(result.termination_reason) != str(
+            manifest.get("termination_reason")
+    ):
+        raise RuntimeError(
+            "Stage-2 completed termination reason does not match manifest"
+        )
+    if result.observation_count != int(manifest.get("observation_count", -1)):
+        raise RuntimeError(
+            "Stage-2 completed observation count does not match manifest"
+        )
+    if result.evaluation_count != int(manifest.get("evaluation_count", -1)):
+        raise RuntimeError(
+            "Stage-2 completed inference count does not match manifest"
+        )
+    matching_best = [
+        item for item in result.observations
+        if item.action_matrix == result.best.action_matrix
+    ]
+    if (
+            len(matching_best) != 1
+            or _without_search_runtime_marker(matching_best[0])
+            != _without_search_runtime_marker(result.best)
+    ):
+        raise RuntimeError(
+            "Stage-2 completed best evaluation is absent or stale in JSONL"
+        )
+    online_best_payload = read_json_file(os.path.join(
+        output_dir, "online_best.json",
+    ))
+    if online_best_payload != result.best.as_dict():
+        raise RuntimeError(
+            "Stage-2 completed online best does not match persisted result"
+        )
+    if strict_validation is not None:
+        strict_selected = strict_validation.get("selected")
+        strict_selected_evaluation = (
+            None
+            if strict_selected is None
+            else _evaluation_from_payload(
+                strict_selected, communication_importance_ratio,
+            )
+        )
+        if (
+                (strict_selected_evaluation is None) != (selected is None)
+                or (
+                    strict_selected_evaluation is not None
+                    and strict_selected_evaluation.as_dict()
+                    != selected.as_dict()
+                )
+        ):
+            raise RuntimeError(
+                "Stage-2 strict selected evaluation does not match final selection"
+            )
+        strict_records = list(strict_validation.get("records") or [])
+        strict_count = sum(
+            bool(row.get("strict_evaluated", False))
+            for row in strict_records
+        )
+        if strict_count != int(
+                manifest.get("strict_evaluated_candidate_count", -1)
+        ):
+            raise RuntimeError(
+                "Stage-2 strict record count does not match manifest"
+            )
     paths = {
         "manifest": os.path.join(output_dir, "manifest.json"),
         "observations": observations_path,
@@ -540,11 +643,8 @@ def _strict_metrics(value: Any) -> Optional[SearchMetrics]:
     if value is None:
         return None
     try:
-        return SearchMetrics(**{
-            name: float(_field(value, name))
-            for name in CONSTRAINT_NAMES
-        })
-    except (TypeError, ValueError):
+        return _metrics_from_runtime(value)
+    except (RuntimeError, TypeError, ValueError):
         return None
 
 
@@ -735,6 +835,12 @@ def _strict_violations(
             if not payload["available"]
         ],
     }
+    aggregate["available_family_count"] = len(
+        aggregate["available_families"]
+    )
+    aggregate["unavailable_family_count"] = len(
+        aggregate["unavailable_families"]
+    )
     return {"families": families, "aggregate": aggregate}
 
 
@@ -751,6 +857,7 @@ def _strict_fallback_rank(evaluation: SearchEvaluation) -> tuple[float, ...]:
         ).flatten(evaluation.action_matrix)
     )
     return (
+        -float(aggregate.get("unavailable_family_count", 3)),
         -float(aggregate.get("failed_constraint_count", 0)),
         -float(aggregate.get("total_normalized_violation", 0.0)),
         -float(aggregate.get("worst_normalized_violation", 0.0)),
@@ -786,37 +893,12 @@ def _evaluation_from_payload(
         payload: Mapping[str, Any],
         communication_importance_ratio: float,
         ) -> SearchEvaluation:
-    probability_payload = dict(payload.get("constraint_probabilities") or {})
-    return SearchEvaluation(
-        action_matrix=tuple(
-            tuple(int(value) for value in row)
-            for row in payload["action_matrix"]
+    return SearchEvaluation.from_dict({
+        **dict(payload),
+        "communication_importance_ratio": float(
+            communication_importance_ratio
         ),
-        metrics=SearchMetrics(**payload["metrics"]),
-        limits=ConstraintLimits(
-            loss_max=float(payload["limits"]["loss_max"]),
-            metric1_min=float(payload["limits"]["metric1_min"]),
-            metric2_min=float(payload["limits"]["metric2_min"]),
-            loss_std_max=float(payload["limits"]["loss_std_max"]),
-            metric1_std_max=float(payload["limits"]["metric1_std_max"]),
-            metric2_std_max=float(payload["limits"]["metric2_std_max"]),
-        ),
-        valid=bool(payload["valid"]),
-        reward=payload.get("reward"),
-        communication_importance_ratio=float(communication_importance_ratio),
-        constraint_probabilities=(
-            tuple(
-                float(probability_payload[name])
-                for name in CONSTRAINT_PROBABILITY_NAMES
-            )
-            if probability_payload else ()
-        ),
-        gate_probability=(
-            payload.get("gate_probability")
-            if probability_payload else None
-        ),
-        metadata=payload.get("metadata") or {},
-    )
+    })
 
 
 def canonical_strict_validation(
@@ -841,19 +923,26 @@ def canonical_strict_validation(
     )
 
     final_reference = validation_banks.final_reference
-    ranked: list[SearchEvaluation] = []
-    seen_actions: set[ActionMatrix] = set()
-    for candidate in sorted(
-            result.observations,
-            key=candidate_rank_key,
-            reverse=True,
-    ):
-        if candidate.action_matrix in seen_actions:
-            continue
-        seen_actions.add(candidate.action_matrix)
-        ranked.append(candidate)
-        if len(ranked) >= max(1, int(top_n)):
-            break
+    requested_top_n = max(1, int(top_n))
+    eligible = [
+        candidate
+        for candidate in result.observations
+        if (
+            candidate.valid
+            and candidate.inference_performed
+            and bool(candidate.metadata.get("materializable", False))
+            and bool(candidate.metadata.get("pending_full_vector"))
+        )
+    ]
+    if len(eligible) < requested_top_n:
+        raise RuntimeError(
+            "strict validation requires top-N optimizer-valid, materializable, "
+            "model-forward candidates: "
+            f"eligible={len(eligible)} requested={requested_top_n}"
+        )
+    ranked = heapq.nlargest(
+        requested_top_n, eligible, key=candidate_rank_key,
+    )
     records: list[dict[str, Any]] = []
     strict_evaluations: list[tuple[SearchEvaluation, bool]] = []
     for online in ranked:
@@ -910,6 +999,11 @@ def canonical_strict_validation(
             validation_banks=validation_banks,
         )
         promotion_record = _promotion_payload(promotion)
+        if promotion_record["status"] == "failed_evaluation":
+            raise RuntimeError(
+                "strict promotion infrastructure evaluation failed; "
+                "preserving search_complete_pending_strict for retry"
+            )
         record = {
             "online_candidate": online.as_dict(),
             "materializable": True,
@@ -943,6 +1037,11 @@ def canonical_strict_validation(
                 validation_banks=validation_banks,
             )
             certification_record = _promotion_payload(certification)
+            if certification_record["status"] == "failed_evaluation":
+                raise RuntimeError(
+                    "strict certification infrastructure evaluation failed; "
+                    "preserving search_complete_pending_strict for retry"
+                )
             record["certification"] = certification_record
 
         strict_metrics = _strict_metrics(
@@ -1040,6 +1139,11 @@ def canonical_strict_validation(
             "strict_evaluation": strict_evaluation.as_dict(),
         })
         strict_evaluations.append((strict_evaluation, formal_feasible))
+    if len(strict_evaluations) != requested_top_n:
+        raise RuntimeError(
+            "strict validation did not produce complete pooled metrics for every "
+            f"top-N candidate: {len(strict_evaluations)} != {requested_top_n}"
+        )
     strict_passes = [
         evaluation
         for evaluation, formal_feasible in strict_evaluations
@@ -1082,6 +1186,9 @@ def canonical_strict_validation(
         ),
         "bootstrap_probability_role": "diagnostic_tiebreak_only",
         "candidate_store": os.fspath(candidate_store.path),
+        "requested_top_n": int(requested_top_n),
+        "eligible_online_candidate_count": len(eligible),
+        "strict_evaluated_candidate_count": len(strict_evaluations),
         "online_best": result.best.as_dict(),
         "selection_status": selection_status,
         "formal_feasible": bool(formal_feasible),
@@ -1129,6 +1236,30 @@ def run_layerwise_search_baseline(
         int(population_size)
         + 800 * (int(population_size) - int(ga_elite_count))
     )
+    formal_run = strict_validator is not None
+    if formal_run and normalized_backend == "coinn_ga":
+        if (
+                int(population_size) != 64
+                or int(ga_elite_count) != 7
+                or int(mutation_max_coordinates) != 4
+                or budget != 45_664
+        ):
+            raise ValueError(
+                "formal Stage-2 COINN-GA requires P64/E7, 800 update "
+                "generations, four-layer mutation cap, and exactly 45,664 "
+                "inference-reaching evaluations"
+            )
+    if formal_run and normalized_backend == "bo_rf" and budget != 50_000:
+        raise ValueError(
+            "formal Stage-2 BO-RF requires the 50,000-evaluation safety cap"
+        )
+    if formal_run and normalized_backend == "greedy":
+        expected_greedy_cap = 6 ** int(layerwise_env.horizon)
+        if budget != expected_greedy_cap:
+            raise ValueError(
+                "formal Stage-2 Greedy requires the full action-space safety "
+                f"cap {expected_greedy_cap}"
+            )
     if normalized_backend == "coinn_ga" and budget < ga_expected_evaluations:
         raise ValueError(
             "Stage-2 COINN-GA requires enough inference budget for exactly "
@@ -1171,6 +1302,15 @@ def run_layerwise_search_baseline(
         if os.path.exists(manifest_path)
         else None
     )
+    if (
+            existing_manifest is None
+            and os.path.exists(observation_path)
+            and os.path.getsize(observation_path) > 0
+    ):
+        raise RuntimeError(
+            "Stage-2 observations exist without a manifest; use a fresh output "
+            "directory or restore the matching manifest"
+        )
     if existing_manifest is not None:
         if not resume:
             raise RuntimeError(
@@ -1206,6 +1346,24 @@ def run_layerwise_search_baseline(
                     "restart fresh"
                 )
 
+    recovered_online_wall_seconds = float(
+        0.0
+        if existing_manifest is None
+        else existing_manifest.get(
+            "online_search_wall_seconds",
+            existing_manifest.get("search_wall_seconds", 0.0),
+        )
+    )
+    if preload:
+        recovered_online_wall_seconds = max(
+            recovered_online_wall_seconds,
+            max(
+                float(item.metadata.get(
+                    "search_cumulative_wall_seconds", 0.0,
+                ) or 0.0)
+                for item in preload
+            ),
+        )
     run_manifest = {
         **dict(manifest),
         "schema_version": "stage2_layerwise_search_baseline_v2",
@@ -1233,6 +1391,20 @@ def run_layerwise_search_baseline(
             "re-inferred"
         ),
         "preloaded_observation_count": len(preload),
+        "online_search_wall_seconds": recovered_online_wall_seconds,
+        "strict_attempt_count": int(
+            0
+            if existing_manifest is None
+            else existing_manifest.get("strict_attempt_count", 0)
+        ),
+        "strict_attempt_wall_seconds_total": float(
+            0.0
+            if existing_manifest is None
+            else existing_manifest.get(
+                "strict_attempt_wall_seconds_total",
+                existing_manifest.get("last_strict_attempt_wall_seconds", 0.0),
+            )
+        ),
         "started_at": (
             existing_manifest.get("started_at")
             if existing_manifest is not None
@@ -1263,13 +1435,14 @@ def run_layerwise_search_baseline(
         ),
     )
     if persisted_search_result is None:
-        observation_rows: list[Mapping[str, Any]] = [
-            item.as_dict() for item in preload
-        ]
-
         def on_evaluation(row: Mapping[str, Any]) -> None:
             owned = dict(row)
-            observation_rows.append(owned)
+            owned_metadata = dict(owned.get("metadata") or {})
+            owned_metadata["search_cumulative_wall_seconds"] = float(
+                recovered_online_wall_seconds
+                + time.perf_counter() - run_started_monotonic
+            )
+            owned["metadata"] = owned_metadata
             _write_observation_row(observation_path, owned)
 
         runtime_evaluator = LayerwiseRuntimeEvaluator(
@@ -1291,25 +1464,49 @@ def run_layerwise_search_baseline(
             output_dir=output_dir,
             result=result,
             manifest=run_manifest,
-            observation_rows=observation_rows,
+            observation_rows=None,
         )
-        if (
-                normalized_backend == "greedy"
-                and strict_validator is not None
-                and result.termination_reason != "verified_local_optima"
-        ):
+        formal_contract_error = None
+        if formal_run and normalized_backend == "greedy":
+            if result.termination_reason != "verified_local_optima":
+                formal_contract_error = (
+                    "formal Greedy search exhausted its guard before verifying "
+                    "complete 1-opt and 2-opt neighborhoods"
+                )
+        elif formal_run and normalized_backend == "coinn_ga":
+            completed_generations = sum(
+                row.get("phase") == "ga_update_generation"
+                for row in result.history
+            )
+            if (
+                    result.termination_reason != "generation_limit"
+                    or completed_generations != 800
+                    or result.evaluation_count != ga_expected_evaluations
+            ):
+                formal_contract_error = (
+                    "formal COINN-GA did not complete exactly 800 generations "
+                    f"and {ga_expected_evaluations} inference evaluations"
+                )
+        elif formal_run and normalized_backend == "bo_rf":
+            if result.termination_reason not in {
+                    "bo_no_improvement",
+                    "evaluation_budget",
+                    "candidate_space_exhausted",
+            }:
+                formal_contract_error = (
+                    "formal BO-RF stopped outside native convergence or its "
+                    "hard safety cap"
+                )
+        if formal_contract_error is not None:
             incomplete_manifest = {
                 **run_manifest,
-                "status": "incomplete_unverified_local_search",
+                "status": "incomplete_search_contract",
                 "evaluation_count": int(result.evaluation_count),
                 "observation_count": int(result.observation_count),
                 "termination_reason": str(result.termination_reason),
             }
             _atomic_json(manifest_path, incomplete_manifest)
-            raise RuntimeError(
-                "formal Greedy search exhausted its guard before verifying "
-                "complete 1-opt and 2-opt neighborhoods"
-            )
+            raise RuntimeError(formal_contract_error)
         run_manifest = {
             **run_manifest,
             "status": "search_complete_pending_strict",
@@ -1317,8 +1514,13 @@ def run_layerwise_search_baseline(
             "evaluation_count": int(result.evaluation_count),
             "observation_count": int(result.observation_count),
             "termination_reason": str(result.termination_reason),
+            "online_search_wall_seconds": float(
+                run_manifest.get("online_search_wall_seconds", 0.0)
+                + time.perf_counter() - run_started_monotonic
+            ),
             "search_wall_seconds": float(
-                time.perf_counter() - run_started_monotonic
+                run_manifest.get("online_search_wall_seconds", 0.0)
+                + time.perf_counter() - run_started_monotonic
             ),
         }
         _atomic_json(manifest_path, run_manifest)
@@ -1339,8 +1541,34 @@ def run_layerwise_search_baseline(
     selected: Optional[SearchEvaluation] = online_best
     selection_status = "online_best_smoke_only"
     strict_validation_passed = False
+    strict_validation_wall_seconds = 0.0
     if strict_validator is not None:
-        strict_validation = dict(strict_validator(result))
+        strict_started_monotonic = time.perf_counter()
+        try:
+            strict_validation = dict(strict_validator(result))
+        except Exception:
+            failed_attempt_seconds = float(
+                time.perf_counter() - strict_started_monotonic
+            )
+            failed_manifest = {
+                **run_manifest,
+                "status": "search_complete_pending_strict",
+                "strict_attempt_count": int(
+                    run_manifest.get("strict_attempt_count", 0)
+                ) + 1,
+                "last_strict_attempt_wall_seconds": failed_attempt_seconds,
+                "strict_attempt_wall_seconds_total": float(
+                    run_manifest.get(
+                        "strict_attempt_wall_seconds_total", 0.0,
+                    )
+                    + failed_attempt_seconds
+                ),
+            }
+            _atomic_json(manifest_path, failed_manifest)
+            raise
+        strict_validation_wall_seconds = float(
+            time.perf_counter() - strict_started_monotonic
+        )
         strict_path = os.path.join(output_dir, "strict_validation.json")
         _atomic_json(strict_path, strict_validation)
         paths["strict_validation"] = strict_path
@@ -1393,6 +1621,52 @@ def run_layerwise_search_baseline(
     strict_evaluated_records = [
         row for row in strict_records if bool(row.get("strict_evaluated", False))
     ]
+    online_trial_count = int(sum(
+        len(tuple(item.metadata.get("trial_seeds", ()) or ()))
+        for item in result.observations
+        if item.inference_performed
+    ))
+    strict_joint_trial_count = int(sum(
+        int(row.get("strict_trial_count", 0) or 0)
+        for row in strict_evaluated_records
+    ))
+    strict_compute_trial_count = int(sum(
+        int(
+            dict(
+                dict(row.get("violations") or {}).get("families") or {}
+            ).get("compute_only", {}).get("trial_count", 0)
+            or 0
+        )
+        for row in strict_evaluated_records
+    ))
+    strict_communication_trial_count = int(sum(
+        int(
+            dict(
+                dict(row.get("violations") or {}).get("families") or {}
+            ).get("communication_only", {}).get("trial_count", 0)
+            or 0
+        )
+        for row in strict_evaluated_records
+    ))
+    strict_fresh_trial_count = int(sum(
+        int(dict(row.get("promotion") or {}).get("fresh_trial_count", 0) or 0)
+        + int(dict(row.get("certification") or {}).get("fresh_trial_count", 0) or 0)
+        for row in strict_evaluated_records
+    ))
+    online_search_wall_seconds = float(
+        run_manifest.get(
+            "online_search_wall_seconds",
+            run_manifest.get("search_wall_seconds", 0.0),
+        )
+    )
+    strict_attempt_count = int(
+        run_manifest.get("strict_attempt_count", 0)
+        + (1 if strict_validator is not None else 0)
+    )
+    strict_attempt_wall_seconds_total = float(
+        run_manifest.get("strict_attempt_wall_seconds_total", 0.0)
+        + strict_validation_wall_seconds
+    )
     completed_manifest = {
         **run_manifest,
         "status": (
@@ -1410,25 +1684,61 @@ def run_layerwise_search_baseline(
         ),
         "completed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "evaluation_count": int(result.evaluation_count),
+        "inference_reaching_candidate_count": int(result.evaluation_count),
         "model_inference_count": int(result.evaluation_count),
+        "model_inference_count_semantics": (
+            "legacy_alias_of_inference_reaching_candidate_count"
+        ),
+        "online_candidate_trial_count": int(online_trial_count),
         "observation_count": int(result.observation_count),
         "non_inference_observation_count": int(
             result.observation_count - result.evaluation_count
         ),
-        "search_wall_seconds": float(
-            time.perf_counter() - run_started_monotonic
-            + (
-                float(existing_manifest.get("search_wall_seconds", 0.0))
-                if persisted_search_result is not None
-                and existing_manifest is not None
-                else 0.0
-            )
+        "online_search_wall_seconds": online_search_wall_seconds,
+        "search_wall_seconds": online_search_wall_seconds,
+        "strict_attempt_count": strict_attempt_count,
+        "last_strict_attempt_wall_seconds": float(
+            strict_validation_wall_seconds
+        ),
+        "strict_attempt_wall_seconds_total": (
+            strict_attempt_wall_seconds_total
+        ),
+        "strict_validation_wall_seconds": (
+            strict_attempt_wall_seconds_total
+        ),
+        "total_wall_seconds": float(
+            online_search_wall_seconds
+            + strict_attempt_wall_seconds_total
         ),
         "strict_evaluated_candidate_count": len(strict_evaluated_records),
-        "strict_trial_count": int(sum(
-            int(row.get("strict_trial_count", 0) or 0)
-            for row in strict_evaluated_records
-        )),
+        "strict_trial_count": strict_joint_trial_count,
+        "strict_joint_trial_count": strict_joint_trial_count,
+        "strict_compute_trial_count": strict_compute_trial_count,
+        "strict_communication_trial_count": (
+            strict_communication_trial_count
+        ),
+        "strict_total_evidence_trial_count": int(
+            strict_joint_trial_count
+            + strict_compute_trial_count
+            + strict_communication_trial_count
+        ),
+        "strict_fresh_trial_count": strict_fresh_trial_count,
+        "total_candidate_trial_count": int(
+            online_trial_count
+            + strict_joint_trial_count
+            + strict_compute_trial_count
+            + strict_communication_trial_count
+        ),
+        "model_forward_trial_count": int(
+            online_trial_count
+            + strict_joint_trial_count
+            + strict_compute_trial_count
+            + strict_communication_trial_count
+        ),
+        "model_forward_trial_count_semantics": (
+            "pooled_candidate_evidence_trials_across_online_joint_compute_"
+            "communication"
+        ),
         "termination_reason": str(result.termination_reason),
         "strict_validation_enabled": bool(strict_validator is not None),
         "strict_validation_passed": strict_validation_passed,

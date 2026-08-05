@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import copy
 from collections import deque
+import hashlib
 import json
 import logging
 import math
@@ -4125,6 +4126,44 @@ def _run_layerwise_training_branch(
                 f"Stage-2: expected fixed_source={expected_stage1_source!r}, "
                 f"got {str(fixed_source)!r}"
             )
+        stage1_provenance = dict(getattr(
+            evaluator, "stage1_comparator_selection_provenance", {},
+        ) or {})
+        stage1_identity = {
+            "backend": search_backend,
+            "action": list(stage1_provenance.get("action") or []),
+            "gelu_degrees": [
+                int(value) for value in np.asarray(fixed_gelu).reshape(-1)
+            ],
+            "softmax_degrees": [
+                int(value) for value in np.asarray(fixed_softmax).reshape(-1)
+            ],
+        }
+        stage1_result_path = os.fspath(
+            stage1_provenance.get("result_path") or ""
+        )
+        stage1_result_sha256 = None
+        if os.path.isfile(stage1_result_path):
+            with open(stage1_result_path, "rb") as handle:
+                stage1_result_sha256 = hashlib.sha256(
+                    handle.read()
+                ).hexdigest()
+        if (
+                stage1_provenance.get("backend") != search_backend
+                or stage1_provenance.get("gelu_degrees")
+                != stage1_identity["gelu_degrees"]
+                or stage1_provenance.get("softmax_degrees")
+                != stage1_identity["softmax_degrees"]
+                or stage1_provenance.get("selection_hash")
+                != sha256_json(stage1_identity)
+                or stage1_result_sha256 is None
+                or stage1_provenance.get("result_sha256")
+                != stage1_result_sha256
+        ):
+            raise RuntimeError(
+                "Stage-2 fixed configuration does not match the hashed "
+                "Stage-1 comparator selection handoff"
+            )
         from .search_baseline_runner import (
             canonical_strict_validation,
             run_layerwise_search_baseline,
@@ -4221,6 +4260,7 @@ def _run_layerwise_training_branch(
             "stage1_bound_into_stage2": bool(
                 str(fixed_source) == f"stage1_{search_backend}_result"
             ),
+            "stage1_selection_provenance": stage1_provenance,
             "online_fidelity": {
                 "split": "validation_full_stratified_probe",
                 "example_count": int(online_probe_example_count),
@@ -4455,6 +4495,30 @@ def _run_layerwise_training_branch(
                 search_run["scientific_export_allowed"]
             ),
             "search_backend": search_backend,
+            "stage1_consumed_provenance": stage1_provenance,
+            "search_accounting": {
+                key: search_run["manifest"].get(key)
+                for key in (
+                    "seed",
+                    "observation_count",
+                    "inference_reaching_candidate_count",
+                    "online_candidate_trial_count",
+                    "strict_evaluated_candidate_count",
+                    "strict_joint_trial_count",
+                    "strict_compute_trial_count",
+                    "strict_communication_trial_count",
+                    "strict_total_evidence_trial_count",
+                    "strict_fresh_trial_count",
+                    "total_candidate_trial_count",
+                    "model_forward_trial_count",
+                    "online_search_wall_seconds",
+                    "strict_attempt_count",
+                    "strict_attempt_wall_seconds_total",
+                    "strict_validation_wall_seconds",
+                    "total_wall_seconds",
+                    "termination_reason",
+                )
+            },
             "rl_variant": f"blb_v3_layerwise_search_{search_backend}",
             "blb_v3_best_action_vec": best_full_vector,
             "blb_v3_best_action_group": best_action_group,
