@@ -1,0 +1,30 @@
+{
+  "schema": "rfr_cloud_archive_repair_verification_v1",
+  "status": "PASS",
+  "model": "bert-large",
+  "dataset": "mrpc",
+  "checkpoint_episode": 24720,
+  "ppo_updates": 206,
+  "source_commit": "0764e71025ee887327d63364052935d770c489f9",
+  "supersedes_archive_branch": "codex/bert-large-mrpc-final-archive-20260731",
+  "supersedes_archive_commit": "a9559610df1cfddecaba40e969896468cc8e0de0",
+  "repair_reason": "The prior branch omitted two small log blobs that were listed by SHA256SUMS.",
+  "restored_files": [
+    {
+      "path": "small_files/run/logs/blb_stage2_rl.log",
+      "bytes": 25699,
+      "sha256": "5e5bd856a1ca53d0189dd1ebfdb537f822622a737f650f1191282bd3b283a23a"
+    },
+    {
+      "path": "small_files/run/stage2_noise/progress/diagnostics/blb_stage2_health.log",
+      "bytes": 5129,
+      "sha256": "9109e25b75368e938c45b8cc7a2ac8fa77a1d900ca08d5bc9e975288045917cc"
+    }
+  ],
+  "checks": {
+    "source_files_match_original_snapshot_manifest": true,
+    "checkpoint_and_stream_archive_unchanged": true,
+    "all_sha256sums_pass_after_repair": true,
+    "archive_file_set_now_complete": true
+  }
+}
