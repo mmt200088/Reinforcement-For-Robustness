@@ -1,0 +1,26 @@
+{
+  "aggregate_eligible": false,
+  "base_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "base_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "branch": "codex/task-stage2-contract-test-cleanup-20260805",
+  "branch_role": "task",
+  "changed_scopes": [
+    "agent_handoffs/tasks/",
+    "tests/test_blb_fusion_count_map.py",
+    "tests/test_blb_robust_baseline.py",
+    "tests/test_sequential_smoke.py",
+    "tests/test_stage2_ngpu_speed_targeted_first.py"
+  ],
+  "completed_at": null,
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [],
+  "source_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "source_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "started_at": "2026-08-05T23:37:07+08:00",
+  "status": "in_progress",
+  "supersedes": [],
+  "task_id": "stage2-contract-test-cleanup-20260805",
+  "verification": []
+}
