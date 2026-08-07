@@ -1,0 +1,17 @@
+{
+  "schema": "rfr_result_source_provenance_v1",
+  "run_id": "bert-base-rte-stage2-0p5pct-50k-20260806",
+  "checkpoint": "textattack/bert-base-uncased-RTE",
+  "dataset": "rte",
+  "precision_tolerance": 0.005,
+  "precision_tolerance_percent": 0.5,
+  "stability_multiplier": 2.0,
+  "stability_percent": 200,
+  "run_source_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "run_source_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "result_branch_base_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "result_branch_base_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "server_source_checkout": "/hy-tmp/rfr-base-rte-stage2-05pct-20260806",
+  "server_run_root": "/hy-tmp/rfr-base-rte-stage2-05pct-20260806/Parting Chapter/persistent/rl/bert-base/rte/s1t0.001_s2t0.005_s2st2.0",
+  "structured_run_id": "Parting_Chapter_persistent_rl_bert-base_rte_s1t0.001_s2t0.005_s2st2.0__20260805T163849044466Z__pid255107"
+}

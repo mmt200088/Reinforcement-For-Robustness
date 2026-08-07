@@ -1,0 +1,10 @@
+{
+  "schema": "rfr_snapshot_restore_verification_v1",
+  "status": "RESTORE_OK",
+  "run_id": "bert-base-rte-stage2-0p5pct-50k-20260806",
+  "restored_file_count": 49,
+  "restored_total_bytes": 1994444476,
+  "manifest_source_file_count": 49,
+  "source_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "source_tree": "500c52b104391995602eca9b191e7c1fe7c8de33"
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "rfr_stage2_run_migration_v1",
+  "run_id": "bert-base-rte-stage2-0p5pct-50k-20260806",
+  "structured_run_id": "Parting_Chapter_persistent_rl_bert-base_rte_s1t0.001_s2t0.005_s2st2.0__20260805T163849044466Z__pid255107",
+  "source_host": "single-gpu-server",
+  "destination_host": "five-gpu-server",
+  "source_gpu_count": 1,
+  "destination_gpu_count": 5,
+  "source_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "source_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "graceful_stop": {
+    "completed_episodes": 13560,
+    "ppo_updates": 113,
+    "checkpoint_boundary": true,
+    "status": "graceful_stop"
+  },
+  "sha256": {
+    "checkpoint": "1c852869092e76021886eed8908ae4793877a7e851dc2a2ed3b02796a2811e8d",
+    "status": "f008874ee662fea2f20bb19c9e71e4ff85acc6f85d032db87b5b0854efc8f454",
+    "structured_episodes": "b74b43f612a1e29cd65112fe95afa44ba25c1b4b833097fd20f32c12a8c3ff5a",
+    "structured_ppo_updates": "4af610c74d6170997e6a72c7189a16e49f9c78f56c9e83cf1de59fe4bd7e1b36"
+  },
+  "full_run_and_structured_file_hashes_match": true,
+  "model_and_dataset_cache_file_hashes_match": true,
+  "offline_model_and_dataset_load_verified": true,
+  "lifecycle": "active_training_on_five_gpu_server",
+  "migrated_at": "2026-08-06T17:56:55.453021+08:00",
+  "destination_pid": 90871,
+  "resume_verified_at": "2026-08-06T18:02:51.962962+08:00",
+  "resume_evidence": {
+    "checkpoint_log_episode": 13560,
+    "first_completed_post_migration_episode": 13680,
+    "first_completed_post_migration_ppo_update": 114,
+    "same_structured_run_id": true,
+    "no_second_structured_run_directory": true,
+    "five_reward_workers_created": true,
+    "all_five_gpus_observed_active_during_startup_or_training": true
+  },
+  "source_process_confirmed_stopped": true,
+  "source_checkpoint_preserved": true,
+  "latest_verification": {
+    "verified_at": "2026-08-06T18:05:28.458113+08:00",
+    "checkpoint_completed_episodes": 13800,
+    "checkpoint_ppo_updates": 115,
+    "episode_stream_rows": 13816,
+    "post_migration_observed_throughput_episodes_per_hour": 4046.9,
+    "destination_process_alive": true,
+    "error_summary_present": false
+  }
+}
