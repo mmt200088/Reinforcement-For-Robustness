@@ -1,0 +1,91 @@
+{
+  "action_matrix": [
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      1
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      1,
+      0
+    ]
+  ],
+  "candidate_gate_trials": 30,
+  "created_at": "2026-08-07T19:20:14+0800",
+  "execution_note": "Exact fixed candidate injected as greedy safe_action. Only the online three-trial feasibility prefilter is overridden for this fixed-candidate F4 test. Canonical A/B/C point gates, compute/communication counterfactual gates, action decode, installation, and inference are unchanged.",
+  "final_gate_trials": 45,
+  "fixed_stage1_gelu": [
+    1,
+    1,
+    1,
+    4,
+    1,
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "fixed_stage1_softmax": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "online_prefilter_bypassed_for_fixed_candidate_strict_gate_test": true,
+  "precision_tolerance": 0.001,
+  "schema_version": "rte_latest_best_0p1_strict_gate_launch_v1",
+  "selected_action_identity": "82137b4e7c6dacf6c8a791bcefb147c6ef6d6f580d349cf5702857c985eea356",
+  "source_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "source_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "stability_multiplier": 2.0
+}
