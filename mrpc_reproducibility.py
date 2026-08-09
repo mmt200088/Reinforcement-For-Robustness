@@ -363,7 +363,13 @@ def validate_mrpc_evaluation_setup(
     init_kwargs = getattr(tokenizer, "init_kwargs", None)
     if not isinstance(init_kwargs, Mapping):
         _fail("MRPC tokenizer revision metadata is unavailable")
-    if str(init_kwargs.get("_commit_hash") or "").strip() != MRPC_TOKENIZER_REVISION:
+    tokenizer_model_id = (
+        str(getattr(tokenizer, "name_or_path", "") or init_kwargs.get("name_or_path") or "").strip().lower()
+    )
+    if tokenizer_model_id != MRPC_MODEL_ID:
+        _fail(f"MRPC reproducibility requires tokenizer {MRPC_MODEL_ID}")
+    tokenizer_commit = str(init_kwargs.get("_commit_hash") or "").strip()
+    if tokenizer_commit and tokenizer_commit != MRPC_TOKENIZER_REVISION:
         _fail("MRPC tokenizer revision does not match the pinned revision")
     if _exact_integer(batch_size, field="MRPC comparator batch size") != MRPC_COMPARATOR_BATCH_SIZE:
         _fail(f"MRPC comparator batch size must be {MRPC_COMPARATOR_BATCH_SIZE}")

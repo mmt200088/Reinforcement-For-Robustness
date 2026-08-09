@@ -222,7 +222,11 @@ class MRPCReproducibilityRuntimeTest(unittest.TestCase):
             config=model_config,
         )
         tokenizer = types.SimpleNamespace(
-            init_kwargs={"_commit_hash": module.MRPC_TOKENIZER_REVISION},
+            name_or_path=module.MRPC_MODEL_ID,
+            init_kwargs={
+                "_commit_hash": module.MRPC_TOKENIZER_REVISION,
+                "name_or_path": module.MRPC_MODEL_ID,
+            },
         )
         collator_type = type(
             "DataCollatorWithPadding",
@@ -253,6 +257,7 @@ class MRPCReproducibilityRuntimeTest(unittest.TestCase):
         for name, mutation in (
             ("model", lambda: setattr(model.config, "_name_or_path", "other/model")),
             ("revision", lambda: setattr(model.config, "_commit_hash", "0" * 40)),
+            ("tokenizer_model", lambda: setattr(tokenizer, "name_or_path", "other/model")),
             ("tokenizer", lambda: tokenizer.init_kwargs.update({"_commit_hash": "0" * 40})),
             ("padding", lambda: setattr(collator, "padding", True)),
             ("max_length", lambda: setattr(collator, "max_length", 64)),
@@ -280,6 +285,20 @@ class MRPCReproducibilityRuntimeTest(unittest.TestCase):
                 stability_probe=[None] * module.MRPC_PROBE_EXAMPLE_COUNT,
                 batch_size=32,
             )
+
+    def test_legacy_transformers_tokenizer_commit_metadata_is_optional(self):
+        module = _module()
+        model, tokenizer, collator = self._runtime(module)
+        tokenizer.init_kwargs.pop("_commit_hash")
+
+        module.validate_mrpc_evaluation_setup(
+            model=model,
+            tokenizer=tokenizer,
+            collator=collator,
+            full_validation=[None] * module.MRPC_FULL_EXAMPLE_COUNT,
+            stability_probe=[None] * module.MRPC_PROBE_EXAMPLE_COUNT,
+            batch_size=module.MRPC_COMPARATOR_BATCH_SIZE,
+        )
 
     def test_context_carries_the_exact_frozen_probe_without_identity_hashes(self):
         module = _module()
