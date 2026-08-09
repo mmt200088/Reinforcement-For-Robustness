@@ -1,0 +1,756 @@
+{
+  "aggregate_branch": "codex/aggregate-three-search-correctness-20260810",
+  "aggregate_id": "20260810-three-search-correctness",
+  "base_commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+  "base_tree": "500c52b104391995602eca9b191e7c1fe7c8de33",
+  "canonical_branch": "jk_standard_rl",
+  "canonical_eligible": true,
+  "created_at": "2026-08-10T03:53:23+08:00",
+  "deployment_eligible": true,
+  "heads": [
+    {
+      "branch": "bert-large",
+      "commit": "ba155379fe1f71e37ab7918f833d349f2451f5b1",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "Legacy independent project root: only two remote-only bootstrap commits versus more than 1500 canonical commits, and it is not the canonical jk_standard_rl history",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/aggregate-20260804-git-protocol",
+      "commit": "1e25b7755b1834a835b4a506fc1905e8f1c8677b",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Prior reviewed aggregate is the canonical base and an ancestor of the new aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-20260804-primary-recovery",
+      "commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-mrpc-launch-20260804",
+      "commit": "5c222da6186b8a60244b46029bbc8dac79befb34",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/aggregate-three-search-baselines-20260805",
+      "commit": "c3598e98064558cef1f39cfa15c9468e65dbf9f9",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "prior aggregate is an ancestor of aggregate source",
+      "role": "aggregate"
+    },
+    {
+      "branch": "codex/all-agents-elastic-rl-integrated-20260727",
+      "commit": "1f32a793cda54b72e19319fa172eb51c458d7198",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/all-agents-integrated-20260724",
+      "commit": "accc27d65b6e99435913c3f1bed8629e755742e8",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/all-agents-k6-13-integrated-20260727",
+      "commit": "54dfeaa085fc2aa8da9523fb4707451fbde01634",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "Reviewed git cherry and tree diff: production action_space and Paean source match current canonical; remaining divergence is retired test coverage and historical gate evidence superseded by the current K6-K13 contract",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-base-sst2-stage2-archive-20260804",
+      "commit": "7a7b9de0c8901a0dac01970f495e61f746c9a475",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "Branch adds only the immutable BERT-base SST-2 Stage-2 50k training snapshot, restore tooling, and cloud verification under server_backups/; it is data/archive evidence, not comparator source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-large-mrpc-exact-probe-scheduling-20260725",
+      "commit": "264e4002860818e87c1933006df678af8464d1c2",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-large-mrpc-final-archive-20260731",
+      "commit": "a9559610df1cfddecaba40e969896468cc8e0de0",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-large-rte-final-archive-20260801",
+      "commit": "377cfb1266806d87e123602b5f805157f0ddcd7d",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "Branch contains the stopped BERT-large RTE checkpoint archive and cloud-restore evidence; all three commits are patch-equivalent to canonical and it is not source work",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/bert-large-rte-sst2-training-archives-20260803",
+      "commit": "82f7b2486c15d7bba3db735076c50ea41fc0a165",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/block-sf-audit",
+      "commit": "aff4d1ccc7ae1d2e8dabef97d9466a28e0e5948b",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Audit source commits are patch-equivalent to canonical; the branch-only commit contains MRPC installed-SF reports and server evidence",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/block3-runtime-wiring",
+      "commit": "ed2e89f2fa3f667eca1d06135c1f4748b9957076",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/candidate-index-on-stage2-small",
+      "commit": "c28e7304c96d98fe349ec3653c6bb54a01debd76",
+      "disposition": "patch_equivalent",
+      "handoff": null,
+      "reason": "git cherry marks all eight branch commits patch-equivalent to the aggregate source, including the candidate promotion index and small-network changes",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/candidate-promotion-index-d3fa013b",
+      "commit": "a8c026a78c81ad985f47c1f2e88b02aad241e215",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/elastic-rl-gpu-scheduling-20260726",
+      "commit": "eee7d21513ffee103359d97e37acc33a31346000",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/five-profile-fusion-audit",
+      "commit": "c49fed05f0bac59b2471143a8d3e41c65c2b93d1",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed history contains installed-SF audit runners and historical five/six-profile result bundles; shared audit implementation patches already exist in canonical and branch-only content is evidence",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/fixed-b2-b5-fusion",
+      "commit": "24e919cea64f22b1b869b9bf22d57bbb776bac5e",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/git-multi-agent-protocol-20260804",
+      "commit": "da9443f07a8d2329166977d55b042075011d4d7d",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "Legacy bootstrap branch is an ancestor and is explicitly superseded by completed handoff codex/task-git-protocol-20260804",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-paean-action-batch-20260710",
+      "commit": "381d4a81b9802289fb306e29d64720b5a1813390",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-paean-plot-defer-20260710",
+      "commit": "f19736112c12b62b29b2958158bb751ca806b4a2",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-rescale-compact-scan-20260710",
+      "commit": "85c81a25bb7feb8cd834998ce3be26ff354b534f",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-rescale-scalar-state-20260710",
+      "commit": "2907e63388c5d58b0e4e6f1e80b37f50aaa2d83c",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-stage2-plot-default-20260710",
+      "commit": "78cfec9672db58935f1e2e1c7b7cae5ed0c88be5",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/green-task5-map-aware-gate-20260710",
+      "commit": "ffa58a5de4fc5997acbd1ca89805da5d0419187b",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/l0-block1-k-rl-20260726",
+      "commit": "efc7e1055ce95f119e374187f8ad563c24e5c848",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-dirty-recovery-20260803",
+      "commit": "37e1af3fab38d886aff11843c383457ec2f03dfc",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Preserved dirty primary state and backup history; recovery branches are never mechanically merged into source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-dirty-recovery-20260804",
+      "commit": "0f0287a1fe8caf035cdd1258923233398068fbae",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Exact blob-preserving archive of the newly discovered shared-checkout CLAUDE.md state; retained for recovery and explicitly excluded from source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-primary-head-backup-20260731",
+      "commit": "c78aa8a80abd8718d0e123589e2c54ac13485ad2",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Historical local-primary backup tip; its intended source commits are already patch-equivalent in canonical and the backup-only commit remains recovery evidence",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/stage2-task4-bounded-history-red",
+      "commit": "761cddecace57246b3ecf587af6060cd8c1f8b33",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Named local worktree backup of a RED intermediate; retained only for recovery and never directly integrated",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/stage2-task5-compact-candidate-red",
+      "commit": "d7ed3a99ffd7be47fb9f17a2f27ea2b48647a5c2",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Named local worktree backup of a RED intermediate; retained only for recovery and never directly integrated",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/task-6a-probe-telemetry-red",
+      "commit": "4c992ad754756d122816050ddb3963fc57e74789",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Named local worktree backup of a RED telemetry intermediate; retained only for recovery",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/task-6b-red-telemetry",
+      "commit": "50773a8c60bf7daa8ec453053743d052c46aec15",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Named local worktree backup of a RED telemetry intermediate; retained only for recovery",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/task-6c-runtime-gate-impl",
+      "commit": "7fce21b095de4c0066ccd161c24cdfba16b835f3",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Named local worktree backup from the runtime-gate task; canonical contains the reviewed integration and this branch remains recovery-only",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/truncation-k-doc-width-subagent-d",
+      "commit": "2cde04365be0f916c800eea661608c2e4c122c2c",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Subagent worktree backup for historical truncation-K documentation; retained for recovery, not direct source integration",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/truncation-k-exact-coercion-subagent-b",
+      "commit": "bd26d251c3374cb760391a1d22cab029df5e5714",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Subagent worktree backup for historical truncation-K coercion work; retained for recovery, not direct source integration",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/local-worktree-backups-20260731/truncation-k6-collector-p1-20260727",
+      "commit": "a02ec502771a8859f768d84123bbbf1d2e5be662",
+      "disposition": "recovery_only",
+      "handoff": null,
+      "reason": "Historical collector worktree backup retained for recovery; current truncation-K source is on canonical",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-action-batch-20260710",
+      "commit": "897b273b79721033f1414e846b0a012d29a5461e",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-action-batch-rng-20260710",
+      "commit": "6ce18c4bb3122a8de496a13ae4cd99405d895ced",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-action-batch-workload-20260710",
+      "commit": "2312cec43f3f23d5b85484c605101e57557b12d1",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-fixed-workload-20260710",
+      "commit": "34cfb4c1431c00a4000a0861f751ab3a51ee0f72",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-noise-rng-20260710",
+      "commit": "3fe6004c95195ed08fbaf884f56b6ecc3a5dd8cb",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-paean-plot-defer-20260710",
+      "commit": "4b08e19d18a308dbf409926550db090e2d3b0c89",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-rescale-compact-scan-20260710",
+      "commit": "57f67d91ae16cb90eb39342b1091946f5b7b5837",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-rescale-scalar-state-20260710",
+      "commit": "0fc84b66cd737e4395ce9201a3e2442b6d3ecc03",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/red-stage2-plot-default-20260710",
+      "commit": "84f274ac8c315e3084b5ca9ba78ab4f91e20d13c",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/result-base-rte-b4zero-high-gate-20260806",
+      "commit": "09136b122e03b34b3b6522f222cdcbd8bff86284",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed one remote-only commit; all 12 changed paths are compact gate evidence under experiments/, so it is result-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-git-hygiene-tmp-20260804",
+      "commit": "06a51b14f92320ca7c28f0b28201b537be6f1625",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Server-produced verification evidence only; result-check proves the branch adds files exclusively under experiments/server_command_runs/ on source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-git-protocol-bootstrap-20260804",
+      "commit": "9eae15a2f2836ec6c21bbb5994c26ab901a9ead3",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Server-produced verification evidence only; result-check proves the branch adds files exclusively under experiments/server_command_runs/ on source 4fdda9de769a001399a1b649afa176651442ad5a",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-rte-latestbest-0p1-gates-20260807",
+      "commit": "217a7591b0d37235f6188491595a49b54b460ae6",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed one remote-only commit; all 10 changed paths are strict-gate evidence under experiments/, so it is result-only",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bert-base-mrpc-60k-20260805",
+      "commit": "8c2a526dbf793c95c388b5f8544a793e83c733dc",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed one remote-only commit; all 73 changed paths are approved training artifacts under rl_training_data_points/, not source",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bert-base-rte-0p5-50k-20260807",
+      "commit": "1fa50e0c05db4d6b8c7522ae4d55659a7e265684",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed one remote-only commit; all 59 changed paths are approved training artifacts under rl_training_data_points/, not source",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bert-base-rte-50k-20260805",
+      "commit": "25415e2e8ae1ce0bb14ffa0f3368f85b6d90715b",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed two remote-only commits; all 49 changed paths are approved training artifacts under rl_training_data_points/, not source",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-bert-large-mrpc-full-archive-repair-20260805",
+      "commit": "66c3dbf29ec80eaa1cdcefec699827406e83f55a",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed one remote-only commit; all four changed paths repair archived data under server_backups/, not source",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-six-model-backup-audit-20260805",
+      "commit": "2bb175defb4c042773650c26d7b853bdd81e0a59",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed one remote-only commit; all five changed paths are backup-audit evidence under experiments/, not source",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-stage2-six-model-final-full-report-20260805",
+      "commit": "c5b9f7a64dcf50cadb02fd1caf35bc160bb413e8",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Reviewed one remote-only commit; all six changed paths are final-report evidence under experiments/, not source",
+      "role": "result"
+    },
+    {
+      "branch": "codex/result-three-search-baselines-20260805",
+      "commit": "8ecf3513b22c46e99e81e0a28dbe1083a2ba1ee8",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "Blocked comparator aggregate evidence only: its source tip c3598e98064558cef1f39cfa15c9468e65dbf9f9 is already an ancestor of the corrected included source, and its remaining branch-only commit records failure evidence under experiments/",
+      "role": "result"
+    },
+    {
+      "branch": "codex/rl-end-to-end-runtime-optimization-20260724",
+      "commit": "39abb31bbed11614033a5042e9722987116aac2d",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/rte-gpu-canary-health",
+      "commit": "1b34e94936ec19f92a1715ccaf7020049cf926c1",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/server-artifact-evacuation-20260720",
+      "commit": "5fbd2332839576f9025c6a87ca211fa1a31bcfd5",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/server-data-cloud-archive-20260731",
+      "commit": "f0545112589ea97f63d1fc914a6be6db98f5d7bc",
+      "disposition": "archive_only",
+      "handoff": null,
+      "reason": "Branch consists of server data overlay chunks, manifests, restore tools, and cloud-restore evidence; it is an immutable data archive, not source deployment",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1-base-rte-report",
+      "commit": "024bc52dd39ea095d046bc4e9be6a3c1a80aff69",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1-large-mrpc-report",
+      "commit": "07fb87aaf53a3bf2ab27b9cf69fa1f6ba32c39ec",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1-unbounded-entropy",
+      "commit": "e5f77b7ca02479743f47f5b9e9b138d1e80b91f5",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1best-large-stage2-chain-eval-20260725",
+      "commit": "41b57eae9cd3299945c2bc0d9f924f1e3637a4cc",
+      "disposition": "result_only",
+      "handoff": null,
+      "reason": "The Stage-1-best evaluation implementation is patch-equivalent to canonical; only the historical completion marker remains branch-unique",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage1best-large-stage2-training-20260725",
+      "commit": "e1a1bba96502ef5a49bdae1749f0434908f97452",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-18-group-eval-20260727",
+      "commit": "ad810c1724da759d23ef4ed6f1077dc2b24d3b52",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-five-gpu-runtime-20260728",
+      "commit": "e48121b170e2dbcb8d466e0b1a57313928759e3a",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "Reviewed 32 remote-only commits target the retired five-probe 5/25-trial runtime contract; canonical now uses the later 3/15-trial health-aware scaling path, so merging this branch would restore stale execution semantics",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-glue-ep114240",
+      "commit": "13e923da134a960b5026281b6df3ed3fb4003fc6",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "Historical GLUE evidence is patch-equivalent and its earlier seed-replay fix is superseded by canonical calibrated action context, unified materialization, truncation backend, and fail-closed install handling",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-k-convergence",
+      "commit": "fa4ee9cbd27d6265238f8d1091b712e14ee86066",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-k-presets-network-budget-20260728",
+      "commit": "117f94590eb8bf22d40ff1f47abc518cebf53b74",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-large-throughput",
+      "commit": "0764e71025ee887327d63364052935d770c489f9",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-network-ablation-v10",
+      "commit": "bc9de82e22e5602155766f7117086f766ff7588a",
+      "disposition": "patch_equivalent",
+      "handoff": null,
+      "reason": "git cherry marks all five network ablation and small-GTrXL commits patch-equivalent to aggregate source",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-rl-runtime-opt-48b03e8",
+      "commit": "6268ee02fdbf070065ea04f72966cffc0461300f",
+      "disposition": "superseded",
+      "handoff": null,
+      "reason": "Older runtime-optimization line predates the reviewed stage2-runtime-efficiency integration and later health-aware 3/15-trial canonical path; its remaining unique commits are stale implementations and historical evidence",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-runtime-efficiency-integrated-3d89",
+      "commit": "2356a58fabf20ad1744be0f7d998acfcad9232a2",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-search-baselines-20260731",
+      "commit": "2cd9dbcaab5802bdb4c6959b567b775a600a6296",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-small-a2d-index-integrated",
+      "commit": "3d89b99dd609a67799811a4bf995000bafe1436c",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/stage2-terminal-probe-opt-97079",
+      "commit": "3d89b99dd609a67799811a4bf995000bafe1436c",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/task-git-hygiene-tmp-20260804",
+      "commit": "2f3e997584119d6eb5c35c115bdee91151da68b2",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Completed Git-hygiene task was integrated by the prior primary-recovery aggregate and is already an ancestor of this aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-git-protocol-20260804",
+      "commit": "56496375476c0a5d0177592f84df652f321567d0",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "The completed Git-protocol task is contained in the prior canonical aggregate and therefore in the new aggregate source",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-stage2-contract-test-cleanup-20260805",
+      "commit": "ee5645e7937a1c7c95a99f2b7681ecd75d92ab41",
+      "disposition": "in_progress",
+      "handoff": null,
+      "reason": "Remote handoff status is in_progress with aggregate_eligible=false and mandatory server suite not_run; intentionally excluded from this comparator-only cycle",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task-three-search-baselines-20260804",
+      "commit": "06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "disposition": "included",
+      "handoff": "agent_handoffs/tasks/three-search-baselines-20260804.json",
+      "reason": "Completed handoff 06cbbbd381eb0e63e437adf55727734932f54e2c is the aggregate source tip; source 52f24aa69b8aa649825595d2bd076f89a811410d passed full server tests plus fresh/resume smoke for bo_rf, greedy, and coinn_ga",
+      "role": "task"
+    },
+    {
+      "branch": "codex/task6-docs-k6-13",
+      "commit": "15aa8d85c7f1a99501cef232fcd83af2fa0468fe",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "codex/truncation-k6-13-20260727",
+      "commit": "88e6978defeea4725f49490201b6583245c1b37f",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "Git ancestry proves this full remote tip is contained in aggregate source 06cbbbd381eb0e63e437adf55727734932f54e2c",
+      "role": "legacy"
+    },
+    {
+      "branch": "jk_standard_rl",
+      "commit": "6c36532a47349ffc43d38616a030b37dd1b29153",
+      "disposition": "already_ancestor",
+      "handoff": null,
+      "reason": "canonical snapshot is an ancestor of aggregate source",
+      "role": "canonical"
+    },
+    {
+      "branch": "main",
+      "commit": "3a7400560ed66bfb42424f414bb3f360ff3e9f56",
+      "disposition": "rejected",
+      "handoff": null,
+      "reason": "Legacy noncanonical root with four remote-only bootstrap commits and more than 1500 missing canonical commits; jk_standard_rl is the sole canonical source branch",
+      "role": "legacy"
+    }
+  ],
+  "record_type": "aggregate_manifest",
+  "remote": "origin",
+  "schema_version": 1,
+  "server_evidence": [
+    "server:100.64.229.185:8722:/hy-tmp/comparator_acceptance_20260810/acceptance_summary.json",
+    "server:100.64.229.185:8722:/hy-tmp/comparator_acceptance_20260810/acceptance_summary.md",
+    "server:100.64.229.185:8722:/hy-tmp/comparator_acceptance_20260810/final_gate/make_test.log",
+    "server:100.64.229.185:8722:/hy-tmp/comparator_acceptance_20260810/final_gate/comparator_suite.log",
+    "server:100.64.229.185:8722:/hy-tmp/comparator_aggregate_20260810/"
+  ],
+  "snapshot_at": "2026-08-10T03:53:23+08:00",
+  "source_commit": "06cbbbd381eb0e63e437adf55727734932f54e2c",
+  "source_tree": "05e8dfb6e4739d43961384a59f7b57735d1b62ab",
+  "verification": [
+    {
+      "command": "python3 scripts/repo_sync_guard.py agent-finish --handoff agent_handoffs/tasks/three-search-baselines-20260804.json --remote origin",
+      "evidence": "local guard: tip 06cbbbd381eb0e63e437adf55727734932f54e2c, tree 05e8dfb6e4739d43961384a59f7b57735d1b62ab, remote_parity=true",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m py_compile <52 changed Python files>; bash -n llama_7B_LayerImportance.sh; git diff --check; python3 -m unittest -v tests.test_repo_sync_guard",
+      "evidence": "local aggregate worktree: 52 files compiled, Bash syntax and whitespace passed, 17/17 guard tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "verify /hy-tmp/comparator_acceptance_20260810/acceptance_summary.json and exact clean source checkout",
+      "evidence": "server: accepted=true at scientific source 52f24aa69b8aa649825595d2bd076f89a811410d tree 8a4337ecc8634e040107a318dcc3216ad99b1cb0; make test 1156 passed; comparator suite 448 passed; bo_rf, greedy, coinn_ga fresh/resume all accepted with unchanged resume scientific state",
+      "outcome": "passed"
+    },
+    {
+      "command": "git fetch --prune origin +refs/heads/*:refs/remotes/origin/* and aggregate head disposition audit",
+      "evidence": "88/88 remote heads have exact commit IDs and explicit terminal dispositions; 0 needs_review; later Greedy/BO-RF single-GPU and COINN-GA five-GPU performance work is absent from the included source boundary",
+      "outcome": "passed"
+    },
+    {
+      "command": "server Git-only exact aggregate checkout: BLB_STRICT=0 make test; 26-module comparator unittest suite; source/commit/tree/clean verification",
+      "evidence": "server:100.64.229.185:8722:/hy-tmp/comparator_aggregate_20260810/; aggregate tip differs from verified scientific source only by task handoff and aggregate manifest records",
+      "outcome": "passed"
+    }
+  ]
+}
