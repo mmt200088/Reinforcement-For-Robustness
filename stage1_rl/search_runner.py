@@ -954,6 +954,7 @@ def _validate_completed_search_contract(
         result: SearchResult,
         *,
         constraints: Stage1Constraints | None = None,
+        comparator_smoke: bool = False,
         ) -> None:
     if not result.observations:
         raise RuntimeError(
@@ -995,6 +996,17 @@ def _validate_completed_search_contract(
             "Stage-1 completion contract best evaluation is absent, stale, "
             "or not best under the configured rank"
         )
+    if comparator_smoke:
+        if (
+                int(result.config.evaluation_cap) != 1
+                or result.evaluation_count != 1
+                or result.termination_reason != "evaluation_cap"
+        ):
+            raise RuntimeError(
+                "Stage-1 comparator smoke must terminate at its single real "
+                "evaluation budget"
+            )
+        return
     if result.algorithm == "greedy":
         if result.termination_reason != "verified_local_optimum":
             raise RuntimeError(
@@ -1054,6 +1066,7 @@ def _load_finalizing_search_result(
         backend: str,
         config: SearchConfig,
         checkpoint: Mapping[str, Any],
+        comparator_smoke: bool = False,
         ) -> SearchResult:
     """Rebuild derived completion artifacts without running the evaluator."""
 
@@ -1116,6 +1129,7 @@ def _load_finalizing_search_result(
     _validate_completed_search_contract(
         result,
         constraints=_constraints_from_contract(checkpoint.get("contract")),
+        comparator_smoke=comparator_smoke,
     )
     return result
 
@@ -1219,6 +1233,7 @@ def load_completed_search_result(output_dir: str | Path) -> SearchResult:
     _validate_completed_search_contract(
         result,
         constraints=_constraints_from_contract(checkpoint.get("contract")),
+        comparator_smoke=manifest.get("comparator_smoke") is True,
     )
     return result
 
@@ -1298,6 +1313,7 @@ def persist_search_result(
     _validate_completed_search_contract(
         result,
         constraints=_constraints_from_contract(contract),
+        comparator_smoke=(manifest or {}).get("comparator_smoke") is True,
     )
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -1478,6 +1494,9 @@ class Stage1SearchRunner:
                     backend=normalized,
                     config=self.config,
                     checkpoint=preload_metadata,
+                    comparator_smoke=(
+                        self.manifest.get("comparator_smoke") is True
+                    ),
                 )
                 persist_search_result(
                     output_dir=self.output_dir,
@@ -1656,6 +1675,9 @@ class Stage1SearchRunner:
             _validate_completed_search_contract(
                 result,
                 constraints=self.adapter.constraints,
+                comparator_smoke=(
+                    self.manifest.get("comparator_smoke") is True
+                ),
             )
         except Exception as exc:
             publish(progress_payload(

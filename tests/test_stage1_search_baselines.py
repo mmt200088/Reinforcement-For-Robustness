@@ -1341,6 +1341,49 @@ class AdapterAndPersistenceTests(unittest.TestCase):
                 "ordinary-mrpc-comparator",
             )
 
+    def test_comparator_smoke_budget_limit_round_trips_without_new_forward(self):
+        class NoForwardEvaluator(_FakeRealEvaluator):
+            def stage1_evaluate(self, gelu, softmax, *, use_train, split):
+                raise AssertionError("completed smoke resume must not evaluate")
+
+        for backend in ("greedy", "coinn_ga"):
+            with self.subTest(backend=backend), tempfile.TemporaryDirectory() as tmpdir:
+                config = SearchConfig(
+                    evaluation_cap=1,
+                    greedy_max_starts=3,
+                )
+                first_evaluator = _FakeRealEvaluator()
+                first = Stage1SearchRunner(
+                    adapter=Stage1EvaluatorAdapter(
+                        evaluator=first_evaluator,
+                        num_layers=1,
+                        constraints=self._constraints(),
+                    ),
+                    config=config,
+                    output_dir=tmpdir,
+                    manifest={"comparator_smoke": True},
+                ).run(backend)
+
+                self.assertEqual(first.termination_reason, "evaluation_cap")
+                self.assertEqual(first.evaluation_count, 1)
+                self.assertEqual(len(first_evaluator.calls), 1)
+                self.assertEqual(
+                    load_completed_search_result(tmpdir).as_dict(),
+                    first.as_dict(),
+                )
+
+                resumed = Stage1SearchRunner(
+                    adapter=Stage1EvaluatorAdapter(
+                        evaluator=NoForwardEvaluator(),
+                        num_layers=1,
+                        constraints=self._constraints(),
+                    ),
+                    config=config,
+                    output_dir=tmpdir,
+                    manifest={"comparator_smoke": True},
+                ).run(backend)
+                self.assertEqual(resumed.as_dict(), first.as_dict())
+
     def test_completed_run_writes_minimum_artifacts_and_round_trips(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             result = self._ordinary_runner(tmpdir).run("greedy")
