@@ -102,6 +102,12 @@ def _build_ordinary_two_stage_result(
     consumed_binding = dict(
         stage2_result.get("stage1_consumed_binding") or {}
     )
+    for binding in (stage1_binding, consumed_binding):
+        result_path = binding.get("result_path")
+        if result_path:
+            binding["result_path"] = os.path.abspath(
+                os.path.expanduser(os.fspath(result_path))
+            )
     num_layers = int(stage1_binding.get("num_layers", 0) or 0)
     if (
             not normalized_backend

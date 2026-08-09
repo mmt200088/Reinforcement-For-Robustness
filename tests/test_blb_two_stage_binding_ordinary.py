@@ -428,6 +428,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             "_build_ordinary_two_stage_result",
             Any=object,
             Mapping=dict,
+            os=os,
         )
         binding = {
             "backend": "bo_rf",
@@ -515,12 +516,71 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 final_eval_error=None,
             )
 
+    def test_outer_two_stage_result_accepts_relative_and_absolute_result_path(self):
+        build = _load_function(
+            "layer_importance_evaluator.py",
+            "_build_ordinary_two_stage_result",
+            Any=object,
+            Mapping=dict,
+            os=os,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            absolute_result_path = os.path.join(
+                tmpdir,
+                "stage1_comparator",
+                "bo_rf",
+                "result.json",
+            )
+            relative_result_path = os.path.relpath(absolute_result_path)
+            stage1_binding = {
+                "backend": "bo_rf",
+                "seed": 42,
+                "action": [0, 0],
+                "gelu_degrees": [4, 4],
+                "softmax_degrees": [6, 6],
+                "num_layers": 2,
+                "result_path": relative_result_path,
+            }
+            consumed_binding = {
+                **stage1_binding,
+                "result_path": absolute_result_path,
+            }
+
+            payload = build(
+                backend="bo_rf",
+                stage1_best_config={
+                    "selection_binding": stage1_binding,
+                },
+                stage2_result={
+                    "status": "smoke_only_complete",
+                    "strict_feasible": False,
+                    "search_backend": "bo_rf",
+                    "stage1_consumed_binding": consumed_binding,
+                    "selection_diagnostics": {},
+                },
+                final_eval_result=None,
+                final_eval_status="skipped_by_request",
+                final_eval_ineligible_reason=None,
+                final_eval_error=None,
+            )
+
+        expected_path = os.path.abspath(relative_result_path)
+        self.assertEqual(
+            payload["stage1"]["selection_binding"]["result_path"],
+            expected_path,
+        )
+        self.assertEqual(
+            payload["stage2"]["consumed_stage1_binding"]["result_path"],
+            expected_path,
+        )
+
     def test_outer_two_stage_result_rejects_final_eval_for_infeasible_selection(self):
         build = _load_function(
             "layer_importance_evaluator.py",
             "_build_ordinary_two_stage_result",
             Any=object,
             Mapping=dict,
+            os=os,
         )
         binding = {
             "backend": "bo_rf",
