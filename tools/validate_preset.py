@@ -23,6 +23,7 @@ Exit code 0 = clean; 1 = problems found (with line-number annotations).
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import re
 import sys
@@ -32,6 +33,7 @@ from typing import Dict, Iterable, Iterator, List, Set, Tuple
 
 LAUNCHER_REL = "llama_7B_LayerImportance.sh"
 PAEAN_LAUNCHER_REL = "Paean/run_final_eval.sh"
+PAEAN_CONFIG_REL = "Paean/config.py"
 
 
 _FLAG_LINE_RE = re.compile(
@@ -56,6 +58,54 @@ def extract_launcher_flags(launcher_path: str) -> Set[str]:
                 if t.startswith("--"):
                     flags.add(t)
     return flags
+
+
+def _python_argparse_flag_sets(config_path: str) -> Tuple[Set[str], Set[str]]:
+    if not os.path.isfile(config_path):
+        return set(), set()
+    with open(config_path, encoding="utf-8-sig") as handle:
+        tree = ast.parse(handle.read(), filename=config_path)
+    flags: Set[str] = set()
+    repeatable: Set[str] = set()
+    for node in ast.walk(tree):
+        if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument"
+        ):
+            continue
+        call_flags = {
+            argument.value
+            for argument in node.args
+            if (
+                isinstance(argument, ast.Constant)
+                and isinstance(argument.value, str)
+                and argument.value.startswith("--")
+            )
+        }
+        flags.update(call_flags)
+        action = next((
+            keyword.value.value
+            for keyword in node.keywords
+            if (
+                keyword.arg == "action"
+                and isinstance(keyword.value, ast.Constant)
+                and isinstance(keyword.value.value, str)
+            )
+        ), "")
+        if action in {"append", "append_const", "extend"}:
+            repeatable.update(call_flags)
+    return flags, repeatable
+
+
+def extract_python_argparse_flags(config_path: str) -> Set[str]:
+    """Extract literal ``argparse.add_argument`` option strings."""
+    return _python_argparse_flag_sets(config_path)[0]
+
+
+def extract_python_argparse_repeatable_flags(config_path: str) -> Set[str]:
+    """Extract argparse options whose action accepts repeated occurrences."""
+    return _python_argparse_flag_sets(config_path)[1]
 
 
 def _iter_numbered_lines(lines: Iterable[str]) -> Iterator[Tuple[int, str]]:
@@ -141,10 +191,13 @@ def _classify_value(flag: str, value: str) -> str:
 def validate_preset(
         preset_path: str,
         launcher_flags: Set[str],
+        *,
+        repeatable_flags: Set[str] | None = None,
         ) -> List[Tuple[int, str]]:
     """Return ``[(line_num, message), ...]`` for problems."""
     problems: List[Tuple[int, str]] = []
     seen: Dict[str, int] = {}
+    repeatable = set(repeatable_flags or ())
     for line_num, flag, value in extract_preset_flags(preset_path):
         if not flag:
             problems.append((line_num, f"orphan value {value!r} with no preceding flag"))
@@ -157,13 +210,13 @@ def validate_preset(
                 f"unknown flag {flag!r} (not accepted by either launcher; "
                 "check for typos against the canonical list)",
             ))
-        elif flag in seen:
+        elif flag in seen and flag not in repeatable:
             problems.append((
                 line_num,
                 f"duplicate flag {flag!r}; first seen on line {seen[flag]}",
             ))
         else:
-            seen[flag] = line_num
+            seen.setdefault(flag, line_num)
             err = _classify_value(flag, value)
             if err:
                 problems.append((line_num, f"{flag} {err}"))
@@ -181,21 +234,42 @@ def main(argv: List[str] | None = None) -> int:
         "--paean-launcher", default=PAEAN_LAUNCHER_REL,
         help=f"Paean launcher to scan (default: {PAEAN_LAUNCHER_REL})",
     )
+    ap.add_argument(
+        "--paean-config", default=PAEAN_CONFIG_REL,
+        help=(
+            "Paean argparse config to scan "
+            f"(default: {PAEAN_CONFIG_REL})"
+        ),
+    )
     args = ap.parse_args(argv)
 
     # Union: a preset under presets/ may use BLB launcher flags;
-    # one under Paean/presets/ may use Paean flags. We accept either source.
-    flags = extract_launcher_flags(args.launcher) | extract_launcher_flags(args.paean_launcher)
+    # one under Paean/presets/ may use Paean flags. Paean's shell entrypoint is
+    # intentionally a thin Python wrapper, so its argparse declarations are
+    # also authoritative.
+    flags = (
+        extract_launcher_flags(args.launcher)
+        | extract_launcher_flags(args.paean_launcher)
+        | extract_python_argparse_flags(args.paean_config)
+    )
+    repeatable_flags = extract_python_argparse_repeatable_flags(
+        args.paean_config
+    )
     if not flags:
         print(f"[error] no flags extracted from {args.launcher} / {args.paean_launcher}; "
               "regex may be stale", file=sys.stderr)
         return 2
     print(f"[validate_preset] using {len(flags)} canonical flags from "
-          f"{args.launcher} + {args.paean_launcher}", file=sys.stderr)
+          f"{args.launcher} + {args.paean_launcher} + {args.paean_config}",
+          file=sys.stderr)
 
     any_failed = False
     for preset_path in args.presets:
-        problems = validate_preset(preset_path, flags)
+        problems = validate_preset(
+            preset_path,
+            flags,
+            repeatable_flags=repeatable_flags,
+        )
         if not problems:
             print(f"  OK  {preset_path}")
             continue

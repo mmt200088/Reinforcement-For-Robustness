@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 
 import numpy as np
 import pytest
@@ -8,8 +9,12 @@ from blb_stage2_rl.statistical_constraints import (
     InsufficientBaselineTrials,
     TrialSeries,
     assess_candidate,
+    baseline_reference_from_resume_payload,
+    baseline_reference_resume_payload,
     build_baseline_reference,
     retarget_constraint_assessment,
+    trial_series_from_resume_payload,
+    trial_series_resume_payload,
 )
 
 
@@ -62,6 +67,79 @@ def _groups_from_pooled(values):
         )
         for start in range(0, len(values), 5)
     ]
+
+
+def test_trial_series_resume_payload_round_trip_preserves_values_and_seeds():
+    original = TrialSeries(
+        loss=[1.0, 1.1],
+        metric1=[0.8, 0.81],
+        metric2=[0.7, 0.71],
+        seeds=[101, 102],
+    )
+
+    payload = trial_series_resume_payload(original)
+    restored = trial_series_from_resume_payload(
+        json.loads(json.dumps(payload, sort_keys=True))
+    )
+
+    assert restored == original
+    assert payload["schema_version"] == "stage2_trial_series_resume_v1"
+
+
+def test_baseline_reference_resume_payload_round_trip_preserves_bootstrap_rows():
+    original = _reference()
+
+    payload = baseline_reference_resume_payload(original)
+    restored = baseline_reference_from_resume_payload(
+        json.loads(json.dumps(payload, sort_keys=True))
+    )
+
+    assert restored.trials == original.trials
+    assert restored.trial_count == original.trial_count
+    assert restored.precision_tolerance == original.precision_tolerance
+    assert restored.stability_multiplier == original.stability_multiplier
+    assert restored.bootstrap_seed == original.bootstrap_seed
+    assert restored.bootstrap_samples == original.bootstrap_samples
+    for field_name in (
+        "loss_mean",
+        "metric1_mean",
+        "metric2_mean",
+        "loss_std",
+        "metric1_std",
+        "metric2_std",
+        "loss_limit",
+        "metric1_limit",
+        "metric2_limit",
+        "loss_std_limit",
+        "metric1_std_limit",
+        "metric2_std_limit",
+    ):
+        assert getattr(restored, field_name) == getattr(original, field_name)
+    for channel in ("loss", "metric1", "metric2"):
+        np.testing.assert_array_equal(
+            restored.bootstrap_means[channel],
+            original.bootstrap_means[channel],
+        )
+        np.testing.assert_array_equal(
+            restored.bootstrap_stds[channel],
+            original.bootstrap_stds[channel],
+        )
+
+
+def test_baseline_reference_resume_payload_rejects_unknown_schema():
+    payload = baseline_reference_resume_payload(_reference())
+    payload["schema_version"] = "unknown"
+
+    with pytest.raises(ValueError, match="schema_version"):
+        baseline_reference_from_resume_payload(payload)
+
+
+def test_baseline_reference_resume_payload_rejects_tampered_derived_digest():
+    payload = baseline_reference_resume_payload(_reference())
+    payload["derived"]["bootstrap_means_sha256"]["loss"] = "0" * 64
+
+    with pytest.raises(ValueError, match="bootstrap_means_sha256"):
+        baseline_reference_from_resume_payload(payload)
 
 
 def test_trial_series_normalizes_values_and_protects_invariants():

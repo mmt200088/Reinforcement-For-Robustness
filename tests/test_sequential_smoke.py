@@ -38,7 +38,9 @@ import ast
 from contextlib import contextmanager
 import importlib.machinery
 import importlib.util
+import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -53,6 +55,7 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
+
 
 
 def _load_module_standalone(rel_path: str, name: str):
@@ -86,6 +89,31 @@ def _load_function_standalone(rel_path: str, function_name: str, **globals_):
     }
     exec(compile(isolated, str(path), "exec"), namespace)
     return namespace[function_name]
+
+
+def _load_symbols_standalone(rel_path: str, names, **globals_):
+    """Compile selected production symbols without heavy module imports."""
+    path = REPO_ROOT / rel_path
+    requested = set(names)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    selected = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+        and node.name in requested
+    ]
+    found = {node.name for node in selected}
+    if found != requested:
+        raise AssertionError(f"missing standalone symbols: {sorted(requested - found)}")
+    future = ast.parse("from __future__ import annotations\n").body[0]
+    isolated = ast.Module(body=[future, *selected], type_ignores=[])
+    ast.fix_missing_locations(isolated)
+    namespace = {
+        "__name__": "blb_stage2_rl._isolated_symbols",
+        "__package__": "blb_stage2_rl",
+        **globals_,
+    }
+    exec(compile(isolated, str(path), "exec"), namespace)
+    return {name: namespace[name] for name in names}
 
 
 class _AccessTrap:
@@ -211,7 +239,7 @@ class SequentialArtifactContractsTest(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix="blb_smoke_")
         # Numpy required; if missing, skip the whole class.
         try:
-            import numpy as np  # noqa: F401
+            import numpy as np
         except ImportError:
             raise unittest.SkipTest("numpy not available")
         cls.diag_mod = _load_module_standalone(
@@ -1868,6 +1896,14 @@ class BlockRuntimeHelperTest(unittest.TestCase):
         self.assertEqual(commit_info["optimizer_cfg_overrides"], [{"cfg_attr": "marker"}])
 
 
+
+
+
+
+
+
+
+
 class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
     """Source-text locks for the four-GPU reward-probe throughput path."""
 
@@ -1918,9 +1954,14 @@ class MultiGpuProbeThroughputRegressionTest(unittest.TestCase):
             "from functools import lru_cache",
             "@lru_cache(maxsize=64)",
             "def _split_round_robin_cached",
-            "assignments = _split_round_robin_cached(k, len(self.workers))",
+            "def _split_trial_indices_round_robin",
+            "positions = _split_round_robin_cached(len(indices), n_workers)",
         ):
             self.assertIn(needle, src, msg=f"probe_runner.py missing: {needle!r}")
+        self.assertGreaterEqual(
+            src.count("_split_trial_indices_round_robin("),
+            4,
+        )
 
     def test_probe_runner_aggregates_trial_results_in_preallocated_lists(self):
         src = open("blb_stage2_rl/probe_runner.py", encoding="utf-8").read()
@@ -2560,11 +2601,12 @@ class RewardDesignV2RegressionTest(unittest.TestCase):
         # which gate is firing without re-running the optimizer.
         self.assertIn("terminal_metrics: loss_mean=", src)
 
-    def test_default_num_trials_bumped_to_five(self):
+    def test_default_online_candidate_trials_match_v12_contract(self):
         src = open("blb_stage2_rl/runner.py", encoding="utf-8").read()
-        # The default lives in BLBStage2TrainConfig and flows down through
-        # BLBStage2EnvConfig.num_trials_per_step → env._eval_on_probe(k).
-        self.assertIn("num_trials_per_step: int = 5", src)
+        # The v12 comparator/RL online contract is exactly three trials per
+        # candidate; robust baseline and strict A/B/C banks remain independent.
+        self.assertIn("num_trials_per_step: int = 3", src)
+        self.assertIn("online_num_trials_per_step: int = 3", src)
 
 
 class WarmstartFixedRegressionTest(unittest.TestCase):
@@ -2639,7 +2681,7 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         helper_src = src[marker_start:marker_end]
 
         import numpy as np
-        from typing import Any, Optional, Sequence, List   # noqa: F401
+        from typing import Any, Optional, Sequence, List
         ns = {"np": np, "Any": Any, "Optional": Optional,
               "Sequence": Sequence, "List": List}
         exec(helper_src, ns)
@@ -2680,11 +2722,9 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         """Extract dependency-light helpers from sequential_runner without
         importing the torch-heavy module on local developer machines."""
         import ast
-        import math
         import numpy as np
         from pathlib import Path
-        from typing import Any, Optional, Sequence, Set, List   # noqa: F401
-
+        from typing import Any, Optional, Sequence, Set, List
         src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(src)
         wanted = set(names)
@@ -2715,12 +2755,10 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
     def _exec_runner_items(self, *names):
         """Extract dependency-light functions/classes from sequential_runner."""
         import ast
-        import math
         import numpy as np
         from dataclasses import dataclass, field
         from pathlib import Path
-        from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple   # noqa: F401
-
+        from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
         src = Path("blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(src)
         wanted = set(names)
@@ -3706,7 +3744,6 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertTrue(torch.equal(policy.seen_masks[0][0], torch.from_numpy(level_mask)))
 
     def test_sequential_ppo_update_skips_nonfinite_minibatch(self):
-        import math
         import sys
 
         torch_mod = sys.modules.get("torch")
@@ -3787,7 +3824,6 @@ class WarmstartFixedRegressionTest(unittest.TestCase):
         self.assertLessEqual(policy._ppo_lr_scale, 1.0)
 
     def test_sequential_ppo_update_handles_budgeted_reward_extremes(self):
-        import math
         import sys
 
         torch_mod = sys.modules.get("torch")

@@ -306,6 +306,128 @@ def summarize_eval_trials(trials: Sequence[Mapping[str, Any]]) -> dict:
     }
 
 
+def summarize_selected_vs_random_results(
+        selected_results: Sequence[Mapping[str, Any]],
+        random_results: Sequence[Mapping[str, Any]],
+        *,
+        num_metrics: int,
+        ) -> dict:
+    """Build the canonical selected-vs-random comparison summary."""
+    if not selected_results and not random_results:
+        return {}
+
+    def _new_stats() -> dict[str, Any]:
+        return {
+            "n": 0,
+            "sum": 0.0,
+            "sum_sq": 0.0,
+            "min": None,
+            "max": None,
+        }
+
+    def _add_stats(stat: dict[str, Any], value: float) -> None:
+        value_f = float(value)
+        stat["n"] += 1
+        stat["sum"] += value_f
+        stat["sum_sq"] += value_f * value_f
+        if stat["min"] is None or value_f < stat["min"]:
+            stat["min"] = value_f
+        if stat["max"] is None or value_f > stat["max"]:
+            stat["max"] = value_f
+
+    def _finish_stats(stat: Mapping[str, Any]) -> dict[str, float | int]:
+        count = int(stat["n"])
+        if count <= 0:
+            return {"n": 0}
+        mean = float(stat["sum"]) / float(count)
+        variance = float(stat["sum_sq"]) / float(count) - mean * mean
+        if np.isfinite(variance) and variance < 0.0:
+            variance = 0.0
+        return {
+            "n": count,
+            "mean": float(mean),
+            "std": float(variance ** 0.5),
+            "min": float(stat["min"]),
+            "max": float(stat["max"]),
+        }
+
+    anchor = selected_results[0] if selected_results else None
+    random_count = len(random_results)
+    summary: dict[str, Any] = {
+        "selected_count": len(selected_results),
+        "random_count": random_count,
+    }
+    if anchor is not None:
+        summary["selected_anchor"] = {
+            "name": str(anchor.get("name", "selected")),
+            "loss_mean": float(anchor.get("loss", 0.0)),
+            "loss_std": float(anchor.get("loss_std", 0.0)),
+            "metric1_mean": float(anchor.get("p", 0.0)),
+            "metric1_std": float(anchor.get("p_std", 0.0)),
+            "metric2_mean": float(anchor.get("s", 0.0)),
+            "metric2_std": float(anchor.get("s_std", 0.0)),
+            "total_bits_sum": int(anchor.get("total_bits_sum", 0)),
+            "total_fusion_count": int(anchor.get("total_fusion_count", 0)),
+            "avg_truncation_k": float(anchor.get("avg_truncation_k", 0.0)),
+        }
+    if random_results:
+        stat_fields = (
+            ("loss_mean", "loss"),
+            ("loss_std", "loss_std"),
+            ("metric1_mean", "p"),
+            ("metric1_std", "p_std"),
+            ("metric2_mean", "s"),
+            ("metric2_std", "s_std"),
+        )
+        stats_by_name = {name: _new_stats() for name, _field in stat_fields}
+        metric1_rank = 0
+        loss_rank = 0
+        metric2_rank = 0
+        anchor_p = float(anchor.get("p", 0.0)) if anchor is not None else 0.0
+        anchor_loss = float(anchor.get("loss", 0.0)) if anchor is not None else 0.0
+        anchor_s = float(anchor.get("s", 0.0)) if anchor is not None else 0.0
+
+        for row in random_results:
+            for name, field in stat_fields:
+                _add_stats(stats_by_name[name], float(row.get(field, 0.0)))
+            if anchor is None:
+                continue
+            if float(row.get("p", 0.0)) < anchor_p:
+                metric1_rank += 1
+            if float(row.get("loss", 0.0)) > anchor_loss:
+                loss_rank += 1
+            if num_metrics > 1 and float(row.get("s", 0.0)) < anchor_s:
+                metric2_rank += 1
+
+        summary["random_stats"] = {
+            name: _finish_stats(stats_by_name[name])
+            for name, _field in stat_fields
+        }
+
+        if anchor is not None:
+
+            def _rank_dict(rank: int) -> dict[str, float | int] | None:
+                count = int(random_count)
+                if count <= 0:
+                    return None
+                rank_i = int(rank)
+                return {
+                    "rank_better_than_selected": rank_i,
+                    "out_of": count,
+                    "percentile": float(rank_i) / float(count),
+                }
+
+            summary["anchor_rank_vs_random"] = {
+                "metric1_higher_better": _rank_dict(metric1_rank),
+                "loss_lower_better": _rank_dict(loss_rank),
+            }
+            if num_metrics > 1:
+                summary["anchor_rank_vs_random"]["metric2_higher_better"] = (
+                    _rank_dict(metric2_rank)
+                )
+    return summary
+
+
 def pack_repeat_evaluation(
         trials: Sequence[Mapping[str, Any]],
         *,

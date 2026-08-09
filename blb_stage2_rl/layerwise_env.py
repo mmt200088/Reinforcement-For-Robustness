@@ -37,6 +37,7 @@ _TERMINAL_INFO_SNAPSHOT_FIELDS = (
     "error",
     "optimizer_baseline_action",
     "optimizer_eval_mode",
+    "final_config_fingerprint",
     "optimizer_invalid_summary",
     "model_degree_sync",
     "optimizer_cfg_overrides",

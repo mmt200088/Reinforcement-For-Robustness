@@ -45,6 +45,8 @@ cat <<'EOF'
   --mode train / eval / search-only
                              PPO 链式模式已移除。bo_rf / greedy / coinn_ga 子命令固定使用 train，
                              严格串行执行同算法 Stage-1 → 绑定结果 → 同算法 Stage-2。
+  --comparator-smoke         仅 bo_rf / greedy / coinn_ga：Stage-1/Stage-2 各做 1 次真实评估，
+                             Stage-2 保持 3 trials，并跳过 strict validation 与 Paean final eval。
 
 预算简写：
   --episodes S1,S2           RL：设置 Stage-1 / Stage-2 episode 数；也可传单个 N 表示两阶段相同
@@ -386,6 +388,48 @@ default_final_eval_json_for_family(){
     *) echo "glue_final_configs_best_ppo.json" ;;
   esac
 }
+reject_formal_comparator_overrides(){
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --algorithm|--algorithm=*|--search-algorithm|--search-algorithm=*|\
+      --mode|--mode=*|\
+      --batch-size|--batch-size=*|\
+      --random-seed|--random-seed=*|\
+      --blb-v3-seed|--blb-v3-seed=*|\
+      --blb-v3-search-rf-n-estimators|--blb-v3-search-rf-n-estimators=*|\
+      --blb-v3-search-rf-min-samples-leaf|--blb-v3-search-rf-min-samples-leaf=*|\
+      --stage1-accuracy-tolerance|--stage1-accuracy-tolerance=*|\
+      --stage2-limit-tolerance|--stage2-limit-tolerance=*|\
+      --stage2-stability-tolerance|--stage2-stability-tolerance=*|\
+      --stage2-stability-multiplier|--stage2-stability-multiplier=*|\
+      --stage2-communication-importance-ratio|--stage2-communication-importance-ratio=*|\
+      --stage2-k-trials|--stage2-k-trials=*|\
+      --blb-v3-truncation-backend|--blb-v3-truncation-backend=*|\
+      --blb-v3-truncation-ring-bits|--blb-v3-truncation-ring-bits=*|\
+      --blb-v3-truncation-source-fractional-bits|--blb-v3-truncation-source-fractional-bits=*|\
+      --blb-v3-baseline-groups|--blb-v3-baseline-groups=*|\
+      --blb-v3-baseline-trials-per-group|--blb-v3-baseline-trials-per-group=*|\
+      --blb-v3-promotion-validation-trials|--blb-v3-promotion-validation-trials=*|\
+      --blb-v3-final-selection-validation-trials|--blb-v3-final-selection-validation-trials=*|\
+      --blb-v3-search-full-validation|--blb-v3-search-full-validation=*|\
+      --blb-v3-search-backend|--blb-v3-search-backend=*|\
+      --blb-v3-search-evaluation-budget|--blb-v3-search-evaluation-budget=*|\
+      --blb-v3-search-initial-design-size|--blb-v3-search-initial-design-size=*|\
+      --blb-v3-search-candidate-pool-size|--blb-v3-search-candidate-pool-size=*|\
+      --blb-v3-search-population-size|--blb-v3-search-population-size=*|\
+      --blb-v3-search-patience-generations|--blb-v3-search-patience-generations=*|\
+      --blb-v3-final-selection-top-n|--blb-v3-final-selection-top-n=*|\
+      --blb-v3-search-mutation-max-coordinates|--blb-v3-search-mutation-max-coordinates=*|\
+      --mrpc-reproducibility-fixture-path|--mrpc-reproducibility-fixture-path=*|\
+      --stage2-fixed-config-source|--stage2-fixed-config-source=*|\
+      --stage2-rl-variant|--stage2-rl-variant=*|\
+      --stage2-probe-size|--stage2-probe-size=*)
+        err "comparator 子命令不允许覆盖固定的算法、预算或验证参数：$arg"
+        ;;
+    esac
+  done
+}
 translate_subcommand_args(){
   local args=("$@")
   local first="${args[0]:-}"
@@ -402,10 +446,19 @@ translate_subcommand_args(){
       fi
       case "$sub" in
         rl|ppo) SUBCOMMAND_ARGS=(--search-algorithm rl "${args[@]:2}") ;;
-        bo|bo-rf|bo_rf|bayesian) SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend bo_rf --blb-v3-search-evaluation-budget 50000 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}") ;;
+        bo|bo-rf|bo_rf|bayesian)
+          reject_formal_comparator_overrides "${args[@]:2}"
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size 64 --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend bo_rf --blb-v3-search-evaluation-budget 50000 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          ;;
         ga|genetic) SUBCOMMAND_ARGS=(--search-algorithm ga "${args[@]:2}") ;;
-        coinn|coinn-ga|coinn_ga) SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend coinn_ga --blb-v3-search-evaluation-budget 45664 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}") ;;
-        greedy|greedy-search|greedy_search) SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend greedy --blb-v3-search-evaluation-budget 2176782336 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}") ;;
+        coinn|coinn-ga|coinn_ga)
+          reject_formal_comparator_overrides "${args[@]:2}"
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size 64 --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend coinn_ga --blb-v3-search-evaluation-budget 45664 --blb-v3-search-patience-generations 5 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          ;;
+        greedy|greedy-search|greedy_search)
+          reject_formal_comparator_overrides "${args[@]:2}"
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size 64 --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend greedy --blb-v3-search-evaluation-budget 2176782336 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          ;;
         *) err "run 子命令只支持 rl / ga / bo_rf / greedy / coinn_ga，当前为：$sub" ;;
       esac
       ;;
@@ -552,6 +605,7 @@ BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT="Rescale_optimizer"
 BLB_V3_SEED=""; S_BLB_V3_SEED="false"
 BLB_V3_POLICY_NETWORK_VARIANT="shared_gtrxl_small_v1"; S_BLB_V3_POLICY_NETWORK_VARIANT="false"
 BLB_V3_SEARCH_BACKEND="ppo"; S_BLB_V3_SEARCH_BACKEND="false"
+MRPC_REPRODUCIBILITY_FIXTURE_PATH="$(cd "$(dirname "$0")" && pwd)/fixtures/reproducibility/mrpc_validation_v1.json"
 BLB_V3_SEARCH_EVALUATION_BUDGET="0"; S_BLB_V3_SEARCH_EVALUATION_BUDGET="false"
 BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="64"; S_BLB_V3_SEARCH_INITIAL_DESIGN_SIZE="false"
 BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="2048"; S_BLB_V3_SEARCH_CANDIDATE_POOL_SIZE="false"
@@ -561,6 +615,7 @@ BLB_V3_SEARCH_MUTATION_MAX_COORDINATES="3"; S_BLB_V3_SEARCH_MUTATION_MAX_COORDIN
 BLB_V3_SEARCH_RF_N_ESTIMATORS="128"; S_BLB_V3_SEARCH_RF_N_ESTIMATORS="false"
 BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="2"; S_BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="false"
 BLB_V3_SEARCH_FULL_VALIDATION="true"; S_BLB_V3_SEARCH_FULL_VALIDATION="false"
+COMPARATOR_SMOKE="false"
 BLB_V3_REWARD_DEVICES=""; S_BLB_V3_REWARD_DEVICES="false"
 STAGE1_RL_DEVICES=""; S_STAGE1_RL_DEVICES="false"
 STAGE2_RL_DEVICES=""; S_STAGE2_RL_DEVICES="false"
@@ -734,6 +789,7 @@ while [ "$#" -gt 0 ]; do
     --skip-stage1-search) SKIP_STAGE1_SEARCH="true"; S_SKIP_STAGE1_SEARCH="true"; shift ;;
     --skip-noise-search) SKIP_NOISE_SEARCH="true"; S_SKIP_NOISE_SEARCH="true"; shift ;;
     --skip-final-eval) SKIP_FINAL_EVAL="true"; S_SKIP_FINAL_EVAL="true"; shift ;;
+    --comparator-smoke) COMPARATOR_SMOKE="true"; shift ;;
     --final-eval-preset) needv "$@"; FINAL_EVAL_PRESET="$2"; S_FINAL_EVAL_PRESET="true"; shift 2 ;;
     --final-eval-only) FINAL_EVAL_ONLY="true"; S_FINAL_EVAL_ONLY="true"; shift ;;
     --final-eval-source|--source) needv "$@"; FINAL_EVAL_SOURCE="$2"; S_FINAL_EVAL_SOURCE="true"; shift 2 ;;
@@ -953,6 +1009,16 @@ case "$BLB_V3_SEARCH_BACKEND" in
   *) err "--blb-v3-search-backend 只支持 ppo、bo_rf、greedy 或 coinn_ga。" ;;
 esac
 
+if [ "$COMPARATOR_SMOKE" = "true" ]; then
+  [ "$BLB_V3_SEARCH_BACKEND" != "ppo" ] || err "--comparator-smoke 仅支持 bo_rf、greedy 或 coinn_ga comparator。"
+  BLB_V3_SEARCH_EVALUATION_BUDGET="1"
+  BLB_V3_SEARCH_FULL_VALIDATION="false"
+  RANDOM_SEED="42"
+  BLB_V3_SEED="42"
+  STAGE2_K_TRIALS="3"
+  SKIP_FINAL_EVAL="true"
+fi
+
 case "$RUN_MODE" in
   train) ;;
   eval|final-eval|final-eval-only) RUN_MODE="eval" ;;
@@ -1051,8 +1117,16 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     [ "$SKIP_STAGE1_SEARCH" = "false" ] || err "两阶段 comparator 不能跳过 Stage-1。"
     [ "$SKIP_NOISE_SEARCH" = "false" ] || err "两阶段 comparator 不能跳过 Stage-2。"
     [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ] || err "两阶段 comparator 的 Stage-2 必须绑定 stage1_result。"
-    [ "$BLB_V3_SEARCH_FULL_VALIDATION" = "true" ] || err "正式两阶段 comparator 必须启用 --blb-v3-search-full-validation true。"
-    [ "$BLB_V3_FINAL_SELECTION_TOP_N" = "5" ] || err "正式两阶段 comparator 必须严格复核 top 5 候选。"
+    if [ "$COMPARATOR_SMOKE" = "true" ]; then
+      [ "$BLB_V3_SEARCH_EVALUATION_BUDGET" = "1" ] || err "comparator smoke 的 Stage-2 evaluation budget 必须为 1。"
+      [ "$BLB_V3_SEARCH_FULL_VALIDATION" = "false" ] || err "comparator smoke 必须禁用 Stage-2 strict validation。"
+      [ "$STAGE2_K_TRIALS" = "3" ] || err "comparator smoke 必须保留 3 个 Stage-2 trials。"
+      [ "$SKIP_FINAL_EVAL" = "true" ] || err "comparator smoke 必须跳过 Paean final eval。"
+    else
+      [ "$BLB_V3_SEARCH_FULL_VALIDATION" = "true" ] || err "正式两阶段 comparator 必须启用 --blb-v3-search-full-validation true。"
+      [ "$BLB_V3_FINAL_SELECTION_TOP_N" = "5" ] || err "正式两阶段 comparator 必须严格复核 top 5 候选。"
+    fi
+    [ "$BATCH_SIZE" = "64" ] || err "正式 MRPC comparator 必须使用 canonical batch size 64。"
     DECOUPLED_LAYOUT="false"
   fi
 fi
@@ -1930,12 +2004,16 @@ else
     CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_stability_multiplier "$STAGE2_STABILITY_MULTIPLIER" --stage2_communication_importance_ratio "$STAGE2_COMMUNICATION_IMPORTANCE_RATIO" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
     # 解耦布局开关 + stage2-only 的 stage1 record 选择（仅 rl）。
     CMD+=(--decoupled_layout "$DECOUPLED_LAYOUT" --stage1_run_id "$STAGE1_RUN_ID")
+    CMD+=(--comparator_smoke "$COMPARATOR_SMOKE")
     # Optional multi-seed override (when --blb-v3-seed provided)
     if [ -n "$BLB_V3_SEED" ]; then
       CMD+=(--blb_v3_seed "$BLB_V3_SEED")
     fi
     CMD+=(--blb_v3_policy_network_variant "$BLB_V3_POLICY_NETWORK_VARIANT")
     CMD+=(--blb_v3_search_backend "$BLB_V3_SEARCH_BACKEND" --blb_v3_search_evaluation_budget "$BLB_V3_SEARCH_EVALUATION_BUDGET" --blb_v3_search_initial_design_size "$BLB_V3_SEARCH_INITIAL_DESIGN_SIZE" --blb_v3_search_candidate_pool_size "$BLB_V3_SEARCH_CANDIDATE_POOL_SIZE" --blb_v3_search_population_size "$BLB_V3_SEARCH_POPULATION_SIZE" --blb_v3_search_patience_generations "$BLB_V3_SEARCH_PATIENCE_GENERATIONS" --blb_v3_search_mutation_max_coordinates "$BLB_V3_SEARCH_MUTATION_MAX_COORDINATES" --blb_v3_search_rf_n_estimators "$BLB_V3_SEARCH_RF_N_ESTIMATORS" --blb_v3_search_rf_min_samples_leaf "$BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF" --blb_v3_search_full_validation "$BLB_V3_SEARCH_FULL_VALIDATION")
+    if [ "$BLB_V3_SEARCH_BACKEND" != "ppo" ]; then
+      CMD+=(--mrpc_reproducibility_fixture_path "$MRPC_REPRODUCIBILITY_FIXTURE_PATH")
+    fi
     # Two-GPU reward probe parallelism (--blb-v3-reward-devices "0,1")
     if [ -n "$BLB_V3_REWARD_DEVICES" ]; then
       CMD+=(--blb_v3_reward_devices "$BLB_V3_REWARD_DEVICES")

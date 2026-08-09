@@ -35,6 +35,8 @@ from .statistical_constraints import (
     ConstraintAssessment,
     TrialSeries,
     assess_candidate,
+    baseline_reference_from_resume_payload,
+    baseline_reference_resume_payload,
     retarget_constraint_assessment,
     retarget_precision_tolerance,
 )
@@ -339,6 +341,13 @@ def bind_layerwise_candidate_identity(
         if not math.isfinite(value) or value <= 0.0:
             raise ValueError(f"{field_name} must be finite and positive")
     context = dict(identity_context)
+    stage1_binding = contract.get("stage1_selection_binding")
+    if stage1_binding is not None:
+        if not isinstance(stage1_binding, Mapping) or not stage1_binding:
+            raise ValueError(
+                "stage1_selection_binding must be a non-empty mapping"
+            )
+        context["stage1_selection_binding"] = dict(stage1_binding)
     context["k_levels"] = list(levels)
     context["cost_model_revision"] = str(cost_model_revision)
     context["resource_objective_contract"] = {
@@ -669,6 +678,26 @@ def validate_layerwise_episode_limit_extension(
     return requested
 
 
+def _exact_resume_mapping(
+        name: str,
+        payload: Mapping[str, Any],
+        keys: Sequence[str],
+        ) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    copied = dict(payload)
+    required = set(keys)
+    actual = set(copied)
+    if actual != required:
+        missing = sorted(required - actual)
+        extra = sorted(repr(key) for key in actual - required)
+        raise ValueError(
+            f"{name} must contain exactly {tuple(keys)}; "
+            f"missing={missing}, extra={extra}"
+        )
+    return copied
+
+
 @dataclass(frozen=True)
 class LayerwiseValidationBank:
     """One fixed common-random-number validation bank."""
@@ -810,6 +839,91 @@ class LayerwiseValidationBanks:
             "hard_gate": _STRICT_GATE_CONTRACT,
             "bootstrap_probability_role": "diagnostic_tiebreak_only",
         }
+
+    def resume_payload(self) -> dict[str, Any]:
+        """Return all raw references required for zero-baseline resume."""
+        return {
+            "schema_version": "layerwise_validation_banks_resume_v1",
+            "banks": {
+                bank.label: {
+                    "label": bank.label,
+                    "probe_seeds": list(bank.probe_seeds),
+                    "trials_per_probe": int(bank.trials_per_probe),
+                    "reference": baseline_reference_resume_payload(bank.reference),
+                }
+                for bank in (self.bank_a, self.bank_b, self.bank_c)
+            },
+            "promotion_reference": baseline_reference_resume_payload(
+                self.promotion_reference
+            ),
+            "final_reference": baseline_reference_resume_payload(
+                self.final_reference
+            ),
+            "contract": self.contract_payload(),
+        }
+
+    @classmethod
+    def from_resume_payload(
+            cls,
+            payload: Mapping[str, Any],
+            ) -> LayerwiseValidationBanks:
+        """Restore validation banks and revalidate pooling and seed contracts."""
+        copied = _exact_resume_mapping(
+            "layerwise validation banks resume payload",
+            payload,
+            (
+                "schema_version",
+                "banks",
+                "promotion_reference",
+                "final_reference",
+                "contract",
+            ),
+        )
+        if copied["schema_version"] != "layerwise_validation_banks_resume_v1":
+            raise ValueError(
+                "layerwise validation banks resume payload.schema_version "
+                "must be 'layerwise_validation_banks_resume_v1'"
+            )
+        bank_payloads = _exact_resume_mapping(
+            "layerwise validation banks resume payload.banks",
+            copied["banks"],
+            ("A", "B", "C"),
+        )
+        restored_banks = {}
+        for label in ("A", "B", "C"):
+            bank_payload = _exact_resume_mapping(
+                f"layerwise validation bank {label} resume payload",
+                bank_payloads[label],
+                ("label", "probe_seeds", "trials_per_probe", "reference"),
+            )
+            if bank_payload["label"] != label:
+                raise ValueError(
+                    f"layerwise validation bank {label} label mismatch"
+                )
+            restored_banks[label] = LayerwiseValidationBank(
+                label=label,
+                reference=baseline_reference_from_resume_payload(
+                    bank_payload["reference"]
+                ),
+                probe_seeds=bank_payload["probe_seeds"],
+                trials_per_probe=bank_payload["trials_per_probe"],
+            )
+        restored = cls(
+            bank_a=restored_banks["A"],
+            bank_b=restored_banks["B"],
+            bank_c=restored_banks["C"],
+            promotion_reference=baseline_reference_from_resume_payload(
+                copied["promotion_reference"]
+            ),
+            final_reference=baseline_reference_from_resume_payload(
+                copied["final_reference"]
+            ),
+        )
+        if copied["contract"] != restored.contract_payload():
+            raise ValueError(
+                "layerwise validation banks resume payload contract mismatch"
+            )
+        return restored
 
 
 def _constraint_safety_margins(candidate: Any) -> tuple[float, ...]:
@@ -1900,6 +2014,16 @@ def _restore_three_bank_candidates(
         )
         if evidence is None or observed_count != trial_limit:
             continue
+        final_config_fingerprint = (
+            _strict_evidence_final_config_fingerprint(
+                evidence,
+                context="restored validation banks",
+            )
+        )
+        if final_config_fingerprint is None:
+            raise RuntimeError(
+                "restored validation banks have no final config fingerprint"
+            )
         metrics = _metrics_from_trials(evidence.trials)
         if not point_constraints_pass(metrics, reference):
             continue
@@ -1952,6 +2076,7 @@ def _restore_three_bank_candidates(
             "boosted_overrides": _deserialize_boosted_overrides(
                 metadata["boosted_overrides"],
             ),
+            "final_config_fingerprint": final_config_fingerprint,
             "reward": (
                 None if reward is None else _finite(reward, name="episode_reward")
             ),
@@ -2208,6 +2333,47 @@ def _validate_bank_evidence_prefix(
     return len(observed)
 
 
+def _strict_final_config_fingerprint(
+        value: Any,
+        *,
+        context: str,
+        ) -> str:
+    fingerprint = str(value or "")
+    if len(fingerprint) != 64 or any(
+            character not in "0123456789abcdef" for character in fingerprint
+    ):
+        raise RuntimeError(f"{context} final config fingerprint is invalid")
+    return fingerprint
+
+
+def _strict_evidence_final_config_fingerprint(
+        evidence: CandidateTrialEvidence | None,
+        *,
+        expected: str | None = None,
+        context: str,
+        ) -> str | None:
+    if evidence is None:
+        return None
+    fingerprints = {
+        _strict_final_config_fingerprint(
+            group.get("final_config_fingerprint"),
+            context=context,
+        )
+        for group in evidence.groups
+    }
+    if len(fingerprints) != 1:
+        raise RuntimeError(
+            f"{context} evidence has inconsistent final config fingerprints"
+        )
+    observed = next(iter(fingerprints))
+    if expected is not None and observed != expected:
+        raise RuntimeError(
+            f"{context} evidence final config fingerprint does not match "
+            "the prepared action"
+        )
+    return observed
+
+
 def _collect_fixed_validation_bank(
         *,
         env: Any,
@@ -2225,31 +2391,11 @@ def _collect_fixed_validation_bank(
     expected_seeds, start_count, target_count, bank = _validation_bank_prefix(
         validation_banks, bank_label,
     )
-    evidence = candidate_store.trial_evidence_for_action(
-        action_indices, full_identity_context, max_trials=target_count,
-    )
-    existing_count = _validate_bank_evidence_prefix(
-        evidence, expected_seeds, context=f"Bank {bank.label}",
-    )
-    if existing_count < start_count:
-        raise RuntimeError(
-            f"Bank {bank.label} cannot start before {start_count} earlier-bank trials"
-        )
-    if (existing_count - start_count) % bank.trials_per_probe:
-        raise RuntimeError(
-            f"Bank {bank.label} evidence ends inside a probe group"
-        )
-    if existing_count >= target_count:
-        if evidence is None:
-            raise AssertionError("complete validation bank has no evidence")
-        return evidence, 0
-
     resource = _resource_fields_from_action_matrix(
         action_matrix,
         float(getattr(env, "communication_importance_ratio", 1.0)),
     )
     cost = float(resource["ppo_resource_score"])
-    next_group = (existing_count - start_count) // bank.trials_per_probe
     online_clear = getattr(env.base, "clear_installed_blb", None)
     if full_base_env is not env.base and callable(online_clear):
         online_clear()
@@ -2265,6 +2411,35 @@ def _collect_fixed_validation_bank(
             external_resource_objective=resource,
             boosted_overrides=_copy_boosted_overrides(boosted_overrides),
         )
+        final_config_fingerprint = _strict_final_config_fingerprint(
+            prepared.get("final_config_fingerprint"),
+            context=f"Bank {bank.label} prepared action",
+        )
+        evidence = candidate_store.trial_evidence_for_action(
+            action_indices, full_identity_context, max_trials=target_count,
+        )
+        existing_count = _validate_bank_evidence_prefix(
+            evidence, expected_seeds, context=f"Bank {bank.label}",
+        )
+        _strict_evidence_final_config_fingerprint(
+            evidence,
+            expected=final_config_fingerprint,
+            context=f"Bank {bank.label}",
+        )
+        if existing_count < start_count:
+            raise RuntimeError(
+                f"Bank {bank.label} cannot start before "
+                f"{start_count} earlier-bank trials"
+            )
+        if (existing_count - start_count) % bank.trials_per_probe:
+            raise RuntimeError(
+                f"Bank {bank.label} evidence ends inside a probe group"
+            )
+        if existing_count >= target_count:
+            if evidence is None:
+                raise AssertionError("complete validation bank has no evidence")
+            return evidence, 0
+        next_group = (existing_count - start_count) // bank.trials_per_probe
         remaining_groups = [
             (group_index, int(bank.probe_seeds[group_index]))
             for group_index in range(next_group, len(bank.probe_seeds))
@@ -2345,6 +2520,7 @@ def _collect_fixed_validation_bank(
                 "boosted_overrides": _serialize_boosted_overrides(
                     boosted_overrides,
                 ),
+                "final_config_fingerprint": final_config_fingerprint,
                 "boosted_overrides_provenance": "layerwise_env",
                 "assessment_bootstrap_seed": int(bootstrap_seed),
                 "promotion_marker": f"validation_bank_{bank.label.lower()}",
@@ -2375,6 +2551,11 @@ def _collect_fixed_validation_bank(
     )
     observed_count = _validate_bank_evidence_prefix(
         evidence, expected_seeds, context=f"Bank {bank.label}",
+    )
+    _strict_evidence_final_config_fingerprint(
+        evidence,
+        expected=final_config_fingerprint,
+        context=f"Bank {bank.label}",
     )
     if evidence is None or observed_count != target_count:
         raise RuntimeError(
@@ -2517,6 +2698,7 @@ def _evaluate_axis_counterfactual_banks(
         evidence = None
         metrics = None
         assessment = None
+        reference = None
         passed = True
         bank_payloads: dict[str, Any] = {}
         for label in labels:
@@ -2558,30 +2740,36 @@ def _evaluate_axis_counterfactual_banks(
             if not current_pass:
                 passed = False
                 break
+        if reference is None:
+            raise RuntimeError("axis counterfactual produced no validation reference")
+        final_config_fingerprint = _strict_evidence_final_config_fingerprint(
+            evidence,
+            context=f"{axis} axis strict validation",
+        )
+        if final_config_fingerprint is None:
+            raise RuntimeError(
+                f"{axis} axis strict validation has no final config fingerprint"
+            )
         results[axis] = {
             "mode": materialization.mode,
             "precision_tolerance": float(tolerance),
-            "stability_multiplier": float(
-                axis_banks.final_reference.stability_multiplier
-            ),
-            "loss_limit": float(axis_banks.final_reference.loss_limit),
-            "metric1_limit": float(axis_banks.final_reference.metric1_limit),
-            "metric2_limit": float(axis_banks.final_reference.metric2_limit),
-            "loss_std_limit": float(
-                axis_banks.final_reference.loss_std_limit
-            ),
-            "metric1_std_limit": float(
-                axis_banks.final_reference.metric1_std_limit
-            ),
-            "metric2_std_limit": float(
-                axis_banks.final_reference.metric2_std_limit
-            ),
+            "stability_multiplier": float(reference.stability_multiplier),
+            "loss_limit": float(reference.loss_limit),
+            "metric1_limit": float(reference.metric1_limit),
+            "metric2_limit": float(reference.metric2_limit),
+            "loss_std_limit": float(reference.loss_std_limit),
+            "metric1_std_limit": float(reference.metric1_std_limit),
+            "metric2_std_limit": float(reference.metric2_std_limit),
+            "full_vector": [
+                int(value) for value in materialization.full_vector
+            ],
             "action_hash": sha256_json(
                 [int(value) for value in materialization.full_vector]
             ),
             "boosted_overrides": _serialize_boosted_overrides(
                 materialization.boosted_overrides,
             ),
+            "final_config_fingerprint": final_config_fingerprint,
             "banks": bank_payloads,
             "point_pass": bool(passed and len(bank_payloads) == len(labels)),
             "metrics": None if metrics is None else dict(metrics),
@@ -2624,6 +2812,13 @@ def _promote_candidate_through_validation_banks(
     latest_status, latest_metadata = _latest_promotion_status(
         candidate_store, action_indices, full_identity_context,
     )
+    terminal_failures = {
+        "bank_a_point_failed",
+        "bank_b_point_failed",
+        "bank_c_point_failed",
+        "axis_counterfactual_point_failed",
+        _FINAL_REVALIDATION_FAILED,
+    }
     if latest_status in ("promoted", _FINAL_REVALIDATION_PASSED):
         trial_limit = (
             validation_banks.final_trial_count
@@ -2667,13 +2862,6 @@ def _promote_candidate_through_validation_banks(
             metrics,
             latest_metadata.get("axis_counterfactuals"),
         )
-    terminal_failures = {
-        "bank_a_point_failed",
-        "bank_b_point_failed",
-        "bank_c_point_failed",
-        "axis_counterfactual_point_failed",
-        _FINAL_REVALIDATION_FAILED,
-    }
     if latest_status in terminal_failures:
         return PromotionResult(
             "promotion_already_attempted", trial_count, 0,
@@ -3173,6 +3361,7 @@ def certify_candidate_with_bank_c(
         for row in candidate["action_matrix"]
     )
     boosted_overrides = dict(candidate.get("boosted_overrides") or {})
+    full_base_env = promotion_base_env or env.base
     latest_status, latest_metadata = _latest_promotion_status(
         candidate_store, action_indices, full_identity_context,
     )
@@ -3182,7 +3371,7 @@ def certify_candidate_with_bank_c(
             full_identity_context,
             max_trials=validation_banks.final_trial_count,
         )
-        _validate_bank_evidence_prefix(
+        observed_count = _validate_bank_evidence_prefix(
             evidence,
             validation_banks.bank_a.trial_seeds
             + validation_banks.bank_b.trial_seeds
@@ -3191,6 +3380,30 @@ def certify_candidate_with_bank_c(
         )
         if evidence is None:
             raise RuntimeError("final certification status has no raw evidence")
+        if observed_count != validation_banks.final_trial_count:
+            raise RuntimeError(
+                "final certification status has incomplete raw evidence"
+            )
+        evidence, fresh_count = _collect_fixed_validation_bank(
+            env=env,
+            full_base_env=full_base_env,
+            candidate_store=candidate_store,
+            action_indices=action_indices,
+            full_identity_context=full_identity_context,
+            action_matrix=action_matrix,
+            boosted_overrides=boosted_overrides,
+            bootstrap_seed=bootstrap_seed,
+            episode_reward=(
+                None if candidate.get("reward") is None
+                else float(candidate["reward"])
+            ),
+            validation_banks=validation_banks,
+            bank_label="C",
+        )
+        if fresh_count:
+            raise AssertionError(
+                "completed final certification unexpectedly ran fresh trials"
+            )
         metrics = _metrics_from_trials(evidence.trials)
         diagnostic = assess_candidate_fn(
             evidence.trials,
@@ -3262,7 +3475,6 @@ def certify_candidate_with_bank_c(
             None if evidence is None else _metrics_from_trials(evidence.trials),
         )
 
-    full_base_env = promotion_base_env or env.base
     resource = _resource_fields_from_action_matrix(
         action_matrix,
         float(getattr(env, "communication_importance_ratio", 1.0)),
@@ -3277,6 +3489,14 @@ def certify_candidate_with_bank_c(
         "bootstrap_probability_role": "diagnostic_tiebreak_only",
         "validation_bank_contract": validation_banks.contract_payload(),
     }
+    prior_axis_counterfactuals = latest_metadata.get("axis_counterfactuals")
+    if isinstance(prior_axis_counterfactuals, Mapping):
+        prior_axis_counterfactuals = copy.deepcopy(
+            prior_axis_counterfactuals
+        )
+        status_metadata["axis_counterfactuals"] = prior_axis_counterfactuals
+    else:
+        prior_axis_counterfactuals = None
     reward = candidate.get("reward")
     if reward is not None:
         status_metadata["episode_reward"] = _finite(
@@ -3285,7 +3505,9 @@ def certify_candidate_with_bank_c(
     fresh_count = 0
     assessment = None
     metrics = None
-    axis_counterfactuals: Optional[Mapping[str, Any]] = None
+    axis_counterfactuals: Mapping[str, Any] | None = (
+        prior_axis_counterfactuals
+    )
     status = "failed_evaluation"
     try:
         evidence, fresh_count = _collect_fixed_validation_bank(

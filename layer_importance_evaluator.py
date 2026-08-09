@@ -63,6 +63,7 @@ from function_handler import (
     SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
+from mrpc_reproducibility import validate_mrpc_evaluation_setup
 from noise_rl_module_v2 import (
     NOISE_RL_PROGRESS_BOX_PPO_INTERVAL,
     _fmt_elapsed,
@@ -79,6 +80,140 @@ from rl_data_points import RLDataPointWriter, make_unique_run_id
 import os
 import random
 import hashlib
+
+
+def _build_ordinary_two_stage_result(
+        *,
+        backend: str,
+        stage1_best_config: Mapping[str, Any],
+        stage2_result: Mapping[str, Any],
+        final_eval_result: Mapping[str, Any] | None,
+        final_eval_status: str,
+        final_eval_ineligible_reason: str | None,
+        final_eval_error: str | None,
+        ) -> dict[str, Any]:
+    """Build the trusted-environment two-stage comparator summary."""
+    from json_utils import to_jsonable
+
+    normalized_backend = str(backend or "")
+    stage1_binding = dict(
+        stage1_best_config.get("selection_binding") or {}
+    )
+    consumed_binding = dict(
+        stage2_result.get("stage1_consumed_binding") or {}
+    )
+    num_layers = int(stage1_binding.get("num_layers", 0) or 0)
+    if (
+            not normalized_backend
+            or stage1_binding.get("backend") != normalized_backend
+            or stage2_result.get("search_backend") != normalized_backend
+            or num_layers <= 0
+            or len(stage1_binding.get("action") or ()) != num_layers
+            or len(stage1_binding.get("gelu_degrees") or ()) != num_layers
+            or len(stage1_binding.get("softmax_degrees") or ()) != num_layers
+            or any(
+                int(value) != 6
+                for value in stage1_binding.get("softmax_degrees") or ()
+            )
+    ):
+        raise RuntimeError(
+            "two-stage comparator has an invalid Stage-1 selection binding"
+        )
+    if consumed_binding != stage1_binding:
+        raise RuntimeError(
+            "Stage-2 result does not match the Stage-1 selection binding"
+        )
+
+    stage2_status = str(stage2_result.get("status") or "")
+    strict_feasible = bool(stage2_result.get("strict_feasible", False))
+    status_contract = {
+        "completed": (True, "complete_strict_feasible"),
+        "completed_infeasible": (False, "complete_least_violating"),
+        "smoke_only_complete": (False, "smoke_only_complete"),
+    }
+    if stage2_status not in status_contract:
+        raise RuntimeError(
+            f"two-stage comparator has invalid Stage-2 status {stage2_status!r}"
+        )
+    expected_feasible, outer_status = status_contract[stage2_status]
+    if strict_feasible is not expected_feasible:
+        raise RuntimeError(
+            "two-stage comparator Stage-2 status and strict verdict disagree"
+        )
+    if final_eval_result is not None and not strict_feasible:
+        raise RuntimeError(
+            "strict-infeasible selection cannot include final evaluation"
+        )
+
+    selection_diagnostics = dict(
+        stage2_result.get("selection_diagnostics") or {}
+    )
+    artifact_paths = dict(
+        selection_diagnostics.get("artifact_paths") or {}
+    )
+    action_group = dict(
+        stage2_result.get("blb_v3_best_action_group") or {}
+    )
+    action_matrix = action_group.get("policy_actions")
+    if stage2_status != "smoke_only_complete" and not isinstance(
+            action_matrix, (list, tuple)
+    ):
+        raise RuntimeError(
+            "two-stage comparator Stage-2 result has no layerwise action matrix"
+        )
+
+    return to_jsonable({
+        "schema_version": "two_stage_search_result_v1",
+        "backend": normalized_backend,
+        "status": outer_status,
+        "strict_feasible": strict_feasible,
+        "stage1_bound_into_stage2": True,
+        "smoke_only": stage2_status == "smoke_only_complete",
+        "stage1": {
+            "selection_binding": stage1_binding,
+            "result_path": stage1_binding.get("result_path"),
+            "gelu_degrees": list(stage1_binding["gelu_degrees"]),
+            "softmax_degrees": list(stage1_binding["softmax_degrees"]),
+            "evaluation": stage1_best_config.get("evaluation"),
+            "search_accounting": stage1_best_config.get(
+                "search_accounting"
+            ),
+        },
+        "stage2": {
+            "status": stage2_status,
+            "strict_feasible": strict_feasible,
+            "consumed_stage1_binding": consumed_binding,
+            "manifest_path": artifact_paths.get("manifest"),
+            "selected_configuration_path": artifact_paths.get(
+                "final_selected_configuration"
+            ),
+            "strict_validation_path": artifact_paths.get(
+                "strict_validation"
+            ),
+            "action_vec": stage2_result.get("blb_v3_best_action_vec"),
+            "action_group": action_group,
+            "layerwise_configuration": stage2_result.get(
+                "blb_v3_layerwise_best_configuration"
+            ),
+            "final_config_fingerprint": stage2_result.get(
+                "final_config_fingerprint"
+            ),
+            "search_accounting": stage2_result.get("search_accounting"),
+            "selection_diagnostics": selection_diagnostics,
+        },
+        "final_eval": {
+            "status": str(final_eval_status),
+            "executed": final_eval_result is not None,
+            "result_path": (
+                final_eval_result.get("summary_path")
+                if isinstance(final_eval_result, Mapping) else None
+            ),
+            "ineligible_reason": final_eval_ineligible_reason,
+            "error": final_eval_error,
+            "result": final_eval_result,
+        },
+    }, stringify_unknown=True)
+
 
 # ==================== PPO 常量与配置定义 ====================
 # 动作映射表
@@ -2405,6 +2540,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_search_rf_n_estimators=128,
                   blb_v3_search_rf_min_samples_leaf=2,
                   blb_v3_search_full_validation=True,
+                  comparator_smoke=False,
                   blb_v3_fusion_neighbor_curriculum=False,
                   blb_v3_fusion_probe_interval=0,
                   blb_v3_fusion_exploration_epsilon=0.0,
@@ -2418,6 +2554,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_osr_allow_fingerprint_mismatch=False,
                   rl_algo="ppo",
                   grpo_kl_beta=0.0,
+                  mrpc_reproducibility=None,
                   final_eval_require_rescale_optimizer=False):
         """
         基于 PPO 强化学习的策略搜索器。
@@ -2435,6 +2572,22 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.data_collator = data_collator
         self.batch_size = max(1, int(batch_size))
+        self.mrpc_reproducibility = mrpc_reproducibility
+        if self.mrpc_reproducibility is not None:
+            if str(data_path).strip().lower() != "mrpc":
+                raise ValueError(
+                    "MRPC reproducibility fixture requires data_path='mrpc'"
+                )
+            validate_mrpc_evaluation_setup(
+                model=self.model,
+                tokenizer=getattr(data_collator, "tokenizer", None),
+                collator=data_collator,
+                full_validation=test_data,
+                stability_probe=(
+                    self.mrpc_reproducibility.stability_probe
+                ),
+                batch_size=self.batch_size,
+            )
 
         # 评估结果缓存（基于 (gelu_config, softmax_config, resolved_split) 的确定性缓存）
         # 模型在 eval 模式 + no_grad + dataloader shuffle=False + 无随机性 → 相同配置评估结果必然一致
@@ -3246,7 +3399,10 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.blb_v3_policy_network_variant = normalize_policy_network_variant(
             blb_v3_policy_network_variant
         )
-        from blb_stage2_rl.search_baselines import normalize_search_backend
+        from blb_stage2_rl.search_baselines import (
+            normalize_search_backend,
+            validate_comparator_scientific_parameters,
+        )
 
         self.blb_v3_search_backend = normalize_search_backend(
             blb_v3_search_backend
@@ -3279,7 +3435,22 @@ class LayerImportanceEvaluator(TrainerCallback):
             blb_v3_search_full_validation,
             "blb_v3_search_full_validation",
         )
+        self.comparator_smoke = self._coerce_bool_flag(
+            comparator_smoke, "comparator_smoke",
+        )
+        if self.comparator_smoke and self.blb_v3_search_backend == "ppo":
+            raise ValueError(
+                "comparator_smoke is only valid for bo_rf, greedy, or coinn_ga"
+            )
         if self.blb_v3_search_backend != "ppo":
+            if self.stage2_rl_variant != "blb_v3":
+                raise ValueError(
+                    "two-stage comparators require stage2_rl_variant='blb_v3'"
+                )
+            if self.mrpc_reproducibility is None:
+                raise ValueError(
+                    "two-stage comparators require the MRPC reproducibility fixture"
+                )
             model_id = str(getattr(
                 getattr(self.model, "config", None),
                 "_name_or_path",
@@ -3292,24 +3463,66 @@ class LayerImportanceEvaluator(TrainerCallback):
                     != "textattack/bert-base-uncased-mrpc"
             ):
                 raise ValueError(
-                    "formal two-stage comparators require exactly "
+                    "two-stage comparators require exactly "
                     "textattack/bert-base-uncased-MRPC on 12-layer GLUE MRPC"
                 )
-            backend_budget = {
-                "bo_rf": 50_000,
-                "greedy": 6 ** 12,
-                "coinn_ga": 45_664,
-            }[self.blb_v3_search_backend]
-            if int(self.blb_v3_search_evaluation_budget) != backend_budget:
+            if int(self.final_eval_random_seed) != 42:
                 raise ValueError(
-                    f"formal {self.blb_v3_search_backend} comparator requires "
-                    f"evaluation budget/safety cap {backend_budget}"
+                    "two-stage comparators require Stage-1 seed 42"
                 )
-            if self.blb_v3_search_backend == "coinn_ga" and int(
-                    self.blb_v3_search_population_size
-            ) != 64:
+            effective_stage2_seed = (
+                42 if self.blb_v3_seed is None else int(self.blb_v3_seed)
+            )
+            if effective_stage2_seed != 42:
                 raise ValueError(
-                    "formal COINN-GA comparator requires Stage-2 population 64"
+                    "two-stage comparators require Stage-2 seed 42"
+                )
+            validate_comparator_scientific_parameters(
+                communication_importance_ratio=(
+                    self.stage2_communication_importance_ratio
+                ),
+                truncation_backend=blb_v3_truncation_backend,
+                truncation_ring_bits=blb_v3_truncation_ring_bits,
+                truncation_source_fractional_bits=(
+                    blb_v3_truncation_source_fractional_bits
+                ),
+            )
+            if self.comparator_smoke:
+                if int(self.blb_v3_search_evaluation_budget) != 1:
+                    raise ValueError(
+                        "comparator smoke requires Stage-2 evaluation budget 1"
+                    )
+                if self.blb_v3_search_full_validation:
+                    raise ValueError(
+                        "comparator smoke disables Stage-2 strict validation"
+                    )
+                if int(self.stage2_k_trials) != 3:
+                    raise ValueError(
+                        "comparator smoke requires Stage-2 online trial count 3"
+                    )
+                if not self.skip_final_eval:
+                    raise ValueError(
+                        "comparator smoke requires final evaluation to be skipped"
+                    )
+            else:
+                backend_budget = {
+                    "bo_rf": 50_000,
+                    "greedy": 6 ** 12,
+                    "coinn_ga": 45_664,
+                }[self.blb_v3_search_backend]
+                if int(self.blb_v3_search_evaluation_budget) != backend_budget:
+                    raise ValueError(
+                        f"{self.blb_v3_search_backend} comparator requires "
+                        f"evaluation budget/safety cap {backend_budget}"
+                    )
+            if self.blb_v3_search_backend == "coinn_ga" and (
+                    int(self.blb_v3_search_population_size) != 64
+                    or int(self.blb_v3_search_patience_generations) != 5
+            ):
+                raise ValueError(
+                    "COINN-GA comparator requires Stage-2 population 64, "
+                    "a five-generation incumbent-stagnation stop, an "
+                    "800-generation safety cap, and a 45,664-inference safety cap"
                 )
             if self.blb_v3_search_backend == "bo_rf" and (
                     int(self.blb_v3_search_initial_design_size) != 64
@@ -3317,21 +3530,34 @@ class LayerImportanceEvaluator(TrainerCallback):
                     or int(self.blb_v3_search_patience_generations) != 100
             ):
                 raise ValueError(
-                    "formal BO-RF comparator requires initial design 64, "
+                    "BO-RF comparator requires initial design 64, "
                     "candidate pool 2,048, and no-improvement patience 100"
+                )
+            if self.blb_v3_search_backend == "bo_rf" and (
+                    int(self.blb_v3_search_rf_n_estimators) != 128
+                    or int(self.blb_v3_search_rf_min_samples_leaf) != 2
+            ):
+                raise ValueError(
+                    "BO-RF comparator requires 128 estimators and leaf size 2"
                 )
             if self.skip_stage1_rl or self.skip_noise_rl:
                 raise ValueError(
                     "two-stage comparator must run both Stage-1 and Stage-2"
                 )
-            if not self.blb_v3_search_full_validation:
+            if (
+                    not self.comparator_smoke
+                    and not self.blb_v3_search_full_validation
+            ):
                 raise ValueError(
-                    "formal two-stage comparator requires full Stage-2 strict "
+                    "two-stage comparator requires full Stage-2 strict "
                     "validation"
                 )
-            if int(self.blb_v3_final_selection_top_n) != 5:
+            if (
+                    not self.comparator_smoke
+                    and int(self.blb_v3_final_selection_top_n) != 5
+            ):
                 raise ValueError(
-                    "formal two-stage comparator must strictly validate top 5"
+                    "two-stage comparator must strictly validate top 5"
                 )
             if int(self.blb_v3_search_mutation_max_coordinates) != 4:
                 raise ValueError(
@@ -3344,9 +3570,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 int(self.blb_v3_promotion_validation_trials),
                 int(self.blb_v3_final_selection_validation_trials),
             )
-            if trial_contract != (5, 3, 3, 15, 15):
+            if (
+                    not self.comparator_smoke
+                    and trial_contract != (5, 3, 3, 15, 15)
+            ):
                 raise ValueError(
-                    "formal two-stage comparator requires the v12 trial "
+                    "two-stage comparator requires the v12 trial "
                     "contract (baseline=5x3, online=3, strict banks=15 each)"
                 )
             constraint_contract = (
@@ -3360,7 +3589,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     and math.isclose(constraint_contract[2], 2.0)
             ):
                 raise ValueError(
-                    "formal two-stage comparator requires precision tolerance "
+                    "two-stage comparator requires precision tolerance "
                     "0.001 in both stages and Stage-2 stability multiplier 2.0"
                 )
         if (
@@ -3943,6 +4172,23 @@ class LayerImportanceEvaluator(TrainerCallback):
         cache = self.__dict__.setdefault("_stability_probe_cache", {})
         key = (str(split_name), int(probe_size), int(probe_seed))
         if key in cache:
+            return cache[key]
+        if self.mrpc_reproducibility is not None:
+            if str(split_name) != "validation_full":
+                raise RuntimeError(
+                    "MRPC reproducibility requires validation_full"
+                )
+            frozen_probe = self.mrpc_reproducibility.stability_probe
+            if frozen_probe is None:
+                raise RuntimeError(
+                    "MRPC reproducibility stability probe is unavailable"
+                )
+            if int(probe_size) != len(frozen_probe):
+                raise ValueError(
+                    "MRPC reproducibility probe size mismatch: "
+                    f"requested {int(probe_size)}, fixture has {len(frozen_probe)}"
+                )
+            cache[key] = (frozen_probe, None)
             return cache[key]
         dataset = self.dataset_splits.get(split_name)
         if dataset is None or len(dataset) == 0:
@@ -5383,19 +5629,78 @@ class LayerImportanceEvaluator(TrainerCallback):
         )
         return path if os.path.isfile(path) else None
 
+    def _stage2_final_eval_ineligible_reason(
+            self,
+            noise_stage_result,
+            ):
+        """Return why a comparator result cannot enter scientific final-eval."""
+        if not isinstance(noise_stage_result, Mapping):
+            raise TypeError("Stage-2 search result must be a mapping")
+        if self.blb_v3_search_backend == "ppo":
+            return None
+        if (
+                noise_stage_result.get("search_backend")
+                != self.blb_v3_search_backend
+        ):
+            raise RuntimeError(
+                "comparator Stage-2 result backend does not match "
+                "the active two-stage search"
+            )
+        if (
+                noise_stage_result.get("status") != "completed"
+                or noise_stage_result.get("strict_feasible") is not True
+        ):
+            return "Stage-2 comparator result is not strict-feasible"
+        return None
+
     def _build_stage2_final_eval_handoff(self, noise_stage_result):
         """Detach the Stage-2 best payload before handing it to final-eval."""
         if not isinstance(noise_stage_result, Mapping):
             raise TypeError("Stage-2 search result must be a mapping")
-        if str(noise_stage_result.get("status", "")) == "smoke_only_complete":
+        status = str(noise_stage_result.get("status", ""))
+        if status == "smoke_only_complete":
             raise ValueError(
                 "smoke-only Stage-2 search cannot be handed to final evaluation; "
                 "rerun with the canonical validation_full gate enabled"
             )
+        comparator_backends = {"bo_rf", "greedy", "coinn_ga"}
+        search_backend = str(
+            noise_stage_result.get("search_backend", "") or ""
+        ).lower()
+        rl_variant = str(noise_stage_result.get("rl_variant", "") or "")
+        comparator_variant_prefix = "blb_v3_layerwise_search_"
+        comparator_variant_backend = ""
+        if rl_variant.startswith(comparator_variant_prefix):
+            comparator_variant_backend = rl_variant[
+                len(comparator_variant_prefix):
+            ]
+            if comparator_variant_backend.endswith("_smoke"):
+                comparator_variant_backend = comparator_variant_backend[:-6]
+        is_comparator = bool(
+            search_backend in comparator_backends
+            or comparator_variant_backend in comparator_backends
+        )
+        if is_comparator:
+            if search_backend not in comparator_backends:
+                raise ValueError(
+                    "comparator Stage-2 result is missing its search backend"
+                )
+            if status != "completed":
+                raise ValueError(
+                    "only a strict-feasible completed comparator result can be "
+                    "handed to scientific final evaluation"
+                )
+            if noise_stage_result.get("strict_feasible") is not True:
+                raise ValueError(
+                    "comparator final evaluation requires a strict-feasible "
+                    "Stage-2 result"
+                )
+            if comparator_variant_backend != search_backend:
+                raise ValueError(
+                    "comparator Stage-2 result has an rl_variant backend mismatch"
+                )
 
-        is_layerwise = str(
-            noise_stage_result.get("rl_variant", "") or ""
-        ).startswith("blb_v3_layerwise")
+        is_layerwise = rl_variant.startswith("blb_v3_layerwise")
         handoff = {}
         best_noise_cfg = noise_stage_result.get("best_noise_config")
         if isinstance(best_noise_cfg, Mapping):
@@ -5412,10 +5717,21 @@ class LayerImportanceEvaluator(TrainerCallback):
             handoff["blb_v3_best_action_vec"] = np.asarray(
                 best_action, dtype=int,
             ).copy()
-            handoff["blb_v3_profile"] = str(
-                noise_stage_result.get("blb_v3_profile")
-                or getattr(self, "dataset_key", "")
-                or ""
+            result_profile = str(
+                noise_stage_result.get("blb_v3_profile") or ""
+            )
+            evaluator_profile = str(
+                getattr(self, "dataset_key", "") or ""
+            )
+            if is_comparator and (
+                    not result_profile or result_profile != evaluator_profile
+            ):
+                raise ValueError(
+                    "comparator Stage-2 result profile does not match the "
+                    "final-eval dataset"
+                )
+            handoff["blb_v3_profile"] = (
+                result_profile or evaluator_profile
             )
             if (
                     is_layerwise
@@ -5446,6 +5762,51 @@ class LayerImportanceEvaluator(TrainerCallback):
                 if not isinstance(best_group, Mapping):
                     raise ValueError("blb_v3_best_action_group must be a mapping")
                 handoff["blb_v3_best_action_group"] = copy.deepcopy(best_group)
+
+        if is_comparator:
+            if handoff.get("blb_v3_fusion_count_action") is not True:
+                raise ValueError(
+                    "comparator Stage-2 final evaluation requires fusion-count action"
+                )
+            group = handoff.get("blb_v3_best_action_group")
+            action_matrix = (
+                group.get("policy_actions")
+                if isinstance(group, Mapping) else None
+            )
+            boosted_overrides = (
+                group.get("boosted_overrides")
+                if isinstance(group, Mapping) else None
+            )
+            if not isinstance(action_matrix, (list, tuple)) or not all(
+                    isinstance(row, (list, tuple)) for row in action_matrix
+            ):
+                raise ValueError(
+                    "comparator Stage-2 result is missing its selected action matrix"
+                )
+            if not isinstance(boosted_overrides, (list, tuple)):
+                raise ValueError(
+                    "comparator Stage-2 result is missing its boosted overrides"
+                )
+            final_config_fingerprint = str(
+                noise_stage_result.get("final_config_fingerprint") or ""
+            )
+            if (
+                    len(final_config_fingerprint) != 64
+                    or any(
+                        char not in "0123456789abcdef"
+                        for char in final_config_fingerprint
+                    )
+            ):
+                raise ValueError(
+                    "comparator Stage-2 result has an invalid final config fingerprint"
+                )
+            handoff.update({
+                "status": "completed",
+                "search_backend": search_backend,
+                "rl_variant": rl_variant,
+                "strict_feasible": True,
+                "final_config_fingerprint": final_config_fingerprint,
+            })
 
         return handoff or None
 
@@ -5556,9 +5917,90 @@ class LayerImportanceEvaluator(TrainerCallback):
                             best_group = checkpoint.get("blb_v3_best_action_group")
                             if best_group is None:
                                 best_group = strict_best.get("best_action_group")
-                            is_layerwise = str(
+                            checkpoint_rl_variant = str(
                                 checkpoint.get("rl_variant", "") or ""
-                            ).startswith("blb_v3_layerwise")
+                            )
+                            is_layerwise = checkpoint_rl_variant.startswith(
+                                "blb_v3_layerwise"
+                            )
+                            comparator_backends = {
+                                "bo_rf", "greedy", "coinn_ga",
+                            }
+                            checkpoint_backend = str(
+                                checkpoint.get("search_backend", "") or ""
+                            ).lower()
+                            variant_prefix = "blb_v3_layerwise_search_"
+                            variant_backend = ""
+                            if checkpoint_rl_variant.startswith(variant_prefix):
+                                variant_backend = checkpoint_rl_variant[
+                                    len(variant_prefix):
+                                ]
+                                if variant_backend.endswith("_smoke"):
+                                    variant_backend = variant_backend[:-6]
+                            active_backend = str(
+                                getattr(self, "blb_v3_search_backend", "ppo")
+                                or "ppo"
+                            ).lower()
+                            is_comparator = bool(
+                                active_backend in comparator_backends
+                                or checkpoint_backend in comparator_backends
+                                or variant_backend in comparator_backends
+                            )
+                            comparator_contract = None
+                            if is_comparator:
+                                contract_errors = []
+                                if checkpoint.get("status") != "completed":
+                                    contract_errors.append("status")
+                                if checkpoint.get("strict_feasible") is not True:
+                                    contract_errors.append("strict_feasible")
+                                if checkpoint_backend not in comparator_backends:
+                                    contract_errors.append("search_backend")
+                                if variant_backend != checkpoint_backend:
+                                    contract_errors.append("rl_variant")
+                                if (
+                                        active_backend in comparator_backends
+                                        and checkpoint_backend != active_backend
+                                ):
+                                    contract_errors.append("active backend")
+                                fingerprint = str(
+                                    checkpoint.get("final_config_fingerprint")
+                                    or ""
+                                )
+                                if (
+                                        len(fingerprint) != 64
+                                        or any(
+                                            char not in "0123456789abcdef"
+                                            for char in fingerprint
+                                        )
+                                ):
+                                    contract_errors.append(
+                                        "final_config_fingerprint"
+                                    )
+                                action_matrix = (
+                                    best_group.get("policy_actions")
+                                    if isinstance(best_group, Mapping) else None
+                                )
+                                if (
+                                        not isinstance(action_matrix, (list, tuple))
+                                        or not all(
+                                            isinstance(row, (list, tuple))
+                                            for row in action_matrix
+                                        )
+                                ):
+                                    contract_errors.append("policy_actions")
+                                if contract_errors:
+                                    raise ValueError(
+                                        "completed comparator checkpoint contract "
+                                        "is invalid: "
+                                        + ", ".join(contract_errors)
+                                    )
+                                comparator_contract = {
+                                    "status": "completed",
+                                    "strict_feasible": True,
+                                    "search_backend": checkpoint_backend,
+                                    "rl_variant": checkpoint_rl_variant,
+                                    "final_config_fingerprint": fingerprint,
+                                }
                             missing = []
                             if best_action is None:
                                 missing.append("action")
@@ -5597,6 +6039,8 @@ class LayerImportanceEvaluator(TrainerCallback):
                             )
                             if best_group is not None:
                                 out["blb_v3_best_action_group"] = copy.deepcopy(best_group)
+                            if comparator_contract is not None:
+                                out.update(comparator_contract)
                         except Exception as exc:
                             failures.append((path, exc))
                             self.log(
@@ -5887,8 +6331,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             metric1, metric2 = self._stage1_legacy_metric_pair_from_eval_result(result)
             avg_time = result.time_ms
         except Exception as e:
-            print(f"[警告] 为数据集（dataset）'{ds}' 计算指标失败: {e}")
-            avg_loss, avg_time, metric1, metric2 = 0.0, 0.0, 0.0, 0.0
+            raise RuntimeError(
+                f"数据集(dataset){ds!r} 的模型评估失败。禁止将基础设施错误"
+                "转换为零指标或写入评估缓存"
+            ) from e
         return avg_loss, metric1, metric2, avg_time
 
     def evaluate_model(
@@ -6644,88 +7090,58 @@ class LayerImportanceEvaluator(TrainerCallback):
                 not self.skip_stage1_rl
                 and self.blb_v3_search_backend != "ppo"
         ):
+            from dataclasses import replace
+
+            from json_utils import read_json_file
             from stage1_rl.search_baselines import (
-                SearchConfig as Stage1SearchConfig,
                 Stage1Constraints,
-                Stage1SearchSpace,
+                stage1_comparator_search_config,
+                validate_stage1_comparator_setup,
             )
-            from stage1_rl.search_runner import run_stage1_search
+            from stage1_rl.search_runner import (
+                build_stage1_search_accounting,
+                load_completed_search_result,
+                run_stage1_search,
+            )
 
             backend = self.blb_v3_search_backend
-            metric_values = (
-                (float(base_p),)
-                if int(num_metrics) == 1
-                else (float(base_p), float(base_s))
-            )
-            metric_limits = (
-                (float(limit_p),)
-                if int(num_metrics) == 1
-                else (float(limit_p), float(limit_s))
-            )
-            metric_names = (
-                ("metric1",)
-                if int(num_metrics) == 1
-                else ("metric1", "metric2")
-            )
+            if int(num_metrics) != 2:
+                raise RuntimeError(
+                    "MRPC Stage-1 comparator requires accuracy and weighted_f1"
+                )
             stage1_constraints = Stage1Constraints.from_baseline(
                 baseline_loss=float(base_loss),
-                baseline_metrics=metric_values,
-                loss_relative_tolerance=float(self.error_threshold),
-                metric_relative_tolerance=float(
-                    self.correlation_drop_ratio
-                ),
-                metric_names=metric_names,
+                baseline_metrics=(float(base_p), float(base_s)),
+                loss_relative_tolerance=0.001,
+                metric_relative_tolerance=0.001,
+                metric_names=("accuracy", "weighted_f1"),
             )
             if (
-                    not math.isclose(stage1_constraints.loss_max, float(limit_loss))
-                    or tuple(stage1_constraints.metric_mins) != tuple(metric_limits)
+                    not math.isclose(
+                        stage1_constraints.loss_max,
+                        float(limit_loss),
+                        rel_tol=0.0,
+                        abs_tol=0.0,
+                    )
+                    or tuple(stage1_constraints.metric_mins)
+                    != (float(limit_p), float(limit_s))
             ):
                 raise RuntimeError(
-                    "Stage-1 comparator constraint construction drifted from "
-                    "the canonical baseline limits"
+                    "Stage-1 comparator runtime thresholds do not match the "
+                    "0.1% MRPC limits"
                 )
-            stage1_space = Stage1SearchSpace(int(self.total_layers))
-            stage1_space_size = int(stage1_space.cardinality)
-            configured_cap = int(self.blb_v3_search_evaluation_budget)
-            stage1_config_fields = {
-                "seed": int(self.final_eval_random_seed),
-                "bo_initial_design_size": min(48, stage1_space_size),
-                "bo_candidate_pool_size": max(
-                    2_048,
-                    int(self.blb_v3_search_candidate_pool_size),
-                ),
-                "bo_no_improvement_patience": max(
-                    1,
-                    int(self.blb_v3_search_patience_generations),
-                ),
-                "rf_n_estimators": int(
-                    self.blb_v3_search_rf_n_estimators
-                ),
-                "rf_min_samples_leaf": int(
-                    self.blb_v3_search_rf_min_samples_leaf
-                ),
-                "greedy_max_starts": 3,
-                "ga_population_size": 48,
-                "ga_elite_count": 5,
-                "ga_update_generations": 800,
-                "ga_mutation_max_layers": 4,
-            }
-            provisional_config = Stage1SearchConfig(
-                evaluation_cap=stage1_space_size,
-                **stage1_config_fields,
+            stage1_search_config = stage1_comparator_search_config(backend)
+            validate_stage1_comparator_setup(
+                backend=backend,
+                config=stage1_search_config,
+                num_layers=int(self.total_layers),
+                constraints=stage1_constraints,
             )
-            if backend == "greedy":
-                stage1_evaluation_cap = stage1_space_size
-            elif backend == "coinn_ga":
-                stage1_evaluation_cap = (
-                    provisional_config.canonical_ga_target_evaluations
+            if self.comparator_smoke:
+                stage1_search_config = replace(
+                    stage1_search_config,
+                    evaluation_cap=1,
                 )
-            else:
-                stage1_evaluation_cap = configured_cap
-            stage1_search_config = Stage1SearchConfig(
-                evaluation_cap=min(stage1_evaluation_cap, stage1_space_size),
-                **stage1_config_fields,
-            )
             stage1_output_dir = os.path.join(
                 self.run_output_dir
                 or os.path.dirname(self.stage1_step_info_file),
@@ -6739,7 +7155,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 f"\n--- 阶段2（Phase 2）: {backend} Stage-1 search "
                 "(validation_full) ---"
             )
-            stage1_comparator_result = run_stage1_search(
+            in_memory_stage1_result = run_stage1_search(
                 backend=backend,
                 evaluator=self,
                 num_layers=int(self.total_layers),
@@ -6755,61 +7171,69 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )),
                     "dataset": str(self.data_path),
                     "split": "validation_full",
+                    "comparator_smoke": bool(self.comparator_smoke),
                     "stage1_bound_into_stage2": True,
                     "stage2_backend": backend,
                 },
                 preload_path=preload_path,
             )
+            stage1_comparator_result = load_completed_search_result(
+                stage1_output_dir
+            )
+            if (
+                    stage1_comparator_result.as_dict()
+                    != in_memory_stage1_result.as_dict()
+            ):
+                raise RuntimeError(
+                    "in-memory Stage-1 result does not match its completed "
+                    "ordinary artifacts"
+                )
             selected_stage1 = stage1_comparator_result.best
             if not selected_stage1.valid:
                 raise RuntimeError(
                     "Stage-1 comparator produced no valid configuration"
                 )
             if (
-                    backend == "greedy"
+                    not self.comparator_smoke
+                    and backend == "greedy"
                     and stage1_comparator_result.termination_reason
                     != "verified_local_optimum"
             ):
                 raise RuntimeError(
-                    "formal Stage-1 Greedy did not verify every 1-opt and "
-                    "2-opt local optimum"
+                    "Stage-1 Greedy did not verify every 1-opt and 2-opt "
+                    "local optimum"
                 )
-            if backend == "coinn_ga" and (
-                    stage1_comparator_result.termination_reason
-                    != "completed_generations"
-                    or stage1_comparator_result.evaluation_count
-                    != stage1_search_config.canonical_ga_target_evaluations
+            if (
+                    not self.comparator_smoke
+                    and backend == "coinn_ga"
+                    and stage1_comparator_result.termination_reason
+                    not in {"completed_generations", "ga_no_incumbent_improvement"}
             ):
                 raise RuntimeError(
-                    "formal Stage-1 COINN-GA did not complete exactly 800 "
-                    "generations and 34,448 evaluations"
+                    "Stage-1 COINN-GA has no five-generation stagnation or "
+                    "800-generation safety-cap completion"
                 )
-            from blb_stage2_rl.candidate_store import sha256_json
-            from json_utils import read_json_file
 
             stage1_result_path = os.path.join(
                 stage1_output_dir, "result.json",
             )
-            with open(stage1_result_path, "rb") as handle:
-                stage1_result_sha256 = hashlib.sha256(handle.read()).hexdigest()
-            stage1_selection_identity = {
+            stage1_manifest = read_json_file(
+                os.path.join(stage1_output_dir, "manifest.json")
+            )
+            if not isinstance(stage1_manifest, Mapping):
+                raise RuntimeError("Stage-1 manifest must be a JSON object")
+            stage1_selection_binding = {
                 "backend": backend,
+                "seed": int(stage1_comparator_result.config.seed),
                 "action": list(selected_stage1.action),
                 "gelu_degrees": list(selected_stage1.gelu_degrees),
                 "softmax_degrees": list(selected_stage1.softmax_degrees),
-            }
-            stage1_selection_provenance = {
-                **stage1_selection_identity,
-                "selection_hash": sha256_json(stage1_selection_identity),
+                "num_layers": int(self.total_layers),
                 "result_path": stage1_result_path,
-                "result_sha256": stage1_result_sha256,
             }
-            self.stage1_comparator_selection_provenance = (
-                stage1_selection_provenance
+            self.stage1_comparator_selection_binding = dict(
+                stage1_selection_binding
             )
-            stage1_manifest = dict(read_json_file(os.path.join(
-                stage1_output_dir, "manifest.json",
-            )) or {})
             best_config = {
                 "gelu": np.asarray(
                     selected_stage1.gelu_degrees, dtype=int,
@@ -6817,7 +7241,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "softmax": np.asarray(
                     selected_stage1.softmax_degrees, dtype=int,
                 ),
-                "formal_feasible": bool(selected_stage1.feasible),
+                "feasible": bool(selected_stage1.feasible),
                 "selection_status": (
                     "feasible"
                     if selected_stage1.feasible
@@ -6825,22 +7249,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 ),
                 "backend": backend,
                 "evaluation": selected_stage1.as_dict(),
-                "result_path": os.path.join(stage1_output_dir, "result.json"),
-                "selection_provenance": stage1_selection_provenance,
-                "search_accounting": {
-                    "observation_count": int(
-                        stage1_comparator_result.evaluation_count
-                    ),
-                    "model_inference_count": int(
-                        stage1_comparator_result.evaluation_count
-                    ),
-                    "termination_reason": str(
-                        stage1_comparator_result.termination_reason
-                    ),
-                    "search_wall_seconds": float(
-                        stage1_manifest.get("search_wall_seconds", 0.0)
-                    ),
-                },
+                "result_path": stage1_result_path,
+                "selection_binding": stage1_selection_binding,
+                "search_accounting": build_stage1_search_accounting(
+                    result=stage1_comparator_result,
+                    manifest=stage1_manifest,
+                ),
             }
             search_best_config = best_config
             global_best_config = best_config
@@ -6860,11 +7274,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     ),
                     extra_fields={
                         "backend": backend,
-                        "formal_feasible": bool(selected_stage1.feasible),
+                        "feasible": bool(selected_stage1.feasible),
                         "evaluation_count": stage1_completed_episodes,
-                        "result_path": os.path.join(
-                            stage1_output_dir, "result.json",
-                        ),
+                        "result_path": stage1_result_path,
                     },
                 )
 
@@ -8406,6 +8818,7 @@ class LayerImportanceEvaluator(TrainerCallback):
         noise_stage_result = None
         final_eval_result = None
         final_eval_error = None
+        final_eval_ineligible_reason = None
         stage2_fixed_gelu = np.asarray(base_gelu, dtype=int)
         stage2_fixed_softmax = np.asarray(base_softmax, dtype=int)
         stage2_fixed_label = "Baseline"
@@ -8506,9 +8919,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                 noise_limit_p = limit_p
                 noise_limit_s = limit_s
                 if noise_stage_result is not None:
-                    stage2_search_best = self._build_stage2_final_eval_handoff(
-                        noise_stage_result,
+                    final_eval_ineligible_reason = (
+                        self._stage2_final_eval_ineligible_reason(
+                            noise_stage_result,
+                        )
                     )
+                    if final_eval_ineligible_reason is None:
+                        stage2_search_best = (
+                            self._build_stage2_final_eval_handoff(
+                                noise_stage_result,
+                            )
+                        )
                     noise_limit_loss = noise_stage_result.get("limit_loss", limit_loss)
                     noise_limit_p = noise_stage_result.get("limit_p", limit_p)
                     noise_limit_s = noise_stage_result.get("limit_s", limit_s)
@@ -8519,7 +8940,13 @@ class LayerImportanceEvaluator(TrainerCallback):
                     if stage2_search_best is None and prior_stage2_search_best is not None:
                         stage2_search_best = prior_stage2_search_best
 
-                if self.final_eval_only:
+                if final_eval_ineligible_reason is not None:
+                    self.log(
+                        "[Comparator][Paean] skipping optional final-eval: "
+                        + final_eval_ineligible_reason
+                    )
+                    final_eval_result = None
+                elif self.final_eval_only:
                     final_eval_result = self.run_unified_final_eval(
                         stage1_search_best=stage1_search_best,
                         stage2_search_best=stage2_search_best,
@@ -8567,7 +8994,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         final_eval_error = exc
                         self.log(
                             "[Comparator][Paean] optional final-eval failed "
-                            "after authoritative strict F4; preserving the "
+                            "after strict F4; preserving the "
                             f"two-stage search artifact: {exc!r}"
                         )
                 if self.run_output_dir:
@@ -8575,8 +9002,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                         self.run_output_dir,
                         "final_eval",
                         (
-                            "failed_optional"
-                            if final_eval_error is not None else "completed"
+                            "skipped_ineligible"
+                            if final_eval_ineligible_reason is not None
+                            else (
+                                "failed_optional"
+                                if final_eval_error is not None else "completed"
+                            )
                         ),
                     )
         finally:
@@ -8584,6 +9015,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         self.last_noise_stage_result = noise_stage_result
         self.last_final_eval_result = final_eval_result
+        ordinary_two_stage_payload = None
 
         if (
                 self.blb_v3_search_backend != "ppo"
@@ -8591,201 +9023,49 @@ class LayerImportanceEvaluator(TrainerCallback):
                 and noise_stage_result is not None
                 and self.run_output_dir
         ):
-            from json_utils import write_json_file
+            if final_eval_result is not None:
+                final_eval_status = "completed"
+            elif final_eval_ineligible_reason is not None:
+                final_eval_status = "skipped_ineligible"
+            elif final_eval_error is not None:
+                final_eval_status = "failed_optional"
+            elif self.skip_final_eval:
+                final_eval_status = "skipped_by_request"
+            else:
+                final_eval_status = "decoupled_not_run"
 
-            stage1_formal = bool(best_config.get("formal_feasible", False))
-            stage2_formal = bool(
-                noise_stage_result.get("formal_feasible", False)
-            )
-            selection_diagnostics = dict(
-                noise_stage_result.get("selection_diagnostics") or {}
-            )
-            strict_validation = dict(
-                selection_diagnostics.get("strict_validation") or {}
-            )
-            produced_provenance = dict(
-                best_config.get("selection_provenance") or {}
-            )
-            consumed_provenance = dict(
-                noise_stage_result.get("stage1_consumed_provenance") or {}
-            )
-            provenance_matches = bool(
-                produced_provenance
-                and produced_provenance == consumed_provenance
-            )
-            if not provenance_matches:
-                raise RuntimeError(
-                    "final two-stage artifact detected Stage-1 provenance drift"
-                )
-            two_stage_formal = bool(
-                stage1_formal and stage2_formal and provenance_matches
-            )
-            two_stage_payload = {
-                "schema_version": "two_stage_search_final_v2",
-                "backend": self.blb_v3_search_backend,
-                "identity": {
-                    "model": str(getattr(
-                        getattr(self.model, "config", None),
-                        "_name_or_path",
-                        type(self.model).__name__,
-                    )),
-                    "dataset": str(self.data_path),
-                    "num_layers": int(self.total_layers),
-                    "stage1_search_seed": int(self.final_eval_random_seed),
-                    "stage2_search_seed": dict(
-                        noise_stage_result.get("search_accounting") or {}
-                    ).get("seed"),
-                    "paean_seed": int(self.final_eval_random_seed),
-                    "experiment_protocol": "bert_base_mrpc_v12",
-                    "protocol_hash": sha256_json({
-                        "model": "textattack/bert-base-uncased-MRPC",
-                        "dataset": "glue_mrpc",
-                        "num_layers": 12,
-                        "stage1_precision_tolerance": 0.001,
-                        "stage2_precision_tolerance": 0.001,
-                        "stage2_stability_multiplier": 2.0,
-                        "baseline_trials": [5, 3],
-                        "online_trials": 3,
-                        "strict_bank_trials": [15, 15, 15],
-                        "strict_top_n": 5,
-                    }),
-                },
-                "status": (
-                    "complete_strict_feasible"
-                    if two_stage_formal
-                    else "complete_strict_infeasible"
+            ordinary_two_stage_payload = _build_ordinary_two_stage_result(
+                backend=self.blb_v3_search_backend,
+                stage1_best_config=best_config,
+                stage2_result=noise_stage_result,
+                final_eval_result=final_eval_result,
+                final_eval_status=final_eval_status,
+                final_eval_ineligible_reason=(
+                    final_eval_ineligible_reason
                 ),
-                "formal_feasible": two_stage_formal,
-                "formal_scientific_complete": two_stage_formal,
-                "stage1_bound_into_stage2": provenance_matches,
-                "stage1_produced_selection_hash": produced_provenance.get(
-                    "selection_hash"
+                final_eval_error=(
+                    None if final_eval_error is None else repr(final_eval_error)
                 ),
-                "stage2_consumed_selection_hash": consumed_provenance.get(
-                    "selection_hash"
-                ),
-                "final_eval": {
-                    "executed": final_eval_result is not None,
-                    "status": (
-                        "completed"
-                        if final_eval_result is not None
-                        else (
-                            "failed_optional"
-                            if final_eval_error is not None
-                            else (
-                                "skipped_by_request"
-                                if self.skip_final_eval
-                                else "decoupled_not_run"
-                            )
-                        )
-                    ),
-                    "error": (
-                        None
-                        if final_eval_error is None
-                        else repr(final_eval_error)
-                    ),
-                    "result": (
-                        None
-                        if final_eval_result is None
-                        else final_eval_result
-                    ),
-                    "role": (
-                        "separate_from_authoritative_internal_strict_F4"
-                    ),
-                },
-                "stage1": {
-                    "backend": self.blb_v3_search_backend,
-                    "gelu_degrees": np.asarray(
-                        best_config["gelu"], dtype=int,
-                    ).tolist(),
-                    "softmax_degrees": np.asarray(
-                        best_config["softmax"], dtype=int,
-                    ).tolist(),
-                    "valid": bool(
-                        best_config.get("evaluation", {}).get("valid", True)
-                    ),
-                    "formal_feasible": stage1_formal,
-                    "selection_status": best_config.get("selection_status"),
-                    "evaluation": best_config.get("evaluation"),
-                    "result_path": best_config.get("result_path"),
-                    "selection_provenance": best_config.get(
-                        "selection_provenance"
-                    ),
-                    "search_accounting": best_config.get(
-                        "search_accounting"
-                    ),
-                },
-                "stage2": {
-                    "backend": self.blb_v3_search_backend,
-                    "action_matrix": noise_stage_result.get(
-                        "blb_v3_layerwise_best_action_group", {}
-                    ).get("policy_actions"),
-                    "full_vector": noise_stage_result.get(
-                        "blb_v3_best_action_vec"
-                    ),
-                    "best_action_group": noise_stage_result.get(
-                        "blb_v3_best_action_group"
-                    ),
-                    "valid": bool(
-                        dict(selection_diagnostics.get(
-                            "best_evaluation",
-                        ) or {}).get("valid", True)
-                    ),
-                    "formal_feasible": stage2_formal,
-                    "selection_status": strict_validation.get(
-                        "selection_status"
-                    ),
-                    "scientific_export_allowed": bool(
-                        noise_stage_result.get(
-                            "scientific_export_allowed", False,
-                        )
-                    ),
-                    "selected_evaluation": selection_diagnostics.get(
-                        "best_evaluation"
-                    ),
-                    "online_best": strict_validation.get("online_best"),
-                    "selected_violations": strict_validation.get(
-                        "selected_violations"
-                    ),
-                    "strict_validation_summary": {
-                        "requested_top_n": strict_validation.get(
-                            "requested_top_n"
-                        ),
-                        "eligible_online_candidate_count": (
-                            strict_validation.get(
-                                "eligible_online_candidate_count"
-                            )
-                        ),
-                        "strict_evaluated_candidate_count": (
-                            strict_validation.get(
-                                "strict_evaluated_candidate_count"
-                            )
-                        ),
-                        "validation_banks": strict_validation.get(
-                            "validation_banks"
-                        ),
-                        "hard_gate": strict_validation.get("hard_gate"),
-                    },
-                    "search_accounting": noise_stage_result.get(
-                        "search_accounting"
-                    ),
-                    "stage1_produced_provenance": produced_provenance,
-                    "stage1_consumed_provenance": consumed_provenance,
-                    "artifact_paths": selection_diagnostics.get(
-                        "artifact_paths"
-                    ),
-                },
-            }
-            write_json_file(
-                os.path.join(
-                    self.run_output_dir,
-                    "two_stage_search_final.json",
-                ),
-                two_stage_payload,
-                sort_keys=True,
+            )
+            from blb_stage2_rl.search_baseline_runner import _atomic_json
+
+            _atomic_json(
+                os.path.join(self.run_output_dir, "two_stage_result.json"),
+                ordinary_two_stage_payload,
             )
 
-        if final_eval_result is not None:
+        if ordinary_two_stage_payload is not None:
+            opt_gelu = np.asarray(
+                ordinary_two_stage_payload["stage1"]["gelu_degrees"],
+                dtype=int,
+            )
+            opt_softmax = np.asarray(
+                ordinary_two_stage_payload["stage1"][
+                    "softmax_degrees"
+                ],
+                dtype=int,
+            )
+        elif final_eval_result is not None:
             opt_gelu = np.asarray(final_eval_result["opt_gelu"], dtype=int)
             opt_softmax = np.asarray(final_eval_result["opt_softmax"], dtype=int)
         elif best_config is not None:

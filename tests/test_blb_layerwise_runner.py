@@ -504,6 +504,9 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                 types.SimpleNamespace(
                     trials=bank_reference.trials,
                     trial_count=bank_reference.trial_count,
+                    groups=[{
+                        "final_config_fingerprint": "f" * 64,
+                    }],
                 ),
                 25,
             )
@@ -613,7 +616,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                     self, _action, *, boosted_overrides, **_kwargs,
             ):
                 self.prepared_overrides = boosted_overrides
-                return {}
+                return {"final_config_fingerprint": "f" * 64}
 
             def evaluate_prepared_terminal_batch(
                     self, _prepared, *, num_trials_per_action, **_kwargs,
@@ -763,6 +766,88 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
                     + bank_c.probe_seeds
                 ),
             )
+
+    def test_validation_banks_resume_payload_restores_exact_references(self):
+        from blb_stage2_rl.layerwise_runner import (
+            LayerwiseValidationBank,
+            LayerwiseValidationBanks,
+        )
+        from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+        from blb_stage2_rl.statistical_constraints import (
+            TrialSeries,
+            build_baseline_reference,
+        )
+
+        def reference(probe_seeds):
+            seeds = tuple(
+                derive_probe_trial_seed(probe_seed, trial_idx)
+                for probe_seed in probe_seeds
+                for trial_idx in range(3)
+            )
+            offsets = np.asarray([
+                (seed % 100_000) * 1e-9 for seed in seeds
+            ])
+            return build_baseline_reference(
+                [TrialSeries(
+                    loss=0.30 + offsets,
+                    metric1=0.90 + offsets,
+                    metric2=0.80 + offsets,
+                    seeds=seeds,
+                )],
+                precision_tolerance=0.001,
+                stability_multiplier=2.0,
+                bootstrap_samples=128,
+                seed=17,
+            )
+
+        probe_banks = {
+            "A": (101, 102, 103, 104, 105),
+            "B": (201, 202, 203, 204, 205),
+            "C": (301, 302, 303, 304, 305),
+        }
+        bank_a = LayerwiseValidationBank(
+            "A", reference(probe_banks["A"]), probe_banks["A"], 3,
+        )
+        bank_b = LayerwiseValidationBank(
+            "B", reference(probe_banks["B"]), probe_banks["B"], 3,
+        )
+        bank_c = LayerwiseValidationBank(
+            "C", reference(probe_banks["C"]), probe_banks["C"], 3,
+        )
+        original = LayerwiseValidationBanks(
+            bank_a=bank_a,
+            bank_b=bank_b,
+            bank_c=bank_c,
+            promotion_reference=reference(
+                probe_banks["A"] + probe_banks["B"]
+            ),
+            final_reference=reference(
+                probe_banks["A"] + probe_banks["B"] + probe_banks["C"]
+            ),
+        )
+
+        payload = json.loads(json.dumps(original.resume_payload()))
+        restored = LayerwiseValidationBanks.from_resume_payload(payload)
+
+        self.assertEqual(restored.contract_payload(), original.contract_payload())
+        for restored_bank, original_bank in (
+            (restored.bank_a, original.bank_a),
+            (restored.bank_b, original.bank_b),
+            (restored.bank_c, original.bank_c),
+        ):
+            self.assertEqual(restored_bank.reference.trials, original_bank.reference.trials)
+        self.assertEqual(
+            restored.promotion_reference.trials,
+            original.promotion_reference.trials,
+        )
+        self.assertEqual(
+            restored.final_reference.trials,
+            original.final_reference.trials,
+        )
+
+        payload["banks"]["A"]["probe_seeds"][0] += 1_000
+        with self.assertRaisesRegex(ValueError, "reference seeds"):
+            LayerwiseValidationBanks.from_resume_payload(payload)
 
     def test_layerwise_validation_bank_config_is_fixed_to_five_by_three(self):
         from blb_stage2_rl.layerwise_runner import (
@@ -1914,15 +1999,25 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
             if isinstance(node, ast.FunctionDef)
             and node.name == "_run_sequential_via_runner_locked"
         )
+        materializer = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_build_stage2_materialization_env"
+        )
         runner_source = ast.get_source_segment(source, runner)
+        materializer_source = ast.get_source_segment(source, materializer)
 
         self.assertIn(
-            "load_calibrated_stage2_action_context(",
+            "_build_stage2_materialization_env(",
             runner_source,
         )
         self.assertIn(
+            "load_calibrated_stage2_action_context(",
+            materializer_source,
+        )
+        self.assertIn(
             "validate_calibrated_stage2_action_context(",
-            runner_source,
+            materializer_source,
         )
         self.assertIn(
             "baseline.typical_fusion_count = float(base_env.num_layers)",
@@ -2005,6 +2100,71 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
                 base_key,
                 msg=field_name,
             )
+
+    def test_layerwise_candidate_identity_binds_plain_stage1_selection(self):
+        from blb_stage2_rl.candidate_store import candidate_key
+        from blb_stage2_rl.layerwise_runner import bind_layerwise_candidate_identity
+
+        stage1_binding = {
+            "backend": "bo_rf",
+            "seed": 42,
+            "action": [0],
+            "gelu_degrees": [4],
+            "softmax_degrees": [6],
+            "num_layers": 1,
+            "result_path": "/runs/stage1/bo_rf/result.json",
+        }
+        contract = {
+            "algorithm_contract_hash": "algorithm-v9",
+            "stage1_selection_binding": stage1_binding,
+            "formal_run_identity": {
+                "identity_hash": "formal-a",
+                "marker": "a",
+            },
+            "formal_run_identity_hash": "formal-a",
+            "stage1_selection_provenance": {
+                "backend": "bo_rf",
+                "selection_hash": "selection-a",
+                "result_sha256": "result-a",
+            },
+            "communication_importance_ratio": 1.0,
+            "compute_axis_denominator": 12,
+            "communication_axis_denominator": 12,
+            "resource_credit_mode": "separable_weighted_per_slot_v1",
+            "strict_resource_order": ["weighted_score", "balance_tiebreak"],
+        }
+        base = bind_layerwise_candidate_identity(
+            {"action_space_version": "stage2_layerwise_12x2_hml_v3"},
+            (8, 9, 11, 13, 10, 12),
+            "network_weighted_compute_communication_v3",
+            contract,
+        )
+
+        self.assertIn("stage1_selection_binding", base)
+        self.assertEqual(base["stage1_selection_binding"], stage1_binding)
+        self.assertNotIn("formal_run_identity", base)
+        self.assertNotIn("formal_run_identity_hash", base)
+        self.assertNotIn("stage1_selection_provenance", base)
+
+        changed_contract = {
+            **contract,
+            "stage1_selection_binding": {
+                **stage1_binding,
+                "backend": "coinn_ga",
+                "seed": 7,
+                "result_path": "/runs/stage1/coinn_ga/result.json",
+            },
+        }
+        changed = bind_layerwise_candidate_identity(
+            {"action_space_version": "stage2_layerwise_12x2_hml_v3"},
+            (8, 9, 11, 13, 10, 12),
+            "network_weighted_compute_communication_v3",
+            changed_contract,
+        )
+        self.assertNotEqual(
+            candidate_key([0], changed),
+            candidate_key([0], base),
+        )
 
     def test_layerwise_checkpoint_metadata_rejects_foreign_run_context(self):
         from blb_stage2_rl import layerwise_runner
@@ -2533,13 +2693,31 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
     def test_launcher_locks_stage2_directory_before_fresh_cleanup(self):
         source = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
-        stage2 = source[source.index(
-            'PERSISTENT_DIR="${PERSISTENT_ROOT}/${SEARCH_ALGORITHM}/${MODEL_TYPE}/'
-            '${DATASET}/${CONSTRAINT_SLUG}"'
-        ):]
-        cleanup = stage2.index('rm -rf "$PERSISTENT_DIR"')
+        stage2_start = source.index(
+            '    _PERSISTENT_ALGORITHM="$SEARCH_ALGORITHM"'
+        )
+        stage2_end = source.index(
+            'elif [ "$SEARCH_ALGORITHM" = "ga" ] || '
+            '[ "$SEARCH_ALGORITHM" = "greedy" ]; then',
+            stage2_start,
+        )
+        stage2 = source[stage2_start:stage2_end]
+        base_assignment = stage2.index(
+            '_PERSISTENT_ALGORITHM="$SEARCH_ALGORITHM"'
+        )
+        backend_override = stage2.index(
+            '_PERSISTENT_ALGORITHM="$BLB_V3_SEARCH_BACKEND"'
+        )
+        persistent_dir = stage2.index(
+            'PERSISTENT_DIR="${PERSISTENT_ROOT}/${_PERSISTENT_ALGORITHM}/'
+            '${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"'
+        )
         lock = stage2.index('flock -n "$BLB_STAGE2_RUN_LOCK_FD"')
+        cleanup = stage2.index('rm -rf "$PERSISTENT_DIR"')
 
+        self.assertLess(base_assignment, backend_override)
+        self.assertLess(backend_override, persistent_dir)
+        self.assertLess(persistent_dir, lock)
         self.assertLess(lock, cleanup)
         self.assertIn("BLB_STAGE2_RUN_LOCK_PATH", stage2[:cleanup])
         self.assertIn("export BLB_STAGE2_RUN_LOCK_FD", stage2[:cleanup])
@@ -5609,7 +5787,11 @@ class _PromotionBase:
 
     def prepare_action_for_terminal_probe(self, full_vec, **kwargs):
         self.prepare_calls.append((list(full_vec), dict(kwargs)))
-        prepared = {"prepared": True, "action": list(full_vec)}
+        prepared = {
+            "prepared": True,
+            "action": list(full_vec),
+            "final_config_fingerprint": "f" * 64,
+        }
         if kwargs.get("probe_base_seed") is not None:
             prepared["probe_base_seed"] = int(kwargs["probe_base_seed"])
         return prepared
@@ -5747,6 +5929,84 @@ class LayerwisePromotionTests(unittest.TestCase):
         )
         self.assertEqual(restored.axis_counterfactuals, axis_payload)
 
+    def test_bank_c_point_failure_inherits_bank_ab_axis_evidence(self):
+        from blb_stage2_rl.layerwise_runner import certify_candidate_with_bank_c
+
+        axis_payload = {
+            "compute": {"point_pass": True, "banks": {"A": {}, "B": {}}},
+            "communication": {
+                "point_pass": True,
+                "banks": {"A": {}, "B": {}},
+            },
+        }
+        evidence = types.SimpleNamespace(trials=object(), trial_count=45)
+        store = types.SimpleNamespace(
+            trial_evidence_for_action=lambda *_args, **_kwargs: evidence,
+        )
+        banks = types.SimpleNamespace(
+            final_trial_count=45,
+            promotion_trial_count=30,
+            final_reference=object(),
+            contract_payload=lambda: {"hard_gate": "canonical"},
+        )
+        metrics = {
+            "loss_mean": 1.0,
+            "metric1_mean": 0.88,
+            "metric2_mean": 0.85,
+            "loss_std": 0.01,
+            "metric1_std": 0.01,
+            "metric2_std": 0.01,
+        }
+        with (
+            mock.patch(
+                "blb_stage2_rl.layerwise_runner._latest_promotion_status",
+                return_value=(
+                    "promoted",
+                    {"axis_counterfactuals": axis_payload},
+                ),
+            ),
+            mock.patch(
+                "blb_stage2_rl.layerwise_runner._collect_fixed_validation_bank",
+                return_value=(evidence, 15),
+            ),
+            mock.patch(
+                "blb_stage2_rl.layerwise_runner._metrics_from_trials",
+                return_value=metrics,
+            ),
+            mock.patch(
+                "blb_stage2_rl.layerwise_runner.point_constraints_pass",
+                return_value=False,
+            ),
+            mock.patch(
+                "blb_stage2_rl.layerwise_runner._append_promotion_status",
+            ) as append_status,
+        ):
+            result = certify_candidate_with_bank_c(
+                env=types.SimpleNamespace(
+                    base=object(),
+                    communication_importance_ratio=1.0,
+                ),
+                promotion_base_env=None,
+                candidate_store=store,
+                identity_context={"profile": "mrpc"},
+                candidate={
+                    "full_vector": [1, 2, 3],
+                    "action_matrix": [[0, 0]],
+                    "boosted_overrides": {},
+                },
+                bootstrap_seed=17,
+                assess_candidate_fn=lambda *_args, **_kwargs: {},
+                final_probability=0.95,
+                validation_banks=banks,
+            )
+
+        self.assertEqual(result.status, "bank_c_point_failed")
+        self.assertEqual(result.axis_counterfactuals, axis_payload)
+        self.assertEqual(
+            append_status.call_args.kwargs["metadata"]["axis_counterfactuals"],
+            axis_payload,
+        )
+
     def _store_with_five(self, root, seeds=None):
         from blb_stage2_rl.candidate_store import CandidateStore
         from blb_stage2_rl.layerwise_runner import evidence_identity_context
@@ -5764,7 +6024,11 @@ class LayerwisePromotionTests(unittest.TestCase):
                 metric2=[0.8] * 5,
                 seeds=[1, 2, 3, 4, 5] if seeds is None else seeds,
             ),
-            {"identity_context": context, "fidelity": "F4"},
+            {
+                "identity_context": context,
+                "fidelity": "F4",
+                "final_config_fingerprint": "f" * 64,
+            },
         )
         return store
 
@@ -5961,7 +6225,11 @@ class LayerwisePromotionTests(unittest.TestCase):
                         metric2=[0.80 - 0.001 * i for i in range(5)],
                         seeds=seeds,
                     ),
-                    {"identity_context": full_context, "fidelity": "F4"},
+                    {
+                        "identity_context": full_context,
+                        "fidelity": "F4",
+                        "final_config_fingerprint": "f" * 64,
+                    },
                 )
             result = promote_candidate_if_eligible(
                 env=types.SimpleNamespace(base=base),
@@ -6047,6 +6315,141 @@ class LayerwisePromotionTests(unittest.TestCase):
             [len(call[0]) for call in base.evaluate_calls],
             [5, 5, 5],
         )
+
+    def test_completed_bank_c_reuse_rejects_stale_final_config_fingerprint(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import (
+            certify_candidate_with_bank_c,
+            promote_candidate_if_eligible,
+        )
+
+        class DriftedPromotionBase(_PromotionBase):
+            def prepare_action_for_terminal_probe(self, full_vec, **kwargs):
+                prepared = super().prepare_action_for_terminal_probe(
+                    full_vec, **kwargs,
+                )
+                prepared["final_config_fingerprint"] = "e" * 64
+                return prepared
+
+        action = list(range(20))
+        action_matrix = [[0] * 2 for _ in range(12)]
+        context = {"action_space_version": "layerwise-v1"}
+        banks = _three_validation_banks()
+        base = _PromotionBase(fresh_probability=0.01)
+        candidate = {
+            "full_vector": action,
+            "action_matrix": action_matrix,
+            "boosted_overrides": {},
+            "reward": 1.0,
+        }
+        with tempfile.TemporaryDirectory() as td:
+            store = CandidateStore(Path(td) / "candidates.jsonl")
+            promoted = promote_candidate_if_eligible(
+                env=types.SimpleNamespace(base=base),
+                promotion_base_env=base,
+                candidate_store=store,
+                action_indices=action,
+                identity_context=context,
+                action_matrix=action_matrix,
+                assessment=_assessment(0.01),
+                priority=3,
+                variable_cost=0.0,
+                frontier_cost=None,
+                boosted_overrides={},
+                bootstrap_seed=77,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.01),
+                validation_banks=banks,
+            )
+            candidate["candidate_key"] = promoted.evidence.candidate_key
+            certify_candidate_with_bank_c(
+                env=types.SimpleNamespace(base=base),
+                promotion_base_env=base,
+                candidate_store=store,
+                identity_context=context,
+                candidate=candidate,
+                bootstrap_seed=99,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.01),
+                validation_banks=banks,
+            )
+
+            drifted = DriftedPromotionBase(fresh_probability=0.01)
+            with self.assertRaisesRegex(
+                    RuntimeError,
+                    "evidence final config fingerprint does not match",
+            ):
+                certify_candidate_with_bank_c(
+                    env=types.SimpleNamespace(base=drifted),
+                    promotion_base_env=drifted,
+                    candidate_store=store,
+                    identity_context=context,
+                    candidate=candidate,
+                    bootstrap_seed=100,
+                    assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.01),
+                    validation_banks=banks,
+                )
+
+        self.assertEqual(len(drifted.prepare_calls), 1)
+        self.assertEqual(drifted.evaluate_calls, [])
+
+    def test_restore_rejects_inconsistent_final_config_fingerprints(self):
+        from blb_stage2_rl.candidate_store import CandidateTrialEvidence
+        from blb_stage2_rl.layerwise_runner import (
+            evidence_identity_context,
+            restore_promoted_candidates,
+        )
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+        from json_utils import stable_json_hash
+
+        action = tuple(range(20))
+        action_matrix = [[0] * 2 for _ in range(12)]
+        context = {"action_space_version": "layerwise-v1"}
+        full_context = evidence_identity_context(context, "F4")
+        banks = _three_validation_banks()
+        seeds = (
+            banks.bank_a.trial_seeds
+            + banks.bank_b.trial_seeds
+            + banks.bank_c.trial_seeds
+        )
+        evidence = CandidateTrialEvidence(
+            candidate_key="candidate",
+            action_indices=action,
+            trials=TrialSeries(
+                loss=[0.3] * len(seeds),
+                metric1=[0.9] * len(seeds),
+                metric2=[0.8] * len(seeds),
+                seeds=seeds,
+            ),
+            groups=(
+                {"final_config_fingerprint": "f" * 64},
+                {"final_config_fingerprint": "e" * 64},
+            ),
+        )
+        store = types.SimpleNamespace(
+            iter_active_records=lambda: iter(({
+                "record_type": "candidate_promotion_status_v2",
+                "identity_context_hash": stable_json_hash(full_context),
+                "candidate_key": "candidate",
+                "action_indices": list(action),
+                "promotion_status": "final_revalidation_passed",
+                "promotion_metadata": {
+                    "action_matrix": action_matrix,
+                    "boosted_overrides": [],
+                },
+            },)),
+            trial_evidence_for_action=lambda *_args, **_kwargs: evidence,
+        )
+
+        with self.assertRaisesRegex(
+                RuntimeError,
+                "inconsistent final config fingerprints",
+        ):
+            restore_promoted_candidates(
+                candidate_store=store,
+                identity_context=context,
+                statistical_reference=banks.promotion_reference,
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.99),
+                validation_banks=banks,
+            )
 
     def test_bank_c_transient_failure_is_retryable_after_restore(self):
         from blb_stage2_rl.candidate_store import CandidateStore

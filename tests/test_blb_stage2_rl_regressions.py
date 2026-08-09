@@ -566,7 +566,9 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
             runner._clear_legacy_noise = lambda: legacy_clear_calls.append("legacy")
             runner._clear_all_noise = lambda: all_clear_calls.append("all")
             runner._verify_model_installation = (
-                lambda _bridge, _decoded: verify_calls.append("verify") or {"ok": True}
+                lambda _bridge, _decoded: verify_calls.append("verify") or {
+                    "model_will_use_selected_cfg": True,
+                }
             )
 
             single, repeat = runner._run_blb_eval(
@@ -587,7 +589,10 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         self.assertEqual(verify_calls, ["verify"])
         self.assertAlmostEqual(single["loss"], 0.32)
         self.assertEqual(repeat["stats"]["n"], 3)
-        self.assertEqual(single["install_verification"], {"ok": True})
+        self.assertEqual(
+            single["install_verification"],
+            {"model_will_use_selected_cfg": True},
+        )
 
     def test_final_eval_has_no_profile_only_max_sfs_loader(self):
         from Paean.blb_action_eval import BLBActionFinalEvaluationModule
@@ -735,7 +740,9 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
                         "p": 0.875,
                         "s": 0.8,
                         "time_ms": 12.0,
-                        "install_verification": {"ok": True},
+                        "install_verification": {
+                            "model_will_use_selected_cfg": True,
+                        },
                     },
                     None,
                 )

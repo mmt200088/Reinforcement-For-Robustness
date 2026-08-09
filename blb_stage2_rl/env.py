@@ -9,41 +9,33 @@ import contextlib
 import hashlib
 import math
 import operator
-import os
 import random
 import time
-from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
 
-# Reusable no-op context for the single-worker-per-device path.
-_NULL_CTX = contextlib.nullcontext()
-
 from blb_rl_bridge import BLBNoiseRLBridge
-from rescale_optimizer_bridge import (
-    RescaleOptimizerBridge,
-    aggregate_optimizer_signals,
-)
+from rescale_optimizer_bridge import RescaleOptimizerBridge
 
 from .action_space import (
-    ActionDecodeResult,
-    BLB_FIRST_INPUT_N,
     K_LEVELS,
     MaxSFsTable,
     action_dims_for_config,
-    action_vector_to_cfgs,
     avg_truncation_k_in_action,
-    build_optimizer_requests,
-    layer_dims,
     make_all_max_action_vector,
     validate_action_vector,
 )
 from .candidate_store import action_hash
 from .inference_eval import run_installed_probe_trial
 from .optimizer_cost import materialize_action_for_model
-from .probe_runner import ProbeRunner, diagnostics_payload
+from .probe_runner import (
+    ProbeRunner,
+    _normalize_probe_trial_result,
+    diagnostics_payload,
+)
 from .reward import (
     BaselineCostStats,
     EpisodeMetrics,
@@ -52,6 +44,10 @@ from .reward import (
     compute_reward,
 )
 from .statistical_constraints import TrialSeries, assess_candidate
+
+
+# Reusable no-op context for the single-worker-per-device path.
+_NULL_CTX = contextlib.nullcontext()
 
 
 # ---------------------------------------------------------------------------
@@ -2027,26 +2023,18 @@ class BLBStage2Env:
             trial_seeds=trial_seeds,
         )
 
-    def _eval_on_probe_deterministic(self, k: int) -> EpisodeMetrics:
-        """K serial trials on this env's device with keyed noise seeds.
-
-        Trial ``t`` reseeds ONLY this device's dedicated noise generator with
-        ``probe_noise_seed XOR (t * KNUTH)`` (the same mix as
-        ``probe_runner._trial_seed``), so the injected CKKS/MPC noise depends
-        on (run_seed, global_episode, trial) alone: identical on 1 GPU and on
-        any worker of an N-GPU run (CUDA Philox is device-independent), and
-        reproducible across reruns. Touches no global RNG → safe for
-        concurrent episode-parallel workers.
-
-        With workers-per-device > 1 the dedicated noise generator is shared
-        by same-device siblings, so each trial's (reseed -> forward) runs
-        under ``probe_device_lock`` — trials interleave across workers at
-        trial granularity with identical per-trial noise streams regardless
-        of interleaving order.
-        """
+    def _run_deterministic_probe_trial_indices(
+            self,
+            trial_indices: Sequence[int],
+            ) -> tuple[List[Tuple[float, float, float]], List[int]]:
         from function_handler import noise_rng_scope, reseed_noise_rng_for_device
         from .seed_utils import derive_probe_trial_seed
 
+        indices = tuple(int(trial_index) for trial_index in trial_indices)
+        if any(trial_index < 0 for trial_index in indices):
+            raise ValueError("deterministic probe trial indices must be nonnegative")
+        if len(set(indices)) != len(indices):
+            raise ValueError("deterministic probe trial indices must be unique")
         scope = getattr(self, "probe_noise_scope", None)
         lock = self.probe_device_lock
         if scope is not None:
@@ -2065,12 +2053,10 @@ class BLBStage2Env:
         )
         base_seed = int(self.probe_noise_seed)
         trial_seeds = [
-            derive_probe_trial_seed(base_seed, trial_idx)
-            for trial_idx in range(int(k))
+            derive_probe_trial_seed(base_seed, trial_index)
+            for trial_index in indices
         ]
-        per_trial_loss: List[float] = []
-        per_trial_metric1: List[float] = []
-        per_trial_metric2: List[float] = []
+        results: List[Tuple[float, float, float]] = []
         probe_wall_start = time.perf_counter()
         was_training = self.model.training
         if was_training:
@@ -2095,43 +2081,52 @@ class BLBStage2Env:
                         torch.cuda.synchronize(self._device)
 
         try:
-            for trial_idx in range(int(k)):
-                seed = trial_seeds[trial_idx]
-                loss, m1, m2 = run_installed_probe_trial(
+            for position, _trial_index in enumerate(indices):
+                seed = trial_seeds[position]
+                result = run_installed_probe_trial(
                     self.model,
                     self.probe_batches,
                     is_regression=bool(self.is_regression),
                     metric_profile=str(
-                        getattr(getattr(self, "env_cfg", None), "profile", "") or ""
+                        getattr(
+                            getattr(self, "env_cfg", None),
+                            "profile", "",
+                        ) or ""
                     ),
                     restore_training=False,
                     forward_context=_forward_context(seed),
                 )
-
-                per_trial_loss.append(loss)
-                per_trial_metric1.append(m1)
-                per_trial_metric2.append(m2)
+                results.append(_normalize_probe_trial_result(result))
         finally:
             if was_training:
                 self.model.train()
         wall_elapsed = time.perf_counter() - probe_wall_start
         self._last_probe_diagnostics = {
-            "k": int(k),
+            "k": len(indices),
             "wall_seconds": float(wall_elapsed),
             "per_worker_seconds": [float(wall_elapsed)],
-            "per_worker_trial_counts": [int(k)],
-            "per_worker_trial_indices": [list(range(int(k)))],
+            "per_worker_trial_counts": [len(indices)],
+            "per_worker_trial_indices": [list(indices)],
             "per_worker_trial_seeds": [list(trial_seeds)],
             "devices": [str(self._device)],
             "speedup_vs_sequential": 1.0,
             "deterministic_probe_seed": int(base_seed),
             "line": (
-                f"[probe-deterministic] k={int(k)} device={self._device} "
+                f"[probe-deterministic] k={len(indices)} device={self._device} "
                 f"base_seed={base_seed} wall={wall_elapsed:.3f}s"
             ),
         }
+        return results, trial_seeds
+
+    def _eval_on_probe_deterministic(self, k: int) -> EpisodeMetrics:
+        """K serial trials on this env's device with keyed noise seeds."""
+        results, trial_seeds = self._run_deterministic_probe_trial_indices(
+            range(int(k))
+        )
         return self._aggregate_probe_trials(
-            per_trial_loss, per_trial_metric1, per_trial_metric2,
+            [result[0] for result in results],
+            [result[1] for result in results],
+            [result[2] for result in results],
             trial_seeds=trial_seeds,
         )
 

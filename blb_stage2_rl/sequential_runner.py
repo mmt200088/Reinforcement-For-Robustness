@@ -15,8 +15,9 @@ Two entrypoints:
 """
 from __future__ import annotations
 
-import copy
 from collections import deque
+import copy
+from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 import logging
@@ -24,7 +25,7 @@ import math
 import os
 import random
 import time
-from dataclasses import asdict, dataclass, field
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
@@ -61,6 +62,7 @@ from .fusion_curriculum import (
     fusion_probe_target_block,
     select_mutable_step_indices,
 )
+from .schedule_geometry import schedule_max_num_levels
 from .sequential_env import BLBStage2SequentialEnv, SequentialEnvConfig
 from .sequential_policy import (
     BLBStage2SequentialPolicy,
@@ -70,12 +72,11 @@ from .sequential_policy import (
     sequential_ppo_update,
     step_to_mask_and_levels,
 )
-from .schedule_geometry import schedule_max_num_levels
 from .truncation_levels import (
     CHECKPOINT_K_DOMAIN_KEY,
     checkpoint_k_domain_contract,
-    validate_exact_k_domain,
     validate_checkpoint_k_domain,
+    validate_exact_k_domain,
 )
 
 if TYPE_CHECKING:
@@ -3800,8 +3801,9 @@ def _build_layerwise_candidate_identity_context(
         static_skeletons_baseline: Any,
         algorithm_contract: Mapping[str, Any],
         algorithm_contract_hash: str,
+        stage1_selection_binding: Mapping[str, Any] | None = None,
         ) -> Dict[str, Any]:
-    """Bind layerwise raw evidence to the complete effective run context."""
+    """Bind layerwise evidence to the ordinary scientific run context."""
     from .candidate_store import build_candidate_identity_context, sha256_json
     from .layerwise_action import (
         K_LEVELS,
@@ -3815,6 +3817,43 @@ def _build_layerwise_candidate_identity_context(
         "gelu": [int(value) for value in fixed_gelu.reshape(-1)],
         "softmax": [int(value) for value in fixed_softmax.reshape(-1)],
     }
+    stage1_binding_payload = None
+    if isinstance(stage1_selection_binding, Mapping):
+        stage1_binding_payload = {
+            "backend": str(stage1_selection_binding.get("backend") or ""),
+            "seed": int(stage1_selection_binding.get("seed", -1)),
+            "action": [
+                int(value)
+                for value in stage1_selection_binding.get("action") or []
+            ],
+            "gelu_degrees": [
+                int(value)
+                for value in stage1_selection_binding.get(
+                    "gelu_degrees", ()
+                )
+            ],
+            "softmax_degrees": [
+                int(value)
+                for value in stage1_selection_binding.get(
+                    "softmax_degrees", ()
+                )
+            ],
+            "num_layers": int(stage1_selection_binding.get("num_layers", 0)),
+            "result_path": os.path.abspath(os.fspath(
+                stage1_selection_binding.get("result_path") or ""
+            )),
+        }
+        if (
+                stage1_binding_payload["gelu_degrees"]
+                != stage1_degrees["gelu"]
+                or stage1_binding_payload["softmax_degrees"]
+                != stage1_degrees["softmax"]
+                or stage1_binding_payload["num_layers"]
+                != len(stage1_degrees["gelu"])
+        ):
+            raise RuntimeError(
+                "strict candidate identity does not match Stage-1 binding"
+            )
     num_layers = len(stage1_degrees["gelu"])
     def reference_payload(reference: Any) -> Dict[str, Any]:
         return {
@@ -3900,6 +3939,10 @@ def _build_layerwise_candidate_identity_context(
         LAYERWISE_COST_MODEL_REVISION,
         {
             "algorithm_contract_hash": str(algorithm_contract_hash),
+            **(
+                {"stage1_selection_binding": stage1_binding_payload}
+                if stage1_binding_payload is not None else {}
+            ),
             "communication_importance_ratio": algorithm_contract[
                 "communication_importance_ratio"
             ],
@@ -3939,6 +3982,7 @@ def _run_layerwise_training_branch(
         fixed_label: str,
         fixed_source: str,
         blb_progress_dir: str,
+        clean_baseline_metrics: Any,
         baseline_preflight_metrics: Mapping[str, Any],
         status: Any,
         resume_checkpoint_path: Any,
@@ -3963,45 +4007,33 @@ def _run_layerwise_training_branch(
         )
     bullet = "*"
 
+    from json_utils import to_jsonable
+
     from .candidate_store import CandidateStore, sha256_json
-    from .layerwise_env import BLBStage2LayerwiseEnv
     from .diagnostics import EpisodeStats, PPOUpdateStats, RLDiagnosticsRecorder
-    from .network_variants import (
-        LEGACY_SHARED_RL_VARIANT,
-        bind_policy_network_contract,
-        policy_network_architecture,
-        normalize_policy_network_variant,
-        validate_checkpoint_policy_network_variant,
-    )
+    from .fusion_fixed_action import build_fusion_fixed_config
     from .layerwise_action import (
         K_LEVELS as LAYERWISE_K_LEVELS,
-        LAYERWISE_SLOT_NAMES,
         LAYERWISE_COST_MODEL_REVISION,
         LAYERWISE_DECODE_VERSION,
+        LAYERWISE_SLOT_NAMES,
         describe_layerwise_action_matrix,
         layerwise_action_space_version,
         max_communication_saving_units,
         max_compute_saving_units,
     )
-    from .precision_presets import (
-        PRECISION_PRESETS,
-        PRECISION_PRESET_VERSION,
-        allocated_precision_tolerances,
-        network_axis_weights,
-        validate_communication_importance_ratio,
-    )
-    from .fusion_fixed_action import build_fusion_fixed_config
+    from .layerwise_env import BLBStage2LayerwiseEnv
     from .layerwise_runner import (
-        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
-        DEFAULT_CONVERGENCE_MIN_EPISODES,
         _PROBABILITY_FIELDS,
+        DEFAULT_CONVERGENCE_MIN_EPISODES,
+        DEFAULT_CONVERGENCE_PATIENCE_UPDATES,
+        CheckpointFileFingerprintTracker,
+        StrictSelectionKey,
         _to_plain_mapping,
         build_layerwise_run_context,
-        CheckpointFileFingerprintTracker,
         initialize_layerwise_policy,
         normalized_constraint_safety_margins,
         resolve_layerwise_episode_budget,
-        StrictSelectionKey,
         strict_selection_key,
         strict_selection_key_from_snapshot,
         train_layerwise,
@@ -4009,9 +4041,22 @@ def _run_layerwise_training_branch(
         validate_layerwise_checkpoint_metadata,
         validate_layerwise_episode_limit_extension,
     )
+    from .network_variants import (
+        LEGACY_SHARED_RL_VARIANT,
+        bind_policy_network_contract,
+        normalize_policy_network_variant,
+        policy_network_architecture,
+        validate_checkpoint_policy_network_variant,
+    )
     from .persistence import write_training_curves
+    from .precision_presets import (
+        PRECISION_PRESET_VERSION,
+        PRECISION_PRESETS,
+        allocated_precision_tolerances,
+        network_axis_weights,
+        validate_communication_importance_ratio,
+    )
     from .runner import _build_legacy_compatible_best_noise_config
-    from json_utils import to_jsonable
 
     layerwise_manifest_path = os.path.join(
         blb_progress_dir, "layerwise_run_manifest.json",
@@ -4126,44 +4171,6 @@ def _run_layerwise_training_branch(
                 f"Stage-2: expected fixed_source={expected_stage1_source!r}, "
                 f"got {str(fixed_source)!r}"
             )
-        stage1_provenance = dict(getattr(
-            evaluator, "stage1_comparator_selection_provenance", {},
-        ) or {})
-        stage1_identity = {
-            "backend": search_backend,
-            "action": list(stage1_provenance.get("action") or []),
-            "gelu_degrees": [
-                int(value) for value in np.asarray(fixed_gelu).reshape(-1)
-            ],
-            "softmax_degrees": [
-                int(value) for value in np.asarray(fixed_softmax).reshape(-1)
-            ],
-        }
-        stage1_result_path = os.fspath(
-            stage1_provenance.get("result_path") or ""
-        )
-        stage1_result_sha256 = None
-        if os.path.isfile(stage1_result_path):
-            with open(stage1_result_path, "rb") as handle:
-                stage1_result_sha256 = hashlib.sha256(
-                    handle.read()
-                ).hexdigest()
-        if (
-                stage1_provenance.get("backend") != search_backend
-                or stage1_provenance.get("gelu_degrees")
-                != stage1_identity["gelu_degrees"]
-                or stage1_provenance.get("softmax_degrees")
-                != stage1_identity["softmax_degrees"]
-                or stage1_provenance.get("selection_hash")
-                != sha256_json(stage1_identity)
-                or stage1_result_sha256 is None
-                or stage1_provenance.get("result_sha256")
-                != stage1_result_sha256
-        ):
-            raise RuntimeError(
-                "Stage-2 fixed configuration does not match the hashed "
-                "Stage-1 comparator selection handoff"
-            )
         from .search_baseline_runner import (
             canonical_strict_validation,
             run_layerwise_search_baseline,
@@ -4171,6 +4178,32 @@ def _run_layerwise_training_branch(
 
         search_output_dir = os.path.join(
             blb_progress_dir, f"search_{search_backend}",
+        )
+        from json_utils import read_json_file
+
+        invocation_path = os.path.join(
+            search_output_dir, "invocation.json",
+        )
+        if not os.path.isfile(invocation_path):
+            raise RuntimeError("Stage-2 search has no invocation.json")
+        invocation_contract = read_json_file(invocation_path)
+        expected_invocation = _build_search_invocation_contract(
+            runner=SimpleNamespace(evaluator=evaluator),
+            train_cfg=train_cfg,
+            fixed_gelu=fixed_gelu,
+            fixed_softmax=fixed_softmax,
+            fixed_label=fixed_label,
+            fixed_source=fixed_source,
+        )
+        if (
+                not isinstance(invocation_contract, Mapping)
+                or dict(invocation_contract) != expected_invocation
+        ):
+            raise RuntimeError(
+                "Stage-2 search invocation does not match Stage-1 binding"
+            )
+        stage1_selection_binding = dict(
+            expected_invocation["stage1_selection_binding"]
         )
         communication_ratio = float(
             layerwise_env.communication_importance_ratio
@@ -4244,6 +4277,7 @@ def _run_layerwise_training_branch(
             },
         }
         search_contract_hash = sha256_json(search_contract)
+
         search_manifest = {
             "profile": str(train_cfg.profile),
             "model_type": str(getattr(evaluator, "model_type", "") or ""),
@@ -4256,11 +4290,12 @@ def _run_layerwise_training_branch(
             ],
             "fixed_label": str(fixed_label),
             "fixed_source": str(fixed_source),
+            "stage2_invocation": invocation_contract,
             "stage1_backend": search_backend,
             "stage1_bound_into_stage2": bool(
                 str(fixed_source) == f"stage1_{search_backend}_result"
             ),
-            "stage1_selection_provenance": stage1_provenance,
+            "stage1_selection_binding": stage1_selection_binding,
             "online_fidelity": {
                 "split": "validation_full_stratified_probe",
                 "example_count": int(online_probe_example_count),
@@ -4284,43 +4319,43 @@ def _run_layerwise_training_branch(
             "algorithm_contract": search_contract,
             "algorithm_contract_hash": search_contract_hash,
         }
+        strict_candidate_store = CandidateStore(os.path.join(
+            search_output_dir, "strict_candidate_store.jsonl",
+        ))
+        strict_identity_context = (
+            _build_layerwise_candidate_identity_context(
+                train_cfg=train_cfg,
+                evaluator=evaluator,
+                fusion_map=fusion_map,
+                max_sfs=max_sfs,
+                fixed_gelu=fixed_gelu,
+                fixed_softmax=fixed_softmax,
+                robust_reference=robust_reference,
+                authoritative_robust_reference=(
+                    authoritative_robust_reference
+                ),
+                validation_banks=authoritative_validation_banks,
+                probe_example_count=int(online_probe_example_count),
+                authoritative_example_count=int(
+                    authoritative_validation_example_count
+                ),
+                schedule=layerwise_env.schedule,
+                static_skeletons_baseline=(
+                    static_skeletons_baseline
+                ),
+                algorithm_contract=search_contract,
+                algorithm_contract_hash=search_contract_hash,
+                stage1_selection_binding=stage1_selection_binding,
+            )
+        )
+        search_manifest["strict_identity_context_hash"] = sha256_json(
+            strict_identity_context
+        )
+        search_manifest["strict_candidate_store"] = os.fspath(
+            strict_candidate_store.path
+        )
         strict_validator = None
         if bool(getattr(train_cfg, "search_full_validation", True)):
-            strict_candidate_store = CandidateStore(os.path.join(
-                search_output_dir, "strict_candidate_store.jsonl",
-            ))
-            strict_identity_context = (
-                _build_layerwise_candidate_identity_context(
-                    train_cfg=train_cfg,
-                    evaluator=evaluator,
-                    fusion_map=fusion_map,
-                    max_sfs=max_sfs,
-                    fixed_gelu=fixed_gelu,
-                    fixed_softmax=fixed_softmax,
-                    robust_reference=robust_reference,
-                    authoritative_robust_reference=(
-                        authoritative_robust_reference
-                    ),
-                    validation_banks=authoritative_validation_banks,
-                    probe_example_count=int(online_probe_example_count),
-                    authoritative_example_count=int(
-                        authoritative_validation_example_count
-                    ),
-                    schedule=layerwise_env.schedule,
-                    static_skeletons_baseline=(
-                        static_skeletons_baseline
-                    ),
-                    algorithm_contract=search_contract,
-                    algorithm_contract_hash=search_contract_hash,
-                )
-            )
-            search_manifest["strict_identity_context_hash"] = sha256_json(
-                strict_identity_context
-            )
-            search_manifest["strict_candidate_store"] = os.fspath(
-                strict_candidate_store.path
-            )
-
             def strict_validator(search_result):
                 return canonical_strict_validation(
                     result=search_result,
@@ -4341,6 +4376,37 @@ def _run_layerwise_training_branch(
                         "final_constraint_probability",
                         0.95,
                     )),
+                )
+
+        pending_strict_context_writer = None
+        if strict_validator is not None:
+            from .statistical_constraints import (
+                baseline_reference_resume_payload,
+            )
+
+            def pending_strict_context_writer(resume_contract):
+                _write_pending_strict_resume_context(
+                    search_output_dir=search_output_dir,
+                    invocation_contract=invocation_contract,
+                    resume_contract=resume_contract,
+                    clean_baseline_metrics=(
+                        _episode_metrics_resume_payload(
+                            clean_baseline_metrics
+                        )
+                    ),
+                    robust_reference=baseline_reference_resume_payload(
+                        robust_reference
+                    ),
+                    baseline_preflight_metrics=baseline_preflight_metrics,
+                    validation_banks=(
+                        authoritative_validation_banks.resume_payload()
+                    ),
+                    authoritative_robust_summary=(
+                        authoritative_robust_summary
+                    ),
+                    authoritative_validation_example_count=(
+                        authoritative_validation_example_count
+                    ),
                 )
 
         run_lock.bind_context(sha256_json({
@@ -4373,6 +4439,9 @@ def _run_layerwise_training_branch(
             ),
             manifest=search_manifest,
             strict_validator=strict_validator,
+            pending_strict_context_writer=(
+                pending_strict_context_writer
+            ),
         )
         selected = search_run["selected"]
         selected_metadata = dict(selected.metadata)
@@ -4384,6 +4453,9 @@ def _run_layerwise_training_branch(
             [int(value) for value in row]
             for row in selected.action_matrix
         ]
+        selected_action_identity = _selected_action_identity_payload(
+            selected
+        )
         if not best_full_vector:
             raise RuntimeError(
                 "search baseline selected action has no materialized full vector"
@@ -4412,7 +4484,16 @@ def _run_layerwise_training_branch(
                 "scientific_status": (
                     "smoke_only_no_validation_full_gate"
                 ),
+                "strict_feasible": False,
+                "selected_action_identity": selected_action_identity,
                 "search_backend": search_backend,
+                "stage1_consumed_binding": stage1_selection_binding,
+                "strict_identity_context_hash": str(
+                    search_manifest.get("strict_identity_context_hash") or ""
+                ),
+                "final_config_fingerprint": selected_action_identity[
+                    "final_config_fingerprint"
+                ],
                 "blb_v3_profile": str(train_cfg.profile),
                 "blb_v3_total_episodes": int(
                     search_run["result"].evaluation_count
@@ -4427,7 +4508,6 @@ def _run_layerwise_training_branch(
                     "selection_mode": (
                         "smoke_only_layerwise_search_baseline"
                     ),
-                    "scientific_export_allowed": False,
                     "smoke_candidate_full_vector": best_full_vector,
                     "smoke_candidate_action_matrix": best_action_matrix,
                     "smoke_candidate_layer_configurations": (
@@ -4438,7 +4518,6 @@ def _run_layerwise_training_branch(
                 },
                 "layerwise_summary": {
                     **search_run["result"].as_dict(),
-                    "scientific_export_allowed": False,
                     "smoke_candidate": selected.as_dict(),
                     "artifact_paths": search_run["artifact_paths"],
                 },
@@ -4464,15 +4543,13 @@ def _run_layerwise_training_branch(
             best_breakdown=selected.as_dict(),
             best_episode=int(search_run["result"].evaluation_count),
         )
-        formal_feasible = bool(search_run["manifest"].get(
-            "formal_feasible", False,
-        ))
+        strict_feasible = bool(search_run.get("strict_feasible", False))
         completion_status = (
-            "completed" if formal_feasible else "completed_infeasible"
+            "completed" if strict_feasible else "completed_infeasible"
         )
         scientific_status = (
             "full_search_with_validation_full_gate"
-            if formal_feasible
+            if strict_feasible
             else "full_search_strict_least_violating"
         )
         status.set_phase(f"Stage-2 {search_backend} search complete")
@@ -4490,12 +4567,16 @@ def _run_layerwise_training_branch(
             },
             "status": completion_status,
             "scientific_status": scientific_status,
-            "formal_feasible": formal_feasible,
-            "scientific_export_allowed": bool(
-                search_run["scientific_export_allowed"]
-            ),
+            "strict_feasible": strict_feasible,
+            "selected_action_identity": selected_action_identity,
             "search_backend": search_backend,
-            "stage1_consumed_provenance": stage1_provenance,
+            "stage1_consumed_binding": stage1_selection_binding,
+            "strict_identity_context_hash": search_manifest[
+                "strict_identity_context_hash"
+            ],
+            "final_config_fingerprint": selected_action_identity[
+                "final_config_fingerprint"
+            ],
             "search_accounting": {
                 key: search_run["manifest"].get(key)
                 for key in (
@@ -6391,11 +6472,1037 @@ def _run_layerwise_training_branch(
     }
 
 
+
+
+
+
+def _build_search_invocation_contract(
+        *,
+        runner: Any,
+        train_cfg: Any,
+        fixed_gelu: Any,
+        fixed_softmax: Any,
+        fixed_label: Any,
+        fixed_source: Any,
+        ) -> dict[str, Any]:
+    from json_utils import to_jsonable
+    from stage1_rl.search_runner import load_completed_search_result
+
+    from .search_baselines import normalize_search_backend
+
+    backend = normalize_search_backend(
+        getattr(train_cfg, "search_backend", "ppo")
+    )
+    if backend == "ppo":
+        raise ValueError("search invocation contract requires a non-PPO backend")
+    expected_source = f"stage1_{backend}_result"
+    if str(fixed_source) != expected_source:
+        raise RuntimeError(
+            "two-stage comparator invocation must bind its own Stage-1 result: "
+            f"expected {expected_source!r}, got {str(fixed_source)!r}"
+        )
+
+    evaluator = runner.evaluator
+    binding = dict(getattr(
+        evaluator, "stage1_comparator_selection_binding", {},
+    ) or {})
+    raw_result_path = binding.get("result_path")
+    if not raw_result_path:
+        raise RuntimeError(
+            "Stage-2 comparator invocation has no ordinary Stage-1 result path"
+        )
+    try:
+        stage1_result_path = os.path.abspath(
+            os.path.expanduser(os.fspath(raw_result_path))
+        )
+        completed_stage1 = load_completed_search_result(
+            os.path.dirname(stage1_result_path)
+        )
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        raise RuntimeError(
+            "Stage-2 comparator invocation cannot load the completed Stage-1 result"
+        ) from exc
+
+    gelu_degrees = [
+        int(value) for value in np.asarray(fixed_gelu).reshape(-1)
+    ]
+    softmax_degrees = [
+        int(value) for value in np.asarray(fixed_softmax).reshape(-1)
+    ]
+    num_layers = int(getattr(evaluator, "total_layers", 0))
+    seed = int(getattr(train_cfg, "seed", 0))
+    completed_action = [int(value) for value in completed_stage1.best.action]
+    completed_gelu = [
+        int(value) for value in completed_stage1.best.gelu_degrees
+    ]
+    completed_softmax = [
+        int(value) for value in completed_stage1.best.softmax_degrees
+    ]
+    normalized_binding = {
+        "backend": str(binding.get("backend") or ""),
+        "seed": int(binding.get("seed", -1)),
+        "action": [int(value) for value in binding.get("action") or []],
+        "gelu_degrees": [
+            int(value) for value in binding.get("gelu_degrees") or []
+        ],
+        "softmax_degrees": [
+            int(value) for value in binding.get("softmax_degrees") or []
+        ],
+        "num_layers": int(binding.get("num_layers", 0)),
+        "result_path": stage1_result_path,
+    }
+    if (
+            completed_stage1.algorithm != backend
+            or int(getattr(completed_stage1.config, "seed", -1)) != seed
+            or num_layers <= 0
+            or len(completed_action) != num_layers
+            or completed_gelu != gelu_degrees
+            or completed_softmax != softmax_degrees
+            or any(value != 6 for value in completed_softmax)
+            or normalized_binding["backend"] != backend
+            or normalized_binding["seed"] != seed
+            or normalized_binding["action"] != completed_action
+            or normalized_binding["gelu_degrees"] != completed_gelu
+            or normalized_binding["softmax_degrees"] != completed_softmax
+            or normalized_binding["num_layers"] != num_layers
+    ):
+        raise RuntimeError(
+            "Stage-2 comparator binding does not match the completed Stage-1 result"
+        )
+
+    scientific_parameters = {
+        name: getattr(train_cfg, name, default)
+        for name, default in (
+            ("search_full_validation", True),
+            ("search_evaluation_budget", 0),
+            ("search_initial_design_size", 8),
+            ("search_candidate_pool_size", 512),
+            ("search_population_size", 24),
+            ("search_patience_generations", 5),
+            ("search_mutation_max_coordinates", 3),
+            ("search_rf_n_estimators", 128),
+            ("search_rf_min_samples_leaf", 2),
+            ("online_num_trials_per_step", 3),
+            ("baseline_groups", 5),
+            ("baseline_trials_per_group", 3),
+            ("promotion_validation_trials", 15),
+            ("final_selection_validation_trials", 15),
+            ("final_selection_top_n", 20),
+            ("constraint_bootstrap_samples", 4096),
+            ("online_constraint_probability", 0.50),
+            ("promotion_constraint_probability", 0.80),
+            ("final_constraint_probability", 0.95),
+            ("stage2_stability_multiplier", 2.0),
+            ("communication_importance_ratio", 1.0),
+        )
+    }
+    return to_jsonable({
+        "schema_version": "stage2_search_invocation_v2",
+        "search_backend": backend,
+        "profile": str(getattr(train_cfg, "profile", "")),
+        "model_type": str(getattr(evaluator, "model_type", "") or ""),
+        "num_layers": num_layers,
+        "fixed_gelu": gelu_degrees,
+        "fixed_softmax": softmax_degrees,
+        "fixed_label": str(fixed_label),
+        "fixed_source": str(fixed_source),
+        "seed": seed,
+        "stage1_selection_binding": normalized_binding,
+        "stage1_result_path": stage1_result_path,
+        "scientific_parameters": scientific_parameters,
+    }, stringify_unknown=True)
+
+
+def _selected_action_identity_payload(
+        evaluation: Any,
+        ) -> dict[str, Any]:
+    from .search_baseline_runner import (
+        _selected_action_identity_payload as canonical_selected_identity,
+    )
+
+    return canonical_selected_identity(evaluation)
+
+
+
+
+
+
+
+
+
+
+def _validate_completed_search_resume_result(
+        result: Mapping[str, Any],
+        expected_result: Mapping[str, Any],
+        ) -> None:
+    from json_utils import to_jsonable
+
+    actual = to_jsonable(result, stringify_unknown=True)
+    expected = to_jsonable(expected_result, stringify_unknown=True)
+    if actual != expected:
+        raise RuntimeError(
+            "Stage-2 sequential resume does not match the completed inner search"
+        )
+
+
+
+
+def _build_completed_search_resume_result(
+        *,
+        runner: Any,
+        fixed_gelu: Any,
+        fixed_softmax: Any,
+        invocation_contract: Mapping[str, Any],
+        inner_run: Mapping[str, Any],
+        ) -> dict[str, Any]:
+    from .fusion_fixed_action import build_fusion_fixed_config
+    from .layerwise_action import describe_layerwise_action_matrix
+    from .runner import _build_legacy_compatible_best_noise_config
+
+    manifest = dict(inner_run.get("manifest") or {})
+    selected = inner_run.get("selected")
+    result = inner_run.get("result")
+    if selected is None or result is None:
+        raise RuntimeError(
+            "Stage-2 completed inner search has no selected result"
+        )
+
+    resume_contract = manifest.get("resume_contract")
+    requested_manifest = (
+        resume_contract.get("requested_manifest")
+        if isinstance(resume_contract, Mapping) else None
+    )
+    if (
+            not isinstance(requested_manifest, Mapping)
+            or requested_manifest.get("stage2_invocation")
+            != dict(invocation_contract)
+    ):
+        raise RuntimeError(
+            "Stage-2 completed inner search does not match its invocation"
+        )
+
+    search_backend = str(manifest.get("search_backend") or "")
+    stage1_binding = dict(
+        invocation_contract.get("stage1_selection_binding") or {}
+    )
+    fixed_gelu_values = [
+        int(value) for value in np.asarray(fixed_gelu).reshape(-1)
+    ]
+    fixed_softmax_values = [
+        int(value) for value in np.asarray(fixed_softmax).reshape(-1)
+    ]
+    if (
+            search_backend != str(invocation_contract.get("search_backend") or "")
+            or manifest.get("profile") != invocation_contract.get("profile")
+            or int(manifest.get("num_layers", 0))
+            != int(invocation_contract.get("num_layers", 0))
+            or list(manifest.get("fixed_gelu") or []) != fixed_gelu_values
+            or list(manifest.get("fixed_softmax") or []) != fixed_softmax_values
+            or manifest.get("stage1_backend") != search_backend
+            or manifest.get("stage1_bound_into_stage2") is not True
+            or dict(manifest.get("stage1_selection_binding") or {})
+            != stage1_binding
+    ):
+        raise RuntimeError(
+            "Stage-2 completed inner search scientific configuration changed"
+        )
+
+    selected_metadata = dict(getattr(selected, "metadata", {}) or {})
+    best_full_vector = [
+        int(value)
+        for value in selected_metadata.get("pending_full_vector", ())
+    ]
+    best_action_matrix = [
+        [int(value) for value in row]
+        for row in getattr(selected, "action_matrix", ())
+    ]
+    selected_action_identity = _selected_action_identity_payload(selected)
+    if (
+            selected_action_identity.get("action_matrix") != best_action_matrix
+            or selected_action_identity.get("full_vector") != best_full_vector
+    ):
+        raise RuntimeError(
+            "Stage-2 completed selected action evidence is inconsistent"
+        )
+
+    inner_status = str(manifest.get("status") or "")
+    strict_feasible = bool(inner_run.get("strict_feasible", False))
+    if inner_status == "smoke_only_complete":
+        if inner_run.get("strict_validation") is not None or strict_feasible:
+            raise RuntimeError(
+                "Stage-2 smoke completion has strict-validation evidence"
+            )
+    else:
+        expected_status = (
+            "complete_strict_feasible"
+            if strict_feasible else "complete_least_violating"
+        )
+        if (
+                inner_status != expected_status
+                or inner_run.get("strict_validation") is None
+        ):
+            raise RuntimeError(
+                "Stage-2 completed strict result has inconsistent status"
+            )
+
+    best_layer_configurations = describe_layerwise_action_matrix(
+        best_action_matrix
+    )
+    limits = selected.limits.as_dict()
+    profile = str(invocation_contract.get("profile") or "")
+    num_layers = int(invocation_contract.get("num_layers", 0))
+    artifact_paths = dict(inner_run.get("artifact_paths") or {})
+    strict_validation = inner_run.get("strict_validation")
+    common = {
+        "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
+        "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
+        "strict_feasible": strict_feasible,
+        "selected_action_identity": selected_action_identity,
+        "search_backend": search_backend,
+        "stage1_consumed_binding": stage1_binding,
+        "strict_identity_context_hash": str(
+            manifest.get("strict_identity_context_hash") or ""
+        ),
+        "final_config_fingerprint": selected_action_identity[
+            "final_config_fingerprint"
+        ],
+        "blb_v3_profile": profile,
+        "blb_v3_total_episodes": int(result.evaluation_count),
+        "limit_loss": float(limits["loss_max"]),
+        "limit_p": float(limits["metric1_min"]),
+        "limit_s": float(limits["metric2_min"]),
+    }
+
+    if inner_status == "smoke_only_complete":
+        return {
+            **common,
+            "status": "smoke_only_complete",
+            "scientific_status": "smoke_only_no_validation_full_gate",
+            "rl_variant": f"blb_v3_layerwise_search_{search_backend}_smoke",
+            "selection_diagnostics": {
+                "selection_mode": "smoke_only_layerwise_search_baseline",
+                "smoke_candidate_full_vector": best_full_vector,
+                "smoke_candidate_action_matrix": best_action_matrix,
+                "smoke_candidate_layer_configurations": (
+                    best_layer_configurations
+                ),
+                "smoke_candidate_evaluation": selected.as_dict(),
+                "artifact_paths": artifact_paths,
+            },
+            "layerwise_summary": {
+                **result.as_dict(),
+                "smoke_candidate": selected.as_dict(),
+                "artifact_paths": artifact_paths,
+            },
+        }
+
+    fixed_config = build_fusion_fixed_config(
+        best_full_vector,
+        profile=profile,
+        num_layers=num_layers,
+        gelu=np.asarray(fixed_gelu, dtype=int),
+        softmax=np.asarray(fixed_softmax, dtype=int),
+        source=f"stage2_{search_backend}_best",
+    )
+    best_action_group = dict(fixed_config["group"])
+    best_action_group["policy_actions"] = best_action_matrix
+    best_action_group["boosted_overrides"] = selected_metadata.get(
+        "boosted_overrides", []
+    )
+    legacy_best = _build_legacy_compatible_best_noise_config(
+        runner.evaluator
+    )
+    accounting_names = (
+        "seed",
+        "observation_count",
+        "inference_reaching_candidate_count",
+        "online_candidate_trial_count",
+        "strict_evaluated_candidate_count",
+        "strict_joint_trial_count",
+        "strict_compute_trial_count",
+        "strict_communication_trial_count",
+        "strict_total_evidence_trial_count",
+        "strict_fresh_trial_count",
+        "total_candidate_trial_count",
+        "model_forward_trial_count",
+        "online_search_wall_seconds",
+        "strict_attempt_count",
+        "strict_attempt_wall_seconds_total",
+        "strict_validation_wall_seconds",
+        "total_wall_seconds",
+        "termination_reason",
+    )
+    return {
+        **common,
+        "best_noise_config": {
+            key: value.copy() for key, value in legacy_best.items()
+        },
+        "stable_search_best_noise_config": {
+            key: value.copy() for key, value in legacy_best.items()
+        },
+        "stable_joint_best_noise_config": {
+            key: value.copy() for key, value in legacy_best.items()
+        },
+        "status": "completed" if strict_feasible else "completed_infeasible",
+        "scientific_status": (
+            "full_search_with_validation_full_gate"
+            if strict_feasible else "full_search_strict_least_violating"
+        ),
+        "search_accounting": {
+            key: manifest.get(key) for key in accounting_names
+        },
+        "rl_variant": f"blb_v3_layerwise_search_{search_backend}",
+        "blb_v3_best_action_vec": best_full_vector,
+        "blb_v3_best_action_group": best_action_group,
+        "blb_v3_layerwise_best_action_group": best_action_group,
+        "blb_v3_layerwise_best_configuration": best_layer_configurations,
+        "blb_v3_best_reward": float(selected.reward or 0.0),
+        "blb_v3_fusion_count_action": True,
+        "proxy_limit_loss": float(limits["loss_max"]),
+        "proxy_limit_p": float(limits["metric1_min"]),
+        "proxy_limit_s": float(limits["metric2_min"]),
+        "search_limits": {
+            "loss": float(limits["loss_max"]),
+            "metric1": float(limits["metric1_min"]),
+            "metric2": float(limits["metric2_min"]),
+            "loss_std": float(limits["loss_std_max"]),
+            "metric1_std": float(limits["metric1_std_max"]),
+            "metric2_std": float(limits["metric2_std_max"]),
+        },
+        "selection_diagnostics": {
+            "selection_mode": "layerwise_constrained_search_baseline",
+            "best_action_matrix": best_action_matrix,
+            "best_layer_configurations": best_layer_configurations,
+            "best_evaluation": selected.as_dict(),
+            "strict_validation": strict_validation,
+            "artifact_paths": artifact_paths,
+        },
+        "layerwise_summary": {
+            **result.as_dict(),
+            "selected": selected.as_dict(),
+            "strict_validation": strict_validation,
+            "artifact_paths": artifact_paths,
+        },
+    }
+
+
+def _restore_search_resume_result(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise RuntimeError("Stage-2 sequential resume result is not an object")
+    restored = dict(payload)
+    for name in ("fixed_gelu", "fixed_softmax"):
+        if name in restored:
+            restored[name] = np.asarray(restored[name], dtype=int)
+    for group_name in (
+            "best_noise_config",
+            "stable_search_best_noise_config",
+            "stable_joint_best_noise_config",
+    ):
+        group = restored.get(group_name)
+        if isinstance(group, Mapping):
+            restored[group_name] = {
+                str(name): np.asarray(value, dtype=int)
+                for name, value in group.items()
+            }
+    return restored
+
+
+def _write_completed_search_resume(
+        *,
+        search_output_dir: str,
+        invocation_contract: Mapping[str, Any],
+        result: Mapping[str, Any],
+        expected_result: Mapping[str, Any],
+        ) -> None:
+    from json_utils import read_json_file
+
+    from .search_baseline_runner import _atomic_json
+
+    invocation_path = os.path.join(search_output_dir, "invocation.json")
+    if (
+            not os.path.isfile(invocation_path)
+            or read_json_file(invocation_path) != dict(invocation_contract)
+    ):
+        raise RuntimeError(
+            "Stage-2 completed search invocation does not match invocation.json"
+        )
+    _validate_completed_search_resume_result(result, expected_result)
+
+    resume_result_path = os.path.join(search_output_dir, "resume_result.json")
+    if os.path.isfile(resume_result_path):
+        restored = _restore_search_resume_result(
+            read_json_file(resume_result_path)
+        )
+        _validate_completed_search_resume_result(restored, expected_result)
+        _validate_completed_search_resume_result(result, restored)
+        return
+    _atomic_json(resume_result_path, result)
+
+
+_EPISODE_METRICS_RESUME_FIELDS = (
+    "loss_mean",
+    "loss_std",
+    "metric1_mean",
+    "metric2_mean",
+    "metric1_std",
+    "metric2_std",
+    "loss_max",
+    "metric1_min",
+    "metric2_min",
+    "loss_trials",
+    "metric1_trials",
+    "metric2_trials",
+    "trial_seeds",
+)
+
+
+def _episode_metrics_resume_payload(metrics: Any) -> dict[str, Any]:
+    """Serialize the exact clean-probe evidence needed for zero-forward resume."""
+    payload = {
+        "schema_version": "stage2_episode_metrics_resume_v1",
+    }
+    for name in _EPISODE_METRICS_RESUME_FIELDS[:9]:
+        value = float(getattr(metrics, name))
+        if not math.isfinite(value):
+            raise ValueError(f"clean baseline metric {name} must be finite")
+        payload[name] = value
+    for name in _EPISODE_METRICS_RESUME_FIELDS[9:12]:
+        values = tuple(float(value) for value in getattr(metrics, name))
+        if not values or not all(math.isfinite(value) for value in values):
+            raise ValueError(
+                f"clean baseline metric trial series {name} must be finite and non-empty"
+            )
+        payload[name] = list(values)
+    trial_seeds = tuple(int(value) for value in metrics.trial_seeds)
+    trial_count = len(payload["loss_trials"])
+    if (
+            len(payload["metric1_trials"]) != trial_count
+            or len(payload["metric2_trials"]) != trial_count
+            or len(trial_seeds) not in {0, trial_count}
+    ):
+        raise ValueError("clean baseline metric trial series lengths must match")
+    payload["trial_seeds"] = list(trial_seeds)
+    return payload
+
+
+def _episode_metrics_from_resume_payload(payload: Mapping[str, Any]) -> Any:
+    """Authenticate and restore one clean-probe EpisodeMetrics payload."""
+    from .reward import EpisodeMetrics
+
+    required = {"schema_version", *_EPISODE_METRICS_RESUME_FIELDS}
+    if not isinstance(payload, Mapping) or set(payload) != required:
+        raise ValueError("clean baseline metrics resume payload is invalid")
+    if payload.get("schema_version") != "stage2_episode_metrics_resume_v1":
+        raise ValueError("clean baseline metrics resume schema mismatch")
+    restored_values = {
+        name: payload[name]
+        for name in _EPISODE_METRICS_RESUME_FIELDS[:9]
+    }
+    restored_values.update({
+        name: tuple(payload[name])
+        for name in _EPISODE_METRICS_RESUME_FIELDS[9:]
+    })
+    restored = EpisodeMetrics(**restored_values)
+    if _episode_metrics_resume_payload(restored) != dict(payload):
+        raise ValueError("clean baseline metrics resume payload changed on restore")
+    return restored
+
+
+def _restore_pending_strict_resume_evidence(
+        context: Mapping[str, Any],
+        *,
+        precision_tolerance: float,
+        stability_multiplier: float,
+        bootstrap_samples: int,
+        online_trials: int,
+        baseline_groups: int,
+        trials_per_group: int,
+        authoritative_example_count: int,
+        ) -> dict[str, Any]:
+    """Restore and validate every baseline reference used by strict resume."""
+    from .layerwise_runner import LayerwiseValidationBanks
+    from .statistical_constraints import baseline_reference_from_resume_payload
+
+    if not isinstance(context, Mapping):
+        raise ValueError("pending strict resume context must be a mapping")
+    clean_metrics = _episode_metrics_from_resume_payload(
+        context.get("clean_baseline_metrics")
+    )
+    if len(tuple(clean_metrics.loss_trials)) != int(online_trials):
+        raise RuntimeError(
+            "pending strict clean baseline trial count changed"
+        )
+    robust_reference = baseline_reference_from_resume_payload(
+        context.get("robust_reference")
+    )
+    validation_banks = LayerwiseValidationBanks.from_resume_payload(
+        context.get("validation_banks")
+    )
+    expected_trials = int(baseline_groups) * int(trials_per_group)
+    expected_reference_contract = (
+        float(precision_tolerance),
+        float(stability_multiplier),
+        int(bootstrap_samples),
+    )
+
+    def validate_reference(reference: Any, trial_count: int, label: str) -> None:
+        actual_contract = (
+            float(reference.precision_tolerance),
+            float(reference.stability_multiplier),
+            int(reference.bootstrap_samples),
+        )
+        if actual_contract != expected_reference_contract:
+            raise RuntimeError(
+                f"pending strict {label} baseline contract changed"
+            )
+        if int(reference.trial_count) != int(trial_count):
+            raise RuntimeError(
+                f"pending strict {label} baseline trial count changed"
+            )
+
+    validate_reference(robust_reference, expected_trials, "online")
+    for bank in (
+            validation_banks.bank_a,
+            validation_banks.bank_b,
+            validation_banks.bank_c,
+    ):
+        if (
+                len(tuple(bank.probe_seeds)) != int(baseline_groups)
+                or int(bank.trials_per_probe) != int(trials_per_group)
+                or int(bank.trial_count) != expected_trials
+        ):
+            raise RuntimeError(
+                f"pending strict validation Bank {bank.label} contract changed"
+            )
+        validate_reference(
+            bank.reference, expected_trials, f"Bank {bank.label}"
+        )
+    validate_reference(
+        validation_banks.promotion_reference,
+        2 * expected_trials,
+        "promotion A+B",
+    )
+    validate_reference(
+        validation_banks.final_reference,
+        3 * expected_trials,
+        "final A+B+C",
+    )
+
+    stored_example_count = int(
+        context.get("authoritative_validation_example_count", 0)
+    )
+    if (
+            int(authoritative_example_count) != 408
+            or stored_example_count != int(authoritative_example_count)
+    ):
+        raise RuntimeError(
+            "pending strict authoritative validation example count changed"
+        )
+    baseline_preflight_metrics = context.get("baseline_preflight_metrics")
+    authoritative_summary = context.get("authoritative_robust_summary")
+    if not isinstance(baseline_preflight_metrics, Mapping):
+        raise ValueError("pending strict baseline preflight metrics are invalid")
+    if not isinstance(authoritative_summary, Mapping) or not authoritative_summary:
+        raise ValueError("pending strict authoritative baseline summary is invalid")
+    return {
+        "clean_baseline_metrics": clean_metrics,
+        "robust_reference": robust_reference,
+        "baseline_preflight_metrics": dict(baseline_preflight_metrics),
+        "validation_banks": validation_banks,
+        "authoritative_robust_summary": dict(authoritative_summary),
+        "authoritative_validation_example_count": stored_example_count,
+    }
+
+
+def _write_pending_strict_resume_context(
+        *,
+        search_output_dir: str,
+        invocation_contract: Mapping[str, Any],
+        resume_contract: Mapping[str, Any],
+        clean_baseline_metrics: Mapping[str, Any],
+        robust_reference: Mapping[str, Any],
+        baseline_preflight_metrics: Mapping[str, Any],
+        validation_banks: Mapping[str, Any],
+        authoritative_robust_summary: Mapping[str, Any],
+        authoritative_validation_example_count: int,
+        ) -> None:
+    """Persist the baseline evidence needed to restart strict validation."""
+    from json_utils import read_json_file
+
+    from .search_baseline_runner import _atomic_json
+
+    payload = {
+        "schema_version": "stage2_pending_strict_resume_context_v2",
+        "invocation_contract": dict(invocation_contract),
+        "resume_contract": dict(resume_contract),
+        "clean_baseline_metrics": dict(clean_baseline_metrics),
+        "robust_reference": dict(robust_reference),
+        "baseline_preflight_metrics": dict(baseline_preflight_metrics),
+        "validation_banks": dict(validation_banks),
+        "authoritative_robust_summary": dict(
+            authoritative_robust_summary
+        ),
+        "authoritative_validation_example_count": int(
+            authoritative_validation_example_count
+        ),
+    }
+    os.makedirs(search_output_dir, exist_ok=True)
+    path = os.path.join(
+        search_output_dir, "pending_strict_resume_context.json",
+    )
+    if os.path.isfile(path):
+        if read_json_file(path) != payload:
+            raise RuntimeError(
+                "Stage-2 pending strict resume context changed"
+            )
+        return
+    _atomic_json(path, payload)
+
+
+def _preflight_pending_strict_search_resume(
+        *,
+        runner: Any,
+        train_cfg: Any,
+        fixed_gelu: Any,
+        fixed_softmax: Any,
+        fixed_label: Any,
+        fixed_source: Any,
+        blb_progress_dir: str,
+        ) -> dict[str, Any] | None:
+    """Restore ordinary pending-strict evidence before model setup."""
+    from json_utils import read_json_file
+
+    from .search_baselines import normalize_search_backend
+
+    backend = normalize_search_backend(
+        getattr(train_cfg, "search_backend", "ppo")
+    )
+    if backend == "ppo" or not bool(
+            getattr(train_cfg, "search_full_validation", True)
+    ):
+        return None
+    search_output_dir = os.path.join(
+        blb_progress_dir, f"search_{backend}",
+    )
+    manifest_path = os.path.join(search_output_dir, "manifest.json")
+    if not os.path.isfile(manifest_path):
+        return None
+
+    manifest = read_json_file(manifest_path)
+    if not isinstance(manifest, Mapping):
+        raise RuntimeError("Stage-2 pending strict manifest is invalid")
+    status = str(manifest.get("status") or "")
+    if status in {
+            "complete_strict_feasible",
+            "complete_least_violating",
+            "smoke_only_complete",
+    }:
+        return None
+    if status != "search_complete_pending_strict":
+        return None
+
+    invocation = _build_search_invocation_contract(
+        runner=runner,
+        train_cfg=train_cfg,
+        fixed_gelu=fixed_gelu,
+        fixed_softmax=fixed_softmax,
+        fixed_label=fixed_label,
+        fixed_source=fixed_source,
+    )
+    invocation_path = os.path.join(search_output_dir, "invocation.json")
+    if (
+            not os.path.isfile(invocation_path)
+            or read_json_file(invocation_path) != invocation
+    ):
+        raise RuntimeError(
+            "Stage-2 pending strict invocation does not match existing artifacts"
+        )
+
+    context_path = os.path.join(
+        search_output_dir, "pending_strict_resume_context.json",
+    )
+    if not os.path.isfile(context_path):
+        raise RuntimeError(
+            "Stage-2 pending strict run has no resume context"
+        )
+    context = read_json_file(context_path)
+    required_fields = {
+        "schema_version",
+        "invocation_contract",
+        "resume_contract",
+        "clean_baseline_metrics",
+        "robust_reference",
+        "baseline_preflight_metrics",
+        "validation_banks",
+        "authoritative_robust_summary",
+        "authoritative_validation_example_count",
+    }
+    if not isinstance(context, Mapping) or set(context) != required_fields:
+        raise RuntimeError("Stage-2 pending strict resume context is invalid")
+    context = dict(context)
+    resume_contract = context.get("resume_contract")
+    requested_manifest = (
+        resume_contract.get("requested_manifest")
+        if isinstance(resume_contract, Mapping) else None
+    )
+    if (
+            context.get("schema_version")
+            != "stage2_pending_strict_resume_context_v2"
+            or context.get("invocation_contract") != invocation
+            or not isinstance(resume_contract, Mapping)
+            or manifest.get("resume_contract") != resume_contract
+            or not isinstance(requested_manifest, Mapping)
+            or requested_manifest.get("stage2_invocation") != invocation
+    ):
+        raise RuntimeError(
+            "Stage-2 pending strict resume context does not match the run"
+        )
+    return context
+
+
+def _preflight_completed_search_resume(
+        *,
+        runner: Any,
+        train_cfg: Any,
+        fixed_gelu: Any,
+        fixed_softmax: Any,
+        fixed_label: Any,
+        fixed_source: Any,
+        blb_progress_dir: str,
+        ) -> dict[str, Any] | None:
+    from json_utils import read_json_file
+
+    from .search_baseline_runner import (
+        _atomic_json,
+        _load_plain_completed_search_run,
+    )
+    from .search_baselines import normalize_search_backend
+
+    backend = normalize_search_backend(
+        getattr(train_cfg, "search_backend", "ppo")
+    )
+    if backend == "ppo":
+        return None
+
+    search_output_dir = os.path.join(
+        blb_progress_dir, f"search_{backend}",
+    )
+    os.makedirs(search_output_dir, exist_ok=True)
+    invocation = _build_search_invocation_contract(
+        runner=runner,
+        train_cfg=train_cfg,
+        fixed_gelu=fixed_gelu,
+        fixed_softmax=fixed_softmax,
+        fixed_label=fixed_label,
+        fixed_source=fixed_source,
+    )
+    invocation_path = os.path.join(search_output_dir, "invocation.json")
+    resume_result_path = os.path.join(search_output_dir, "resume_result.json")
+    if os.path.isfile(invocation_path):
+        if read_json_file(invocation_path) != invocation:
+            raise RuntimeError(
+                "Stage-2 comparator invocation does not match existing artifacts"
+            )
+    else:
+        existing_names = {
+            name for name in os.listdir(search_output_dir)
+            if name not in {"invocation.json.tmp"}
+        }
+        if existing_names:
+            raise RuntimeError(
+                "Stage-2 search artifacts exist without invocation.json"
+            )
+        _atomic_json(invocation_path, invocation)
+
+    manifest_path = os.path.join(search_output_dir, "manifest.json")
+    if not os.path.isfile(manifest_path):
+        if os.path.isfile(resume_result_path):
+            raise RuntimeError(
+                "Stage-2 resume result exists without an inner manifest"
+            )
+        return None
+    manifest = read_json_file(manifest_path)
+    if not isinstance(manifest, Mapping):
+        raise RuntimeError("Stage-2 inner search manifest is invalid")
+    status = str(manifest.get("status") or "")
+    completed_statuses = {
+        "complete_strict_feasible",
+        "complete_least_violating",
+        "smoke_only_complete",
+    }
+    if status not in completed_statuses:
+        if os.path.isfile(resume_result_path):
+            raise RuntimeError(
+                "Stage-2 resume result exists before inner search completion"
+            )
+        return None
+
+    resume_contract = manifest.get("resume_contract")
+    requested_manifest = (
+        resume_contract.get("requested_manifest")
+        if isinstance(resume_contract, Mapping) else None
+    )
+    if (
+            not isinstance(requested_manifest, Mapping)
+            or requested_manifest.get("stage2_invocation") != invocation
+    ):
+        raise RuntimeError(
+            "Stage-2 completed inner search invocation does not match"
+        )
+
+    inner_run = _load_plain_completed_search_run(
+        output_dir=search_output_dir,
+        manifest=manifest,
+        communication_importance_ratio=float(
+            manifest.get("communication_importance_ratio", 1.0)
+        ),
+    )
+    expected_result = _build_completed_search_resume_result(
+        runner=runner,
+        fixed_gelu=fixed_gelu,
+        fixed_softmax=fixed_softmax,
+        invocation_contract=invocation,
+        inner_run=inner_run,
+    )
+    if os.path.isfile(resume_result_path):
+        restored = _restore_search_resume_result(
+            read_json_file(resume_result_path)
+        )
+        _validate_completed_search_resume_result(
+            restored, expected_result,
+        )
+        return restored
+
+    _write_completed_search_resume(
+        search_output_dir=search_output_dir,
+        invocation_contract=invocation,
+        result=expected_result,
+        expected_result=expected_result,
+    )
+    return expected_result
+
+
+def _build_stage2_materialization_env(
+        *,
+        runner: Any,
+        train_cfg: Any,
+        fixed_gelu: Any,
+        fixed_softmax: Any,
+        log: Callable[[str], None],
+        ) -> dict[str, Any]:
+    from .baseline_bootstrap import (
+        load_calibrated_stage2_action_context,
+        validate_calibrated_stage2_action_context,
+    )
+    from .env import BLBStage2Env, BLBStage2EnvConfig
+    from .layerwise_runner import resolve_decision_path
+    from .reward import BaselineCostStats, RewardWeights
+
+    ev = runner.evaluator
+    decision_path = resolve_decision_path(
+        fusion_count_action=bool(
+            getattr(train_cfg, "fusion_count_action", False)
+        ),
+        decision_granularity=str(
+            getattr(train_cfg, "decision_granularity", "block")
+        ),
+        reward_design=str(
+            getattr(train_cfg, "reward_design", "stage1_aligned")
+        ),
+    )
+    gelu = np.asarray(fixed_gelu, dtype=int)
+    softmax = np.asarray(fixed_softmax, dtype=int)
+    ev.apply_configuration(gelu, softmax)
+    try:  # noqa: SIM105 - optional cleanup on a partially initialized evaluator
+        ev.reversible_handler.restore_layer_input_noise(
+            layer_indices=list(range(ev.total_layers)),
+        )
+    except Exception:
+        pass
+
+    probe_batches = runner._build_probe_batches(
+        ev,
+        train_cfg,
+        probe_size_override=(256 if decision_path == "layerwise" else None),
+    )
+    train_cfg.probe_batch_count = max(
+        1, int(len(probe_batches) or train_cfg.probe_batch_count)
+    )
+    log(f"  * 评估子集: batch 数 = {len(probe_batches)}")
+    rescale_bridge = runner._build_rescale_bridge(train_cfg, log=log)
+    calibrated_action_context = load_calibrated_stage2_action_context(
+        rescale_optimizer_root=str(train_cfg.inproc_rescale_optimizer_root),
+        dataset=str(train_cfg.profile),
+        num_layers=int(ev.total_layers),
+        gelu_per_layer=[int(value) for value in gelu.reshape(-1)],
+        softmax_per_layer=[int(value) for value in softmax.reshape(-1)],
+        snap_sf_to_noise_table=False,
+    )
+    validate_calibrated_stage2_action_context(
+        calibrated_action_context,
+        dataset=str(train_cfg.profile),
+        num_layers=int(ev.total_layers),
+        gelu_per_layer=[int(value) for value in gelu.reshape(-1)],
+        softmax_per_layer=[int(value) for value in softmax.reshape(-1)],
+        snap_sf_to_noise_table=False,
+    )
+    baseline_object = calibrated_action_context.baseline
+    baseline_action_vec = np.asarray(
+        calibrated_action_context.baseline_action_vec,
+        dtype=np.int64,
+    ).reshape(-1)
+    log(
+        "  * calibrated static_skeletons baseline loaded from "
+        f"{baseline_object.archive_path} "
+        "(sha256="
+        f"{calibrated_action_context.provenance['archive_sha256']})"
+    )
+    base_env = BLBStage2Env(
+        handler=ev.reversible_handler,
+        model=ev.model,
+        probe_batches=probe_batches,
+        rescale_bridge=rescale_bridge,
+        baseline=BaselineCostStats(),
+        reward_weights=RewardWeights(),
+        acc_threshold=train_cfg.acc_threshold,
+        stab_threshold=train_cfg.stab_threshold,
+        max_sfs=calibrated_action_context.max_sfs,
+        num_layers=int(ev.total_layers),
+        gelu_degree=gelu,
+        attn_degree=softmax,
+        layers_attribute="model." + ev.layers_attribute,
+        is_regression=bool(getattr(ev, "is_regression", False)),
+        env_cfg=BLBStage2EnvConfig(
+            profile=train_cfg.profile,
+            num_trials_per_step=train_cfg.num_trials_per_step,
+            probe_batch_count=train_cfg.probe_batch_count,
+            truncation_backend=train_cfg.truncation_backend,
+            truncation_ring_bits=train_cfg.truncation_ring_bits,
+            truncation_source_fractional_bits=(
+                train_cfg.truncation_source_fractional_bits
+            ),
+            borderline_retest_enabled=False,
+            borderline_retest_trials_multiplier=1,
+        ),
+    )
+    base_env.pareto_cost_archive = None
+    base_env.sync_degree_vectors_from_model()
+    return {
+        "base_env": base_env,
+        "baseline_action_vec": baseline_action_vec,
+        "calibrated_action_context": calibrated_action_context,
+        "baseline_object": baseline_object,
+        "baseline_cost_stats": calibrated_action_context.cost_stats,
+    }
+
+
+
+
 class _ProbeRunnerOwnerHolder:
     """Own one shared probe pool across every Stage-2 exit path."""
 
     def __init__(self) -> None:
-        self._owner: Optional[Any] = None
+        self._owner: Any | None = None
         self._closed = False
 
     def bind(self, owner: Any) -> None:
@@ -6436,7 +7543,30 @@ def run_sequential_via_runner(
     probe_runner_owner_holder = _ProbeRunnerOwnerHolder()
     with LayerwiseRunLock(blb_progress_dir) as run_lock:
         try:
-            return _run_sequential_via_runner_locked(
+            completed_resume = _preflight_completed_search_resume(
+                runner=runner,
+                train_cfg=train_cfg,
+                fixed_gelu=fixed_gelu,
+                fixed_softmax=fixed_softmax,
+                fixed_label=fixed_label,
+                fixed_source=fixed_source,
+                blb_progress_dir=blb_progress_dir,
+            )
+            if completed_resume is not None:
+                return completed_resume
+
+            pending_strict_resume_context = (
+                _preflight_pending_strict_search_resume(
+                    runner=runner,
+                    train_cfg=train_cfg,
+                    fixed_gelu=fixed_gelu,
+                    fixed_softmax=fixed_softmax,
+                    fixed_label=fixed_label,
+                    fixed_source=fixed_source,
+                    blb_progress_dir=blb_progress_dir,
+                )
+            )
+            result = _run_sequential_via_runner_locked(
                 runner=runner,
                 train_cfg=train_cfg,
                 fixed_gelu=fixed_gelu,
@@ -6446,7 +7576,33 @@ def run_sequential_via_runner(
                 resume_checkpoint_path=resume_checkpoint_path,
                 run_lock=run_lock,
                 probe_runner_owner_holder=probe_runner_owner_holder,
+                pending_strict_resume_context=pending_strict_resume_context,
             )
+            from .search_baselines import normalize_search_backend
+
+            backend = normalize_search_backend(
+                getattr(train_cfg, "search_backend", "ppo")
+            )
+            if backend == "ppo":
+                return result
+
+            completed_result = _preflight_completed_search_resume(
+                runner=runner,
+                train_cfg=train_cfg,
+                fixed_gelu=fixed_gelu,
+                fixed_softmax=fixed_softmax,
+                fixed_label=fixed_label,
+                fixed_source=fixed_source,
+                blb_progress_dir=blb_progress_dir,
+            )
+            if completed_result is None:
+                raise RuntimeError(
+                    "Stage-2 comparator finished without completed inner artifacts"
+                )
+            _validate_completed_search_resume_result(
+                result, completed_result,
+            )
+            return completed_result
         finally:
             probe_runner_owner_holder.close()
 
@@ -6462,6 +7618,7 @@ def _run_sequential_via_runner_locked(
         resume_checkpoint_path=None,
         run_lock: Any,
         probe_runner_owner_holder: _ProbeRunnerOwnerHolder,
+        pending_strict_resume_context: Mapping[str, Any] | None = None,
         ) -> Dict[str, Any]:
     """Drive the sequential RL pipeline using BLBStage2RLRunner's setup helpers.
 
@@ -6478,23 +7635,18 @@ def _run_sequential_via_runner_locked(
     ``best_noise_config`` (legacy-compat all-max), ``limit_loss`` /
     ``limit_p`` / ``limit_s``, ``baseline_tot_c``.
     """
-    import pickle
     train_cfg.rl_algo = _normalize_supported_rl_algo(
         getattr(train_cfg, "rl_algo", "ppo"), context="BLBStage2TrainConfig.rl_algo"
     )
     train_cfg.grpo_kl_beta = 0.0
 
-    from .baseline_bootstrap import (
-        load_calibrated_stage2_action_context,
-        validate_calibrated_stage2_action_context,
-    )
+    from .action_io import action_vec_to_slots_list
+    from .action_space import action_dims_for_config, describe_action_vector
     from .diagnostics import (
         EpisodeStats,
         PPOUpdateStats,
         RLDiagnosticsRecorder,
     )
-    from .env import BLBStage2Env, BLBStage2EnvConfig
-    from .reward import BaselineCostStats, ParetoCostArchive, RewardWeights
     from .persistence import (
         BLBRewardCrashWatcher,
         BLBStatusBoard,
@@ -6502,14 +7654,13 @@ def _run_sequential_via_runner_locked(
         write_diagnostic_curves,
         write_training_curves,
     )
+    from .probe_runner import enable_cuda_reward_probe_fast_math
+    from .reward import ParetoCostArchive
     from .runner import (
         _build_legacy_compatible_best_noise_config,
         _selection_float,
         resolve_blb_persistence_dir,
     )
-    from .action_space import action_dims_for_config, describe_action_vector
-    from .action_io import action_vec_to_slots_list
-    from .probe_runner import enable_cuda_reward_probe_fast_math
 
     # Keep baseline and reward-probe kernels in the same mode for every GPU count.
     enable_cuda_reward_probe_fast_math()
@@ -6530,6 +7681,39 @@ def _run_sequential_via_runner_locked(
         ),
         reward_design=str(getattr(train_cfg, "reward_design", "stage1_aligned")),
     )
+    restored_pending_evidence = None
+    precision_tolerance = None
+    stability_multiplier = None
+    bootstrap_samples = None
+    configured_baseline_groups = None
+    configured_baseline_trials = None
+    if pending_strict_resume_context is not None:
+        if not robust_mode or decision_path != "layerwise":
+            raise RuntimeError(
+                "pending strict resume requires layerwise robust constrained mode"
+            )
+        precision_tolerance, stability_multiplier, bootstrap_samples = (
+            _resolve_robust_baseline_config(train_cfg, ev)
+        )
+        from .layerwise_runner import (
+            validate_layerwise_three_bank_convergence_config,
+            validate_layerwise_validation_bank_config,
+        )
+
+        configured_baseline_groups, configured_baseline_trials = (
+            validate_layerwise_validation_bank_config(train_cfg)
+        )
+        validate_layerwise_three_bank_convergence_config(train_cfg)
+        restored_pending_evidence = _restore_pending_strict_resume_evidence(
+            pending_strict_resume_context,
+            precision_tolerance=precision_tolerance,
+            stability_multiplier=stability_multiplier,
+            bootstrap_samples=bootstrap_samples,
+            online_trials=int(train_cfg.num_trials_per_step),
+            baseline_groups=configured_baseline_groups,
+            trials_per_group=configured_baseline_trials,
+            authoritative_example_count=408,
+        )
     bullet = "*"
     log = runner._make_log_safe(ev.log)
     active_rl_mode = (
@@ -6616,87 +7800,25 @@ def _run_sequential_via_runner_locked(
         f"（PPO rollout 平均奖励较上一次跌幅 > {crash_watcher._drop_threshold:.2f} 时记录）"
     )
 
-    # ---------- 1) apply stage1 polynomial degrees ----------
+    # ---------- 1-3) shared production materializer setup ----------
+    materialization_setup = _build_stage2_materialization_env(
+        runner=runner,
+        train_cfg=train_cfg,
+        fixed_gelu=fixed_gelu,
+        fixed_softmax=fixed_softmax,
+        log=log,
+    )
     fixed_gelu = np.asarray(fixed_gelu, dtype=int)
     fixed_softmax = np.asarray(fixed_softmax, dtype=int)
-    ev.apply_configuration(fixed_gelu, fixed_softmax)
-    try:
-        ev.reversible_handler.restore_layer_input_noise(
-            layer_indices=list(range(ev.total_layers)),
-        )
-    except Exception:
-        pass
-
-    # ---------- 2) probe + bridge + baseline ----------
-    probe_batches = runner._build_probe_batches(
-        ev,
-        train_cfg,
-        probe_size_override=(256 if decision_path == "layerwise" else None),
-    )
-    train_cfg.probe_batch_count = max(1, int(len(probe_batches) or train_cfg.probe_batch_count))
-    log(f"  {bullet} 评估子集：batch 数 = {len(probe_batches)}")
-
-    rescale_bridge = runner._build_rescale_bridge(train_cfg, log=log)
-
-    calibrated_action_context = load_calibrated_stage2_action_context(
-        rescale_optimizer_root=str(train_cfg.inproc_rescale_optimizer_root),
-        dataset=str(train_cfg.profile),
-        num_layers=int(ev.total_layers),
-        gelu_per_layer=[int(x) for x in fixed_gelu.reshape(-1)],
-        softmax_per_layer=[int(x) for x in fixed_softmax.reshape(-1)],
-        snap_sf_to_noise_table=False,
-    )
-    validate_calibrated_stage2_action_context(
-        calibrated_action_context,
-        dataset=str(train_cfg.profile),
-        num_layers=int(ev.total_layers),
-        gelu_per_layer=[int(x) for x in fixed_gelu.reshape(-1)],
-        softmax_per_layer=[int(x) for x in fixed_softmax.reshape(-1)],
-        snap_sf_to_noise_table=False,
-    )
-    ss_baseline_obj = calibrated_action_context.baseline
+    base_env = materialization_setup["base_env"]
+    calibrated_action_context = materialization_setup[
+        "calibrated_action_context"
+    ]
+    ss_baseline_obj = materialization_setup["baseline_object"]
+    ss_cost_stats = materialization_setup["baseline_cost_stats"]
     ss_action_vec = calibrated_action_context.baseline_action_vec
     max_sfs = calibrated_action_context.max_sfs
-    ss_cost_stats = calibrated_action_context.cost_stats
-    _ss_diag = calibrated_action_context.diagnostics
-    baseline_action_vec = np.asarray(ss_action_vec, dtype=np.int64).reshape(-1)
-    log(
-        f"  {bullet} calibrated static_skeletons baseline loaded from "
-        f"{ss_baseline_obj.archive_path} "
-        f"(sha256={calibrated_action_context.provenance['archive_sha256']})"
-    )
-
-    # ---------- 3) base env ----------
-    base_env = BLBStage2Env(
-        handler=ev.reversible_handler,
-        model=ev.model,
-        probe_batches=probe_batches,
-        rescale_bridge=rescale_bridge,
-        baseline=BaselineCostStats(),
-        reward_weights=RewardWeights(),
-        acc_threshold=train_cfg.acc_threshold,
-        stab_threshold=train_cfg.stab_threshold,
-        max_sfs=max_sfs,
-        num_layers=int(ev.total_layers),
-        gelu_degree=fixed_gelu,
-        attn_degree=fixed_softmax,
-        layers_attribute="model." + ev.layers_attribute,
-        is_regression=bool(getattr(ev, "is_regression", False)),
-        env_cfg=BLBStage2EnvConfig(
-            profile=train_cfg.profile,
-            num_trials_per_step=train_cfg.num_trials_per_step,
-            probe_batch_count=train_cfg.probe_batch_count,
-            truncation_backend=train_cfg.truncation_backend,
-            truncation_ring_bits=train_cfg.truncation_ring_bits,
-            truncation_source_fractional_bits=(
-                train_cfg.truncation_source_fractional_bits
-            ),
-            borderline_retest_enabled=False,
-            borderline_retest_trials_multiplier=1,
-        ),
-    )
-    base_env.pareto_cost_archive = None
-    base_env.sync_degree_vectors_from_model()
+    baseline_action_vec = materialization_setup["baseline_action_vec"]
 
     # ---------- 3.5) Multi-GPU reward-probe runner (opt-in) ----------
     reward_devices = list(getattr(train_cfg, "reward_devices", []) or [])
@@ -6740,7 +7862,12 @@ def _run_sequential_via_runner_locked(
     # baseline metric1 reference; loss_std here is 0 since no noise is installed
     # and we use a deterministic forward path. We deliberately do NOT use this
     # value to set stab_threshold — see noisy preflight below.)
-    baseline_metrics = runner._estimate_baseline_metrics(base_env)
+    if pending_strict_resume_context is None:
+        baseline_metrics = runner._estimate_baseline_metrics(base_env)
+    else:
+        baseline_metrics = restored_pending_evidence[
+            "clean_baseline_metrics"
+        ]
     baseline.loss_mean = float(baseline_metrics.loss_mean)
     baseline.loss_std = float(baseline_metrics.loss_std)
     baseline.metric1_mean = float(baseline_metrics.metric1_mean)
@@ -6963,37 +8090,49 @@ def _run_sequential_via_runner_locked(
     authoritative_validation_banks = None
     authoritative_validation_example_count = 0
     if robust_mode:
-        precision_tolerance, stability_multiplier, bootstrap_samples = (
-            _resolve_robust_baseline_config(train_cfg, ev)
-        )
-        if decision_path == "layerwise":
-            from .layerwise_runner import (
-                validate_layerwise_three_bank_convergence_config,
-                validate_layerwise_validation_bank_config,
+        if restored_pending_evidence is None:
+            precision_tolerance, stability_multiplier, bootstrap_samples = (
+                _resolve_robust_baseline_config(train_cfg, ev)
             )
+            if decision_path == "layerwise":
+                from .layerwise_runner import (
+                    validate_layerwise_three_bank_convergence_config,
+                    validate_layerwise_validation_bank_config,
+                )
 
-            configured_baseline_groups, configured_baseline_trials = (
-                validate_layerwise_validation_bank_config(train_cfg)
+                configured_baseline_groups, configured_baseline_trials = (
+                    validate_layerwise_validation_bank_config(train_cfg)
+                )
+                validate_layerwise_three_bank_convergence_config(train_cfg)
+            else:
+                configured_baseline_groups = int(
+                    getattr(train_cfg, "baseline_groups", 5)
+                )
+                configured_baseline_trials = int(
+                    getattr(train_cfg, "baseline_trials_per_group", 3)
+                )
+            robust_reference, robust_summary = (
+                _collect_robust_baseline_reference(
+                    base_env=base_env,
+                    baseline_action_vec=baseline_action_vec,
+                    base_seed=int(train_cfg.seed),
+                    precision_tolerance=precision_tolerance,
+                    stability_multiplier=stability_multiplier,
+                    bootstrap_samples=bootstrap_samples,
+                    baseline_groups=configured_baseline_groups,
+                    trials_per_group=configured_baseline_trials,
+                    max_groups=max(10, 2 * configured_baseline_groups),
+                )
             )
-            validate_layerwise_three_bank_convergence_config(train_cfg)
         else:
-            configured_baseline_groups = int(
-                getattr(train_cfg, "baseline_groups", 5)
+            robust_reference = restored_pending_evidence[
+                "robust_reference"
+            ]
+            robust_summary = dict(
+                restored_pending_evidence["baseline_preflight_metrics"].get(
+                    "robust_reference", {}
+                )
             )
-            configured_baseline_trials = int(
-                getattr(train_cfg, "baseline_trials_per_group", 3)
-            )
-        robust_reference, robust_summary = _collect_robust_baseline_reference(
-            base_env=base_env,
-            baseline_action_vec=baseline_action_vec,
-            base_seed=int(train_cfg.seed),
-            precision_tolerance=precision_tolerance,
-            stability_multiplier=stability_multiplier,
-            bootstrap_samples=bootstrap_samples,
-            baseline_groups=configured_baseline_groups,
-            trials_per_group=configured_baseline_trials,
-            max_groups=max(10, 2 * configured_baseline_groups),
-        )
         _install_robust_baseline_reference(
             base_env, baseline, weights, robust_reference,
         )
@@ -7012,25 +8151,40 @@ def _run_sequential_via_runner_locked(
         stab_threshold_loss = float(robust_reference.loss_std_limit)
         stab_threshold_m1 = float(robust_reference.metric1_std_limit)
         stab_threshold_m2 = float(robust_reference.metric2_std_limit)
-        baseline_preflight_metrics["robust_reference"] = robust_summary
-        baseline_preflight_metrics.update(robust_summary)
-        baseline_preflight_metrics.update({
-            "metric1_mean": noisy_baseline_metric1,
-            "metric2_mean": noisy_baseline_metric2,
-            "loss_mean": noisy_baseline_loss_mean,
-            "metric1_std": noisy_baseline_metric1_std,
-            "metric2_std": noisy_baseline_metric2_std,
-            "loss_std": noisy_baseline_loss_std,
-            "metric1_threshold": float(robust_reference.metric1_limit),
-            "metric2_threshold": float(robust_reference.metric2_limit),
-            "loss_threshold": float(robust_reference.loss_limit),
-            "metric1_std_threshold": float(robust_reference.metric1_std_limit),
-            "metric2_std_threshold": float(robust_reference.metric2_std_limit),
-            "loss_std_threshold": float(robust_reference.loss_std_limit),
-            "limit_tolerance": float(robust_reference.precision_tolerance),
-            "stability_tolerance": float(robust_reference.stability_multiplier),
-            "stability_floor": float(weights.stab_floor),
-        })
+        if restored_pending_evidence is None:
+            baseline_preflight_metrics["robust_reference"] = robust_summary
+            baseline_preflight_metrics.update(robust_summary)
+            baseline_preflight_metrics.update({
+                "metric1_mean": noisy_baseline_metric1,
+                "metric2_mean": noisy_baseline_metric2,
+                "loss_mean": noisy_baseline_loss_mean,
+                "metric1_std": noisy_baseline_metric1_std,
+                "metric2_std": noisy_baseline_metric2_std,
+                "loss_std": noisy_baseline_loss_std,
+                "metric1_threshold": float(robust_reference.metric1_limit),
+                "metric2_threshold": float(robust_reference.metric2_limit),
+                "loss_threshold": float(robust_reference.loss_limit),
+                "metric1_std_threshold": float(
+                    robust_reference.metric1_std_limit
+                ),
+                "metric2_std_threshold": float(
+                    robust_reference.metric2_std_limit
+                ),
+                "loss_std_threshold": float(
+                    robust_reference.loss_std_limit
+                ),
+                "limit_tolerance": float(
+                    robust_reference.precision_tolerance
+                ),
+                "stability_tolerance": float(
+                    robust_reference.stability_multiplier
+                ),
+                "stability_floor": float(weights.stab_floor),
+            })
+        else:
+            baseline_preflight_metrics = dict(
+                restored_pending_evidence["baseline_preflight_metrics"]
+            )
         if decision_path == "layerwise":
             (
                 promotion_base_env,
@@ -7043,120 +8197,171 @@ def _run_sequential_via_runner_locked(
                 reward_devices=reward_devices,
                 log=log,
             )
-            from .layerwise_runner import (
-                LayerwiseValidationBank,
-                LayerwiseValidationBanks,
-            )
-            from .statistical_constraints import build_baseline_reference
+            if restored_pending_evidence is None:
+                bank_references = {}
+                bank_summaries = {}
+                bank_group_starts = {
+                    "A": 1_000, "B": 2_000, "C": 3_000,
+                }
+                trials_per_bank_group = configured_baseline_trials
+                for bank_label in ("A", "B", "C"):
+                    bank_reference, bank_summary = (
+                        _collect_robust_baseline_reference(
+                            base_env=promotion_base_env,
+                            baseline_action_vec=baseline_action_vec,
+                            base_seed=int(train_cfg.seed),
+                            precision_tolerance=precision_tolerance,
+                            stability_multiplier=stability_multiplier,
+                            bootstrap_samples=bootstrap_samples,
+                            baseline_groups=configured_baseline_groups,
+                            trials_per_group=trials_per_bank_group,
+                            max_groups=configured_baseline_groups,
+                            group_index_start=bank_group_starts[bank_label],
+                        )
+                    )
+                    bank_references[bank_label] = bank_reference
+                    bank_summaries[bank_label] = bank_summary
 
-            bank_references = {}
-            bank_summaries = {}
-            bank_group_starts = {"A": 1_000, "B": 2_000, "C": 3_000}
-            trials_per_bank_group = configured_baseline_trials
-            for bank_label in ("A", "B", "C"):
-                bank_reference, bank_summary = _collect_robust_baseline_reference(
-                    base_env=promotion_base_env,
-                    baseline_action_vec=baseline_action_vec,
-                    base_seed=int(train_cfg.seed),
+                from .layerwise_runner import (
+                    LayerwiseValidationBank,
+                    LayerwiseValidationBanks,
+                )
+                from .statistical_constraints import build_baseline_reference
+
+                promotion_reference = build_baseline_reference(
+                    [
+                        bank_references["A"].trials,
+                        bank_references["B"].trials,
+                    ],
                     precision_tolerance=precision_tolerance,
                     stability_multiplier=stability_multiplier,
                     bootstrap_samples=bootstrap_samples,
-                    baseline_groups=configured_baseline_groups,
-                    trials_per_group=trials_per_bank_group,
-                    max_groups=configured_baseline_groups,
-                    group_index_start=bank_group_starts[bank_label],
+                    seed=int(train_cfg.seed) + 10_001,
                 )
-                bank_references[bank_label] = bank_reference
-                bank_summaries[bank_label] = bank_summary
+                final_reference = build_baseline_reference(
+                    [
+                        bank_references["A"].trials,
+                        bank_references["B"].trials,
+                        bank_references["C"].trials,
+                    ],
+                    precision_tolerance=precision_tolerance,
+                    stability_multiplier=stability_multiplier,
+                    bootstrap_samples=bootstrap_samples,
+                    seed=int(train_cfg.seed) + 10_002,
+                )
 
-            promotion_reference = build_baseline_reference(
-                [bank_references["A"].trials, bank_references["B"].trials],
-                precision_tolerance=precision_tolerance,
-                stability_multiplier=stability_multiplier,
-                bootstrap_samples=bootstrap_samples,
-                seed=int(train_cfg.seed) + 10_001,
-            )
-            final_reference = build_baseline_reference(
-                [
-                    bank_references["A"].trials,
-                    bank_references["B"].trials,
-                    bank_references["C"].trials,
-                ],
-                precision_tolerance=precision_tolerance,
-                stability_multiplier=stability_multiplier,
-                bootstrap_samples=bootstrap_samples,
-                seed=int(train_cfg.seed) + 10_002,
-            )
+                def build_bank(label):
+                    summary = bank_summaries[label]
+                    return LayerwiseValidationBank(
+                        label=label,
+                        reference=bank_references[label],
+                        probe_seeds=tuple(
+                            int(group["group_probe_seed"])
+                            for group in summary["groups"]
+                        ),
+                        trials_per_probe=trials_per_bank_group,
+                    )
 
-            def build_bank(label):
-                summary = bank_summaries[label]
-                return LayerwiseValidationBank(
-                    label=label,
-                    reference=bank_references[label],
-                    probe_seeds=tuple(
-                        int(group["group_probe_seed"])
-                        for group in summary["groups"]
+                authoritative_validation_banks = LayerwiseValidationBanks(
+                    bank_a=build_bank("A"),
+                    bank_b=build_bank("B"),
+                    bank_c=build_bank("C"),
+                    promotion_reference=promotion_reference,
+                    final_reference=final_reference,
+                )
+                authoritative_robust_reference = promotion_reference
+
+                def pooled_reference_summary(reference):
+                    return {
+                        "trial_count": int(reference.trial_count),
+                        "loss_mean": float(reference.loss_mean),
+                        "metric1_mean": float(reference.metric1_mean),
+                        "metric2_mean": float(reference.metric2_mean),
+                        "loss_std": float(reference.loss_std),
+                        "metric1_std": float(reference.metric1_std),
+                        "metric2_std": float(reference.metric2_std),
+                        "limits": {
+                            "loss": float(reference.loss_limit),
+                            "metric1": float(reference.metric1_limit),
+                            "metric2": float(reference.metric2_limit),
+                            "loss_std": float(reference.loss_std_limit),
+                            "metric1_std": float(
+                                reference.metric1_std_limit
+                            ),
+                            "metric2_std": float(
+                                reference.metric2_std_limit
+                            ),
+                        },
+                    }
+
+                authoritative_robust_summary = {
+                    "ok": True,
+                    "schema_version": "stage2_validation_banks_v1",
+                    "hard_gate": (
+                        "joint_six_point_plus_compute_and_communication_"
+                        "counterfactual_six_point_v1"
                     ),
-                    trials_per_probe=trials_per_bank_group,
-                )
-
-            authoritative_validation_banks = LayerwiseValidationBanks(
-                bank_a=build_bank("A"),
-                bank_b=build_bank("B"),
-                bank_c=build_bank("C"),
-                promotion_reference=promotion_reference,
-                final_reference=final_reference,
-            )
-            authoritative_robust_reference = promotion_reference
-
-            def pooled_reference_summary(reference):
-                return {
-                    "trial_count": int(reference.trial_count),
-                    "loss_mean": float(reference.loss_mean),
-                    "metric1_mean": float(reference.metric1_mean),
-                    "metric2_mean": float(reference.metric2_mean),
-                    "loss_std": float(reference.loss_std),
-                    "metric1_std": float(reference.metric1_std),
-                    "metric2_std": float(reference.metric2_std),
-                    "limits": {
-                        "loss": float(reference.loss_limit),
-                        "metric1": float(reference.metric1_limit),
-                        "metric2": float(reference.metric2_limit),
-                        "loss_std": float(reference.loss_std_limit),
-                        "metric1_std": float(reference.metric1_std_limit),
-                        "metric2_std": float(reference.metric2_std_limit),
-                    },
+                    "bootstrap_probability_role": "diagnostic_tiebreak_only",
+                    "banks": bank_summaries,
+                    "promotion_reference_ab": pooled_reference_summary(
+                        promotion_reference,
+                    ),
+                    "final_reference_abc": pooled_reference_summary(
+                        final_reference,
+                    ),
+                    "contract": (
+                        authoritative_validation_banks.contract_payload()
+                    ),
                 }
+            else:
+                authoritative_validation_banks = (
+                    restored_pending_evidence["validation_banks"]
+                )
+                authoritative_robust_reference = (
+                    authoritative_validation_banks.promotion_reference
+                )
+                authoritative_robust_summary = dict(
+                    restored_pending_evidence[
+                        "authoritative_robust_summary"
+                    ]
+                )
+                restored_example_count = int(
+                    restored_pending_evidence[
+                        "authoritative_validation_example_count"
+                    ]
+                )
+                if (
+                        int(authoritative_validation_example_count)
+                        != restored_example_count
+                ):
+                    raise RuntimeError(
+                        "pending strict runtime validation example count changed"
+                    )
 
-            authoritative_robust_summary = {
-                "ok": True,
-                "schema_version": "stage2_validation_banks_v1",
-                "hard_gate": (
-                    "joint_six_point_plus_compute_and_communication_"
-                    "counterfactual_six_point_v1"
-                ),
-                "bootstrap_probability_role": "diagnostic_tiebreak_only",
-                "banks": bank_summaries,
-                "promotion_reference_ab": pooled_reference_summary(
-                    promotion_reference,
-                ),
-                "final_reference_abc": pooled_reference_summary(
-                    final_reference,
-                ),
-                "contract": authoritative_validation_banks.contract_payload(),
-            }
             _install_robust_baseline_reference(
                 promotion_base_env,
                 promotion_base_env.baseline,
                 promotion_base_env.reward_weights,
                 authoritative_robust_reference,
             )
-            baseline_preflight_metrics["authoritative_validation_full"] = {
+            authoritative_preflight = {
                 **dict(authoritative_robust_summary),
                 "split": "validation_full",
                 "example_count": int(authoritative_validation_example_count),
                 "fidelity": "F4",
             }
+            if restored_pending_evidence is None:
+                baseline_preflight_metrics[
+                    "authoritative_validation_full"
+                ] = authoritative_preflight
+            elif (
+                    baseline_preflight_metrics.get(
+                        "authoritative_validation_full"
+                    ) != authoritative_preflight
+            ):
+                raise RuntimeError(
+                    "pending strict authoritative baseline summary changed"
+                )
 
     log(
         f"  {bullet} 基线噪声预热（noisy baseline preflight）："
@@ -7301,6 +8506,7 @@ def _run_sequential_via_runner_locked(
             fixed_label=fixed_label,
             fixed_source=fixed_source,
             blb_progress_dir=blb_progress_dir,
+            clean_baseline_metrics=baseline_metrics,
             baseline_preflight_metrics=baseline_preflight_metrics,
             status=status,
             resume_checkpoint_path=resume_checkpoint_path,
@@ -9361,6 +10567,7 @@ def _run_sequential_via_runner_locked(
     # 8.1) 局部最优 / 健康检测报告（Stage-1 同款 pruning_search_log.txt 版式）。
     try:
         from rl_local_optimum import write_local_optimum_report
+
         from .persistence import BLB_SEARCH_LOG_TXT
         write_local_optimum_report(
             os.path.join(blb_progress_dir, BLB_SEARCH_LOG_TXT),
@@ -9419,14 +10626,16 @@ def _run_sequential_via_runner_locked(
             import datetime as _dt
             import json as _json
             import shutil as _shutil
+
             from config import run_layout as _rl
+
             from .persistence import (
-                BLB_TRAINING_CURVE_PNG,
-                BLB_ENTROPY_CURVE_PNG,
                 BLB_DIAGNOSTIC_CURVE_PNG,
-                BLB_REWARD_PAPER_PNG,
+                BLB_ENTROPY_CURVE_PNG,
                 BLB_FINAL_REPORT_MD,
+                BLB_REWARD_PAPER_PNG,
                 BLB_SEARCH_LOG_TXT,
+                BLB_TRAINING_CURVE_PNG,
             )
 
             _wd = os.path.normpath(str(getattr(ev, "run_output_dir", "") or ""))  # <root>/stage2/<combo>

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 import numpy as np
 
+import blb_stage2_rl.search_baselines as search_baselines_module
 from blb_stage2_rl.layerwise_action import (
     decode_layer_gene,
     decode_layerwise_action_genes,
@@ -19,12 +21,14 @@ from blb_stage2_rl.search_baselines import (
     _bo_acquisition_key,
     _diverse_second_parent,
     _hamming_distance,
+    _make_ga_child,
     _replacement_mutation,
     _select_hamming_diverse_elites,
     _structured_initial_design,
     candidate_rank_key,
     normalize_search_backend,
     run_search,
+    validate_comparator_scientific_parameters,
 )
 
 
@@ -71,10 +75,25 @@ def _evaluation(
 
 
 def _probability_evaluation(action, margins, *, valid=True):
+    scales = (
+        max(abs(LIMITS.loss_max), 1.0e-6),
+        max(abs(LIMITS.metric1_min), 1.0e-6),
+        max(abs(LIMITS.metric2_min), 1.0e-6),
+        max(abs(LIMITS.loss_std_max), 1.0e-6),
+        max(abs(LIMITS.metric1_std_max), 1.0e-6),
+        max(abs(LIMITS.metric2_std_max), 1.0e-6),
+    )
+    normalized = tuple(float(value) for value in margins)
     return _evaluation(
         action,
+        loss=LIMITS.loss_max - normalized[0] * scales[0],
+        metric1=LIMITS.metric1_min + normalized[1] * scales[1],
+        metric2=LIMITS.metric2_min + normalized[2] * scales[2],
+        loss_std=LIMITS.loss_std_max - normalized[3] * scales[3],
+        metric1_std=LIMITS.metric1_std_max - normalized[4] * scales[4],
+        metric2_std=LIMITS.metric2_std_max - normalized[5] * scales[5],
         valid=valid,
-        probabilities=tuple(0.5 + float(value) for value in margins),
+        probabilities=tuple(0.5 + value for value in normalized),
         gate_probability=0.5,
     )
 
@@ -166,12 +185,11 @@ class AtomicLayerGeneTests(unittest.TestCase):
         neighbors = tuple(space.neighbors(action))
         self.assertEqual(len(neighbors), 10)
         for neighbor in neighbors:
+            after_genes = space.genes(neighbor)
             changed_layers = [
                 index
-                for index, (before, after) in enumerate(
-                    zip(before_genes, space.genes(neighbor))
-                )
-                if before != after
+                for index, before in enumerate(before_genes)
+                if before != after_genes[index]
             ]
             self.assertEqual(len(changed_layers), 1)
 
@@ -240,6 +258,20 @@ class ConstraintAndRankingTests(unittest.TestCase):
             with self.subTest(override=override):
                 self.assertFalse(_evaluation(((0, 0),), **override).feasible)
 
+    def test_point_failure_cannot_be_overridden_by_probability_confidence(self):
+        evaluation = _evaluation(
+            ((1, 2),),
+            loss=1.20,
+            probabilities=(0.99,) * 6,
+            gate_probability=0.50,
+        )
+
+        self.assertFalse(evaluation.feasible)
+        self.assertEqual(evaluation.failed_constraint_count, 1)
+        self.assertGreater(evaluation.normalized_violation, 0.0)
+        self.assertTrue(all(value > 0.0 for value in evaluation.confidence_margins))
+        self.assertEqual(evaluation.constraint_margins, evaluation.normalized_margins)
+
     def test_infeasible_rank_is_valid_then_fail_count_total_worst_resource(self):
         invalid = _probability_evaluation(
             ((1, 2),), (-0.001, 0.1, 0.1, 0.1, 0.1, 0.1), valid=False,
@@ -256,17 +288,67 @@ class ConstraintAndRankingTests(unittest.TestCase):
         higher_total = _probability_evaluation(
             ((1, 2),), (-0.25, -0.10, 0.1, 0.1, 0.1, 0.1),
         )
-        lower_worst = _probability_evaluation(
-            ((0, 1),), (-0.25, -0.25, 0.1, 0.1, 0.1, 0.1),
+        unit_limits = ConstraintLimits(
+            loss_max=1.0,
+            metric1_min=1.0,
+            metric2_min=1.0,
+            loss_std_max=1.0,
+            metric1_std_max=1.0,
+            metric2_std_max=1.0,
         )
-        higher_worst = _probability_evaluation(
-            ((1, 2),), (-0.375, -0.125, 0.1, 0.1, 0.1, 0.1),
+
+        def exact_worst_evaluation(action, first, second):
+            return SearchEvaluation(
+                action_matrix=action,
+                metrics=SearchMetrics(
+                    loss_mean=1.0 - first,
+                    metric1_mean=1.0 + second,
+                    metric2_mean=1.1,
+                    loss_std=0.9,
+                    metric1_std=0.9,
+                    metric2_std=0.9,
+                ),
+                limits=unit_limits,
+                valid=True,
+            )
+
+        lower_worst = exact_worst_evaluation(
+            ((0, 1),), -0.25, -0.25,
+        )
+        higher_worst = exact_worst_evaluation(
+            ((1, 2),), -0.375, -0.125,
         )
 
         self.assertGreater(candidate_rank_key(two_failures), candidate_rank_key(invalid))
         self.assertGreater(candidate_rank_key(one_failure), candidate_rank_key(two_failures))
         self.assertGreater(candidate_rank_key(lower_total), candidate_rank_key(higher_total))
+        self.assertEqual(
+            lower_worst.normalized_violation,
+            higher_worst.normalized_violation,
+        )
+        self.assertLess(
+            lower_worst.worst_normalized_violation,
+            higher_worst.worst_normalized_violation,
+        )
         self.assertGreater(candidate_rank_key(lower_worst), candidate_rank_key(higher_worst))
+
+    def test_infeasible_rank_preserves_sub_femtoscale_violation_order(self):
+        lower_violation = _evaluation(((0, 0),), loss=1.11)
+        higher_violation = _evaluation(
+            ((1, 2),), loss=np.nextafter(1.11, np.inf),
+        )
+        self.assertLess(
+            lower_violation.normalized_violation,
+            higher_violation.normalized_violation,
+        )
+        self.assertGreater(
+            higher_violation.resource.ppo_resource_score,
+            lower_violation.resource.ppo_resource_score,
+        )
+        self.assertGreater(
+            candidate_rank_key(lower_violation),
+            candidate_rank_key(higher_violation),
+        )
 
     def test_feasible_resource_and_communication_weighting_are_preserved(self):
         feasible = _evaluation(((1, 1),))
@@ -312,6 +394,26 @@ class ConstraintAndRankingTests(unittest.TestCase):
         self.assertEqual(space.genes(result.best.action_matrix), (3,))
 
 
+class SearchReplayIntegrityTests(unittest.TestCase):
+    def test_duplicate_persisted_observation_fails_closed(self):
+        space = LayerwiseSearchSpace(1)
+        evaluation = _evaluation(space.safe_action)
+
+        for backend in ("greedy", "bo_rf", "coinn_ga"):
+            with self.subTest(backend=backend), self.assertRaisesRegex(
+                    ValueError, "duplicate preloaded evaluation",
+            ):
+                run_search(
+                    backend,
+                    space,
+                    lambda _action: self.fail(
+                        "corrupt replay must fail before live evaluation"
+                    ),
+                    SearchConfig(evaluation_budget=1),
+                    preload=(evaluation, evaluation),
+                )
+
+
 class GreedySearchTests(unittest.TestCase):
     def test_legacy_checkpoint_callback_still_receives_observation_tuple(self):
         space = LayerwiseSearchSpace(1)
@@ -326,6 +428,59 @@ class GreedySearchTests(unittest.TestCase):
 
         self.assertEqual([len(row) for row in snapshots], list(range(1, 7)))
         self.assertTrue(all(isinstance(row, tuple) for row in snapshots))
+
+    def test_greedy_partial_resume_replays_exact_control_flow_before_live_suffix(self):
+        space = LayerwiseSearchSpace(2)
+        config = SearchConfig(
+            evaluation_budget=space.cardinality,
+            seed=17,
+        )
+        uninterrupted_actions = []
+
+        def uninterrupted_evaluator(action):
+            uninterrupted_actions.append(action)
+            return _evaluation(action)
+
+        uninterrupted = run_search(
+            "greedy", space, uninterrupted_evaluator, config,
+        )
+        crash_after = 10
+        interrupted_actions = []
+
+        def interrupted_evaluator(action):
+            interrupted_actions.append(action)
+            evaluation = _evaluation(action)
+            if len(interrupted_actions) == crash_after:
+                raise RuntimeError("injected Greedy interruption")
+            return evaluation
+
+        with self.assertRaisesRegex(RuntimeError, "injected Greedy interruption"):
+            run_search("greedy", space, interrupted_evaluator, config)
+        resumed_live_actions = []
+
+        def resumed_evaluator(action):
+            resumed_live_actions.append(action)
+            return _evaluation(action)
+
+        resumed = run_search(
+            "greedy",
+            space,
+            resumed_evaluator,
+            config,
+            preload=tuple(_evaluation(action) for action in interrupted_actions),
+        )
+
+        self.assertEqual(interrupted_actions, uninterrupted_actions[:crash_after])
+        self.assertEqual(resumed_live_actions, uninterrupted_actions[crash_after:])
+        self.assertEqual(
+            [item.as_dict() for item in resumed.observations],
+            [item.as_dict() for item in uninterrupted.observations],
+        )
+        self.assertEqual(resumed.best.as_dict(), uninterrupted.best.as_dict())
+        self.assertEqual(resumed.history, uninterrupted.history)
+        self.assertEqual(
+            resumed.termination_reason, uninterrupted.termination_reason,
+        )
 
     def test_greedy_uses_six_anchors_accepts_two_opt_then_returns_to_one_opt(self):
         space = LayerwiseSearchSpace(3)
@@ -399,6 +554,93 @@ class BayesianSearchTests(unittest.TestCase):
             reshaped = features.reshape(features.shape[0], 2, 6)
             np.testing.assert_allclose(reshaped.sum(axis=2), 1.0)
             self.assertTrue(np.all((reshaped == 0.0) | (reshaped == 1.0)))
+
+    def test_bo_partial_resume_replays_exact_control_flow_before_live_suffix(self):
+        space = LayerwiseSearchSpace(3)
+        config = SearchConfig(
+            evaluation_budget=14,
+            seed=17,
+            initial_design_size=8,
+            candidate_pool_size=20,
+            patience_generations=20,
+        )
+        uninterrupted_actions = []
+
+        def uninterrupted_evaluator(action):
+            uninterrupted_actions.append(action)
+            return _evaluation(action)
+
+        uninterrupted = run_search(
+            "bo_rf",
+            space,
+            uninterrupted_evaluator,
+            config,
+            surrogate_factory=lambda _seed: _TinyForest(),
+        )
+
+        crash_after = 10
+        interrupted_actions = []
+
+        def interrupted_evaluator(action):
+            interrupted_actions.append(action)
+            evaluation = _evaluation(action)
+            if len(interrupted_actions) == crash_after:
+                raise RuntimeError("injected BO interruption")
+            return evaluation
+
+        with self.assertRaisesRegex(RuntimeError, "injected BO interruption"):
+            run_search(
+                "bo_rf",
+                space,
+                interrupted_evaluator,
+                config,
+                surrogate_factory=lambda _seed: _TinyForest(),
+            )
+        persisted = tuple(_evaluation(action) for action in interrupted_actions)
+        resumed_live_actions = []
+
+        def resumed_evaluator(action):
+            resumed_live_actions.append(action)
+            return _evaluation(action)
+
+        resumed = run_search(
+            "bo_rf",
+            space,
+            resumed_evaluator,
+            config,
+            surrogate_factory=lambda _seed: _TinyForest(),
+            preload=persisted,
+        )
+
+        self.assertEqual(interrupted_actions, uninterrupted_actions[:crash_after])
+        self.assertEqual(resumed_live_actions, uninterrupted_actions[crash_after:])
+        self.assertEqual(
+            [item.as_dict() for item in resumed.observations],
+            [item.as_dict() for item in uninterrupted.observations],
+        )
+        self.assertEqual(resumed.best.as_dict(), uninterrupted.best.as_dict())
+        self.assertEqual(resumed.history, uninterrupted.history)
+        self.assertEqual(
+            resumed.termination_reason, uninterrupted.termination_reason,
+        )
+
+    def test_bo_reordered_persisted_prefix_fails_closed(self):
+        space = LayerwiseSearchSpace(2)
+        with self.assertRaisesRegex(RuntimeError, "exact search replay diverged"):
+            run_search(
+                "bo_rf",
+                space,
+                lambda _action: self.fail("divergent replay must not go live"),
+                SearchConfig(
+                    evaluation_budget=8,
+                    seed=17,
+                    initial_design_size=6,
+                    candidate_pool_size=12,
+                    patience_generations=10,
+                ),
+                surrogate_factory=lambda _seed: _TinyForest(),
+                preload=(_evaluation(space.uniform_anchors[1]),),
+            )
 
     def test_bo_native_no_improvement_convergence_stops_before_hard_budget(self):
         _TinyForest.fitted_features = []
@@ -521,6 +763,13 @@ class BayesianSearchTests(unittest.TestCase):
 
 
 class GeneticSearchTests(unittest.TestCase):
+    def test_search_config_rejects_mutation_cap_above_four_layers(self):
+        with self.assertRaisesRegex(ValueError, "at most 4"):
+            SearchConfig(
+                evaluation_budget=64,
+                mutation_max_coordinates=5,
+            )
+
     def test_replacement_mutation_honors_configured_layer_cap(self):
         space = LayerwiseSearchSpace(12)
         base = space.from_genes((0,) * 12)
@@ -535,6 +784,140 @@ class GeneticSearchTests(unittest.TestCase):
             changed = _hamming_distance(space, base, mutated)
             self.assertGreaterEqual(changed, 1)
             self.assertLessEqual(changed, 4)
+
+    def test_ga_parent_selection_is_feasibility_aware_fitness_proportional(self):
+        space = LayerwiseSearchSpace(2)
+        low_resource = _evaluation(space.safe_action)
+        high_resource = _evaluation(space.max_resource_action)
+        infeasible = _evaluation(
+            space.from_genes((1, 1)), metric1=0.10,
+        )
+
+        class RecordingRng:
+            def __init__(self):
+                self.probabilities = None
+
+            def choice(self, count, *args, **kwargs):
+                self.probabilities = kwargs.get("p")
+                if self.probabilities is None:
+                    return np.arange(count)
+                return 1
+
+        rng = RecordingRng()
+        selected = search_baselines_module._tournament_parent(
+            (low_resource, high_resource, infeasible), rng,
+        )
+
+        self.assertEqual(selected.action_matrix, high_resource.action_matrix)
+        self.assertGreater(rng.probabilities[1], rng.probabilities[0])
+        self.assertGreater(rng.probabilities[0], 0.0)
+        self.assertEqual(rng.probabilities[2], 0.0)
+
+    def test_ga_all_infeasible_fitness_decreases_with_violation(self):
+        space = LayerwiseSearchSpace(1)
+        mild = _evaluation(space.safe_action, metric1=0.88)
+        severe = _evaluation(space.max_resource_action, metric1=0.10)
+        weights = getattr(search_baselines_module, "_ga_parent_weights", None)
+
+        self.assertIsNotNone(weights)
+        mild_weight, severe_weight = weights((mild, severe))
+        self.assertGreater(mild_weight, severe_weight)
+        self.assertGreater(severe_weight, 0.0)
+
+    def test_replacement_mutation_moves_each_changed_layer_to_mesh_neighbor(self):
+        space = LayerwiseSearchSpace(12)
+        base = space.from_genes((0,) * 12)
+        before_rows = space.validate(base)
+        for seed in range(100):
+            mutated = _replacement_mutation(
+                space,
+                base,
+                np.random.default_rng(seed),
+                force=True,
+                max_layers=4,
+            )
+            for index, before in enumerate(before_rows):
+                after = mutated[index]
+                self.assertLessEqual(
+                    max(
+                        abs(before[0] - after[0]),
+                        abs(before[1] - after[1]),
+                    ),
+                    1,
+                )
+
+    def test_coinn_ga_child_never_invokes_crossover(self):
+        space = LayerwiseSearchSpace(4)
+        first = _evaluation(space.from_genes((0, 0, 0, 0)))
+        mutation_child = space.from_genes((1, 0, 0, 0))
+
+        with (
+            mock.patch.object(
+                search_baselines_module,
+                "_tournament_parent",
+                return_value=first,
+            ) as select_parent,
+            mock.patch.object(
+                LayerwiseSearchSpace,
+                "crossover",
+                side_effect=AssertionError("COINN-GA crossover is forbidden"),
+            ) as crossover,
+            mock.patch.object(
+                search_baselines_module,
+                "_replacement_mutation",
+                return_value=mutation_child,
+            ) as mutate,
+        ):
+            child, immigrant = _make_ga_child(
+                space,
+                (first,),
+                np.random.default_rng(17),
+                set(),
+                mutation_max_layers=4,
+            )
+
+        self.assertEqual(child, mutation_child)
+        self.assertFalse(immigrant)
+        select_parent.assert_called_once()
+        crossover.assert_not_called()
+        self.assertEqual(mutate.call_args.args[1], first.action_matrix)
+        self.assertTrue(mutate.call_args.kwargs["force"])
+
+    def test_duplicate_repair_restarts_from_same_selected_parent(self):
+        space = LayerwiseSearchSpace(6)
+        first = _evaluation(space.from_genes((0, 0, 0, 0, 0, 0)))
+        duplicate = space.from_genes((1, 0, 0, 0, 0, 0))
+        repaired = space.from_genes((0, 1, 0, 0, 0, 0))
+
+        with (
+            mock.patch.object(
+                search_baselines_module,
+                "_tournament_parent",
+                return_value=first,
+            ),
+            mock.patch.object(
+                LayerwiseSearchSpace,
+                "crossover",
+                side_effect=AssertionError("COINN-GA crossover is forbidden"),
+            ),
+            mock.patch.object(
+                search_baselines_module,
+                "_replacement_mutation",
+                side_effect=(duplicate, repaired),
+            ) as mutate,
+        ):
+            child, immigrant = _make_ga_child(
+                space,
+                (first,),
+                np.random.default_rng(17),
+                {duplicate},
+                mutation_max_layers=4,
+            )
+
+        self.assertEqual(child, repaired)
+        self.assertFalse(immigrant)
+        self.assertEqual(mutate.call_args_list[0].args[1], first.action_matrix)
+        self.assertEqual(mutate.call_args_list[1].args[1], first.action_matrix)
 
     def test_elites_keep_incumbent_and_prefer_hamming_distance_two(self):
         space = LayerwiseSearchSpace(3)
@@ -605,6 +988,122 @@ class GeneticSearchTests(unittest.TestCase):
             self.assertEqual(row["expected_evaluations"], 64 + generation * 57)
             self.assertEqual(row["evaluations"], 64 + generation * 57)
 
+    def test_ga_stops_after_five_consecutive_generations_without_incumbent_improvement(self):
+        space = LayerwiseSearchSpace(4)
+        result = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _evaluation(action),
+            SearchConfig(
+                evaluation_budget=100,
+                seed=17,
+                ga_population_size=12,
+                ga_elite_count=2,
+                ga_generations=10,
+                patience_generations=5,
+            ),
+        )
+        updates = [
+            row for row in result.history
+            if row["phase"] == "ga_update_generation"
+        ]
+
+        self.assertEqual(
+            result.termination_reason,
+            "ga_no_incumbent_improvement",
+        )
+        self.assertEqual(len(updates), 5)
+        self.assertEqual(
+            [row["no_improvement_generations"] for row in updates],
+            [1, 2, 3, 4, 5],
+        )
+
+    def test_ga_partial_generation_resume_replays_population_and_rng_exactly(self):
+        space = LayerwiseSearchSpace(3)
+        config = SearchConfig(
+            evaluation_budget=7 + 2 * 6,
+            seed=17,
+            ga_population_size=7,
+            ga_elite_count=1,
+            ga_generations=2,
+        )
+        uninterrupted_actions = []
+
+        def uninterrupted_evaluator(action):
+            uninterrupted_actions.append(action)
+            return _evaluation(action)
+
+        uninterrupted = run_search(
+            "coinn_ga", space, uninterrupted_evaluator, config,
+        )
+
+        crash_after = 10
+        interrupted_actions = []
+
+        def interrupted_evaluator(action):
+            interrupted_actions.append(action)
+            evaluation = _evaluation(action)
+            if len(interrupted_actions) == crash_after:
+                raise RuntimeError("injected GA interruption")
+            return evaluation
+
+        with self.assertRaisesRegex(RuntimeError, "injected GA interruption"):
+            run_search(
+                "coinn_ga", space, interrupted_evaluator, config,
+            )
+        persisted = tuple(_evaluation(action) for action in interrupted_actions)
+        resumed_live_actions = []
+
+        def resumed_evaluator(action):
+            resumed_live_actions.append(action)
+            return _evaluation(action)
+
+        resumed = run_search(
+            "coinn_ga",
+            space,
+            resumed_evaluator,
+            config,
+            preload=persisted,
+        )
+
+        self.assertEqual(interrupted_actions, uninterrupted_actions[:crash_after])
+        self.assertEqual(resumed_live_actions, uninterrupted_actions[crash_after:])
+        self.assertEqual(
+            [item.as_dict() for item in resumed.observations],
+            [item.as_dict() for item in uninterrupted.observations],
+        )
+        self.assertEqual(resumed.best.as_dict(), uninterrupted.best.as_dict())
+        self.assertEqual(resumed.history, uninterrupted.history)
+        self.assertEqual(
+            resumed.termination_reason, uninterrupted.termination_reason,
+        )
+
+    def test_ga_does_not_bypass_adjacent_mutation_with_immigrants(self):
+        space = LayerwiseSearchSpace(2)
+        result = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _evaluation(action),
+            SearchConfig(
+                evaluation_budget=13,
+                seed=17,
+                ga_population_size=7,
+                ga_elite_count=1,
+                ga_generations=1,
+            ),
+        )
+        update = next(
+            row for row in result.history
+            if row["phase"] == "ga_update_generation"
+        )
+
+        self.assertFalse(update["diversity_triggered"])
+        self.assertEqual(update["diversity_immigrants"], 0)
+        self.assertEqual(update["fallback_immigrants"], 0)
+        self.assertEqual(update["replaced_worst_nonelite_actions"], [])
+        self.assertEqual(update["immigrant_actions"], [])
+        self.assertEqual(update["offspring_evaluated"], 6)
+
     def test_ga_small_space_still_returns_best_observed_feasible_action(self):
         space = LayerwiseSearchSpace(1)
         calls = []
@@ -632,6 +1131,63 @@ class GeneticSearchTests(unittest.TestCase):
 
 
 class InferenceAccountingTests(unittest.TestCase):
+    def test_bo_and_ga_full_preload_reconstruct_results_without_live_evaluation(self):
+        space = LayerwiseSearchSpace(3)
+        cases = (
+            (
+                "bo_rf",
+                SearchConfig(
+                    evaluation_budget=12,
+                    seed=17,
+                    initial_design_size=8,
+                    candidate_pool_size=20,
+                    patience_generations=20,
+                ),
+                (lambda _seed: _TinyForest()),
+            ),
+            (
+                "coinn_ga",
+                SearchConfig(
+                    evaluation_budget=7 + 2 * 6,
+                    seed=17,
+                    ga_population_size=7,
+                    ga_elite_count=1,
+                    ga_generations=2,
+                ),
+                None,
+            ),
+        )
+        for backend, config, surrogate_factory in cases:
+            with self.subTest(backend=backend):
+                uninterrupted = run_search(
+                    backend,
+                    space,
+                    lambda action: _evaluation(action),
+                    config,
+                    surrogate_factory=surrogate_factory,
+                )
+                replayed = run_search(
+                    backend,
+                    space,
+                    lambda _action: self.fail(
+                        "complete exact replay must be zero-forward"
+                    ),
+                    config,
+                    surrogate_factory=surrogate_factory,
+                    preload=uninterrupted.observations,
+                )
+
+                self.assertEqual(
+                    [item.as_dict() for item in replayed.observations],
+                    [item.as_dict() for item in uninterrupted.observations],
+                )
+                self.assertEqual(replayed.best.as_dict(), uninterrupted.best.as_dict())
+                self.assertEqual(replayed.history, uninterrupted.history)
+                self.assertEqual(
+                    replayed.termination_reason,
+                    uninterrupted.termination_reason,
+                )
+
     def test_greedy_and_bo_do_not_charge_non_inference_invalid_observations(self):
         for backend in ("greedy", "bo_rf"):
             with self.subTest(backend=backend):
@@ -715,6 +1271,22 @@ class InferenceAccountingTests(unittest.TestCase):
             self.assertGreaterEqual(row["offspring_observations"], 6)
         self.assertEqual(updates[-1]["expected_evaluations"], 20)
 
+    def test_greedy_replays_full_budget_preload_without_new_inference(self):
+        space = LayerwiseSearchSpace(1)
+        preload = tuple(_evaluation(action) for action in space.all_actions())
+
+        result = run_search(
+            "greedy",
+            space,
+            lambda _action: self.fail("replay must not call evaluator"),
+            SearchConfig(evaluation_budget=space.cardinality),
+            preload=preload,
+        )
+
+        self.assertEqual(result.termination_reason, "verified_local_optima")
+        self.assertTrue(result.history)
+        self.assertEqual(result.evaluation_count, space.cardinality)
+
     def test_observation_attempt_guard_bounds_all_non_inference_search(self):
         space = LayerwiseSearchSpace(3)
         calls = []
@@ -792,6 +1364,33 @@ class DiverseSecondParentTests(unittest.TestCase):
             selected.action_matrix,
             max(candidates, key=candidate_rank_key).action_matrix,
         )
+
+
+class ComparatorScientificParameterTests(unittest.TestCase):
+    def test_canonical_parameters_are_required(self):
+        canonical = {
+            "communication_importance_ratio": 1.0,
+            "truncation_backend": "binary",
+            "truncation_ring_bits": 43,
+            "truncation_source_fractional_bits": 24,
+        }
+        validate_comparator_scientific_parameters(**canonical)
+
+        invalid_cases = (
+            {"communication_importance_ratio": 0.5},
+            {"truncation_backend": "decimal"},
+            {"truncation_ring_bits": 44},
+            {"truncation_source_fractional_bits": 23},
+        )
+        for override in invalid_cases:
+            with self.subTest(override=override):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "canonical Stage-2 scientific parameters",
+                ):
+                    validate_comparator_scientific_parameters(
+                        **{**canonical, **override}
+                    )
 
 
 class BackendNormalizationTests(unittest.TestCase):

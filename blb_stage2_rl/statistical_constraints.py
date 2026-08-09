@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import hashlib
 import math
 import operator
 from types import MappingProxyType
@@ -11,6 +12,8 @@ from typing import Mapping, Sequence
 import numpy as np
 
 _CHANNELS = ("loss", "metric1", "metric2")
+_TRIAL_SERIES_RESUME_SCHEMA = "stage2_trial_series_resume_v1"
+_BASELINE_REFERENCE_RESUME_SCHEMA = "stage2_baseline_reference_resume_v1"
 _MINIMUM_BASELINE_TRIALS = 15
 _MAX_BOOTSTRAP_INDEX_ELEMENTS = 1_000_000
 
@@ -82,6 +85,65 @@ class TrialSeries:
         for channel, values in normalized.items():
             object.__setattr__(self, channel, values)
         object.__setattr__(self, "seeds", seeds)
+
+
+def _exact_mapping(name: str, payload: Mapping, keys: Sequence[str]) -> dict:
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    copied = dict(payload)
+    required = set(keys)
+    actual = set(copied)
+    if actual != required:
+        missing = sorted(required - actual)
+        extra = sorted(repr(key) for key in actual - required)
+        raise ValueError(
+            f"{name} must contain exactly {tuple(keys)}; "
+            f"missing={missing}, extra={extra}"
+        )
+    return copied
+
+
+def _require_schema(payload: Mapping, expected: str, name: str) -> dict:
+    copied = dict(payload)
+    if copied.get("schema_version") != expected:
+        raise ValueError(
+            f"{name}.schema_version must be {expected!r}; "
+            f"received {copied.get('schema_version')!r}"
+        )
+    return copied
+
+
+def trial_series_resume_payload(trials: TrialSeries) -> dict:
+    """Return a JSON-native, versioned TrialSeries resume payload."""
+    if not isinstance(trials, TrialSeries):
+        raise TypeError("trials must be a TrialSeries")
+    return {
+        "schema_version": _TRIAL_SERIES_RESUME_SCHEMA,
+        "loss": list(trials.loss),
+        "metric1": list(trials.metric1),
+        "metric2": list(trials.metric2),
+        "seeds": list(trials.seeds),
+    }
+
+
+def trial_series_from_resume_payload(payload: Mapping) -> TrialSeries:
+    """Restore TrialSeries while rejecting schema or key drift."""
+    copied = _exact_mapping(
+        "trial series resume payload",
+        payload,
+        ("schema_version", "loss", "metric1", "metric2", "seeds"),
+    )
+    _require_schema(
+        copied,
+        _TRIAL_SERIES_RESUME_SCHEMA,
+        "trial series resume payload",
+    )
+    return TrialSeries(
+        loss=copied["loss"],
+        metric1=copied["metric1"],
+        metric2=copied["metric2"],
+        seeds=copied["seeds"],
+    )
 
 
 @dataclass(frozen=True)
@@ -335,6 +397,121 @@ def build_baseline_reference(
     )
 
 
+def _float64_sha256(values: np.ndarray) -> str:
+    canonical = np.asarray(values, dtype=np.dtype("<f8"))
+    return hashlib.sha256(canonical.tobytes(order="C")).hexdigest()
+
+
+def _baseline_reference_derived_payload(reference: BaselineReference) -> dict:
+    return {
+        "trial_count": int(reference.trial_count),
+        "means": {
+            "loss": float(reference.loss_mean),
+            "metric1": float(reference.metric1_mean),
+            "metric2": float(reference.metric2_mean),
+        },
+        "stds": {
+            "loss": float(reference.loss_std),
+            "metric1": float(reference.metric1_std),
+            "metric2": float(reference.metric2_std),
+        },
+        "limits": {
+            "loss": float(reference.loss_limit),
+            "metric1": float(reference.metric1_limit),
+            "metric2": float(reference.metric2_limit),
+            "loss_std": float(reference.loss_std_limit),
+            "metric1_std": float(reference.metric1_std_limit),
+            "metric2_std": float(reference.metric2_std_limit),
+        },
+        "bootstrap_means_sha256": {
+            channel: _float64_sha256(reference.bootstrap_means[channel])
+            for channel in _CHANNELS
+        },
+        "bootstrap_stds_sha256": {
+            channel: _float64_sha256(reference.bootstrap_stds[channel])
+            for channel in _CHANNELS
+        },
+    }
+
+
+def baseline_reference_resume_payload(reference: BaselineReference) -> dict:
+    """Return compact source data plus digests for deterministic restoration."""
+    if not isinstance(reference, BaselineReference):
+        raise TypeError("reference must be a BaselineReference")
+    return {
+        "schema_version": _BASELINE_REFERENCE_RESUME_SCHEMA,
+        "trials": trial_series_resume_payload(reference.trials),
+        "precision_tolerance": float(reference.precision_tolerance),
+        "stability_multiplier": float(reference.stability_multiplier),
+        "bootstrap_seed": int(reference.bootstrap_seed),
+        "bootstrap_samples": int(reference.bootstrap_samples),
+        "derived": _baseline_reference_derived_payload(reference),
+    }
+
+
+def baseline_reference_from_resume_payload(payload: Mapping) -> BaselineReference:
+    """Rebuild and authenticate a deterministic baseline reference payload."""
+    copied = _exact_mapping(
+        "baseline reference resume payload",
+        payload,
+        (
+            "schema_version",
+            "trials",
+            "precision_tolerance",
+            "stability_multiplier",
+            "bootstrap_seed",
+            "bootstrap_samples",
+            "derived",
+        ),
+    )
+    _require_schema(
+        copied,
+        _BASELINE_REFERENCE_RESUME_SCHEMA,
+        "baseline reference resume payload",
+    )
+    reference = build_baseline_reference(
+        [trial_series_from_resume_payload(copied["trials"])],
+        precision_tolerance=copied["precision_tolerance"],
+        stability_multiplier=copied["stability_multiplier"],
+        bootstrap_samples=copied["bootstrap_samples"],
+        seed=copied["bootstrap_seed"],
+    )
+    expected = _baseline_reference_derived_payload(reference)
+    derived = _exact_mapping(
+        "baseline reference resume payload.derived",
+        copied["derived"],
+        tuple(expected),
+    )
+    if derived["trial_count"] != expected["trial_count"]:
+        raise ValueError("baseline reference resume payload trial_count mismatch")
+    nested_keys = {
+        "means": _CHANNELS,
+        "stds": _CHANNELS,
+        "limits": (
+            "loss",
+            "metric1",
+            "metric2",
+            "loss_std",
+            "metric1_std",
+            "metric2_std",
+        ),
+        "bootstrap_means_sha256": _CHANNELS,
+        "bootstrap_stds_sha256": _CHANNELS,
+    }
+    for field_name, keys in nested_keys.items():
+        actual_values = _exact_mapping(
+            f"baseline reference resume payload.derived.{field_name}",
+            derived[field_name],
+            keys,
+        )
+        if actual_values != expected[field_name]:
+            raise ValueError(
+                "baseline reference resume payload "
+                f"{field_name} mismatch"
+            )
+    return reference
+
+
 def _probability(pass_rows: np.ndarray) -> float:
     return float(np.clip(np.mean(pass_rows), 0.0, 1.0))
 
@@ -481,7 +658,11 @@ __all__ = [
     "InsufficientBaselineTrials",
     "TrialSeries",
     "assess_candidate",
+    "baseline_reference_from_resume_payload",
+    "baseline_reference_resume_payload",
     "build_baseline_reference",
     "retarget_constraint_assessment",
     "retarget_precision_tolerance",
+    "trial_series_from_resume_payload",
+    "trial_series_resume_payload",
 ]

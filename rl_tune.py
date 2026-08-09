@@ -4,13 +4,12 @@ import json
 import re
 import glob
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List, Union
 
 import fire
 import torch
 import transformers
 from datasets import DownloadConfig, load_dataset, load_from_disk
-from typing import List, Optional, Union
 from runtime_error_reporter import run_fire_entrypoint
 """
 Unused imports:
@@ -38,9 +37,18 @@ from cli_parse_utils import (
     parse_stage1_episode_limit,
     parse_stage2_episode_limit,
 )
+from mrpc_reproducibility import (
+    MRPC_FULL_EXAMPLE_COUNT,
+    MRPCReproducibilityContext,
+    MRPCReproducibilityError,
+    load_mrpc_fixture,
+    resolve_mrpc_pretrained_revision_kwargs,
+    resolve_mrpc_validation_views,
+)
 
 
 ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE = True
+MRPC_VALIDATION_ROW_COUNT = MRPC_FULL_EXAMPLE_COUNT
 GLUE_EQUIVALENT_PARQUET_ENDPOINTS = [
     "https://huggingface.co",
 ]
@@ -48,6 +56,19 @@ GLUE_LOCAL_DATASET_ENV_VARS = (
     "GLUE_LOCAL_DATASET_DIR",
     "GLUE_DATASET_DIR",
 )
+
+
+def resolve_pretrained_revision_kwargs(
+        *,
+        fixture,
+        data_path: str,
+        model_id: str,
+        ) -> tuple[dict[str, str], dict[str, str]]:
+    return resolve_mrpc_pretrained_revision_kwargs(
+        fixture=fixture,
+        data_path=data_path,
+        model_id=model_id,
+    )
 
 
 def seed_everything(seed: int) -> int:
@@ -170,6 +191,57 @@ def _validate_glue_dataset_equivalence(data, task_name: str) -> None:
         )
 
 
+def resolve_mrpc_reproducibility_views(
+        data: Any,
+        *,
+        data_path: str,
+        fixture,
+        ):
+    if fixture is None:
+        raise MRPCReproducibilityError(
+            "MRPC reproducibility requires a fixture"
+        )
+    if str(data_path).strip().lower() != "mrpc":
+        raise MRPCReproducibilityError(
+            "MRPC reproducibility fixture requires the MRPC task"
+        )
+    return resolve_mrpc_validation_views(
+        data,
+        fixture,
+        expected_row_count=MRPC_VALIDATION_ROW_COUNT,
+    )
+
+
+def _finalize_glue_load_success(
+        data,
+        task_name: str,
+        *,
+        mrpc_reproducibility_fixture=None,
+        ):
+    task = str(task_name).strip().lower()
+    try:
+        _validate_glue_dataset_equivalence(data, task)
+    except Exception as exc:
+        if mrpc_reproducibility_fixture is not None:
+            raise MRPCReproducibilityError(
+                f"MRPC GLUE {task!r} schema mismatch"
+            ) from exc
+        raise
+
+    if mrpc_reproducibility_fixture is None:
+        return data
+    if task != "mrpc":
+        raise MRPCReproducibilityError(
+            "MRPC reproducibility fixture cannot validate another GLUE task"
+        )
+    resolve_mrpc_validation_views(
+        data,
+        mrpc_reproducibility_fixture,
+        expected_row_count=MRPC_VALIDATION_ROW_COUNT,
+    )
+    return data
+
+
 def _split_existing_path_list(raw_value: str):
     paths = []
     for raw_item in str(raw_value or "").split(os.pathsep):
@@ -260,6 +332,7 @@ def _try_load_local_glue_dataset(
         load_from_disk_fn,
         route_log_dir: str,
         primary_exc: Exception,
+        mrpc_reproducibility_fixture=None,
         ):
     errors = []
     for path in _glue_local_dataset_candidates(task):
@@ -267,7 +340,11 @@ def _try_load_local_glue_dataset(
             continue
         try:
             data = load_from_disk_fn(path)
-            _validate_glue_dataset_equivalence(data, task)
+            _finalize_glue_load_success(
+                data,
+                task,
+                mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
+            )
             log_path = None
             if route_log_dir:
                 log_path = _write_glue_local_route_log(
@@ -283,6 +360,8 @@ def _try_load_local_glue_dataset(
                 file=sys.stderr,
             )
             return data, errors
+        except MRPCReproducibilityError:
+            raise
         except Exception as local_exc:
             errors.append(f"{path} load_from_disk: {local_exc!r}")
 
@@ -291,7 +370,11 @@ def _try_load_local_glue_dataset(
             continue
         try:
             data = load_dataset_fn("parquet", data_files=data_files)
-            _validate_glue_dataset_equivalence(data, task)
+            _finalize_glue_load_success(
+                data,
+                task,
+                mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
+            )
             log_path = None
             if route_log_dir:
                 log_path = _write_glue_local_route_log(
@@ -308,6 +391,8 @@ def _try_load_local_glue_dataset(
                 file=sys.stderr,
             )
             return data, errors
+        except MRPCReproducibilityError:
+            raise
         except Exception as local_exc:
             errors.append(f"{path} local_parquet: {local_exc!r}")
 
@@ -317,7 +402,11 @@ def _try_load_local_glue_dataset(
             task,
             download_config=DownloadConfig(local_files_only=True),
         )
-        _validate_glue_dataset_equivalence(data, task)
+        _finalize_glue_load_success(
+            data,
+            task,
+            mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
+        )
         log_path = None
         if route_log_dir:
             log_path = _write_glue_local_route_log(
@@ -334,6 +423,8 @@ def _try_load_local_glue_dataset(
             file=sys.stderr,
         )
         return data, errors
+    except MRPCReproducibilityError:
+        raise
     except Exception as cache_exc:
         errors.append(f"hf_cache_local_files_only: {cache_exc!r}")
 
@@ -389,6 +480,7 @@ def load_glue_dataset_equivalent(
         load_dataset_fn=load_dataset,
         load_from_disk_fn=load_from_disk,
         route_log_dir: str = None,
+        mrpc_reproducibility_fixture=None,
         ):
     task = str(task_name).strip().lower()
     # GLUE data loading has 4 possible routes (HF remote / local save_to_disk /
@@ -399,11 +491,18 @@ def load_glue_dataset_equivalent(
     # remote loader succeeds.
     try:
         data = load_dataset_fn("nyu-mll/glue", task)
+        _finalize_glue_load_success(
+            data,
+            task,
+            mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
+        )
         print(
             f"[dataset] task={task!r} → route=hf_remote endpoint=nyu-mll/glue",
             file=sys.stderr,
         )
         return data
+    except MRPCReproducibilityError:
+        raise
     except Exception as primary_exc:
         if not ENABLE_GLUE_EQUIVALENT_PARQUET_ROUTE:
             raise
@@ -419,6 +518,7 @@ def load_glue_dataset_equivalent(
             load_from_disk_fn=load_from_disk_fn,
             route_log_dir=route_log_dir,
             primary_exc=primary_exc,
+            mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
         )
         if data is not None:
             return data
@@ -447,8 +547,14 @@ def load_glue_dataset_equivalent(
             )
             try:
                 data = load_dataset_fn("parquet", data_files=data_files)
-                _validate_glue_dataset_equivalence(data, task)
+                _finalize_glue_load_success(
+                    data,
+                    task,
+                    mrpc_reproducibility_fixture=mrpc_reproducibility_fixture,
+                )
                 return data
+            except MRPCReproducibilityError:
+                raise
             except Exception as equivalent_exc:
                 equivalent_errors.append(f"{endpoint}: {equivalent_exc!r}")
 
@@ -464,6 +570,7 @@ def train(
         base_model: str = "",  # the only required argument
         data_path: str = "yahma/alpaca-cleaned",
         output_dir: str = "./lora-alpaca",
+        mrpc_reproducibility_fixture_path: str = "",
         adapter_name: str = "lora",
         load_8bit: bool = False,
         # training hyperparams
@@ -647,6 +754,7 @@ def train(
         blb_v3_search_rf_n_estimators: int = 128,
         blb_v3_search_rf_min_samples_leaf: int = 2,
         blb_v3_search_full_validation: bool = True,
+        comparator_smoke: bool = False,
         blb_v3_fusion_neighbor_curriculum: bool = False,
         blb_v3_fusion_probe_interval: int = 0,
         blb_v3_fusion_exploration_epsilon: float = 0.0,
@@ -756,6 +864,9 @@ def train(
         blb_v3_search_full_validation,
         "blb_v3_search_full_validation",
     )
+    comparator_smoke = parse_bool_flag(
+        comparator_smoke, "comparator_smoke",
+    )
     stage2_stability_multiplier = float(stage2_stability_multiplier)
     if stage2_stability_multiplier <= 0.0:
         raise ValueError("stage2_stability_multiplier must be positive")
@@ -850,6 +961,24 @@ def train(
             "stage1_rl_episodes <= 0 means unbounded Stage-1 training and "
             "requires stage1_entropy_stop_threshold"
         )
+
+    mrpc_fixture = None
+    mrpc_views = None
+    mrpc_probe_data = None
+    mrpc_reproducibility = None
+    fixture_path = str(
+        mrpc_reproducibility_fixture_path or ""
+    ).strip()
+    if fixture_path:
+        mrpc_fixture = load_mrpc_fixture(fixture_path)
+    model_revision_kwargs, tokenizer_revision_kwargs = (
+        resolve_pretrained_revision_kwargs(
+            fixture=mrpc_fixture,
+            data_path=data_path,
+            model_id=base_model,
+        )
+    )
+
     # 在创建 LayerImportanceEvaluator 之前覆盖 PPO 更新间隔及其派生常量
     import layer_importance_evaluator as _lie
     _lie.set_ppo_update_interval(ppo_update_interval)
@@ -981,9 +1110,16 @@ def train(
 
     if 'llama' in base_model and 'llama3' not in base_model:
         # Due to the name of transformers' LlamaTokenizer, we have to do this
-        tokenizer = LlamaTokenizer.from_pretrained(base_model)
+        tokenizer = LlamaTokenizer.from_pretrained(
+            base_model,
+            **tokenizer_revision_kwargs,
+        )
     else:
-        tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            base_model,
+            trust_remote_code=True,
+            **tokenizer_revision_kwargs,
+        )
 
 
     tokenizer.pad_token = tokenizer.eos_token if tokenizer.eos_token else "[PAD]"
@@ -997,9 +1133,13 @@ def train(
             device_map=device_map,
             trust_remote_code=True,
             quantization_config=quantization_config,
+            **model_revision_kwargs,
         )
     else:
-        config = AutoConfig.from_pretrained(base_model)
+        config = AutoConfig.from_pretrained(
+            base_model,
+            **model_revision_kwargs,
+        )
         # config.use_causal_lm = False  # Key: disable causal mask for MRPC.
         _dp = data_path.lower()
         if _dp == "stsb":
@@ -1020,6 +1160,7 @@ def train(
             trust_remote_code=True,
             # pad_token_id=tokenizer.eos_token_id
             pad_token_id=tokenizer.pad_token_id,
+            **model_revision_kwargs,
         )
 
     # ---------------------------------------------------------------
@@ -1157,17 +1298,25 @@ def train(
     
     print(model)
     if data_path.endswith(".json"):  # todo: support jsonl
+        if mrpc_fixture is not None:
+            raise MRPCReproducibilityError(
+                "MRPC reproducibility fixture cannot load a JSON dataset"
+            )
         data = load_dataset("json", data_files=data_path)
     else:
         # glue tasks: "stsb", "mnli", "sst2", "cola", "qnli", "rte", "wnli", "mrpc"
         data = load_glue_dataset_equivalent(
             data_path,
             route_log_dir=os.path.join(output_dir, "logs"),
+            mrpc_reproducibility_fixture=mrpc_fixture,
+        )
+    if mrpc_fixture is not None:
+        mrpc_views = resolve_mrpc_reproducibility_views(
+            data,
+            data_path=data_path,
+            fixture=mrpc_fixture,
         )
 
-
-
-    
     if resume_from_checkpoint:
         # Check the available weights and load them
         checkpoint_name = os.path.join(
@@ -1232,21 +1381,41 @@ def train(
         else:
             print(f"Loading dataset: {data['validation']}")
             train_data = data["train"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
-            val_data = data["validation"].shuffle(seed=final_eval_random_seed).map(tokenize_fn)
+            if mrpc_views is None:
+                validation_source = data["validation"].shuffle(
+                    seed=final_eval_random_seed
+                )
+                mrpc_probe_source = None
+            else:
+                validation_source = mrpc_views.full_validation
+                mrpc_probe_source = mrpc_views.stability_probe
+            val_data = validation_source.map(tokenize_fn)
+            if mrpc_probe_source is not None:
+                mrpc_probe_data = mrpc_probe_source.map(tokenize_fn)
             # The current RL flow does not use the official test split.
             # test_data = data["test"].shuffle().map(tokenize_fn)
-            
+
             print(f"After tokenize: {val_data[0]}")
             # add label
             train_data = train_data.rename_column("label", "labels")
             val_data = val_data.rename_column("label", "labels")
-            
+            if mrpc_probe_data is not None:
+                mrpc_probe_data = mrpc_probe_data.rename_column(
+                    "label", "labels"
+                )
+            if mrpc_views is not None and mrpc_probe_data is None:
+                raise MRPCReproducibilityError(
+                    "MRPC tokenization produced no frozen stability probe"
+                )
+
             print(f"After add label: {val_data[0]}")
-            
+
             # Set PyTorch tensor format.
             columns = ["input_ids", "attention_mask", "token_type_ids", "labels"]
             train_data.set_format(type="torch", columns=columns)
             val_data.set_format(type="torch", columns=columns)
+            if mrpc_probe_data is not None:
+                mrpc_probe_data.set_format(type="torch", columns=columns)
 
             print(f"After format: {val_data}")
             
@@ -1268,7 +1437,12 @@ def train(
         return_tensors="pt", # Return PyTorch tensors
         pad_to_multiple_of=8   # Return attention masks
     )
-    
+    if mrpc_views is not None:
+        mrpc_reproducibility = MRPCReproducibilityContext(
+            fixture=mrpc_fixture,
+            stability_probe=mrpc_probe_data,
+        )
+
     # if not ddp and torch.cuda.device_count() > 1:
     #     # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
     #     model.is_parallelizable = True
@@ -1338,6 +1512,7 @@ def train(
             stage1_run_id=stage1_run_id,
             data_path=data_path,
             test_data_mm=val_data_mm,
+            mrpc_reproducibility=mrpc_reproducibility,
             stage1_accuracy_tolerance=stage1_accuracy_tolerance,
             stage2_limit_tolerance=stage2_limit_tolerance,
             stage2_stability_tolerance=stage2_stability_tolerance,
@@ -1439,6 +1614,7 @@ def train(
             blb_v3_search_full_validation=(
                 blb_v3_search_full_validation
             ),
+            comparator_smoke=comparator_smoke,
             blb_v3_fusion_neighbor_curriculum=blb_v3_fusion_neighbor_curriculum,
             blb_v3_fusion_probe_interval=blb_v3_fusion_probe_interval,
             blb_v3_fusion_exploration_epsilon=blb_v3_fusion_exploration_epsilon,

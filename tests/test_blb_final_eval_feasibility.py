@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 class BLBFinalEvalFeasibilityTests(unittest.TestCase):
-    def test_loss_is_report_only_for_formal_feasible(self):
+    def test_loss_is_report_only_for_feasible_result(self):
         from blb_stage2_rl.feasibility import build_final_eval_feasibility
 
         report = build_final_eval_feasibility(
@@ -29,7 +29,7 @@ class BLBFinalEvalFeasibilityTests(unittest.TestCase):
         self.assertFalse(report["loss_is_hard_constraint"])
         self.assertTrue(report["strict_feasible"])
 
-    def test_unknown_threshold_source_never_claims_formal_feasible(self):
+    def test_unknown_threshold_source_never_claims_feasibility(self):
         from blb_stage2_rl.feasibility import build_final_eval_feasibility
 
         report = build_final_eval_feasibility(
@@ -50,7 +50,10 @@ class BLBFinalEvalFeasibilityTests(unittest.TestCase):
 
         self.assertIsNone(report["feasible"])
         self.assertTrue(report["diagnostic_feasible"])
-        self.assertIn("threshold source unknown", report["formal_feasible_unavailable_reason"])
+        self.assertIn(
+            "threshold source unknown",
+            report["feasible_unavailable_reason"],
+        )
 
     def test_feasibility_report_writes_json_and_markdown(self):
         from blb_stage2_rl.feasibility import (

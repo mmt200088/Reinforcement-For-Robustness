@@ -59,16 +59,24 @@ class ElasticRLScalingABTests(unittest.TestCase):
                 "timestamp": timestamp,
             }],
         )
-        self._write_jsonl(
-            root / "progress" / "candidate_store.jsonl",
-            [{
-                "record_type": "candidate_trial_group_v1",
-                "candidate_hash": "same-candidate",
-                "trial_seeds": [11, 12, 13, 14, 15],
-                "trial_values": [0.1, 0.2, 0.3, 0.4, 0.5],
-                "created_at": f"timestamp-{timestamp}",
-                "logical_generation": int(timestamp),
-            }],
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        CandidateStore(root / "progress" / "candidate_store.jsonl").append_trial_group(
+            [0, 1],
+            TrialSeries(
+                loss=[0.1, 0.2, 0.3, 0.4, 0.5],
+                metric1=[0.6, 0.7, 0.8, 0.9, 1.0],
+                metric2=[0.5, 0.6, 0.7, 0.8, 0.9],
+                seeds=[11, 12, 13, 14, 15],
+            ),
+            {
+                "identity_context": {
+                    "test_protocol": "elastic_rl_scaling_ab_v1",
+                },
+                "fidelity": "F1",
+                "valid": True,
+            },
         )
         checkpoint = {
             "episode": 1,

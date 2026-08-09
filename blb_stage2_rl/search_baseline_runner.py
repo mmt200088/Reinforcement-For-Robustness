@@ -6,25 +6,26 @@ import heapq
 import json
 import os
 import time
-from typing import Any, Callable, Mapping, Optional, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
-from json_utils import read_json_file, to_jsonable
+from json_utils import read_json_file, stable_json_hash, to_jsonable
 from jsonl_utils import read_jsonl, recover_jsonl_file
 
-from .candidate_store import action_hash
+from .candidate_store import CandidateStore, action_hash
 from .layerwise_action import describe_layerwise_action_matrix
 from .search_baselines import (
-    ActionMatrix,
     CONSTRAINT_NAMES,
     CONSTRAINT_PROBABILITY_NAMES,
+    ActionMatrix,
     ConstraintLimits,
     LayerwiseSearchSpace,
-    SearchEvaluation,
     SearchConfig,
+    SearchEvaluation,
     SearchMetrics,
     SearchResult,
+    _select_hamming_diverse_elites,
     candidate_rank_key,
     normalize_search_backend,
     run_search,
@@ -36,6 +37,16 @@ def _field(value: Any, name: str, default: Any = None) -> Any:
     if isinstance(value, Mapping):
         return value.get(name, default)
     return getattr(value, name, default)
+
+
+def _is_sha256(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 
 
 def limits_from_reference(reference: Any) -> ConstraintLimits:
@@ -84,7 +95,8 @@ def _serialize_boosted_overrides(value: Any) -> list[dict[str, Any]]:
 
 
 def _atomic_json(path: str, payload: Any) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
     temp_path = path + ".tmp"
     with open(temp_path, "w", encoding="utf-8") as handle:
         json.dump(
@@ -95,7 +107,73 @@ def _atomic_json(path: str, payload: Any) -> None:
             sort_keys=True,
         )
         handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temp_path, path)
+    directory_fd = os.open(
+        directory,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+    )
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _action_seed_key(action_matrix: ActionMatrix) -> int:
@@ -129,7 +207,7 @@ class LayerwiseRuntimeEvaluator:
             reference: Any,
             base_seed: int,
             expected_trials: int,
-            on_evaluation: Optional[Callable[[Mapping[str, Any]], None]] = None,
+            on_evaluation: Callable[[Mapping[str, Any]], None] | None = None,
             ):
         self.env = env
         self.limits = limits_from_reference(reference)
@@ -246,18 +324,33 @@ class LayerwiseRuntimeEvaluator:
                 if self.on_evaluation is not None:
                     self.on_evaluation(evaluation.as_dict())
                 return evaluation
-            if not bool(runtime_info.get("forward_ran", False)):
+            if runtime_info.get("forward_ran") is not True:
                 raise RuntimeError(
                     "real Stage-2 evaluation did not execute model forward"
                 )
             replan = runtime_info.get("replan_application")
             if not (
                     isinstance(replan, Mapping)
-                    and bool(replan.get("model_uses_replan_config", False))
+                    and replan.get("model_uses_replan_config") is True
             ):
                 raise RuntimeError(
                     "real Stage-2 evaluation did not install the replan "
                     "configuration into the model"
+                )
+            final_config_fingerprint = runtime_info.get(
+                "final_config_fingerprint"
+            )
+            if not (
+                    isinstance(final_config_fingerprint, str)
+                    and len(final_config_fingerprint) == 64
+                    and all(
+                        character in "0123456789abcdef"
+                        for character in final_config_fingerprint
+                    )
+            ):
+                raise RuntimeError(
+                    "real Stage-2 evaluation returned no valid final config "
+                    "fingerprint"
                 )
             runtime_metrics = runtime_info.get("metrics")
             metrics = _metrics_from_runtime(runtime_metrics)
@@ -299,7 +392,26 @@ class LayerwiseRuntimeEvaluator:
                 int(value)
                 for value in (_field(runtime_metrics, "trial_seeds", ()) or ())
             )
-            if len(trial_seeds) != self.expected_trials:
+            trial_results = {
+                name: tuple(
+                    float(value)
+                    for value in (
+                        _field(runtime_metrics, field_name, ()) or ()
+                    )
+                )
+                for name, field_name in (
+                    ("loss", "loss_trials"),
+                    ("metric1", "metric1_trials"),
+                    ("metric2", "metric2_trials"),
+                )
+            }
+            if (
+                    len(trial_seeds) != self.expected_trials
+                    or any(
+                        len(values) != self.expected_trials
+                        for values in trial_results.values()
+                    )
+            ):
                 raise RuntimeError(
                     "real Stage-2 evaluation returned an unexpected trial count: "
                     f"{len(trial_seeds)} != {self.expected_trials}"
@@ -314,9 +426,14 @@ class LayerwiseRuntimeEvaluator:
                 "forward_ran": True,
                 "model_uses_replan_config": True,
                 "materializable": True,
+                "final_config_fingerprint": final_config_fingerprint,
                 "action_seed_key": int(action_seed_key),
                 "probe_seed": int(probe_seed),
                 "trial_seeds": [int(value) for value in trial_seeds],
+                "trial_results": {
+                    name: [float(value) for value in values]
+                    for name, values in trial_results.items()
+                },
                 "bootstrap_seed": bootstrap_seed,
                 "statistical_assessment": to_jsonable(
                     runtime_info.get("statistical_assessment"),
@@ -370,7 +487,7 @@ def persist_search_result(
         output_dir: str,
         result: SearchResult,
         manifest: Mapping[str, Any],
-        observation_rows: Optional[Sequence[Mapping[str, Any]]] = None,
+        observation_rows: Sequence[Mapping[str, Any]] | None = None,
         ) -> dict[str, str]:
     """Write the complete compact evidence needed to replay search figures."""
     os.makedirs(output_dir, exist_ok=True)
@@ -414,18 +531,16 @@ def _write_observation_row(path: str, row: Mapping[str, Any]) -> None:
         os.fsync(handle.fileno())
 
 
-def load_search_preload(path: str) -> tuple[SearchEvaluation, ...]:
-    """Recover and deserialize crash-safe Stage-2 observation rows."""
 
-    recover_jsonl_file(path)
+
+
+
+def _search_preload_from_rows(
+        rows: Sequence[Mapping[str, Any]],
+        ) -> tuple[SearchEvaluation, ...]:
     ordered: list[SearchEvaluation] = []
     by_action: dict[ActionMatrix, SearchEvaluation] = {}
-    for row in read_jsonl(
-            path,
-            errors="raise",
-            dict_only=True,
-            missing_ok=False,
-    ):
+    for row in rows:
         evaluation = SearchEvaluation.from_dict(row)
         previous = by_action.get(evaluation.action_matrix)
         if previous is not None:
@@ -433,10 +548,26 @@ def load_search_preload(path: str) -> tuple[SearchEvaluation, ...]:
                 raise ValueError(
                     "conflicting Stage-2 observations for one action"
                 )
-            continue
+            raise ValueError(
+                "duplicate Stage-2 observation for one action"
+            )
         by_action[evaluation.action_matrix] = evaluation
         ordered.append(evaluation)
     return tuple(ordered)
+
+
+def load_search_preload(path: str) -> tuple[SearchEvaluation, ...]:
+    """Recover and deserialize crash-safe Stage-2 observation rows."""
+
+    recover_jsonl_file(path)
+    return _search_preload_from_rows(read_jsonl(
+        path,
+        errors="raise",
+        dict_only=True,
+        missing_ok=False,
+    ))
+
+
 
 
 def _without_search_runtime_marker(
@@ -449,59 +580,54 @@ def _without_search_runtime_marker(
     return payload
 
 
+def _selected_action_identity_payload(
+        evaluation: SearchEvaluation,
+        ) -> dict[str, Any]:
+    metadata = dict(evaluation.metadata)
+    full_vector = tuple(
+        int(value)
+        for value in metadata.get("pending_full_vector", ())
+    )
+    if not full_vector:
+        raise RuntimeError(
+            "Stage-2 selected action identity has no materialized full vector"
+        )
+    final_config_fingerprint = metadata.get("final_config_fingerprint")
+    if not _is_sha256(final_config_fingerprint):
+        raise RuntimeError(
+            "Stage-2 selected action has no valid final configuration fingerprint"
+        )
+    payload = {
+        "schema_version": "stage2_selected_action_identity_v3",
+        "action_matrix": [
+            [int(value) for value in row]
+            for row in evaluation.action_matrix
+        ],
+        "full_vector": list(full_vector),
+        "boosted_overrides": to_jsonable(
+            metadata.get("boosted_overrides", []),
+            stringify_unknown=True,
+        ),
+        "final_config_fingerprint": final_config_fingerprint,
+    }
+    payload["action_identity_hash"] = stable_json_hash(payload)
+    return payload
+
+
 def _load_persisted_search_result(output_dir: str) -> SearchResult:
     observations = load_search_preload(os.path.join(
         output_dir, "observations.jsonl",
     ))
-    return SearchResult.from_dict(
-        read_json_file(os.path.join(output_dir, "summary.json")),
-        observations=observations,
-    )
+    summary = read_json_file(os.path.join(output_dir, "summary.json"))
+    return SearchResult.from_dict(summary, observations=observations)
 
 
-def _completed_search_run(
+def _validate_persisted_online_result(
         *,
         output_dir: str,
         manifest: Mapping[str, Any],
-        communication_importance_ratio: float,
-        ) -> dict[str, Any]:
-    observations_path = os.path.join(output_dir, "observations.jsonl")
-    summary_path = os.path.join(output_dir, "summary.json")
-    strict_path = os.path.join(output_dir, "strict_validation.json")
-    selected_path = os.path.join(
-        output_dir, "final_selected_configuration.json",
-    )
-    result = _load_persisted_search_result(output_dir)
-    strict_validation = (
-        read_json_file(strict_path)
-        if os.path.exists(strict_path)
-        else None
-    )
-    strict_required = bool(
-        manifest.get(
-            "strict_validation_enabled",
-            manifest.get("strict_validation_requested", False),
-        )
-    )
-    if strict_required and strict_validation is None:
-        raise RuntimeError(
-            "Stage-2 completed strict-validation artifact is missing"
-        )
-    selected_payload = read_json_file(selected_path)
-    selected = (
-        None
-        if selected_payload is None
-        else _evaluation_from_payload(
-            selected_payload,
-            communication_importance_ratio,
-        )
-    )
-    if selected is None and str(manifest.get("status")) in {
-            "complete", "complete_no_strict_feasible", "smoke_only_complete",
-    }:
-        raise RuntimeError(
-            "Stage-2 completed final-selected artifact is missing"
-        )
+        result: SearchResult,
+        ) -> None:
     if result.algorithm != normalize_search_backend(
             manifest.get("search_backend")
     ):
@@ -522,6 +648,16 @@ def _completed_search_run(
         raise RuntimeError(
             "Stage-2 completed inference count does not match manifest"
         )
+    authoritative_best = max(
+        result.observations, key=candidate_rank_key,
+    )
+    if (
+            _without_search_runtime_marker(authoritative_best)
+            != _without_search_runtime_marker(result.best)
+    ):
+        raise RuntimeError(
+            "Stage-2 completed online best is not the authoritative JSONL winner"
+        )
     matching_best = [
         item for item in result.observations
         if item.action_matrix == result.best.action_matrix
@@ -541,59 +677,8 @@ def _completed_search_run(
         raise RuntimeError(
             "Stage-2 completed online best does not match persisted result"
         )
-    if strict_validation is not None:
-        strict_selected = strict_validation.get("selected")
-        strict_selected_evaluation = (
-            None
-            if strict_selected is None
-            else _evaluation_from_payload(
-                strict_selected, communication_importance_ratio,
-            )
-        )
-        if (
-                (strict_selected_evaluation is None) != (selected is None)
-                or (
-                    strict_selected_evaluation is not None
-                    and strict_selected_evaluation.as_dict()
-                    != selected.as_dict()
-                )
-        ):
-            raise RuntimeError(
-                "Stage-2 strict selected evaluation does not match final selection"
-            )
-        strict_records = list(strict_validation.get("records") or [])
-        strict_count = sum(
-            bool(row.get("strict_evaluated", False))
-            for row in strict_records
-        )
-        if strict_count != int(
-                manifest.get("strict_evaluated_candidate_count", -1)
-        ):
-            raise RuntimeError(
-                "Stage-2 strict record count does not match manifest"
-            )
-    paths = {
-        "manifest": os.path.join(output_dir, "manifest.json"),
-        "observations": observations_path,
-        "history": os.path.join(output_dir, "history.json"),
-        "summary": summary_path,
-        "online_best": os.path.join(output_dir, "online_best.json"),
-        "final_selected_configuration": selected_path,
-    }
-    if strict_validation is not None:
-        paths["strict_validation"] = strict_path
-    return {
-        "result": result,
-        "online_best": result.best,
-        "selected": selected,
-        "strict_validation": strict_validation,
-        "artifact_paths": paths,
-        "manifest": dict(manifest),
-        "scientific_export_allowed": bool(
-            manifest.get("scientific_export_allowed", False)
-        ),
-        "resumed_completed_run": True,
-    }
+
+
 
 
 def _promotion_payload(value: Any) -> dict[str, Any]:
@@ -639,7 +724,7 @@ def _strict_selected_rank(evaluation: SearchEvaluation) -> tuple[float, ...]:
     )
 
 
-def _strict_metrics(value: Any) -> Optional[SearchMetrics]:
+def _strict_metrics(value: Any) -> SearchMetrics | None:
     if value is None:
         return None
     try:
@@ -655,16 +740,14 @@ def _constraint_family_violations(
         trial_count: int,
         banks_run: Sequence[str],
         not_run_banks: Sequence[str],
-        point_pass: Optional[bool],
+        point_pass: bool | None,
         ) -> dict[str, Any]:
     constraints = {}
     violated = []
     violations = []
-    for name, raw_margin, normalized_margin in zip(
-            CONSTRAINT_NAMES,
-            evaluation.raw_margins,
-            evaluation.normalized_margins,
-    ):
+    for index, name in enumerate(CONSTRAINT_NAMES):
+        raw_margin = evaluation.raw_margins[index]
+        normalized_margin = evaluation.normalized_margins[index]
         violation = max(0.0, -float(normalized_margin))
         constraints[name] = {
             "raw_margin": float(raw_margin),
@@ -844,6 +927,22 @@ def _strict_violations(
     return {"families": families, "aggregate": aggregate}
 
 
+def _strict_hard_gate_incomplete_families(
+        violations: Mapping[str, Any],
+        ) -> list[str]:
+    families = dict(violations.get("families") or {})
+    return [
+        name
+        for name in ("joint", "compute_only", "communication_only")
+        if (
+            not isinstance(families.get(name), Mapping)
+            or not bool(families[name].get("available", False))
+            or families[name].get("point_pass") is not True
+            or list(families[name].get("not_run_banks") or [])
+        )
+    ]
+
+
 def _strict_fallback_rank(evaluation: SearchEvaluation) -> tuple[float, ...]:
     resource = evaluation.resource
     violations = dict(
@@ -857,14 +956,266 @@ def _strict_fallback_rank(evaluation: SearchEvaluation) -> tuple[float, ...]:
         ).flatten(evaluation.action_matrix)
     )
     return (
-        -float(aggregate.get("unavailable_family_count", 3)),
         -float(aggregate.get("failed_constraint_count", 0)),
         -float(aggregate.get("total_normalized_violation", 0.0)),
         -float(aggregate.get("worst_normalized_violation", 0.0)),
+        -float(aggregate.get("unavailable_family_count", 3)),
         float(resource.ppo_resource_score),
         float(resource.robust_floor),
         *lexicographic,
     )
+
+
+def _validate_strict_validation_payload(
+        *,
+        result: SearchResult,
+        payload: Mapping[str, Any],
+        communication_importance_ratio: float,
+        ) -> None:
+    """Validate the ordinary scientific structure of one strict result."""
+    if payload.get("schema_version") != "stage2_search_strict_validation_v3":
+        raise RuntimeError("strict validation has an unsupported schema")
+    if type(payload.get("requested_top_n")) is not int or int(
+            payload["requested_top_n"]
+    ) != 5:
+        raise RuntimeError("strict validation must contain exactly five candidates")
+    if type(payload.get("strict_evaluated_candidate_count")) is not int or int(
+            payload["strict_evaluated_candidate_count"]
+    ) != 5:
+        raise RuntimeError("strict validation must evaluate exactly five candidates")
+
+    records = payload.get("records")
+    if not isinstance(records, list) or len(records) != 5:
+        raise RuntimeError("strict validation must contain exactly five records")
+    eligible = [
+        candidate
+        for candidate in result.observations
+        if (
+            candidate.valid
+            and candidate.inference_performed
+            and bool(candidate.metadata.get("materializable", False))
+            and bool(candidate.metadata.get("pending_full_vector"))
+        )
+    ]
+    if len(eligible) < 5:
+        raise RuntimeError(
+            "strict validation result has fewer than five eligible candidates"
+        )
+    expected_online = heapq.nlargest(5, eligible, key=candidate_rank_key)
+
+    strict_rows: list[tuple[SearchEvaluation, bool]] = []
+    required_families = {
+        "joint", "compute_only", "communication_only",
+    }
+    for index, (record, expected) in enumerate(zip(records, expected_online)):  # noqa: B905 - Python 3.9
+        if not isinstance(record, Mapping):
+            raise RuntimeError(f"strict record {index} is not an object")
+        online_payload = record.get("online_candidate")
+        strict_payload = record.get("strict_evaluation")
+        if not isinstance(online_payload, Mapping) or not isinstance(
+                strict_payload, Mapping
+        ):
+            raise RuntimeError(
+                f"strict record {index} has no online/strict evaluation"
+            )
+        online = _evaluation_from_payload(
+            online_payload, communication_importance_ratio,
+        )
+        strict = _evaluation_from_payload(
+            strict_payload, communication_importance_ratio,
+        )
+        if (
+                _without_search_runtime_marker(online)
+                != _without_search_runtime_marker(expected)
+        ):
+            raise RuntimeError(
+                "strict records do not match the authoritative online top five"
+            )
+        if strict.action_matrix != online.action_matrix:
+            raise RuntimeError(
+                f"strict record {index} changed the candidate action"
+            )
+        if (
+                record.get("strict_evaluated") is not True
+                or record.get("selection_eligible") is not True
+                or type(record.get("strict_feasible")) is not bool
+        ):
+            raise RuntimeError(
+                f"strict record {index} is not a completed eligible evaluation"
+            )
+        violations = record.get("violations")
+        if not isinstance(violations, Mapping):
+            raise RuntimeError(f"strict record {index} has no violations")
+        families = violations.get("families")
+        if (
+                not isinstance(families, Mapping)
+                or not required_families.issubset(families)
+                or any(
+                    not isinstance(families[name], Mapping)
+                    for name in required_families
+                )
+        ):
+            raise RuntimeError(
+                f"strict record {index} is missing constraint families"
+            )
+        if strict.metadata.get("strict_violations") != violations:
+            raise RuntimeError(
+                f"strict record {index} has inconsistent violation evidence"
+            )
+        _selected_action_identity_payload(strict)
+        strict_rows.append((strict, bool(record["strict_feasible"])))
+
+    verdict = payload.get("strict_feasible")
+    if type(verdict) is not bool:
+        raise RuntimeError("strict validation has no boolean strict verdict")
+    status = str(payload.get("selection_status") or "")
+    expected_status = (
+        "strict_feasible" if verdict else "strict_least_violating"
+    )
+    if status != expected_status:
+        raise RuntimeError("strict validation has an inconsistent selection status")
+    strict_passes = [row for row, passed in strict_rows if passed]
+    if verdict:
+        if not strict_passes:
+            raise RuntimeError("strict feasible verdict has no feasible candidate")
+        expected_selected = max(strict_passes, key=_strict_selected_rank)
+    else:
+        if strict_passes:
+            raise RuntimeError("least-violating verdict contains a feasible candidate")
+        expected_selected = max(
+            (row for row, _passed in strict_rows),
+            key=_strict_fallback_rank,
+        )
+
+    selected_payload = payload.get("selected")
+    if not isinstance(selected_payload, Mapping):
+        raise RuntimeError("strict validation has no selected candidate")
+    selected = _evaluation_from_payload(
+        selected_payload, communication_importance_ratio,
+    )
+    if (
+            selected_payload.get("strict_feasible") is not verdict
+            or str(selected_payload.get("selection_status") or "") != status
+            or _selected_action_identity_payload(selected)
+            != _selected_action_identity_payload(expected_selected)
+            or selected.as_dict() != expected_selected.as_dict()
+    ):
+        raise RuntimeError(
+            "selected strict candidate does not match the scientific ranking"
+        )
+    if payload.get("selected_violations") != expected_selected.metadata.get(
+            "strict_violations"
+    ):
+        raise RuntimeError(
+            "selected strict candidate has inconsistent violation evidence"
+        )
+
+
+_STRICT_MATERIALIZATION_FAMILIES = (
+    "joint",
+    "compute_only",
+    "communication_only",
+)
+
+
+def _prepare_strict_materialization_fingerprints(
+        *,
+        layerwise_env: Any,
+        base_env: Any,
+        action_matrix: Sequence[Sequence[int]],
+        joint_action_indices: Sequence[int],
+        joint_boosted_overrides: Mapping[Any, Any],
+        ) -> dict[str, str]:
+    from .layerwise_action import materialize_layerwise_counterfactuals
+
+    materializations = materialize_layerwise_counterfactuals(
+        layerwise_env.baseline_full_vector,
+        action_matrix,
+        layerwise_env.schedule,
+        layerwise_env.fusion_map,
+    )
+    joint = materializations["joint"]
+    if (
+            tuple(int(value) for value in joint.full_vector)
+            != tuple(int(value) for value in joint_action_indices)
+            or _serialize_boosted_overrides(joint.boosted_overrides)
+            != _serialize_boosted_overrides(joint_boosted_overrides)
+    ):
+        raise RuntimeError(
+            "Stage-2 strict candidate does not match canonical joint materialization"
+        )
+
+    fingerprints = {}
+    for family in _STRICT_MATERIALIZATION_FAMILIES:
+        materialization = materializations[family]
+        prepared = base_env.prepare_action_for_terminal_probe(
+            [int(value) for value in materialization.full_vector],
+            boosted_overrides={
+                (int(block_idx), int(layer_idx)): {
+                    str(name): int(value)
+                    for name, value in fields.items()
+                }
+                for (block_idx, layer_idx), fields in (
+                    materialization.boosted_overrides.items()
+                )
+            },
+        )
+        if (
+                not isinstance(prepared, Mapping)
+                or bool(prepared.get("any_invalid", False))
+                or prepared.get("requires_forward") is not True
+        ):
+            raise RuntimeError(
+                f"Stage-2 strict {family} action is not materializable"
+            )
+        fingerprint = str(prepared.get("final_config_fingerprint") or "")
+        if not _is_sha256(fingerprint):
+            raise RuntimeError(
+                f"Stage-2 strict {family} final config fingerprint is invalid"
+            )
+        fingerprints[family] = fingerprint
+    return fingerprints
+
+
+
+
+
+
+def _strict_reference_for_trial_count(
+        validation_banks: Any,
+        trial_count: int,
+        ) -> tuple[str, Any]:
+    """Return the reference whose limits produced the pooled strict metrics."""
+    bank_a = _field(validation_banks, "bank_a")
+    candidates = (
+        (
+            "bank_a",
+            int(_field(bank_a, "trial_count", 0)),
+            _field(bank_a, "reference"),
+        ),
+        (
+            "promotion",
+            int(_field(validation_banks, "promotion_trial_count", 0)),
+            _field(validation_banks, "promotion_reference"),
+        ),
+        (
+            "final",
+            int(_field(validation_banks, "final_trial_count", 0)),
+            _field(validation_banks, "final_reference"),
+        ),
+    )
+    available = [
+        (label, count, reference)
+        for label, count, reference in candidates
+        if count > 0 and reference is not None and int(trial_count) >= count
+    ]
+    if not available:
+        raise RuntimeError(
+            "strict pooled metrics have no same-source validation reference: "
+            f"trial_count={int(trial_count)}"
+        )
+    label, _count, reference = max(available, key=lambda item: item[1])
+    return label, reference
 
 
 def _completed_validation_banks(
@@ -918,12 +1269,14 @@ def canonical_strict_validation(
     from .layerwise_runner import (
         _FINAL_REVALIDATION_PASSED,
         _deserialize_boosted_overrides,
+        _strict_evidence_final_config_fingerprint,
         certify_candidate_with_bank_c,
         promote_candidate_if_eligible,
     )
 
-    final_reference = validation_banks.final_reference
-    requested_top_n = max(1, int(top_n))
+    requested_top_n = int(top_n)
+    if requested_top_n != 5:
+        raise ValueError("strict validation requires exactly top 5 candidates")
     eligible = [
         candidate
         for candidate in result.observations
@@ -963,7 +1316,7 @@ def canonical_strict_validation(
                 "promotion": None,
                 "certification": None,
                 "strict_point_pass": False,
-                "formal_feasible": False,
+                "strict_feasible": False,
                 "selection_eligible": False,
                 "skip_reason": (
                     "online_candidate_invalid"
@@ -1011,7 +1364,7 @@ def canonical_strict_validation(
             "promotion": promotion_record,
             "certification": None,
             "strict_point_pass": False,
-            "formal_feasible": False,
+            "strict_feasible": False,
             "selection_eligible": False,
         }
         records.append(record)
@@ -1035,7 +1388,7 @@ def canonical_strict_validation(
                 bootstrap_seed=bootstrap_seed,
                 final_probability=float(final_probability),
                 validation_banks=validation_banks,
-            )
+                )
             certification_record = _promotion_payload(certification)
             if certification_record["status"] == "failed_evaluation":
                 raise RuntimeError(
@@ -1046,6 +1399,9 @@ def canonical_strict_validation(
 
         strict_metrics = _strict_metrics(
             None if certification is None else certification.metrics
+        )
+        strict_evidence = (
+            None if certification is None else certification.evidence
         )
         metrics_source = "certification"
         strict_trial_count = (
@@ -1076,12 +1432,54 @@ def canonical_strict_validation(
         )
         if strict_metrics is None:
             strict_metrics = _strict_metrics(promotion.metrics)
+            strict_evidence = promotion.evidence
             metrics_source = "promotion"
             strict_trial_count = int(promotion_record["trial_count"])
             strict_assessment = promotion.assessment
         if strict_metrics is None or strict_trial_count <= 0:
             record["skip_reason"] = "no_strict_pooled_metrics"
             continue
+
+        strict_final_config_fingerprint = (
+            _strict_evidence_final_config_fingerprint(
+                strict_evidence,
+                context="canonical strict validation",
+            )
+        )
+        if strict_final_config_fingerprint is None:
+            raise RuntimeError(
+                "canonical strict validation has no final config fingerprint"
+            )
+        strict_materialization_fingerprints = (
+            _prepare_strict_materialization_fingerprints(
+                layerwise_env=layerwise_env,
+                base_env=promotion_base_env,
+                action_matrix=online.action_matrix,
+                joint_action_indices=full_vector,
+                joint_boosted_overrides=boosted_overrides,
+            )
+        )
+        if strict_materialization_fingerprints["joint"] != (
+                strict_final_config_fingerprint
+        ):
+            raise RuntimeError(
+                "canonical strict joint materialization fingerprint changed"
+            )
+        if isinstance(strict_axis_counterfactuals, Mapping):
+            for axis_name, family in (
+                    ("compute", "compute_only"),
+                    ("communication", "communication_only"),
+            ):
+                axis_payload = strict_axis_counterfactuals.get(axis_name)
+                if (
+                        isinstance(axis_payload, Mapping)
+                        and axis_payload.get("final_config_fingerprint")
+                        != strict_materialization_fingerprints[family]
+                ):
+                    raise RuntimeError(
+                        f"canonical strict {family} materialization fingerprint "
+                        "changed"
+                    )
 
         passed = bool(
             certification_record is not None
@@ -1090,10 +1488,16 @@ def canonical_strict_validation(
                 "already_final_certified",
             )
         )
+        strict_limits_source, strict_reference = (
+            _strict_reference_for_trial_count(
+                validation_banks,
+                strict_trial_count,
+            )
+        )
         strict_evaluation = SearchEvaluation(
             action_matrix=online.action_matrix,
             metrics=strict_metrics,
-            limits=limits_from_reference(final_reference),
+            limits=limits_from_reference(strict_reference),
             valid=True,
             reward=online.reward,
             communication_importance_ratio=float(
@@ -1101,9 +1505,14 @@ def canonical_strict_validation(
             ),
             metadata={
                 **metadata,
+                "final_config_fingerprint": strict_final_config_fingerprint,
                 "strict_validation_status": strict_status,
                 "strict_metrics_source": metrics_source,
+                "strict_limits_source": strict_limits_source,
                 "strict_trial_count": int(strict_trial_count),
+                "strict_materialization_fingerprints": dict(
+                    strict_materialization_fingerprints
+                ),
                 "strict_final_assessment": to_jsonable(
                     strict_assessment, stringify_unknown=True,
                 ),
@@ -1112,7 +1521,9 @@ def canonical_strict_validation(
                 "strict_candidate_store": os.fspath(candidate_store.path),
             },
         )
-        formal_feasible = bool(passed and strict_evaluation.feasible)
+        strict_point_feasible = bool(
+            passed and strict_evaluation.feasible
+        )
         if passed and not strict_evaluation.feasible:
             raise RuntimeError(
                 "canonical final certification passed but pooled six-point "
@@ -1127,6 +1538,16 @@ def canonical_strict_validation(
             joint_banks_run=joint_banks_run,
             joint_not_run_banks=joint_not_run_banks,
         )
+        if passed:
+            incomplete_families = _strict_hard_gate_incomplete_families(
+                violations
+            )
+            if incomplete_families:
+                raise RuntimeError(
+                    "final strict certification is missing complete passing "
+                    "joint/axis evidence for "
+                    f"{incomplete_families}"
+                )
         strict_evaluation.metadata["strict_violations"] = violations
         record.update({
             "strict_evaluated": True,
@@ -1134,11 +1555,11 @@ def canonical_strict_validation(
             "strict_trial_count": int(strict_trial_count),
             "strict_metrics_source": metrics_source,
             "strict_point_pass": bool(passed),
-            "formal_feasible": formal_feasible,
+            "strict_feasible": strict_point_feasible,
             "violations": violations,
             "strict_evaluation": strict_evaluation.as_dict(),
         })
-        strict_evaluations.append((strict_evaluation, formal_feasible))
+        strict_evaluations.append((strict_evaluation, strict_point_feasible))
     if len(strict_evaluations) != requested_top_n:
         raise RuntimeError(
             "strict validation did not produce complete pooled metrics for every "
@@ -1146,24 +1567,24 @@ def canonical_strict_validation(
         )
     strict_passes = [
         evaluation
-        for evaluation, formal_feasible in strict_evaluations
-        if formal_feasible
+        for evaluation, strict_point_feasible in strict_evaluations
+        if strict_point_feasible
     ]
     if strict_passes:
         selected = max(strict_passes, key=_strict_selected_rank)
         selection_status = "strict_feasible"
-        formal_feasible = True
+        strict_feasible = True
     elif strict_evaluations:
         selected = max(
-            (evaluation for evaluation, _formal in strict_evaluations),
+            (evaluation for evaluation, _strict in strict_evaluations),
             key=_strict_fallback_rank,
         )
         selection_status = "strict_least_violating"
-        formal_feasible = False
+        strict_feasible = False
     else:
         selected = None
         selection_status = "no_strict_evaluated_materializable_candidate"
-        formal_feasible = False
+        strict_feasible = False
     selected_violations = (
         None
         if selected is None
@@ -1172,11 +1593,11 @@ def canonical_strict_validation(
     selected_payload = None if selected is None else {
         **selected.as_dict(),
         "selection_status": selection_status,
-        "formal_feasible": bool(formal_feasible),
+        "strict_feasible": bool(strict_feasible),
         "violations": selected_violations,
     }
     return {
-        "schema_version": "stage2_search_strict_validation_v1",
+        "schema_version": "stage2_search_strict_validation_v3",
         "split": "validation_full",
         "validation_banks": validation_banks.contract_payload(),
         "joint_and_axis_counterfactual_gate": True,
@@ -1191,10 +1612,338 @@ def canonical_strict_validation(
         "strict_evaluated_candidate_count": len(strict_evaluations),
         "online_best": result.best.as_dict(),
         "selection_status": selection_status,
-        "formal_feasible": bool(formal_feasible),
+        "strict_feasible": bool(strict_feasible),
         "selected_violations": selected_violations,
         "selected": selected_payload,
         "records": records,
+    }
+
+
+def _validate_ga_completion_proof(
+        result: SearchResult,
+        *,
+        patience_generations: int,
+        generation_cap: int,
+        maximum_evaluations: int,
+        ) -> None:
+    """Validate COINN-GA completion from persisted search evidence."""
+
+    patience = int(patience_generations)
+    generation_limit = int(generation_cap)
+    evaluation_limit = int(maximum_evaluations)
+    if patience != 5 or generation_limit <= 0 or evaluation_limit <= 0:
+        raise RuntimeError(
+            "COINN-GA completion proof has inconsistent safety caps"
+        )
+    if result.termination_reason not in {
+            "ga_no_incumbent_improvement", "generation_limit",
+    }:
+        raise RuntimeError(
+            "COINN-GA lacks native five-generation stagnation or "
+            "generation-cap completion proof"
+        )
+    if result.evaluation_count > evaluation_limit:
+        raise RuntimeError(
+            "COINN-GA exceeded its maximum inference budget"
+        )
+
+    initial_rows = [
+        row for row in result.history
+        if isinstance(row, Mapping) and row.get("phase") == "ga_initial_population"
+    ]
+    update_rows = [
+        row for row in result.history
+        if isinstance(row, Mapping) and row.get("phase") == "ga_update_generation"
+    ]
+    if (
+            len(initial_rows) != 1
+            or not result.history
+            or result.history[0] is not initial_rows[0]
+            or len(result.history) != 1 + len(update_rows)
+    ):
+        raise RuntimeError(
+            "COINN-GA completion proof has invalid generation history"
+        )
+
+    initial = initial_rows[0]
+    population_size = initial.get("population_target")
+    elite_count = initial.get("elite_count")
+    if (
+            type(population_size) is not int
+            or type(elite_count) is not int
+            or population_size <= 0
+            or elite_count < 0
+            or elite_count >= population_size
+    ):
+        raise RuntimeError(
+            "COINN-GA completion proof has invalid population settings"
+        )
+    offspring_count = population_size - elite_count
+    initial_observation_count = initial.get("observations")
+    if (
+            type(initial_observation_count) is not int
+            or initial_observation_count < population_size
+            or initial_observation_count > result.observation_count
+            or int(initial.get("evaluations", -1)) != population_size
+            or int(initial.get("population_size", -1)) != population_size
+    ):
+        raise RuntimeError(
+            "COINN-GA completion proof has invalid initial population"
+        )
+    population = [
+        item
+        for item in result.observations[:initial_observation_count]
+        if item.inference_performed
+    ]
+    if len(population) != population_size:
+        raise RuntimeError(
+            "COINN-GA initial population is not backed by real "
+            "evaluation evidence"
+        )
+
+    cumulative_observations = initial_observation_count
+    cumulative_evaluations = population_size
+    no_improvement_generations = 0
+    expected_generation = 1
+    for row in update_rows:
+        if (
+                int(row.get("generation", -1)) != expected_generation
+                or int(row.get("iteration", -1)) != expected_generation
+        ):
+            raise RuntimeError(
+                "COINN-GA generations are not contiguous"
+            )
+        expected_elites = _select_hamming_diverse_elites(
+            LayerwiseSearchSpace(len(result.best.action_matrix)),
+            population,
+            elite_count,
+        )
+        recorded_elites = row.get("elite_actions")
+        expected_elite_actions = [
+            [list(layer) for layer in item.action_matrix]
+            for item in expected_elites
+        ]
+        if (
+                recorded_elites != expected_elite_actions
+                or int(row.get("elite_count", -1)) != elite_count
+        ):
+            raise RuntimeError(
+                "COINN-GA does not prove exact elite retention"
+            )
+
+        next_observation_count = row.get("observations")
+        next_evaluation_count = row.get("evaluations")
+        if (
+                type(next_observation_count) is not int
+                or type(next_evaluation_count) is not int
+                or next_observation_count <= cumulative_observations
+                or next_observation_count > result.observation_count
+                or next_evaluation_count
+                != cumulative_evaluations + offspring_count
+                or int(row.get("offspring_evaluated", -1)) != offspring_count
+                or int(row.get("expected_evaluations", -1))
+                != next_evaluation_count
+        ):
+            raise RuntimeError(
+                "COINN-GA has invalid generation accounting"
+            )
+        generation_observations = result.observations[
+            cumulative_observations:next_observation_count
+        ]
+        offspring = [
+            item for item in generation_observations
+            if item.inference_performed
+        ]
+        if len(offspring) != offspring_count:
+            raise RuntimeError(
+                "COINN-GA generation lacks real offspring evaluation evidence"
+            )
+
+        previous_best = max(
+            result.observations[:cumulative_observations],
+            key=candidate_rank_key,
+        )
+        current_best = max(
+            result.observations[:next_observation_count],
+            key=candidate_rank_key,
+        )
+        improved = (
+            candidate_rank_key(current_best) > candidate_rank_key(previous_best)
+        )
+        no_improvement_generations = (
+            0 if improved else no_improvement_generations + 1
+        )
+        recorded_stagnation = row.get("no_improvement_generations")
+        if (
+                row.get("improved") is not improved
+                or type(recorded_stagnation) is not int
+                or recorded_stagnation != no_improvement_generations
+        ):
+            raise RuntimeError(
+                "COINN-GA has inconsistent incumbent stagnation evidence"
+            )
+
+        population = [*expected_elites, *offspring]
+        cumulative_observations = next_observation_count
+        cumulative_evaluations = next_evaluation_count
+        expected_generation += 1
+
+    if (
+            cumulative_observations != result.observation_count
+            or cumulative_evaluations != result.evaluation_count
+    ):
+        raise RuntimeError(
+            "COINN-GA completion proof leaves observations unassigned"
+        )
+    completed_generations = expected_generation - 1
+    if result.termination_reason == "ga_no_incumbent_improvement":
+        if (
+                completed_generations >= generation_limit
+                or no_improvement_generations != patience
+        ):
+            raise RuntimeError(
+                "COINN-GA lacks a five-generation incumbent stagnation proof"
+            )
+    elif (
+            completed_generations != generation_limit
+            or result.evaluation_count
+            != population_size + generation_limit * offspring_count
+    ):
+        raise RuntimeError(
+            "COINN-GA generation safety-cap proof is incomplete"
+        )
+
+
+def _load_plain_completed_search_run(
+        *,
+        output_dir: str,
+        manifest: Mapping[str, Any],
+        communication_importance_ratio: float,
+        ) -> dict[str, Any]:
+    result = _load_persisted_search_result(output_dir)
+    _validate_persisted_online_result(
+        output_dir=output_dir,
+        manifest=manifest,
+        result=result,
+    )
+    paths = {
+        "manifest": os.path.join(output_dir, "manifest.json"),
+        "observations": os.path.join(output_dir, "observations.jsonl"),
+        "history": os.path.join(output_dir, "history.json"),
+        "summary": os.path.join(output_dir, "summary.json"),
+        "online_best": os.path.join(output_dir, "online_best.json"),
+        "final_selected_configuration": os.path.join(
+            output_dir, "final_selected_configuration.json",
+        ),
+    }
+    selected_payload = read_json_file(paths["final_selected_configuration"])
+    if selected_payload is None:
+        selected = None
+    elif isinstance(selected_payload, Mapping):
+        selected = _evaluation_from_payload(
+            selected_payload,
+            communication_importance_ratio,
+        )
+    else:
+        raise RuntimeError(
+            "completed Stage-2 selected configuration must be an object or null"
+        )
+
+    strict_validation = None
+    status = str(manifest.get("status") or "")
+    if status != "smoke_only_complete":
+        strict_path = os.path.join(output_dir, "strict_validation.json")
+        if not os.path.isfile(strict_path):
+            raise RuntimeError(
+                "completed Stage-2 strict validation artifact is missing"
+            )
+        payload = read_json_file(strict_path)
+        if not isinstance(payload, Mapping):
+            raise RuntimeError(
+                "completed Stage-2 strict validation artifact is invalid"
+            )
+        strict_validation = dict(payload)
+        _validate_strict_validation_payload(
+            result=result,
+            payload=strict_validation,
+            communication_importance_ratio=communication_importance_ratio,
+        )
+        verdict = strict_validation.get("strict_feasible")
+        if type(verdict) is not bool:
+            raise RuntimeError(
+                "completed strict validation has no boolean strict verdict"
+            )
+        if bool(manifest.get("strict_feasible", False)) != verdict:
+            raise RuntimeError(
+                "completed strict verdict does not match manifest"
+            )
+        expected_status = (
+            "complete_strict_feasible"
+            if verdict else "complete_least_violating"
+        )
+        if status != expected_status:
+            raise RuntimeError(
+                "completed strict status does not match strict verdict"
+            )
+        strict_selection_status = str(
+            strict_validation.get("selection_status") or ""
+        )
+        expected_selection_status = (
+            "strict_feasible" if verdict else "strict_least_violating"
+        )
+        if (
+                strict_selection_status != expected_selection_status
+                or str(manifest.get("selection_status") or "")
+                != expected_selection_status
+        ):
+            raise RuntimeError(
+                "completed strict selection status is inconsistent"
+            )
+        strict_selected_payload = strict_validation.get("selected")
+        if not isinstance(strict_selected_payload, Mapping):
+            raise RuntimeError(
+                "completed strict validation has no selected configuration"
+            )
+        strict_selected = _evaluation_from_payload(
+            strict_selected_payload,
+            communication_importance_ratio,
+        )
+        if (
+                selected is None
+                or selected.as_dict() != strict_selected.as_dict()
+        ):
+            raise RuntimeError(
+                "completed selected configuration does not match strict validation"
+            )
+        if (
+                not isinstance(selected_payload, Mapping)
+                or selected_payload.get("strict_feasible") is not verdict
+                or str(selected_payload.get("selection_status") or "")
+                != expected_selection_status
+        ):
+            raise RuntimeError(
+                "completed selected configuration has inconsistent strict status"
+            )
+        paths["strict_validation"] = strict_path
+        candidate_store_path = strict_validation.get("candidate_store")
+        if candidate_store_path:
+            owned_path = os.fspath(candidate_store_path)
+            if not os.path.isabs(owned_path):
+                owned_path = os.path.join(output_dir, owned_path)
+            if not os.path.isfile(owned_path):
+                raise RuntimeError(
+                    "completed Stage-2 strict candidate store is missing"
+                )
+            paths["strict_candidate_store"] = owned_path
+
+    return {
+        "result": result,
+        "online_best": result.best,
+        "selected": selected,
+        "strict_validation": strict_validation,
+        "artifact_paths": paths,
+        "manifest": dict(manifest),
+        "strict_feasible": bool(manifest.get("strict_feasible", False)),
     }
 
 
@@ -1215,12 +1964,11 @@ def run_layerwise_search_baseline(
         rf_min_samples_leaf: int,
         communication_importance_ratio: float,
         manifest: Mapping[str, Any],
-        strict_validator: Optional[
-            Callable[[SearchResult], Mapping[str, Any]]
-        ] = None,
+        strict_validator: Callable[[SearchResult], Mapping[str, Any]] | None = None,
+        pending_strict_context_writer: Callable[[Mapping[str, Any]], None] | None = None,
         resume: bool = True,
         ) -> dict[str, Any]:
-    """Run one non-RL baseline and persist crash-recoverable observations."""
+    """Run one non-RL baseline with ordinary crash-recoverable artifacts."""
     normalized_backend = normalize_search_backend(backend)
     run_started_monotonic = time.perf_counter()
     if normalized_backend == "ppo":
@@ -1228,43 +1976,62 @@ def run_layerwise_search_baseline(
     budget = int(evaluation_budget)
     if budget <= 0:
         raise ValueError("search evaluation budget must be positive")
+
     os.makedirs(output_dir, exist_ok=True)
     observation_path = os.path.join(output_dir, "observations.jsonl")
     manifest_path = os.path.join(output_dir, "manifest.json")
+    strict_validation_path = os.path.join(
+        output_dir, "strict_validation.json",
+    )
     ga_elite_count = min(7, max(1, int(population_size) - 1))
-    ga_expected_evaluations = int(
+    ga_maximum_evaluations = int(
         int(population_size)
         + 800 * (int(population_size) - int(ga_elite_count))
     )
-    formal_run = strict_validator is not None
-    if formal_run and normalized_backend == "coinn_ga":
-        if (
+    strict_run = strict_validator is not None
+    if strict_run and int(seed) != 42:
+        raise ValueError("Stage-2 comparators with strict validation require seed 42")
+    if (
+            strict_run
+            and normalized_backend == "coinn_ga"
+            and (
                 int(population_size) != 64
                 or int(ga_elite_count) != 7
                 or int(mutation_max_coordinates) != 4
+                or int(patience_generations) != 5
                 or budget != 45_664
-        ):
-            raise ValueError(
-                "formal Stage-2 COINN-GA requires P64/E7, 800 update "
-                "generations, four-layer mutation cap, and exactly 45,664 "
-                "inference-reaching evaluations"
             )
-    if formal_run and normalized_backend == "bo_rf" and budget != 50_000:
+    ):
         raise ValueError(
-            "formal Stage-2 BO-RF requires the 50,000-evaluation safety cap"
+            "strict Stage-2 COINN-GA requires P64/E7, patience 5, the "
+            "800-generation safety cap, a four-layer mutation cap, and the "
+            "45,664-evaluation safety cap"
         )
-    if formal_run and normalized_backend == "greedy":
+    if (
+            strict_run
+            and normalized_backend == "bo_rf"
+            and (
+                budget != 50_000
+                or int(initial_design_size) != 64
+                or int(candidate_pool_size) != 2_048
+                or int(patience_generations) != 100
+                or int(rf_n_estimators) != 128
+                or int(rf_min_samples_leaf) != 2
+            )
+    ):
+        raise ValueError(
+            "strict Stage-2 Bayesian RF requires evaluation cap 50,000, "
+            "initial design 64, candidate pool 2,048, patience 100, "
+            "128 trees, and minimum leaf size 2"
+        )
+    if strict_run and normalized_backend == "greedy":
         expected_greedy_cap = 6 ** int(layerwise_env.horizon)
         if budget != expected_greedy_cap:
             raise ValueError(
-                "formal Stage-2 Greedy requires the full action-space safety "
+                "strict Stage-2 Greedy requires the full action-space safety "
                 f"cap {expected_greedy_cap}"
             )
-    if normalized_backend == "coinn_ga" and budget < ga_expected_evaluations:
-        raise ValueError(
-            "Stage-2 COINN-GA requires enough inference budget for exactly "
-            f"800 update generations: {budget} < {ga_expected_evaluations}"
-        )
+
     search_config_payload = {
         "initial_design_size": int(initial_design_size),
         "candidate_pool_size": int(candidate_pool_size),
@@ -1272,7 +2039,7 @@ def run_layerwise_search_baseline(
         "ga_population_size": int(population_size),
         "ga_elite_count": int(ga_elite_count),
         "ga_generations": 800,
-        "ga_expected_evaluations": ga_expected_evaluations,
+        "ga_maximum_evaluations": ga_maximum_evaluations,
         "patience_generations": int(patience_generations),
         "mutation_max_coordinates": int(mutation_max_coordinates),
         "rf_n_estimators": int(rf_n_estimators),
@@ -1293,10 +2060,11 @@ def run_layerwise_search_baseline(
             communication_importance_ratio
         ),
         "search_config": search_config_payload,
-        "strict_validation_requested": bool(strict_validator is not None),
+        "strict_validation_requested": bool(strict_run),
     }, stringify_unknown=True)
+
     preload: tuple[SearchEvaluation, ...] = ()
-    persisted_search_result: Optional[SearchResult] = None
+    persisted_search_result: SearchResult | None = None
     existing_manifest = (
         read_json_file(manifest_path)
         if os.path.exists(manifest_path)
@@ -1321,14 +2089,14 @@ def run_layerwise_search_baseline(
             raise RuntimeError(
                 "search baseline resume contract does not match the existing run"
             )
+        existing_status = str(existing_manifest.get("status") or "")
         completed_statuses = {
-            "complete",
-            "complete_no_strict_feasible",
+            "complete_strict_feasible",
+            "complete_least_violating",
             "smoke_only_complete",
         }
-        existing_status = str(existing_manifest.get("status"))
         if existing_status in completed_statuses:
-            return _completed_search_run(
+            return _load_plain_completed_search_run(
                 output_dir=output_dir,
                 manifest=existing_manifest,
                 communication_importance_ratio=float(
@@ -1337,14 +2105,47 @@ def run_layerwise_search_baseline(
             )
         if existing_status == "search_complete_pending_strict":
             persisted_search_result = _load_persisted_search_result(output_dir)
+            _validate_persisted_online_result(
+                output_dir=output_dir,
+                manifest=existing_manifest,
+                result=persisted_search_result,
+            )
         elif os.path.exists(observation_path):
             preload = load_search_preload(observation_path)
-            if normalized_backend in ("bo_rf", "coinn_ga") and preload:
-                raise RuntimeError(
-                    f"partial {normalized_backend} resume is disabled because "
-                    "exact surrogate/population state is not available; "
-                    "restart fresh"
+
+    strict_candidate_store = None
+    strict_candidate_store_checkpoint_size = None
+    strict_candidate_store_path = (
+        manifest.get("strict_candidate_store") if strict_run else None
+    )
+    if strict_candidate_store_path:
+        owned_store_path = os.fspath(strict_candidate_store_path)
+        if not os.path.isabs(owned_store_path):
+            owned_store_path = os.path.join(output_dir, owned_store_path)
+        strict_candidate_store = CandidateStore(owned_store_path)
+        if existing_manifest is not None:
+            checkpoint_value = existing_manifest.get(
+                "strict_candidate_store_checkpoint_size"
+            )
+            if checkpoint_value is not None:
+                if (
+                        isinstance(checkpoint_value, bool)
+                        or not isinstance(checkpoint_value, int)
+                        or checkpoint_value < 0
+                ):
+                    raise RuntimeError(
+                        "strict candidate-store checkpoint size is invalid"
+                    )
+                strict_candidate_store_checkpoint_size = int(
+                    checkpoint_value
                 )
+
+    if pending_strict_context_writer is not None:
+        if not strict_run:
+            raise ValueError(
+                "pending strict context writer requires strict validation"
+            )
+        pending_strict_context_writer(dict(resume_contract))
 
     recovered_online_wall_seconds = float(
         0.0
@@ -1366,7 +2167,7 @@ def run_layerwise_search_baseline(
         )
     run_manifest = {
         **dict(manifest),
-        "schema_version": "stage2_layerwise_search_baseline_v2",
+        "schema_version": "stage2_layerwise_search_baseline_v3",
         "search_backend": normalized_backend,
         "status": (
             "search_complete_pending_strict"
@@ -1375,8 +2176,7 @@ def run_layerwise_search_baseline(
         ),
         "scientific_status": (
             "full_search_with_validation_full_gate"
-            if strict_validator is not None
-            else "smoke_only_no_validation_full_gate"
+            if strict_run else "smoke_only_no_validation_full_gate"
         ),
         "evaluation_budget": budget,
         "seed": int(seed),
@@ -1384,7 +2184,7 @@ def run_layerwise_search_baseline(
             communication_importance_ratio
         ),
         "search_config": search_config_payload,
-        "strict_validation_requested": bool(strict_validator is not None),
+        "strict_validation_requested": bool(strict_run),
         "resume_contract": resume_contract,
         "resume_semantics": (
             "deterministic observation replay; completed observations are not "
@@ -1412,11 +2212,15 @@ def run_layerwise_search_baseline(
         ),
         "resumed_at": (
             time.strftime("%Y-%m-%dT%H:%M:%S")
-            if existing_manifest is not None
-            else None
+            if existing_manifest is not None else None
         ),
     }
+    if strict_candidate_store_checkpoint_size is not None:
+        run_manifest["strict_candidate_store_checkpoint_size"] = int(
+            strict_candidate_store_checkpoint_size
+        )
     _atomic_json(manifest_path, run_manifest)
+
     config = SearchConfig(
         evaluation_budget=budget,
         seed=int(seed),
@@ -1466,38 +2270,37 @@ def run_layerwise_search_baseline(
             manifest=run_manifest,
             observation_rows=None,
         )
-        formal_contract_error = None
-        if formal_run and normalized_backend == "greedy":
+        contract_error = None
+        if strict_run and normalized_backend == "greedy":
             if result.termination_reason != "verified_local_optima":
-                formal_contract_error = (
-                    "formal Greedy search exhausted its guard before verifying "
-                    "complete 1-opt and 2-opt neighborhoods"
+                contract_error = (
+                    "strict Greedy search stopped before verifying complete "
+                    "1-opt and 2-opt neighborhoods"
                 )
-        elif formal_run and normalized_backend == "coinn_ga":
-            completed_generations = sum(
-                row.get("phase") == "ga_update_generation"
-                for row in result.history
-            )
-            if (
-                    result.termination_reason != "generation_limit"
-                    or completed_generations != 800
-                    or result.evaluation_count != ga_expected_evaluations
-            ):
-                formal_contract_error = (
-                    "formal COINN-GA did not complete exactly 800 generations "
-                    f"and {ga_expected_evaluations} inference evaluations"
+        elif strict_run and normalized_backend == "coinn_ga":
+            try:
+                _validate_ga_completion_proof(
+                    result,
+                    patience_generations=int(patience_generations),
+                    generation_cap=800,
+                    maximum_evaluations=ga_maximum_evaluations,
                 )
-        elif formal_run and normalized_backend == "bo_rf":
-            if result.termination_reason not in {
+            except RuntimeError as exc:
+                contract_error = str(exc)
+        elif (
+                strict_run
+                and normalized_backend == "bo_rf"
+                and result.termination_reason not in {
                     "bo_no_improvement",
                     "evaluation_budget",
                     "candidate_space_exhausted",
-            }:
-                formal_contract_error = (
-                    "formal BO-RF stopped outside native convergence or its "
-                    "hard safety cap"
-                )
-        if formal_contract_error is not None:
+                }
+        ):
+            contract_error = (
+                "strict BO-RF stopped outside native convergence or its "
+                "evaluation safety cap"
+            )
+        if contract_error is not None:
             incomplete_manifest = {
                 **run_manifest,
                 "status": "incomplete_search_contract",
@@ -1506,7 +2309,15 @@ def run_layerwise_search_baseline(
                 "termination_reason": str(result.termination_reason),
             }
             _atomic_json(manifest_path, incomplete_manifest)
-            raise RuntimeError(formal_contract_error)
+            raise RuntimeError(contract_error)
+
+        online_best_path = os.path.join(output_dir, "online_best.json")
+        _atomic_json(online_best_path, result.best.as_dict())
+        paths["online_best"] = online_best_path
+        online_elapsed = float(
+            recovered_online_wall_seconds
+            + time.perf_counter() - run_started_monotonic
+        )
         run_manifest = {
             **run_manifest,
             "status": "search_complete_pending_strict",
@@ -1514,14 +2325,8 @@ def run_layerwise_search_baseline(
             "evaluation_count": int(result.evaluation_count),
             "observation_count": int(result.observation_count),
             "termination_reason": str(result.termination_reason),
-            "online_search_wall_seconds": float(
-                run_manifest.get("online_search_wall_seconds", 0.0)
-                + time.perf_counter() - run_started_monotonic
-            ),
-            "search_wall_seconds": float(
-                run_manifest.get("online_search_wall_seconds", 0.0)
-                + time.perf_counter() - run_started_monotonic
-            ),
+            "online_search_wall_seconds": online_elapsed,
+            "search_wall_seconds": online_elapsed,
         }
         _atomic_json(manifest_path, run_manifest)
     else:
@@ -1531,72 +2336,173 @@ def run_layerwise_search_baseline(
             "observations": observation_path,
             "history": os.path.join(output_dir, "history.json"),
             "summary": os.path.join(output_dir, "summary.json"),
+            "online_best": os.path.join(output_dir, "online_best.json"),
         }
+
     online_best = result.best
     online_best_path = os.path.join(output_dir, "online_best.json")
     _atomic_json(online_best_path, online_best.as_dict())
     paths["online_best"] = online_best_path
 
     strict_validation = None
-    selected: Optional[SearchEvaluation] = online_best
+    selected: SearchEvaluation | None = online_best
     selection_status = "online_best_smoke_only"
-    strict_validation_passed = False
+    strict_feasible = False
     strict_validation_wall_seconds = 0.0
-    if strict_validator is not None:
+    if strict_run:
+        strict_payload_from_artifact = None
+        if (
+                existing_manifest is not None
+                and str(existing_manifest.get("status") or "")
+                == "search_complete_pending_strict"
+                and os.path.isfile(strict_validation_path)
+        ):
+            completed_strict_payload = read_json_file(
+                strict_validation_path
+            )
+            if not isinstance(completed_strict_payload, Mapping):
+                raise RuntimeError(
+                    "completed strict validation artifact is invalid"
+                )
+            strict_payload_from_artifact = dict(
+                completed_strict_payload
+            )
+        if (
+                strict_payload_from_artifact is None
+                and strict_candidate_store is not None
+        ):
+            if strict_candidate_store_checkpoint_size is None:
+                store_path = os.fspath(strict_candidate_store.path)
+                strict_candidate_store_checkpoint_size = (
+                    os.path.getsize(store_path)
+                    if os.path.exists(store_path) else 0
+                )
+                run_manifest = {
+                    **run_manifest,
+                    "strict_candidate_store_checkpoint_size": int(
+                        strict_candidate_store_checkpoint_size
+                    ),
+                }
+                _atomic_json(manifest_path, run_manifest)
+            else:
+                strict_candidate_store.recover_to_checkpoint_size(
+                    strict_candidate_store_checkpoint_size
+                )
+
         strict_started_monotonic = time.perf_counter()
         try:
-            strict_validation = dict(strict_validator(result))
+            strict_payload = (
+                strict_payload_from_artifact
+                if strict_payload_from_artifact is not None
+                else strict_validator(result)
+            )
+            if not isinstance(strict_payload, Mapping):
+                raise RuntimeError(
+                    "strict validation must return a mapping"
+                )
+            strict_validation = dict(strict_payload)
+            _validate_strict_validation_payload(
+                result=result,
+                payload=strict_validation,
+                communication_importance_ratio=communication_importance_ratio,
+            )
+            verdict = strict_validation.get("strict_feasible")
+            if type(verdict) is not bool:
+                raise RuntimeError(
+                    "strict validation must provide a boolean strict_feasible verdict"
+                )
+            strict_feasible = bool(verdict)
+            selected_payload = strict_validation.get("selected")
+            if selected_payload is None:
+                selected = None
+            elif isinstance(selected_payload, Mapping):
+                selected = _evaluation_from_payload(
+                    selected_payload,
+                    communication_importance_ratio,
+                )
+            else:
+                raise RuntimeError(
+                    "strict selected candidate must be an object or null"
+                )
+            selection_status = str(strict_validation.get(
+                "selection_status",
+                (
+                    "strict_feasible"
+                    if strict_feasible else "strict_least_violating"
+                ),
+            ))
+            if strict_feasible and selected is None:
+                raise RuntimeError(
+                    "strict feasible validation must select a candidate"
+                )
+            if strict_feasible and selection_status != "strict_feasible":
+                raise RuntimeError(
+                    "strict feasible verdict has an inconsistent selection status"
+                )
+            if (
+                    not strict_feasible
+                    and selected is not None
+                    and selection_status != "strict_least_violating"
+            ):
+                raise RuntimeError(
+                    "least-violating selection has an inconsistent status"
+                )
         except Exception:
-            failed_attempt_seconds = float(
+            failed_seconds = float(
                 time.perf_counter() - strict_started_monotonic
             )
+            if (
+                    strict_payload_from_artifact is None
+                    and strict_candidate_store is not None
+                    and strict_candidate_store_checkpoint_size is not None
+            ):
+                strict_candidate_store.recover_to_checkpoint_size(
+                    strict_candidate_store_checkpoint_size
+                )
             failed_manifest = {
                 **run_manifest,
                 "status": "search_complete_pending_strict",
                 "strict_attempt_count": int(
                     run_manifest.get("strict_attempt_count", 0)
                 ) + 1,
-                "last_strict_attempt_wall_seconds": failed_attempt_seconds,
+                "last_strict_attempt_wall_seconds": failed_seconds,
                 "strict_attempt_wall_seconds_total": float(
                     run_manifest.get(
                         "strict_attempt_wall_seconds_total", 0.0,
-                    )
-                    + failed_attempt_seconds
+                    ) + failed_seconds
                 ),
             }
             _atomic_json(manifest_path, failed_manifest)
             raise
-        strict_validation_wall_seconds = float(
-            time.perf_counter() - strict_started_monotonic
+        strict_validation_wall_seconds = (
+            0.0
+            if strict_payload_from_artifact is not None
+            else float(time.perf_counter() - strict_started_monotonic)
         )
-        strict_path = os.path.join(output_dir, "strict_validation.json")
-        _atomic_json(strict_path, strict_validation)
-        paths["strict_validation"] = strict_path
-        selected_payload = strict_validation.get("selected")
-        if selected_payload is None:
-            selected = None
-            selection_status = str(strict_validation.get(
-                "selection_status",
-                "no_strict_evaluated_materializable_candidate",
-            ))
-        else:
-            selected = _evaluation_from_payload(
-                selected_payload,
-                communication_importance_ratio,
+        if strict_payload_from_artifact is None:
+            _atomic_json(strict_validation_path, strict_validation)
+        paths["strict_validation"] = strict_validation_path
+        candidate_store_path = strict_validation.get("candidate_store")
+        if candidate_store_path:
+            owned_candidate_store_path = os.fspath(candidate_store_path)
+            if not os.path.isabs(owned_candidate_store_path):
+                owned_candidate_store_path = os.path.join(
+                    output_dir, owned_candidate_store_path,
+                )
+            if not os.path.isfile(owned_candidate_store_path):
+                raise RuntimeError(
+                    "strict validation candidate store is missing at completion"
+                )
+            paths["strict_candidate_store"] = owned_candidate_store_path
+        if selected is None:
+            failed_manifest = {
+                **run_manifest,
+                "status": "search_complete_pending_strict",
+            }
+            _atomic_json(manifest_path, failed_manifest)
+            raise RuntimeError(
+                "strict validation produced no materializable candidate"
             )
-            selection_status = str(strict_validation.get(
-                "selection_status",
-                (
-                    "strict_feasible"
-                    if bool(selected_payload.get("feasible", False))
-                    else "strict_least_violating"
-                ),
-            ))
-        strict_validation_passed = bool(strict_validation.get(
-            "formal_feasible",
-            selected_payload is not None
-            and bool(selected_payload.get("feasible", False)),
-        ))
 
     selected_path = os.path.join(
         output_dir, "final_selected_configuration.json",
@@ -1604,7 +2510,7 @@ def run_layerwise_search_baseline(
     final_selected_payload = None if selected is None else {
         **selected.as_dict(),
         "selection_status": selection_status,
-        "formal_feasible": bool(strict_validation_passed),
+        "strict_feasible": bool(strict_feasible),
         "violations": (
             None
             if strict_validation is None
@@ -1613,6 +2519,7 @@ def run_layerwise_search_baseline(
     }
     _atomic_json(selected_path, final_selected_payload)
     paths["final_selected_configuration"] = selected_path
+
     strict_records = (
         []
         if strict_validation is None
@@ -1650,7 +2557,9 @@ def run_layerwise_search_baseline(
     ))
     strict_fresh_trial_count = int(sum(
         int(dict(row.get("promotion") or {}).get("fresh_trial_count", 0) or 0)
-        + int(dict(row.get("certification") or {}).get("fresh_trial_count", 0) or 0)
+        + int(dict(row.get("certification") or {}).get(
+            "fresh_trial_count", 0,
+        ) or 0)
         for row in strict_evaluated_records
     ))
     online_search_wall_seconds = float(
@@ -1661,7 +2570,7 @@ def run_layerwise_search_baseline(
     )
     strict_attempt_count = int(
         run_manifest.get("strict_attempt_count", 0)
-        + (1 if strict_validator is not None else 0)
+        + (1 if strict_run else 0)
     )
     strict_attempt_wall_seconds_total = float(
         run_manifest.get("strict_attempt_wall_seconds_total", 0.0)
@@ -1671,15 +2580,10 @@ def run_layerwise_search_baseline(
         **run_manifest,
         "status": (
             "smoke_only_complete"
-            if strict_validator is None
+            if not strict_run
             else (
-                "complete"
-                if strict_validation_passed
-                else (
-                    "complete_no_strict_feasible"
-                    if selected is not None
-                    else "failed_no_strict_materializable_candidate"
-                )
+                "complete_strict_feasible"
+                if strict_feasible else "complete_least_violating"
             )
         ),
         "completed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -1707,8 +2611,7 @@ def run_layerwise_search_baseline(
             strict_attempt_wall_seconds_total
         ),
         "total_wall_seconds": float(
-            online_search_wall_seconds
-            + strict_attempt_wall_seconds_total
+            online_search_wall_seconds + strict_attempt_wall_seconds_total
         ),
         "strict_evaluated_candidate_count": len(strict_evaluated_records),
         "strict_trial_count": strict_joint_trial_count,
@@ -1740,21 +2643,12 @@ def run_layerwise_search_baseline(
             "communication"
         ),
         "termination_reason": str(result.termination_reason),
-        "strict_validation_enabled": bool(strict_validator is not None),
-        "strict_validation_passed": strict_validation_passed,
+        "strict_validation_enabled": bool(strict_run),
+        "strict_validation_passed": bool(strict_feasible),
+        "strict_feasible": bool(strict_feasible),
         "selection_status": selection_status,
-        "formal_feasible": bool(strict_validation_passed),
-        "scientific_export_allowed": bool(
-            strict_validator is not None and strict_validation_passed
-        ),
     }
     _atomic_json(paths["manifest"], completed_manifest)
-    if strict_validator is not None and selected is None:
-        raise RuntimeError(
-            "strict validation produced no evaluated materializable candidate; "
-            "the run failed closed after preserving all evidence under "
-            f"{output_dir}"
-        )
     return {
         "result": result,
         "online_best": online_best,
@@ -1762,7 +2656,5 @@ def run_layerwise_search_baseline(
         "strict_validation": strict_validation,
         "artifact_paths": paths,
         "manifest": completed_manifest,
-        "scientific_export_allowed": bool(
-            strict_validator is not None and strict_validation_passed
-        ),
+        "strict_feasible": bool(strict_feasible),
     }

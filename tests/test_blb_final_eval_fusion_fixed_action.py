@@ -65,46 +65,6 @@ def _load_paean_method(name, **runtime_globals):
 
 
 class Stage2FinalEvalHandoffTest(unittest.TestCase):
-    def test_in_memory_final_eval_handoff_copies_exact_fusion_best(self):
-        build_handoff = _load_evaluator_method(
-            "_build_stage2_final_eval_handoff",
-            copy=copy,
-            Mapping=Mapping,
-            np=np,
-        )
-        evaluator = types.SimpleNamespace(dataset_key="mrpc")
-        action = np.asarray([3, 1, 4], dtype=int)
-        group = {
-            "option_by_step": {"0": 1},
-            "boosted_overrides": [{
-                "block_idx": 2,
-                "layer_idx": 0,
-                "field_values": {"qk_merge_sf": 47},
-            }],
-        }
-        search_result = {
-            "best_noise_config": {
-                "input_noise_scaling_factors": np.asarray([41, 42], dtype=int),
-            },
-            "blb_v3_best_action_vec": action,
-            "blb_v3_profile": "mrpc",
-            "blb_v3_fusion_count_action": True,
-            "blb_v3_best_action_group": group,
-        }
-
-        handoff = build_handoff(evaluator, search_result)
-
-        np.testing.assert_array_equal(handoff["blb_v3_best_action_vec"], action)
-        self.assertEqual(handoff["blb_v3_profile"], "mrpc")
-        self.assertIs(handoff["blb_v3_fusion_count_action"], True)
-        self.assertEqual(handoff["blb_v3_best_action_group"], group)
-        self.assertIsNot(handoff["blb_v3_best_action_vec"], action)
-        self.assertIsNot(handoff["blb_v3_best_action_group"], group)
-        self.assertIsNot(
-            handoff["blb_v3_best_action_group"]["boosted_overrides"][0],
-            group["boosted_overrides"][0],
-        )
-
     def test_in_memory_fusion_handoff_rejects_missing_reloadable_group(self):
         build_handoff = _load_evaluator_method(
             "_build_stage2_final_eval_handoff",
@@ -232,6 +192,128 @@ class Stage2FinalEvalHandoffTest(unittest.TestCase):
         np.testing.assert_array_equal(stage2["blb_v3_best_action_vec"], [9, 8])
         self.assertIs(stage2["blb_v3_fusion_count_action"], True)
         self.assertEqual(stage2["blb_v3_best_action_group"], valid_group)
+
+    def test_checkpoint_loader_rejects_incomplete_comparator_contract(self):
+        final_name = "blb_stage2_rl_checkpoint_final.pt"
+        live_name = "blb_stage2_rl_checkpoint_live.pt"
+        loader = _load_evaluator_method(
+            "_load_prior_rl_search_results",
+            copy=copy,
+            Mapping=Mapping,
+            np=np,
+            os=os,
+        )
+        checkpoint = {
+            "rl_variant": "blb_v3_layerwise_search_bo_rf",
+            "search_backend": "bo_rf",
+            "best_action": [9, 8],
+            "profile": "mrpc",
+            "blb_v3_fusion_count_action": True,
+            "blb_v3_best_action_group": {
+                "option_by_step": {"0": 1},
+                "policy_actions": [[1, 0]],
+                "boosted_overrides": [],
+            },
+        }
+        loader.__globals__["torch"] = types.SimpleNamespace(
+            load=lambda _path, **_kwargs: checkpoint,
+        )
+        noise_module = types.ModuleType("noise_rl_module_v2")
+        noise_module.STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
+        noise_module.NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
+        runner_module = types.ModuleType("blb_stage2_rl.runner")
+        runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
+        runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            progress_dir = pathlib.Path(tmp_dir) / "stage2_noise" / "progress"
+            progress_dir.mkdir(parents=True)
+            (progress_dir / final_name).write_bytes(b"incomplete-comparator")
+            evaluator = types.SimpleNamespace(
+                resume_run_dir=tmp_dir,
+                run_output_dir=None,
+                stage2_rl_variant="blb_v3",
+                blb_v3_search_backend="bo_rf",
+                dataset_key="mrpc",
+                log=lambda _message: None,
+                _get_max_noise_configuration=lambda: {
+                    "input_noise_scaling_factors": np.asarray([60], dtype=int),
+                },
+            )
+            with mock.patch.dict(sys.modules, {
+                "noise_rl_module_v2": noise_module,
+                "blb_stage2_rl.runner": runner_module,
+            }):
+                with self.assertRaisesRegex(
+                        RuntimeError,
+                        "completed comparator checkpoint",
+                ):
+                    loader(evaluator)
+
+    def test_checkpoint_loader_preserves_completed_comparator_contract(self):
+        final_name = "blb_stage2_rl_checkpoint_final.pt"
+        live_name = "blb_stage2_rl_checkpoint_live.pt"
+        loader = _load_evaluator_method(
+            "_load_prior_rl_search_results",
+            copy=copy,
+            Mapping=Mapping,
+            np=np,
+            os=os,
+        )
+        checkpoint = {
+            "status": "completed",
+            "strict_feasible": True,
+            "rl_variant": "blb_v3_layerwise_search_bo_rf",
+            "search_backend": "bo_rf",
+            "final_config_fingerprint": "e" * 64,
+            "best_action": [9, 8],
+            "profile": "mrpc",
+            "blb_v3_fusion_count_action": True,
+            "blb_v3_best_action_group": {
+                "option_by_step": {"0": 1},
+                "policy_actions": [[1, 0]],
+                "boosted_overrides": [],
+            },
+        }
+        loader.__globals__["torch"] = types.SimpleNamespace(
+            load=lambda _path, **_kwargs: checkpoint,
+        )
+        noise_module = types.ModuleType("noise_rl_module_v2")
+        noise_module.STAGE1_CHECKPOINT_FILENAME = "stage1_rl_checkpoint.pt"
+        noise_module.NOISE_STAGE_CHECKPOINT_FILENAME = "noise_rl_checkpoint.pt"
+        runner_module = types.ModuleType("blb_stage2_rl.runner")
+        runner_module.BLB_STAGE2_FINAL_CHECKPOINT_FILENAME = final_name
+        runner_module.BLB_STAGE2_LIVE_CHECKPOINT_FILENAME = live_name
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            progress_dir = pathlib.Path(tmp_dir) / "stage2_noise" / "progress"
+            progress_dir.mkdir(parents=True)
+            (progress_dir / final_name).write_bytes(b"completed-comparator")
+            evaluator = types.SimpleNamespace(
+                resume_run_dir=tmp_dir,
+                run_output_dir=None,
+                stage2_rl_variant="blb_v3",
+                blb_v3_search_backend="bo_rf",
+                dataset_key="mrpc",
+                log=lambda _message: None,
+                _get_max_noise_configuration=lambda: {
+                    "input_noise_scaling_factors": np.asarray([60], dtype=int),
+                },
+            )
+            with mock.patch.dict(sys.modules, {
+                "noise_rl_module_v2": noise_module,
+                "blb_stage2_rl.runner": runner_module,
+            }):
+                _stage1, stage2 = loader(evaluator)
+
+        self.assertEqual(stage2["status"], "completed")
+        self.assertIs(stage2["strict_feasible"], True)
+        self.assertEqual(stage2["search_backend"], "bo_rf")
+        self.assertEqual(
+            stage2["rl_variant"],
+            "blb_v3_layerwise_search_bo_rf",
+        )
+        self.assertEqual(stage2["final_config_fingerprint"], "e" * 64)
 
     def test_checkpoint_loader_raises_when_blb_checkpoint_cannot_be_loaded(self):
         final_name = "blb_stage2_rl_checkpoint_final.pt"

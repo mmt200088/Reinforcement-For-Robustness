@@ -20,15 +20,19 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         loop_start = text.index("for idx, candidate in enumerate(selected_candidates")
         loop_end = text.index("# ---- Generate cost-matched random candidates", loop_start)
         loop = text[loop_start:loop_end]
+        lifecycle_start = text.index(
+            "def _evaluate_candidate_with_seed_lifecycle("
+        )
+        lifecycle_end = text.index(
+            "def _validate_stage2_final_eval_handoff(", lifecycle_start
+        )
+        lifecycle = text[lifecycle_start:lifecycle_end]
 
         self.assertIn(
-            "self._restore_isolated_candidate_rng_state(\n"
-            "                candidate.metadata, isolated_candidate_rng_state,\n"
-            "            )",
-            loop,
+            "self._evaluate_candidate_with_seed_lifecycle(", loop
         )
         self.assertLess(
-            loop.index("self._restore_isolated_candidate_rng_state("),
+            loop.index("self._evaluate_candidate_with_seed_lifecycle("),
             loop.index("self._evaluate_action_candidate("),
         )
         self.assertIn("def _capture_isolated_candidate_rng_state(", text)
@@ -38,9 +42,66 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         self.assertIn("torch.random.set_rng_state(state[\"torch_cpu\"])", text)
         self.assertIn("torch.cuda.set_rng_state_all(state[\"torch_cuda\"])", text)
         self.assertIn("from function_handler import reseed_noise_rng", text)
+        self.assertIn(
+            "isolate_random_seed=(final_eval_handoff is not None)",
+            text,
+        )
         self.assertIn("reseed_noise_rng(self.random_seed)", text)
-        self.assertIn("finally:", loop)
-        self.assertIn("reseed_noise_rng(None)", loop)
+        self.assertNotIn("formal_noise_seed_authority", lifecycle)
+        self.assertNotIn("paean_candidate_noise_seed_authority(", lifecycle)
+        self.assertIn("finally:", lifecycle)
+        self.assertIn("reseed_noise_rng(None)", lifecycle)
+
+    def test_random_candidates_reset_seed_before_eval_and_restore_entropy(self):
+        text = source_text("Paean/blb_action_eval.py")
+        setup_start = text.index(
+            "random_candidates, cost_match_diagnostics = ("
+        )
+        loop_start = text.index(
+            "for idx, candidate in enumerate(random_candidates, start=1):"
+        )
+        loop_end = text.index(
+            "results = selected_results + random_results", loop_start
+        )
+        setup = text[setup_start:loop_start]
+        loop = text[loop_start:loop_end]
+
+        self.assertIn('"isolate_random_seed": True', setup)
+        self.assertNotIn("formal_noise_seed_authority", setup)
+        self.assertNotIn("paean_candidate_noise_seed_authority(", setup)
+        self.assertIn(
+            "self._evaluate_candidate_with_seed_lifecycle(",
+            loop,
+        )
+        self.assertLess(
+            loop.index("self._evaluate_candidate_with_seed_lifecycle("),
+            loop.index("self._evaluate_action_candidate("),
+        )
+
+    def test_comparator_forward_accepts_configured_common_random_seed(self):
+        text = source_text("Paean/blb_action_eval.py")
+        run_start = text.index("def run(")
+        run_end = text.index("def _resolve_base_action", run_start)
+        run_source = text[run_start:run_end]
+
+        self.assertNotIn(
+            "formal comparator final-eval requires random seed 42",
+            run_source,
+        )
+        self.assertIn("self._build_rescale_bridge(", run_source)
+        self.assertIn("self._evaluate_action_candidate(", run_source)
+        self.assertIn("reseed_noise_rng(self.random_seed)", text)
+
+    def test_evaluation_protocol_random_groups_uses_actual_result_count(self):
+        text = source_text("Paean/blb_action_eval.py")
+        self.assertIn(
+            '"random_groups": ("enabled" if len(candidate_results) > 1 else "disabled"),',
+            text,
+        )
+        self.assertNotIn(
+            '"random_groups": "enabled" if self.random_enabled else "disabled",',
+            text,
+        )
 
     def test_evaluation_protocol_reuses_action_spec_tuples_until_json_conversion(self):
         text = source_text("Paean/blb_action_eval.py")

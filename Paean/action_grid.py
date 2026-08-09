@@ -345,6 +345,7 @@ def build_action_candidates(
     max_sfs: Any = None,
     gelu_degree: object = 4,
     attn_degree: object = 4,
+    isolate_random_seed: bool = False,
 ) -> List[ActionCandidate]:
     num_layers = int(num_layers)
     if num_layers <= 0:
@@ -401,13 +402,16 @@ def build_action_candidates(
             raise ValueError(f"fixed action spec must contain exactly one value: {spec!r}")
         _set_selector_value(base, num_layers, decode_max_sfs, selector, int(values[0]))
 
+    candidate_metadata = dict(config.metadata) if config is not None else {}
+    if isolate_random_seed:
+        candidate_metadata["isolate_random_seed"] = True
     if not ranges:
         return [
             ActionCandidate(
                 name="ActionSelected",
                 action_vec=base.copy(),
                 overrides={},
-                metadata=(dict(config.metadata) if config is not None else {}),
+                metadata=candidate_metadata,
             )
         ]
 
@@ -433,7 +437,7 @@ def build_action_candidates(
                 name=label,
                 action_vec=vec,
                 overrides=overrides,
-                metadata=(dict(config.metadata) if config is not None else {}),
+                metadata=dict(candidate_metadata),
             )
         )
     return candidates

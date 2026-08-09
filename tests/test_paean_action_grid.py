@@ -53,6 +53,21 @@ def _load_action_grid_module():
 
 
 class PaeanActionGridTest(unittest.TestCase):
+    def test_selected_candidate_requests_isolated_noise_seed(self):
+        action_grid = _load_action_grid_module()
+
+        candidates = action_grid.build_action_candidates(
+            num_layers=1,
+            profile="mrpc",
+            base_action_vec=[1, 2, 3],
+            isolate_random_seed=True,
+        )
+
+        self.assertEqual(len(candidates), 1)
+        self.assertIs(
+            candidates[0].metadata.get("isolate_random_seed"), True
+        )
+
     def test_batch_manifest_expands_named_isolated_candidates(self):
         action_grid = _load_action_grid_module()
         action_grid.action_dims_for_config = lambda _num_layers: [4, 4, 4]

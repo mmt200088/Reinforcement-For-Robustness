@@ -1,3 +1,5 @@
+from pathlib import Path
+import tempfile
 import unittest
 from unittest import mock
 
@@ -38,6 +40,49 @@ class ValidatePresetTest(unittest.TestCase):
                 (4, "--stage2-rl-episodes", "60000"),
             ],
         )
+
+    def test_extract_python_argparse_flags_includes_multiline_aliases(self):
+        source = "﻿" + """import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--simple")
+parser.add_argument(
+    "--action-range",
+    "--range",
+    dest="action_ranges",
+    action="append",
+)
+"""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "config.py"
+            path.write_text(source, encoding="utf-8")
+
+            flags = validate_preset.extract_python_argparse_flags(str(path))
+            repeatable = (
+                validate_preset.extract_python_argparse_repeatable_flags(
+                    str(path)
+                )
+            )
+
+        self.assertEqual(flags, {"--simple", "--action-range", "--range"})
+        self.assertEqual(repeatable, {"--action-range", "--range"})
+
+    def test_repeatable_flags_are_not_reported_as_duplicates(self):
+        entries = [
+            (1, "--range", "block1.truncation=6,7"),
+            (2, "--range", "block2.truncation=8,9"),
+        ]
+        with mock.patch.object(
+                validate_preset,
+                "extract_preset_flags",
+                return_value=entries,
+        ):
+            problems = validate_preset.validate_preset(
+                "unused.conf",
+                {"--range"},
+                repeatable_flags={"--range"},
+            )
+
+        self.assertEqual(problems, [])
 
 
 if __name__ == "__main__":

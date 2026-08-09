@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import operator
 from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence, Tuple
 
@@ -118,6 +119,57 @@ def _validated_num_layers(num_layers: int) -> int:
     if layers < 1:
         raise ValueError(f"num_layers must be >= 1, got {layers}")
     return layers
+
+
+def truncation_k_summary_from_full_action(
+        action_vec: Sequence[int],
+        num_layers: int,
+        *,
+        k_levels: Sequence[int] = K_LEVELS,
+        ) -> Tuple[int, int, float]:
+    """Decode the five per-layer K slots from one legacy full action vector."""
+    layers = _validated_num_layers(num_layers)
+    levels = validate_exact_k_domain(k_levels)
+    try:
+        raw_values = tuple(action_vec)
+    except TypeError as exc:
+        raise ValueError("Stage-2 full action vector must be a sequence") from exc
+    expected_length = layers * _LAYER_WIDTH + 1
+    if len(raw_values) != expected_length:
+        raise ValueError(
+            "Stage-2 full action vector length mismatch: "
+            f"expected {expected_length}, got {len(raw_values)}"
+        )
+    values = []
+    try:
+        for value in raw_values:
+            if isinstance(value, bool) or type(value).__name__ == "bool_":
+                raise TypeError("boolean action indices are invalid")
+            values.append(operator.index(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Stage-2 full action vector must contain only integer indices"
+        ) from exc
+
+    total = 0
+    count = 0
+    for layer_idx in range(layers):
+        layer_start = layer_idx * _LAYER_WIDTH
+        for block_idx in _BLOCK_ORDER:
+            slot = (
+                layer_start
+                + _BLOCK_STARTS[block_idx]
+                + _BLOCK_SLOT_COUNTS[block_idx]
+                - 1
+            )
+            level_index = values[slot]
+            if not 0 <= level_index < len(levels):
+                raise ValueError(
+                    f"Stage-2 K action index {level_index} is out of range"
+                )
+            total += int(levels[level_index])
+            count += 1
+    return int(total), int(count), float(total / count)
 
 
 def layerwise_action_space_version(num_layers: int) -> str:
@@ -434,6 +486,46 @@ def layerwise_schedule(
         _validate_graphs(spec, fusion_map)
         specs.append(spec)
     return specs
+
+
+def layerwise_fusion_option_by_step(
+        action_matrix: Sequence[Sequence[int]],
+        schedule: Sequence[LayerwiseStepSpec],
+        fusion_map: Any,
+        ) -> Mapping[str, int]:
+    """Project the compact action to the executable legacy fusion-step map.
+
+    The step keys match :func:`action_space.step_schedule`: layer 0 owns
+    ``B2,B4,B5`` and later layers own ``B1,B2,B4,B5``. Comparator actions fix
+    Block 2 and Block 5 at fusion-count 1 while selecting Block 4 per layer.
+    """
+    rows = tuple(tuple(int(value) for value in row) for row in action_matrix)
+    specs = tuple(schedule)
+    if not rows or len(rows) != len(specs):
+        raise ValueError(
+            "action_matrix and schedule must contain the same nonzero layer count"
+        )
+    if any(len(row) != len(LAYERWISE_SLOT_NAMES) for row in rows):
+        raise ValueError("action_matrix must have shape num_layers x 2")
+
+    option_by_step: dict[str, int] = {}
+    legacy_step_idx = 0
+    for row, spec in zip(rows, specs):  # noqa: B905 - lengths checked above
+        _validate_layer_action(row, spec)
+        graph_keys = dict(spec.graph_keys_by_block)
+        block_order = (2, 4, 5) if int(spec.layer_idx) == 0 else (1, 2, 4, 5)
+        for block_idx in block_order:
+            if block_idx in (2, 4, 5):
+                fusion_count = int(row[0]) if block_idx == 4 else 1
+                graph_key = graph_keys[block_idx]
+                option = _unique_option_for_fusion_count(
+                    fusion_map,
+                    graph_key,
+                    fusion_count,
+                )
+                option_by_step[str(legacy_step_idx)] = int(option.option_id)
+            legacy_step_idx += 1
+    return MappingProxyType(option_by_step)
 
 
 def _block_offsets(layer_idx: int, block_idx: int) -> range:

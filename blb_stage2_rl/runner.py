@@ -3327,6 +3327,8 @@ class BLBStage2RLRunner:
                 split_name, probe_size, probe_seed=int(train_cfg.seed),
             )
         except Exception:
+            if getattr(ev, "mrpc_reproducibility", None) is not None:
+                raise
             probe_subset = None
 
         if probe_subset is None:
@@ -3341,6 +3343,7 @@ class BLBStage2RLRunner:
             probe_subset,
             batch_size=int(ev.batch_size),
             shuffle=False,
+            drop_last=False,
             collate_fn=ev.data_collator,
             pin_memory=torch.cuda.is_available(),
         )
@@ -3377,6 +3380,7 @@ class BLBStage2RLRunner:
             validation_full,
             batch_size=int(ev.batch_size),
             shuffle=False,
+            drop_last=False,
             collate_fn=ev.data_collator,
             pin_memory=torch.cuda.is_available(),
         )

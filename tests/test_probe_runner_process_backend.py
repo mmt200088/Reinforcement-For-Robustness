@@ -80,6 +80,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 fail_receive_once=False,
                 receive_error=None,
                 duplicate_result=False,
+                partial_grouped_then_fail_once=False,
                 ):
             self.device = torch.device(f"cuda:{int(device_id)}")
             self.events = events
@@ -88,6 +89,9 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             self.fail_receive_once = fail_receive_once
             self.receive_error = receive_error
             self.duplicate_result = duplicate_result
+            self.partial_grouped_then_fail_once = (
+                partial_grouped_then_fail_once
+            )
             self.pending = None
             self.closed = False
             self.close_count = 0
@@ -98,7 +102,7 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 raise RuntimeError("child submit marker")
             self.pending = (operation, payload)
 
-        def receive(self, operation):
+        def receive(self, operation, result_handler=None):
             self.events.append(("remote-receive", operation))
             if self.fail_receive:
                 raise RuntimeError("child traceback marker")
@@ -109,6 +113,26 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
                 raise self.receive_error
             self.assert_pending(operation)
             _, payload = self.pending
+            if (
+                    operation == "run_action_trial_groups"
+                    and self.partial_grouped_then_fail_once
+            ):
+                self.partial_grouped_then_fail_once = False
+                first_group = payload["action_groups"][0]
+                first_trial = int(first_group["trial_indices"][0])
+                if result_handler is None:
+                    raise AssertionError("streaming result needs a handler")
+                result_handler({
+                    "action_index": int(first_group["action_index"]),
+                    "trial_index": first_trial,
+                    "result": (
+                        float(first_trial),
+                        float(first_group["base_seed"]),
+                        2.0,
+                    ),
+                })
+                self.pending = None
+                raise BrokenPipeError("injected partial replica pipe loss")
             self.pending = None
             if operation == "run_trials":
                 results = [
@@ -248,8 +272,9 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
             [(0.0, 80.0, 2.0), (1.0, 80.0, -1.0), (2.0, 80.0, 2.0)],
         ])
         self.assertEqual(events[0][:2], ("remote-submit", "run_action_trial_groups"))
+        submitted_groups = events[0][2]["action_groups"]
         self.assertEqual(
-            events[0][2]["action_groups"],
+            submitted_groups,
             [
                 {
                     "action_index": 0,
@@ -444,6 +469,33 @@ class ProbeRunnerProcessBackendTest(unittest.TestCase):
         )
         self.assertEqual(payload["pool_generation"], 1)
         self.assertEqual(payload["retry_count"], 0)
+
+    def test_grouped_partial_completion_is_kept_before_replica_crash(self):
+        events = []
+        healthy = self._RemoteWorker(events, device_id=1)
+        failed = self._RemoteWorker(
+            events,
+            device_id=2,
+            partial_grouped_then_fail_once=True,
+        )
+        runner = ProbeRunner(
+            [self._LocalWorker(events)],
+            process_workers=[healthy, failed],
+        )
+        actions = [object(), object()]
+
+        results = runner.run_action_trial_groups(
+            actions,
+            base_seeds=[70, 80],
+            k=3,
+        )
+
+        self.assertEqual(results[0][2], (2.0, 70.0, 2.0))
+        self.assertEqual(
+            runner.last_diagnostics.retried_action_trial_indices,
+            [(1, 2)],
+        )
+        self.assertTrue(failed.closed)
 
     def test_remote_shape_error_remains_fatal(self):
         events = []

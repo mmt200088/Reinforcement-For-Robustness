@@ -43,12 +43,70 @@ _COMPACT_RECORD_TYPES = frozenset({
     "candidate_trial_group_v2", "candidate_promotion_status_v2",
 })
 _INDEXED_RECORD_TYPES = _TRIAL_GROUP_RECORD_TYPES | _PROMOTION_STATUS_RECORD_TYPES
+
+
 # Note: F2 / F3 were intermediate tiers in the original spec; deprecated and
 # removed 2026-05-16. The active ladder is F0 (optimizer-only, no model
 # forward) → F1 (small probe + few MC trials during training) → F4 (full
 # validation_full final eval with real BLB install). Old JSONL records with
 # ``fidelity="F2"`` / ``"F3"`` get rank ``-1`` from ``fidelity_rank`` and
 # surface as legacy entries — they are not lost, just not promotable.
+
+
+def normalize_trial_result_values(
+        result: Sequence[Any],
+        ) -> Tuple[float, float, float]:
+    """Apply the Stage-2 probe aggregation policy to one trial result."""
+    values = tuple(float(value) for value in result)
+    if len(values) != 3:
+        raise ValueError("trial result must contain three metrics")
+    loss, metric1, metric2 = values
+    loss = (
+        100.0
+        if not math.isfinite(loss)
+        else min(100.0, max(0.0, loss))
+    )
+
+    def normalize_metric(value: float) -> float:
+        if math.isnan(value) or value == -math.inf:
+            return 0.0
+        if value == math.inf:
+            return 1.0
+        return value
+
+    return (
+        float(loss),
+        float(normalize_metric(metric1)),
+        float(normalize_metric(metric2)),
+    )
+
+
+def _normalize_trial_series(trials: TrialSeries) -> TrialSeries:
+    normalized = tuple(
+        normalize_trial_result_values((
+            trials.loss[index],
+            trials.metric1[index],
+            trials.metric2[index],
+        ))
+        for index in range(len(trials.seeds))
+    )
+    return TrialSeries(
+        loss=[values[0] for values in normalized],
+        metric1=[values[1] for values in normalized],
+        metric2=[values[2] for values in normalized],
+        seeds=trials.seeds,
+    )
+
+
+def _fsync_directory(path: Path) -> None:
+    directory_fd = os.open(
+        os.fspath(path),
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+    )
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def normalize_action_indices(action_indices: Any) -> List[int]:
@@ -64,6 +122,8 @@ def normalize_action_indices(action_indices: Any) -> List[int]:
         action_indices = json.loads(action_indices)
     if not isinstance(action_indices, Iterable):
         raise TypeError("action_indices must be an iterable of integers")
+    if not isinstance(action_indices, (list, tuple)):
+        action_indices = list(action_indices)
     try:
         return [int(item) for item in action_indices]
     except TypeError:
@@ -99,6 +159,16 @@ def raw_action_hash(action_indices: Any) -> str:
 
 def sha256_json(value: Any) -> str:
     return stable_json_hash(value)
+
+
+def _assign_candidate_identity_field(
+        payload: Dict[str, Any],
+        field: str,
+        expected: Any,
+        ) -> None:
+    if field in payload and payload[field] != expected:
+        raise ValueError(f"candidate identity field mismatch: {field}")
+    payload[field] = expected
 
 
 def _records_from_registry(registry_or_description: Any) -> List[Mapping[str, Any]]:
@@ -548,6 +618,26 @@ class CandidateStore:
             raise ValueError(
                 "candidate compact record references a missing identity context"
             )
+        action = normalize_action_indices(record.get("action_indices", ()))
+        expected = CandidateStore._compact_candidate_identity_fields(
+            action, context, context_hash,
+        )
+        for field, expected_value in expected.items():
+            actual_value = record.get(field)
+            if field == "action_indices":
+                actual_value = normalize_action_indices(actual_value or ())
+            if actual_value != expected_value:
+                raise ValueError(
+                    f"candidate identity field mismatch: {field}"
+                )
+        for field in ("raw_action_indices", "effective_action_indices"):
+            if (
+                    field in record
+                    and normalize_action_indices(record[field]) != action
+            ):
+                raise ValueError(
+                    f"candidate identity field mismatch: {field}"
+                )
         return context
 
     @staticmethod
@@ -568,6 +658,61 @@ class CandidateStore:
             metadata["identity_context"] = copy.deepcopy(dict(context))
             payload["trial_group_metadata"] = metadata
         return payload
+
+    @staticmethod
+    def _validate_legacy_evidence_identity(
+            record: Mapping[str, Any],
+            ) -> None:
+        record_type = str(record.get("record_type", ""))
+        if record_type not in {
+                "candidate_trial_group_v1",
+                "candidate_promotion_status_v1",
+        }:
+            return
+        context = record.get("identity_context")
+        if not isinstance(context, Mapping):
+            raise ValueError("candidate identity context is missing")
+        action = normalize_action_indices(record.get("action_indices", ()))
+        for field in ("raw_action_indices", "effective_action_indices"):
+            if (
+                    field in record
+                    and normalize_action_indices(record[field]) != action
+            ):
+                raise ValueError(
+                    f"candidate identity field mismatch: {field}"
+                )
+        raw_hash = action_hash(action)
+        effective_hash = raw_hash
+        expected = {
+            "raw_action_hash": raw_hash,
+            "action_hash": raw_hash,
+            "action_vector_hash": raw_hash,
+            "effective_action_hash": effective_hash,
+            "candidate_key_basis": "effective_action_hash + identity_context",
+            "candidate_key": candidate_key(
+                action,
+                context,
+                effective_action_indices=action,
+                effective_action_hash_value=effective_hash,
+            ),
+            "identity_context_hash": sha256_json(dict(context)),
+            "legacy_record": False,
+        }
+        for field, expected_value in expected.items():
+            if record.get(field) != expected_value:
+                raise ValueError(
+                    f"candidate identity field mismatch: {field}"
+                )
+        if record_type == "candidate_trial_group_v1":
+            metadata = record.get("trial_group_metadata")
+            if (
+                    not isinstance(metadata, Mapping)
+                    or dict(metadata.get("identity_context") or {})
+                    != dict(context)
+            ):
+                raise ValueError(
+                    "candidate identity field mismatch: trial_group_metadata"
+                )
 
     def _load_recovery_layout(self) -> None:
         self._refresh_external_storage()
@@ -618,7 +763,7 @@ class CandidateStore:
 
         # The newest marker selects a checkpointed logical prefix plus its own
         # tail. Repeating that rule through older markers excludes every
-        # abandoned branch without rewriting any complete physical row.
+        # abandoned branch without rewriting any complete JSONL row.
         self._recovery_layout_size = file_size
         self._recovery_markers = tuple(markers)
         self._active_spans = self._resolve_active_spans(markers, file_size)
@@ -678,6 +823,8 @@ class CandidateStore:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(_CANDIDATE_JSONL_ENCODER.encode(marker) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
             marker_end = self.path.stat().st_size
             markers = self._recovery_markers + (
                 (current, marker_end, size, next_generation),
@@ -724,6 +871,8 @@ class CandidateStore:
                 handle.seek(end)
                 handle.write(b"\n")
                 self._invalidate_recovery_layout()
+            handle.flush()
+            os.fsync(handle.fileno())
 
     def read_all(self) -> List[Dict[str, Any]]:
         return list(self.iter_active_records())
@@ -746,14 +895,16 @@ class CandidateStore:
                 continue
             if record_type in _COMPACT_RECORD_TYPES:
                 payload = self._hydrate_compact_record(payload, context_index)
+            else:
+                self._validate_legacy_evidence_identity(payload)
             payload.setdefault("legacy_record", is_legacy_record(payload))
             yield payload
 
-    def _append_physical_record(
+    def _append_record(
             self,
             record: Mapping[str, Any],
             ) -> Dict[str, Any]:
-        """Append one already-normalized physical row."""
+        """Append one already-normalized JSONL row."""
         payload = dict(record)
         payload.setdefault(
             "created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -761,11 +912,16 @@ class CandidateStore:
         self._refresh_external_storage(for_write=True)
         self._load_recovery_layout()
         payload.setdefault("logical_generation", self._logical_generation)
+        file_existed = self.path.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._repair_unterminated_tail()
         row_offset = self.path.stat().st_size if self.path.exists() else 0
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(_CANDIDATE_JSONL_ENCODER.encode(payload) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        if not file_existed:
+            _fsync_directory(self.path.parent)
         signature = self._current_storage_signature()
         if signature[0]:
             self._extend_active_tail(row_offset, signature[3])
@@ -804,30 +960,45 @@ class CandidateStore:
         payload["action_indices"] = normalize_action_indices(payload["action_indices"])
         payload.setdefault("raw_action_indices", list(payload["action_indices"]))
         payload["raw_action_indices"] = normalize_action_indices(payload["raw_action_indices"])
-        payload.setdefault("raw_action_hash", action_hash(payload["raw_action_indices"]))
-        payload.setdefault("action_hash", payload["raw_action_hash"])
-        payload.setdefault("action_vector_hash", payload["action_hash"])
+        raw_hash = action_hash(payload["raw_action_indices"])
+        _assign_candidate_identity_field(payload, "raw_action_hash", raw_hash)
+        _assign_candidate_identity_field(payload, "action_hash", raw_hash)
+        _assign_candidate_identity_field(payload, "action_vector_hash", raw_hash)
         if "effective_action_indices" in payload:
             payload["effective_action_indices"] = normalize_action_indices(payload["effective_action_indices"])
         else:
             payload["effective_action_indices"] = list(payload["action_indices"])
-        payload.setdefault("effective_action_hash", action_hash(payload["effective_action_indices"]))
-        payload.setdefault("candidate_key_basis", "effective_action_hash + identity_context")
+        effective_hash = action_hash(payload["effective_action_indices"])
+        _assign_candidate_identity_field(
+            payload, "effective_action_hash", effective_hash,
+        )
+        _assign_candidate_identity_field(
+            payload,
+            "candidate_key_basis",
+            "effective_action_hash + identity_context",
+        )
         identity_context = payload.get("identity_context")
         if isinstance(identity_context, Mapping):
-            payload.setdefault(
-                "candidate_key",
-                candidate_key(
-                    payload["action_indices"],
-                    identity_context,
-                    effective_action_indices=payload["effective_action_indices"],
-                    effective_action_hash_value=payload["effective_action_hash"],
-                ),
+            expected_candidate_key = candidate_key(
+                payload["action_indices"],
+                identity_context,
+                effective_action_indices=payload["effective_action_indices"],
+                effective_action_hash_value=effective_hash,
             )
-            payload.setdefault("identity_context_hash", sha256_json(dict(identity_context)))
-        payload.setdefault("legacy_record", is_legacy_record(payload))
+            _assign_candidate_identity_field(
+                payload, "candidate_key", expected_candidate_key,
+            )
+            _assign_candidate_identity_field(
+                payload,
+                "identity_context_hash",
+                sha256_json(dict(identity_context)),
+            )
+        _assign_candidate_identity_field(
+            payload, "legacy_record", is_legacy_record(payload),
+        )
+        self._validate_legacy_evidence_identity(payload)
         payload.setdefault("rank_key", list(candidate_rank_key(payload)))
-        return self._append_physical_record(payload)
+        return self._append_record(payload)
 
     @staticmethod
     def _trial_group_from_record(
@@ -836,12 +1007,13 @@ class CandidateStore:
         group = record.get("trial_group")
         if not isinstance(group, Mapping):
             return None
-        return TrialSeries(
+        stored = TrialSeries(
             loss=group.get("loss", ()),
             metric1=group.get("metric1", ()),
             metric2=group.get("metric2", ()),
             seeds=group.get("seeds", ()),
         )
+        return _normalize_trial_series(stored)
 
     def _index_trial_record(
             self,
@@ -932,6 +1104,8 @@ class CandidateStore:
                     self._compact_record_identity_context(
                         record, self._identity_context_by_hash,
                     )
+                else:
+                    self._validate_legacy_evidence_identity(record)
                 if not record.get("candidate_key"):
                     continue
                 self._index_trial_record(record, offset=offset)
@@ -960,6 +1134,8 @@ class CandidateStore:
                         record = self._hydrate_compact_evidence_record(
                             record, self._identity_context_by_hash,
                         )
+                    else:
+                        self._validate_legacy_evidence_identity(record)
                     yield record
 
     @staticmethod
@@ -992,7 +1168,7 @@ class CandidateStore:
             if existing != context:
                 raise ValueError("candidate identity context hash collision")
             return context_hash
-        self._append_physical_record({
+        self._append_record({
             "record_type": _IDENTITY_CONTEXT_RECORD_TYPE,
             "identity_context_hash": context_hash,
             "identity_context": context,
@@ -1044,6 +1220,7 @@ class CandidateStore:
             raise ValueError("robust trial evidence requires nonempty aligned seeds")
         if len(set(trials.seeds)) != len(trials.seeds):
             raise ValueError("duplicate trial seeds within trial group")
+        trials = _normalize_trial_series(trials)
 
         normalized_action = normalize_action_indices(action_indices)
         wanted_key = candidate_key(normalized_action, identity_context)
@@ -1141,7 +1318,7 @@ class CandidateStore:
                 "trial_group_metadata": metadata_payload,
             }
             payload["rank_key"] = list(candidate_rank_key(payload))
-            return self._append_physical_record(payload)
+            return self._append_record(payload)
 
         return self.append({
             "record_type": "candidate_trial_group_v1",
@@ -1185,7 +1362,7 @@ class CandidateStore:
             ),
         }
         payload["rank_key"] = list(candidate_rank_key(payload))
-        return self._append_physical_record(payload)
+        return self._append_record(payload)
 
     def trial_evidence_for_action(
             self,

@@ -1,15 +1,30 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+import numpy as np
+
+from blb_stage2_rl.candidate_store import action_hash
+from blb_stage2_rl.fusion_count_map import FusionCountMap
+from blb_stage2_rl.layerwise_action import (
+    layerwise_schedule,
+    materialize_layerwise_counterfactuals,
+)
+from blb_stage2_rl.precision_presets import allocated_precision_tolerances
 from blb_stage2_rl.reward import EpisodeMetrics
+import blb_stage2_rl.search_baseline_runner as search_runner_module
 from blb_stage2_rl.search_baseline_runner import (
     LayerwiseRuntimeEvaluator,
+    _atomic_json,
+    _strict_fallback_rank,
+    _strict_selected_rank,
     canonical_strict_validation,
     limits_from_reference,
     load_search_preload,
@@ -26,6 +41,7 @@ from blb_stage2_rl.search_baselines import (
     candidate_rank_key,
     run_search,
 )
+from blb_stage2_rl.seed_utils import derive_probe_trial_seed
 
 
 class _Reference:
@@ -37,11 +53,91 @@ class _Reference:
     metric2_std_limit = 0.018
 
 
+def _reference(*, metric1_limit=0.89):
+    return SimpleNamespace(
+        loss_limit=1.01,
+        metric1_limit=float(metric1_limit),
+        metric2_limit=0.84,
+        loss_std_limit=0.02,
+        metric1_std_limit=0.015,
+        metric2_std_limit=0.018,
+    )
+
+
+def _strict_identity_context(marker="a"):
+    return {"profile": "mrpc", "fixture_marker": str(marker)}
+
+
+def _search_manifest(**overrides):
+    payload = {"profile": "mrpc"}
+    payload.update(overrides)
+    return payload
+
+
+def _canonical_test_materializations(action_matrix):
+    rows = tuple(tuple(int(value) for value in row) for row in action_matrix)
+    fusion_map = FusionCountMap.load("mrpc")
+    schedule = layerwise_schedule(
+        len(rows),
+        fusion_map,
+        profile="mrpc",
+        gelu_degrees=[4] * len(rows),
+    )
+    baseline = np.zeros(len(rows) * 73 + 1, dtype=np.int64)
+    return materialize_layerwise_counterfactuals(
+        baseline,
+        rows,
+        schedule,
+        fusion_map,
+    )
+
+
+def _serialized_test_boosted_overrides(value):
+    return [
+        {
+            "block_idx": int(block_idx),
+            "layer_idx": int(layer_idx),
+            "field_values": {
+                str(name): int(field_value)
+                for name, field_value in fields.items()
+            },
+        }
+        for (block_idx, layer_idx), fields in sorted(
+            value.items(),
+            key=lambda item: (item[0][1], item[0][0]),
+        )
+    ]
+
+
+
+
+
+
+def _candidate_store_stub(path="/tmp/candidates.jsonl"):
+    return SimpleNamespace(path=path)
+
+
 class _BaseEnv:
     def __init__(self):
         self.probe_noise_seed = None
         self.clear_count = 0
         self.env_cfg = SimpleNamespace(num_trials_per_step=3)
+        self.prepare_calls = 0
+
+    def prepare_action_for_terminal_probe(
+            self, action_indices, **_kwargs,
+            ):
+        self.prepare_calls += 1
+        return {
+            "requires_forward": True,
+            "any_invalid": False,
+            "decoded": {
+                "action_indices": tuple(
+                    int(value) for value in action_indices
+                ),
+            },
+            "final_config_fingerprint": "f" * 64,
+        }
 
     def clear_installed_blb(self):
         self.clear_count += 1
@@ -51,10 +147,17 @@ class _LayerwiseEnv:
     horizon = 2
     communication_importance_ratio = 1.0
 
-    def __init__(self, *, forward_ran=True, model_uses_replan=True):
+    def __init__(
+            self,
+            *,
+            forward_ran=True,
+            model_uses_replan=True,
+            final_config_fingerprint="f" * 64,
+            ):
         self.base = _BaseEnv()
-        self.forward_ran = bool(forward_ran)
-        self.model_uses_replan = bool(model_uses_replan)
+        self.forward_ran = forward_ran
+        self.model_uses_replan = model_uses_replan
+        self.final_config_fingerprint = final_config_fingerprint
         self.rows = []
         self.runtime_terminal_info = None
         self.boosted_overrides = {(4, 0): {"slot": 47}}
@@ -71,6 +174,11 @@ class _LayerwiseEnv:
         done = len(self.rows) == self.horizon
         if not done:
             return [0.0], 0.0, False, {"layer_idx": len(self.rows) - 1}
+        joint = _canonical_test_materializations(self.rows)["joint"]
+        self.pending_full_vector = [
+            int(value) for value in joint.full_vector
+        ]
+        self.boosted_overrides = dict(joint.boosted_overrides)
         self.runtime_terminal_info = {
             "metrics": EpisodeMetrics(
                 loss_mean=1.0,
@@ -89,6 +197,7 @@ class _LayerwiseEnv:
             "replan_application": {
                 "model_uses_replan_config": self.model_uses_replan,
             },
+            "final_config_fingerprint": self.final_config_fingerprint,
             "statistical_assessment": {
                 "loss_precision_probability": 0.91,
                 "metric1_precision_probability": 0.92,
@@ -106,7 +215,7 @@ class _LayerwiseEnv:
             "reward_breakdown": {"priority": 3},
         }
         return [0.0], 1.25, True, {
-            "pending_full_vector": [1, 2, 3],
+            "pending_full_vector": list(self.pending_full_vector),
         }
 
 
@@ -145,13 +254,37 @@ class _InvalidCandidateLayerwiseEnv(_LayerwiseEnv):
         return state, reward, done, info
 
 
+class _AlwaysInvalidLayerwiseEnv(_InvalidCandidateLayerwiseEnv):
+    def step(self, row):
+        state, reward, done, info = super().step(row)
+        if done:
+            self.runtime_terminal_info.update({
+                "invalid": True,
+                "forward_ran": False,
+                "materialization_failure_reason": "optimizer_invalid_chain",
+                "forward_skipped_reason": "optimizer_invalid_chain",
+                "optimizer_invalid_summary": "all candidates invalid",
+            })
+        return state, reward, done, info
+
+
+
+
 def _search_evaluation(
         action_matrix,
         *,
         metric1_mean=0.90,
         valid=True,
         materializable=True,
+        canonical_materializations=None,
         ):
+    materializations = canonical_materializations
+    if materializations is None and materializable and len(action_matrix) == 2:
+        materializations = _canonical_test_materializations(action_matrix)
+    joint = (
+        materializations["joint"]
+        if materializations is not None else None
+    )
     return SearchEvaluation(
         action_matrix=action_matrix,
         metrics=SearchMetrics(
@@ -173,12 +306,23 @@ def _search_evaluation(
         valid=valid,
         reward=1.0,
         metadata={
-            "pending_full_vector": [
-                value for row in action_matrix for value in row
-            ] if materializable else [],
-            "boosted_overrides": [],
+            "pending_full_vector": (
+                [int(value) for value in joint.full_vector]
+                if joint is not None
+                else (
+                    [value for row in action_matrix for value in row]
+                    if materializable else []
+                )
+            ),
+            "boosted_overrides": (
+                _serialized_test_boosted_overrides(
+                    joint.boosted_overrides
+                )
+                if joint is not None else []
+            ),
             "statistical_assessment": {"bootstrap_seed": 1234},
             "materializable": bool(materializable),
+            "final_config_fingerprint": "f" * 64,
         },
     )
 
@@ -193,10 +337,284 @@ def _search_result(*evaluations):
     )
 
 
+def _five_eligible_evaluations(*evaluations):
+    owned = list(evaluations)
+    actions = {evaluation.action_matrix for evaluation in owned}
+    for action in (
+            ((0, 0), (0, 0)),
+            ((1, 0), (0, 0)),
+            ((0, 1), (0, 0)),
+            ((0, 0), (1, 0)),
+            ((1, 1), (0, 0)),
+            ((0, 2), (1, 2)),
+            ((1, 2), (1, 2)),
+            ):
+        if action in actions:
+            continue
+        owned.append(_search_evaluation(action))
+        actions.add(action)
+        if len(owned) == 5:
+            break
+    if len(owned) != 5:
+        raise AssertionError("test fixture requires five distinct evaluations")
+    return tuple(owned)
+
+
+_STRICT_BANK_PROBE_SEEDS = {
+    "A": (101, 102, 103, 104, 105),
+    "B": (201, 202, 203, 204, 205),
+    "C": (301, 302, 303, 304, 305),
+}
+_STRICT_TRIALS_PER_PROBE = 3
+_STRICT_BATCH_SET_KEY = "validation_full"
+
+
+def _strict_metrics_from_trial_results(results):
+    rows = tuple(dict(result) for result in results)
+    values = {
+        name: np.asarray([row[name] for row in rows], dtype=np.float64)
+        for name in ("loss", "metric1", "metric2")
+    }
+    return {
+        "loss_mean": float(np.mean(values["loss"])),
+        "metric1_mean": float(np.mean(values["metric1"])),
+        "metric2_mean": float(np.mean(values["metric2"])),
+        "loss_std": float(np.std(values["loss"], ddof=1)),
+        "metric1_std": float(np.std(values["metric1"], ddof=1)),
+        "metric2_std": float(np.std(values["metric2"], ddof=1)),
+    }
+
+
+def _strict_fixture_metrics(trial_count=45):
+    result = {"loss": 1.0, "metric1": 0.90, "metric2": 0.85}
+    return _strict_metrics_from_trial_results(
+        result for _ in range(int(trial_count))
+    )
+
+
+def _strict_validation_bank_contract():
+    banks = {}
+    for label, probe_seeds in _STRICT_BANK_PROBE_SEEDS.items():
+        trial_seeds = [
+            derive_probe_trial_seed(base_seed, trial_index)
+            for base_seed in probe_seeds
+            for trial_index in range(_STRICT_TRIALS_PER_PROBE)
+        ]
+        banks[label] = {
+            "probe_seeds": list(probe_seeds),
+            "trial_seeds": trial_seeds,
+            "trials_per_probe": _STRICT_TRIALS_PER_PROBE,
+            "trial_count": len(trial_seeds),
+        }
+    return {
+        "schema_version": "layerwise_validation_banks_v1",
+        "banks": banks,
+        "promotion_trial_count": 30,
+        "final_trial_count": 45,
+        "hard_gate": "canonical",
+        "bootstrap_probability_role": "diagnostic_tiebreak_only",
+    }
+
+
+def _strict_banks_for_trial_count(strict_trial_count):
+    trial_count = int(strict_trial_count)
+    if trial_count not in (15, 30, 45):
+        raise ValueError("strict trial count must be a complete bank prefix")
+    return ("A", "B", "C")[:trial_count // 15]
+
+
+def _strict_axis_action(full_vector, axis_name):
+    offset = 100 if axis_name == "compute" else 200
+    return tuple(offset + int(value) for value in full_vector)
+
+
+def _strict_axis_counterfactuals(materializations, banks_run):
+    bank_contract = _strict_validation_bank_contract()["banks"]
+    out = {}
+    for axis_name, materialization_name in (
+            ("compute", "compute_only"),
+            ("communication", "communication_only"),
+    ):
+        cumulative = 0
+        axis_banks = {}
+        for label in banks_run:
+            cumulative += int(bank_contract[label]["trial_count"])
+            axis_banks[label] = {
+                "trial_count": cumulative,
+                "metrics": _strict_fixture_metrics(cumulative),
+            }
+        materialization = materializations[materialization_name]
+        full_vector = [
+            int(value) for value in materialization.full_vector
+        ]
+        out[axis_name] = {
+            "mode": materialization.mode,
+            "full_vector": full_vector,
+            "action_hash": action_hash(full_vector),
+            "boosted_overrides": _serialized_test_boosted_overrides(
+                materialization.boosted_overrides
+            ),
+            "final_config_fingerprint": "f" * 64,
+            "precision_tolerance": 0.001,
+            "banks": axis_banks,
+            "metrics": _strict_fixture_metrics(cumulative),
+        }
+    return out
+
+
+def _strict_artifact(
+        result,
+        *,
+        strict_feasible=True,
+        strict_trial_count=45,
+        selected_updates=None,
+        strict_metrics=None,
+        ):
+    ranked = sorted(
+        (
+            candidate for candidate in result.observations
+            if (
+                candidate.valid
+                and candidate.inference_performed
+                and bool(candidate.metadata.get("materializable", False))
+                and bool(candidate.metadata.get("pending_full_vector"))
+            )
+        ),
+        key=candidate_rank_key,
+        reverse=True,
+    )[:5]
+    if len(ranked) != 5:
+        raise ValueError("strict test artifact requires five eligible candidates")
+    banks_run = _strict_banks_for_trial_count(strict_trial_count)
+    not_run_banks = [
+        label for label in ("A", "B", "C") if label not in banks_run
+    ]
+    default_metrics = _strict_fixture_metrics(strict_trial_count)
+    if not strict_feasible:
+        default_metrics = {**default_metrics, "metric1_mean": 0.88}
+    joint_metrics = SearchMetrics.from_dict(
+        default_metrics if strict_metrics is None else strict_metrics
+    )
+    axis_metrics = SearchMetrics.from_dict(default_metrics)
+    records = []
+    strict_evaluations = []
+    for online in ranked:
+        materializations = _canonical_test_materializations(
+            online.action_matrix
+        )
+        violations = {
+            "families": {
+                name: {
+                    "available": True,
+                    "point_pass": bool(strict_feasible),
+                    "trial_count": int(strict_trial_count),
+                    "banks_run": list(banks_run),
+                    "not_run_banks": list(not_run_banks),
+                    "metrics": (
+                        joint_metrics if name == "joint" else axis_metrics
+                    ).as_dict(),
+                }
+                for name in (
+                    "joint", "compute_only", "communication_only",
+                )
+            },
+            "aggregate": {
+                "failed_constraint_count": 0 if strict_feasible else 1,
+                "total_normalized_violation": (
+                    0.0 if strict_feasible else 0.1
+                ),
+                "worst_normalized_violation": (
+                    0.0 if strict_feasible else 0.1
+                ),
+                "unavailable_family_count": 0,
+            },
+        }
+        strict_payload = SearchEvaluation(
+            action_matrix=online.action_matrix,
+            metrics=joint_metrics,
+            limits=online.limits,
+            valid=True,
+            reward=online.reward,
+            communication_importance_ratio=1.0,
+            constraint_probabilities=online.constraint_probabilities,
+            gate_probability=online.gate_probability,
+            metadata={
+                **online.metadata,
+                "strict_trial_count": int(strict_trial_count),
+                "strict_final_assessment": {
+                    name: 0.99
+                    for name in (
+                        "loss", "metric1", "metric2", "loss_std",
+                        "metric1_std", "metric2_std",
+                    )
+                },
+                "strict_axis_counterfactuals": (
+                    _strict_axis_counterfactuals(
+                        materializations, banks_run,
+                    )
+                ),
+                "strict_materialization_fingerprints": {
+                    family: "f" * 64
+                    for family in (
+                        "joint", "compute_only", "communication_only",
+                    )
+                },
+                "strict_violations": violations,
+            },
+        ).as_dict()
+        strict_payload.update(dict(selected_updates or {}))
+        strict_evaluation = SearchEvaluation.from_dict(strict_payload)
+        strict_evaluations.append(strict_evaluation)
+        records.append({
+            "online_candidate": online.as_dict(),
+            "strict_evaluated": True,
+            "selection_eligible": True,
+            "strict_point_pass": bool(strict_feasible),
+            "strict_feasible": bool(strict_feasible),
+            "strict_trial_count": int(strict_trial_count),
+            "strict_evaluation": strict_evaluation.as_dict(),
+            "violations": violations,
+        })
+    selection_status = (
+        "strict_feasible" if strict_feasible else "strict_least_violating"
+    )
+    rank_key = _strict_selected_rank if strict_feasible else _strict_fallback_rank
+    selected_evaluation = max(strict_evaluations, key=rank_key)
+    selected_violations = selected_evaluation.metadata["strict_violations"]
+    selected = {
+        **selected_evaluation.as_dict(),
+        "selection_status": selection_status,
+        "strict_feasible": bool(strict_feasible),
+        "violations": selected_violations,
+    }
+    return {
+        "schema_version": "stage2_search_strict_validation_v3",
+        "requested_top_n": 5,
+        "strict_evaluated_candidate_count": 5,
+        "online_best": result.best.as_dict(),
+        "selection_status": selection_status,
+        "strict_feasible": bool(strict_feasible),
+        "selected_violations": selected_violations,
+        "selected": selected,
+        "validation_banks": _strict_validation_bank_contract(),
+        "records": records,
+    }
+
+
+
+
+
+
+
+
 def _promotion_result(
         *, status, trial_count, metrics, fresh_trial_count=0,
-        assessment=None, axis_counterfactuals=None,
+        assessment=None, axis_counterfactuals=None, evidence=None,
         ):
+    if evidence is None and metrics is not None:
+        evidence = SimpleNamespace(groups=[{
+            "final_config_fingerprint": "f" * 64,
+        }])
     return SimpleNamespace(
         status=status,
         trial_count=trial_count,
@@ -204,20 +622,152 @@ def _promotion_result(
         metrics=metrics,
         assessment=assessment,
         axis_counterfactuals=axis_counterfactuals,
+        evidence=evidence,
     )
 
 
-def _validation_banks():
+def _strict_materialization_fingerprints():
+    return {
+        family: "f" * 64
+        for family in ("joint", "compute_only", "communication_only")
+    }
+
+
+def _patch_strict_materialization_preparation():
+    return patch(
+        "blb_stage2_rl.search_baseline_runner."
+        "_prepare_strict_materialization_fingerprints",
+        return_value=_strict_materialization_fingerprints(),
+    )
+
+
+def _passing_axis_counterfactuals(metrics):
+    payload = {
+        "final_config_fingerprint": "f" * 64,
+        "loss_limit": 1.01,
+        "metric1_limit": 0.89,
+        "metric2_limit": 0.84,
+        "loss_std_limit": 0.02,
+        "metric1_std_limit": 0.015,
+        "metric2_std_limit": 0.018,
+        "banks": {
+            label: {
+                "trial_count": trial_count,
+                "fresh_trial_count": 15,
+                "metrics": metrics,
+                "point_pass": True,
+            }
+            for label, trial_count in (("A", 15), ("B", 30), ("C", 45))
+        },
+        "point_pass": True,
+        "metrics": metrics,
+    }
+    return {"compute": payload, "communication": payload}
+
+
+def _passing_strict_violations():
+    return {
+        "families": {
+            name: {
+                "available": True,
+                "point_pass": True,
+                "not_run_banks": [],
+            }
+            for name in ("joint", "compute_only", "communication_only")
+        },
+        "aggregate": {
+            "failed_constraint_count": 0,
+            "total_normalized_violation": 0.0,
+            "worst_normalized_violation": 0.0,
+            "unavailable_family_count": 0,
+        },
+    }
+
+
+def _validation_banks(
+        *, bank_a_reference=None, promotion_reference=None,
+        final_reference=None,
+        ):
+    bank_a_reference = bank_a_reference or _Reference()
+    promotion_reference = promotion_reference or _Reference()
+    final_reference = final_reference or _Reference()
     return SimpleNamespace(
-        bank_a=SimpleNamespace(trial_count=15),
+        bank_a=SimpleNamespace(
+            trial_count=15,
+            reference=bank_a_reference,
+        ),
         promotion_trial_count=30,
         final_trial_count=45,
-        final_reference=_Reference(),
-        contract_payload=lambda: {"hard_gate": "canonical"},
+        promotion_reference=promotion_reference,
+        final_reference=final_reference,
+        contract_payload=_strict_validation_bank_contract,
     )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class RuntimeEvaluatorTests(unittest.TestCase):
+    def test_duplicate_persisted_observation_row_fails_closed(self):
+        evaluation = _search_evaluation(((0, 0), (0, 0)))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "observations.jsonl")
+            with open(path, "w", encoding="utf-8") as handle:
+                row = json.dumps(evaluation.as_dict(), sort_keys=True)
+                handle.write(row + "\n" + row + "\n")
+
+            with self.assertRaisesRegex(
+                    ValueError, "duplicate Stage-2 observation",
+            ):
+                load_search_preload(path)
+
+    def test_atomic_json_durably_commits_before_return(self):
+        events = []
+        real_replace = os.replace
+
+        def tracked_replace(source, target):
+            events.append("replace")
+            return real_replace(source, target)
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+                "blb_stage2_rl.search_baseline_runner.os.fsync",
+                side_effect=lambda _fd: events.append("fsync"),
+        ), patch(
+                "blb_stage2_rl.search_baseline_runner.os.replace",
+                side_effect=tracked_replace,
+        ):
+            _atomic_json(
+                os.path.join(tmpdir, "artifact.json"),
+                {"status": "complete"},
+            )
+
+        self.assertEqual(events, ["fsync", "replace", "fsync"])
+
     def test_real_layerwise_path_yields_all_six_metrics_and_audit_fields(self):
         env = _LayerwiseEnv()
         callback_rows = []
@@ -246,10 +796,93 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         self.assertEqual(result.metadata["bootstrap_seed"], 1234)
         self.assertEqual(
             result.metadata["boosted_overrides"],
-            [{"block_idx": 4, "layer_idx": 0, "field_values": {"slot": 47}}],
+            _serialized_test_boosted_overrides(
+                _canonical_test_materializations(
+                    ((1, 2), (0, 1))
+                )["joint"].boosted_overrides
+            ),
         )
         self.assertEqual(len(callback_rows), 1)
         self.assertGreaterEqual(env.base.clear_count, 1)
+
+    def test_real_layerwise_path_preserves_final_config_fingerprint(self):
+        evaluator = LayerwiseRuntimeEvaluator(
+            env=_LayerwiseEnv(final_config_fingerprint="e" * 64),
+            reference=_Reference(),
+            base_seed=17,
+            expected_trials=3,
+        )
+
+        result = evaluator(((1, 2), (0, 1)))
+
+        self.assertEqual(
+            result.metadata["final_config_fingerprint"], "e" * 64,
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def test_completed_resume_does_not_publish_pending_strict_context(self):
+        kwargs = {
+            "backend": "greedy",
+            "robust_reference": _Reference(),
+            "evaluation_budget": 36,
+            "seed": 42,
+            "initial_design_size": 2,
+            "candidate_pool_size": 8,
+            "population_size": 4,
+            "patience_generations": 5,
+            "mutation_max_coordinates": 1,
+            "rf_n_estimators": 8,
+            "rf_min_samples_leaf": 1,
+            "communication_importance_ratio": 1.0,
+            "manifest": _search_manifest(),
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            completed = run_layerwise_search_baseline(
+                layerwise_env=_LayerwiseEnv(),
+                output_dir=tmpdir,
+                strict_validator=lambda result: _strict_artifact(
+                    result, strict_feasible=True,
+                ),
+                **kwargs,
+            )
+
+            reopened = run_layerwise_search_baseline(
+                layerwise_env=_LayerwiseEnv(),
+                output_dir=tmpdir,
+                strict_validator=lambda _result: self.fail(
+                    "completed strict validation must not rerun"
+                ),
+                pending_strict_context_writer=lambda _contract: self.fail(
+                    "completed reopen must not publish pending strict context"
+                ),
+                **kwargs,
+            )
+
+        self.assertEqual(
+            reopened["result"].best.as_dict(),
+            completed["result"].best.as_dict(),
+        )
+
+
+
+
 
     def test_missing_real_forward_fails_closed(self):
         evaluator = LayerwiseRuntimeEvaluator(
@@ -272,6 +905,43 @@ class RuntimeEvaluatorTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "replan"):
             evaluator(((0, 0), (0, 0)))
+
+    def test_truthy_nonboolean_forward_evidence_fails_closed(self):
+        evaluator = LayerwiseRuntimeEvaluator(
+            env=_LayerwiseEnv(forward_ran="false"),
+            reference=_Reference(),
+            base_seed=17,
+            expected_trials=3,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "forward"):
+            evaluator(((0, 0), (0, 0)))
+
+    def test_truthy_nonboolean_replan_evidence_fails_closed(self):
+        evaluator = LayerwiseRuntimeEvaluator(
+            env=_LayerwiseEnv(model_uses_replan=1),
+            reference=_Reference(),
+            base_seed=17,
+            expected_trials=3,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "replan"):
+            evaluator(((0, 0), (0, 0)))
+
+    def test_missing_or_malformed_final_config_fingerprint_fails_closed(self):
+        for fingerprint in (None, "", "A" * 64, "f" * 63, 7):
+            with self.subTest(fingerprint=fingerprint):
+                evaluator = LayerwiseRuntimeEvaluator(
+                    env=_LayerwiseEnv(
+                        final_config_fingerprint=fingerprint,
+                    ),
+                    reference=_Reference(),
+                    base_seed=17,
+                    expected_trials=3,
+                )
+
+                with self.assertRaisesRegex(RuntimeError, "fingerprint"):
+                    evaluator(((0, 0), (0, 0)))
 
     def test_action_keyed_probe_seed_is_order_independent(self):
         env = _SeededLayerwiseEnv()
@@ -366,7 +1036,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             paths = persist_search_result(
                 output_dir=tmpdir,
                 result=result,
-                manifest={"profile": "mrpc", "scientific_status": "smoke"},
+                manifest=_search_manifest(scientific_status="smoke"),
                 observation_rows=evaluation_rows,
             )
 
@@ -415,14 +1085,14 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 rf_n_estimators=8,
                 rf_min_samples_leaf=1,
                 communication_importance_ratio=1.0,
-                manifest={"profile": "mrpc", "scientific_status": "smoke"},
+                manifest=_search_manifest(scientific_status="smoke"),
             )
 
             self.assertEqual(run["result"].evaluation_count, 2)
             self.assertEqual(
                 run["manifest"]["status"], "smoke_only_complete",
             )
-            self.assertFalse(run["scientific_export_allowed"])
+            self.assertNotIn("scientific_export_allowed", run)
             self.assertEqual(
                 run["manifest"]["scientific_status"],
                 "smoke_only_no_validation_full_gate",
@@ -460,7 +1130,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             "rf_n_estimators": 8,
             "rf_min_samples_leaf": 1,
             "communication_importance_ratio": 1.0,
-            "manifest": {"profile": "mrpc"},
+            "manifest": _search_manifest(),
         }
         with tempfile.TemporaryDirectory() as tmpdir:
             first_env = _LayerwiseEnv()
@@ -477,7 +1147,9 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 output_dir=tmpdir,
                 **kwargs,
             )
-            self.assertTrue(second["resumed_completed_run"])
+            self.assertEqual(
+                second["manifest"]["status"], "smoke_only_complete",
+            )
             self.assertEqual(second_env.base.clear_count, 0)
             self.assertEqual(
                 second["selected"].action_matrix,
@@ -487,6 +1159,65 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 second["result"].evaluation_count,
                 first["result"].evaluation_count,
             )
+
+
+
+    def test_pending_strict_context_writer_receives_resume_contract_before_strict(self):
+        context_calls = []
+        requested_manifest = _search_manifest()
+
+        def interrupted_strict(_result):
+            self.assertEqual(len(context_calls), 1)
+            raise RuntimeError("strict infrastructure interruption")
+
+        with tempfile.TemporaryDirectory() as tmpdir, self.assertRaisesRegex(
+                RuntimeError, "strict infrastructure interruption"):
+            run_layerwise_search_baseline(
+                backend="greedy",
+                layerwise_env=_LayerwiseEnv(),
+                robust_reference=_Reference(),
+                output_dir=tmpdir,
+                evaluation_budget=36,
+                seed=42,
+                initial_design_size=2,
+                candidate_pool_size=8,
+                population_size=4,
+                patience_generations=5,
+                mutation_max_coordinates=1,
+                rf_n_estimators=8,
+                rf_min_samples_leaf=1,
+                communication_importance_ratio=1.0,
+                manifest=requested_manifest,
+                strict_validator=interrupted_strict,
+                pending_strict_context_writer=context_calls.append,
+            )
+
+        self.assertEqual(len(context_calls), 1)
+        resume_contract = context_calls[0]
+        self.assertEqual(resume_contract["search_backend"], "greedy")
+        self.assertTrue(resume_contract["strict_validation_requested"])
+        self.assertEqual(
+            resume_contract["requested_manifest"], requested_manifest,
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def test_completed_resume_rejects_truncated_observation_journal(self):
         kwargs = {
@@ -502,7 +1233,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             "rf_n_estimators": 8,
             "rf_min_samples_leaf": 1,
             "communication_importance_ratio": 1.0,
-            "manifest": {"profile": "mrpc"},
+            "manifest": _search_manifest(),
         }
         with tempfile.TemporaryDirectory() as tmpdir:
             first = run_layerwise_search_baseline(
@@ -517,7 +1248,8 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 handle.write(first_row)
 
             with self.assertRaisesRegex(
-                    RuntimeError, "observation count does not match manifest",
+                    RuntimeError,
+                    "completed observation count does not match manifest",
             ):
                 run_layerwise_search_baseline(
                     layerwise_env=_LayerwiseEnv(),
@@ -539,7 +1271,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             "rf_n_estimators": 8,
             "rf_min_samples_leaf": 1,
             "communication_importance_ratio": 1.0,
-            "manifest": {"profile": "mrpc"},
+            "manifest": _search_manifest(),
         }
         with tempfile.TemporaryDirectory() as tmpdir:
             first = run_layerwise_search_baseline(
@@ -555,7 +1287,8 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 json.dump(summary, handle)
 
             with self.assertRaisesRegex(
-                    RuntimeError, "termination reason does not match manifest",
+                    RuntimeError,
+                    "completed termination reason does not match manifest",
             ):
                 run_layerwise_search_baseline(
                     layerwise_env=_LayerwiseEnv(),
@@ -565,27 +1298,15 @@ class RuntimeEvaluatorTests(unittest.TestCase):
 
     def test_strict_phase_resume_does_not_repeat_online_search(self):
         def completed_strict(result):
-            selected = result.best.as_dict()
-            selected["metadata"] = {
-                **selected["metadata"],
-                "strict_trial_count": 45,
-            }
-            return {
-                "schema_version": "stage2_search_strict_validation_v2",
-                "selection_status": "strict_feasible",
-                "formal_feasible": True,
-                "selected": selected,
-                "records": [{
-                    "strict_evaluated": True,
-                    "strict_trial_count": 45,
-                }],
-            }
+            return _strict_artifact(
+                result, strict_feasible=True, strict_trial_count=45,
+            )
 
         kwargs = {
             "backend": "greedy",
             "robust_reference": _Reference(),
             "evaluation_budget": 36,
-            "seed": 17,
+            "seed": 42,
             "initial_design_size": 2,
             "candidate_pool_size": 8,
             "population_size": 4,
@@ -594,7 +1315,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             "rf_n_estimators": 8,
             "rf_min_samples_leaf": 1,
             "communication_importance_ratio": 1.0,
-            "manifest": {"profile": "mrpc"},
+            "manifest": _search_manifest(),
         }
         with tempfile.TemporaryDirectory() as tmpdir:
             first_env = _LayerwiseEnv()
@@ -625,9 +1346,15 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 **kwargs,
             )
             self.assertEqual(second_env.base.clear_count, 0)
-            self.assertTrue(resumed["scientific_export_allowed"])
             self.assertEqual(
-                resumed["manifest"]["strict_trial_count"], 45,
+                resumed["strict_validation"]["selection_status"],
+                "strict_feasible",
+            )
+            self.assertTrue(resumed["manifest"]["strict_feasible"])
+            self.assertTrue(resumed["manifest"]["strict_validation_passed"])
+            self.assertNotIn("scientific_export_allowed", resumed)
+            self.assertEqual(
+                resumed["manifest"]["strict_trial_count"], 225,
             )
             self.assertEqual(resumed["manifest"]["strict_attempt_count"], 2)
             self.assertGreaterEqual(
@@ -635,8 +1362,193 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 resumed["manifest"]["last_strict_attempt_wall_seconds"],
             )
 
-    def test_formal_ga_cannot_complete_after_observation_guard(self):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def test_strict_runner_requires_seed_42_before_search(self):
+        scientific_manifest = _search_manifest()
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+                "blb_stage2_rl.search_baseline_runner.run_search",
+                side_effect=AssertionError("search must not run"),
+        ):
+            with self.assertRaisesRegex(ValueError, "seed 42"):
+                run_layerwise_search_baseline(
+                    backend="bo_rf",
+                    layerwise_env=_LayerwiseEnv(),
+                    robust_reference=_Reference(),
+                    output_dir=tmpdir,
+                    evaluation_budget=50_000,
+                    seed=17,
+                    initial_design_size=64,
+                    candidate_pool_size=2_048,
+                    population_size=64,
+                    patience_generations=100,
+                    mutation_max_coordinates=4,
+                    rf_n_estimators=128,
+                    rf_min_samples_leaf=2,
+                    communication_importance_ratio=1.0,
+                    manifest=scientific_manifest,
+                    strict_validator=lambda _result: {},
+                )
+
+    def test_strict_bo_requires_canonical_search_configuration(self):
+        scientific_manifest = _search_manifest()
+        canonical = {
+            "initial_design_size": 64,
+            "candidate_pool_size": 2_048,
+            "patience_generations": 100,
+            "rf_n_estimators": 128,
+            "rf_min_samples_leaf": 2,
+        }
+        for field, value in (
+            ("initial_design_size", 63),
+            ("candidate_pool_size", 2_047),
+            ("patience_generations", 99),
+            ("rf_n_estimators", 127),
+            ("rf_min_samples_leaf", 3),
+        ):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmpdir, patch(
+                    "blb_stage2_rl.search_baseline_runner.run_search",
+                    side_effect=AssertionError("search must not run"),
+            ):
+                with self.assertRaisesRegex(ValueError, "Bayesian"):
+                    run_layerwise_search_baseline(
+                        backend="bo_rf",
+                        layerwise_env=_LayerwiseEnv(),
+                        robust_reference=_Reference(),
+                        output_dir=tmpdir,
+                        evaluation_budget=50_000,
+                        seed=42,
+                        population_size=64,
+                        mutation_max_coordinates=4,
+                        communication_importance_ratio=1.0,
+                        manifest=scientific_manifest,
+                        strict_validator=lambda _result: {},
+                        **{**canonical, field: value},
+                    )
+
+    def test_strict_bo_accepts_canonical_search_configuration(self):
+        scientific_manifest = _search_manifest()
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+                "blb_stage2_rl.search_baseline_runner.run_search",
+                side_effect=RuntimeError("canonical search reached"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "canonical search reached"):
+                run_layerwise_search_baseline(
+                    backend="bo_rf",
+                    layerwise_env=_LayerwiseEnv(),
+                    robust_reference=_Reference(),
+                    output_dir=tmpdir,
+                    evaluation_budget=50_000,
+                    seed=42,
+                    initial_design_size=64,
+                    candidate_pool_size=2_048,
+                    population_size=64,
+                    patience_generations=100,
+                    mutation_max_coordinates=4,
+                    rf_n_estimators=128,
+                    rf_min_samples_leaf=2,
+                    communication_importance_ratio=1.0,
+                    manifest=scientific_manifest,
+                    strict_validator=lambda _result: {},
+                )
+
+    def test_ga_accepts_five_generation_stagnation(self):
+        validator = getattr(
+            search_runner_module,
+            "_validate_ga_completion_proof",
+            None,
+        )
+        self.assertIsNotNone(validator)
+        space = LayerwiseSearchSpace(4)
+        result = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _search_evaluation(action),
+            SearchConfig(
+                evaluation_budget=100,
+                seed=17,
+                ga_population_size=12,
+                ga_elite_count=2,
+                ga_generations=10,
+                patience_generations=5,
+            ),
+        )
+
+        validator(
+            result,
+            patience_generations=5,
+            generation_cap=10,
+            maximum_evaluations=100,
+        )
+
+    def test_ga_rejects_stagnation_before_five_generations(self):
+        validator = getattr(
+            search_runner_module,
+            "_validate_ga_completion_proof",
+            None,
+        )
+        self.assertIsNotNone(validator)
+        space = LayerwiseSearchSpace(4)
+        result = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _search_evaluation(action),
+            SearchConfig(
+                evaluation_budget=100,
+                seed=17,
+                ga_population_size=12,
+                ga_elite_count=2,
+                ga_generations=10,
+                patience_generations=5,
+            ),
+        )
+        updates = [
+            row for row in result.history
+            if row.get("phase") == "ga_update_generation"
+        ]
+        fourth_observation_count = int(updates[3]["observations"])
+        forged_observations = result.observations[:fourth_observation_count]
+        forged = SearchResult(
+            algorithm=result.algorithm,
+            best=max(forged_observations, key=candidate_rank_key),
+            observations=forged_observations,
+            history=tuple(
+                row for row in result.history
+                if int(row.get("generation", 0)) <= 4
+            ),
+            termination_reason="ga_no_incumbent_improvement",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "five-generation"):
+            validator(
+                forged,
+                patience_generations=5,
+                generation_cap=10,
+                maximum_evaluations=100,
+            )
+
+
+    def test_ga_cannot_complete_after_observation_guard(self):
         evaluation = _search_evaluation(((0, 0), (0, 0)))
+        scientific_manifest = _search_manifest()
         incomplete = SearchResult(
             algorithm="coinn_ga",
             best=evaluation,
@@ -657,7 +1569,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 },
         ):
             with self.assertRaisesRegex(
-                    RuntimeError, "did not complete exactly 800 generations",
+                    RuntimeError, "five-generation",
             ):
                 run_layerwise_search_baseline(
                     backend="coinn_ga",
@@ -665,16 +1577,16 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                     robust_reference=_Reference(),
                     output_dir=tmpdir,
                     evaluation_budget=45_664,
-                    seed=17,
+                    seed=42,
                     initial_design_size=64,
                     candidate_pool_size=2_048,
                     population_size=64,
-                    patience_generations=100,
+                    patience_generations=5,
                     mutation_max_coordinates=4,
                     rf_n_estimators=128,
                     rf_min_samples_leaf=2,
                     communication_importance_ratio=1.0,
-                    manifest={"profile": "mrpc"},
+                    manifest=scientific_manifest,
                     strict_validator=lambda _result: {},
                 )
 
@@ -692,7 +1604,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             "rf_n_estimators": 8,
             "rf_min_samples_leaf": 1,
             "communication_importance_ratio": 1.0,
-            "manifest": {"profile": "mrpc"},
+            "manifest": _search_manifest(),
         }
         with tempfile.TemporaryDirectory() as tmpdir:
             def interrupted_search(_backend, space, evaluator, _config, **_kwargs):
@@ -726,7 +1638,20 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 interrupted_wall,
             )
 
-    def test_partial_bo_and_ga_resume_fail_closed_without_exact_state(self):
+    def test_partial_bo_and_ga_resume_replays_prefix_without_forward(self):
+        class TrackingLayerwiseEnv(_LayerwiseEnv):
+            def __init__(self):
+                super().__init__()
+                self.action_history = []
+
+            def step(self, row):
+                state, reward, done, info = super().step(row)
+                if done:
+                    self.action_history.append(tuple(
+                        tuple(value for value in layer) for layer in self.rows
+                    ))
+                return state, reward, done, info
+
         for backend, budget in (("bo_rf", 2), ("coinn_ga", 804)):
             with self.subTest(backend=backend), tempfile.TemporaryDirectory() as tmpdir:
                 kwargs = {
@@ -744,7 +1669,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                     "rf_n_estimators": 8,
                     "rf_min_samples_leaf": 1,
                     "communication_importance_ratio": 1.0,
-                    "manifest": {"profile": "mrpc"},
+                    "manifest": _search_manifest(),
                 }
 
                 def interrupted_search(_backend, space, evaluator, _config, **_kwargs):
@@ -758,12 +1683,22 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "online interrupted"):
                         run_layerwise_search_baseline(**kwargs)
 
-                with self.assertRaisesRegex(
-                        RuntimeError, "partial .* resume is disabled",
-                ):
-                    run_layerwise_search_baseline(
-                        **{**kwargs, "layerwise_env": _LayerwiseEnv()}
-                    )
+                resumed_env = TrackingLayerwiseEnv()
+                resumed = run_layerwise_search_baseline(
+                    **{**kwargs, "layerwise_env": resumed_env}
+                )
+
+                self.assertEqual(
+                    resumed["manifest"]["preloaded_observation_count"], 1,
+                )
+                self.assertNotIn(
+                    LayerwiseSearchSpace(resumed_env.horizon).safe_action,
+                    resumed_env.action_history,
+                )
+                self.assertEqual(
+                    len(resumed_env.action_history),
+                    resumed["result"].evaluation_count - 1,
+                )
 
     def test_resume_rejects_changed_contract(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -782,7 +1717,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 "rf_n_estimators": 8,
                 "rf_min_samples_leaf": 1,
                 "communication_importance_ratio": 1.0,
-                "manifest": {"profile": "mrpc"},
+                "manifest": _search_manifest(),
             }
             run_layerwise_search_baseline(**common)
             with self.assertRaisesRegex(RuntimeError, "resume contract"):
@@ -794,63 +1729,12 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                     }
                 )
 
-    def test_no_strict_evaluated_candidate_fails_after_persisting(self):
-        strict_result = {
-            "schema_version": "stage2_search_strict_validation_v1",
-            "selected": None,
-            "records": [{"strict_point_pass": False}],
-        }
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaisesRegex(
-                    RuntimeError, "no evaluated materializable candidate",
-            ):
-                run_layerwise_search_baseline(
-                    backend="greedy",
-                    layerwise_env=_LayerwiseEnv(),
-                    robust_reference=_Reference(),
-                    output_dir=tmpdir,
-                    evaluation_budget=36,
-                    seed=17,
-                    initial_design_size=2,
-                    candidate_pool_size=8,
-                    population_size=4,
-                    patience_generations=5,
-                    mutation_max_coordinates=1,
-                    rf_n_estimators=8,
-                    rf_min_samples_leaf=1,
-                    communication_importance_ratio=1.0,
-                    manifest={
-                        "profile": "mrpc",
-                        "scientific_status": "full_search",
-                    },
-                    strict_validator=lambda _result: strict_result,
-                )
-
-            with open(
-                    os.path.join(tmpdir, "manifest.json"),
-                    encoding="utf-8",
-            ) as handle:
-                manifest = json.load(handle)
-            self.assertEqual(
-                manifest["status"], "failed_no_strict_materializable_candidate",
-            )
-            self.assertFalse(manifest["strict_validation_passed"])
 
     def test_no_strict_feasible_returns_materializable_fallback_and_artifacts(self):
         def strict_validator(result):
-            selected = result.best.as_dict()
-            selected["metadata"] = {
-                **selected["metadata"],
-                "strict_trial_count": 15,
-            }
-            return {
-                "schema_version": "stage2_search_strict_validation_v2",
-                "selection_status": "strict_least_violating",
-                "formal_feasible": False,
-                "selected": selected,
-                "online_best": result.best.as_dict(),
-                "records": [{"strict_evaluated": True}],
-            }
+            return _strict_artifact(
+                result, strict_feasible=False, strict_trial_count=15,
+            )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             run = run_layerwise_search_baseline(
@@ -859,7 +1743,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 robust_reference=_Reference(),
                 output_dir=tmpdir,
                 evaluation_budget=36,
-                seed=17,
+                seed=42,
                 initial_design_size=2,
                 candidate_pool_size=8,
                 population_size=4,
@@ -868,15 +1752,16 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 rf_n_estimators=8,
                 rf_min_samples_leaf=1,
                 communication_importance_ratio=1.0,
-                manifest={"profile": "mrpc"},
+                manifest=_search_manifest(),
                 strict_validator=strict_validator,
             )
 
             self.assertIsNotNone(run["selected"])
-            self.assertFalse(run["scientific_export_allowed"])
+            self.assertFalse(run["strict_feasible"])
+            self.assertNotIn("scientific_export_allowed", run)
             self.assertEqual(
                 run["manifest"]["status"],
-                "complete_no_strict_feasible",
+                "complete_least_violating",
             )
             self.assertEqual(
                 run["manifest"]["selection_status"],
@@ -893,39 +1778,38 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 run["result"].best.action_matrix,
             )
 
+
+
+
+
     def test_canonical_strict_validation_reuses_shared_bank_gates(self):
-        evaluator = LayerwiseRuntimeEvaluator(
-            env=_LayerwiseEnv(),
-            reference=_Reference(),
-            base_seed=17,
-            expected_trials=3,
-        )
-        result = run_search(
-            "greedy",
-            LayerwiseSearchSpace(2),
-            evaluator,
-            SearchConfig(evaluation_budget=1, seed=17),
-        )
+        result = _search_result(*_five_eligible_evaluations())
+        strict_metrics = {
+            "loss_mean": 1.0,
+            "metric1_mean": 0.90,
+            "metric2_mean": 0.85,
+            "loss_std": 0.01,
+            "metric1_std": 0.01,
+            "metric2_std": 0.01,
+        }
+        axis_counterfactuals = _passing_axis_counterfactuals(strict_metrics)
+        strict_evidence = SimpleNamespace(groups=[{
+            "final_config_fingerprint": "f" * 64,
+        }])
         promotion = SimpleNamespace(
             status="promoted",
             trial_count=30,
             fresh_trial_count=30,
             metrics=None,
             assessment=None,
-            axis_counterfactuals={"compute": {}, "communication": {}},
+            axis_counterfactuals=axis_counterfactuals,
+            evidence=strict_evidence,
         )
         certification = SimpleNamespace(
             status="final_revalidation_passed",
             trial_count=45,
             fresh_trial_count=15,
-            metrics={
-                "loss_mean": 1.0,
-                "metric1_mean": 0.90,
-                "metric2_mean": 0.85,
-                "loss_std": 0.01,
-                "metric1_std": 0.01,
-                "metric2_std": 0.01,
-            },
+            metrics=strict_metrics,
             assessment={
                 "loss_precision_probability": 0.99,
                 "metric1_precision_probability": 0.99,
@@ -934,15 +1818,11 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 "metric1_stability_probability": 0.99,
                 "metric2_stability_probability": 0.99,
             },
-            axis_counterfactuals={"compute": {}, "communication": {}},
+            axis_counterfactuals=axis_counterfactuals,
+            evidence=strict_evidence,
         )
-        banks = SimpleNamespace(
-            final_reference=_Reference(),
-            contract_payload=lambda: {"hard_gate": "canonical"},
-        )
-        store = SimpleNamespace(path="/tmp/search_strict_candidates.jsonl")
 
-        with patch(
+        with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
                 return_value=promotion,
@@ -955,31 +1835,86 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 result=result,
                 layerwise_env=object(),
                 promotion_base_env=object(),
-                candidate_store=store,
-                identity_context={"profile": "mrpc"},
-                validation_banks=banks,
-                top_n=1,
+                candidate_store=_candidate_store_stub(
+                    "/tmp/search_strict_candidates.jsonl"
+                ),
+                identity_context=_strict_identity_context(),
+                validation_banks=_validation_banks(),
+                top_n=5,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
             )
 
-        promote_mock.assert_called_once()
-        certify_mock.assert_called_once()
-        self.assertTrue(strict["records"][0]["strict_point_pass"])
+        self.assertEqual(promote_mock.call_count, 5)
+        self.assertEqual(certify_mock.call_count, 5)
+        self.assertTrue(all(
+            "physical_trial_invocation_hash" not in call.kwargs
+            for call in promote_mock.call_args_list + certify_mock.call_args_list
+        ))
+        self.assertEqual(strict["requested_top_n"], 5)
+        self.assertEqual(strict["strict_evaluated_candidate_count"], 5)
+        self.assertTrue(strict["strict_feasible"])
+        self.assertTrue(all(
+            record["strict_point_pass"] for record in strict["records"]
+        ))
         self.assertIsNotNone(strict["selected"])
         self.assertEqual(
             strict["selected"]["metrics"]["metric2_mean"], 0.85,
         )
+        self.assertNotIn("physical_trial_invocation_hash", strict)
+        self.assertNotIn("physical_trial_accounting", strict)
+        self.assertNotIn("formal_run_identity", strict)
 
-    def test_canonical_validation_processes_all_top_n_feasible_candidates(self):
-        first = _search_evaluation(((0, 0), (0, 0)))
-        result = _search_result(
-            first,
-            _search_evaluation(((1, 0), (0, 0))),
-            _search_evaluation(((1, 2), (1, 2))),
-            first,
+
+
+
+
+
+
+
+    def test_already_certified_candidate_requires_complete_axis_evidence(self):
+        result = _search_result(*_five_eligible_evaluations())
+        metrics = {
+            "loss_mean": 1.0,
+            "metric1_mean": 0.90,
+            "metric2_mean": 0.85,
+            "loss_std": 0.01,
+            "metric1_std": 0.01,
+            "metric2_std": 0.01,
+        }
+        promotion = _promotion_result(
+            status="already_promoted", trial_count=30, metrics=metrics,
         )
+        certification = _promotion_result(
+            status="already_final_certified",
+            trial_count=45,
+            metrics=metrics,
+            axis_counterfactuals=None,
+        )
+
+        with _patch_strict_materialization_preparation(), patch(
+                "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
+                return_value=promotion,
+        ), patch(
+                "blb_stage2_rl.layerwise_runner.certify_candidate_with_bank_c",
+                return_value=certification,
+        ), self.assertRaisesRegex(RuntimeError, "axis"):
+            canonical_strict_validation(
+                result=result,
+                layerwise_env=object(),
+                promotion_base_env=object(),
+                candidate_store=_candidate_store_stub("strict.jsonl"),
+                identity_context=_strict_identity_context(),
+                validation_banks=_validation_banks(),
+                top_n=5,
+                communication_importance_ratio=1.0,
+                promotion_probability=0.8,
+                final_probability=0.95,
+            )
+
+    def test_canonical_validation_processes_all_top_five_candidates(self):
+        result = _search_result(*_five_eligible_evaluations())
         metrics = {
             "loss_mean": 1.0,
             "metric1_mean": 0.90,
@@ -1004,9 +1939,10 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 "metric1_stability_probability",
                 "metric2_stability_probability",
             )},
+            axis_counterfactuals=_passing_axis_counterfactuals(metrics),
         )
 
-        with patch(
+        with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
                 return_value=promotion,
@@ -1019,34 +1955,39 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 result=result,
                 layerwise_env=object(),
                 promotion_base_env=object(),
-                candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
+                candidate_store=_candidate_store_stub(),
                 identity_context={"profile": "mrpc"},
                 validation_banks=_validation_banks(),
-                top_n=3,
+                top_n=5,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
             )
 
-        self.assertEqual(promote_mock.call_count, 3)
-        self.assertEqual(certify_mock.call_count, 3)
-        self.assertEqual(len(strict["records"]), 3)
+        self.assertEqual(promote_mock.call_count, 5)
+        self.assertEqual(certify_mock.call_count, 5)
+        self.assertEqual(len(strict["records"]), 5)
         self.assertTrue(all(
             record["strict_evaluated"] for record in strict["records"]
         ))
         self.assertEqual(strict["selection_status"], "strict_feasible")
-        self.assertTrue(strict["formal_feasible"])
+        self.assertTrue(strict["strict_feasible"])
+        self.assertNotIn("formal_feasible", strict)
 
-    def test_top_n_includes_online_infeasible_and_strict_fallback(self):
+    def test_top_five_includes_online_infeasible_and_strict_fallback(self):
         online_feasible = _search_evaluation(((0, 0), (0, 0)))
         online_infeasible = _search_evaluation(
             ((1, 2), (1, 2)), metric1_mean=0.70,
         )
-        result = _search_result(online_infeasible, online_feasible)
+        result = _search_result(*_five_eligible_evaluations(
+            online_infeasible, online_feasible,
+        ))
 
         def promotion_side_effect(**kwargs):
             action = tuple(tuple(row) for row in kwargs["action_matrix"])
-            metric1 = 0.88 if action == online_infeasible.action_matrix else 0.80
+            metric1 = (
+                0.88 if action == online_infeasible.action_matrix else 0.80
+            )
             return _promotion_result(
                 status="bank_a_point_failed",
                 trial_count=15,
@@ -1061,7 +2002,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 },
             )
 
-        with patch(
+        with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
                 side_effect=promotion_side_effect,
@@ -1073,23 +2014,27 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 result=result,
                 layerwise_env=object(),
                 promotion_base_env=object(),
-                candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
+                candidate_store=_candidate_store_stub(),
                 identity_context={"profile": "mrpc"},
-                validation_banks=_validation_banks(),
-                top_n=2,
+                validation_banks=_validation_banks(
+                    bank_a_reference=_reference(metric1_limit=0.89),
+                    promotion_reference=_reference(metric1_limit=0.87),
+                    final_reference=_reference(metric1_limit=0.85),
+                ),
+                top_n=5,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
             )
 
-        self.assertEqual(promote_mock.call_count, 2)
+        self.assertEqual(promote_mock.call_count, 5)
         certify_mock.assert_not_called()
         self.assertTrue(any(
             not record["online_candidate"]["feasible"]
             for record in strict["records"]
         ))
         self.assertEqual(strict["selection_status"], "strict_least_violating")
-        self.assertFalse(strict["formal_feasible"])
+        self.assertFalse(strict["strict_feasible"])
         self.assertIsNotNone(strict["selected"])
         self.assertEqual(
             strict["selected"]["action_matrix"],
@@ -1104,6 +2049,17 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         self.assertEqual(
             strict["selected"]["metadata"]["strict_trial_count"], 15,
         )
+        self.assertEqual(
+            strict["selected"]["metadata"]["strict_limits_source"],
+            "bank_a",
+        )
+        self.assertEqual(strict["selected"]["limits"]["metric1_min"], 0.89)
+        self.assertEqual(
+            strict["selected_violations"]["families"]["joint"][
+                "failed_constraint_count"
+            ],
+            1,
+        )
         self.assertIn(
             "metric1_mean",
             strict["selected_violations"]["families"]["joint"][
@@ -1117,13 +2073,72 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             "not_run",
         )
 
+    def test_strict_fallback_prioritizes_violation_before_unavailable_families(self):
+        def with_violations(action, *, failed, total, worst, unavailable):
+            payload = _search_evaluation(action).as_dict()
+            payload["metadata"]["strict_violations"] = {
+                "aggregate": {
+                    "failed_constraint_count": failed,
+                    "total_normalized_violation": total,
+                    "worst_normalized_violation": worst,
+                    "unavailable_family_count": unavailable,
+                }
+            }
+            return SearchEvaluation.from_dict(payload)
+
+        mild_incomplete = with_violations(
+            ((0, 0), (0, 0)),
+            failed=1,
+            total=0.01,
+            worst=0.01,
+            unavailable=1,
+        )
+        severe_complete = with_violations(
+            ((1, 2), (1, 2)),
+            failed=2,
+            total=2.0,
+            worst=1.0,
+            unavailable=0,
+        )
+
+        self.assertGreater(
+            _strict_fallback_rank(mild_incomplete),
+            _strict_fallback_rank(severe_complete),
+        )
+
+    def test_strict_fallback_preserves_sub_femtoscale_violation_order(self):
+        def with_total(action, total):
+            payload = _search_evaluation(action).as_dict()
+            payload["metadata"]["strict_violations"] = {
+                "aggregate": {
+                    "failed_constraint_count": 1,
+                    "total_normalized_violation": total,
+                    "worst_normalized_violation": total,
+                    "unavailable_family_count": 0,
+                }
+            }
+            return SearchEvaluation.from_dict(payload)
+
+        lower_violation = with_total(((0, 0), (0, 0)), 0.1)
+        higher_violation = with_total(
+            ((1, 2), (1, 2)), math.nextafter(0.1, math.inf),
+        )
+        self.assertGreater(
+            higher_violation.resource.ppo_resource_score,
+            lower_violation.resource.ppo_resource_score,
+        )
+        self.assertGreater(
+            _strict_fallback_rank(lower_violation),
+            _strict_fallback_rank(higher_violation),
+        )
+
     def test_strict_fallback_ranks_joint_and_axis_violation_families(self):
         mild_axis = _search_evaluation(((0, 0), (0, 0)))
         severe_axis = _search_evaluation(((1, 0), (0, 0)))
         two_axis_failures = _search_evaluation(((1, 2), (1, 2)))
-        result = _search_result(
+        result = _search_result(*_five_eligible_evaluations(
             mild_axis, severe_axis, two_axis_failures,
-        )
+        ))
         joint_metrics = {
             "loss_mean": 1.0,
             "metric1_mean": 0.90,
@@ -1136,6 +2151,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         def axis_payload(*, metric1_mean, point_pass):
             metrics = {**joint_metrics, "metric1_mean": metric1_mean}
             return {
+                "final_config_fingerprint": "f" * 64,
                 "loss_limit": 1.01,
                 "metric1_limit": 0.89,
                 "metric2_limit": 0.84,
@@ -1188,7 +2204,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 },
             )
 
-        with patch(
+        with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
                 side_effect=promotion_side_effect,
@@ -1200,10 +2216,10 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 result=result,
                 layerwise_env=object(),
                 promotion_base_env=object(),
-                candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
+                candidate_store=_candidate_store_stub(),
                 identity_context={"profile": "mrpc"},
                 validation_banks=_validation_banks(),
-                top_n=3,
+                top_n=5,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
@@ -1227,20 +2243,21 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             strict["selected"]["metadata"]["strict_trial_count"], 30,
         )
 
-    def test_strict_validation_requires_full_eligible_top_n(self):
+    def test_strict_validation_requires_five_eligible_candidates(self):
         valid = _search_evaluation(((0, 0), (0, 0)))
         invalid = _search_evaluation(
             ((1, 2), (1, 2)), valid=False, materializable=False,
         )
-        with self.assertRaisesRegex(RuntimeError, "eligible=1 requested=2"):
+        four_valid = _five_eligible_evaluations(valid)[:4]
+        with self.assertRaisesRegex(RuntimeError, "eligible=4 requested=5"):
             canonical_strict_validation(
-                result=_search_result(valid, invalid),
+                result=_search_result(invalid, *four_valid),
                 layerwise_env=object(),
                 promotion_base_env=object(),
-                candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
+                candidate_store=_candidate_store_stub(),
                 identity_context={"profile": "mrpc"},
                 validation_banks=_validation_banks(),
-                top_n=2,
+                top_n=5,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
@@ -1259,21 +2276,19 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 "metric2_std": 0.01,
             },
         )
-        with patch(
+        with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
                 return_value=promotion,
         ), self.assertRaisesRegex(RuntimeError, "infrastructure evaluation failed"):
             canonical_strict_validation(
-                result=_search_result(
-                    _search_evaluation(((0, 0), (0, 0))),
-                ),
+                result=_search_result(*_five_eligible_evaluations()),
                 layerwise_env=object(),
                 promotion_base_env=object(),
-                candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
+                candidate_store=_candidate_store_stub(),
                 identity_context={"profile": "mrpc"},
                 validation_banks=_validation_banks(),
-                top_n=1,
+                top_n=5,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
@@ -1284,7 +2299,8 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             ((1, 2), (1, 2)), valid=False, materializable=False,
         )
         materializable = _search_evaluation(((0, 0), (0, 0)))
-        result = _search_result(invalid, materializable)
+        eligible = _five_eligible_evaluations(materializable)
+        result = _search_result(invalid, *eligible)
         promotion = _promotion_result(
             status="bank_a_point_failed",
             trial_count=15,
@@ -1298,7 +2314,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             },
         )
 
-        with patch(
+        with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
                 return_value=promotion,
@@ -1307,34 +2323,36 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 result=result,
                 layerwise_env=object(),
                 promotion_base_env=object(),
-                candidate_store=SimpleNamespace(path="/tmp/candidates.jsonl"),
+                candidate_store=_candidate_store_stub(),
                 identity_context={"profile": "mrpc"},
                 validation_banks=_validation_banks(),
-                top_n=1,
+                top_n=5,
                 communication_importance_ratio=1.0,
                 promotion_probability=0.8,
                 final_probability=0.95,
             )
 
-        promote_mock.assert_called_once()
-        self.assertEqual(
+        self.assertEqual(promote_mock.call_count, 5)
+        self.assertNotEqual(
             strict["selected"]["action_matrix"],
-            [list(row) for row in materializable.action_matrix],
+            [list(row) for row in invalid.action_matrix],
         )
-        self.assertEqual(strict["requested_top_n"], 1)
-        self.assertEqual(strict["eligible_online_candidate_count"], 1)
-        self.assertEqual(len(strict["records"]), 1)
+        self.assertEqual(strict["requested_top_n"], 5)
+        self.assertEqual(strict["eligible_online_candidate_count"], 5)
+        self.assertEqual(len(strict["records"]), 5)
+
 
     def test_point_gated_strict_selection_round_trips_without_probabilities(self):
         def strict_validator(result):
-            selected = result.best.as_dict()
-            selected["constraint_probabilities"] = {}
-            selected["gate_probability"] = None
-            return {
-                "schema_version": "stage2_search_strict_validation_v1",
-                "selected": selected,
-                "records": [{"strict_point_pass": True}],
-            }
+            artifact = _strict_artifact(
+                result,
+                strict_feasible=True,
+                selected_updates={
+                    "constraint_probabilities": {},
+                    "gate_probability": None,
+                },
+            )
+            return artifact
 
         with tempfile.TemporaryDirectory() as tmpdir:
             run = run_layerwise_search_baseline(
@@ -1343,7 +2361,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 robust_reference=_Reference(),
                 output_dir=tmpdir,
                 evaluation_budget=36,
-                seed=17,
+                seed=42,
                 initial_design_size=2,
                 candidate_pool_size=8,
                 population_size=4,
@@ -1352,12 +2370,13 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 rf_n_estimators=8,
                 rf_min_samples_leaf=1,
                 communication_importance_ratio=1.0,
-                manifest={"profile": "mrpc"},
+                manifest=_search_manifest(),
                 strict_validator=strict_validator,
             )
 
+        self.assertTrue(run["manifest"]["strict_feasible"])
         self.assertTrue(run["manifest"]["strict_validation_passed"])
-        self.assertTrue(run["scientific_export_allowed"])
+        self.assertNotIn("scientific_export_allowed", run)
         self.assertEqual(run["selected"].constraint_probabilities, ())
         self.assertIsNone(run["selected"].gate_probability)
 

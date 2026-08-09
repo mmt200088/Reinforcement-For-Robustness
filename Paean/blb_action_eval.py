@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 import random
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -28,7 +28,11 @@ from blb_stage2_rl.baseline_bootstrap import (
     load_calibrated_stage2_action_context,
 )
 from blb_stage2_rl.feasibility import build_final_eval_feasibility
-from blb_stage2_rl.eval_metrics import pack_repeat_evaluation
+from blb_stage2_rl.eval_metrics import (
+    pack_repeat_evaluation,
+    summarize_selected_vs_random_results,
+)
+from blb_stage2_rl.fusion_count_map import FusionCountMap
 from blb_stage2_rl.fusion_fixed_action import select_fusion_eval_metadata
 from blb_stage2_rl.optimizer_cost import materialize_decoded_action
 from final_evaluation_module import UnifiedFinalEvaluationModule
@@ -46,11 +50,36 @@ from .action_grid import (
     CostMatchedSamplingDiagnostics,
     build_action_candidates,
     build_cost_matched_random_action_candidates,
-    build_random_action_candidates,
     coerce_spec_list,
 )
 
 _PLOT_RENDER_FALSE_VALUES = {"0", "false", "no", "off", "skip", "none"}
+
+
+def _atomic_json(path: str, payload: Any) -> None:
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(
+            to_jsonable(payload, stringify_unknown=True),
+            handle,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+    directory_fd = os.open(
+        directory,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+    )
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 class BLBActionFinalEvaluationModule:
@@ -138,6 +167,197 @@ class BLBActionFinalEvaluationModule:
             torch.cuda.set_rng_state_all(state["torch_cuda"])
         reseed_noise_rng(self.random_seed)
 
+    def _evaluate_candidate_with_seed_lifecycle(
+        self,
+        *,
+        metadata: Mapping[str, Any],
+        isolated_candidate_rng_state: Optional[Mapping[str, Any]],  # noqa: UP045
+        evaluate: Callable[[], Any],
+    ) -> Any:
+        candidate_metadata = dict(metadata or {})
+        isolate_noise_rng = (
+            candidate_metadata.get("isolate_random_seed") is True
+        )
+        self._restore_isolated_candidate_rng_state(
+            candidate_metadata,
+            isolated_candidate_rng_state,
+        )
+        try:
+            return evaluate()
+        finally:
+            if isolate_noise_rng:
+                reseed_noise_rng(None)
+
+    def _validate_stage2_final_eval_handoff(
+            self,
+            search_best_stage2,
+            *,
+            expected_profile,
+            ):
+        comparator_backends = {"bo_rf", "greedy", "coinn_ga"}
+        if not isinstance(search_best_stage2, Mapping):
+            return None
+        backend = str(search_best_stage2.get("search_backend") or "").lower()
+        rl_variant = str(search_best_stage2.get("rl_variant") or "")
+        variant_prefix = "blb_v3_layerwise_search_"
+        variant_backend = ""
+        if rl_variant.startswith(variant_prefix):
+            variant_backend = rl_variant[len(variant_prefix):]
+            if variant_backend.endswith("_smoke"):
+                variant_backend = variant_backend[:-6]
+        is_comparator = bool(
+            backend in comparator_backends
+            or variant_backend in comparator_backends
+        )
+        if not is_comparator:
+            return None
+        if backend not in comparator_backends or variant_backend != backend:
+            raise ValueError(
+                "comparator final-eval backend identity mismatch"
+            )
+        if search_best_stage2.get("status") != "completed":
+            raise ValueError(
+                "comparator final-eval requires a completed Stage-2 result"
+            )
+        if search_best_stage2.get("strict_feasible") is not True:
+            raise ValueError(
+                "comparator final-eval requires a strict-feasible Stage-2 result"
+            )
+        profile = str(search_best_stage2.get("blb_v3_profile") or "")
+        if profile != str(expected_profile):
+            raise ValueError(
+                "comparator final-eval profile does not match the active dataset"
+            )
+        if search_best_stage2.get("blb_v3_fusion_count_action") is not True:
+            raise ValueError(
+                "comparator final-eval requires fusion-count action metadata"
+            )
+        group = search_best_stage2.get("blb_v3_best_action_group")
+        if not isinstance(group, Mapping):
+            raise ValueError(
+                "comparator final-eval selected action group is missing"
+            )
+        raw_matrix = group.get("policy_actions")
+        raw_vector = search_best_stage2.get("blb_v3_best_action_vec")
+        raw_overrides = group.get("boosted_overrides")
+        if not isinstance(raw_matrix, (list, tuple)) or not all(
+                isinstance(row, (list, tuple)) for row in raw_matrix
+        ):
+            raise ValueError(
+                "comparator final-eval action matrix is missing"
+            )
+        if raw_vector is None:
+            raise ValueError(
+                "comparator final-eval full vector is missing"
+            )
+        if not isinstance(raw_overrides, (list, tuple)):
+            raise ValueError(
+                "comparator final-eval boosted overrides are missing"
+            )
+        fingerprint = str(
+            search_best_stage2.get("final_config_fingerprint") or ""
+        )
+        if (
+                len(fingerprint) != 64
+                or any(char not in "0123456789abcdef" for char in fingerprint)
+        ):
+            raise ValueError(
+                "comparator final-eval config fingerprint is invalid"
+            )
+        return {
+            "status": "completed",
+            "search_backend": backend,
+            "rl_variant": rl_variant,
+            "strict_feasible": True,
+            "blb_v3_profile": profile,
+            "blb_v3_fusion_count_action": True,
+            "blb_v3_best_action_vec": [int(item) for item in raw_vector],
+            "blb_v3_best_action_group": {
+                **dict(group),
+                "policy_actions": [list(row) for row in raw_matrix],
+                "boosted_overrides": [dict(item) for item in raw_overrides],
+            },
+            "final_config_fingerprint": fingerprint,
+        }
+
+    def _validate_prepared_materialization(
+            self,
+            final_eval_handoff,
+            *,
+            materialized,
+            ):
+        if not isinstance(final_eval_handoff, Mapping):
+            raise ValueError(
+                "comparator final-eval handoff is missing"
+            )
+        if not bool(getattr(materialized, "model_ready", False)):
+            reason = str(getattr(materialized, "failure_reason", "") or "")
+            raise ValueError(
+                "comparator final-eval selected action is not model-ready"
+                + (f": {reason}" if reason else "")
+            )
+        expected_fingerprint = str(
+            final_eval_handoff.get("final_config_fingerprint") or ""
+        )
+        actual_fingerprint = str(
+            getattr(materialized, "final_config_fingerprint", "") or ""
+        )
+        if actual_fingerprint != expected_fingerprint:
+            raise ValueError(
+                "comparator final-eval config fingerprint mismatch"
+            )
+        return {
+            "schema_version": (
+                "stage2_final_eval_materialization_consistency_v1"
+            ),
+            "checked_before_forward": True,
+            "expected_final_config_fingerprint": expected_fingerprint,
+            "final_config_fingerprint": actual_fingerprint,
+            "final_config_fingerprint_exact_match": True,
+        }
+
+    def _validate_selected_candidate_handoff(
+            self,
+            selected_candidates,
+            final_eval_handoff,
+            ):
+        if final_eval_handoff is None:
+            return
+        if not selected_candidates:
+            raise ValueError(
+                "comparator final-eval produced no selected candidate"
+            )
+        candidate = selected_candidates[0]
+        actual_vector = np.asarray(
+            candidate.action_vec, dtype=int,
+        ).reshape(-1).tolist()
+        expected_vector = final_eval_handoff.get("blb_v3_best_action_vec")
+        if actual_vector != expected_vector:
+            raise ValueError(
+                "comparator final-eval selected candidate full vector mismatch"
+            )
+        metadata = getattr(candidate, "metadata", None)
+        group = metadata.get("group") if isinstance(metadata, Mapping) else None
+        if not isinstance(group, Mapping):
+            raise ValueError(
+                "comparator final-eval selected candidate has no fusion group"
+            )
+        expected_group = final_eval_handoff.get("blb_v3_best_action_group")
+        if not isinstance(expected_group, Mapping):
+            raise ValueError(
+                "comparator final-eval handoff has no selected action group"
+            )
+        if group.get("policy_actions") != expected_group.get("policy_actions"):
+            raise ValueError(
+                "comparator final-eval selected candidate action matrix mismatch"
+            )
+        if group.get("boosted_overrides") != expected_group.get(
+                "boosted_overrides"
+        ):
+            raise ValueError(
+                "comparator final-eval selected candidate boosted overrides mismatch"
+            )
+
     def run(
         self,
         search_best_stage1: Optional[dict],
@@ -152,15 +372,21 @@ class BLBActionFinalEvaluationModule:
         if self.random_enabled and self.action_ranges:
             raise ValueError("BLB action final_eval random mode cannot be combined with action ranges")
 
-        os.makedirs(self.results_dir, exist_ok=True)
         ev = self.evaluator
-        total_layers = int(ev.total_layers)
         profile = str(getattr(ev, "dataset_key", "default") or "default")
+        final_eval_handoff = self._validate_stage2_final_eval_handoff(
+            search_best_stage2,
+            expected_profile=profile,
+        )
+        total_layers = int(ev.total_layers)
         (
             self.rescale_bridge,
             self.rescale_invoker_kind,
             self.rescale_optimizer_root,
-        ) = self._build_rescale_bridge(profile)
+        ) = self._build_rescale_bridge(
+            profile,
+            require_in_process=(final_eval_handoff is not None),
+        )
 
         stage1_resolver = UnifiedFinalEvaluationModule(
             evaluator=ev,
@@ -206,6 +432,7 @@ class BLBActionFinalEvaluationModule:
             max_sfs=action_context.max_sfs,
             gelu_degree=opt_gelu,
             attn_degree=opt_softmax,
+            isolate_random_seed=(final_eval_handoff is not None),
         )
 
         # 加大精度 handoff: in fusion-count mode the trained best is a flat grid-index
@@ -240,10 +467,71 @@ class BLBActionFinalEvaluationModule:
                     )
                     patched.append(dataclasses.replace(cand, metadata=md))
                 except Exception as exc:
+                    if final_eval_handoff is not None:
+                        raise RuntimeError(
+                            "comparator final-eval could not attach the selected "
+                            "fusion metadata"
+                        ) from exc
                     ev.log(f"  [blb-eval][warning] fusion metadata resolve failed for {cand.name}: {exc}")
                     patched.append(cand)
             selected_candidates = patched
 
+        if final_eval_handoff is not None:
+            selected_candidates = [
+                dataclasses.replace(
+                    candidate,
+                    metadata={
+                        **dict(candidate.metadata or {}),
+                        "isolate_random_seed": True,
+                    },
+                )
+                for candidate in selected_candidates
+            ]
+
+        self._validate_selected_candidate_handoff(
+            selected_candidates,
+            final_eval_handoff,
+        )
+
+        prepared_selected_materialized = None
+        selected_materialization_consistency = None
+        if final_eval_handoff is not None:
+            if len(selected_candidates) != 1:
+                raise ValueError(
+                    "comparator final-eval requires exactly one selected candidate"
+                )
+            self._stage2_fusion_map = FusionCountMap.load(profile)
+            selected_candidate = selected_candidates[0]
+            selected_metadata = dict(selected_candidate.metadata or {})
+            decoded = self._decode_action_candidate(
+                action_vec=selected_candidate.action_vec,
+                metadata=selected_metadata,
+                max_sfs=action_context.max_sfs,
+                num_layers=total_layers,
+                gelu=opt_gelu,
+                softmax=opt_softmax,
+                profile=profile,
+            )
+            cfgs_dict = decoded.cfgs_dict()
+            opt_outputs, opt_signals = self._optimizer_outputs(
+                profile, cfgs_dict,
+            )
+            prepared_selected_materialized = self._materialize_decoded_action(
+                profile=profile,
+                action_vec=selected_candidate.action_vec,
+                decoded=decoded,
+                cfgs_dict=cfgs_dict,
+                opt_outputs=opt_outputs,
+                opt_signals=opt_signals,
+            )
+            selected_materialization_consistency = (
+                self._validate_prepared_materialization(
+                    final_eval_handoff,
+                    materialized=prepared_selected_materialized,
+                )
+            )
+
+        os.makedirs(self.results_dir, exist_ok=True)
         metric_names = ev.get_metric_short_names()
         num_metrics = ev.get_num_metrics()
         ev.log("\n" + "=" * 60)
@@ -290,14 +578,10 @@ class BLBActionFinalEvaluationModule:
             ev.log(
                 f"\n--- BLB selected candidate {idx}/{len(selected_candidates)}: {candidate.name} ---"
             )
-            self._restore_isolated_candidate_rng_state(
-                candidate.metadata, isolated_candidate_rng_state,
-            )
-            isolate_noise_rng = bool(
-                (candidate.metadata or {}).get("isolate_random_seed", False)
-            )
-            try:
-                result = self._evaluate_action_candidate(
+            result = self._evaluate_candidate_with_seed_lifecycle(
+                metadata=candidate.metadata,
+                isolated_candidate_rng_state=isolated_candidate_rng_state,
+                evaluate=lambda: self._evaluate_action_candidate(
                     name=candidate.name,
                     action_vec=candidate.action_vec,
                     overrides=candidate.overrides,
@@ -306,10 +590,12 @@ class BLBActionFinalEvaluationModule:
                     softmax=opt_softmax,
                     report_constraints=report_constraints,
                     max_sfs=action_context.max_sfs,
-                )
-            finally:
-                if isolate_noise_rng:
-                    reseed_noise_rng(None)
+                    prepared_materialized=prepared_selected_materialized,
+                    materialization_consistency=(
+                        selected_materialization_consistency
+                    ),
+                ),
+            )
             selected_results.append(result)
             ev.log(
                 f"  {candidate.name}: Loss={result['loss']:.4f}, "
@@ -355,20 +641,37 @@ class BLBActionFinalEvaluationModule:
                     log_fn=ev.log,
                 )
             )
+            if final_eval_handoff is not None:
+                random_candidates = [
+                    dataclasses.replace(
+                        candidate,
+                        metadata={
+                            **dict(candidate.metadata or {}),
+                            "isolate_random_seed": True,
+                        },
+                    )
+                    for candidate in random_candidates
+                ]
             for idx, candidate in enumerate(random_candidates, start=1):
                 ev.log(
                     f"\n--- BLB random candidate {idx}/{len(random_candidates)}: "
                     f"{candidate.name} ---"
                 )
-                result = self._evaluate_action_candidate(
-                    name=candidate.name,
-                    action_vec=candidate.action_vec,
-                    overrides=candidate.overrides,
+                result = self._evaluate_candidate_with_seed_lifecycle(
                     metadata=candidate.metadata,
-                    gelu=opt_gelu,
-                    softmax=opt_softmax,
-                    report_constraints=report_constraints,
-                    max_sfs=action_context.max_sfs,
+                    isolated_candidate_rng_state=(
+                        isolated_candidate_rng_state
+                    ),
+                    evaluate=lambda: self._evaluate_action_candidate(
+                        name=candidate.name,
+                        action_vec=candidate.action_vec,
+                        overrides=candidate.overrides,
+                        metadata=candidate.metadata,
+                        gelu=opt_gelu,
+                        softmax=opt_softmax,
+                        report_constraints=report_constraints,
+                        max_sfs=action_context.max_sfs,
+                    ),
                 )
                 random_results.append(result)
                 ev.log(
@@ -403,6 +706,11 @@ class BLBActionFinalEvaluationModule:
             comparison_summary=comparison_summary,
             cost_match_diagnostics=cost_match_payload,
             action_context_provenance=action_context.provenance,
+            final_eval_handoff=final_eval_handoff,
+        )
+        selected_result = selected_results[0] if selected_results else None
+        selected_candidate = (
+            selected_candidates[0] if selected_candidates else None
         )
         text_path = self._save_results_markdown(
             json_path=summary_path,
@@ -433,17 +741,18 @@ class BLBActionFinalEvaluationModule:
             ev.log(f"BLB action scatter plot saved to: {scatter_path}")
 
         glue_payload = self._maybe_run_glue_submission(
-            selected_candidate=selected_candidates[0] if selected_candidates else None,
-            selected_result=selected_results[0] if selected_results else None,
+            selected_candidate=selected_candidate,
+            selected_result=selected_result,
             opt_gelu=opt_gelu,
             opt_softmax=opt_softmax,
             profile=profile,
             action_context=action_context,
+            final_eval_handoff=final_eval_handoff,
         )
 
         ev.apply_configuration(opt_gelu, opt_softmax)
         self._clear_all_noise()
-        best = selected_results[0] if selected_results else None
+        best = selected_result
         return {
             "selected_source": f"blb_action(stage1={stage1_source})",
             "opt_gelu": opt_gelu,
@@ -452,7 +761,9 @@ class BLBActionFinalEvaluationModule:
             "baseline_result": baseline_result,
             "optimized_result": best,
             "candidate_results": results,
-            "selected_results": selected_results,
+            "selected_results": (
+                [] if best is None else [best]
+            ),
             "random_results": random_results,
             "random_summary": comparison_summary or {},
             "cost_match_diagnostics": cost_match_payload,
@@ -462,6 +773,7 @@ class BLBActionFinalEvaluationModule:
             "plot_path": plot_path,
             "scatter_path": scatter_path,
             "glue_submission": glue_payload,
+            "stage2_final_eval_handoff": final_eval_handoff,
             "variance_plot_path": None,
         }
 
@@ -565,31 +877,48 @@ class BLBActionFinalEvaluationModule:
             report_constraints,
             max_sfs,
             metadata=None,
+            prepared_materialized=None,
+            materialization_consistency=None,
             ):
         ev = self.evaluator
         total_layers = int(ev.total_layers)
         profile = str(getattr(ev, "dataset_key", "default") or "default")
         metadata = dict(metadata or {})
-        decoded = self._decode_action_candidate(
-            action_vec=action_vec,
-            metadata=metadata,
-            max_sfs=max_sfs,
-            num_layers=total_layers,
-            gelu=gelu,
-            softmax=softmax,
-            profile=profile,
-        )
-
-        cfgs_dict = decoded.cfgs_dict()
-        opt_outputs, opt_signals = self._optimizer_outputs(profile, cfgs_dict)
-        materialized = self._materialize_decoded_action(
-            profile=profile,
-            action_vec=action_vec,
-            decoded=decoded,
-            cfgs_dict=cfgs_dict,
-            opt_outputs=opt_outputs,
-            opt_signals=opt_signals,
-        )
+        if prepared_materialized is None:
+            decoded = self._decode_action_candidate(
+                action_vec=action_vec,
+                metadata=metadata,
+                max_sfs=max_sfs,
+                num_layers=total_layers,
+                gelu=gelu,
+                softmax=softmax,
+                profile=profile,
+            )
+            cfgs_dict = decoded.cfgs_dict()
+            opt_outputs, opt_signals = self._optimizer_outputs(
+                profile, cfgs_dict,
+            )
+            materialized = self._materialize_decoded_action(
+                profile=profile,
+                action_vec=action_vec,
+                decoded=decoded,
+                cfgs_dict=cfgs_dict,
+                opt_outputs=opt_outputs,
+                opt_signals=opt_signals,
+            )
+        else:
+            materialized = prepared_materialized
+            actual_action = [
+                int(value)
+                for value in np.asarray(action_vec, dtype=int).reshape(-1)
+            ]
+            if list(materialized.action_indices) != actual_action:
+                raise ValueError(
+                    "prepared Stage-2 materialization action mismatch"
+                )
+            decoded = materialized.decoded
+            opt_outputs = materialized.outputs
+            opt_signals = materialized.signals
         decoded = materialized.decoded
         replan_application = materialized.replan_application
         skip_reason = str(materialized.failure_reason or "")
@@ -655,6 +984,9 @@ class BLBActionFinalEvaluationModule:
             "config_details": self._config_details(decoded, action_vec, overrides, opt_outputs),
             "replan_application": replan_application,
             "final_config_fingerprint": materialized.final_config_fingerprint,
+            "materialization_consistency": to_jsonable(
+                materialization_consistency or {}
+            ),
             "rescale_optimizer": {
                 "invoker_kind": str(getattr(self, "rescale_invoker_kind", "unknown")),
                 "root": str(getattr(self, "rescale_optimizer_root", "") or ""),
@@ -851,8 +1183,13 @@ class BLBActionFinalEvaluationModule:
         )
 
         try:
-            from blb_stage2_rl.fusion_count_map import FusionCountMap
-            fusion_map = FusionCountMap.load(str(profile))
+            fusion_map = getattr(self, "_stage2_fusion_map", None)
+            if fusion_map is None:
+                from blb_stage2_rl.fusion_count_map import (
+                    FusionCountMap as RuntimeFusionCountMap,
+                )
+
+                fusion_map = RuntimeFusionCountMap.load(str(profile))
         except Exception as exc:
             raise RuntimeError(
                 f"failed to load fusion-count map for profile={profile!r}: {exc}"
@@ -973,6 +1310,10 @@ class BLBActionFinalEvaluationModule:
             cfgs_dict,
             opt_outputs,
             opt_signals,
+            truncation_backend=None,
+            truncation_ring_bits=None,
+            truncation_source_fractional_bits=None,
+            rotation_name_map_provider=None,
             ):
         """Apply Rescale_optimizer/replan results to cfgs before model forward.
 
@@ -984,19 +1325,33 @@ class BLBActionFinalEvaluationModule:
         bridge = getattr(self, "rescale_bridge", None)
         invoker = getattr(bridge, "invoker", None)
         invoker_baselines: Mapping[str, Any] = getattr(invoker, "baselines", {}) or {}
+        evaluator_backend = getattr(
+            self.evaluator, "blb_v3_truncation_backend", "binary",
+        )
+        evaluator_ring_bits = getattr(
+            self.evaluator, "blb_v3_truncation_ring_bits", 43,
+        )
+        evaluator_source_bits = getattr(
+            self.evaluator,
+            "blb_v3_truncation_source_fractional_bits",
+            24,
+        )
         backend = str(
-            getattr(self.evaluator, "blb_v3_truncation_backend", "binary")
-            or "binary"
+            truncation_backend
+            if truncation_backend is not None
+            else (
+                "binary" if evaluator_backend is None else evaluator_backend
+            )
         )
         ring_bits = int(
-            getattr(self.evaluator, "blb_v3_truncation_ring_bits", 43) or 43
+            truncation_ring_bits
+            if truncation_ring_bits is not None
+            else (43 if evaluator_ring_bits is None else evaluator_ring_bits)
         )
         source_fractional_bits = int(
-            getattr(
-                self.evaluator,
-                "blb_v3_truncation_source_fractional_bits",
-                24,
-            ) or 24
+            truncation_source_fractional_bits
+            if truncation_source_fractional_bits is not None
+            else (24 if evaluator_source_bits is None else evaluator_source_bits)
         )
         # apply_optimizer_outputs_to_cfgs is intentionally invoked only inside
         # materialize_decoded_action so final eval shares the online RL seam.
@@ -1008,7 +1363,9 @@ class BLBActionFinalEvaluationModule:
             outputs=opt_outputs,
             signals=opt_signals,
             invoker_baselines=invoker_baselines,
-            rotation_name_map_provider=self._rotation_name_map_for,
+            rotation_name_map_provider=(
+                rotation_name_map_provider or self._rotation_name_map_for
+            ),
             truncation_backend=backend,
             truncation_ring_bits=ring_bits,
             truncation_source_fractional_bits=source_fractional_bits,
@@ -1060,10 +1417,32 @@ class BLBActionFinalEvaluationModule:
             "matches_realized_total": bool(int(declared_total) == int(realized_total)),
         }
 
-    def _build_rescale_bridge(self, profile: str) -> Tuple[RescaleOptimizerBridge, str, str]:
+    def _resolve_rescale_invoker_kind(
+            self,
+            *,
+            require_in_process: bool,
+            ) -> str:
+        if require_in_process:
+            return "in_process"
+        kind = str(
+            getattr(
+                self.evaluator,
+                "blb_v3_rescale_invoker_kind",
+                "in_process",
+            ) or "in_process"
+        )
+        return kind.lower().replace("-", "_")
+
+    def _build_rescale_bridge(
+            self,
+            profile: str,
+            *,
+            require_in_process: bool = False,
+            ) -> Tuple[RescaleOptimizerBridge, str, str]:
         ev = self.evaluator
-        kind = str(getattr(ev, "blb_v3_rescale_invoker_kind", "in_process") or "in_process")
-        kind = kind.lower().replace("-", "_")
+        kind = self._resolve_rescale_invoker_kind(
+            require_in_process=require_in_process,
+        )
         root = self._resolve_rescale_optimizer_root()
 
         def fail(reason: Exception | str):
@@ -1487,6 +1866,10 @@ class BLBActionFinalEvaluationModule:
                 block5_cfgs=decoded.block5_cfgs,
             )
             install_verification = self._verify_model_installation(bridge, decoded)
+            if install_verification.get("model_will_use_selected_cfg") is not True:
+                raise RuntimeError(
+                    "selected configuration installation verification failed"
+                )
             split_name = ev._resolve_eval_split(use_train=False, split="validation_full")
             trials = []
             for _idx in range(max(1, int(repeats))):
@@ -1792,10 +2175,15 @@ class BLBActionFinalEvaluationModule:
         comparison_summary: Optional[Dict[str, Any]] = None,
         cost_match_diagnostics: Optional[Dict[str, Any]] = None,
         action_context_provenance: Optional[Mapping[str, Any]] = None,
+        final_eval_handoff: Optional[Mapping[str, Any]] = None,  # noqa: UP045
     ):
+        handoff = to_jsonable(final_eval_handoff)
         output = {
+            "schema_version": "paean_blb_action_final_eval_result_v1",
+            "status": "complete",
             "dataset": self.evaluator.dataset_key,
             "selected_source": selected_source,
+            "stage2_final_eval_handoff": handoff,
             "baseline_stage1": {
                 "gelu": np.asarray(baseline_stage1_gelu, dtype=int).tolist(),
                 "softmax": np.asarray(baseline_stage1_softmax, dtype=int).tolist(),
@@ -1816,20 +2204,20 @@ class BLBActionFinalEvaluationModule:
                 "version": 2,
                 "mode": "blb_action_grid_cost_matched",
                 "candidate_count": int(len(candidate_results)),
-                "random_groups": "enabled" if self.random_enabled else "disabled",
+                "random_groups": ("enabled" if len(candidate_results) > 1 else "disabled"),
                 "cost_match_count": int(self.cost_match_count),
                 "cost_match_max_attempts": int(self.cost_match_max_attempts),
                 "action_ranges": self.action_ranges,
                 "action_fixed": self.action_fixed,
                 "repeat_n": int(self.repeat_n),
+                "random_seed": int(self.random_seed),
             },
         }
         output_path = os.path.join(
             self.results_dir,
             f"blb_action_final_eval_results_{self.evaluator.dataset_key}.json",
         )
-        with open(output_path, "w", encoding="utf-8") as fh:
-            json.dump(output, fh, indent=2)
+        _atomic_json(output_path, output)
         return output_path
 
     # ------------------------------------------------------------------
@@ -1861,116 +2249,11 @@ class BLBActionFinalEvaluationModule:
             random_results: List[Dict[str, Any]],
             num_metrics: int,
             ) -> Dict[str, Any]:
-        if not selected_results and not random_results:
-            return {}
-
-        def _new_stats() -> Dict[str, Any]:
-            return {
-                "n": 0,
-                "sum": 0.0,
-                "sum_sq": 0.0,
-                "min": None,
-                "max": None,
-            }
-
-        def _add_stats(stat: Dict[str, Any], value: float) -> None:
-            value_f = float(value)
-            stat["n"] += 1
-            stat["sum"] += value_f
-            stat["sum_sq"] += value_f * value_f
-            if stat["min"] is None or value_f < stat["min"]:
-                stat["min"] = value_f
-            if stat["max"] is None or value_f > stat["max"]:
-                stat["max"] = value_f
-
-        def _finish_stats(stat: Dict[str, Any]) -> Dict[str, float]:
-            count = int(stat["n"])
-            if count <= 0:
-                return {"n": 0}
-            mean = float(stat["sum"]) / float(count)
-            variance = float(stat["sum_sq"]) / float(count) - mean * mean
-            if np.isfinite(variance) and variance < 0.0:
-                variance = 0.0
-            return {
-                "n": count,
-                "mean": float(mean),
-                "std": float(variance ** 0.5),
-                "min": float(stat["min"]),
-                "max": float(stat["max"]),
-            }
-
-        anchor = selected_results[0] if selected_results else None
-        random_count = len(random_results)
-        summary: Dict[str, Any] = {
-            "selected_count": int(len(selected_results)),
-            "random_count": int(random_count),
-        }
-        if anchor is not None:
-            summary["selected_anchor"] = {
-                "name": str(anchor.get("name", "selected")),
-                "loss_mean": float(anchor.get("loss", 0.0)),
-                "loss_std": float(anchor.get("loss_std", 0.0)),
-                "metric1_mean": float(anchor.get("p", 0.0)),
-                "metric1_std": float(anchor.get("p_std", 0.0)),
-                "metric2_mean": float(anchor.get("s", 0.0)),
-                "metric2_std": float(anchor.get("s_std", 0.0)),
-                "total_bits_sum": int(anchor.get("total_bits_sum", 0)),
-                "total_fusion_count": int(anchor.get("total_fusion_count", 0)),
-                "avg_truncation_k": float(anchor.get("avg_truncation_k", 0.0)),
-            }
-        if random_results:
-            stat_fields = (
-                ("loss_mean", "loss"),
-                ("loss_std", "loss_std"),
-                ("metric1_mean", "p"),
-                ("metric1_std", "p_std"),
-                ("metric2_mean", "s"),
-                ("metric2_std", "s_std"),
-            )
-            stats_by_name = {name: _new_stats() for name, _field in stat_fields}
-            metric1_rank = 0
-            loss_rank = 0
-            metric2_rank = 0
-            anchor_p = float(anchor.get("p", 0.0)) if anchor is not None else 0.0
-            anchor_loss = float(anchor.get("loss", 0.0)) if anchor is not None else 0.0
-            anchor_s = float(anchor.get("s", 0.0)) if anchor is not None else 0.0
-
-            for row in random_results:
-                for name, field in stat_fields:
-                    _add_stats(stats_by_name[name], float(row.get(field, 0.0)))
-                if anchor is None:
-                    continue
-                if float(row.get("p", 0.0)) < anchor_p:
-                    metric1_rank += 1
-                if float(row.get("loss", 0.0)) > anchor_loss:
-                    loss_rank += 1
-                if num_metrics > 1 and float(row.get("s", 0.0)) < anchor_s:
-                    metric2_rank += 1
-
-            summary["random_stats"] = {
-                name: _finish_stats(stats_by_name[name])
-                for name, _field in stat_fields
-            }
-
-            if anchor is not None:
-                def _rank_dict(rank: int):
-                    count = int(random_count)
-                    if count <= 0:
-                        return None
-                    rank_i = int(rank)
-                    return {
-                        "rank_better_than_selected": rank_i,
-                        "out_of": count,
-                        "percentile": float(rank_i) / float(count),
-                    }
-
-                summary["anchor_rank_vs_random"] = {
-                    "metric1_higher_better": _rank_dict(metric1_rank),
-                    "loss_lower_better": _rank_dict(loss_rank),
-                }
-                if num_metrics > 1:
-                    summary["anchor_rank_vs_random"]["metric2_higher_better"] = _rank_dict(metric2_rank)
-        return summary
+        return summarize_selected_vs_random_results(
+            selected_results,
+            random_results,
+            num_metrics=num_metrics,
+        )
 
     def _comparison_summary_markdown(
             self,
@@ -2139,11 +2422,34 @@ class BLBActionFinalEvaluationModule:
             opt_softmax: np.ndarray,
             profile: str,
             action_context,
+            final_eval_handoff: Optional[Mapping[str, Any]] = None,  # noqa: UP045
             ) -> Dict[str, Any]:
+        handoff = to_jsonable(final_eval_handoff)
         if not self.glue_submission_enabled:
-            return {"enabled": False, "skipped_reason": "disabled_by_settings"}
+            return {
+                "enabled": False,
+                "skipped_reason": "disabled_by_settings",
+            }
         if selected_candidate is None or selected_result is None:
-            return {"enabled": True, "skipped_reason": "no_selected_candidate"}
+            return {
+                "enabled": True,
+                "skipped_reason": "no_selected_candidate",
+            }
+        install_verification = selected_result.get("install_verification")
+        if not isinstance(install_verification, Mapping):
+            install_verification = {}
+        if not (
+                selected_result.get("skipped_forward") is False
+                and type(selected_result.get("evaluation_n")) is int
+                and selected_result["evaluation_n"] > 0
+                and install_verification.get(
+                    "model_will_use_selected_cfg"
+                ) is True
+        ):
+            return {
+                "enabled": True,
+                "skipped_reason": "selected_action_not_evaluated",
+            }
         try:
             from generate_glue_submission import generate_blb_glue_submission
         except Exception as exc:
@@ -2175,9 +2481,9 @@ class BLBActionFinalEvaluationModule:
                 "calibrated_action_context": to_jsonable(
                     action_context.provenance
                 ),
+                "stage2_final_eval_handoff": handoff,
             }
-            with open(action_json_path, "w", encoding="utf-8") as _fh:
-                json.dump(fusion_fixed_cfg, _fh, ensure_ascii=False, indent=2)
+            _atomic_json(action_json_path, fusion_fixed_cfg)
         else:
             # Persist the BLB action as a slot-form JSON the generator can load
             # without depending on training-side artifacts.
@@ -2190,6 +2496,7 @@ class BLBActionFinalEvaluationModule:
                 anchor_name=str(selected_candidate.name),
                 max_sfs=action_context.max_sfs,
                 action_context_provenance=action_context.provenance,
+                final_eval_handoff=handoff,
             )
 
         try:
@@ -2232,6 +2539,7 @@ class BLBActionFinalEvaluationModule:
             anchor_name: str,
             max_sfs,
             action_context_provenance: Mapping[str, Any],
+            final_eval_handoff: Optional[Mapping[str, Any]] = None,  # noqa: UP045
             ) -> None:
         try:
             from blb_stage2_rl.action_io import action_vec_to_slots_list
@@ -2271,9 +2579,9 @@ class BLBActionFinalEvaluationModule:
             "calibrated_action_context": to_jsonable(
                 action_context_provenance
             ),
+            "stage2_final_eval_handoff": to_jsonable(final_eval_handoff),
         }
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2, ensure_ascii=False)
+        _atomic_json(path, payload)
 
     @staticmethod
     def _attach_relative_metrics(baseline, results):

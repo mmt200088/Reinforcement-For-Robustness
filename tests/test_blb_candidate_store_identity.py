@@ -1,5 +1,7 @@
 import builtins
+import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -215,6 +217,20 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         action = np.asarray([[1, 2], [3, 4]], dtype=int).view(NoToListArray)
         self.assertEqual(store_mod.normalize_action_indices(action), [1, 2, 3, 4])
 
+    def test_nested_one_shot_action_iterator_is_not_partially_consumed(self):
+        from blb_stage2_rl import candidate_store as store_mod
+
+        action = (item for item in (1, [2, 3], 4))
+
+        self.assertEqual(
+            store_mod.normalize_action_indices(action),
+            [1, 2, 3, 4],
+        )
+        self.assertNotEqual(
+            store_mod.action_hash(item for item in (1, [2, 3], 4)),
+            store_mod.action_hash([4]),
+        )
+
     def test_action_hash_caches_by_normalized_action_tuple(self):
         from blb_stage2_rl import candidate_store as store_mod
 
@@ -276,11 +292,11 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual([record["action_indices"] for record in records], [[1], [2]])
 
     def test_append_writes_each_jsonl_record_as_one_complete_row(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl import candidate_store as store_mod
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "candidate_store.jsonl"
-            store = CandidateStore(path)
+            store = store_mod.CandidateStore(path)
             fake_handle = mock.MagicMock()
             fake_handle.__enter__.return_value = fake_handle
             fake_handle.__exit__.return_value = None
@@ -292,11 +308,12 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                 return original_open(open_path, *args, **kwargs)
 
             with mock.patch.object(Path, "open", guarded_open):
-                saved = store.append({
-                    "action_indices": [1, 2, 3],
-                    "fidelity": "F1",
-                    "valid": True,
-                })
+                with mock.patch.object(store_mod.os, "fsync"):
+                    saved = store.append({
+                        "action_indices": [1, 2, 3],
+                        "fidelity": "F1",
+                        "valid": True,
+                    })
 
         self.assertEqual(saved["action_indices"], [1, 2, 3])
         fake_handle.writelines.assert_not_called()
@@ -304,6 +321,72 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         row = fake_handle.write.call_args.args[0]
         self.assertTrue(row.endswith("\n"))
         self.assertEqual(json.loads(row)["action_indices"], [1, 2, 3])
+
+    def test_first_append_fsyncs_row_and_parent_directory(self):
+        from blb_stage2_rl import candidate_store as store_mod
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            store = store_mod.CandidateStore(path)
+            with mock.patch.object(
+                    store_mod.os, "fsync",
+            ) as fsync, mock.patch.object(
+                    store_mod.os, "open", wraps=store_mod.os.open,
+            ) as open_directory:
+                store.append({
+                    "action_indices": [1, 2, 3],
+                    "fidelity": "F1",
+                    "valid": True,
+                })
+
+            self.assertEqual(fsync.call_count, 2)
+            open_directory.assert_called_once_with(
+                os.fspath(path.parent),
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+            )
+
+    def test_recovery_marker_is_fsynced_before_return(self):
+        from blb_stage2_rl import candidate_store as store_mod
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            store = store_mod.CandidateStore(path)
+            store.append({"action_indices": [1], "fidelity": "F1", "valid": True})
+            committed_size = path.stat().st_size
+            store.append({"action_indices": [2], "fidelity": "F1", "valid": True})
+
+            with mock.patch.object(store_mod.os, "fsync") as fsync:
+                store.recover_to_checkpoint_size(committed_size)
+
+            fsync.assert_called_once()
+
+    def test_malformed_tail_repair_is_fsynced_before_read_returns(self):
+        from blb_stage2_rl import candidate_store as store_mod
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            path.write_bytes(b'{"action_indices":[1]}\n{"record_type":"broken"')
+            store = store_mod.CandidateStore(path)
+
+            with mock.patch.object(store_mod.os, "fsync") as fsync:
+                records = store.read_all()
+
+            fsync.assert_called_once()
+            self.assertEqual([row["action_indices"] for row in records], [[1]])
+
+    def test_complete_tail_newline_repair_is_fsynced_before_read_returns(self):
+        from blb_stage2_rl import candidate_store as store_mod
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            path.write_bytes(b'{"action_indices":[1]}')
+            store = store_mod.CandidateStore(path)
+
+            with mock.patch.object(store_mod.os, "fsync") as fsync:
+                records = store.read_all()
+
+            fsync.assert_called_once()
+            self.assertEqual([row["action_indices"] for row in records], [[1]])
 
     def test_read_all_discards_only_a_malformed_unterminated_tail(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -667,6 +750,45 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
         self.assertEqual(size_after_replay, size_before_replay)
         self.assertEqual(evidence.trial_count, 2)
         self.assertEqual(evidence.trials.seeds, (11, 12))
+
+    def test_legacy_out_of_range_loss_replay_is_normalized_and_idempotent(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [3, 2, 1, 0]
+        context = {"action_space_version": "layerwise-v1", "profile": "mrpc"}
+        trials = TrialSeries(
+            loss=[150.0],
+            metric1=[0.9],
+            metric2=[0.8],
+            seeds=[11],
+        )
+        metadata = {"identity_context": context, "episode_index": 121}
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            CandidateStore(path).append_trial_group(action, trials, metadata)
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            trial_row = next(
+                row for row in rows
+                if row.get("record_type") == "candidate_trial_group_v1"
+            )
+            trial_row["trial_group"]["loss"] = [150.0]
+            path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            size_before_replay = path.stat().st_size
+            replay = CandidateStore(path).append_trial_group(
+                action, trials, metadata,
+            )
+            evidence = CandidateStore(path).trial_evidence_for_action(
+                action, context,
+            )
+            size_after_replay = path.stat().st_size
+
+        self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(size_after_replay, size_before_replay)
+        self.assertEqual(evidence.trials.loss, (100.0,))
 
     def test_trial_group_replay_rejects_changed_metadata(self):
         from blb_stage2_rl.candidate_store import CandidateStore
@@ -1446,6 +1568,239 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         CandidateStore(bad_path).read_all()
 
+    def test_legacy_candidate_store_rejects_cross_candidate_identity_splice(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        fixture = self._representative_compact_fixture()
+        action_a = list(fixture["action"])
+        action_b = list(action_a)
+        action_b[0] = (action_b[0] + 1) % 6
+        context = fixture["contexts"]["F1"]
+        trials_b = TrialSeries(
+            loss=[0.41, 0.42],
+            metric1=[0.71, 0.72],
+            metric2=[0.61, 0.62],
+            seeds=[901, 902],
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "legacy.jsonl"
+            store = CandidateStore(path)
+            store.append_trial_group(
+                action_a,
+                fixture["trials"]["F1"],
+                fixture["metadata"]["F1"],
+            )
+            store.append_trial_group(
+                action_b,
+                trials_b,
+                fixture["metadata"]["F1"],
+            )
+            rows = [json.loads(line) for line in path.read_text(
+                encoding="utf-8",
+            ).splitlines()]
+            trial_a = next(
+                row for row in rows
+                if row.get("record_type") == "candidate_trial_group_v1"
+                and row["action_indices"] == action_a
+            )
+            trial_b = next(
+                row for row in rows
+                if row.get("record_type") == "candidate_trial_group_v1"
+                and row["action_indices"] == action_b
+            )
+            trial_a["candidate_key"] = trial_b["candidate_key"]
+            path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "candidate identity"):
+                CandidateStore(path).trial_evidence_for_action(action_b, context)
+
+    def test_legacy_candidate_store_rejects_self_consistent_effective_splice(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        fixture = self._representative_compact_fixture()
+        action_a = list(fixture["action"])
+        action_b = list(action_a)
+        action_b[0] = (action_b[0] + 1) % 6
+        context = fixture["contexts"]["F1"]
+        trials_b = TrialSeries(
+            loss=[0.41, 0.42],
+            metric1=[0.71, 0.72],
+            metric2=[0.61, 0.62],
+            seeds=[901, 902],
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "legacy.jsonl"
+            store = CandidateStore(path)
+            store.append_trial_group(
+                action_a,
+                fixture["trials"]["F1"],
+                fixture["metadata"]["F1"],
+            )
+            store.append_trial_group(
+                action_b,
+                trials_b,
+                fixture["metadata"]["F1"],
+            )
+            rows = [json.loads(line) for line in path.read_text(
+                encoding="utf-8",
+            ).splitlines()]
+            trial_a = next(
+                row for row in rows
+                if row.get("record_type") == "candidate_trial_group_v1"
+                and row["action_indices"] == action_a
+            )
+            trial_b = next(
+                row for row in rows
+                if row.get("record_type") == "candidate_trial_group_v1"
+                and row["action_indices"] == action_b
+            )
+            for field in (
+                    "effective_action_indices",
+                    "effective_action_hash",
+                    "candidate_key",
+            ):
+                trial_a[field] = copy.deepcopy(trial_b[field])
+            path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "candidate identity"):
+                CandidateStore(path).trial_evidence_for_action(action_b, context)
+
+    def test_legacy_best_lookup_validates_persisted_candidate_key(self):
+        from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
+
+        fixture = self._representative_compact_fixture()
+        action_a = list(fixture["action"])
+        action_b = list(action_a)
+        action_b[0] = (action_b[0] + 1) % 6
+        context = fixture["contexts"]["F1"]
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "legacy.jsonl"
+            CandidateStore(path).append_trial_group(
+                action_a,
+                fixture["trials"]["F1"],
+                fixture["metadata"]["F1"],
+            )
+            rows = [json.loads(line) for line in path.read_text(
+                encoding="utf-8",
+            ).splitlines()]
+            trial = next(
+                row for row in rows
+                if row.get("record_type") == "candidate_trial_group_v1"
+            )
+            trial["candidate_key"] = candidate_key(action_b, context)
+            path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+
+            operations = {
+                "read_all": lambda store: store.read_all(),
+                "best_for_action": lambda store: store.best_for_action(
+                    action_b, identity_context=context,
+                ),
+                "should_evaluate": lambda store: store.should_evaluate(
+                    action_b, "F1", identity_context=context,
+                ),
+            }
+            for name, operation in operations.items():
+                with self.subTest(operation=name):
+                    with self.assertRaisesRegex(ValueError, "candidate identity"):
+                        operation(CandidateStore(path))
+
+    def test_compact_candidate_store_rejects_cross_candidate_identity_splice(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        fixture = self._representative_compact_fixture()
+        action_a = list(fixture["action"])
+        action_b = list(action_a)
+        action_b[0] = (action_b[0] + 1) % 6
+        context = fixture["contexts"]["F1"]
+        trials_b = TrialSeries(
+            loss=[0.41, 0.42],
+            metric1=[0.71, 0.72],
+            metric2=[0.61, 0.62],
+            seeds=[901, 902],
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "compact.jsonl"
+            store = CandidateStore(path)
+            store.append_trial_group(
+                action_a,
+                fixture["trials"]["F1"],
+                fixture["metadata"]["F1"],
+                compact=True,
+            )
+            store.append_trial_group(
+                action_b,
+                trials_b,
+                fixture["metadata"]["F1"],
+                compact=True,
+            )
+            rows = [json.loads(line) for line in path.read_text(
+                encoding="utf-8",
+            ).splitlines()]
+            trial_a = next(
+                row for row in rows
+                if row.get("record_type") == "candidate_trial_group_v2"
+                and row["action_indices"] == action_a
+            )
+            trial_b = next(
+                row for row in rows
+                if row.get("record_type") == "candidate_trial_group_v2"
+                and row["action_indices"] == action_b
+            )
+            trial_a["candidate_key"] = trial_b["candidate_key"]
+            path.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "candidate identity"):
+                CandidateStore(path).trial_evidence_for_action(action_b, context)
+
+    def test_append_rejects_conflicting_derived_candidate_identity_fields(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+
+        fixture = self._representative_compact_fixture()
+        action = fixture["action"]
+        context = fixture["contexts"]["F1"]
+        conflicting_action = list(action)
+        conflicting_action[0] = (conflicting_action[0] + 1) % 6
+        conflicts = {
+            "effective_action_indices": conflicting_action,
+            "raw_action_hash": "0" * 64,
+            "action_hash": "1" * 64,
+            "action_vector_hash": "2" * 64,
+            "effective_action_hash": "3" * 64,
+            "candidate_key_basis": "caller_supplied_key",
+            "candidate_key": "4" * 64,
+            "identity_context_hash": "5" * 64,
+            "legacy_record": True,
+        }
+        with tempfile.TemporaryDirectory() as td:
+            for field, value in conflicts.items():
+                path = Path(td) / f"bad-{field}.jsonl"
+                with self.subTest(field=field):
+                    with self.assertRaisesRegex(ValueError, "candidate identity"):
+                        CandidateStore(path).append({
+                            "record_type": "candidate_trial_group_v1",
+                            "action_indices": action,
+                            "effective_action_indices": action,
+                            "identity_context": context,
+                            "fidelity": "F1",
+                            "valid": True,
+                            field: value,
+                        })
+
     def test_mixed_store_random_offsets_pool_in_order_and_share_v1_duplicate_rules(self):
         from blb_stage2_rl.candidate_store import CandidateStore, candidate_key
         from blb_stage2_rl.statistical_constraints import TrialSeries
@@ -1644,3 +1999,35 @@ class BLBCandidateStoreIdentityTests(unittest.TestCase):
             "candidate_identity_context_v1",
             {row["record_type"] for row in final_records},
         )
+
+    def test_store_is_path_backed_and_reopens_ordinary_trial_evidence(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.statistical_constraints import TrialSeries
+
+        action = [1, 2, 3]
+        context = {"action_space_version": "layerwise-v1", "fidelity": "F4"}
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "candidate_store.jsonl"
+            CandidateStore(path).append_trial_group(
+                action,
+                TrialSeries(
+                    loss=[0.3], metric1=[0.9], metric2=[0.8], seeds=[101],
+                ),
+                {
+                    "identity_context": context,
+                    "fidelity": "F4",
+                    "axis": "joint",
+                    "bank": "A",
+                    "group_index": 0,
+                },
+                compact=True,
+            )
+            evidence = CandidateStore(path).trial_evidence_for_action(
+                action, context,
+            )
+
+        self.assertFalse(hasattr(CandidateStore, "from_bytes"))
+        self.assertFalse(hasattr(CandidateStore, "append_physical_trial_event"))
+        self.assertFalse(hasattr(CandidateStore, "physical_trial_accounting"))
+        self.assertEqual(evidence.trials.seeds, (101,))
+        self.assertEqual(evidence.trials.loss, (0.3,))

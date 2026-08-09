@@ -442,10 +442,10 @@ def candidate_rank_key(evaluation: SearchEvaluation) -> tuple[Any, ...]:
 class SearchConfig:
     """Serializable configuration for all three canonical baselines."""
 
-    evaluation_cap: int = 34_448
+    evaluation_cap: int = 45_664
     seed: int = 42
 
-    bo_initial_design_size: int = 48
+    bo_initial_design_size: int = 64
     bo_candidate_pool_size: int = 2048
     bo_no_improvement_patience: int = 100
     rf_n_estimators: int = 256
@@ -454,16 +454,18 @@ class SearchConfig:
 
     greedy_max_starts: int = 3
 
-    ga_population_size: int = 48
-    ga_elite_count: int = 5
+    ga_population_size: int = 64
+    ga_elite_count: int = 7
     ga_update_generations: int = 800
+    ga_no_improvement_patience: int = 5
+    # Compatibility-only fields retained in serialized historical configs.
     ga_tournament_size: int = 3
-    ga_crossover_probability: float = 0.9
+    ga_crossover_probability: float = 0.0
     ga_mutation_max_layers: int = 4
     ga_duplicate_attempts: int = 64
     ga_unique_ratio_threshold: float = 0.60
     ga_mean_distance_threshold: float = 2.0
-    ga_immigrant_fraction: float = 0.10
+    ga_immigrant_fraction: float = 0.0
     maximin_candidate_pool_size: int = 1024
 
     def __post_init__(self) -> None:
@@ -478,6 +480,7 @@ class SearchConfig:
             "ga_population_size",
             "ga_elite_count",
             "ga_update_generations",
+            "ga_no_improvement_patience",
             "ga_tournament_size",
             "ga_mutation_max_layers",
             "ga_duplicate_attempts",
@@ -519,6 +522,109 @@ class SearchConfig:
     def from_dict(cls, payload: Mapping[str, Any]) -> "SearchConfig":
         names = set(cls.__dataclass_fields__)
         return cls(**{name: payload[name] for name in names if name in payload})
+
+
+STAGE1_COMPARATOR_NUM_LAYERS = 12
+STAGE1_COMPARATOR_SPLIT = "validation_full"
+STAGE1_COMPARATOR_USE_TRAIN = False
+STAGE1_COMPARATOR_LOSS_RELATIVE_TOLERANCE = 0.001
+STAGE1_COMPARATOR_METRIC_RELATIVE_TOLERANCE = 0.001
+STAGE1_COMPARATOR_METRIC_NAMES = ("accuracy", "weighted_f1")
+
+
+def _stage1_comparator_error(reason: str) -> RuntimeError:
+    return RuntimeError(f"Stage-1 comparator protocol violation: {reason}")
+
+
+def stage1_comparator_search_config(backend: Any) -> SearchConfig:
+    """Return the reproducible MRPC search parameters for one comparator."""
+
+    normalized = normalize_search_backend(backend)
+    evaluation_caps = {
+        "bo_rf": 50_000,
+        "greedy": 3 ** STAGE1_COMPARATOR_NUM_LAYERS,
+        "coinn_ga": 64 + 800 * (64 - 7),
+    }
+    return SearchConfig(
+        evaluation_cap=evaluation_caps[normalized],
+        seed=42,
+        bo_initial_design_size=64,
+        bo_candidate_pool_size=2_048,
+        bo_no_improvement_patience=100,
+        rf_n_estimators=128,
+        rf_min_samples_leaf=2,
+        acquisition_exploration=0.05,
+        greedy_max_starts=3,
+        ga_population_size=64,
+        ga_elite_count=7,
+        ga_update_generations=800,
+        ga_no_improvement_patience=5,
+        ga_tournament_size=3,
+        ga_crossover_probability=0.0,
+        ga_mutation_max_layers=4,
+        ga_duplicate_attempts=64,
+        ga_unique_ratio_threshold=0.60,
+        ga_mean_distance_threshold=2.0,
+        ga_immigrant_fraction=0.0,
+        maximin_candidate_pool_size=1_024,
+    )
+
+
+def validate_stage1_comparator_constraints(
+        constraints: Stage1Constraints,
+        ) -> dict[str, Any]:
+    """Validate the scientific MRPC limits without hashes or authority state."""
+
+    if not isinstance(constraints, Stage1Constraints):
+        raise _stage1_comparator_error("constraints are not Stage1Constraints")
+    if constraints.metric_names != STAGE1_COMPARATOR_METRIC_NAMES:
+        raise _stage1_comparator_error(
+            "metric names must be accuracy and weighted_f1"
+        )
+    if len(constraints.baseline_metrics) != 2:
+        raise _stage1_comparator_error("MRPC requires two metrics")
+    expected = Stage1Constraints.from_baseline(
+        baseline_loss=constraints.baseline_loss,
+        baseline_metrics=constraints.baseline_metrics,
+        loss_relative_tolerance=STAGE1_COMPARATOR_LOSS_RELATIVE_TOLERANCE,
+        metric_relative_tolerance=STAGE1_COMPARATOR_METRIC_RELATIVE_TOLERANCE,
+        metric_names=STAGE1_COMPARATOR_METRIC_NAMES,
+    )
+    if constraints.as_dict() != expected.as_dict():
+        raise _stage1_comparator_error(
+            "constraint thresholds do not use the exact 0.1% MRPC tolerances"
+        )
+    return expected.as_dict()
+
+
+def validate_stage1_comparator_setup(
+        *,
+        backend: Any,
+        config: SearchConfig,
+        num_layers: int,
+        constraints: Stage1Constraints,
+        split: str = STAGE1_COMPARATOR_SPLIT,
+        use_train: bool = STAGE1_COMPARATOR_USE_TRAIN,
+        ) -> None:
+    """Validate reproducible comparator parameters using direct value checks."""
+
+    normalized = normalize_search_backend(backend)
+    expected_config = stage1_comparator_search_config(normalized)
+    if not isinstance(config, SearchConfig) or config.as_dict() != expected_config.as_dict():
+        raise _stage1_comparator_error(
+            f"{normalized} search configuration is not the comparator preset"
+        )
+    if (
+            isinstance(num_layers, bool)
+            or not isinstance(num_layers, int)
+            or num_layers != STAGE1_COMPARATOR_NUM_LAYERS
+    ):
+        raise _stage1_comparator_error("the action space must have 12 layers")
+    if split != STAGE1_COMPARATOR_SPLIT or use_train is not False:
+        raise _stage1_comparator_error(
+            "evaluation must use validation_full with use_train=False"
+        )
+    validate_stage1_comparator_constraints(constraints)
 
 
 @dataclass(frozen=True)
@@ -596,6 +702,7 @@ class _EvaluationCache:
             incremental_checkpoint_callback: Optional[
                 IncrementalCheckpointCallback
             ] = None,
+            replay_preload_in_order: bool = True,
             ):
         self.space = space
         self.evaluator = evaluator
@@ -605,9 +712,26 @@ class _EvaluationCache:
         self._by_action: dict[Stage1Action, SearchEvaluation] = {}
         self._ordered: list[SearchEvaluation] = []
         self._best: Optional[SearchEvaluation] = None
-        for evaluation in preload:
-            self.add_preloaded(evaluation)
-        if len(self._ordered) > self.cap:
+        self._replay_preload = tuple(preload)
+        self._replay_index = 0
+        self._replay_preload_in_order = bool(replay_preload_in_order)
+        if self._replay_preload and not self._replay_preload_in_order:
+            raise ValueError(
+                "unordered Stage-1 preload is unsupported; exact replay is required"
+            )
+        seen: set[Stage1Action] = set()
+        for evaluation in self._replay_preload:
+            if not isinstance(evaluation, SearchEvaluation):
+                raise TypeError(
+                    "preload entries must be SearchEvaluation instances"
+                )
+            action = self.space.validate(evaluation.action)
+            if action in seen:
+                raise ValueError(
+                    "ordered preload contains a duplicate action"
+                )
+            seen.add(action)
+        if len(self._replay_preload) > self.cap:
             raise ValueError("preloaded observations exceed the evaluation cap")
 
     @property
@@ -621,6 +745,18 @@ class _EvaluationCache:
     @property
     def observations(self) -> tuple[SearchEvaluation, ...]:
         return tuple(self._ordered)
+
+    @property
+    def replay_complete(self) -> bool:
+        return self._replay_index == len(self._replay_preload)
+
+    def assert_replay_consumed(self) -> None:
+        if not self.replay_complete:
+            next_action = self._replay_preload[self._replay_index].action
+            raise RuntimeError(
+                "exact Stage-1 search replay terminated before consuming "
+                f"persisted observation {self._replay_index}: {next_action!r}"
+            )
 
     def contains(self, action: Sequence[int]) -> bool:
         return self.space.validate(action) in self._by_action
@@ -653,6 +789,20 @@ class _EvaluationCache:
         cached = self._by_action.get(owned)
         if cached is not None:
             return cached
+        if (
+                self._replay_preload_in_order
+                and self._replay_index < len(self._replay_preload)
+        ):
+            evaluation = self._replay_preload[self._replay_index]
+            if evaluation.action != owned:
+                raise RuntimeError(
+                    "exact Stage-1 search replay diverged at persisted "
+                    f"observation {self._replay_index}: expected "
+                    f"{evaluation.action!r}, requested {owned!r}"
+                )
+            self._replay_index += 1
+            self._record(evaluation)
+            return evaluation
         if self.remaining <= 0:
             raise RuntimeError("Stage-1 search evaluation cap exhausted")
         evaluation = self.evaluator(owned)
@@ -782,8 +932,8 @@ def structured_maximin_initial_design(
         ) -> tuple[Stage1Action, ...]:
     """Build anchors, all one-layer all4 reductions, then maximin actions.
 
-    For ``L=12, count=48`` this is exactly three anchors, 24 one-layer
-    reductions from all4, and 21 categorical maximin actions.
+    For ``L=12, count=64`` this is exactly three anchors, 24 one-layer
+    reductions from all4, and 37 categorical maximin actions.
     """
 
     target = min(int(count), int(space.cardinality))
@@ -874,6 +1024,7 @@ def _run_greedy(
         incremental_checkpoint_callback: Optional[
             IncrementalCheckpointCallback
         ],
+        replay_preload_in_order: bool = True,
         ) -> SearchResult:
     cache = _EvaluationCache(
         space=space,
@@ -882,6 +1033,7 @@ def _run_greedy(
         preload=preload,
         checkpoint_callback=checkpoint_callback,
         incremental_checkpoint_callback=incremental_checkpoint_callback,
+        replay_preload_in_order=replay_preload_in_order,
     )
     history: list[dict[str, Any]] = []
     all_verified = True
@@ -969,6 +1121,7 @@ def _run_greedy(
             break
         if not all_verified and cache.remaining <= 0:
             break
+    cache.assert_replay_consumed()
     termination = (
         "verified_local_optimum"
         if all_verified
@@ -1001,7 +1154,7 @@ def _default_surrogate_factory(config: SearchConfig) -> SurrogateFactory:
         return RandomForestRegressor(
             n_estimators=int(config.rf_n_estimators),
             min_samples_leaf=int(config.rf_min_samples_leaf),
-            max_features="sqrt",
+            max_features=0.75,
             bootstrap=True,
             random_state=int(seed),
             n_jobs=-1,
@@ -1141,6 +1294,7 @@ def _run_bo_rf(
         preload=preload,
         checkpoint_callback=checkpoint_callback,
         incremental_checkpoint_callback=incremental_checkpoint_callback,
+        replay_preload_in_order=True,
     )
     history: list[dict[str, Any]] = []
     design = structured_maximin_initial_design(
@@ -1275,6 +1429,7 @@ def _run_bo_rf(
         ))
     if cache.remaining <= 0:
         termination = "evaluation_cap"
+    cache.assert_replay_consumed()
     return SearchResult(
         algorithm="bo_rf",
         config=config,
@@ -1286,7 +1441,7 @@ def _run_bo_rf(
 
 
 # ---------------------------------------------------------------------------
-# Structured elitist Stage-1 GA (P48/E5, 800 update generations by default)
+# Structured elitist Stage-1 GA (P64/E7, 800 update generations by default)
 # ---------------------------------------------------------------------------
 
 
@@ -1354,6 +1509,54 @@ def _select_hamming_diverse_elites(
     return selected
 
 
+def _ga_parent_weights(
+        population: Sequence[SearchEvaluation],
+        ) -> tuple[float, ...]:
+    """Return feasibility-aware positive COINN parent fitness weights."""
+
+    if not population:
+        raise ValueError("GA parent population must not be empty")
+
+    def inverse_penalty(item: SearchEvaluation) -> float:
+        components = (
+            1.0,
+            float(not item.valid),
+            float(item.failed_constraint_count),
+            *item.violations,
+            float(item.worst_violation),
+        )
+        scale = max(components)
+        if not math.isfinite(scale):
+            return math.nextafter(0.0, 1.0)
+        scaled_total = sum(value / scale for value in components)
+        return max(
+            (1.0 / scale) / scaled_total,
+            math.nextafter(0.0, 1.0),
+        )
+
+    feasible_weights = tuple(
+        1.0 / max(float(item.cost), _EPS) if item.feasible else 0.0
+        for item in population
+    )
+    infeasible_weights = tuple(
+        0.0 if item.feasible else inverse_penalty(item)
+        for item in population
+    )
+    feasible_total = float(sum(feasible_weights))
+    infeasible_total = float(sum(infeasible_weights))
+    if feasible_total > 0.0 and infeasible_total > 0.0:
+        return tuple(
+            0.90 * (feasible / feasible_total)
+            + 0.10 * (infeasible / infeasible_total)
+            for feasible, infeasible in zip(  # noqa: B905 - Python 3.9
+                feasible_weights, infeasible_weights,
+            )
+        )
+    if feasible_total > 0.0:
+        return feasible_weights
+    return infeasible_weights
+
+
 def _tournament(
         population: Sequence[SearchEvaluation],
         rng: np.random.Generator,
@@ -1361,31 +1564,13 @@ def _tournament(
         *,
         diverse_from: Optional[Stage1Action] = None,
         ) -> SearchEvaluation:
-    size = min(int(tournament_size), len(population))
-    indices = tuple(int(value) for value in rng.choice(len(population), size=size, replace=False))
-    contestants = [population[index] for index in indices]
-    if diverse_from is not None:
-        distances = {
-            item.action: sum(
-                int(lhs != rhs)
-                for lhs, rhs in zip(item.action, diverse_from)
-            )
-            for item in contestants
-        }
-        distance_two = [
-            item for item in contestants
-            if distances[item.action] >= 2
-        ]
-        if distance_two:
-            contestants = distance_two
-        else:
-            distance_one = [
-                item for item in contestants
-                if distances[item.action] >= 1
-            ]
-            if distance_one:
-                contestants = distance_one
-    return max(contestants, key=candidate_rank_key)
+    """Compatibility-named fitness-proportional COINN parent selector."""
+
+    del tournament_size, diverse_from
+    weights = np.asarray(_ga_parent_weights(population), dtype=float)
+    probabilities = weights / float(np.sum(weights))
+    index = int(rng.choice(len(population), p=probabilities))
+    return population[index]
 
 
 def _mutate_action(
@@ -1412,8 +1597,13 @@ def _mutate_action(
         selected = [int(rng.integers(space.num_layers))]
     for layer_idx in selected:
         current = candidate[layer_idx]
-        alternatives = tuple(value for value in GENE_CATEGORIES if value != current)
-        candidate[layer_idx] = alternatives[int(rng.integers(len(alternatives)))]
+        alternatives = tuple(
+            value for value in GENE_CATEGORIES
+            if value != current and abs(value - current) == 1
+        )
+        candidate[layer_idx] = alternatives[
+            int(rng.integers(len(alternatives)))
+        ]
     return tuple(candidate)
 
 
@@ -1473,47 +1663,27 @@ def _breed_unique_child(
         config: SearchConfig,
         ) -> tuple[Optional[Stage1Action], bool]:
     for _attempt in range(int(config.ga_duplicate_attempts)):
-        first = _tournament(
+        parent = _tournament(
             population, rng, int(config.ga_tournament_size),
-        )
-        second = _tournament(
-            population,
-            rng,
-            int(config.ga_tournament_size),
-            diverse_from=first.action,
-        )
-        crossed = float(rng.random()) < float(config.ga_crossover_probability)
-        child = (
-            _crossover(space, first.action, second.action, rng)
-            if crossed else first.action
         )
         child = _mutate_action(
             space,
-            child,
+            parent.action,
             rng,
             max_layers=int(config.ga_mutation_max_layers),
-            force=not crossed,
+            force=True,
         )
         if child in blocked or cache.contains(child):
-            # Duplicate offspring receives a forced layer-replacement mutation.
             child = _mutate_action(
                 space,
-                child,
+                parent.action,
                 rng,
                 max_layers=int(config.ga_mutation_max_layers),
                 force=True,
             )
         if child not in blocked and not cache.contains(child):
             return child, False
-    immigrant = _maximin_immigrant(
-        space=space,
-        cache=cache,
-        references=[item.action for item in population] + list(blocked),
-        blocked=blocked,
-        rng=rng,
-        pool_size=int(config.maximin_candidate_pool_size),
-    )
-    return immigrant, True
+    return None, False
 
 
 def _run_coinn_ga(
@@ -1535,6 +1705,7 @@ def _run_coinn_ga(
         preload=preload,
         checkpoint_callback=checkpoint_callback,
         incremental_checkpoint_callback=incremental_checkpoint_callback,
+        replay_preload_in_order=True,
     )
     population_size = min(
         int(config.ga_population_size),
@@ -1566,53 +1737,28 @@ def _run_coinn_ga(
         anchors=min(3, len(initial_actions)),
         one_layer_reductions=min(2 * space.num_layers, max(0, len(initial_actions) - 3)),
         maximin_count=max(0, len(initial_actions) - 3 - 2 * space.num_layers),
-        initialization_provenance=[
-            {
-                "action": list(action),
-                "source": (
-                    "uniform_anchor"
-                    if index < 3
-                    else (
-                        "one_layer_reduction_from_all4"
-                        if index < 3 + 2 * space.num_layers
-                        else "categorical_maximin"
-                    )
-                ),
-            }
-            for index, action in enumerate(initial_actions)
-        ],
         unique_ratio=float(unique_ratio),
         mean_pairwise_distance=float(mean_distance),
     ))
 
     termination = "completed_generations"
     completed_generations = 0
+    incumbent_key = candidate_rank_key(max(
+        population, key=candidate_rank_key,
+    ))
+    no_improvement_generations = 0
+    offspring_target = population_size - elite_count
     for generation in range(1, int(config.ga_update_generations) + 1):
-        if cache.remaining <= 0:
+        if cache.remaining < offspring_target:
             termination = "evaluation_cap"
             break
         elites = _select_hamming_diverse_elites(
             space, population, elite_count,
         )
-        offspring_target = min(population_size - elite_count, cache.remaining)
-        unique_ratio, mean_distance = _population_diversity(space, population)
-        diversity_triggered = bool(
-            unique_ratio < float(config.ga_unique_ratio_threshold)
-            or mean_distance < float(config.ga_mean_distance_threshold)
-        )
-        immigrant_target = (
-            min(
-                offspring_target,
-                max(1, int(math.ceil(population_size * float(config.ga_immigrant_fraction)))),
-            )
-            if diversity_triggered else 0
-        )
-        normal_target = offspring_target - immigrant_target
         actions: list[Stage1Action] = []
         blocked: set[Stage1Action] = set()
-        fallback_immigrants = 0
-        while len(actions) < normal_target:
-            child, used_immigrant = _breed_unique_child(
+        while len(actions) < offspring_target:
+            child, _used_immigrant = _breed_unique_child(
                 space=space,
                 population=population,
                 cache=cache,
@@ -1624,23 +1770,20 @@ def _run_coinn_ga(
                 break
             actions.append(child)
             blocked.add(child)
-            fallback_immigrants += int(used_immigrant)
-        while len(actions) < offspring_target:
-            immigrant = _maximin_immigrant(
-                space=space,
-                cache=cache,
-                references=[item.action for item in population] + actions,
-                blocked=blocked,
-                rng=rng,
-                pool_size=int(config.maximin_candidate_pool_size),
-            )
-            if immigrant is None:
-                break
-            actions.append(immigrant)
-            blocked.add(immigrant)
+        if len(actions) < offspring_target:
+            termination = "candidate_space_exhausted"
+            break
         offspring = [cache.evaluate(action) for action in actions]
         population = elites + offspring
         completed_generations = generation
+        next_incumbent_key = candidate_rank_key(max(
+            population, key=candidate_rank_key,
+        ))
+        improved = next_incumbent_key > incumbent_key
+        no_improvement_generations = (
+            0 if improved else no_improvement_generations + 1
+        )
+        incumbent_key = next_incumbent_key
         next_unique_ratio, next_mean_distance = _population_diversity(space, population)
         history.append(_history_row(
             cache,
@@ -1652,22 +1795,30 @@ def _run_coinn_ga(
             elite_actions=[list(item.action) for item in elites],
             elite_policy="best_incumbent_then_hamming_distance_2",
             new_unique_evaluations=len(offspring),
-            diversity_triggered=bool(diversity_triggered),
-            scheduled_immigrants=int(immigrant_target),
-            fallback_immigrants=int(fallback_immigrants),
+            improved=bool(improved),
+            no_improvement_generations=int(no_improvement_generations),
+            diversity_triggered=False,
+            scheduled_immigrants=0,
+            fallback_immigrants=0,
+            replaced_worst_nonelite_actions=[],
+            immigrant_actions=[],
             unique_ratio=float(next_unique_ratio),
             mean_pairwise_distance=float(next_mean_distance),
+            post_update_unique_ratio=float(next_unique_ratio),
+            post_update_mean_pairwise_distance=float(next_mean_distance),
         ))
-        if len(offspring) < offspring_target:
-            termination = "candidate_space_exhausted"
+        if no_improvement_generations >= int(
+                config.ga_no_improvement_patience
+        ):
+            termination = "ga_no_incumbent_improvement"
             break
-        if offspring_target < population_size - elite_count:
-            termination = "evaluation_cap"
-            break
-    if completed_generations == int(config.ga_update_generations):
-        termination = "completed_generations"
-    elif cache.remaining <= 0:
+    if (
+            termination == "completed_generations"
+            and completed_generations < int(config.ga_update_generations)
+            and cache.remaining <= 0
+    ):
         termination = "evaluation_cap"
+    cache.assert_replay_consumed()
     return SearchResult(
         algorithm="coinn_ga",
         config=config,
@@ -1690,23 +1841,13 @@ def run_search(
         incremental_checkpoint_callback: Optional[
             IncrementalCheckpointCallback
         ] = None,
+        replay_greedy_preload_in_order: bool = True,
         ) -> SearchResult:
     """Run one canonical non-RL Stage-1 search backend."""
 
     normalized = normalize_search_backend(backend)
     cfg = config or SearchConfig()
     preload_tuple = tuple(preload)
-    effective_cap = min(int(cfg.evaluation_cap), int(space.cardinality))
-    if len({item.action for item in preload_tuple}) >= effective_cap:
-        valid = [item for item in preload_tuple if item.valid]
-        return SearchResult(
-            algorithm=normalized,
-            config=cfg,
-            best=max(valid or preload_tuple, key=candidate_rank_key),
-            observations=preload_tuple,
-            history=(),
-            termination_reason="evaluation_cap",
-        )
     if normalized == "greedy":
         return _run_greedy(
             space=space,
@@ -1715,6 +1856,7 @@ def run_search(
             preload=preload_tuple,
             checkpoint_callback=checkpoint_callback,
             incremental_checkpoint_callback=incremental_checkpoint_callback,
+            replay_preload_in_order=replay_greedy_preload_in_order,
         )
     if normalized == "bo_rf":
         return _run_bo_rf(
@@ -1755,5 +1897,8 @@ __all__ = [
     "candidate_rank_key",
     "normalize_search_backend",
     "run_search",
+    "stage1_comparator_search_config",
     "structured_maximin_initial_design",
+    "validate_stage1_comparator_constraints",
+    "validate_stage1_comparator_setup",
 ]

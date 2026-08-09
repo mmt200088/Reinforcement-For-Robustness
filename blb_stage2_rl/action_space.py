@@ -64,6 +64,7 @@ from function_handler import (
 )
 
 try:
+    from .layerwise_action import truncation_k_summary_from_full_action
     from .truncation_levels import (
         DEFAULT_K_LEVELS_LEGACY_COMPAT,
         K_LEVELS,
@@ -71,6 +72,7 @@ try:
         baseline_k_index,
     )
 except ImportError:  # pragma: no cover - legacy top-level import compatibility
+    from layerwise_action import truncation_k_summary_from_full_action
     from truncation_levels import (
         DEFAULT_K_LEVELS_LEGACY_COMPAT,
         K_LEVELS,
@@ -2043,15 +2045,11 @@ def _sum_count_effective_k_values_in_action(
         num_layers: int,
         ) -> Tuple[int, int]:
     arr = validate_action_vector(action_vec, num_layers)
-    layer_dim = len(layer_dims())
-    total = 0
-    count = 0
-    for li in range(int(num_layers)):
-        for p in _k_positions_in_layer():
-            slot = li * layer_dim + p
-            idx = int(arr[slot])
-            total += int(K_LEVELS[idx])
-            count += 1
+    total, count, _average = truncation_k_summary_from_full_action(
+        arr,
+        num_layers,
+        k_levels=K_LEVELS,
+    )
     return total, count
 
 

@@ -67,8 +67,8 @@ def build_final_eval_feasibility(
         and f1_s <= f1_s_l
     )
     diagnostic_feasible = bool(gates_ok and metric_pass) if metrics_known else None
-    formal_available = _thresholds_known(threshold_source, limits)
-    feasible = bool(diagnostic_feasible) if formal_available and diagnostic_feasible is not None else None
+    thresholds_available = _thresholds_known(threshold_source, limits)
+    feasible = bool(diagnostic_feasible) if thresholds_available and diagnostic_feasible is not None else None
 
     strict_z_value = float(strict_z)
     acc_lower = None if acc is None or acc_s is None else float(acc - strict_z_value * acc_s)
@@ -85,8 +85,8 @@ def build_final_eval_feasibility(
     strict_feasible = strict_pass if feasible is not None else None
 
     reason = None
-    if not formal_available:
-        reason = "threshold source unknown or incomplete; formal feasible is unavailable"
+    if not thresholds_available:
+        reason = "threshold source unknown or incomplete; feasibility is unavailable"
 
     return {
         "schema": "blb_final_eval_feasibility_v1",
@@ -108,7 +108,7 @@ def build_final_eval_feasibility(
         "f1_std_limit": f1_s_l,
         "feasible": feasible,
         "diagnostic_feasible": diagnostic_feasible,
-        "formal_feasible_unavailable_reason": reason,
+        "feasible_unavailable_reason": reason,
         "strict_z": strict_z_value,
         "strict_z_source": "default" if strict_z_value == 1.0 else "explicit",
         "acc_lower": acc_lower,

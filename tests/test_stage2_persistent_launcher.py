@@ -182,6 +182,93 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 for part in capture.read_bytes().split(b"\0")[:-1]
             ]
 
+    def _capture_comparator_persistent_path(
+            self,
+            alias,
+            extra_args=(),
+            *,
+            include_preset=True,
+            return_argv=False,
+    ):
+        with tempfile.TemporaryDirectory(prefix=f"{alias}_persistent_route_") as td:
+            tmp = Path(td)
+            capture = tmp / "python_argv.nul"
+            fakebin = tmp / "fakebin"
+            fakebin.mkdir()
+            self._install_fake_flock(fakebin)
+            fake_python = fakebin / "python"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\0' "$@" > {str(capture)!r}
+                    exit 0
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_python.chmod(0o755)
+            persistent_root = tmp / "persistent"
+            env = os.environ.copy()
+            env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
+            env["CUDA_VISIBLE_DEVICES"] = ""
+            command = [
+                "bash",
+                "llama_7B_LayerImportance.sh",
+                "run",
+                alias,
+            ]
+            if include_preset:
+                command.extend(("--preset", "mrpc-blb-stage2-rl"))
+            command.extend((
+                "--persistent-root",
+                str(persistent_root),
+                "--fresh",
+                *extra_args,
+            ))
+            result = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                result.returncode, 0, msg=result.stdout + "\n" + result.stderr,
+            )
+            for _ in range(50):
+                if capture.is_file():
+                    break
+                import time
+
+                time.sleep(0.1)
+            self.assertTrue(capture.is_file(), msg="launcher did not invoke python")
+            argv = [
+                part.decode("utf-8")
+                for part in capture.read_bytes().split(b"\0")[:-1]
+            ]
+            self.assertNotIn("--formal_dataset_protocol", argv)
+            self.assertNotIn("--formal_mrpc_fixture_path", argv)
+            self.assertEqual(
+                Path(
+                    argv[
+                        argv.index(
+                            "--mrpc_reproducibility_fixture_path"
+                        )
+                        + 1
+                    ]
+                ),
+                REPO_ROOT
+                / "fixtures"
+                / "reproducibility"
+                / "mrpc_validation_v1.json",
+            )
+            if return_argv:
+                return argv
+            output_dir = Path(argv[argv.index("--output_dir") + 1])
+            return output_dir.relative_to(persistent_root)
+
     def _capture_persistent_slug_and_metadata(self, extra_args):
         with tempfile.TemporaryDirectory(prefix="stage2_constraint_identity_") as td:
             tmp = Path(td)
@@ -244,6 +331,201 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             output_dir = Path(argv[argv.index("--output_dir") + 1])
             metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
             return output_dir.name, metadata
+
+    def test_comparator_aliases_use_disjoint_backend_persistent_directories(self):
+        expected_prefixes = {
+            "bo_rf": ("bo_rf", "bert-base", "mrpc"),
+            "greedy": ("greedy", "bert-base", "mrpc"),
+            "coinn_ga": ("coinn_ga", "bert-base", "mrpc"),
+        }
+
+        for alias, expected_prefix in expected_prefixes.items():
+            with self.subTest(alias=alias):
+                relative_path = self._capture_comparator_persistent_path(alias)
+                self.assertEqual(relative_path.parts[:3], expected_prefix)
+                self.assertEqual(
+                    relative_path.parts[3],
+                    "s1t0.001_s2t0.001_s2st2.0",
+                )
+
+    def test_comparator_aliases_fix_canonical_batch_without_preset(self):
+        for alias in ("bo_rf", "greedy", "coinn_ga"):
+            with self.subTest(alias=alias):
+                argv = self._capture_comparator_persistent_path(
+                    alias,
+                    include_preset=False,
+                    return_argv=True,
+                )
+                self.assertEqual(
+                    argv[argv.index("--batch_size") + 1],
+                    "64",
+                )
+                self.assertEqual(
+                    argv[argv.index("--micro_batch_size") + 1],
+                    "64",
+                )
+
+    def test_comparator_aliases_pin_final_eval_and_stage2_seeds(self):
+        for alias in ("bo_rf", "greedy", "coinn_ga"):
+            for include_preset in (False, True):
+                with self.subTest(
+                        alias=alias,
+                        include_preset=include_preset,
+                ):
+                    argv = self._capture_comparator_persistent_path(
+                        alias,
+                        include_preset=include_preset,
+                        return_argv=True,
+                    )
+                    self.assertEqual(
+                        argv[argv.index("--final_eval_random_seed") + 1],
+                        "42",
+                    )
+                    self.assertEqual(
+                        argv[argv.index("--blb_v3_seed") + 1],
+                        "42",
+                    )
+                    if alias == "bo_rf":
+                        for flag, expected in (
+                            ("--blb_v3_search_initial_design_size", "64"),
+                            ("--blb_v3_search_candidate_pool_size", "2048"),
+                            ("--blb_v3_search_patience_generations", "100"),
+                            ("--blb_v3_search_rf_n_estimators", "128"),
+                            ("--blb_v3_search_rf_min_samples_leaf", "2"),
+                        ):
+                            with self.subTest(
+                                    alias=alias,
+                                    include_preset=include_preset,
+                                    flag=flag,
+                            ):
+                                self.assertEqual(
+                                    argv[argv.index(flag) + 1],
+                                    expected,
+                                )
+                    elif alias == "coinn_ga":
+                        self.assertEqual(
+                            argv[
+                                argv.index(
+                                    "--blb_v3_search_patience_generations"
+                                ) + 1
+                            ],
+                            "5",
+                        )
+
+    def test_comparator_smoke_aliases_apply_smoke_settings(self):
+        for alias in ("bo_rf", "greedy", "coinn_ga"):
+            with self.subTest(alias=alias):
+                argv = self._capture_comparator_persistent_path(
+                    alias,
+                    extra_args=("--comparator-smoke",),
+                    return_argv=True,
+                )
+                for flag, expected in (
+                    ("--comparator_smoke", "true"),
+                    ("--blb_v3_search_evaluation_budget", "1"),
+                    ("--blb_v3_search_full_validation", "false"),
+                    ("--stage2_k_trials", "3"),
+                    ("--final_eval_random_seed", "42"),
+                    ("--blb_v3_seed", "42"),
+                    ("--skip_final_eval", "true"),
+                ):
+                    with self.subTest(alias=alias, flag=flag):
+                        self.assertEqual(
+                            argv[argv.index(flag) + 1],
+                            expected,
+                        )
+
+    def test_comparator_aliases_apply_full_run_settings_without_smoke(self):
+        expected_budgets = {
+            "bo_rf": "50000",
+            "greedy": "2176782336",
+            "coinn_ga": "45664",
+        }
+        for alias, expected_budget in expected_budgets.items():
+            with self.subTest(alias=alias):
+                argv = self._capture_comparator_persistent_path(
+                    alias,
+                    return_argv=True,
+                )
+                for flag, expected in (
+                    ("--comparator_smoke", "false"),
+                    ("--blb_v3_search_evaluation_budget", expected_budget),
+                    ("--blb_v3_search_full_validation", "true"),
+                    ("--skip_final_eval", "false"),
+                ):
+                    with self.subTest(alias=alias, flag=flag):
+                        self.assertEqual(
+                            argv[argv.index(flag) + 1],
+                            expected,
+                        )
+
+    def test_comparator_aliases_reject_fixed_setting_overrides(self):
+        cases = (
+            ("bo_rf", ("--algorithm", "ga")),
+            ("bo_rf", ("--algorithm=ga",)),
+            ("greedy", ("--mode", "stage2-only")),
+            ("coinn_ga", ("--blb-v3-search-backend", "greedy")),
+            ("bo_rf", ("--blb-v3-search-evaluation-budget", "1")),
+            ("bo_rf", ("--blb-v3-search-initial-design-size", "1")),
+            ("bo_rf", ("--blb-v3-search-initial-design-size=1",)),
+            ("bo_rf", ("--blb-v3-search-candidate-pool-size", "1")),
+            ("bo_rf", ("--blb-v3-search-candidate-pool-size=1",)),
+            ("bo_rf", ("--blb-v3-search-patience-generations", "1")),
+            ("bo_rf", ("--blb-v3-search-patience-generations=1",)),
+            ("coinn_ga", ("--blb-v3-search-population-size", "63")),
+            ("coinn_ga", ("--blb-v3-search-population-size=63",)),
+            ("greedy", ("--stage2-k-trials", "5")),
+            ("bo_rf", ("--random-seed", "7")),
+            ("greedy", ("--random-seed=7",)),
+            ("coinn_ga", ("--blb-v3-seed", "8")),
+            ("bo_rf", ("--blb-v3-seed=8",)),
+            ("bo_rf", ("--blb-v3-search-rf-n-estimators", "1")),
+            ("bo_rf", ("--blb-v3-search-rf-n-estimators=1",)),
+            ("bo_rf", ("--blb-v3-search-rf-min-samples-leaf", "99")),
+            ("bo_rf", ("--blb-v3-search-rf-min-samples-leaf=99",)),
+            ("bo_rf", ("--batch-size", "8")),
+            ("greedy", ("--batch-size=8",)),
+            (
+                "greedy",
+                ("--mrpc-reproducibility-fixture-path", "other.json"),
+            ),
+            (
+                "coinn_ga",
+                ("--mrpc-reproducibility-fixture-path=other.json",),
+            ),
+            ("bo_rf", ("--stage2-rl-variant", "legacy_v2")),
+            ("bo_rf", ("--stage2-rl-variant=legacy_v2",)),
+            ("greedy", ("--stage2-probe-size", "1")),
+            ("greedy", ("--stage2-probe-size=1",)),
+            ("bo_rf", ("--stage2-communication-importance-ratio", "0.5")),
+            ("greedy", ("--stage2-communication-importance-ratio=0.5",)),
+            ("coinn_ga", ("--blb-v3-truncation-backend", "decimal")),
+            ("bo_rf", ("--blb-v3-truncation-backend=decimal",)),
+            ("greedy", ("--blb-v3-truncation-ring-bits", "44")),
+            ("coinn_ga", ("--blb-v3-truncation-ring-bits=44",)),
+            ("bo_rf", ("--blb-v3-truncation-source-fractional-bits", "23")),
+            ("greedy", ("--blb-v3-truncation-source-fractional-bits=23",)),
+        )
+        for alias, extra_args in cases:
+            with self.subTest(alias=alias, extra_args=extra_args):
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "llama_7B_LayerImportance.sh",
+                        "run",
+                        alias,
+                        *extra_args,
+                    ],
+                    cwd=REPO_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "comparator 子命令不允许覆盖固定的算法、预算或验证参数",
+                    result.stdout + result.stderr,
+                )
 
     def test_stage2_public_decision_and_reward_defaults_and_overrides_reach_python(self):
         default_argv = self._capture_stage2_launcher_argv([])

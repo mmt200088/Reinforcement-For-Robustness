@@ -8,9 +8,9 @@ Yes. The Phase-1B local artifacts in `reports/blb_opt/phase1b_consistency/`, `re
 
 Yes. The Phase-1B F0 and optimizer-consistency artifacts record `rescale_optimizer_mode=in_process_real`, root `Rescale_optimizer`, and canonical hash `ed28392d4078e4eb7734740023d281d5b87f1abde68340d7776f4e2855e4278e`. Implication: F0 optimizer validity/cost is real RO evidence, not heuristic-stub evidence.
 
-## 3. Are these results formal feasible, strict feasible, or diagnostic only?
+## 3. Are these results scientifically feasible or diagnostic only?
 
-Limited. These results are F0 optimizer-only diagnostic feasible: they prove cfg-derived optimizer consistency and optimizer-valid masked-domain behavior, but they do not prove model accuracy, repeated stability, real BLB final evaluation, or F3 formal feasibility. Implication: do not enter long training solely from this package.
+Limited. These results are F0 optimizer-only diagnostics: they prove cfg-derived optimizer consistency and optimizer-valid masked-domain behavior, but they do not prove model accuracy, repeated stability, or real BLB F4 final evaluation. Implication: do not enter long training solely from this package.
 
 ## 4. Can these results be compared with the previous handoff?
 

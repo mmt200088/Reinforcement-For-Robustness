@@ -140,14 +140,25 @@ class TrialMixConsistencyTest(unittest.TestCase):
 
     def test_deterministic_env_reuses_shared_trial_seed_list(self):
         source = source_text("blb_stage2_rl/env.py")
-        region = source.split("    def _eval_on_probe_deterministic", 1)[1].split(
-            "    def _aggregate_probe_trials", 1
-        )[0]
+        helper_region = source.split(
+            "    def _run_deterministic_probe_trial_indices", 1
+        )[1].split("    def _eval_on_probe_deterministic", 1)[0]
+        eval_region = source.split(
+            "    def _eval_on_probe_deterministic", 1
+        )[1].split("    def _aggregate_probe_trials", 1)[0]
 
-        self.assertIn("trial_seeds = [", region)
-        self.assertIn('"per_worker_trial_seeds": [list(trial_seeds)]', region)
-        self.assertIn("trial_seeds=trial_seeds", region)
-        self.assertNotIn("2654435761", region)
+        self.assertIn("trial_seeds = [", helper_region)
+        self.assertIn(
+            '"per_worker_trial_seeds": [list(trial_seeds)]',
+            helper_region,
+        )
+        self.assertIn(
+            "self._run_deterministic_probe_trial_indices(",
+            eval_region,
+        )
+        self.assertIn("trial_seeds=trial_seeds", eval_region)
+        self.assertNotIn("2654435761", helper_region)
+        self.assertNotIn("2654435761", eval_region)
 
 
 if __name__ == "__main__":
