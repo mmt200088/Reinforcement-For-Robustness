@@ -761,6 +761,8 @@ def train(
         blb_v3_truncation_backend: str = "binary",
         blb_v3_truncation_ring_bits: int = 43,
         blb_v3_truncation_source_fractional_bits: int = 24,
+        # PPO episode workers, or same-device reward-probe replicas for the
+        # non-RL comparators. Comparator launchers default this to K trials.
         stage2_workers_per_device: int = 1,
         blb_v3_substage_block_order: str = "1,2,4,5",
         blb_v3_substage_frozen_blocks: str = "3",
