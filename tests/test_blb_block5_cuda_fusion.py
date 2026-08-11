@@ -8,6 +8,12 @@ import unittest
 
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
 class Block5CudaFusionTest(unittest.TestCase):
+    def test_degree4_fuses_piece_setup_and_selection_into_accumulation(self):
+        from blb_stage2_rl import block5_fused_cuda
+
+        self.assertFalse(hasattr(block5_fused_cuda, "_initialize_piece_kernel"))
+        self.assertFalse(hasattr(block5_fused_cuda, "_select_piece_kernel"))
+
     def test_noise_workspace_reuses_storage_on_the_same_cuda_stream(self):
         import torch
 
