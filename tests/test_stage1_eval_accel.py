@@ -579,6 +579,55 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         self.assertGreater(len(ev.reversible_handler.calls), len(first_install_calls))
         self.assertEqual(ev.model.eval_calls, 3)
 
+    def test_changed_config_only_reinstalls_changed_layers(self):
+        from layer_importance_evaluator import LayerImportanceEvaluator
+
+        class FakeModel:
+            def eval(self):
+                return None
+
+        class FakeHandler:
+            def __init__(self):
+                self.calls = []
+
+            def restore_layer_gelu(self, layers, layer_name):
+                self.calls.append(("restore_gelu", tuple(layers), layer_name))
+
+            def restore_layer_softmax(self, layers, layer_name):
+                self.calls.append(("restore_softmax", tuple(layers), layer_name))
+
+            def replace_layer_gelu(self, layers, layer_name, *, degree):
+                self.calls.append(
+                    ("replace_gelu", tuple(layers), layer_name, int(degree))
+                )
+
+            def replace_layer_softmax(self, layers, layer_name, *, degree):
+                self.calls.append(
+                    ("replace_softmax", tuple(layers), layer_name, int(degree))
+                )
+
+        ev = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        ev.model = FakeModel()
+        ev.reversible_handler = FakeHandler()
+        ev.layers_attribute = "bert.encoder.layer"
+        ev._last_applied_config = None
+
+        softmax = [6, 6, 6]
+        LayerImportanceEvaluator.apply_configuration(
+            ev, [1, 2, 4], softmax,
+        )
+        self.assertTrue(ev.reversible_handler.calls)
+
+        ev.reversible_handler.calls.clear()
+        LayerImportanceEvaluator.apply_configuration(
+            ev, [2, 2, 4], softmax,
+        )
+
+        self.assertEqual(
+            ev.reversible_handler.calls,
+            [("replace_gelu", (0,), "model.bert.encoder.layer", 2)],
+        )
+
     def test_worker_eval_path_reuses_handler_install_without_eval_cache(self):
         from layer_importance_evaluator import (
             LayerImportanceEvaluator,
@@ -646,6 +695,7 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
         self.assertEqual(eval_calls, ["forward", "forward"])
 
         changed_gelu = [2, 2, STAGE1_ORIGINAL_FUNCTION_DEGREE]
+        handler.calls.clear()
         LayerImportanceEvaluator._stage1_evaluate_on_model(
             ev,
             model=model,
@@ -655,7 +705,10 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
             softmax_degrees=softmax,
             split_name="validation_full",
         )
-        self.assertGreater(len(handler.calls), len(first_install_calls))
+        self.assertEqual(
+            handler.calls,
+            [("replace_gelu", (0,), "model.bert.encoder.layer", 2)],
+        )
         self.assertEqual(model.eval_calls, 3)
 
 
