@@ -628,6 +628,63 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
             [("replace_gelu", (0,), "model.bert.encoder.layer", 2)],
         )
 
+    def test_failed_delta_install_invalidates_cache_and_forces_full_repair(self):
+        from layer_importance_evaluator import LayerImportanceEvaluator
+
+        class FakeModel:
+            def eval(self):
+                return None
+
+        class FakeHandler:
+            def __init__(self):
+                self.calls = []
+                self.fail = False
+
+            def restore_layer_gelu(self, layers, layer_name):
+                self.calls.append(("restore_gelu", tuple(layers), layer_name))
+
+            def restore_layer_softmax(self, layers, layer_name):
+                self.calls.append(("restore_softmax", tuple(layers), layer_name))
+
+            def replace_layer_gelu(self, layers, layer_name, *, degree):
+                self.calls.append(
+                    ("replace_gelu", tuple(layers), layer_name, int(degree))
+                )
+                if self.fail:
+                    raise RuntimeError("install failed")
+
+            def replace_layer_softmax(self, layers, layer_name, *, degree):
+                self.calls.append(
+                    ("replace_softmax", tuple(layers), layer_name, int(degree))
+                )
+
+        ev = LayerImportanceEvaluator.__new__(LayerImportanceEvaluator)
+        ev.model = FakeModel()
+        ev.reversible_handler = FakeHandler()
+        ev.layers_attribute = "bert.encoder.layer"
+        ev._last_applied_config = None
+        softmax = [6, 6, 6]
+
+        LayerImportanceEvaluator.apply_configuration(ev, [1, 2, 4], softmax)
+        ev.reversible_handler.fail = True
+        with self.assertRaisesRegex(RuntimeError, "install failed"):
+            LayerImportanceEvaluator.apply_configuration(ev, [2, 2, 4], softmax)
+
+        self.assertIsNone(ev._last_applied_config)
+        self.assertIsNone(ev.reversible_handler._last_stage1_applied_config)
+
+        ev.reversible_handler.fail = False
+        ev.reversible_handler.calls.clear()
+        LayerImportanceEvaluator.apply_configuration(ev, [2, 2, 4], softmax)
+        self.assertEqual(
+            ev.reversible_handler.calls,
+            [
+                ("replace_gelu", (0, 1), "model.bert.encoder.layer", 2),
+                ("replace_gelu", (2,), "model.bert.encoder.layer", 4),
+                ("replace_softmax", (0, 1, 2), "model.bert.encoder.layer", 6),
+            ],
+        )
+
     def test_worker_eval_path_reuses_handler_install_without_eval_cache(self):
         from layer_importance_evaluator import (
             LayerImportanceEvaluator,
