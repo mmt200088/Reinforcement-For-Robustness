@@ -78,13 +78,13 @@ def _non_contiguous_fusion_map() -> fcm.FusionCountMap:
         "profile": "mrpc",
         "graphs": {
             "block1_mrpc": graph("block1_mrpc", 9, [
-                option(0, 2, 9, 14), option(10, 0, 9, 12),
+                option(0, 0, 9, 14),
             ]),
             "block2_mrpc": graph("block2_mrpc", 23, [
                 option(0, 0, 23, 14), option(88, 1, 23, 9, boosted=True),
             ]),
             "block4": graph("block4", 17, [
-                option(0, 2, 17, 14), option(10, 0, 17, 12), option(88, 1, 17, 8, boosted=True),
+                option(0, 0, 17, 12), option(88, 1, 17, 8, boosted=True),
             ]),
             "block5_n4": graph("block5_n4", 16, [
                 option(0, 0, 16, 14), option(88, 1, 16, 7, boosted=True),

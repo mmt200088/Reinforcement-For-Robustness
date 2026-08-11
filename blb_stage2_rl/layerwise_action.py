@@ -419,6 +419,16 @@ def _validate_graph_options(graph_key: str, graph: Any, expected_slots: int) -> 
     option_ids = [int(option.option_id) for option in graph.options]
     if len(set(option_ids)) != len(option_ids):
         raise ValueError(f"{graph_key}: duplicate option_id values {option_ids}")
+    unsupported_counts = sorted({
+        int(option.fusion_count)
+        for option in graph.options
+        if int(option.fusion_count) not in (0, 1)
+    })
+    if unsupported_counts:
+        raise ValueError(
+            f"{graph_key}: unsupported fusion_count values {unsupported_counts}; "
+            "layerwise maps allow only 0 and 1"
+        )
     for option in graph.options:
         vector = np.asarray(option.action_indices, dtype=int).reshape(-1)
         if vector.size != expected_slots:
