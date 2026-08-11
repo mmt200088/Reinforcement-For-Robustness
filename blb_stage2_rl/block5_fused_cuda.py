@@ -13,6 +13,55 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - CPU/local lane.
     tl = None
 
 
+_NOISE_STD_TENSOR_CACHE = {}
+_NOISE_STD_TENSOR_CACHE_MAXSIZE = 256
+
+
+def _noise_std_tensor(
+        workspace: torch.Tensor,
+        stds: Sequence[float],
+        ) -> torch.Tensor:
+    stream = torch.cuda.current_stream(workspace.device)
+    normalized_stds = tuple(float(value) for value in stds)
+    key = (
+        str(workspace.device),
+        int(stream.cuda_stream),
+        workspace.dtype,
+        int(workspace.dim()),
+        normalized_stds,
+    )
+    tensor = _NOISE_STD_TENSOR_CACHE.pop(key, None)
+    if tensor is None:
+        tensor = torch.tensor(
+            normalized_stds,
+            device=workspace.device,
+            dtype=workspace.dtype,
+        ).view(len(normalized_stds), *([1] * (workspace.dim() - 1)))
+    _NOISE_STD_TENSOR_CACHE[key] = tensor
+    if len(_NOISE_STD_TENSOR_CACHE) > _NOISE_STD_TENSOR_CACHE_MAXSIZE:
+        del _NOISE_STD_TENSOR_CACHE[next(iter(_NOISE_STD_TENSOR_CACHE))]
+    return tensor
+
+
+def _sample_gaussian_rows_cuda(
+        workspace: torch.Tensor,
+        start_row: int,
+        stds: Sequence[float],
+        generator: torch.Generator,
+        ) -> torch.Tensor:
+    """Sample consecutive same-shape rows without changing CUDA RNG results."""
+    start = int(start_row)
+    count = len(stds)
+    target = workspace[start:start + count]
+    if count == 0:
+        return target
+    if start < 0 or start + count > int(workspace.shape[0]):
+        raise ValueError("grouped noise rows exceed the workspace")
+    scales = _noise_std_tensor(workspace, stds).expand_as(target)
+    torch.normal(0.0, scales, generator=generator, out=target)
+    return target
+
+
 if triton is not None:
     from .truncation_fused_cuda import binary_truncation_rn_f32
 
