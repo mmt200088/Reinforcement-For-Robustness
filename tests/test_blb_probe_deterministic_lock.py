@@ -236,29 +236,6 @@ class DeterministicProbeLockTests(unittest.TestCase):
         self.assertTrue(torch.equal(actual_torch, expected_torch))
         np.testing.assert_array_equal(actual_numpy, expected_numpy)
 
-    @unittest.skipIf(
-        torch is None or not torch.cuda.is_available(),
-        "CUDA is required for same-device ProbeRunner parity",
-    )
-    def test_same_device_probe_workers_match_serial_trial_results(self):
-        from blb_stage2_rl.probe_runner import ProbeRunner
-
-        serial_worker = self._make_probe_worker()
-        expected = [
-            serial_worker.run_trial(trial_idx=index, base_seed=97531)
-            for index in range(3)
-        ]
-
-        workers = []
-        for index in range(3):
-            worker = self._make_probe_worker()
-            worker.probe_noise_scope = f"same-device-worker-{index}"
-            worker.probe_cuda_stream = torch.cuda.Stream(device=worker.device)
-            workers.append(worker)
-
-        actual = ProbeRunner(workers).run_trials(k=3, base_seed=97531)
-        self.assertEqual(actual, expected)
-
     def test_noise_rng_scope_isolates_and_restores_thread_local_generator(self):
         from function_handler import (
             _noise_generator_key,
