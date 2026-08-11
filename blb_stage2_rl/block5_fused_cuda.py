@@ -13,72 +13,6 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - CPU/local lane.
     tl = None
 
 
-_NOISE_STD_TENSOR_CACHE = {}
-_NOISE_STD_TENSOR_CACHE_MAXSIZE = 256
-
-
-def _noise_std_tensor(
-        workspace: torch.Tensor,
-        stds: Sequence[float],
-        ) -> torch.Tensor:
-    stream = torch.cuda.current_stream(workspace.device)
-    normalized_stds = tuple(float(value) for value in stds)
-    key = (
-        str(workspace.device),
-        int(stream.cuda_stream),
-        workspace.dtype,
-        int(workspace.dim()),
-        normalized_stds,
-    )
-    tensor = _NOISE_STD_TENSOR_CACHE.pop(key, None)
-    if tensor is None:
-        tensor = torch.tensor(
-            normalized_stds,
-            device=workspace.device,
-            dtype=workspace.dtype,
-        ).view(len(normalized_stds), *([1] * (workspace.dim() - 1)))
-    _NOISE_STD_TENSOR_CACHE[key] = tensor
-    if len(_NOISE_STD_TENSOR_CACHE) > _NOISE_STD_TENSOR_CACHE_MAXSIZE:
-        del _NOISE_STD_TENSOR_CACHE[next(iter(_NOISE_STD_TENSOR_CACHE))]
-    return tensor
-
-
-def _sample_gaussian_rows_cuda(
-        workspace: torch.Tensor,
-        start_row: int,
-        stds: Sequence[float],
-        generator: torch.Generator,
-        ) -> torch.Tensor:
-    """Sample consecutive same-shape rows without changing CUDA RNG results."""
-    start = int(start_row)
-    count = len(stds)
-    if start < 0 or start + count > int(workspace.shape[0]):
-        raise ValueError("grouped noise rows exceed the workspace")
-    target = workspace[start:start + count]
-    if count == 0:
-        return target
-
-    properties = torch.cuda.get_device_properties(workspace.device)
-    block_size = 256
-    blocks_per_sm = properties.max_threads_per_multi_processor // block_size
-    philox_grid_period = (
-        block_size * blocks_per_sm * properties.multi_processor_count * 4
-    )
-    row_numel = int(target[0].numel())
-    if (
-            workspace.dtype != torch.float32
-            or not target.is_contiguous()
-            or row_numel % philox_grid_period != 0
-    ):
-        for row, std in zip(target, stds):
-            row.normal_(0.0, float(std), generator=generator)
-        return target
-
-    scales = _noise_std_tensor(workspace, stds).expand_as(target)
-    torch.normal(0.0, scales, generator=generator, out=target)
-    return target
-
-
 if triton is not None:
     from .truncation_fused_cuda import binary_truncation_rn_f32
 
@@ -189,20 +123,6 @@ if triton is not None:
 
 
     @triton.jit
-    def _load_optional_workspace(
-            workspace_ptr,
-            offsets,
-            mask,
-            numel,
-            row: tl.constexpr,
-            enabled: tl.constexpr,
-            ):
-        if enabled:
-            return _load_workspace(workspace_ptr, offsets, mask, numel, row)
-        return tl.zeros(offsets.shape, tl.float32)
-
-
-    @triton.jit
     def _polynomial_piece_kernel(
             x_ptr,
             workspace_ptr,
@@ -220,18 +140,7 @@ if triton is not None:
             HAS_RESCALE2_NOISE: tl.constexpr,
             HAS_RESCALE3_NOISE: tl.constexpr,
             HAS_RESCALE4_NOISE: tl.constexpr,
-            POWER2_ROW: tl.constexpr,
-            POWER3_ROW: tl.constexpr,
-            POWER4_ROW: tl.constexpr,
             COEFFICIENT0_ROW: tl.constexpr,
-            COEFFICIENT1_ROW: tl.constexpr,
-            RESCALE1_ROW: tl.constexpr,
-            COEFFICIENT2_ROW: tl.constexpr,
-            RESCALE2_ROW: tl.constexpr,
-            COEFFICIENT3_ROW: tl.constexpr,
-            RESCALE3_ROW: tl.constexpr,
-            COEFFICIENT4_ROW: tl.constexpr,
-            RESCALE4_ROW: tl.constexpr,
             BLOCK_SIZE: tl.constexpr,
             ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -239,39 +148,20 @@ if triton is not None:
         x = tl.load(x_ptr + offsets, mask=mask)
         out = _evaluate_polynomial_piece(
             x,
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                POWER2_ROW, HAS_POWER2_NOISE,
+            _load_workspace(workspace_ptr, offsets, mask, numel, 0),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 1),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 2),
+            _load_workspace(
+                workspace_ptr, offsets, mask, numel, COEFFICIENT0_ROW,
             ),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                POWER3_ROW, HAS_POWER3_NOISE,
-            ),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                POWER4_ROW, HAS_POWER4_NOISE,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT0_ROW),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT1_ROW),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                RESCALE1_ROW, HAS_RESCALE1_NOISE,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT2_ROW),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                RESCALE2_ROW, HAS_RESCALE2_NOISE,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT3_ROW),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                RESCALE3_ROW, HAS_RESCALE3_NOISE,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT4_ROW),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                RESCALE4_ROW, HAS_RESCALE4_NOISE,
-            ),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 3),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 4),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 5),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 6),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 7),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 8),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 9),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 10),
             coefficient0,
             coefficient1,
             coefficient2,
@@ -308,18 +198,7 @@ if triton is not None:
             HAS_RESCALE2_NOISE: tl.constexpr,
             HAS_RESCALE3_NOISE: tl.constexpr,
             HAS_RESCALE4_NOISE: tl.constexpr,
-            POWER2_ROW: tl.constexpr,
-            POWER3_ROW: tl.constexpr,
-            POWER4_ROW: tl.constexpr,
             COEFFICIENT0_ROW: tl.constexpr,
-            COEFFICIENT1_ROW: tl.constexpr,
-            RESCALE1_ROW: tl.constexpr,
-            COEFFICIENT2_ROW: tl.constexpr,
-            RESCALE2_ROW: tl.constexpr,
-            COEFFICIENT3_ROW: tl.constexpr,
-            RESCALE3_ROW: tl.constexpr,
-            COEFFICIENT4_ROW: tl.constexpr,
-            RESCALE4_ROW: tl.constexpr,
             APPLY_TRUNCATION: tl.constexpr,
             BLOCK_SIZE: tl.constexpr,
             ):
@@ -328,39 +207,20 @@ if triton is not None:
         x = tl.load(x_ptr + offsets, mask=mask)
         positive = _evaluate_polynomial_piece(
             x,
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                POWER2_ROW, HAS_POWER2_NOISE,
+            _load_workspace(workspace_ptr, offsets, mask, numel, 0),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 1),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 2),
+            _load_workspace(
+                workspace_ptr, offsets, mask, numel, COEFFICIENT0_ROW,
             ),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                POWER3_ROW, HAS_POWER3_NOISE,
-            ),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                POWER4_ROW, HAS_POWER4_NOISE,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT0_ROW),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT1_ROW),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                RESCALE1_ROW, HAS_RESCALE1_NOISE,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT2_ROW),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                RESCALE2_ROW, HAS_RESCALE2_NOISE,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT3_ROW),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                RESCALE3_ROW, HAS_RESCALE3_NOISE,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, COEFFICIENT4_ROW),
-            _load_optional_workspace(
-                workspace_ptr, offsets, mask, numel,
-                RESCALE4_ROW, HAS_RESCALE4_NOISE,
-            ),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 3),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 4),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 5),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 6),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 7),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 8),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 9),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 10),
             coefficient0,
             coefficient1,
             coefficient2,
@@ -417,71 +277,62 @@ def block5_degree4_cuda(
         if index >= len(stds):
             raise ValueError(f"noise index {index} exceeds {len(stds)} stds")
 
-    negative_out = workspace[12]
+    negative_out = workspace[11]
     numel = int(x.numel())
     grid = (triton.cdiv(numel, 256),)
 
-    def sample_slots(slots: Sequence[int], start_row: int):
-        active_slots = tuple(slot for slot in slots if indices[slot] >= 0)
-        _sample_gaussian_rows_cuda(
-            workspace,
-            start_row,
-            tuple(stds[indices[slot]] for slot in active_slots),
-            generator,
-        )
-        return {
-            slot: start_row + offset
-            for offset, slot in enumerate(active_slots)
-        }
+    def sample(slot: int, target: torch.Tensor) -> bool:
+        index = indices[slot]
+        if index < 0:
+            return False
+        target.normal_(0.0, stds[index], generator=generator)
+        return True
 
-    power_rows = sample_slots((0, 1, 2), 0)
+    power_noise_flags = tuple(
+        sample(slot, workspace[slot])
+        for slot in range(3)
+    )
 
     def compute_piece(
             coefficients: Sequence[float],
             coefficient_slot: int,
             rescale_slot: int,
-            rows,
+            coefficient0_row: int,
             final_output: torch.Tensor | None = None,
             negative_output: torch.Tensor | None = None,
             ) -> None:
-        coefficient_rows = tuple(
-            rows.get(coefficient_slot + degree_index, -1)
-            for degree_index in range(5)
-        )
-        if any(row < 0 for row in coefficient_rows):
+        if not sample(coefficient_slot, workspace[coefficient0_row]):
             raise RuntimeError("coefficient encode noise is required")
-        rescale_rows = tuple(
-            rows.get(rescale_slot + degree_index, -1)
-            for degree_index in range(4)
-        )
+        rescale_noise_flags = []
+        for degree_index in range(1, 5):
+            coefficient_noise_row = 3 + (degree_index - 1) * 2
+            rescale_noise_row = coefficient_noise_row + 1
+            if not sample(
+                    coefficient_slot + degree_index,
+                    workspace[coefficient_noise_row],
+            ):
+                raise RuntimeError("coefficient encode noise is required")
+            rescale_noise_flags.append(sample(
+                rescale_slot + degree_index - 1,
+                workspace[rescale_noise_row],
+            ))
 
         common_kwargs = {
-            "HAS_POWER2_NOISE": 0 in power_rows,
-            "HAS_POWER3_NOISE": 1 in power_rows,
-            "HAS_POWER4_NOISE": 2 in power_rows,
-            "HAS_RESCALE1_NOISE": rescale_rows[0] >= 0,
-            "HAS_RESCALE2_NOISE": rescale_rows[1] >= 0,
-            "HAS_RESCALE3_NOISE": rescale_rows[2] >= 0,
-            "HAS_RESCALE4_NOISE": rescale_rows[3] >= 0,
-            "POWER2_ROW": power_rows.get(0, -1),
-            "POWER3_ROW": power_rows.get(1, -1),
-            "POWER4_ROW": power_rows.get(2, -1),
-            "COEFFICIENT0_ROW": coefficient_rows[0],
-            "COEFFICIENT1_ROW": coefficient_rows[1],
-            "RESCALE1_ROW": rescale_rows[0],
-            "COEFFICIENT2_ROW": coefficient_rows[2],
-            "RESCALE2_ROW": rescale_rows[1],
-            "COEFFICIENT3_ROW": coefficient_rows[3],
-            "RESCALE3_ROW": rescale_rows[2],
-            "COEFFICIENT4_ROW": coefficient_rows[4],
-            "RESCALE4_ROW": rescale_rows[3],
+            "HAS_POWER2_NOISE": power_noise_flags[0],
+            "HAS_POWER3_NOISE": power_noise_flags[1],
+            "HAS_POWER4_NOISE": power_noise_flags[2],
+            "HAS_RESCALE1_NOISE": rescale_noise_flags[0],
+            "HAS_RESCALE2_NOISE": rescale_noise_flags[1],
+            "HAS_RESCALE3_NOISE": rescale_noise_flags[2],
+            "HAS_RESCALE4_NOISE": rescale_noise_flags[3],
+            "COEFFICIENT0_ROW": coefficient0_row,
             "BLOCK_SIZE": 256,
         }
         if final_output is None:
             _polynomial_piece_kernel[grid](
                 x,
                 workspace,
-                negative_out,
+                workspace[coefficient0_row],
                 numel,
                 *coefficients,
                 **common_kwargs,
@@ -501,17 +352,13 @@ def block5_degree4_cuda(
             **common_kwargs,
         )
 
-    negative_slots = (3, 4, 8, 5, 9, 6, 10, 7, 11)
-    negative_rows = sample_slots(negative_slots, 3)
-    compute_piece(negative, 3, 8, negative_rows)
+    compute_piece(negative, 3, 8, 11)
     out = torch.empty_like(x)
-    positive_slots = (12, 13, 17, 14, 18, 15, 19, 16, 20)
-    positive_rows = sample_slots(positive_slots, 3)
     compute_piece(
         positive,
         12,
         17,
-        positive_rows,
+        12,
         final_output=out,
         negative_output=negative_out,
     )
