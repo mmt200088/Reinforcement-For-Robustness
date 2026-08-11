@@ -467,6 +467,93 @@ class BertLargeLayerwiseScheduleTest(unittest.TestCase):
         self.assertNotIn(1, applied.fusion_option_ids)
 
 
+class SixProfileCommittedMapContractTest(unittest.TestCase):
+    PROFILE_LAYERS = (
+        ("mrpc", 12),
+        ("rte", 12),
+        ("sst2", 12),
+        ("mrpc_large", 24),
+        ("rte_large", 24),
+        ("sst2_large", 24),
+    )
+
+    def test_committed_rl_graphs_have_exact_zero_one_domain(self):
+        for profile, _num_layers in self.PROFILE_LAYERS:
+            fusion_map = fcm.FusionCountMap.load(profile)
+            graph_keys = (
+                f"block2_{profile}",
+                "block4",
+                "block5_n1",
+                "block5_n2",
+                "block5_n4",
+            )
+            for graph_key in graph_keys:
+                with self.subTest(profile=profile, graph_key=graph_key):
+                    self.assertEqual(
+                        [
+                            int(option.fusion_count)
+                            for option in fusion_map.options(graph_key)
+                        ],
+                        [0, 1],
+                    )
+
+    def test_block4_zero_one_and_fixed_block2_block5_resolve_exact_options(self):
+        for profile, num_layers in self.PROFILE_LAYERS:
+            fusion_map = fcm.FusionCountMap.load(profile)
+            baseline = _legacy_all_max(num_layers)
+            for gelu_degree in (1, 2, 4):
+                schedule = layerwise.layerwise_schedule(
+                    num_layers,
+                    fusion_map,
+                    profile=profile,
+                    gelu_degrees=[gelu_degree] * num_layers,
+                )
+                for spec in (schedule[0], schedule[-1]):
+                    graph_keys = dict(spec.graph_keys_by_block)
+                    for block4_fusion in (0, 1):
+                        application = layerwise.apply_layer_action(
+                            baseline,
+                            [block4_fusion, 0],
+                            spec,
+                            fusion_map,
+                        )
+                        expected_counts = {2: 1, 4: block4_fusion, 5: 1}
+                        for block_idx, expected_count in expected_counts.items():
+                            graph_key = graph_keys[block_idx]
+                            option_id = application.fusion_option_ids[block_idx]
+                            selected = [
+                                option
+                                for option in fusion_map.options(graph_key)
+                                if int(option.option_id) == int(option_id)
+                            ]
+                            with self.subTest(
+                                profile=profile,
+                                gelu_degree=gelu_degree,
+                                layer=spec.layer_idx,
+                                block_idx=block_idx,
+                                block4_fusion=block4_fusion,
+                            ):
+                                self.assertEqual(len(selected), 1)
+                                self.assertEqual(
+                                    int(selected[0].fusion_count),
+                                    expected_count,
+                                )
+                                expected = np.asarray(
+                                    selected[0].action_indices, dtype=int,
+                                ).copy()
+                                graph = fusion_map.graphs[graph_key]
+                                expected[int(graph.k_slot_index)] = layerwise.K_LEVELS.index(
+                                    application.decoded.k_by_block[block_idx]
+                                )
+                                offsets = list(layerwise._block_offsets(
+                                    spec.layer_idx, block_idx,
+                                ))
+                                np.testing.assert_array_equal(
+                                    application.full_vector[offsets],
+                                    expected,
+                                )
+
+
 class KLevelsContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
