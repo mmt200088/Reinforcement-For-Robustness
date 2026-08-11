@@ -42,11 +42,11 @@ if triton is not None:
 
 
     @triton.jit
-    def _evaluate_polynomial_piece(
+    def _evaluate_polynomial_from_powers(
             x,
-            power2_noise,
-            power3_noise,
-            power4_noise,
+            x2,
+            x3,
+            x4,
             coefficient0_noise,
             coefficient1_noise,
             rescale1_noise,
@@ -61,24 +61,11 @@ if triton is not None:
             coefficient2,
             coefficient3,
             coefficient4,
-            HAS_POWER2_NOISE: tl.constexpr,
-            HAS_POWER3_NOISE: tl.constexpr,
-            HAS_POWER4_NOISE: tl.constexpr,
             HAS_RESCALE1_NOISE: tl.constexpr,
             HAS_RESCALE2_NOISE: tl.constexpr,
             HAS_RESCALE3_NOISE: tl.constexpr,
             HAS_RESCALE4_NOISE: tl.constexpr,
             ):
-        x2 = _mul_rn_f32(x, x)
-        if HAS_POWER2_NOISE:
-            x2 = _add_rn_f32(x2, power2_noise)
-        x3 = _mul_rn_f32(x2, x)
-        if HAS_POWER3_NOISE:
-            x3 = _add_rn_f32(x3, power3_noise)
-        x4 = _mul_rn_f32(x2, x2)
-        if HAS_POWER4_NOISE:
-            x4 = _add_rn_f32(x4, power4_noise)
-
         result = _add_rn_f32(coefficient0_noise, coefficient0)
         noisy_coefficient1 = _add_rn_f32(
             coefficient1_noise,
@@ -123,96 +110,64 @@ if triton is not None:
 
 
     @triton.jit
-    def _polynomial_piece_kernel(
+    def _piecewise_polynomial_kernel(
             x_ptr,
             workspace_ptr,
             out_ptr,
             numel,
-            coefficient0,
-            coefficient1,
-            coefficient2,
-            coefficient3,
-            coefficient4,
-            HAS_POWER2_NOISE: tl.constexpr,
-            HAS_POWER3_NOISE: tl.constexpr,
-            HAS_POWER4_NOISE: tl.constexpr,
-            HAS_RESCALE1_NOISE: tl.constexpr,
-            HAS_RESCALE2_NOISE: tl.constexpr,
-            HAS_RESCALE3_NOISE: tl.constexpr,
-            HAS_RESCALE4_NOISE: tl.constexpr,
-            COEFFICIENT0_ROW: tl.constexpr,
-            BLOCK_SIZE: tl.constexpr,
-            ):
-        offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < numel
-        x = tl.load(x_ptr + offsets, mask=mask)
-        out = _evaluate_polynomial_piece(
-            x,
-            _load_workspace(workspace_ptr, offsets, mask, numel, 0),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 1),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 2),
-            _load_workspace(
-                workspace_ptr, offsets, mask, numel, COEFFICIENT0_ROW,
-            ),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 3),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 4),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 5),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 6),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 7),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 8),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 9),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 10),
-            coefficient0,
-            coefficient1,
-            coefficient2,
-            coefficient3,
-            coefficient4,
-            HAS_POWER2_NOISE=HAS_POWER2_NOISE,
-            HAS_POWER3_NOISE=HAS_POWER3_NOISE,
-            HAS_POWER4_NOISE=HAS_POWER4_NOISE,
-            HAS_RESCALE1_NOISE=HAS_RESCALE1_NOISE,
-            HAS_RESCALE2_NOISE=HAS_RESCALE2_NOISE,
-            HAS_RESCALE3_NOISE=HAS_RESCALE3_NOISE,
-            HAS_RESCALE4_NOISE=HAS_RESCALE4_NOISE,
-        )
-        tl.store(out_ptr + offsets, out, mask=mask)
-
-
-    @triton.jit
-    def _polynomial_piece_and_select_kernel(
-            x_ptr,
-            workspace_ptr,
-            negative_ptr,
-            out_ptr,
-            numel,
-            coefficient0,
-            coefficient1,
-            coefficient2,
-            coefficient3,
-            coefficient4,
+            negative_coefficient0,
+            negative_coefficient1,
+            negative_coefficient2,
+            negative_coefficient3,
+            negative_coefficient4,
+            positive_coefficient0,
+            positive_coefficient1,
+            positive_coefficient2,
+            positive_coefficient3,
+            positive_coefficient4,
             truncation_scale,
             HAS_POWER2_NOISE: tl.constexpr,
             HAS_POWER3_NOISE: tl.constexpr,
             HAS_POWER4_NOISE: tl.constexpr,
-            HAS_RESCALE1_NOISE: tl.constexpr,
-            HAS_RESCALE2_NOISE: tl.constexpr,
-            HAS_RESCALE3_NOISE: tl.constexpr,
-            HAS_RESCALE4_NOISE: tl.constexpr,
-            COEFFICIENT0_ROW: tl.constexpr,
+            NEGATIVE_HAS_RESCALE1_NOISE: tl.constexpr,
+            NEGATIVE_HAS_RESCALE2_NOISE: tl.constexpr,
+            NEGATIVE_HAS_RESCALE3_NOISE: tl.constexpr,
+            NEGATIVE_HAS_RESCALE4_NOISE: tl.constexpr,
+            POSITIVE_HAS_RESCALE1_NOISE: tl.constexpr,
+            POSITIVE_HAS_RESCALE2_NOISE: tl.constexpr,
+            POSITIVE_HAS_RESCALE3_NOISE: tl.constexpr,
+            POSITIVE_HAS_RESCALE4_NOISE: tl.constexpr,
             APPLY_TRUNCATION: tl.constexpr,
             BLOCK_SIZE: tl.constexpr,
             ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < numel
         x = tl.load(x_ptr + offsets, mask=mask)
-        positive = _evaluate_polynomial_piece(
+
+        x2 = _mul_rn_f32(x, x)
+        if HAS_POWER2_NOISE:
+            x2 = _add_rn_f32(
+                x2,
+                _load_workspace(workspace_ptr, offsets, mask, numel, 0),
+            )
+        x3 = _mul_rn_f32(x2, x)
+        if HAS_POWER3_NOISE:
+            x3 = _add_rn_f32(
+                x3,
+                _load_workspace(workspace_ptr, offsets, mask, numel, 1),
+            )
+        x4 = _mul_rn_f32(x2, x2)
+        if HAS_POWER4_NOISE:
+            x4 = _add_rn_f32(
+                x4,
+                _load_workspace(workspace_ptr, offsets, mask, numel, 2),
+            )
+
+        negative = _evaluate_polynomial_from_powers(
             x,
-            _load_workspace(workspace_ptr, offsets, mask, numel, 0),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 1),
-            _load_workspace(workspace_ptr, offsets, mask, numel, 2),
-            _load_workspace(
-                workspace_ptr, offsets, mask, numel, COEFFICIENT0_ROW,
-            ),
+            x2,
+            x3,
+            x4,
             _load_workspace(workspace_ptr, offsets, mask, numel, 3),
             _load_workspace(workspace_ptr, offsets, mask, numel, 4),
             _load_workspace(workspace_ptr, offsets, mask, numel, 5),
@@ -221,20 +176,41 @@ if triton is not None:
             _load_workspace(workspace_ptr, offsets, mask, numel, 8),
             _load_workspace(workspace_ptr, offsets, mask, numel, 9),
             _load_workspace(workspace_ptr, offsets, mask, numel, 10),
-            coefficient0,
-            coefficient1,
-            coefficient2,
-            coefficient3,
-            coefficient4,
-            HAS_POWER2_NOISE=HAS_POWER2_NOISE,
-            HAS_POWER3_NOISE=HAS_POWER3_NOISE,
-            HAS_POWER4_NOISE=HAS_POWER4_NOISE,
-            HAS_RESCALE1_NOISE=HAS_RESCALE1_NOISE,
-            HAS_RESCALE2_NOISE=HAS_RESCALE2_NOISE,
-            HAS_RESCALE3_NOISE=HAS_RESCALE3_NOISE,
-            HAS_RESCALE4_NOISE=HAS_RESCALE4_NOISE,
+            _load_workspace(workspace_ptr, offsets, mask, numel, 11),
+            negative_coefficient0,
+            negative_coefficient1,
+            negative_coefficient2,
+            negative_coefficient3,
+            negative_coefficient4,
+            HAS_RESCALE1_NOISE=NEGATIVE_HAS_RESCALE1_NOISE,
+            HAS_RESCALE2_NOISE=NEGATIVE_HAS_RESCALE2_NOISE,
+            HAS_RESCALE3_NOISE=NEGATIVE_HAS_RESCALE3_NOISE,
+            HAS_RESCALE4_NOISE=NEGATIVE_HAS_RESCALE4_NOISE,
         )
-        negative = tl.load(negative_ptr + offsets, mask=mask)
+        positive = _evaluate_polynomial_from_powers(
+            x,
+            x2,
+            x3,
+            x4,
+            _load_workspace(workspace_ptr, offsets, mask, numel, 12),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 13),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 14),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 15),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 16),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 17),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 18),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 19),
+            _load_workspace(workspace_ptr, offsets, mask, numel, 20),
+            positive_coefficient0,
+            positive_coefficient1,
+            positive_coefficient2,
+            positive_coefficient3,
+            positive_coefficient4,
+            HAS_RESCALE1_NOISE=POSITIVE_HAS_RESCALE1_NOISE,
+            HAS_RESCALE2_NOISE=POSITIVE_HAS_RESCALE2_NOISE,
+            HAS_RESCALE3_NOISE=POSITIVE_HAS_RESCALE3_NOISE,
+            HAS_RESCALE4_NOISE=POSITIVE_HAS_RESCALE4_NOISE,
+        )
         out = tl.where(x < 0.0, negative, positive)
         out = tl.where(x >= -2.7, out, 0.0)
         out = tl.where(x > 2.7, x, out)
@@ -266,8 +242,8 @@ def block5_degree4_cuda(
         raise ValueError("degree-4 GELU requires five coefficients per piece")
     if workspace.dim() != x.dim() + 1 or tuple(workspace.shape[1:]) != tuple(x.shape):
         raise ValueError("workspace trailing dimensions must match x")
-    if int(workspace.shape[0]) < 13:
-        raise ValueError("degree-4 GELU requires thirteen workspace rows")
+    if int(workspace.shape[0]) < 21:
+        raise ValueError("degree-4 GELU requires twenty-one workspace rows")
 
     indices = tuple(int(value) for value in noise_indices)
     stds = tuple(float(value) for value in noise_stds)
@@ -277,7 +253,6 @@ def block5_degree4_cuda(
         if index >= len(stds):
             raise ValueError(f"noise index {index} exceeds {len(stds)} stds")
 
-    negative_out = workspace[11]
     numel = int(x.numel())
     grid = (triton.cdiv(numel, 256),)
 
@@ -293,19 +268,16 @@ def block5_degree4_cuda(
         for slot in range(3)
     )
 
-    def compute_piece(
-            coefficients: Sequence[float],
+    def sample_piece(
             coefficient_slot: int,
             rescale_slot: int,
             coefficient0_row: int,
-            final_output: torch.Tensor | None = None,
-            negative_output: torch.Tensor | None = None,
-            ) -> None:
+            ) -> tuple[bool, bool, bool, bool]:
         if not sample(coefficient_slot, workspace[coefficient0_row]):
             raise RuntimeError("coefficient encode noise is required")
         rescale_noise_flags = []
         for degree_index in range(1, 5):
-            coefficient_noise_row = 3 + (degree_index - 1) * 2
+            coefficient_noise_row = coefficient0_row + degree_index * 2 - 1
             rescale_noise_row = coefficient_noise_row + 1
             if not sample(
                     coefficient_slot + degree_index,
@@ -316,50 +288,31 @@ def block5_degree4_cuda(
                 rescale_slot + degree_index - 1,
                 workspace[rescale_noise_row],
             ))
+        return tuple(rescale_noise_flags)
 
-        common_kwargs = {
-            "HAS_POWER2_NOISE": power_noise_flags[0],
-            "HAS_POWER3_NOISE": power_noise_flags[1],
-            "HAS_POWER4_NOISE": power_noise_flags[2],
-            "HAS_RESCALE1_NOISE": rescale_noise_flags[0],
-            "HAS_RESCALE2_NOISE": rescale_noise_flags[1],
-            "HAS_RESCALE3_NOISE": rescale_noise_flags[2],
-            "HAS_RESCALE4_NOISE": rescale_noise_flags[3],
-            "COEFFICIENT0_ROW": coefficient0_row,
-            "BLOCK_SIZE": 256,
-        }
-        if final_output is None:
-            _polynomial_piece_kernel[grid](
-                x,
-                workspace,
-                workspace[coefficient0_row],
-                numel,
-                *coefficients,
-                **common_kwargs,
-            )
-            return
-        if negative_output is None:
-            raise RuntimeError("negative piece output is required")
-        _polynomial_piece_and_select_kernel[grid](
-            x,
-            workspace,
-            negative_output,
-            final_output,
-            numel,
-            *coefficients,
-            float(truncation_scale or 1.0),
-            APPLY_TRUNCATION=truncation_scale is not None,
-            **common_kwargs,
-        )
-
-    compute_piece(negative, 3, 8, 11)
+    negative_rescale_flags = sample_piece(3, 8, 3)
+    positive_rescale_flags = sample_piece(12, 17, 12)
     out = torch.empty_like(x)
-    compute_piece(
-        positive,
-        12,
-        17,
-        12,
-        final_output=out,
-        negative_output=negative_out,
+    _piecewise_polynomial_kernel[grid](
+        x,
+        workspace,
+        out,
+        numel,
+        *negative,
+        *positive,
+        float(truncation_scale or 1.0),
+        HAS_POWER2_NOISE=power_noise_flags[0],
+        HAS_POWER3_NOISE=power_noise_flags[1],
+        HAS_POWER4_NOISE=power_noise_flags[2],
+        NEGATIVE_HAS_RESCALE1_NOISE=negative_rescale_flags[0],
+        NEGATIVE_HAS_RESCALE2_NOISE=negative_rescale_flags[1],
+        NEGATIVE_HAS_RESCALE3_NOISE=negative_rescale_flags[2],
+        NEGATIVE_HAS_RESCALE4_NOISE=negative_rescale_flags[3],
+        POSITIVE_HAS_RESCALE1_NOISE=positive_rescale_flags[0],
+        POSITIVE_HAS_RESCALE2_NOISE=positive_rescale_flags[1],
+        POSITIVE_HAS_RESCALE3_NOISE=positive_rescale_flags[2],
+        POSITIVE_HAS_RESCALE4_NOISE=positive_rescale_flags[3],
+        APPLY_TRUNCATION=truncation_scale is not None,
+        BLOCK_SIZE=256,
     )
     return out
