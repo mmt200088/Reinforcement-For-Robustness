@@ -199,7 +199,7 @@ if triton is not None:
             ):
         if enabled:
             return _load_workspace(workspace_ptr, offsets, mask, numel, row)
-        return 0.0
+        return tl.zeros(offsets.shape, tl.float32)
 
 
     @triton.jit
