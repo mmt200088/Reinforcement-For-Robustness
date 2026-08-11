@@ -8,7 +8,7 @@
     "blb_stage2_rl/layerwise_action.py",
     "tests/test_blb_layerwise_action.py"
   ],
-  "completed_at": "2026-08-11T21:17:54+08:00",
+  "completed_at": "2026-08-11T21:25:51+08:00",
   "deployment_eligible": false,
   "record_type": "task_handoff",
   "schema_version": 1,
@@ -44,7 +44,12 @@
     },
     {
       "command": "CUDA_VISIBLE_DEVICES= python3 scripts/run_multi_profile_fusion_sf_audit.py --output-dir <server evidence dir>",
-      "evidence": "server: 6 profiles, 30 maps, 60 options, 1080 layer-option replays, and 16848 final-config rows passed; result branch codex/result-fusion-map-six-profile-audit-20260811 at 8caffc801d5a4330cf166c502ae5b6e414478a5f",
+      "evidence": "server: 6 profiles, 30 maps, 60 options, 1080 layer-option replays, and 16848 final-config rows passed; result branch codex/result-fusion-map-six-profile-audit-20260811 at afc0a4fa96d1d1e9645b88ebb4769165bbf15ec9",
+      "outcome": "passed"
+    },
+    {
+      "command": "server runtime replay: compare map metadata attn_degree=2 against current Stage-2 Softmax=6",
+      "evidence": "server: all six profiles, 30 maps, 60 options, and every layer completed 1080 paired checks / 2160 production-chain replays; final target cfg/SF and fusion count matched exactly with zero invalid blocks and zero violations",
       "outcome": "passed"
     }
   ]
