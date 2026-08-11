@@ -14,7 +14,7 @@ class Block5CudaFusionTest(unittest.TestCase):
         self.assertFalse(hasattr(block5_fused_cuda, "_initialize_piece_kernel"))
         self.assertFalse(hasattr(block5_fused_cuda, "_select_piece_kernel"))
 
-    def test_degree4_computes_each_polynomial_piece_in_one_kernel(self):
+    def test_degree4_computes_both_polynomial_pieces_in_one_kernel(self):
         from blb_stage2_rl import block5_fused_cuda
 
         self.assertFalse(hasattr(block5_fused_cuda, "_power_kernel"))
@@ -23,10 +23,11 @@ class Block5CudaFusionTest(unittest.TestCase):
         self.assertFalse(
             hasattr(block5_fused_cuda, "_accumulate_and_select_piece_kernel")
         )
-        self.assertTrue(hasattr(block5_fused_cuda, "_polynomial_piece_kernel"))
-        self.assertTrue(
+        self.assertFalse(hasattr(block5_fused_cuda, "_polynomial_piece_kernel"))
+        self.assertFalse(
             hasattr(block5_fused_cuda, "_polynomial_piece_and_select_kernel")
         )
+        self.assertTrue(hasattr(block5_fused_cuda, "_piecewise_polynomial_kernel"))
 
     def test_noise_workspace_reuses_storage_on_the_same_cuda_stream(self):
         import torch
@@ -41,10 +42,10 @@ class Block5CudaFusionTest(unittest.TestCase):
         )
         x = torch.empty((2, 3, 17), device="cuda", dtype=torch.float32)
         try:
-            first = handler._get_block5_fused_cuda_noise_workspace(x, 13)
-            second = handler._get_block5_fused_cuda_noise_workspace(x, 13)
+            first = handler._get_block5_fused_cuda_noise_workspace(x, 21)
+            second = handler._get_block5_fused_cuda_noise_workspace(x, 21)
             self.assertEqual(first.data_ptr(), second.data_ptr())
-            self.assertEqual(tuple(second.shape), (13, *x.shape))
+            self.assertEqual(tuple(second.shape), (21, *x.shape))
         finally:
             handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
 
@@ -128,7 +129,7 @@ class Block5CudaFusionTest(unittest.TestCase):
                     self.assertEqual(
                         [workspace.numel() for workspace in
                          handler._BLOCK5_FUSED_CUDA_WORKSPACES.values()],
-                        [13 * x.numel()],
+                        [21 * x.numel()],
                         ("workspace footprint", power_sfs, coefficient_sfs),
                     )
                     self.assertTrue(
