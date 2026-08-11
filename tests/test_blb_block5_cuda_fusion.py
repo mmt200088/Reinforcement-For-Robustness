@@ -14,6 +14,12 @@ class Block5CudaFusionTest(unittest.TestCase):
         self.assertFalse(hasattr(block5_fused_cuda, "_initialize_piece_kernel"))
         self.assertFalse(hasattr(block5_fused_cuda, "_select_piece_kernel"))
 
+    def test_degree4_computes_all_shared_powers_in_one_kernel(self):
+        from blb_stage2_rl import block5_fused_cuda
+
+        self.assertFalse(hasattr(block5_fused_cuda, "_power_kernel"))
+        self.assertTrue(hasattr(block5_fused_cuda, "_powers_kernel"))
+
     def test_noise_workspace_reuses_storage_on_the_same_cuda_stream(self):
         import torch
 
