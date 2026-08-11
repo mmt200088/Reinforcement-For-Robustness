@@ -365,6 +365,22 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                     "64",
                 )
 
+    def test_comparator_aliases_enable_three_single_gpu_probe_workers(self):
+        for alias in ("bo_rf", "greedy", "coinn_ga"):
+            with self.subTest(alias=alias):
+                argv = self._capture_comparator_persistent_path(
+                    alias,
+                    return_argv=True,
+                )
+                self.assertEqual(
+                    argv[argv.index("--blb_v3_reward_devices") + 1],
+                    "0",
+                )
+                self.assertEqual(
+                    argv[argv.index("--stage2_workers_per_device") + 1],
+                    "3",
+                )
+
     def test_comparator_aliases_pin_final_eval_and_stage2_seeds(self):
         for alias in ("bo_rf", "greedy", "coinn_ga"):
             for include_preset in (False, True):
