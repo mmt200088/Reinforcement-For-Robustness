@@ -9,11 +9,9 @@ import contextlib
 import hashlib
 import math
 import operator
-import os
 import random
 import time
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -2085,59 +2083,19 @@ class BLBStage2Env:
         try:
             for position, _trial_index in enumerate(indices):
                 seed = trial_seeds[position]
-                profiler_path_text = str(
-                    os.environ.get("BLB_STAGE2_PROBE_PROFILE_PATH", "") or ""
-                ).strip()
-                profiler_path = (
-                    Path(profiler_path_text) if profiler_path_text else None
+                result = run_installed_probe_trial(
+                    self.model,
+                    self.probe_batches,
+                    is_regression=bool(self.is_regression),
+                    metric_profile=str(
+                        getattr(
+                            getattr(self, "env_cfg", None),
+                            "profile", "",
+                        ) or ""
+                    ),
+                    restore_training=False,
+                    forward_context=_forward_context(seed),
                 )
-                profile_this_trial = (
-                    profiler_path is not None
-                    and position == 0
-                    and not profiler_path.exists()
-                )
-                profiler = None
-                if profile_this_trial:
-                    activities = [torch.profiler.ProfilerActivity.CPU]
-                    if self._device.type == "cuda":
-                        activities.append(torch.profiler.ProfilerActivity.CUDA)
-                    profiler = torch.profiler.profile(
-                        activities=activities,
-                        record_shapes=True,
-                        profile_memory=True,
-                        with_flops=True,
-                    )
-
-                probe_context = profiler or _NULL_CTX
-                with probe_context:
-                    result = run_installed_probe_trial(
-                        self.model,
-                        self.probe_batches,
-                        is_regression=bool(self.is_regression),
-                        metric_profile=str(
-                            getattr(
-                                getattr(self, "env_cfg", None),
-                                "profile", "",
-                            ) or ""
-                        ),
-                        restore_training=False,
-                        forward_context=_forward_context(seed),
-                    )
-                if profiler is not None and profiler_path is not None:
-                    profiler_path.parent.mkdir(parents=True, exist_ok=True)
-                    profiler.export_chrome_trace(str(profiler_path))
-                    table_path = profiler_path.with_suffix(
-                        profiler_path.suffix + ".table.txt"
-                    )
-                    table_path.write_text(
-                        profiler.key_averages(
-                            group_by_input_shape=True,
-                        ).table(
-                            sort_by="self_cuda_time_total",
-                            row_limit=200,
-                        ),
-                        encoding="utf-8",
-                    )
                 results.append(_normalize_probe_trial_result(result))
         finally:
             if was_training:
