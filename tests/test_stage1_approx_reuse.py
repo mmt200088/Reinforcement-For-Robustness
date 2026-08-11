@@ -189,6 +189,10 @@ class Stage1ApproxReuseBitIdentityTest(unittest.TestCase):
         with torch.inference_mode():
             for step, (gelu, softmax) in enumerate(self.SCHEDULE):
                 lie.LayerImportanceEvaluator.apply_configuration(self_fast, gelu, softmax)
+                # Force the reference arm through the pre-delta full-install
+                # behavior while retaining the no-reuse module baseline.
+                self_slow._last_applied_config = None
+                h_slow._last_stage1_applied_config = None
                 lie.LayerImportanceEvaluator.apply_configuration(self_slow, gelu, softmax)
                 model_fast.eval()
                 model_slow.eval()
