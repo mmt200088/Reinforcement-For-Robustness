@@ -1,0 +1,701 @@
+{
+  "comparison_contract": {
+    "fused_rescale_not_installed": true,
+    "global_invalid_block_count_zero": true,
+    "global_total_bits_intentionally_not_compared": "Block3 exp_n2 versus exp_n6 has different expected chain bits; the audited fusion maps target only Block2/4/5.",
+    "target_baseline_action_indices_equal": true,
+    "target_final_cfg_hash_equal": true,
+    "target_final_sf_projection_equal": true,
+    "target_fusion_count_matches_map": true,
+    "target_valid": true
+  },
+  "profiles": [
+    {
+      "maps": [
+        {
+          "block_idx": 2,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block2_mrpc",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 4,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block4",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 1,
+          "graph_key": "block5_n1",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 2,
+          "graph_key": "block5_n2",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block5_n4",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        }
+      ],
+      "num_layers": 12,
+      "profile": "mrpc",
+      "status": "pass"
+    },
+    {
+      "maps": [
+        {
+          "block_idx": 2,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block2_rte",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 4,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block4",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 1,
+          "graph_key": "block5_n1",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 2,
+          "graph_key": "block5_n2",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block5_n4",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        }
+      ],
+      "num_layers": 12,
+      "profile": "rte",
+      "status": "pass"
+    },
+    {
+      "maps": [
+        {
+          "block_idx": 2,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block2_sst2",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 4,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block4",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 1,
+          "graph_key": "block5_n1",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 2,
+          "graph_key": "block5_n2",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block5_n4",
+          "layer_option_checks": 24,
+          "layers": 12,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 48,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        }
+      ],
+      "num_layers": 12,
+      "profile": "sst2",
+      "status": "pass"
+    },
+    {
+      "maps": [
+        {
+          "block_idx": 2,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block2_mrpc_large",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 4,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block4",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 1,
+          "graph_key": "block5_n1",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 2,
+          "graph_key": "block5_n2",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block5_n4",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        }
+      ],
+      "num_layers": 24,
+      "profile": "mrpc_large",
+      "status": "pass"
+    },
+    {
+      "maps": [
+        {
+          "block_idx": 2,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block2_rte_large",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 4,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block4",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 1,
+          "graph_key": "block5_n1",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 2,
+          "graph_key": "block5_n2",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block5_n4",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        }
+      ],
+      "num_layers": 24,
+      "profile": "rte_large",
+      "status": "pass"
+    },
+    {
+      "maps": [
+        {
+          "block_idx": 2,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block2_sst2_large",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 4,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block4",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 1,
+          "graph_key": "block5_n1",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 2,
+          "graph_key": "block5_n2",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        },
+        {
+          "block_idx": 5,
+          "fusion_counts_verified": [
+            0,
+            1
+          ],
+          "gelu_degree": 4,
+          "graph_key": "block5_n4",
+          "layer_option_checks": 48,
+          "layers": 24,
+          "map_metadata_attn_degree": 2,
+          "options": 2,
+          "runtime_attn_degrees_compared": [
+            2,
+            6
+          ],
+          "runtime_replays": 96,
+          "target_baseline_indices_equal": true,
+          "target_final_cfg_equal": true,
+          "violations": []
+        }
+      ],
+      "num_layers": 24,
+      "profile": "sst2_large",
+      "status": "pass"
+    }
+  ],
+  "purpose": "Prove that historical map metadata attn_degree=2 does not alter the target Block2/4/5 option installed by the current Softmax=6 Stage-2 runtime.",
+  "scope": {
+    "attn_degrees": [
+      2,
+      6
+    ],
+    "layer_option_checks": 1080,
+    "map_options": 60,
+    "maps": 30,
+    "profiles": 6,
+    "runtime_replays": 2160
+  },
+  "source_commit": "9e977052b9806ac834d72672fbcc70dc8a18718a",
+  "status": "pass",
+  "violations": []
+}
