@@ -52,11 +52,28 @@ def _sample_gaussian_rows_cuda(
     """Sample consecutive same-shape rows without changing CUDA RNG results."""
     start = int(start_row)
     count = len(stds)
+    if start < 0 or start + count > int(workspace.shape[0]):
+        raise ValueError("grouped noise rows exceed the workspace")
     target = workspace[start:start + count]
     if count == 0:
         return target
-    if start < 0 or start + count > int(workspace.shape[0]):
-        raise ValueError("grouped noise rows exceed the workspace")
+
+    properties = torch.cuda.get_device_properties(workspace.device)
+    block_size = 256
+    blocks_per_sm = properties.max_threads_per_multi_processor // block_size
+    philox_grid_period = (
+        block_size * blocks_per_sm * properties.multi_processor_count * 4
+    )
+    row_numel = int(target[0].numel())
+    if (
+            workspace.dtype != torch.float32
+            or not target.is_contiguous()
+            or row_numel % philox_grid_period != 0
+    ):
+        for row, std in zip(target, stds):
+            row.normal_(0.0, float(std), generator=generator)
+        return target
+
     scales = _noise_std_tensor(workspace, stds).expand_as(target)
     torch.normal(0.0, scales, generator=generator, out=target)
     return target
