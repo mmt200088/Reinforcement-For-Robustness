@@ -42,27 +42,41 @@ if triton is not None:
 
 
     @triton.jit
-    def _power_kernel(
-            left_ptr,
-            right_ptr,
-            noise_ptr,
-            out_ptr,
+    def _powers_kernel(
+            x_ptr,
+            power2_ptr,
+            power3_ptr,
+            power4_ptr,
             numel,
-            HAS_NOISE: tl.constexpr,
+            HAS_POWER2_NOISE: tl.constexpr,
+            HAS_POWER3_NOISE: tl.constexpr,
+            HAS_POWER4_NOISE: tl.constexpr,
             BLOCK_SIZE: tl.constexpr,
             ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < numel
-        value = _mul_rn_f32(
-            tl.load(left_ptr + offsets, mask=mask),
-            tl.load(right_ptr + offsets, mask=mask),
-        )
-        if HAS_NOISE:
-            value = _add_rn_f32(
-                value,
-                tl.load(noise_ptr + offsets, mask=mask),
+        x = tl.load(x_ptr + offsets, mask=mask)
+        x2 = _mul_rn_f32(x, x)
+        if HAS_POWER2_NOISE:
+            x2 = _add_rn_f32(
+                x2,
+                tl.load(power2_ptr + offsets, mask=mask),
             )
-        tl.store(out_ptr + offsets, value, mask=mask)
+        x3 = _mul_rn_f32(x2, x)
+        if HAS_POWER3_NOISE:
+            x3 = _add_rn_f32(
+                x3,
+                tl.load(power3_ptr + offsets, mask=mask),
+            )
+        x4 = _mul_rn_f32(x2, x2)
+        if HAS_POWER4_NOISE:
+            x4 = _add_rn_f32(
+                x4,
+                tl.load(power4_ptr + offsets, mask=mask),
+            )
+        tl.store(power2_ptr + offsets, x2, mask=mask)
+        tl.store(power3_ptr + offsets, x3, mask=mask)
+        tl.store(power4_ptr + offsets, x4, mask=mask)
 
 
     @triton.jit
@@ -192,21 +206,21 @@ def block5_degree4_cuda(
         target.normal_(0.0, stds[index], generator=generator)
         return True
 
-    for slot, left, right, out in (
-            (0, x, x, powers[2]),
-            (1, powers[2], x, powers[3]),
-            (2, powers[2], powers[2], powers[4]),
-            ):
-        has_noise = sample(slot, noise0)
-        _power_kernel[grid](
-            left,
-            right,
-            noise0,
-            out,
-            numel,
-            HAS_NOISE=has_noise,
-            BLOCK_SIZE=256,
-        )
+    power_noise_flags = tuple(
+        sample(slot, powers[slot + 2])
+        for slot in range(3)
+    )
+    _powers_kernel[grid](
+        x,
+        powers[2],
+        powers[3],
+        powers[4],
+        numel,
+        HAS_POWER2_NOISE=power_noise_flags[0],
+        HAS_POWER3_NOISE=power_noise_flags[1],
+        HAS_POWER4_NOISE=power_noise_flags[2],
+        BLOCK_SIZE=256,
+    )
 
     def compute_piece(
             coefficients: Sequence[float],
