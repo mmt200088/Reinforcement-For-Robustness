@@ -85,14 +85,23 @@ class Block5CudaFusionTest(unittest.TestCase):
             output_truncation_k=9,
         )
         forward = handler._make_block5_gelu_forward(original_gelu, cfg)
+        properties = torch.cuda.get_device_properties(0)
+        block_size = 256
+        aligned_numel = (
+            block_size
+            * (properties.max_threads_per_multi_processor // block_size)
+            * properties.multi_processor_count
+            * 4
+        )
         x = torch.linspace(
             -2.5,
             2.5,
-            steps=2 * 3 * 17,
+            steps=aligned_numel,
             device="cuda",
             dtype=torch.float32,
-        ).reshape(2, 3, 17)
+        )
         real_sampler = block5_fused_cuda._sample_gaussian_rows_cuda
+        real_torch_normal = torch.normal
         grouped_stds = []
 
         def tracked_sampler(workspace, start_row, stds, generator):
@@ -102,13 +111,35 @@ class Block5CudaFusionTest(unittest.TestCase):
         handler.reseed_noise_rng_for_device(x.device, 987654)
         handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
         with mock.patch.object(
+            handler,
+            "_try_block5_fused_cuda",
+            return_value=None,
+        ):
+            expected = forward(x)
+            expected_next = handler._sample_independent_gaussian(
+                torch.empty(257, device=x.device), 0.25,
+            )
+
+        handler.reseed_noise_rng_for_device(x.device, 987654)
+        handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
+        with mock.patch.object(
             block5_fused_cuda,
             "_sample_gaussian_rows_cuda",
             side_effect=tracked_sampler,
-        ):
-            forward(x)
+        ), mock.patch.object(
+            block5_fused_cuda.torch,
+            "normal",
+            wraps=real_torch_normal,
+        ) as grouped_normal:
+            actual = forward(x)
+            actual_next = handler._sample_independent_gaussian(
+                torch.empty(257, device=x.device), 0.25,
+            )
 
         self.assertEqual([len(stds) for stds in grouped_stds], [2, 8, 8])
+        self.assertEqual(grouped_normal.call_count, 3)
+        self.assertTrue(torch.equal(actual, expected))
+        self.assertTrue(torch.equal(actual_next, expected_next))
 
     def test_degree4_computes_each_polynomial_piece_in_one_kernel(self):
         from blb_stage2_rl import block5_fused_cuda
