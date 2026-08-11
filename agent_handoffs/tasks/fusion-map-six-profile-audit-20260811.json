@@ -1,0 +1,51 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "5f8441a8d30cd5cf9fac871d4240f1de61328b97",
+  "base_tree": "95c0fd1b1cb9d5448f29d8ad7a181ffee6108253",
+  "branch": "codex/task-fusion-map-six-profile-audit-20260811",
+  "branch_role": "task",
+  "changed_scopes": [
+    "blb_stage2_rl/layerwise_action.py",
+    "tests/test_blb_layerwise_action.py"
+  ],
+  "completed_at": "2026-08-11T21:17:54+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "experiments/server_command_runs/fusion_map_six_profile_audit_9e977052_20260811/"
+  ],
+  "source_commit": "9e977052b9806ac834d72672fbcc70dc8a18718a",
+  "source_tree": "1e07e0270745dfea8c7341cc2ab497db5bf06a88",
+  "started_at": "2026-08-11T20:41:00+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "fusion-map-six-profile-audit-20260811",
+  "verification": [
+    {
+      "command": "python3 -m unittest -v tests.test_blb_layerwise_action",
+      "evidence": "server: 26 tests passed; includes all six committed profiles, GELU n1/n2/n4, first/last layer, and Block4 fusion 0/1",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m unittest -v tests.test_blb_layerwise_env tests.test_blb_fusion_single_path_guards tests.test_blb_fusion_fixed_action tests.test_blb_action_materialization.ActionMaterializationTests",
+      "evidence": "server: 37 action-to-model, final-eval, replan, boost, and materialization tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m unittest -v tests.test_audit_fusion_count_maps",
+      "evidence": "server: 4 fusion-map audit tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 scripts/audit_fusion_count_maps.py --max-allowed 1 --profile-dir <six committed profile dirs>",
+      "evidence": "server: six profiles passed with zero missing graphs and zero fusion-count violations",
+      "outcome": "passed"
+    },
+    {
+      "command": "CUDA_VISIBLE_DEVICES= python3 scripts/run_multi_profile_fusion_sf_audit.py --output-dir <server evidence dir>",
+      "evidence": "server: 6 profiles, 30 maps, 60 options, 1080 layer-option replays, and 16848 final-config rows passed; result branch codex/result-fusion-map-six-profile-audit-20260811 at 8caffc801d5a4330cf166c502ae5b6e414478a5f",
+      "outcome": "passed"
+    }
+  ]
+}
