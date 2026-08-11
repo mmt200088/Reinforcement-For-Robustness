@@ -8,6 +8,58 @@ import unittest
 
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
 class Block5CudaFusionTest(unittest.TestCase):
+    def test_grouped_noise_sampling_matches_separate_calls_and_rng_state_bitwise(self):
+        import torch
+
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA unavailable")
+
+        from blb_stage2_rl import block5_fused_cuda
+
+        self.assertTrue(
+            hasattr(block5_fused_cuda, "_sample_gaussian_rows_cuda")
+        )
+        shape = (2, 3, 17)
+        stds = (0.125, 2.0 ** -20, 0.03125)
+        separate_generator = torch.Generator(device="cuda").manual_seed(987654)
+        separate = [
+            torch.empty(shape, device="cuda", dtype=torch.float32).normal_(
+                0.0,
+                std,
+                generator=separate_generator,
+            )
+            for std in stds
+        ]
+        separate_next = torch.empty(257, device="cuda").normal_(
+            0.0,
+            0.25,
+            generator=separate_generator,
+        )
+
+        grouped_generator = torch.Generator(device="cuda").manual_seed(987654)
+        workspace = torch.empty(
+            (len(stds), *shape),
+            device="cuda",
+            dtype=torch.float32,
+        )
+        grouped = block5_fused_cuda._sample_gaussian_rows_cuda(
+            workspace,
+            0,
+            stds,
+            grouped_generator,
+        )
+        grouped_next = torch.empty(257, device="cuda").normal_(
+            0.0,
+            0.25,
+            generator=grouped_generator,
+        )
+
+        self.assertTrue(all(
+            torch.equal(grouped[index], value)
+            for index, value in enumerate(separate)
+        ))
+        self.assertTrue(torch.equal(grouped_next, separate_next))
+
     def test_degree4_fuses_piece_setup_and_selection_into_accumulation(self):
         from blb_stage2_rl import block5_fused_cuda
 
