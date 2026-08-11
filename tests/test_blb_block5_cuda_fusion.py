@@ -66,6 +66,50 @@ class Block5CudaFusionTest(unittest.TestCase):
         self.assertFalse(hasattr(block5_fused_cuda, "_initialize_piece_kernel"))
         self.assertFalse(hasattr(block5_fused_cuda, "_select_piece_kernel"))
 
+    def test_degree4_groups_active_noise_into_three_sampler_calls(self):
+        import torch
+
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA unavailable")
+
+        import function_handler as handler
+        from blb_stage2_rl import block5_fused_cuda
+
+        original_gelu = handler.PolynomialGELU(degree=4)
+        cfg = handler.make_block5_default_config(
+            gelu_degree=4,
+            N=16384,
+            gelu_coeff_sf=31,
+            gelu_power_rescale_sfs=(31, None, 31),
+            gelu_coeff_mul_rescale_sfs=(31, None, 31, 31),
+            output_truncation_k=9,
+        )
+        forward = handler._make_block5_gelu_forward(original_gelu, cfg)
+        x = torch.linspace(
+            -2.5,
+            2.5,
+            steps=2 * 3 * 17,
+            device="cuda",
+            dtype=torch.float32,
+        ).reshape(2, 3, 17)
+        real_sampler = block5_fused_cuda._sample_gaussian_rows_cuda
+        grouped_stds = []
+
+        def tracked_sampler(workspace, start_row, stds, generator):
+            grouped_stds.append(tuple(stds))
+            return real_sampler(workspace, start_row, stds, generator)
+
+        handler.reseed_noise_rng_for_device(x.device, 987654)
+        handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
+        with mock.patch.object(
+            block5_fused_cuda,
+            "_sample_gaussian_rows_cuda",
+            side_effect=tracked_sampler,
+        ):
+            forward(x)
+
+        self.assertEqual([len(stds) for stds in grouped_stds], [2, 8, 8])
+
     def test_degree4_computes_each_polynomial_piece_in_one_kernel(self):
         from blb_stage2_rl import block5_fused_cuda
 
