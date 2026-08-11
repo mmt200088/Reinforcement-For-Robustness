@@ -1,0 +1,22 @@
+{
+  "status": "pass",
+  "checks": {
+    "audit_status_pass": true,
+    "map_gate_status_pass": true,
+    "profile_count_6": true,
+    "map_count_30": true,
+    "all_fusion_domains_0_1": true,
+    "all_layers_identical": true,
+    "all_layer_counts_complete": true,
+    "no_fused_rescale_installed": true,
+    "all_provenance_final_cfg": true
+  },
+  "counts": {
+    "profiles": 6,
+    "maps": 30,
+    "options": 60,
+    "layer_option_replays": 1080,
+    "actual_config_rows": 16848
+  },
+  "source_commit": "9e977052b9806ac834d72672fbcc70dc8a18718a"
+}

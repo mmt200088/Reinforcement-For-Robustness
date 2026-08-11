@@ -1,0 +1,48 @@
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+test_bert_large_runs_all_24_layers_through_the_same_terminal_path (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_deferred_terminal_prepares_exact_seed_without_running_base_step (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_evaluates_four_then_five_blocks_and_records_one_row (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_invalid_block_is_aggregated_without_early_termination (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_nonuniform_degrees_select_block3_and_block5_graphs_per_layer (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_rejects_misuse_and_owns_actions_and_terminal_results (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_reset_after_terminal_starts_a_fresh_episode (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_reset_has_stable_geometry_and_owned_state (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_reset_reuses_fixed_schedule_until_degree_vectors_change (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_terminal_calls_base_once_with_full_cost_and_handoff (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_terminal_info_snapshot_is_bounded_json_safe_and_runtime_info_is_private (tests.test_blb_layerwise_env.LayerwiseEnvironmentTest) ... ok
+test_layerwise_ordinary_block2_and_boosted_block5_use_real_helper_chain (tests.test_blb_layerwise_env.LayerwiseRealHelperIntegrationTest) ... ok
+test_final_eval_fusion_decoder_uses_sf_direct_builder (tests.test_blb_fusion_single_path_guards.FusionSinglePathGuardTest) ... ok
+test_final_strict_revalidation_replays_boosted_fusion_config (tests.test_blb_fusion_single_path_guards.FusionSinglePathGuardTest) ... ok
+test_terminal_prepare_can_replay_boosted_overrides (tests.test_blb_fusion_single_path_guards.FusionSinglePathGuardTest) ... ok
+test_every_committed_option_round_trips (tests.test_blb_fusion_fixed_action.MatchOptionIdTest) ... ok
+test_matches_baseline_option_zero (tests.test_blb_fusion_fixed_action.MatchOptionIdTest) ... ok
+test_matches_boosted_option_ignoring_k_slot (tests.test_blb_fusion_fixed_action.MatchOptionIdTest) ... ok
+test_matches_legacy_all_max_baseline_with_slot_dims (tests.test_blb_fusion_fixed_action.MatchOptionIdTest) ... ok
+test_raises_on_no_match (tests.test_blb_fusion_fixed_action.MatchOptionIdTest) ... ok
+test_missing_block1_and_block3_maps_do_not_block_fusion_reconstruction (tests.test_blb_fusion_fixed_action.ReconstructFusionGroupBaselineOwnedBlocksTest) ... ok
+test_missing_fusion_managed_block_map_still_fails_loudly (tests.test_blb_fusion_fixed_action.ReconstructFusionGroupBaselineOwnedBlocksTest) ... ok
+test_attaches_persisted_group_for_best (tests.test_blb_fusion_fixed_action.SelectFusionEvalMetadataTest) ... ok
+test_explicit_fusion_config_is_left_as_is (tests.test_blb_fusion_fixed_action.SelectFusionEvalMetadataTest) ... ok
+test_no_base_action_untouched (tests.test_blb_fusion_fixed_action.SelectFusionEvalMetadataTest) ... ok
+test_non_best_candidate_untouched (tests.test_blb_fusion_fixed_action.SelectFusionEvalMetadataTest) ... ok
+test_per_slot_run_untouched (tests.test_blb_fusion_fixed_action.SelectFusionEvalMetadataTest) ... ok
+test_complete_replan_is_model_ready_and_preserves_block3_k (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_final_config_identity_includes_boosted_sf_and_k (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_missing_optimizer_baseline_skeleton_fails_closed (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_missing_optimizer_output_fails_closed_before_model_install (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_real_mrpc_all_max_materializes_all_blocks_and_preserves_block3_k (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_real_mrpc_k6_materializes_all_blocks_including_layer0 (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_stochastic_backend_rejects_fractional_width_without_signed_headroom (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_stochastic_backend_rejects_target_k_above_source_before_install (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_truncation_backend_is_explicit_and_part_of_identity (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+test_valid_but_incomplete_replan_fails_closed (tests.test_blb_action_materialization.ActionMaterializationTests) ... ok
+
+----------------------------------------------------------------------
+Ran 37 tests in 0.121s
+
+OK
