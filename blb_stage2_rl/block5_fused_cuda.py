@@ -66,23 +66,6 @@ if triton is not None:
 
 
     @triton.jit
-    def _initialize_piece_kernel(
-            noise_ptr,
-            out_ptr,
-            numel,
-            coefficient,
-            BLOCK_SIZE: tl.constexpr,
-            ):
-        offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = offsets < numel
-        value = _add_rn_f32(
-            tl.load(noise_ptr + offsets, mask=mask),
-            coefficient,
-        )
-        tl.store(out_ptr + offsets, value, mask=mask)
-
-
-    @triton.jit
     def _accumulate_piece_kernel(
             power_ptr,
             coefficient_noise_ptr,
@@ -90,7 +73,9 @@ if triton is not None:
             accumulator_ptr,
             numel,
             coefficient,
+            base_coefficient,
             HAS_RESCALE_NOISE: tl.constexpr,
+            INITIALIZE_ACCUMULATOR: tl.constexpr,
             BLOCK_SIZE: tl.constexpr,
             ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -108,29 +93,50 @@ if triton is not None:
                 term,
                 tl.load(rescale_noise_ptr + offsets, mask=mask),
             )
-        result = _add_rn_f32(
-            tl.load(accumulator_ptr + offsets, mask=mask),
-            term,
-        )
+        accumulator = tl.load(accumulator_ptr + offsets, mask=mask)
+        if INITIALIZE_ACCUMULATOR:
+            accumulator = _add_rn_f32(accumulator, base_coefficient)
+        result = _add_rn_f32(accumulator, term)
         tl.store(accumulator_ptr + offsets, result, mask=mask)
 
 
     @triton.jit
-    def _select_piece_kernel(
+    def _accumulate_and_select_piece_kernel(
+            power_ptr,
+            coefficient_noise_ptr,
+            rescale_noise_ptr,
+            accumulator_ptr,
             x_ptr,
             negative_ptr,
-            positive_ptr,
             out_ptr,
             numel,
+            coefficient,
             truncation_scale,
+            HAS_RESCALE_NOISE: tl.constexpr,
             APPLY_TRUNCATION: tl.constexpr,
             BLOCK_SIZE: tl.constexpr,
             ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < numel
+        noisy_coefficient = _add_rn_f32(
+            tl.load(coefficient_noise_ptr + offsets, mask=mask),
+            coefficient,
+        )
+        term = _mul_rn_f32(
+            tl.load(power_ptr + offsets, mask=mask),
+            noisy_coefficient,
+        )
+        if HAS_RESCALE_NOISE:
+            term = _add_rn_f32(
+                term,
+                tl.load(rescale_noise_ptr + offsets, mask=mask),
+            )
+        positive = _add_rn_f32(
+            tl.load(accumulator_ptr + offsets, mask=mask),
+            term,
+        )
         x = tl.load(x_ptr + offsets, mask=mask)
         negative = tl.load(negative_ptr + offsets, mask=mask)
-        positive = tl.load(positive_ptr + offsets, mask=mask)
         out = tl.where(x < 0.0, negative, positive)
         out = tl.where(x >= -2.7, out, 0.0)
         out = tl.where(x > 2.7, x, out)
@@ -207,43 +213,55 @@ def block5_degree4_cuda(
             coefficient_slot: int,
             rescale_slot: int,
             accumulator: torch.Tensor,
+            final_output: torch.Tensor | None = None,
+            negative_output: torch.Tensor | None = None,
             ) -> None:
-        if not sample(coefficient_slot, noise0):
+        if not sample(coefficient_slot, accumulator):
             raise RuntimeError("coefficient encode noise is required")
-        _initialize_piece_kernel[grid](
-            noise0,
-            accumulator,
-            numel,
-            coefficients[0],
-            BLOCK_SIZE=256,
-        )
         for degree_index in range(1, 5):
             if not sample(coefficient_slot + degree_index, noise0):
                 raise RuntimeError("coefficient encode noise is required")
             has_rescale = sample(rescale_slot + degree_index - 1, noise1)
-            _accumulate_piece_kernel[grid](
-                powers[degree_index],
-                noise0,
-                noise1,
-                accumulator,
-                numel,
-                coefficients[degree_index],
-                HAS_RESCALE_NOISE=has_rescale,
-                BLOCK_SIZE=256,
-            )
+            if final_output is not None and degree_index == 4:
+                if negative_output is None:
+                    raise RuntimeError("negative piece output is required")
+                _accumulate_and_select_piece_kernel[grid](
+                    powers[degree_index],
+                    noise0,
+                    noise1,
+                    accumulator,
+                    x,
+                    negative_output,
+                    final_output,
+                    numel,
+                    coefficients[degree_index],
+                    float(truncation_scale or 1.0),
+                    HAS_RESCALE_NOISE=has_rescale,
+                    APPLY_TRUNCATION=truncation_scale is not None,
+                    BLOCK_SIZE=256,
+                )
+            else:
+                _accumulate_piece_kernel[grid](
+                    powers[degree_index],
+                    noise0,
+                    noise1,
+                    accumulator,
+                    numel,
+                    coefficients[degree_index],
+                    coefficients[0],
+                    HAS_RESCALE_NOISE=has_rescale,
+                    INITIALIZE_ACCUMULATOR=degree_index == 1,
+                    BLOCK_SIZE=256,
+                )
 
     compute_piece(negative, 3, 8, negative_out)
-    compute_piece(positive, 12, 17, positive_out)
-
     out = torch.empty_like(x)
-    _select_piece_kernel[grid](
-        x,
-        negative_out,
+    compute_piece(
+        positive,
+        12,
+        17,
         positive_out,
-        out,
-        numel,
-        float(truncation_scale or 1.0),
-        APPLY_TRUNCATION=truncation_scale is not None,
-        BLOCK_SIZE=256,
+        final_output=out,
+        negative_output=negative_out,
     )
     return out
