@@ -14,6 +14,9 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - CPU/local lane.
 
 
 if triton is not None:
+    from .truncation_fused_cuda import binary_truncation_rn_f32
+
+
     @triton.jit
     def _add_rn_f32(left, right):
         return tl.inline_asm_elementwise(
@@ -119,6 +122,8 @@ if triton is not None:
             positive_ptr,
             out_ptr,
             numel,
+            truncation_scale,
+            APPLY_TRUNCATION: tl.constexpr,
             BLOCK_SIZE: tl.constexpr,
             ):
         offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -129,6 +134,8 @@ if triton is not None:
         out = tl.where(x < 0.0, negative, positive)
         out = tl.where(x >= -2.7, out, 0.0)
         out = tl.where(x > 2.7, x, out)
+        if APPLY_TRUNCATION:
+            out = binary_truncation_rn_f32(out, truncation_scale)
         tl.store(out_ptr + offsets, out, mask=mask)
 
 
@@ -144,6 +151,7 @@ def block5_degree4_cuda(
         negative_coefficients: Sequence[float],
         positive_coefficients: Sequence[float],
         generator: torch.Generator,
+        truncation_scale: float | None = None,
         ) -> torch.Tensor:
     """Run eager-order noise sampling with staged exact-FP32 arithmetic."""
     if triton is None:
@@ -234,6 +242,8 @@ def block5_degree4_cuda(
         positive_out,
         out,
         numel,
+        float(truncation_scale or 1.0),
+        APPLY_TRUNCATION=truncation_scale is not None,
         BLOCK_SIZE=256,
     )
     return out
