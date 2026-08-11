@@ -2646,7 +2646,7 @@ def _try_block5_fused_cuda(
     try:
         workspace = _get_block5_fused_cuda_noise_workspace(
             x,
-            7,
+            13,
         )
     except torch.cuda.OutOfMemoryError:
         return None
