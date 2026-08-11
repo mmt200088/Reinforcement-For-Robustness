@@ -8,6 +8,79 @@ import unittest
 
 @unittest.skipIf(importlib.util.find_spec("torch") is None, "torch unavailable")
 class Block5CudaFusionTest(unittest.TestCase):
+    def test_degree4_aligned_cuda_groups_standard_normals_bitwise(self):
+        import torch
+
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA unavailable")
+
+        import function_handler as handler
+        from blb_stage2_rl import block5_fused_cuda
+
+        self.assertTrue(
+            hasattr(block5_fused_cuda, "_sample_standard_normal_rows_cuda")
+        )
+        original_gelu = handler.PolynomialGELU(degree=4)
+        cfg = handler.make_block5_default_config(
+            gelu_degree=4,
+            N=16384,
+            gelu_coeff_sf=31,
+            gelu_power_rescale_sfs=(31, None, 31),
+            gelu_coeff_mul_rescale_sfs=(31, None, 31, 31),
+            output_truncation_k=9,
+        )
+        forward = handler._make_block5_gelu_forward(original_gelu, cfg)
+        properties = torch.cuda.get_device_properties(0)
+        block_size = 256
+        aligned_numel = (
+            block_size
+            * (properties.max_threads_per_multi_processor // block_size)
+            * properties.multi_processor_count
+            * 4
+        )
+        x = torch.linspace(
+            -2.5,
+            2.5,
+            steps=aligned_numel,
+            device="cuda",
+            dtype=torch.float32,
+        )
+
+        handler.reseed_noise_rng_for_device(x.device, 987654)
+        handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
+        with mock.patch.object(
+            handler,
+            "_try_block5_fused_cuda",
+            return_value=None,
+        ):
+            expected = forward(x)
+            expected_next = handler._sample_independent_gaussian(
+                torch.empty(257, device=x.device), 0.25,
+            )
+
+        real_sampler = block5_fused_cuda._sample_standard_normal_rows_cuda
+        grouped_counts = []
+
+        def tracked_sampler(workspace, start_row, count, generator):
+            grouped_counts.append(int(count))
+            return real_sampler(workspace, start_row, count, generator)
+
+        handler.reseed_noise_rng_for_device(x.device, 987654)
+        handler._BLOCK5_FUSED_CUDA_WORKSPACES.clear()
+        with mock.patch.object(
+            block5_fused_cuda,
+            "_sample_standard_normal_rows_cuda",
+            side_effect=tracked_sampler,
+        ):
+            actual = forward(x)
+            actual_next = handler._sample_independent_gaussian(
+                torch.empty(257, device=x.device), 0.25,
+            )
+
+        self.assertEqual(grouped_counts, [2, 8, 8])
+        self.assertTrue(torch.equal(actual, expected))
+        self.assertTrue(torch.equal(actual_next, expected_next))
+
     def test_degree4_fuses_piece_setup_and_selection_into_accumulation(self):
         from blb_stage2_rl import block5_fused_cuda
 
