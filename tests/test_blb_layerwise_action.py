@@ -644,6 +644,18 @@ class LayerwiseValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly one"):
             layerwise.layerwise_schedule(12, duplicate)
 
+    def test_schedule_rejects_fusion_counts_above_one(self):
+        invalid = fcm.FusionCountMap.load("mrpc")
+        graph = invalid.graphs["block4"]
+        graph.options = graph.options + [replace(
+            next(option for option in graph.options if option.fusion_count == 1),
+            option_id=99,
+            fusion_count=2,
+        )]
+
+        with self.assertRaisesRegex(ValueError, "unsupported fusion_count"):
+            layerwise.layerwise_schedule(12, invalid)
+
     def test_map_structure_validation_fails_loudly(self):
         cases = []
 
