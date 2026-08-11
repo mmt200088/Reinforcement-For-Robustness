@@ -88,6 +88,12 @@ class Block5CudaFusionTest(unittest.TestCase):
                         handler,
                         "_try_block5_fused_cuda",
                         side_effect=tracked_fast_path,
+                    ), mock.patch.object(
+                        handler,
+                        "_apply_truncation",
+                        side_effect=AssertionError(
+                            "Block5 fast path launched standalone truncation"
+                        ),
                     ):
                         actual = forward(x)
                         actual_next = handler._sample_independent_gaussian(

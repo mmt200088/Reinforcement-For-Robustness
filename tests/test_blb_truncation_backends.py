@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest import mock
 import unittest
 
 try:
@@ -67,6 +68,35 @@ class TruncationBackendTests(unittest.TestCase):
         expected = torch.trunc(x * 64) / 64
         actual = _apply_truncation(x, 6, "binary")
         self.assertTrue(torch.equal(actual, expected))
+
+    def test_cuda_binary_fast_path_matches_eager_bitwise(self):
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA unavailable")
+
+        import function_handler as handler
+
+        self.assertTrue(
+            hasattr(handler, "_try_binary_truncation_fused_cuda")
+        )
+        x = torch.linspace(
+            -8.0,
+            8.0,
+            steps=65537,
+            device="cuda",
+            dtype=torch.float32,
+        )
+        for k in (6, 9, 13):
+            scale = float(2 ** k)
+            expected = torch.trunc(x * scale) / scale
+            with mock.patch.object(
+                handler.torch,
+                "trunc",
+                side_effect=AssertionError(
+                    "CUDA fast path launched standalone torch.trunc"
+                ),
+            ):
+                actual = handler._apply_truncation(x, k, "binary")
+            self.assertTrue(torch.equal(actual, expected), k)
 
     def test_rotation_repeat_count_executes_independent_noise_for_every_rotation(self):
         import function_handler as fh
