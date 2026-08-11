@@ -793,9 +793,10 @@ class BLBStage2TrainConfig:
     # serial K-trial probe) on their own model replica with global-episode
     # seeding. Mutually exclusive with reward_devices. Empty → legacy loop.
     stage2_rl_devices: List[int] = field(default_factory=list)
-    # Workers per device. Episode-parallel PPO uses this to overlap rollout and
-    # probes; single-GPU comparator search uses it for independent K-trial
-    # reward-probe replicas on separate CUDA streams.
+    # Workers per device for episode-parallel rollout (2026-06-12): >1 overlaps
+    # one worker's CPU rollout/bookkeeping with a sibling's GPU-bound probe on
+    # the same card. Results stay byte-identical for any value (per-device RNG
+    # atomic-unit locks; episode results depend only on the global index).
     stage2_workers_per_device: int = 1
     # Fast online reward mode: collect terminal actions and evaluate distinct
     # actions concurrently across reward_devices. The default K=3 protocol

@@ -1335,19 +1335,6 @@ if [ "$ELASTIC_GPU_ACTIVE" = "true" ]; then
   fi
 fi
 
-if [ "$SEARCH_ALGORITHM" = "rl" ] && [ "$BLB_V3_SEARCH_BACKEND" != "ppo" ]; then
-  if [ "$S_BLB_V3_REWARD_DEVICES" = "false" ]; then
-    if [ "$ELASTIC_GPU_ACTIVE" = "true" ]; then
-      BLB_V3_REWARD_DEVICES="auto"
-    else
-      BLB_V3_REWARD_DEVICES="0"
-    fi
-  fi
-  if [ "$S_STAGE2_WORKERS_PER_DEVICE" = "false" ]; then
-    STAGE2_WORKERS_PER_DEVICE="$STAGE2_K_TRIALS"
-  fi
-fi
-
 if [ "$SEARCH_ALGORITHM" = "general-rl" ]; then
   { [ "$S_STAGE1_EPISODES" = "false" ] && [ "$S_STAGE2_EPISODES" = "false" ] && [ "$S_STAGE1_GENERATIONS" = "false" ] && [ "$S_STAGE2_GENERATIONS" = "false" ] && [ "$S_STAGE1_LR" = "false" ] && [ "$S_STAGE2_LR" = "false" ] && [ "$S_SKIP_STAGE1_SEARCH" = "false" ] && [ "$S_SKIP_NOISE_SEARCH" = "false" ] && [ "$S_SKIP_FINAL_EVAL" = "false" ] && [ "$S_FINAL_EVAL_SOURCE" = "false" ] && [ "$S_FINAL_EVAL_CONFIG" = "false" ] && [ -z "$MANUAL_STAGE1_GELU" ] && [ -z "$MANUAL_STAGE1_SOFTMAX" ] && [ -z "$MANUAL_STAGE2_NOISE" ] && [ "$S_STAGE2_FIXED_CONFIG_SOURCE" = "false" ] && [ "$S_STAGE2_FIXED_CONFIG" = "false" ] && [ -z "$STAGE2_MANUAL_GELU" ] && [ -z "$STAGE2_MANUAL_SOFTMAX" ]; } || err "general-rl 不能与普通 RL / GA / Greedy 的阶段搜索或最终评估参数混用。"
   # ---- 准确度容忍参数校验 ----
@@ -2105,9 +2092,7 @@ else
     CMD+=(--blb_v3_truncation_backend "$BLB_V3_TRUNCATION_BACKEND")
     CMD+=(--blb_v3_truncation_ring_bits "$BLB_V3_TRUNCATION_RING_BITS")
     CMD+=(--blb_v3_truncation_source_fractional_bits "$BLB_V3_TRUNCATION_SOURCE_FRACTIONAL_BITS")
-    if [ "$S_STAGE2_WORKERS_PER_DEVICE" = "true" ] || [ "$BLB_V3_SEARCH_BACKEND" != "ppo" ]; then
-      CMD+=(--stage2_workers_per_device "$STAGE2_WORKERS_PER_DEVICE")
-    fi
+    [ "$S_STAGE2_WORKERS_PER_DEVICE" = "true" ] && CMD+=(--stage2_workers_per_device "$STAGE2_WORKERS_PER_DEVICE")
     [ "$S_BLB_V3_SUBSTAGE_BLOCK_ORDER" = "true" ] && CMD+=(--blb_v3_substage_block_order "$BLB_V3_SUBSTAGE_BLOCK_ORDER")
     [ "$S_BLB_V3_SUBSTAGE_FROZEN_BLOCKS" = "true" ] && CMD+=(--blb_v3_substage_frozen_blocks "$BLB_V3_SUBSTAGE_FROZEN_BLOCKS")
     [ "$S_BLB_V3_SUBSTAGE_EPISODES_EACH" = "true" ] && CMD+=(--blb_v3_substage_episodes_each "$BLB_V3_SUBSTAGE_EPISODES_EACH")

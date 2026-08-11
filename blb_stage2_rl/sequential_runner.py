@@ -7822,19 +7822,9 @@ def _run_sequential_via_runner_locked(
 
     # ---------- 3.5) Multi-GPU reward-probe runner (opt-in) ----------
     reward_devices = list(getattr(train_cfg, "reward_devices", []) or [])
-    reward_workers_per_device = max(
-        1, int(getattr(train_cfg, "stage2_workers_per_device", 1)),
-    )
-    reward_probe_enabled = bool(reward_devices) and (
-        len(reward_devices) >= 2 or reward_workers_per_device >= 2
-    )
-    if reward_probe_enabled:
+    if reward_devices and len(reward_devices) >= 2:
         from .probe_runner import build_probe_runner
-        log(
-            "  [multi-gpu] reward probe enabled: "
-            f"devices={reward_devices} "
-            f"workers_per_device={reward_workers_per_device}"
-        )
+        log(f"  [multi-gpu] reward probe enabled: devices={reward_devices}")
         shared_probe_runner_owner = build_probe_runner(
             primary_model=ev.model,
             primary_handler=ev.reversible_handler,
@@ -7845,7 +7835,6 @@ def _run_sequential_via_runner_locked(
             device_ids=reward_devices,
             metric_profile=str(train_cfg.profile),
             log_fn=lambda m: log(f"  [multi-gpu] {m}"),
-            workers_per_device=reward_workers_per_device,
         )
         probe_runner_owner_holder.bind(shared_probe_runner_owner)
         base_env._shared_probe_runner_owner = shared_probe_runner_owner
@@ -8404,7 +8393,7 @@ def _run_sequential_via_runner_locked(
     if stab_calib_summary:
         log(f"  {bullet} 稳定阈值校准来源（stab calibration source）：{stab_calib_summary}")
 
-    if reward_probe_enabled:
+    if reward_devices and len(reward_devices) >= 2:
         try:
             base_env.clear_installed_blb()
         except Exception:
@@ -8542,7 +8531,7 @@ def _run_sequential_via_runner_locked(
                 "(--blb-v3-fusion-count-action 1); the per-slot path keeps the "
                 "legacy loop / --blb-v3-reward-devices K-split."
             )
-        if reward_probe_enabled:
+        if reward_devices and len(reward_devices) >= 2:
             raise RuntimeError(
                 "--stage2-rl-devices and --blb-v3-reward-devices are mutually "
                 "exclusive: episode-parallel runs the K trials serially on each "

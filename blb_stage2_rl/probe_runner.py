@@ -29,7 +29,6 @@ Design:
 """
 from __future__ import annotations
 
-import contextlib
 import copy
 import math
 import multiprocessing as mp
@@ -48,11 +47,7 @@ import torch
 import torch.nn as nn
 
 from elastic_gpu import ElasticGPUFailure, is_recoverable_gpu_failure
-from function_handler import (
-    ReversibleLayerHandler,
-    noise_rng_scope,
-    reseed_noise_rng_for_device,
-)
+from function_handler import ReversibleLayerHandler, reseed_noise_rng_for_device
 
 from .action_space import ActionDecodeResult
 from .inference_eval import run_installed_probe_trial
@@ -353,8 +348,6 @@ class ProbeWorker:
     is_regression: bool
     metric_profile: str = ""
     role: str = "primary"  # "primary" (worker 0, reuses env model) or "replica"
-    probe_noise_scope: Optional[str] = None
-    probe_cuda_stream: Any = None
     probe_batch_sets: Dict[str, Tuple[Any, ...]] = field(
         init=False, repr=False,
     )
@@ -405,37 +398,13 @@ class ProbeWorker:
             ) from exc
         with torch.cuda.device(self.device):
             seed = _trial_seed(base_seed, trial_idx)
-            if self.probe_noise_scope is None and self.probe_cuda_stream is None:
-                reseed_noise_rng_for_device(self.device, seed)
-                return run_installed_probe_trial(
-                    self.model,
-                    probe_batches,
-                    metric_profile=str(self.metric_profile),
-                    is_regression=bool(self.is_regression),
-                )
-
-            @contextlib.contextmanager
-            def _forward_context():
-                with noise_rng_scope(self.probe_noise_scope):
-                    reseed_noise_rng_for_device(self.device, seed)
-                    stream_context = (
-                        torch.cuda.stream(self.probe_cuda_stream)
-                        if self.probe_cuda_stream is not None
-                        else contextlib.nullcontext()
-                    )
-                    with stream_context:
-                        yield
-                    if self.probe_cuda_stream is not None:
-                        torch.cuda.current_stream(self.device).wait_stream(
-                            self.probe_cuda_stream
-                        )
+            reseed_noise_rng_for_device(self.device, seed)
 
             return run_installed_probe_trial(
                 self.model,
                 probe_batches,
                 metric_profile=str(self.metric_profile),
                 is_regression=bool(self.is_regression),
-                forward_context=_forward_context(),
             )
 
 
@@ -2421,7 +2390,6 @@ def build_probe_runner(
         device_ids: Sequence[int],
         metric_profile: str = "",
         log_fn: Optional[Callable[[str], None]] = None,
-        workers_per_device: int = 1,
         ) -> ProbeRunner:
     """Construct a ProbeRunner with one worker per device id.
 
@@ -2452,36 +2420,13 @@ def build_probe_runner(
     if not device_ids:
         raise ValueError("build_probe_runner requires at least one device id")
 
-    worker_device_ids = [int(device_id) for device_id in device_ids]
-    requested_workers_per_device = max(1, int(workers_per_device))
-    if len(worker_device_ids) == 1 and requested_workers_per_device > 1:
-        worker_device_ids *= requested_workers_per_device
-    device_worker_counts = {
-        device_id: worker_device_ids.count(device_id)
-        for device_id in set(worker_device_ids)
-    }
-    same_device_replicas = any(
-        count > 1 for count in device_worker_counts.values()
-    )
-    scope_prefix = f"probe_runner_{uuid4().hex}"
-
-    def worker_execution_context(worker_index: int, device: torch.device):
-        if device_worker_counts[int(device.index)] <= 1:
-            return None, None
-        with torch.cuda.device(device):
-            probe_stream = torch.cuda.Stream()
-        return f"{scope_prefix}_worker_{int(worker_index)}", probe_stream
-
     enable_cuda_reward_probe_fast_math()
     log = log_fn or (lambda _msg: None)
 
     workers: List[ProbeWorker] = []
 
     # ---- worker 0: reuse env's existing primary model + handler + bridge ----
-    primary_device = torch.device(f"cuda:{int(worker_device_ids[0])}")
-    primary_scope, primary_stream = worker_execution_context(
-        0, primary_device,
-    )
+    primary_device = torch.device(f"cuda:{int(device_ids[0])}")
     workers.append(ProbeWorker(
         device=primary_device,
         model=primary_model,
@@ -2491,20 +2436,13 @@ def build_probe_runner(
         is_regression=bool(is_regression),
         metric_profile=str(metric_profile),
         role="primary",
-        probe_noise_scope=primary_scope,
-        probe_cuda_stream=primary_stream,
     ))
     log(f"[probe-runner] worker 0: {primary_device} (primary, reusing env.bridge)")
 
-    backend = "thread" if same_device_replicas else resolve_probe_backend()
+    backend = resolve_probe_backend()
     log(f"[probe-runner] backend={backend}")
-    if same_device_replicas:
-        log(
-            "[probe-runner] same-device replicas enabled: "
-            f"workers={len(worker_device_ids)} counts={device_worker_counts}"
-        )
 
-    if backend == "process" and len(worker_device_ids) >= 2:
+    if backend == "process" and len(device_ids) >= 2:
         process_workers: List[_ProcessProbeWorker] = []
         context = mp.get_context("spawn")
         try:
@@ -2517,7 +2455,7 @@ def build_probe_runner(
                 _move_probe_batch_to_device(batch, torch.device("cpu"))
                 for batch in primary_probe_batches
             ]
-            for device_id in worker_device_ids[1:]:
+            for device_id in device_ids[1:]:
                 device = torch.device(f"cuda:{int(device_id)}")
                 parent_connection, child_connection = context.Pipe(duplex=True)
                 process = context.Process(
@@ -2566,7 +2504,7 @@ def build_probe_runner(
         return ProbeRunner(workers, process_workers=process_workers)
 
     # ---- workers 1+: deepcopy the primary model onto each extra device ----
-    for d in worker_device_ids[1:]:
+    for d in device_ids[1:]:
         device = torch.device(f"cuda:{int(d)}")
         try:
             with torch.cuda.device(device):
@@ -2585,10 +2523,6 @@ def build_probe_runner(
             raise RuntimeError(
                 f"failed to deepcopy primary model onto {device}: {exc!r}"
             ) from exc
-        worker_index = len(workers)
-        replica_scope, replica_stream = worker_execution_context(
-            worker_index, device,
-        )
         workers.append(ProbeWorker(
             device=device,
             model=replica,
@@ -2598,8 +2532,6 @@ def build_probe_runner(
             is_regression=bool(is_regression),
             metric_profile=str(metric_profile),
             role="replica",
-            probe_noise_scope=replica_scope,
-            probe_cuda_stream=replica_stream,
         ))
         log(f"[probe-runner] worker {len(workers)-1}: {device} (deepcopy replica)")
 
