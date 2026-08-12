@@ -1,0 +1,42 @@
+{
+  "algorithm_order": [
+    "greedy",
+    "bo_rf",
+    "coinn_ga"
+  ],
+  "algorithm_status": {
+    "bo_rf": {
+      "evaluation_count": 172,
+      "feasible": true,
+      "status": "complete",
+      "termination_reason": "no_improvement_convergence"
+    },
+    "coinn_ga": {
+      "evaluation_count": 1090,
+      "feasible": true,
+      "status": "complete",
+      "termination_reason": "ga_no_incumbent_improvement"
+    },
+    "greedy": {
+      "evaluation_count": 1615,
+      "feasible": true,
+      "status": "complete",
+      "termination_reason": "verified_local_optimum"
+    }
+  },
+  "copy_verification": "PASS",
+  "final_eval_executed": false,
+  "generated_at": "2026-08-12T22:36:40.390521+08:00",
+  "queue_source_root": "/hy-tmp/comparator_stage1_queue_20260812_v3",
+  "raw_checksums": "SHA256SUMS.raw",
+  "raw_file_count": 72,
+  "raw_inventory": "FILE_INVENTORY.json",
+  "raw_total_bytes": 4757689,
+  "report": "index.html",
+  "report_data": "REPORT_DATA.json",
+  "result_branch": "codex/result-comparator-stage1-formal-20260812",
+  "run_source_commit": "73ad927a53e411035f7d7756538a0c8838944b22",
+  "run_source_tree": "63374369c330499fcb8e670787055126e624df8c",
+  "schema_version": "comparator_stage1_formal_archive_v1",
+  "stage2_executed": false
+}

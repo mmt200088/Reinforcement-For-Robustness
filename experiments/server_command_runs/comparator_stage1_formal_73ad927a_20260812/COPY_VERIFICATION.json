@@ -1,0 +1,12 @@
+{
+  "archive_file_count": 72,
+  "archive_root": "raw",
+  "archive_total_bytes": 4757689,
+  "comparison": "relative path, byte length, and SHA-256 are identical for every file",
+  "schema_version": "comparator_stage1_copy_verification_v1",
+  "source_file_count": 72,
+  "source_root": "/hy-tmp/comparator_stage1_queue_20260812_v3",
+  "source_total_bytes": 4757689,
+  "status": "PASS",
+  "verified_at": "2026-08-12T22:36:40.390521+08:00"
+}
