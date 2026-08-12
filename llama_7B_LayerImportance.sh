@@ -43,8 +43,10 @@ cat <<'EOF'
                              Parting Chapter/persistent/rl/{model}/{dataset}/{constraint_slug}/stage2_noise/progress/；
                              前置配置当前默认 all4；可用 stage1_result/json/manual 显式切换
   --mode train / eval / search-only
-                             PPO 链式模式已移除。bo_rf / greedy / coinn_ga 子命令固定使用 train，
+                             PPO 链式模式已移除。bo_rf / greedy / coinn_ga 子命令默认固定使用 train，
                              严格串行执行同算法 Stage-1 → 绑定结果 → 同算法 Stage-2。
+  --comparator-stage1-only  仅 bo_rf / greedy / coinn_ga：保留正式 Stage-1 搜索合同，
+                             完成后跳过 Stage-2 与 Paean final eval。
   --comparator-smoke         仅 bo_rf / greedy / coinn_ga：Stage-1/Stage-2 各做 1 次真实评估，
                              Stage-2 保持 3 trials，并跳过 strict validation 与 Paean final eval。
 
@@ -616,6 +618,7 @@ BLB_V3_SEARCH_RF_N_ESTIMATORS="128"; S_BLB_V3_SEARCH_RF_N_ESTIMATORS="false"
 BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="2"; S_BLB_V3_SEARCH_RF_MIN_SAMPLES_LEAF="false"
 BLB_V3_SEARCH_FULL_VALIDATION="true"; S_BLB_V3_SEARCH_FULL_VALIDATION="false"
 COMPARATOR_SMOKE="false"
+COMPARATOR_STAGE1_ONLY="false"
 BLB_V3_REWARD_DEVICES=""; S_BLB_V3_REWARD_DEVICES="false"
 STAGE1_RL_DEVICES=""; S_STAGE1_RL_DEVICES="false"
 STAGE2_RL_DEVICES=""; S_STAGE2_RL_DEVICES="false"
@@ -790,6 +793,7 @@ while [ "$#" -gt 0 ]; do
     --skip-noise-search) SKIP_NOISE_SEARCH="true"; S_SKIP_NOISE_SEARCH="true"; shift ;;
     --skip-final-eval) SKIP_FINAL_EVAL="true"; S_SKIP_FINAL_EVAL="true"; shift ;;
     --comparator-smoke) COMPARATOR_SMOKE="true"; shift ;;
+    --comparator-stage1-only) COMPARATOR_STAGE1_ONLY="true"; shift ;;
     --final-eval-preset) needv "$@"; FINAL_EVAL_PRESET="$2"; S_FINAL_EVAL_PRESET="true"; shift 2 ;;
     --final-eval-only) FINAL_EVAL_ONLY="true"; S_FINAL_EVAL_ONLY="true"; shift ;;
     --final-eval-source|--source) needv "$@"; FINAL_EVAL_SOURCE="$2"; S_FINAL_EVAL_SOURCE="true"; shift 2 ;;
@@ -1019,6 +1023,12 @@ if [ "$COMPARATOR_SMOKE" = "true" ]; then
   SKIP_FINAL_EVAL="true"
 fi
 
+if [ "$COMPARATOR_STAGE1_ONLY" = "true" ]; then
+  [ "$BLB_V3_SEARCH_BACKEND" != "ppo" ] || err "--comparator-stage1-only 仅支持 bo_rf、greedy 或 coinn_ga。"
+  SKIP_NOISE_SEARCH="true"
+  SKIP_FINAL_EVAL="true"
+fi
+
 case "$RUN_MODE" in
   train) ;;
   eval|final-eval|final-eval-only) RUN_MODE="eval" ;;
@@ -1113,10 +1123,15 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
     fi
     SKIP_FINAL_EVAL="true"
   else
-    [ "$RUN_MODE" = "train" ] || err "BO / Greedy / COINN-GA comparator 必须使用串行 --mode train：先完成该算法 Stage-1，再绑定结果运行同算法 Stage-2。"
-    [ "$SKIP_STAGE1_SEARCH" = "false" ] || err "两阶段 comparator 不能跳过 Stage-1。"
-    [ "$SKIP_NOISE_SEARCH" = "false" ] || err "两阶段 comparator 不能跳过 Stage-2。"
-    [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ] || err "两阶段 comparator 的 Stage-2 必须绑定 stage1_result。"
+    [ "$RUN_MODE" = "train" ] || err "BO / Greedy / COINN-GA comparator 必须使用固定 train 合同；只运行 Stage-1 请传 --comparator-stage1-only。"
+    [ "$SKIP_STAGE1_SEARCH" = "false" ] || err "comparator 不能跳过 Stage-1。"
+    if [ "$COMPARATOR_STAGE1_ONLY" = "true" ]; then
+      [ "$SKIP_NOISE_SEARCH" = "true" ] || err "comparator Stage-1-only 必须跳过 Stage-2。"
+      [ "$SKIP_FINAL_EVAL" = "true" ] || err "comparator Stage-1-only 必须跳过 Paean final eval。"
+    else
+      [ "$SKIP_NOISE_SEARCH" = "false" ] || err "两阶段 comparator 不能跳过 Stage-2。"
+      [ "$STAGE2_FIXED_CONFIG_SOURCE" = "stage1_result" ] || err "两阶段 comparator 的 Stage-2 必须绑定 stage1_result。"
+    fi
     if [ "$COMPARATOR_SMOKE" = "true" ]; then
       [ "$BLB_V3_SEARCH_EVALUATION_BUDGET" = "1" ] || err "comparator smoke 的 Stage-2 evaluation budget 必须为 1。"
       [ "$BLB_V3_SEARCH_FULL_VALIDATION" = "false" ] || err "comparator smoke 必须禁用 Stage-2 strict validation。"
@@ -2005,6 +2020,7 @@ else
     # 解耦布局开关 + stage2-only 的 stage1 record 选择（仅 rl）。
     CMD+=(--decoupled_layout "$DECOUPLED_LAYOUT" --stage1_run_id "$STAGE1_RUN_ID")
     CMD+=(--comparator_smoke "$COMPARATOR_SMOKE")
+    CMD+=(--comparator_stage1_only "$COMPARATOR_STAGE1_ONLY")
     # Optional multi-seed override (when --blb-v3-seed provided)
     if [ -n "$BLB_V3_SEED" ]; then
       CMD+=(--blb_v3_seed "$BLB_V3_SEED")

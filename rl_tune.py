@@ -755,6 +755,7 @@ def train(
         blb_v3_search_rf_min_samples_leaf: int = 2,
         blb_v3_search_full_validation: bool = True,
         comparator_smoke: bool = False,
+        comparator_stage1_only: bool = False,
         blb_v3_fusion_neighbor_curriculum: bool = False,
         blb_v3_fusion_probe_interval: int = 0,
         blb_v3_fusion_exploration_epsilon: float = 0.0,
@@ -866,6 +867,9 @@ def train(
     )
     comparator_smoke = parse_bool_flag(
         comparator_smoke, "comparator_smoke",
+    )
+    comparator_stage1_only = parse_bool_flag(
+        comparator_stage1_only, "comparator_stage1_only",
     )
     stage2_stability_multiplier = float(stage2_stability_multiplier)
     if stage2_stability_multiplier <= 0.0:
@@ -1038,6 +1042,7 @@ def train(
         f"final_eval_require_rescale_optimizer: {final_eval_require_rescale_optimizer}\n"
         f"skip_stage1_rl: {skip_stage1_rl}\n"
         f"skip_final_eval: {skip_final_eval}\n"
+        f"comparator_stage1_only: {comparator_stage1_only}\n"
         f"final_eval_only: {final_eval_only}\n"
         f"group_by_length: {group_by_length}\n"
         f"wandb_project: {wandb_project}\n"
@@ -1615,6 +1620,7 @@ def train(
                 blb_v3_search_full_validation
             ),
             comparator_smoke=comparator_smoke,
+            comparator_stage1_only=comparator_stage1_only,
             blb_v3_fusion_neighbor_curriculum=blb_v3_fusion_neighbor_curriculum,
             blb_v3_fusion_probe_interval=blb_v3_fusion_probe_interval,
             blb_v3_fusion_exploration_epsilon=blb_v3_fusion_exploration_epsilon,

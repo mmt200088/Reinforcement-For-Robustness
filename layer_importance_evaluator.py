@@ -2607,6 +2607,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_search_rf_min_samples_leaf=2,
                   blb_v3_search_full_validation=True,
                   comparator_smoke=False,
+                  comparator_stage1_only=False,
                   blb_v3_fusion_neighbor_curriculum=False,
                   blb_v3_fusion_probe_interval=0,
                   blb_v3_fusion_exploration_epsilon=0.0,
@@ -3504,9 +3505,17 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.comparator_smoke = self._coerce_bool_flag(
             comparator_smoke, "comparator_smoke",
         )
+        self.comparator_stage1_only = self._coerce_bool_flag(
+            comparator_stage1_only, "comparator_stage1_only",
+        )
         if self.comparator_smoke and self.blb_v3_search_backend == "ppo":
             raise ValueError(
                 "comparator_smoke is only valid for bo_rf, greedy, or coinn_ga"
+            )
+        if self.comparator_stage1_only and self.blb_v3_search_backend == "ppo":
+            raise ValueError(
+                "comparator_stage1_only is only valid for bo_rf, greedy, "
+                "or coinn_ga"
             )
         if self.blb_v3_search_backend != "ppo":
             if self.stage2_rl_variant != "blb_v3":
@@ -3606,7 +3615,17 @@ class LayerImportanceEvaluator(TrainerCallback):
                 raise ValueError(
                     "BO-RF comparator requires 128 estimators and leaf size 2"
                 )
-            if self.skip_stage1_rl or self.skip_noise_rl:
+            if self.comparator_stage1_only:
+                if (
+                        self.skip_stage1_rl
+                        or not self.skip_noise_rl
+                        or not self.skip_final_eval
+                ):
+                    raise ValueError(
+                        "comparator Stage-1-only mode must run Stage-1 and "
+                        "skip Stage-2/final evaluation"
+                    )
+            elif self.skip_stage1_rl or self.skip_noise_rl:
                 raise ValueError(
                     "two-stage comparator must run both Stage-1 and Stage-2"
                 )
@@ -7202,8 +7221,10 @@ class LayerImportanceEvaluator(TrainerCallback):
                     "dataset": str(self.data_path),
                     "split": "validation_full",
                     "comparator_smoke": bool(self.comparator_smoke),
-                    "stage1_bound_into_stage2": True,
-                    "stage2_backend": backend,
+                    "stage1_bound_into_stage2": not self.comparator_stage1_only,
+                    "stage2_backend": (
+                        None if self.comparator_stage1_only else backend
+                    ),
                 },
                 preload_path=preload_path,
             )
@@ -7292,7 +7313,8 @@ class LayerImportanceEvaluator(TrainerCallback):
             stage1_completed_episodes = int(
                 stage1_comparator_result.evaluation_count
             )
-            self.stage2_fixed_config_source = "stage1_result"
+            if not self.comparator_stage1_only:
+                self.stage2_fixed_config_source = "stage1_result"
             if self.run_output_dir:
                 update_persistent_metadata_stage(
                     self.run_output_dir,

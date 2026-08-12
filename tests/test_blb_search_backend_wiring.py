@@ -213,8 +213,11 @@ class SearchBackendWiringTests(unittest.TestCase):
             evaluator,
         )
         self.assertIn(
-            "comparator Stage-1-only mode must run Stage-1 and skip "
-            "Stage-2/final evaluation",
+            "comparator Stage-1-only mode must run Stage-1 and ",
+            evaluator,
+        )
+        self.assertIn(
+            "skip Stage-2/final evaluation",
             evaluator,
         )
         self.assertIn(
