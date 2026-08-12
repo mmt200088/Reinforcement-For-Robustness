@@ -1,0 +1,55 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "02ce6df34ace643beb93883d1e38506e2749a78f",
+  "base_tree": "30962270fcd69cb823d88ccccfba65b0191e46b4",
+  "branch": "codex/task-comparator-stage1-only-launch-20260812",
+  "branch_role": "task",
+  "changed_scopes": [
+    "agent_handoffs/tasks/",
+    "layer_importance_evaluator.py",
+    "llama_7B_LayerImportance.sh",
+    "rl_tune.py",
+    "tests/"
+  ],
+  "completed_at": "2026-08-12T16:35:00+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "/hy-tmp/comparator_stage1_only_evidence_06292e32/",
+    "/hy-tmp/comparator_stage1_only_smoke_06292e32/"
+  ],
+  "source_commit": "06292e3216172040bef6e1d88d3b9501f6cc61d5",
+  "source_tree": "28ec92ebdfafe237f85352a58611929ba4f7766c",
+  "started_at": "2026-08-12T15:55:00+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "comparator-stage1-only-launch-20260812",
+  "verification": [
+    {
+      "command": "python -m unittest -q tests.test_stage1_search_baselines tests.test_blb_search_baselines tests.test_blb_search_baseline_runner tests.test_blb_search_backend_wiring tests.test_stage2_persistent_launcher tests.test_blb_layerwise_runner.LayerwisePromotionTests tests.test_blb_layerwise_action tests.test_blb_block3_cuda_fusion tests.test_blb_block5_cuda_fusion tests.test_blb_truncation_backends",
+      "evidence": "single-RTX-4090 server: 272 focused comparator, launcher, promotion, CUDA-output, and truncation tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "llama_7B_LayerImportance.sh run {greedy,bo_rf,coinn_ga} --preset mrpc-blb-stage2-rl --comparator-stage1-only --comparator-smoke --fresh",
+      "evidence": "all three real-BERT Stage-1-only smokes completed one validation_full evaluation; each manifest records stage1_bound_into_stage2=false and stage2_backend=null; Stage-2 and final eval are skipped and no two_stage_result.json is produced",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m py_compile rl_tune.py layer_importance_evaluator.py",
+      "evidence": "single-RTX-4090 server: passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "bash -n llama_7B_LayerImportance.sh",
+      "evidence": "single-RTX-4090 server: passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "evidence": "clean isolated task worktree: passed",
+      "outcome": "passed"
+    }
+  ]
+}

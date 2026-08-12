@@ -206,6 +206,20 @@ class SearchBackendWiringTests(unittest.TestCase):
             "two-stage comparator must run both Stage-1 and Stage-2",
             evaluator,
         )
+        self.assertIn("comparator_stage1_only", evaluator)
+        self.assertIn(
+            '"stage1_bound_into_stage2": '
+            'not self.comparator_stage1_only',
+            evaluator,
+        )
+        self.assertIn(
+            "comparator Stage-1-only mode must run Stage-1 and ",
+            evaluator,
+        )
+        self.assertIn(
+            "skip Stage-2/final evaluation",
+            evaluator,
+        )
         self.assertIn(
             "two-stage comparator requires full Stage-2 strict",
             evaluator,
