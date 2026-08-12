@@ -1027,6 +1027,8 @@ if [ "$COMPARATOR_STAGE1_ONLY" = "true" ]; then
   [ "$BLB_V3_SEARCH_BACKEND" != "ppo" ] || err "--comparator-stage1-only 仅支持 bo_rf、greedy 或 coinn_ga。"
   SKIP_NOISE_SEARCH="true"
   SKIP_FINAL_EVAL="true"
+  STAGE2_EPISODES="0"
+  S_STAGE2_EPISODES="false"
 fi
 
 case "$RUN_MODE" in
