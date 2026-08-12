@@ -449,6 +449,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 )
                 for flag, expected in (
                     ("--comparator_smoke", "false"),
+                    ("--comparator_stage1_only", "false"),
                     ("--blb_v3_search_evaluation_budget", expected_budget),
                     ("--blb_v3_search_full_validation", "true"),
                     ("--skip_final_eval", "false"),
@@ -458,6 +459,65 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                             argv[argv.index(flag) + 1],
                             expected,
                         )
+
+    def test_comparator_stage1_only_keeps_formal_search_and_skips_later_stages(self):
+        expected_budgets = {
+            "bo_rf": "50000",
+            "greedy": "2176782336",
+            "coinn_ga": "45664",
+        }
+        for alias, expected_budget in expected_budgets.items():
+            with self.subTest(alias=alias):
+                argv = self._capture_comparator_persistent_path(
+                    alias,
+                    extra_args=("--comparator-stage1-only",),
+                    return_argv=True,
+                )
+                for flag, expected in (
+                    ("--comparator_stage1_only", "true"),
+                    ("--comparator_smoke", "false"),
+                    ("--blb_v3_search_evaluation_budget", expected_budget),
+                    ("--blb_v3_search_full_validation", "true"),
+                    ("--skip_stage1_rl", "false"),
+                    ("--skip_noise_rl", "true"),
+                    ("--skip_final_eval", "true"),
+                ):
+                    with self.subTest(alias=alias, flag=flag):
+                        self.assertEqual(
+                            argv[argv.index(flag) + 1],
+                            expected,
+                        )
+
+    def test_comparator_stage1_only_keeps_backend_persistent_directories(self):
+        for alias in ("bo_rf", "greedy", "coinn_ga"):
+            with self.subTest(alias=alias):
+                relative_path = self._capture_comparator_persistent_path(
+                    alias,
+                    extra_args=("--comparator-stage1-only",),
+                )
+                self.assertEqual(relative_path.parts[0], alias)
+
+    def test_comparator_stage1_only_rejects_ppo_backend(self):
+        result = subprocess.run(
+            [
+                "bash",
+                "llama_7B_LayerImportance.sh",
+                "run",
+                "rl",
+                "--mode",
+                "stage1-only",
+                "--comparator-stage1-only",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "--comparator-stage1-only 仅支持 bo_rf、greedy 或 coinn_ga",
+            result.stdout + result.stderr,
+        )
 
     def test_comparator_aliases_reject_fixed_setting_overrides(self):
         cases = (
