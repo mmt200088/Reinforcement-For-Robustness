@@ -481,6 +481,8 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                     ("--skip_stage1_rl", "false"),
                     ("--skip_noise_rl", "true"),
                     ("--skip_final_eval", "true"),
+                    ("--stage2_rl_episodes", "0"),
+                    ("--stage2_rl_episodes_specified", "false"),
                 ):
                     with self.subTest(alias=alias, flag=flag):
                         self.assertEqual(
