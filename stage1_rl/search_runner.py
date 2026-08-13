@@ -1300,7 +1300,14 @@ def _validate_preload_contract(
         raise ValueError("Stage-1 resume metadata must be a JSON object")
     if normalize_search_backend(payload.get("backend")) != backend:
         raise RuntimeError("Stage-1 resume backend does not match")
-    saved_config = SearchConfig.from_dict(payload.get("config") or {})
+    saved_config_payload = dict(payload.get("config") or {})
+    if (
+            backend == "coinn_ga"
+            and config.ga_require_full_generations
+            and "ga_require_full_generations" not in saved_config_payload
+    ):
+        saved_config_payload["ga_require_full_generations"] = True
+    saved_config = SearchConfig.from_dict(saved_config_payload)
     if saved_config.as_dict() != config.as_dict():
         raise RuntimeError("Stage-1 resume search configuration does not match")
     saved_contract = dict(payload.get("contract") or {})
