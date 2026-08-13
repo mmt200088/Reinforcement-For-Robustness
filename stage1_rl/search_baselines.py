@@ -458,6 +458,7 @@ class SearchConfig:
     ga_elite_count: int = 7
     ga_update_generations: int = 800
     ga_no_improvement_patience: int = 5
+    ga_stop_on_no_improvement: bool = True
     # Compatibility-only fields retained in serialized historical configs.
     ga_tournament_size: int = 3
     ga_crossover_probability: float = 0.0
@@ -489,6 +490,8 @@ class SearchConfig:
         for name in positive:
             if int(getattr(self, name)) <= 0:
                 raise ValueError(f"{name} must be positive")
+        if type(self.ga_stop_on_no_improvement) is not bool:
+            raise ValueError("ga_stop_on_no_improvement must be a boolean")
         if int(self.ga_elite_count) >= int(self.ga_population_size):
             raise ValueError("ga_elite_count must be smaller than ga_population_size")
         for name in (
@@ -540,10 +543,11 @@ def stage1_comparator_search_config(backend: Any) -> SearchConfig:
     """Return the reproducible MRPC search parameters for one comparator."""
 
     normalized = normalize_search_backend(backend)
+    ga_update_generations = 600 if normalized == "coinn_ga" else 800
     evaluation_caps = {
         "bo_rf": 50_000,
         "greedy": 3 ** STAGE1_COMPARATOR_NUM_LAYERS,
-        "coinn_ga": 64 + 800 * (64 - 7),
+        "coinn_ga": 64 + ga_update_generations * (64 - 7),
     }
     return SearchConfig(
         evaluation_cap=evaluation_caps[normalized],
@@ -557,8 +561,9 @@ def stage1_comparator_search_config(backend: Any) -> SearchConfig:
         greedy_max_starts=3,
         ga_population_size=64,
         ga_elite_count=7,
-        ga_update_generations=800,
+        ga_update_generations=ga_update_generations,
         ga_no_improvement_patience=5,
+        ga_stop_on_no_improvement=normalized != "coinn_ga",
         ga_tournament_size=3,
         ga_crossover_probability=0.0,
         ga_mutation_max_layers=4,
@@ -1683,6 +1688,37 @@ def _breed_unique_child(
             )
         if child not in blocked and not cache.contains(child):
             return child, False
+
+    # A finite random retry budget proves only that those draws collided, not
+    # that the population has no unseen mesh neighbor. Preserve the random
+    # path above, then fail closed only after checking every allowed adjacent
+    # mutation deterministically.
+    max_changed_layers = min(
+        int(config.ga_mutation_max_layers),
+        int(space.num_layers),
+    )
+    for changed_layer_count in range(1, max_changed_layers + 1):
+        for parent in population:
+            parent_action = space.validate(parent.action)
+            for layer_indices in itertools.combinations(
+                    range(space.num_layers), changed_layer_count,
+            ):
+                adjacent_values = [
+                    tuple(
+                        value for value in GENE_CATEGORIES
+                        if abs(value - parent_action[layer_idx]) == 1
+                    )
+                    for layer_idx in layer_indices
+                ]
+                for replacements in itertools.product(*adjacent_values):
+                    candidate = list(parent_action)
+                    for layer_idx, replacement in zip(  # noqa: B905 - Python 3.9
+                            layer_indices, replacements,
+                    ):
+                        candidate[layer_idx] = replacement
+                    child = tuple(candidate)
+                    if child not in blocked and not cache.contains(child):
+                        return child, False
     return None, False
 
 
@@ -1807,8 +1843,11 @@ def _run_coinn_ga(
             post_update_unique_ratio=float(next_unique_ratio),
             post_update_mean_pairwise_distance=float(next_mean_distance),
         ))
-        if no_improvement_generations >= int(
+        if (
+            config.ga_stop_on_no_improvement
+            and no_improvement_generations >= int(
                 config.ga_no_improvement_patience
+            )
         ):
             termination = "ga_no_incumbent_improvement"
             break

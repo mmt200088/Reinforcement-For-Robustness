@@ -265,16 +265,16 @@ class SearchBackendWiringTests(unittest.TestCase):
             evaluator,
         )
 
-    def test_stage1_ga_outer_gate_accepts_stagnation_completion(self):
+    def test_stage1_ga_outer_gate_requires_full_600_generation_completion(self):
         evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
             encoding="utf-8"
         )
         self.assertIn(
-            'not in {"completed_generations", "ga_no_incumbent_improvement"}',
+            '!= "completed_generations"',
             evaluator,
         )
-        self.assertNotIn(
-            "stage1_search_config.canonical_ga_target_evaluations",
+        self.assertIn(
+            "stage1_comparator_result.evaluation_count",
             evaluator,
         )
 
@@ -439,8 +439,16 @@ class SearchBackendWiringTests(unittest.TestCase):
             "or int(self.blb_v3_search_patience_generations) != 5",
             evaluator,
         )
+        self.assertIn("600-generation ", evaluator)
+        self.assertIn("34,264-inference full-run contract", evaluator)
         self.assertIn("800-generation safety cap", evaluator)
         self.assertIn("45,664-inference safety cap", evaluator)
+        self.assertIn("Stage1SearchGracefulStop", evaluator)
+        self.assertIn("NOISE_STAGE_STOP_FLAG_FILENAME", evaluator)
+        self.assertIn("install_graceful_stop_handler", evaluator)
+        self.assertIn("is_graceful_stop_requested", evaluator)
+        self.assertIn("stop_requested=stage1_comparator_stop_requested", evaluator)
+        self.assertIn('"stopped_by": "graceful_stop"', evaluator)
 
         runner = (
             ROOT / "blb_stage2_rl" / "sequential_runner.py"
