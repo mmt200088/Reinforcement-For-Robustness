@@ -23,6 +23,7 @@ class Stage1SearchProducerWiringTests(unittest.TestCase):
     def test_stage1_search_reopens_ordinary_completed_result_before_selection(self):
         self.assertIn(
             "from stage1_rl.search_runner import (\n"
+            "                Stage1SearchGracefulStop,\n"
             "                build_stage1_search_accounting,\n"
             "                load_completed_search_result,\n"
             "                run_stage1_search,\n"
@@ -63,6 +64,18 @@ class Stage1SearchProducerWiringTests(unittest.TestCase):
             'not self.comparator_smoke\n                    and backend == "coinn_ga"',
             self.block,
         )
+
+    def test_stage1_comparator_installs_candidate_boundary_graceful_stop(self):
+        self.assertIn("Stage1SearchGracefulStop", self.block)
+        self.assertIn("NOISE_STAGE_STOP_FLAG_FILENAME", self.block)
+        self.assertIn("install_graceful_stop_handler", self.block)
+        self.assertIn("is_graceful_stop_requested", self.block)
+        self.assertIn(
+            "stop_requested=stage1_comparator_stop_requested",
+            self.block,
+        )
+        self.assertIn('"stopped_by": "graceful_stop"', self.block)
+        self.assertIn("uninstall_graceful_stop_handler()", self.block)
 
     def test_stage1_selection_uses_plain_binding_and_locator(self):
         self.assertIn("stage1_selection_binding = {", self.block)

@@ -54,6 +54,7 @@ Stage1EvaluatorAdapter = _search_runner.Stage1EvaluatorAdapter
 Stage1SearchRunner = _search_runner.Stage1SearchRunner
 load_completed_search_result = _search_runner.load_completed_search_result
 load_search_preload = _search_runner.load_search_preload
+Stage1SearchGracefulStop = _search_runner.Stage1SearchGracefulStop
 _validate_completed_search_contract = (
     _search_runner._validate_completed_search_contract
 )
@@ -79,10 +80,11 @@ def _comparator_constraints():
 
 
 def _comparator_config(backend):
+    ga_update_generations = 200 if backend == "coinn_ga" else 800
     evaluation_caps = {
         "bo_rf": 50_000,
         "greedy": 3 ** 12,
-        "coinn_ga": 64 + 800 * (64 - 7),
+        "coinn_ga": 64 + ga_update_generations * (64 - 7),
     }
     return SearchConfig(
         evaluation_cap=evaluation_caps[backend],
@@ -96,8 +98,9 @@ def _comparator_config(backend):
         greedy_max_starts=3,
         ga_population_size=64,
         ga_elite_count=7,
-        ga_update_generations=800,
+        ga_update_generations=ga_update_generations,
         ga_no_improvement_patience=5,
+        ga_stop_on_no_improvement=backend != "coinn_ga",
         ga_tournament_size=3,
         ga_crossover_probability=0.0,
         ga_mutation_max_layers=4,
@@ -790,6 +793,44 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
         self.assertEqual(mutate.call_args_list[0].args[1], first.action)
         self.assertEqual(mutate.call_args_list[1].args[1], first.action)
 
+    def test_duplicate_retry_exhaustion_uses_unseen_adjacent_mutation(self):
+        space = Stage1SearchSpace(4)
+        first = _evaluation((0, 0, 0, 0), cost=1.0)
+        duplicate = (1, 0, 0, 0)
+        cache = SimpleNamespace(
+            observations=(_evaluation(duplicate, cost=1.0),),
+            contains=lambda action: action == duplicate,
+        )
+        config = SearchConfig(
+            evaluation_cap=48,
+            ga_duplicate_attempts=1,
+            ga_mutation_max_layers=4,
+        )
+
+        with (
+            mock.patch.object(
+                _search_baselines,
+                "_tournament",
+                return_value=first,
+            ),
+            mock.patch.object(
+                _search_baselines,
+                "_mutate_action",
+                return_value=duplicate,
+            ),
+        ):
+            child, immigrant = _search_baselines._breed_unique_child(
+                space=space,
+                population=(first,),
+                cache=cache,
+                blocked=set(),
+                rng=np.random.default_rng(17),
+                config=config,
+            )
+
+        self.assertEqual(child, (0, 1, 0, 0))
+        self.assertFalse(immigrant)
+
     def test_ga_mixed_population_completes_five_full_unique_generations(self):
         space = Stage1SearchSpace(12)
         config = SearchConfig(
@@ -1000,6 +1041,38 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
             [1, 2, 3, 4, 5],
         )
 
+    def test_ga_can_disable_stagnation_stop_and_complete_every_generation(self):
+        space = Stage1SearchSpace(5)
+        config = SearchConfig(
+            evaluation_cap=42,
+            ga_population_size=12,
+            ga_elite_count=2,
+            ga_update_generations=3,
+            ga_stop_on_no_improvement=False,
+            ga_duplicate_attempts=64,
+            maximin_candidate_pool_size=128,
+        )
+
+        result = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _evaluation(action, cost=1.0),
+            config,
+        )
+        updates = [
+            row for row in result.history
+            if row["phase"] == "elitist_update"
+        ]
+
+        self.assertEqual(result.termination_reason, "completed_generations")
+        self.assertEqual(len(updates), 3)
+        self.assertEqual(result.evaluation_count, 42)
+        self.assertEqual(
+            [row["no_improvement_generations"] for row in updates],
+            [1, 2, 3],
+        )
+        _validate_completed_search_contract(result)
+
     def test_ga_completion_contract_accepts_exact_five_generation_stagnation(self):
         space = Stage1SearchSpace(5)
         result = run_search(
@@ -1017,6 +1090,36 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
         )
 
         _validate_completed_search_contract(result)
+
+    def test_ga_completion_contract_rejects_stagnation_when_stop_is_disabled(self):
+        space = Stage1SearchSpace(5)
+        result = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _evaluation(action, cost=1.0),
+            SearchConfig(
+                evaluation_cap=100,
+                ga_population_size=12,
+                ga_elite_count=2,
+                ga_update_generations=10,
+                ga_duplicate_attempts=64,
+                maximin_candidate_pool_size=128,
+            ),
+        )
+        forged = SearchResult(
+            algorithm=result.algorithm,
+            config=SearchConfig.from_dict({
+                **result.config.as_dict(),
+                "ga_stop_on_no_improvement": False,
+            }),
+            best=result.best,
+            observations=result.observations,
+            history=result.history,
+            termination_reason=result.termination_reason,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "configured-patience"):
+            _validate_completed_search_contract(forged)
 
     def test_ga_completion_contract_accepts_configured_three_generation_stagnation(self):
         space = Stage1SearchSpace(5)
@@ -1245,11 +1348,54 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
         self.assertEqual(config.ga_elite_count, 7)
         self.assertEqual(config.ga_update_generations, 800)
         self.assertEqual(config.ga_no_improvement_patience, 5)
+        self.assertTrue(config.ga_stop_on_no_improvement)
         self.assertEqual(config.ga_mutation_max_layers, 4)
         self.assertEqual(config.ga_crossover_probability, 0.0)
         self.assertEqual(config.ga_immigrant_fraction, 0.0)
         self.assertEqual(config.canonical_ga_target_evaluations, 45_664)
         self.assertEqual(config.evaluation_cap, 45_664)
+
+    def test_legacy_search_config_defaults_to_stagnation_stop(self):
+        payload = SearchConfig().as_dict()
+        del payload["ga_stop_on_no_improvement"]
+
+        restored = SearchConfig.from_dict(payload)
+
+        self.assertTrue(restored.ga_stop_on_no_improvement)
+
+    def test_stage1_ga_full_200_generation_contract_has_exact_budget(self):
+        config = _search_baselines.stage1_comparator_search_config("coinn_ga")
+
+        self.assertEqual(config.ga_update_generations, 200)
+        self.assertFalse(config.ga_stop_on_no_improvement)
+        self.assertEqual(config.evaluation_cap, 64 + 200 * (64 - 7))
+        self.assertEqual(config.canonical_ga_target_evaluations, 11_464)
+
+    def test_stage1_ga_executes_all_200_update_generations(self):
+        space = Stage1SearchSpace(12)
+        config = _search_baselines.stage1_comparator_search_config("coinn_ga")
+        category_cost = {0: 3.0, 1: 2.5, 2: 1.0}
+
+        result = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _evaluation(
+                action,
+                cost=36.0 + sum(category_cost[value] for value in action),
+            ),
+            config,
+        )
+        updates = [
+            row for row in result.history
+            if row["phase"] == "elitist_update"
+        ]
+
+        self.assertEqual(result.termination_reason, "completed_generations")
+        self.assertEqual(len(updates), 200)
+        self.assertEqual(updates[-1]["generation"], 200)
+        self.assertEqual(result.evaluation_count, 11_464)
+        self.assertEqual(result.unique_evaluation_count, 11_464)
+        _validate_completed_search_contract(result)
 
 
 class _FakeRealEvaluator:
@@ -1912,6 +2058,83 @@ class AdapterAndPersistenceTests(unittest.TestCase):
                     len(resumed_real.calls),
                     reference.evaluation_count - prefix_count,
                 )
+
+    def test_ga_graceful_stop_persists_boundary_and_resumes_exactly(self):
+        config = SearchConfig(
+            seed=23,
+            evaluation_cap=18,
+            ga_population_size=6,
+            ga_elite_count=2,
+            ga_update_generations=3,
+            ga_stop_on_no_improvement=False,
+            ga_duplicate_attempts=64,
+            maximin_candidate_pool_size=64,
+        )
+        with tempfile.TemporaryDirectory() as reference_dir:
+            reference = Stage1SearchRunner(
+                adapter=Stage1EvaluatorAdapter(
+                    evaluator=_FakeRealEvaluator(),
+                    num_layers=4,
+                    constraints=self._constraints(),
+                ),
+                config=config,
+                output_dir=reference_dir,
+                checkpoint_interval=50,
+            ).run("coinn_ga")
+
+        with tempfile.TemporaryDirectory() as resumed_dir:
+            interrupted_real = _FakeRealEvaluator()
+            runner = Stage1SearchRunner(
+                adapter=Stage1EvaluatorAdapter(
+                    evaluator=interrupted_real,
+                    num_layers=4,
+                    constraints=self._constraints(),
+                ),
+                config=config,
+                output_dir=resumed_dir,
+                checkpoint_interval=50,
+                stop_requested=lambda: len(interrupted_real.calls) >= 8,
+            )
+
+            with self.assertRaises(Stage1SearchGracefulStop) as stopped:
+                runner.run("coinn_ga")
+
+            self.assertEqual(stopped.exception.observation_count, 8)
+            checkpoint = _search_runner.read_json_file(
+                Path(resumed_dir) / "checkpoint.json"
+            )
+            self.assertEqual(checkpoint["status"], "stopped")
+            self.assertEqual(checkpoint["observation_count"], 8)
+            self.assertEqual(
+                len(load_search_preload(Path(resumed_dir) / "checkpoint.json")),
+                8,
+            )
+
+            resumed_real = _FakeRealEvaluator()
+            resumed = Stage1SearchRunner(
+                adapter=Stage1EvaluatorAdapter(
+                    evaluator=resumed_real,
+                    num_layers=4,
+                    constraints=self._constraints(),
+                ),
+                config=config,
+                output_dir=resumed_dir,
+                checkpoint_interval=50,
+            ).run("coinn_ga")
+
+        self.assertEqual(resumed.history, reference.history)
+        self.assertEqual(
+            tuple(
+                _scientific_evaluation_dict(item)
+                for item in resumed.observations
+            ),
+            tuple(
+                _scientific_evaluation_dict(item)
+                for item in reference.observations
+            ),
+        )
+        self.assertEqual(resumed.best.action, reference.best.action)
+        self.assertEqual(len(resumed_real.calls), 10)
 
     def test_exception_checkpoint_preserves_complete_observations(self):
         real = _FakeRealEvaluator()
