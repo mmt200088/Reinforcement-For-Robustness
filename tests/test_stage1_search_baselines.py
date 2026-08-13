@@ -2195,6 +2195,54 @@ class AdapterAndPersistenceTests(unittest.TestCase):
         self.assertEqual(resumed.best.action, reference.best.action)
         self.assertEqual(len(resumed_real.calls), 10)
 
+    def test_formal_ga_resumes_checkpoint_from_before_full_run_flag(self):
+        config = SearchConfig(
+            seed=23,
+            evaluation_cap=18,
+            ga_population_size=6,
+            ga_elite_count=2,
+            ga_update_generations=3,
+            ga_stop_on_no_improvement=False,
+            ga_require_full_generations=True,
+            ga_duplicate_attempts=64,
+            maximin_candidate_pool_size=64,
+        )
+        with tempfile.TemporaryDirectory() as resumed_dir:
+            interrupted_real = _FakeRealEvaluator()
+            runner = Stage1SearchRunner(
+                adapter=Stage1EvaluatorAdapter(
+                    evaluator=interrupted_real,
+                    num_layers=4,
+                    constraints=self._constraints(),
+                ),
+                config=config,
+                output_dir=resumed_dir,
+                checkpoint_interval=50,
+                stop_requested=lambda: len(interrupted_real.calls) >= 8,
+            )
+            with self.assertRaises(Stage1SearchGracefulStop):
+                runner.run("coinn_ga")
+
+            checkpoint_path = Path(resumed_dir) / "checkpoint.json"
+            checkpoint = _search_runner.read_json_file(checkpoint_path)
+            del checkpoint["config"]["ga_require_full_generations"]
+            _search_runner.write_json_file(checkpoint_path, checkpoint)
+
+            resumed = Stage1SearchRunner(
+                adapter=Stage1EvaluatorAdapter(
+                    evaluator=_FakeRealEvaluator(),
+                    num_layers=4,
+                    constraints=self._constraints(),
+                ),
+                config=config,
+                output_dir=resumed_dir,
+                checkpoint_interval=50,
+            ).run("coinn_ga")
+
+        self.assertEqual(resumed.termination_reason, "completed_generations")
+        self.assertEqual(resumed.evaluation_count, 18)
+        self.assertTrue(resumed.config.ga_require_full_generations)
+
     def test_exception_checkpoint_preserves_complete_observations(self):
         real = _FakeRealEvaluator()
         original = real.stage1_evaluate
