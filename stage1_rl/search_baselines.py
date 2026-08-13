@@ -459,6 +459,7 @@ class SearchConfig:
     ga_update_generations: int = 800
     ga_no_improvement_patience: int = 5
     ga_stop_on_no_improvement: bool = True
+    ga_require_full_generations: bool = False
     # Compatibility-only fields retained in serialized historical configs.
     ga_tournament_size: int = 3
     ga_crossover_probability: float = 0.0
@@ -490,8 +491,17 @@ class SearchConfig:
         for name in positive:
             if int(getattr(self, name)) <= 0:
                 raise ValueError(f"{name} must be positive")
-        if type(self.ga_stop_on_no_improvement) is not bool:
-            raise ValueError("ga_stop_on_no_improvement must be a boolean")
+        for name in (
+                "ga_stop_on_no_improvement",
+                "ga_require_full_generations",
+        ):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f"{name} must be a boolean")
+        if self.ga_require_full_generations and self.ga_stop_on_no_improvement:
+            raise ValueError(
+                "ga_require_full_generations is incompatible with "
+                "ga_stop_on_no_improvement"
+            )
         if int(self.ga_elite_count) >= int(self.ga_population_size):
             raise ValueError("ga_elite_count must be smaller than ga_population_size")
         for name in (
@@ -564,6 +574,7 @@ def stage1_comparator_search_config(backend: Any) -> SearchConfig:
         ga_update_generations=ga_update_generations,
         ga_no_improvement_patience=5,
         ga_stop_on_no_improvement=normalized != "coinn_ga",
+        ga_require_full_generations=normalized == "coinn_ga",
         ga_tournament_size=3,
         ga_crossover_probability=0.0,
         ga_mutation_max_layers=4,
@@ -1784,8 +1795,23 @@ def _run_coinn_ga(
     ))
     no_improvement_generations = 0
     offspring_target = population_size - elite_count
+    if config.ga_require_full_generations:
+        required_evaluations = (
+            population_size
+            + int(config.ga_update_generations) * offspring_target
+        )
+        if int(cache.cap) < required_evaluations:
+            raise RuntimeError(
+                "Stage-1 GA full-generation contract has insufficient "
+                "evaluation budget"
+            )
     for generation in range(1, int(config.ga_update_generations) + 1):
         if cache.remaining < offspring_target:
+            if config.ga_require_full_generations:
+                raise RuntimeError(
+                    "Stage-1 GA full-generation contract reached an "
+                    "insufficient evaluation budget"
+                )
             termination = "evaluation_cap"
             break
         elites = _select_hamming_diverse_elites(
@@ -1807,6 +1833,11 @@ def _run_coinn_ga(
             actions.append(child)
             blocked.add(child)
         if len(actions) < offspring_target:
+            if config.ga_require_full_generations:
+                raise RuntimeError(
+                    "Stage-1 GA full-generation contract could not produce "
+                    "a full set of unique offspring"
+                )
             termination = "candidate_space_exhausted"
             break
         offspring = [cache.evaluate(action) for action in actions]
@@ -1857,6 +1888,14 @@ def _run_coinn_ga(
             and cache.remaining <= 0
     ):
         termination = "evaluation_cap"
+    if config.ga_require_full_generations and (
+            termination != "completed_generations"
+            or completed_generations != int(config.ga_update_generations)
+    ):
+        raise RuntimeError(
+            "Stage-1 GA full-generation contract did not complete every "
+            "configured generation"
+        )
     cache.assert_replay_consumed()
     return SearchResult(
         algorithm="coinn_ga",
