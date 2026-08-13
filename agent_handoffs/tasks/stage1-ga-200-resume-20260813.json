@@ -1,0 +1,46 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "73ad927a53e411035f7d7756538a0c8838944b22",
+  "base_tree": "63374369c330499fcb8e670787055126e624df8c",
+  "branch": "codex/task-stage1-ga-200-resume-20260813",
+  "branch_role": "task",
+  "changed_scopes": [
+    "AGENTS.md",
+    "layer_importance_evaluator.py",
+    "stage1_rl/",
+    "tests/"
+  ],
+  "completed_at": "2026-08-14T02:00:00+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "/hy-tmp/rfr_stage1_ga_200_candidate_0c4b96cf/",
+    "/hy-tmp/stage1_ga_200_real_smoke_0c4b96cf/"
+  ],
+  "source_commit": "0c4b96cf0b37e3b5e2de468ac4058321ae6ac993",
+  "source_tree": "b29e6f9f8325ef5400a3d32d5ca0a1feeb2d326f",
+  "started_at": "2026-08-13T22:00:00+08:00",
+  "status": "completed",
+  "supersedes": [
+    "stage1-ga-600-resume-20260813"
+  ],
+  "task_id": "stage1-ga-200-resume-20260813",
+  "verification": [
+    {
+      "command": "python -m unittest -v tests.test_stage1_search_baselines tests.test_stage1_search_producer_wiring tests.test_blb_search_backend_wiring",
+      "evidence": "single-RTX-4090 server: 97 focused tests passed, including exact 200-generation/11,464-evaluation contract and graceful-stop/resume trajectory equality",
+      "outcome": "passed"
+    },
+    {
+      "command": "llama_7B_LayerImportance.sh run coinn_ga --preset mrpc-blb-stage2-rl --comparator-stage1-only --comparator-smoke --fresh; repeat without --fresh",
+      "evidence": "single-RTX-4090 server: real BERT validation_full fresh run completed one candidate with formal 200-generation no-early-stop config; completed resume preserved observations.jsonl SHA-256 c93c18f90c882ebce03a198a8a339af1d225d5d4d769be23053c5245eb7694c6 and one-row count exactly",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m py_compile stage1_rl/search_baselines.py stage1_rl/search_runner.py layer_importance_evaluator.py; git diff --check",
+      "evidence": "single-RTX-4090 server: passed from exact source commit and tracked-clean tree",
+      "outcome": "passed"
+    }
+  ]
+}
