@@ -91,6 +91,16 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   dependencies, shared artifacts, and handoff contracts, then choose
   optimizations by end-to-end wall-clock impact and hardware utilization rather
   than by isolated local speedups.
+- Stage-1 formal COINN-GA run contract, updated 2026-08-13: the MRPC
+  `--comparator-stage1-only` COINN-GA run must execute all 200 update
+  generations after its initial population. Its exact inference budget is
+  `64 + 200 * (64 - 7) = 11,464`; incumbent-stagnation stopping is disabled and
+  cannot satisfy formal completion. SIGINT or the comparator-local `STOP_RL`
+  marker requests a stop only after the current candidate has been evaluated,
+  appended and fsynced. Resume the same persistent root without `--fresh`;
+  ordered observation replay must reconstruct the same RNG/population path and
+  must not repeat completed model evaluations. This Stage-1 override does not
+  change the generic or Stage-2 GA 800-generation defaults.
 - Runtime-optimization completion audit, updated 2026-07-14: source `8308bbd`
   was verified in the clean five-RTX-5090 checkout. The six-stage audit found
   all 30 expected flow files and every required artifact-evidence class. The
