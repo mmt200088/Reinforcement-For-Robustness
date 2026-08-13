@@ -7199,6 +7199,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage1_search_config = replace(
                     stage1_search_config,
                     evaluation_cap=1,
+                    ga_require_full_generations=False,
                 )
             stage1_output_dir = os.path.join(
                 self.run_output_dir
@@ -7317,6 +7318,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                             stage1_comparator_result.config.ga_update_generations
                         ) != 200
                         or stage1_comparator_result.config.ga_stop_on_no_improvement
+                        or not stage1_comparator_result.config.ga_require_full_generations
                         or stage1_comparator_result.evaluation_count != 11_464
                     )
             ):

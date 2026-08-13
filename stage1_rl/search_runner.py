@@ -886,6 +886,15 @@ def _validate_ga_generation_proof(
             "Stage-1 GA completion contract records more update rows than "
             "the configured generation count"
         )
+    if result.config.ga_require_full_generations and (
+            result.config.ga_stop_on_no_improvement
+            or result.termination_reason != "completed_generations"
+            or completed_generations != configured_generations
+    ):
+        raise RuntimeError(
+            "Stage-1 GA full-generation completion contract did not finish "
+            "every configured generation"
+        )
     if result.termination_reason == "ga_no_incumbent_improvement":
         patience = int(result.config.ga_no_improvement_patience)
         if (

@@ -101,6 +101,7 @@ def _comparator_config(backend):
         ga_update_generations=ga_update_generations,
         ga_no_improvement_patience=5,
         ga_stop_on_no_improvement=backend != "coinn_ga",
+        ga_require_full_generations=backend == "coinn_ga",
         ga_tournament_size=3,
         ga_crossover_probability=0.0,
         ga_mutation_max_layers=4,
@@ -1413,10 +1414,12 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
     def test_legacy_search_config_defaults_to_stagnation_stop(self):
         payload = SearchConfig().as_dict()
         del payload["ga_stop_on_no_improvement"]
+        del payload["ga_require_full_generations"]
 
         restored = SearchConfig.from_dict(payload)
 
         self.assertTrue(restored.ga_stop_on_no_improvement)
+        self.assertFalse(restored.ga_require_full_generations)
 
     def test_stage1_ga_full_200_generation_contract_has_exact_budget(self):
         config = _search_baselines.stage1_comparator_search_config("coinn_ga")
