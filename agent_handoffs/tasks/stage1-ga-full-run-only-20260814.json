@@ -1,0 +1,47 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "58f192e8aee44d78f224891387d386d506b82368",
+  "base_tree": "b359d061e9241ef19131c1c2ac166acf39be3902",
+  "branch": "codex/task-stage1-ga-full-run-only-20260814",
+  "branch_role": "task",
+  "changed_scopes": [
+    "layer_importance_evaluator.py",
+    "stage1_rl/",
+    "tests/test_stage1_search_baselines.py"
+  ],
+  "completed_at": "2026-08-14T02:24:06+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "/hy-tmp/stage1_ga_full_run_only_2e21ea89_evidence/"
+  ],
+  "source_commit": "2e21ea89518d707e8c94924f1b9a64d84fff14a8",
+  "source_tree": "191b220d427817f1f0ca8b2da5c6a1ea5358c7df",
+  "started_at": "2026-08-14T02:09:00+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "stage1-ga-full-run-only-20260814",
+  "verification": [
+    {
+      "command": "PYTHONPATH=. python3 tests/test_stage1_search_baselines.py",
+      "evidence": "single-RTX-4090 server: 81 tests passed, including RED/GREEN coverage for budget shortfall, unique-offspring failure, exact 200-generation completion, graceful stop/resume, and strict migration of the active pre-flag checkpoint",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=. python3 tests/test_stage2_persistent_launcher.py",
+      "evidence": "single-RTX-4090 server: 29 launcher tests passed after the exact Git sparse checkout included all required preset and Stage-2 files",
+      "outcome": "passed"
+    },
+    {
+      "command": "PYTHONPATH=. python3 tests/test_stage1_search_producer_wiring.py && PYTHONPATH=. python3 tests/test_stage1_launcher_defaults.py",
+      "evidence": "single-RTX-4090 server: 6 producer-wiring and 2 launcher-default tests passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m py_compile stage1_rl/search_baselines.py stage1_rl/search_runner.py layer_importance_evaluator.py tests/test_stage1_search_baselines.py && git diff --check",
+      "evidence": "single-RTX-4090 server: passed from exact source commit 2e21ea89518d707e8c94924f1b9a64d84fff14a8 and tree 191b220d427817f1f0ca8b2da5c6a1ea5358c7df",
+      "outcome": "passed"
+    }
+  ]
+}
