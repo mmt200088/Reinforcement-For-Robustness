@@ -49,6 +49,16 @@ _REQUIRED_COMPLETED_ARTIFACTS = (
     "checkpoint.json",
     "manifest.json",
 )
+
+
+class Stage1SearchGracefulStop(SystemExit):
+    """Signal that an ordinary Stage-1 search stopped at a durable boundary."""
+
+    def __init__(self, observation_count: int):
+        super().__init__(0)
+        self.observation_count = int(observation_count)
+
+
 def _field(value: Any, name: str, default: Any = None) -> Any:
     if isinstance(value, Mapping):
         return value.get(name, default)
@@ -879,7 +889,8 @@ def _validate_ga_generation_proof(
     if result.termination_reason == "ga_no_incumbent_improvement":
         patience = int(result.config.ga_no_improvement_patience)
         if (
-                completed_generations >= int(
+                not result.config.ga_stop_on_no_improvement
+                or completed_generations >= int(
                     result.config.ga_update_generations
                 )
                 or no_improvement_generations != patience
@@ -1425,6 +1436,7 @@ class Stage1SearchRunner:
             manifest: Mapping[str, Any] | None = None,
             checkpoint_callback: ResultCheckpointCallback | None = None,
             checkpoint_interval: int = 50,
+            stop_requested: Callable[[], bool] | None = None,
             ):
         self.adapter = adapter
         self.config = config or SearchConfig()
@@ -1432,6 +1444,7 @@ class Stage1SearchRunner:
         self.manifest = _ordinary_manifest_fields(manifest)
         self.checkpoint_callback = checkpoint_callback
         self.checkpoint_interval = int(checkpoint_interval)
+        self.stop_requested = stop_requested
         if self.checkpoint_interval <= 0:
             raise ValueError("checkpoint_interval must be positive")
 
@@ -1653,6 +1666,16 @@ class Stage1SearchRunner:
                     latest_evaluation=observation,
                     status="running",
                 ))
+            if (
+                    self.stop_requested is not None
+                    and self.stop_requested()
+            ):
+                publish(progress_payload(
+                    observation_count=observation_count,
+                    latest_evaluation=observation,
+                    status="stopped",
+                ))
+                raise Stage1SearchGracefulStop(observation_count)
 
         try:
             result = run_search(
@@ -1734,6 +1757,7 @@ def run_stage1_search(
         preload_path: Optional[str | Path] = None,
         checkpoint_callback: Optional[ResultCheckpointCallback] = None,
         checkpoint_interval: int = 50,
+        stop_requested: Callable[[], bool] | None = None,
         ) -> SearchResult:
     runner = Stage1SearchRunner(
         adapter=Stage1EvaluatorAdapter(
@@ -1746,6 +1770,7 @@ def run_stage1_search(
         manifest=manifest,
         checkpoint_callback=checkpoint_callback,
         checkpoint_interval=int(checkpoint_interval),
+        stop_requested=stop_requested,
     )
     return runner.run(
         backend,
@@ -1758,6 +1783,7 @@ def run_stage1_search(
 __all__ = [
     "ResultCheckpointCallback",
     "Stage1EvaluatorAdapter",
+    "Stage1SearchGracefulStop",
     "Stage1SearchRunner",
     "build_stage1_search_accounting",
     "load_completed_search_result",

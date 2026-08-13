@@ -7148,9 +7148,18 @@ class LayerImportanceEvaluator(TrainerCallback):
                 validate_stage1_comparator_setup,
             )
             from stage1_rl.search_runner import (
+                Stage1SearchGracefulStop,
                 build_stage1_search_accounting,
                 load_completed_search_result,
                 run_stage1_search,
+            )
+            from noise_rl_module_v2 import (
+                NOISE_STAGE_STOP_FLAG_FILENAME,
+                consume_stop_flag_file,
+                install_graceful_stop_handler,
+                is_graceful_stop_requested,
+                reset_graceful_stop_state,
+                uninstall_graceful_stop_handler,
             )
 
             backend = self.blb_v3_search_backend
@@ -7200,34 +7209,78 @@ class LayerImportanceEvaluator(TrainerCallback):
             preload_path = os.path.join(stage1_output_dir, "checkpoint.json")
             if not os.path.isfile(preload_path):
                 preload_path = None
+            stage1_comparator_stop_flag_path = os.path.join(
+                stage1_output_dir,
+                NOISE_STAGE_STOP_FLAG_FILENAME,
+            )
+            reset_graceful_stop_state()
+            consume_stop_flag_file(stage1_comparator_stop_flag_path)
+            install_graceful_stop_handler(log_fn=self.log)
+
+            def stage1_comparator_stop_requested():
+                return is_graceful_stop_requested(
+                    stage1_comparator_stop_flag_path
+                )
+
             self.log(
                 f"\n--- 阶段2（Phase 2）: {backend} Stage-1 search "
                 "(validation_full) ---"
             )
-            in_memory_stage1_result = run_stage1_search(
-                backend=backend,
-                evaluator=self,
-                num_layers=int(self.total_layers),
-                constraints=stage1_constraints,
-                config=stage1_search_config,
-                output_dir=stage1_output_dir,
-                manifest={
-                    "backend": backend,
-                    "model": str(getattr(
-                        getattr(self.model, "config", None),
-                        "_name_or_path",
-                        type(self.model).__name__,
-                    )),
-                    "dataset": str(self.data_path),
-                    "split": "validation_full",
-                    "comparator_smoke": bool(self.comparator_smoke),
-                    "stage1_bound_into_stage2": not self.comparator_stage1_only,
-                    "stage2_backend": (
-                        None if self.comparator_stage1_only else backend
-                    ),
-                },
-                preload_path=preload_path,
+            self.log(
+                "  [优雅停止] 可发送一次 SIGINT，或创建 "
+                f"{stage1_comparator_stop_flag_path}；当前候选完成并落盘后退出。"
             )
+            try:
+                in_memory_stage1_result = run_stage1_search(
+                    backend=backend,
+                    evaluator=self,
+                    num_layers=int(self.total_layers),
+                    constraints=stage1_constraints,
+                    config=stage1_search_config,
+                    output_dir=stage1_output_dir,
+                    manifest={
+                        "backend": backend,
+                        "model": str(getattr(
+                            getattr(self.model, "config", None),
+                            "_name_or_path",
+                            type(self.model).__name__,
+                        )),
+                        "dataset": str(self.data_path),
+                        "split": "validation_full",
+                        "comparator_smoke": bool(self.comparator_smoke),
+                        "stage1_bound_into_stage2": not self.comparator_stage1_only,
+                        "stage2_backend": (
+                            None if self.comparator_stage1_only else backend
+                        ),
+                    },
+                    preload_path=preload_path,
+                    stop_requested=stage1_comparator_stop_requested,
+                )
+            except Stage1SearchGracefulStop as stopped:
+                consume_stop_flag_file(stage1_comparator_stop_flag_path)
+                if self.run_output_dir:
+                    update_persistent_metadata_stage(
+                        self.run_output_dir,
+                        "stage1_search",
+                        "in_progress",
+                        extra_fields={
+                            "backend": backend,
+                            "stopped_by": "graceful_stop",
+                            "completed_evaluations": int(
+                                stopped.observation_count
+                            ),
+                            "checkpoint_path": preload_path or os.path.join(
+                                stage1_output_dir, "checkpoint.json"
+                            ),
+                        },
+                    )
+                self.log(
+                    "  [优雅停止] Stage-1 comparator checkpoint 已安全落盘；"
+                    "下次用相同参数、不带 --fresh 启动即可续跑。"
+                )
+                raise SystemExit(0)
+            finally:
+                uninstall_graceful_stop_handler()
             stage1_comparator_result = load_completed_search_result(
                 stage1_output_dir
             )
@@ -7257,12 +7310,19 @@ class LayerImportanceEvaluator(TrainerCallback):
             if (
                     not self.comparator_smoke
                     and backend == "coinn_ga"
-                    and stage1_comparator_result.termination_reason
-                    not in {"completed_generations", "ga_no_incumbent_improvement"}
+                    and (
+                        stage1_comparator_result.termination_reason
+                        != "completed_generations"
+                        or int(
+                            stage1_comparator_result.config.ga_update_generations
+                        ) != 200
+                        or stage1_comparator_result.config.ga_stop_on_no_improvement
+                        or stage1_comparator_result.evaluation_count != 11_464
+                    )
             ):
                 raise RuntimeError(
-                    "Stage-1 COINN-GA has no five-generation stagnation or "
-                    "800-generation safety-cap completion"
+                    "Stage-1 COINN-GA did not satisfy the 200-generation "
+                    "full-run contract and 11,464-inference full-run contract"
                 )
 
             stage1_result_path = os.path.join(
