@@ -894,6 +894,61 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
         self.assertEqual(result.termination_reason, "evaluation_cap")
         _validate_completed_search_contract(result)
 
+    def test_full_generation_ga_rejects_short_offspring_budget(self):
+        space = Stage1SearchSpace(12)
+        config = SearchConfig(
+            seed=42,
+            evaluation_cap=64 + 56,
+            ga_population_size=64,
+            ga_elite_count=7,
+            ga_update_generations=1,
+            ga_stop_on_no_improvement=False,
+            ga_require_full_generations=True,
+            ga_duplicate_attempts=64,
+            maximin_candidate_pool_size=1024,
+        )
+
+        with self.assertRaisesRegex(
+                RuntimeError, "full-generation contract.*evaluation budget",
+        ):
+            run_search(
+                "coinn_ga",
+                space,
+                lambda action: _evaluation(action, cost=1.0),
+                config,
+            )
+
+    def test_full_generation_ga_rejects_candidate_generation_failure(self):
+        space = Stage1SearchSpace(5)
+        config = SearchConfig(
+            seed=42,
+            evaluation_cap=22,
+            ga_population_size=12,
+            ga_elite_count=2,
+            ga_update_generations=1,
+            ga_stop_on_no_improvement=False,
+            ga_require_full_generations=True,
+            ga_duplicate_attempts=64,
+            maximin_candidate_pool_size=128,
+        )
+
+        with (
+            mock.patch.object(
+                _search_baselines,
+                "_breed_unique_child",
+                return_value=(None, False),
+            ),
+            self.assertRaisesRegex(
+                RuntimeError, "full-generation contract.*unique offspring",
+            ),
+        ):
+            run_search(
+                "coinn_ga",
+                space,
+                lambda action: _evaluation(action, cost=1.0),
+                config,
+            )
+
     def test_ga_completion_contract_rejects_unused_full_generation_budget(self):
         space = Stage1SearchSpace(12)
         result = run_search(
@@ -1368,6 +1423,7 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
 
         self.assertEqual(config.ga_update_generations, 200)
         self.assertFalse(config.ga_stop_on_no_improvement)
+        self.assertTrue(config.ga_require_full_generations)
         self.assertEqual(config.evaluation_cap, 64 + 200 * (64 - 7))
         self.assertEqual(config.canonical_ga_target_evaluations, 11_464)
 
