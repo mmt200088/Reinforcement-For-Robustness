@@ -7,18 +7,22 @@
   "changed_scopes": [
     "AGENTS.md",
     "agent_handoffs/tasks/",
+    "layer_importance_evaluator.py",
+    "llama_7B_LayerImportance.sh",
     "stage1_rl/search_baselines.py",
-    "tests/test_stage1_search_baselines.py"
+    "tests/test_blb_search_backend_wiring.py",
+    "tests/test_stage1_search_baselines.py",
+    "tests/test_stage2_persistent_launcher.py"
   ],
-  "completed_at": "2026-08-14T23:58:00+08:00",
+  "completed_at": "2026-08-15T00:24:00+08:00",
   "deployment_eligible": false,
   "record_type": "task_handoff",
   "schema_version": 1,
   "server_evidence": [
-    "/hy-tmp/bo_rf_stage1_10k_evidence_9ef73f5d/"
+    "/hy-tmp/bo_rf_stage1_10k_evidence_57703016/"
   ],
-  "source_commit": "9ef73f5dfc26b7cbaef312f98a132404d0a6e95b",
-  "source_tree": "d4a5a934ca791bcc99b43892cb4e4b06555abbf9",
+  "source_commit": "5770301653a5c2e94844b58b2b3a84f5999ab7bc",
+  "source_tree": "a97c083c9e519184ed16395cecca206e2ff349f7",
   "started_at": "2026-08-14T23:49:00+08:00",
   "status": "completed",
   "supersedes": [],
@@ -36,7 +40,12 @@
     },
     {
       "command": "python3 -m unittest -q tests.test_blb_search_backend_wiring tests.test_stage2_persistent_launcher",
-      "evidence": "single-GPU server: 42 tests passed in 37.128s",
+      "evidence": "integration RED at b98bf437 exposed launcher 50000/100; GREEN at 57703016 passed and preserves two-stage 50000/100 plus smoke budget 1",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m unittest -v tests.test_stage1_search_baselines tests.test_blb_search_baselines tests.test_blb_search_baseline_runner tests.test_blb_search_backend_wiring tests.test_stage2_persistent_launcher",
+      "evidence": "single-GPU server: 211 tests passed in 30.908s",
       "outcome": "passed"
     },
     {
@@ -45,8 +54,8 @@
       "outcome": "passed"
     },
     {
-      "command": "python3 -m py_compile stage1_rl/search_baselines.py tests/test_stage1_search_baselines.py; git diff --check",
-      "evidence": "clean isolated server task worktree: passed",
+      "command": "python3 -m py_compile stage1_rl/search_baselines.py layer_importance_evaluator.py tests/test_stage1_search_baselines.py tests/test_blb_search_backend_wiring.py tests/test_stage2_persistent_launcher.py; bash -n llama_7B_LayerImportance.sh; git diff --check",
+      "evidence": "clean isolated server task worktree at 57703016/a97c083c: passed",
       "outcome": "passed"
     }
   ]
