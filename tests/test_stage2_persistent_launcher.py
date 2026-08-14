@@ -462,7 +462,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
 
     def test_comparator_stage1_only_keeps_formal_search_and_skips_later_stages(self):
         expected_budgets = {
-            "bo_rf": "50000",
+            "bo_rf": "10000",
             "greedy": "2176782336",
             "coinn_ga": "45664",
         }
@@ -489,6 +489,15 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                             argv[argv.index(flag) + 1],
                             expected,
                         )
+                if alias == "bo_rf":
+                    self.assertEqual(
+                        argv[
+                            argv.index(
+                                "--blb_v3_search_patience_generations"
+                            ) + 1
+                        ],
+                        "1000",
+                    )
 
     def test_comparator_stage1_only_keeps_backend_persistent_directories(self):
         for alias in ("bo_rf", "greedy", "coinn_ga"):

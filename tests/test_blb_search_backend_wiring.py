@@ -439,6 +439,14 @@ class SearchBackendWiringTests(unittest.TestCase):
             "or int(self.blb_v3_search_patience_generations) != 5",
             evaluator,
         )
+        self.assertIn(
+            '10_000 if self.comparator_stage1_only else 50_000',
+            evaluator,
+        )
+        self.assertIn(
+            '1_000 if self.comparator_stage1_only else 100',
+            evaluator,
+        )
         self.assertIn("200-generation ", evaluator)
         self.assertIn("11,464-inference full-run contract", evaluator)
         self.assertIn("800-generation safety cap", evaluator)
