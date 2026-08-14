@@ -1,0 +1,53 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "9a217274b74ac96f37bee7f04a857c52807c2ac4",
+  "base_tree": "7b73655f591acc618736b389de4f0f747644c0e8",
+  "branch": "codex/task-bo-rf-stage1-10k-20260814",
+  "branch_role": "task",
+  "changed_scopes": [
+    "AGENTS.md",
+    "agent_handoffs/tasks/",
+    "stage1_rl/search_baselines.py",
+    "tests/test_stage1_search_baselines.py"
+  ],
+  "completed_at": "2026-08-14T23:58:00+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "/hy-tmp/bo_rf_stage1_10k_evidence_9ef73f5d/"
+  ],
+  "source_commit": "9ef73f5dfc26b7cbaef312f98a132404d0a6e95b",
+  "source_tree": "d4a5a934ca791bcc99b43892cb4e4b06555abbf9",
+  "started_at": "2026-08-14T23:49:00+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "bo-rf-stage1-10k-20260814",
+  "verification": [
+    {
+      "command": "python3 -m unittest tests.test_stage1_search_baselines.StructuredDesignAndAlgorithmTests.test_stage1_bo_rf_uses_10000_evaluation_cap_and_1000_patience",
+      "evidence": "RED commit 6010cf7b failed with 50000 != 10000; GREEN source 9ef73f5d passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m unittest -q tests.test_stage1_search_baselines",
+      "evidence": "single-GPU server: 82 tests passed in 11.878s",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m unittest -q tests.test_blb_search_backend_wiring tests.test_stage2_persistent_launcher",
+      "evidence": "single-GPU server: 42 tests passed in 37.128s",
+      "outcome": "passed"
+    },
+    {
+      "command": "resolve stage1_comparator_search_config for bo_rf, greedy and coinn_ga",
+      "evidence": "BO-RF resolves cap=10000 and patience=1000; Greedy and 200-generation COINN-GA values are unchanged",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 -m py_compile stage1_rl/search_baselines.py tests/test_stage1_search_baselines.py; git diff --check",
+      "evidence": "clean isolated server task worktree: passed",
+      "outcome": "passed"
+    }
+  ]
+}
