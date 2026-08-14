@@ -101,6 +101,13 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   ordered observation replay must reconstruct the same RNG/population path and
   must not repeat completed model evaluations. This Stage-1 override does not
   change the generic or Stage-2 GA 800-generation defaults.
+- Stage-1 formal BO-RF run contract, updated 2026-08-14: the MRPC
+  `--comparator-stage1-only` BO-RF run has a hard maximum of 10,000 unique
+  model evaluations and may stop earlier only after 1,000 consecutive
+  evaluations without incumbent improvement. These values apply only to the
+  formal Stage-1 comparator preset; Greedy, COINN-GA, generic and Stage-2
+  search defaults remain unchanged. Graceful-stop and ordered-observation
+  resume semantics are unchanged.
 - Runtime-optimization completion audit, updated 2026-07-14: source `8308bbd`
   was verified in the clean five-RTX-5090 checkout. The six-stage audit found
   all 30 expected flow files and every required artifact-evidence class. The

@@ -555,7 +555,7 @@ def stage1_comparator_search_config(backend: Any) -> SearchConfig:
     normalized = normalize_search_backend(backend)
     ga_update_generations = 200 if normalized == "coinn_ga" else 800
     evaluation_caps = {
-        "bo_rf": 50_000,
+        "bo_rf": 10_000,
         "greedy": 3 ** STAGE1_COMPARATOR_NUM_LAYERS,
         "coinn_ga": 64 + ga_update_generations * (64 - 7),
     }
@@ -564,7 +564,9 @@ def stage1_comparator_search_config(backend: Any) -> SearchConfig:
         seed=42,
         bo_initial_design_size=64,
         bo_candidate_pool_size=2_048,
-        bo_no_improvement_patience=100,
+        bo_no_improvement_patience=(
+            1_000 if normalized == "bo_rf" else 100
+        ),
         rf_n_estimators=128,
         rf_min_samples_leaf=2,
         acquisition_exploration=0.05,
