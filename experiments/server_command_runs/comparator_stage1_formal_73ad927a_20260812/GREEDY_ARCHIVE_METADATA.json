@@ -1,0 +1,8 @@
+{
+  "archive_type": "greedy_only",
+  "original_result_commit": "c1548bf595c90c0c44eaff2a160c19bc37170640",
+  "source_commit": "73ad927a53e411035f7d7756538a0c8838944b22",
+  "original_file_count": 22,
+  "observation_rows": 1615,
+  "note": "Byte-identical extraction of the completed Greedy Stage-1 run; old BO-RF and old COINN-GA artifacts are intentionally excluded."
+}
