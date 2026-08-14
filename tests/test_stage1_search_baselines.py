@@ -1430,6 +1430,12 @@ class StructuredDesignAndAlgorithmTests(unittest.TestCase):
         self.assertEqual(config.evaluation_cap, 64 + 200 * (64 - 7))
         self.assertEqual(config.canonical_ga_target_evaluations, 11_464)
 
+    def test_stage1_bo_rf_uses_10000_evaluation_cap_and_1000_patience(self):
+        config = _search_baselines.stage1_comparator_search_config("bo_rf")
+
+        self.assertEqual(config.evaluation_cap, 10_000)
+        self.assertEqual(config.bo_no_improvement_patience, 1_000)
+
     def test_stage1_ga_executes_all_200_update_generations(self):
         space = Stage1SearchSpace(12)
         config = _search_baselines.stage1_comparator_search_config("coinn_ga")
