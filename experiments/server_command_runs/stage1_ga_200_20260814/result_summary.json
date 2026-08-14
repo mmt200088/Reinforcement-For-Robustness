@@ -1,0 +1,129 @@
+{
+  "status": "complete",
+  "algorithm": "coinn_ga",
+  "scope": "stage1_only",
+  "source_commit": "9a217274b74ac96f37bee7f04a857c52807c2ac4",
+  "source_tree": "7b73655f591acc618736b389de4f0f747644c0e8",
+  "completed_at": "2026-08-14T03:31:45",
+  "termination_reason": "completed_generations",
+  "update_generations": 200,
+  "history_rows": 201,
+  "evaluation_count": 11464,
+  "unique_evaluation_count": 11464,
+  "search_wall_seconds": 5801.109038717113,
+  "preloaded_observation_count": 5141,
+  "first_generation_at_final_best_cost": 34,
+  "best": {
+    "action": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      1,
+      1,
+      2,
+      2,
+      2
+    ],
+    "constraint_margins": [
+      0.011344953171144366,
+      0.0010010010010010025,
+      0.003215167201329256
+    ],
+    "constraints": {
+      "baseline_loss": 0.38393290979521616,
+      "baseline_metrics": [
+        0.8774509803921569,
+        0.87442208717397
+      ],
+      "loss_max": 0.3843168427050113,
+      "metric_mins": [
+        0.8765735294117647,
+        0.873547665086796
+      ],
+      "metric_names": [
+        "accuracy",
+        "weighted_f1"
+      ]
+    },
+    "cost": 51.0,
+    "failed_constraint_count": 0,
+    "feasible": true,
+    "gelu_degrees": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      2,
+      2,
+      1,
+      1,
+      1
+    ],
+    "loss": 0.3799567861216409,
+    "metadata": {
+      "baseline_loss": 0.38393290979521616,
+      "baseline_metrics": [
+        0.8774509803921569,
+        0.87442208717397
+      ],
+      "cost_components": [
+        15.0,
+        36.0
+      ],
+      "evaluation_index": 2240,
+      "fixed_softmax_degree": 6,
+      "inference_time_ms": 61.46069935389927,
+      "loss_limit": 0.3843168427050113,
+      "metric_limits": [
+        0.8765735294117647,
+        0.873547665086796
+      ],
+      "search_cumulative_wall_seconds": 1123.5491001028568,
+      "split": "validation_full",
+      "use_train": false,
+      "wall_seconds": 0.4322587689384818
+    },
+    "metric_values": {
+      "accuracy": 0.8774509803921569,
+      "weighted_f1": 0.8763562668883809
+    },
+    "metrics": [
+      0.8774509803921569,
+      0.8763562668883809
+    ],
+    "normalized_margins": [
+      0.011344953171144366,
+      0.0010010010010010025,
+      0.003215167201329256
+    ],
+    "raw_margins": [
+      0.004360056583370409,
+      0.0008774509803921582,
+      0.00280860180158482
+    ],
+    "softmax_degrees": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "total_violation": 0.0,
+    "valid": true,
+    "worst_violation": 0.0
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "algorithm": "rl",
+  "model_type": "bert-base",
+  "dataset": "mrpc",
+  "stage1_accuracy_tolerance": 0.001,
+  "stage2_limit_tolerance": 0.001,
+  "stage2_stability_tolerance": 2.0,
+  "blb_v3_decision_granularity": "layer",
+  "blb_v3_reward_design": "robust_constrained",
+  "blb_v3_policy_network_variant": "shared_gtrxl_small_v1",
+  "stage2_k_trials": 3,
+  "stage2_probe_size": 256,
+  "created_at": "2026-08-14T01:49:35+08:00",
+  "last_updated_at": "2026-08-14T03:31:48.582514",
+  "run_count": 4,
+  "stage_status": {
+    "stage1_search": "completed",
+    "stage1_final_eval": "not_started",
+    "stage2_search": "skipped",
+    "stage2_final_eval": "not_started",
+    "final_eval": "skipped"
+  },
+  "stage_detail": {
+    "stage1_search": {
+      "backend": "coinn_ga",
+      "stopped_by": "graceful_stop",
+      "completed_evaluations": 5141,
+      "checkpoint_path": "/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/checkpoint.json",
+      "feasible": true,
+      "evaluation_count": 11464,
+      "result_path": "/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/result.json"
+    }
+  }
+}
