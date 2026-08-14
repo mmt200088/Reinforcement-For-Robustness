@@ -1025,6 +1025,10 @@ fi
 
 if [ "$COMPARATOR_STAGE1_ONLY" = "true" ]; then
   [ "$BLB_V3_SEARCH_BACKEND" != "ppo" ] || err "--comparator-stage1-only 仅支持 bo_rf、greedy 或 coinn_ga。"
+  if [ "$BLB_V3_SEARCH_BACKEND" = "bo_rf" ] && [ "$COMPARATOR_SMOKE" = "false" ]; then
+    BLB_V3_SEARCH_EVALUATION_BUDGET="10000"
+    BLB_V3_SEARCH_PATIENCE_GENERATIONS="1000"
+  fi
   SKIP_NOISE_SEARCH="true"
   SKIP_FINAL_EVAL="true"
   STAGE2_EPISODES="0"

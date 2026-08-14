@@ -3581,7 +3581,9 @@ class LayerImportanceEvaluator(TrainerCallback):
                     )
             else:
                 backend_budget = {
-                    "bo_rf": 50_000,
+                    "bo_rf": (
+                        10_000 if self.comparator_stage1_only else 50_000
+                    ),
                     "greedy": 6 ** 12,
                     "coinn_ga": 45_664,
                 }[self.blb_v3_search_backend]
@@ -3602,11 +3604,15 @@ class LayerImportanceEvaluator(TrainerCallback):
             if self.blb_v3_search_backend == "bo_rf" and (
                     int(self.blb_v3_search_initial_design_size) != 64
                     or int(self.blb_v3_search_candidate_pool_size) != 2_048
-                    or int(self.blb_v3_search_patience_generations) != 100
+                    or int(self.blb_v3_search_patience_generations)
+                    != (
+                        1_000 if self.comparator_stage1_only else 100
+                    )
             ):
                 raise ValueError(
                     "BO-RF comparator requires initial design 64, "
-                    "candidate pool 2,048, and no-improvement patience 100"
+                    "candidate pool 2,048, and the mode-specific "
+                    "no-improvement patience"
                 )
             if self.blb_v3_search_backend == "bo_rf" and (
                     int(self.blb_v3_search_rf_n_estimators) != 128
