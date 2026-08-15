@@ -1,8 +1,9 @@
 {
-  "archive_type": "greedy_only",
-  "original_result_commit": "c1548bf595c90c0c44eaff2a160c19bc37170640",
+  "archive_type": "complete_greedy_server_root",
   "source_commit": "73ad927a53e411035f7d7756538a0c8838944b22",
-  "original_file_count": 22,
+  "original_result_commit": "c1548bf595c90c0c44eaff2a160c19bc37170640",
+  "server_run_root": "/hy-tmp/comparator_stage1_queue_20260812_v3",
+  "original_file_count": 30,
   "observation_rows": 1615,
-  "note": "Byte-identical extraction of the completed Greedy Stage-1 run; old BO-RF and old COINN-GA artifacts are intentionally excluded."
+  "note": "Byte-identical complete archive of the accepted Greedy Stage-1 server root; superseded BO-RF and COINN-GA runs are excluded."
 }

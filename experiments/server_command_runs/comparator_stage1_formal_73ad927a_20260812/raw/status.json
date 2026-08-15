@@ -1,0 +1,19 @@
+{
+  "current_algorithm": null,
+  "detail": "all three formal Stage-1 searches completed and validated",
+  "final_eval_enabled": false,
+  "observed_evaluations": null,
+  "order": [
+    "greedy",
+    "bo_rf",
+    "coinn_ga"
+  ],
+  "process_pid": null,
+  "run_dir": null,
+  "schema_version": "comparator_stage1_queue_status_v2",
+  "source_commit": "73ad927a53e411035f7d7756538a0c8838944b22",
+  "source_tree": "63374369c330499fcb8e670787055126e624df8c",
+  "stage2_enabled": false,
+  "status": "completed",
+  "updated_at": "2026-08-12T09:15:53.302626+00:00"
+}
