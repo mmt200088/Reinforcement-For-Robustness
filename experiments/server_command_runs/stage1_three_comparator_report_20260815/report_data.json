@@ -1,0 +1,80 @@
+{
+  "schema_version": "stage1_three_comparator_report_v1",
+  "generated_at": "2026-08-15",
+  "experiment": {
+    "model": "textattack/bert-base-uncased-MRPC",
+    "dataset": "GLUE MRPC",
+    "split": "validation_full",
+    "layers": 12,
+    "seed": 42,
+    "stage1_accuracy_tolerance": 0.001,
+    "fixed_softmax_degrees": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+  },
+  "shared_best": {
+    "cost": 51.0,
+    "gelu_degrees": [1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1],
+    "softmax_degrees": [6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6],
+    "loss": 0.3799567861216409,
+    "accuracy": 0.8774509803921569,
+    "weighted_f1": 0.8763562668883809,
+    "feasible": true
+  },
+  "constraints": {
+    "baseline_loss": 0.38393290979521616,
+    "loss_max": 0.3843168427050113,
+    "baseline_accuracy": 0.8774509803921569,
+    "accuracy_min": 0.8765735294117647,
+    "baseline_weighted_f1": 0.87442208717397,
+    "weighted_f1_min": 0.873547665086796
+  },
+  "algorithms": [
+    {
+      "id": "greedy",
+      "name": "Greedy",
+      "status": "complete",
+      "termination_reason": "verified_local_optimum",
+      "evaluation_count": 1615,
+      "search_wall_seconds": 765.720018574968,
+      "evaluations_per_hour": 7592.853600484495,
+      "search_contract": "3 starts; exhaustive 1-opt; exhaustive 2-opt; return to 1-opt after an accepted 2-opt; both neighborhoods verified",
+      "convergence": [{"x":1,"y":72.0},{"x":25,"y":70.0},{"x":47,"y":68.0},{"x":68,"y":66.0},{"x":89,"y":64.0},{"x":110,"y":62.0},{"x":131,"y":60.0},{"x":152,"y":58.0},{"x":173,"y":56.0},{"x":194,"y":54.0},{"x":215,"y":52.0},{"x":236,"y":51.5},{"x":497,"y":51.0}],
+      "result_branch": "codex/result-stage1-greedy-20260812",
+      "result_commit": "5f8cf9aa7a56a04b28f3f65e57d5dd0309b8e3f4",
+      "result_tree": "757e9f5eb6765aceb5a0043760004dc2d28030cb",
+      "observation_rows": 1615,
+      "hash_check": "pass"
+    },
+    {
+      "id": "coinn_ga",
+      "name": "COINN-GA",
+      "status": "complete",
+      "termination_reason": "completed_generations",
+      "evaluation_count": 11464,
+      "search_wall_seconds": 5801.109038717113,
+      "evaluations_per_hour": 7114.225870356462,
+      "search_contract": "population 64; 200 update generations after the initial population; no early stopping; exact budget 11,464",
+      "convergence": [{"x":64,"y":58.5},{"x":121,"y":58.0},{"x":406,"y":57.0},{"x":463,"y":56.5},{"x":691,"y":56.0},{"x":748,"y":55.0},{"x":805,"y":54.5},{"x":1147,"y":54.0},{"x":1261,"y":53.0},{"x":1432,"y":52.5},{"x":1660,"y":51.5},{"x":2002,"y":51.0}],
+      "result_branch": "codex/result-stage1-ga-200-20260814",
+      "result_commit": "d9df1cc6a751cbb9f309168a37ba38e4d414bc42",
+      "result_tree": "b0009b09db4cd852fddfdcdb1cf45a66c87e2040",
+      "observation_rows": 11464,
+      "hash_check": "pass"
+    },
+    {
+      "id": "bo_rf",
+      "name": "BO-RF",
+      "status": "complete",
+      "termination_reason": "no_improvement_convergence",
+      "evaluation_count": 1072,
+      "search_wall_seconds": 838.9559541880153,
+      "evaluations_per_hour": 4600.003111885811,
+      "search_contract": "hard cap 10,000 unique evaluations; stop after 1,000 consecutive evaluations without incumbent improvement; RF 128 trees; candidate pool 2,048",
+      "convergence": [{"x":64,"y":58.5},{"x":65,"y":54.5},{"x":68,"y":51.5},{"x":72,"y":51.0}],
+      "result_branch": "codex/result-stage1-bo-rf-10k-20260815",
+      "result_commit": "ed6e60195267348996b5de0c1e9daf741c008498",
+      "result_tree": "f127c9b622802a73341b3bdb8e8bfc1822278284",
+      "observation_rows": 1072,
+      "hash_check": "pass"
+    }
+  ]
+}
