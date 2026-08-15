@@ -1,0 +1,68 @@
+已加载预设：mrpc-blb-stage2-rl（/hy-tmp/rfr_three_comparator_opt_task_20260811_v2/presets/mrpc-blb-stage2-rl.conf）
+启动配置：
+  搜索算法：普通强化学习（rl）（显式指定）
+  数据集：mrpc（显式指定）
+  模型类型：BERT Base（bert-base）（显式指定）
+  日志文件：blb_stage2_rl.log（显式指定）
+  批大小：64（显式指定）
+  模式目录：/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc（显式指定）
+  运行目录：/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0（显式指定）
+  Stage-1 回合数：51000（使用默认值）
+  Stage-1 准确度约束：0.001（显式指定）
+  Stage-2 指标约束百分比：0.001（显式指定）
+  Stage-2 稳定性约束 (stage2_stability_tolerance)：2.0（显式指定）
+  Stage-2 K 次噪声试验：3（显式指定）
+  Stage-2 探针子集大小：256（显式指定）
+  持久化根目录：/hy-tmp/comparator_stage1_ga_200_20260814/persistent（显式指定）
+  持久化目录：/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0（显式指定）
+  从头训练：是（显式指定）
+  Elastic GPU 模式：auto（使用默认值）
+  Elastic GPU 恢复间隔：60（使用默认值）
+  Elastic GPU 最大重启：8（使用默认值）
+  Stage-1 回合数：51000（使用默认值）
+  Stage-2 回合数：0（使用默认值）
+  Stage-2 RL 实现：blb_v3（使用默认值）
+  Stage-2 policy network：shared_gtrxl_small_v1（使用默认值）
+  BLB v3 action mask：否（使用默认值）
+  BLB v3 action mask 模式：none（使用默认值）
+  BLB v3 baseline logit 加成：0（使用默认值）
+  PPO 更新间隔：120（使用默认值）
+  BLB rollout 大小：120（显式指定）
+  BLB Rescale optimizer：in_process_real (Rescale_optimizer)（使用默认值）
+  BLB neighbor ramp：auto（使用默认值）
+  BLB neighbor max mutations：auto（使用默认值）
+  BLB neighbor max radius：auto（使用默认值）
+  BLB entropy coef：auto（使用默认值）
+  BLB entropy ramp episodes：auto（使用默认值）
+  BLB fast reward mode：否（使用默认值）
+  BLB online K trials：3（显式指定）
+  BLB terminal eval batch：4（显式指定）
+  BLB protected K1：否（使用默认值）
+  BLB protected K1 guard sigma：4.0（使用默认值）
+  BLB protected K1 audit：0.02（使用默认值）
+  BLB promotion validation trials：15（显式指定）
+  BLB final selection top N：5（显式指定）
+  BLB final selection validation trials：15（显式指定）
+  BLB min convergence episodes：90000（显式指定）
+  BLB convergence patience updates：100（显式指定）
+  BLB checkpoint 间隔：200（显式指定）
+  BLB 日志评估间隔：100（显式指定）
+  Stage-1 学习率：1e-4（使用默认值）
+  Stage-2 学习率：5e-5（显式指定）
+  被动 final_eval 预设：default（显式指定）
+  最终评估来源：搜索结果（search）（显式指定）
+  Stage-2 固定 GELU/Softmax 来源：Stage-1 搜索结果（stage1_result）（显式指定）
+  跳过 Stage-1 搜索：否（使用默认值）
+  跳过 Stage-2 搜索：是（使用默认值）
+  跳过最终评估：是（使用默认值）
+  仅运行最终评估：否（使用默认值）
+  CUDA_VISIBLE_DEVICES：0（显式指定）
+  实际执行命令（Command）：python3 scripts/elastic_gpu_supervisor.py --run-dir /hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0 --recovery-interval 60 --max-restarts 8 -- python rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir /hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0 --batch_size 64 --micro_batch_size 64 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules \[\"q_proj\"\,\ \"k_proj\"\,\ \"v_proj\"\,\ \"up_proj\"\,\ \"down_proj\"\] --stage1_rl_episodes 51000 --stage2_rl_episodes 0 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified false --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --stage2_fixed_config_source stage1_result --stage2_fixed_config_path '' --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_permutation_trials 0 --final_eval_cost_equivalent_trials 0 --final_eval_budget_equivalent_trials 0 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 1 --final_eval_preset default --skip_noise_rl true --skip_stage1_rl false --skip_final_eval true --final_eval_only false --resume_run_dir '' --stage1_rl_lr 1e-4 --stage2_rl_lr 5e-5 --stage1_accuracy_tolerance 0.001 --stage2_limit_tolerance 0.001 --stage2_stability_tolerance 2.0 --stage2_stability_multiplier 2.0 --stage2_communication_importance_ratio 1.0 --stage2_k_trials 3 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 120 --decoupled_layout false --stage1_run_id '' --comparator_smoke false --comparator_stage1_only true --blb_v3_seed 42 --blb_v3_policy_network_variant shared_gtrxl_small_v1 --blb_v3_search_backend coinn_ga --blb_v3_search_evaluation_budget 45664 --blb_v3_search_initial_design_size 64 --blb_v3_search_candidate_pool_size 2048 --blb_v3_search_population_size 64 --blb_v3_search_patience_generations 5 --blb_v3_search_mutation_max_coordinates 4 --blb_v3_search_rf_n_estimators 128 --blb_v3_search_rf_min_samples_leaf 2 --blb_v3_search_full_validation true --mrpc_reproducibility_fixture_path /hy-tmp/rfr_three_comparator_opt_task_20260811_v2/fixtures/reproducibility/mrpc_validation_v1.json --blb_v3_eval_interval 100 --blb_v3_save_interval 200 --blb_v3_calibrate_baseline_samples 8 --blb_v3_online_k_trials 3 --blb_v3_terminal_eval_batch_size 4 --blb_v3_promotion_validation_trials 15 --blb_v3_final_selection_top_n 5 --blb_v3_final_selection_validation_trials 15 --blb_v3_baseline_groups 5 --blb_v3_baseline_trials_per_group 3 --blb_v3_constraint_bootstrap_samples 4096 --blb_v3_online_constraint_probability 0.50 --blb_v3_promotion_constraint_probability 0.80 --blb_v3_final_constraint_probability 0.95 --blb_v3_min_convergence_episodes 90000 --blb_v3_convergence_patience_updates 100 --blb_v3_sequential_rl true --blb_v3_sequential_invalid_penalty 1.0 --blb_v3_sequential_cost_shaping_coeff 0.0 --blb_v3_sequential_fusion_shaping_coeff 0.0 --rl_algo ppo --blb_v3_substage_mode false --blb_v3_fusion_count_action true --blb_v3_decision_granularity layer --blb_v3_reward_design robust_constrained --blb_v3_truncation_backend binary --blb_v3_truncation_ring_bits 43 --blb_v3_truncation_source_fractional_bits 24 
+
+已在后台启动。
+  进程号（PID）：658160
+  查看日志：tail -f /hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/blb_stage2_rl.log
+  错误摘要：/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/error_summary.txt
+  LATEST_RUN_DIR：/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/LATEST_RUN_DIR
+  LATEST_PID：/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/LATEST_PID
+  优雅停止（Graceful Stop）：kill -INT 658160

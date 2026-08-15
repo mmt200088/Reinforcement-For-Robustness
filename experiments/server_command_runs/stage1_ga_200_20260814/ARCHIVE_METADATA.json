@@ -1,0 +1,9 @@
+{
+  "archive_type": "complete_ga_200_server_evidence",
+  "result_branch_base_commit": "9a217274b74ac96f37bee7f04a857c52807c2ac4",
+  "server_run_root": "/hy-tmp/comparator_stage1_ga_200_20260814",
+  "run_directory": "/hy-tmp/comparator_stage1_ga_200_20260814/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0",
+  "outer_orchestration_file_count": 13,
+  "observation_rows": 11464,
+  "note": "The raw directory is the byte-identical GA run directory; orchestration preserves every remaining file from the formal server root."
+}
