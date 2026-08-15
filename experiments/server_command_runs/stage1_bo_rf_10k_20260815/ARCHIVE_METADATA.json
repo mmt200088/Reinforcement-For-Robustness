@@ -1,0 +1,10 @@
+{
+  "archive_type": "bo_rf_stage1_10k_patience1000",
+  "source_commit": "7db45b9ac283a65020eff97e6b5742f871dff291",
+  "source_tree": "3760050af4dc31818b5e7e3d17e99c600671171b",
+  "server_run_root": "/hy-tmp/comparator_stage1_bo_rf_10k_20260815",
+  "original_file_count": 21,
+  "original_bytes": 2777972,
+  "observation_rows": 1072,
+  "note": "Byte-identical archive of the latest formal Stage-1 BO-RF run; the superseded earlier BO-RF run is intentionally excluded."
+}

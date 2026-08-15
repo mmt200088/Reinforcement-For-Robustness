@@ -1,0 +1,88 @@
+{
+  "backend": "bo_rf",
+  "comparator_smoke": false,
+  "completed_at": "2026-08-15T00:42:22",
+  "config": {
+    "acquisition_exploration": 0.05,
+    "bo_candidate_pool_size": 2048,
+    "bo_initial_design_size": 64,
+    "bo_no_improvement_patience": 1000,
+    "evaluation_cap": 10000,
+    "ga_crossover_probability": 0.0,
+    "ga_duplicate_attempts": 64,
+    "ga_elite_count": 7,
+    "ga_immigrant_fraction": 0.0,
+    "ga_mean_distance_threshold": 2.0,
+    "ga_mutation_max_layers": 4,
+    "ga_no_improvement_patience": 5,
+    "ga_population_size": 64,
+    "ga_require_full_generations": false,
+    "ga_stop_on_no_improvement": true,
+    "ga_tournament_size": 3,
+    "ga_unique_ratio_threshold": 0.6,
+    "ga_update_generations": 800,
+    "greedy_max_starts": 3,
+    "maximin_candidate_pool_size": 1024,
+    "rf_min_samples_leaf": 2,
+    "rf_n_estimators": 128,
+    "seed": 42
+  },
+  "constraints": {
+    "baseline_loss": 0.38393290979521616,
+    "baseline_metrics": [
+      0.8774509803921569,
+      0.87442208717397
+    ],
+    "loss_max": 0.3843168427050113,
+    "metric_mins": [
+      0.8765735294117647,
+      0.873547665086796
+    ],
+    "metric_names": [
+      "accuracy",
+      "weighted_f1"
+    ]
+  },
+  "dataset": "mrpc",
+  "evaluation_count": 1072,
+  "feasible": true,
+  "gelu_degree_categories": [
+    4,
+    2,
+    1
+  ],
+  "model": "textattack/bert-base-uncased-MRPC",
+  "observation_store": {
+    "append_fsync": true,
+    "committed_size": 1534250,
+    "format": "jsonl",
+    "observation_count": 1072,
+    "path": "observations.jsonl"
+  },
+  "optimizer_state_restored": false,
+  "preloaded_observation_count": 0,
+  "resume_semantics": "deterministic ordered observation replay reconstructs surrogate, population, RNG, and local-search state; no serialized optimizer state is restored",
+  "schema_version": "stage1_gelu_search_manifest_v1",
+  "search_wall_seconds": 838.9559541880153,
+  "selection_status": "feasible",
+  "softmax_degrees": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+  ],
+  "split": "validation_full",
+  "stage1_bound_into_stage2": false,
+  "stage2_backend": null,
+  "status": "complete",
+  "termination_reason": "no_improvement_convergence",
+  "unique_evaluation_count": 1072
+}
