@@ -286,6 +286,30 @@ class MRPCReproducibilityRuntimeTest(unittest.TestCase):
                 batch_size=32,
             )
 
+    def test_comparator_batch_matches_historical_stage1_rl(self):
+        module = _module()
+        model, tokenizer, collator = self._runtime(module)
+
+        self.assertEqual(module.MRPC_COMPARATOR_BATCH_SIZE, 16)
+        module.validate_mrpc_evaluation_setup(
+            model=model,
+            tokenizer=tokenizer,
+            collator=collator,
+            full_validation=[None] * module.MRPC_FULL_EXAMPLE_COUNT,
+            stability_probe=[None] * module.MRPC_PROBE_EXAMPLE_COUNT,
+            batch_size=16,
+        )
+
+        with self.assertRaisesRegex(module.MRPCReproducibilityError, "batch size"):
+            module.validate_mrpc_evaluation_setup(
+                model=model,
+                tokenizer=tokenizer,
+                collator=collator,
+                full_validation=[None] * module.MRPC_FULL_EXAMPLE_COUNT,
+                stability_probe=[None] * module.MRPC_PROBE_EXAMPLE_COUNT,
+                batch_size=64,
+            )
+
     def test_legacy_transformers_tokenizer_commit_metadata_is_optional(self):
         module = _module()
         model, tokenizer, collator = self._runtime(module)
