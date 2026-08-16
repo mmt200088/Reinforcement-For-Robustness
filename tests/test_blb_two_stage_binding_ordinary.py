@@ -586,6 +586,91 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertNotIn("materialization_context", function_source)
         self.assertNotIn("axis_materialization_authority", function_source)
 
+    def test_completed_resume_restores_stage2_inference_batch_size(self):
+        build = _load_function(
+            "blb_stage2_rl/sequential_runner.py",
+            "_build_completed_search_resume_result",
+            Any=object,
+            Mapping=dict,
+            np=np,
+            _selected_action_identity_payload=lambda _selected: {
+                "action_matrix": [[0, 0], [0, 0]],
+                "full_vector": [0, 0, 0, 0],
+                "final_config_fingerprint": "fixed-config",
+            },
+        )
+        stage1_binding = {"backend": "bo_rf", "selection_hash": "binding"}
+        invocation_contract = {
+            "search_backend": "bo_rf",
+            "profile": "mrpc",
+            "num_layers": 2,
+            "stage1_selection_binding": stage1_binding,
+            "scientific_parameters": {"stage2_inference_batch_size": 64},
+        }
+        selected = SimpleNamespace(
+            metadata={"pending_full_vector": [0, 0, 0, 0]},
+            action_matrix=((0, 0), (0, 0)),
+            limits=SimpleNamespace(
+                as_dict=lambda: {
+                    "loss_max": 1.0,
+                    "metric1_min": 0.5,
+                    "metric2_min": 0.5,
+                },
+            ),
+            as_dict=lambda: {"reward": 0.0},
+        )
+        inner_run = {
+            "manifest": {
+                "status": "smoke_only_complete",
+                "search_backend": "bo_rf",
+                "profile": "mrpc",
+                "num_layers": 2,
+                "fixed_gelu": [4, 4],
+                "fixed_softmax": [6, 6],
+                "stage1_backend": "bo_rf",
+                "stage1_bound_into_stage2": True,
+                "stage1_selection_binding": stage1_binding,
+                "strict_identity_context_hash": "strict-context",
+                "resume_contract": {
+                    "requested_manifest": {
+                        "stage2_invocation": invocation_contract,
+                    },
+                },
+            },
+            "selected": selected,
+            "result": SimpleNamespace(
+                evaluation_count=1,
+                as_dict=lambda: {"evaluation_count": 1},
+            ),
+            "strict_feasible": False,
+            "strict_validation": None,
+            "artifact_paths": {},
+        }
+        fusion_module = ModuleType("blb_stage2_rl.fusion_fixed_action")
+        fusion_module.build_fusion_fixed_config = lambda *_args, **_kwargs: None
+        action_module = ModuleType("blb_stage2_rl.layerwise_action")
+        action_module.describe_layerwise_action_matrix = lambda value: list(value)
+        runner_module = ModuleType("blb_stage2_rl.runner")
+        runner_module._build_legacy_compatible_best_noise_config = lambda _value: {}
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "blb_stage2_rl.fusion_fixed_action": fusion_module,
+                "blb_stage2_rl.layerwise_action": action_module,
+                "blb_stage2_rl.runner": runner_module,
+            },
+        ):
+            resumed = build(
+                runner=SimpleNamespace(evaluator=SimpleNamespace()),
+                fixed_gelu=np.asarray([4, 4]),
+                fixed_softmax=np.asarray([6, 6]),
+                invocation_contract=invocation_contract,
+                inner_run=inner_run,
+            )
+
+        self.assertEqual(resumed["stage2_inference_batch_size"], 64)
+
     def test_completed_resume_legacy_authority_helpers_are_removed(self):
         source = (ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
