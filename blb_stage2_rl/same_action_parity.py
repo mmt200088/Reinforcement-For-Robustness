@@ -21,6 +21,7 @@ from .search_baselines import (
     ActionMatrix,
     SearchEvaluation,
     SearchResult,
+    candidate_rank_key,
 )
 from .seed_utils import derive_layerwise_online_evaluation_seeds
 from .sequential_policy import step_to_mask_and_levels
@@ -317,6 +318,97 @@ def assert_same_action_projection_equal(
     )
 
 
+def _strict_neighbor_actions(action: ActionMatrix) -> list[ActionMatrix]:
+    candidates: list[ActionMatrix] = []
+    seen = {action}
+    for layer_index, row in enumerate(action):
+        for slot_index in range(2):
+            for alternate in (0, 1, 2):
+                if alternate == row[slot_index]:
+                    continue
+                owned = [list(item) for item in action]
+                owned[layer_index][slot_index] = alternate
+                candidate = tuple(tuple(item) for item in owned)
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
+                candidates.append(candidate)
+    return candidates
+
+
+def _strict_target_evidence(
+        strict_payload: Mapping[str, Any],
+        target_action: ActionMatrix,
+        ) -> tuple[int, list[str]]:
+    records = strict_payload.get("records")
+    if not isinstance(records, Sequence):
+        raise RuntimeError("same-action strict validation returned no records")
+    target_rows = [list(row) for row in target_action]
+    target_record = None
+    for record in records:
+        if not isinstance(record, Mapping):
+            continue
+        online = record.get("online_candidate")
+        if (
+                isinstance(online, Mapping)
+                and online.get("action_matrix") == target_rows
+        ):
+            target_record = record
+            break
+    if target_record is None:
+        raise RuntimeError(
+            "same-action strict validation did not evaluate the target action"
+        )
+    if target_record.get("strict_evaluated") is not True:
+        raise RuntimeError(
+            "same-action strict target was not evaluated"
+        )
+    strict_evaluation = target_record.get("strict_evaluation")
+    if not isinstance(strict_evaluation, Mapping):
+        raise RuntimeError(
+            "same-action strict target has no strict evaluation"
+        )
+    metadata = strict_evaluation.get("metadata")
+    if not isinstance(metadata, Mapping):
+        raise RuntimeError(
+            "same-action strict target has no strict metadata"
+        )
+    trial_count = int(metadata.get(
+        "strict_trial_count",
+        target_record.get("strict_trial_count", 0),
+    ))
+    violations = metadata.get("strict_violations")
+    families = (
+        violations.get("families")
+        if isinstance(violations, Mapping) else None
+    )
+    required_families = (
+        "joint",
+        "compute_only",
+        "communication_only",
+    )
+    if not isinstance(families, Mapping):
+        raise RuntimeError(
+            "same-action strict target has no family evidence"
+        )
+    expected_banks = ["A", "B", "C"]
+    for family_name in required_families:
+        family = families.get(family_name)
+        if (
+                not isinstance(family, Mapping)
+                or family.get("banks_run") != expected_banks
+        ):
+            raise RuntimeError(
+                "same-action strict target did not complete A/B/C for "
+                f"{family_name}"
+            )
+    if trial_count != 45:
+        raise RuntimeError(
+            "same-action strict target did not complete 45 trials"
+        )
+    return trial_count, expected_banks
+
+
 def run_same_action_parity_gate(
         *,
         layerwise_env: Any,
@@ -415,10 +507,40 @@ def run_same_action_parity_gate(
         "comparator_projection": comparator_projection,
     }
     if strict_validator is not None:
+        strict_candidates = [comparator]
+        strict_rejections: list[dict[str, Any]] = []
+        for neighbor_action in _strict_neighbor_actions(action):
+            if len(strict_candidates) >= 5:
+                break
+            candidate = evaluator(neighbor_action)
+            if (
+                    candidate.valid
+                    and candidate.inference_performed
+                    and candidate.metadata.get("materializable") is True
+                    and candidate.metadata.get("forward_ran") is True
+            ):
+                strict_candidates.append(candidate)
+            else:
+                strict_rejections.append({
+                    "action_matrix": [list(row) for row in neighbor_action],
+                    "valid": bool(candidate.valid),
+                    "inference_performed": bool(
+                        candidate.inference_performed
+                    ),
+                    "invalid_reason": candidate.metadata.get(
+                        "invalid_reason"
+                    ),
+                })
+        if len(strict_candidates) != 5:
+            raise RuntimeError(
+                "same-action strict gate could not produce five real eligible "
+                f"candidates: {len(strict_candidates)}"
+            )
+        strict_best = max(strict_candidates, key=candidate_rank_key)
         strict_result = SearchResult(
             algorithm="bo_rf",
-            best=comparator,
-            observations=(comparator,),
+            best=strict_best,
+            observations=tuple(strict_candidates),
             history=(),
             termination_reason="same_action_parity_gate",
         )
@@ -428,11 +550,25 @@ def run_same_action_parity_gate(
         selected = strict_payload.get("selected")
         if not isinstance(selected, Mapping):
             raise RuntimeError("same-action strict validation selected no candidate")
-        selected_action = selected.get("action_matrix")
-        if selected_action != [list(row) for row in action]:
+        strict_candidate_count = int(
+            strict_payload.get("strict_evaluated_candidate_count", -1)
+        )
+        if strict_candidate_count != 5:
             raise RuntimeError(
-                "same-action strict validation selected a different action"
+                "same-action strict validation did not evaluate five candidates"
             )
+        strict_trial_count, strict_banks = _strict_target_evidence(
+            strict_payload,
+            action,
+        )
+        evidence["strict_candidate_count"] = strict_candidate_count
+        evidence["strict_candidate_actions"] = [
+            [list(row) for row in item.action_matrix]
+            for item in strict_candidates
+        ]
+        evidence["strict_rejected_neighbors"] = strict_rejections
+        evidence["strict_target_trial_count"] = strict_trial_count
+        evidence["strict_target_banks_run"] = strict_banks
         evidence["strict_validation"] = to_jsonable(
             strict_payload,
             stringify_unknown=True,
