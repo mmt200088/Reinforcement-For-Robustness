@@ -1198,6 +1198,16 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             derive_layerwise_online_evaluation_seeds,
         )
 
+        class ParityEnv(_LayerwiseEnv):
+            max_step_dim = 2
+
+            @staticmethod
+            def current_spec():
+                return SimpleNamespace(
+                    fusion_num_options=2,
+                    k_num_levels=3,
+                )
+
         action = ((1, 2), (0, 1))
         base_seed = 17
         stream_index = 7
@@ -1209,7 +1219,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             )
         )
         evidence = run_same_action_parity_gate(
-            layerwise_env=_LayerwiseEnv(),
+            layerwise_env=ParityEnv(),
             robust_reference=_Reference(),
             action_matrix=action,
             base_seed=base_seed,
