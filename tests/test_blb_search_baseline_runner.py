@@ -41,7 +41,10 @@ from blb_stage2_rl.search_baselines import (
     candidate_rank_key,
     run_search,
 )
-from blb_stage2_rl.seed_utils import derive_probe_trial_seed
+from blb_stage2_rl.seed_utils import (
+    derive_layerwise_episode_probe_seed,
+    derive_probe_trial_seed,
+)
 
 
 class _Reference:
@@ -943,7 +946,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "fingerprint"):
                     evaluator(((0, 0), (0, 0)))
 
-    def test_action_keyed_probe_seed_is_order_independent(self):
+    def test_probe_seed_stream_matches_ppo_global_episode_indices(self):
         env = _SeededLayerwiseEnv()
         evaluator = LayerwiseRuntimeEvaluator(
             env=env,
@@ -958,18 +961,19 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         observed_b = evaluator(action_b)
         second_a = evaluator(action_a)
 
-        self.assertEqual(
-            first_a.metadata["trial_seeds"],
-            second_a.metadata["trial_seeds"],
-        )
-        self.assertEqual(
-            first_a.metadata["probe_seed"],
-            second_a.metadata["probe_seed"],
-        )
-        self.assertNotEqual(
-            first_a.metadata["trial_seeds"],
-            observed_b.metadata["trial_seeds"],
-        )
+        observed = (first_a, observed_b, second_a)
+        for index, result in enumerate(observed):
+            self.assertEqual(result.metadata["online_stream_index"], index)
+            self.assertEqual(
+                result.metadata["probe_seed"],
+                derive_layerwise_episode_probe_seed(
+                    17, index, trial_count=3,
+                ),
+            )
+        self.assertEqual(env.reset_seed, 19)
+        self.assertEqual(len({
+            result.metadata["probe_seed"] for result in observed
+        }), 3)
 
     def test_optimizer_invalid_candidate_returns_invalid_and_search_continues(self):
         env = _InvalidCandidateLayerwiseEnv()

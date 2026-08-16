@@ -275,25 +275,25 @@ class SearchEvaluation:
     def feasible(self) -> bool:
         return bool(
             self.valid
-            and all(value >= -_EPS for value in self.normalized_margins)
+            and all(value >= -_EPS for value in self.constraint_margins)
         )
 
     @cached_property
     def normalized_violation(self) -> float:
         return float(sum(
-            max(0.0, -value) for value in self.normalized_margins
+            max(0.0, -value) for value in self.constraint_margins
         ))
 
     @cached_property
     def failed_constraint_count(self) -> int:
         return int(sum(
-            value < -_EPS for value in self.normalized_margins
+            value < -_EPS for value in self.constraint_margins
         ))
 
     @cached_property
     def worst_normalized_violation(self) -> float:
         return float(max(
-            (max(0.0, -value) for value in self.normalized_margins),
+            (max(0.0, -value) for value in self.constraint_margins),
             default=0.0,
         ))
 
@@ -313,7 +313,9 @@ class SearchEvaluation:
 
     @cached_property
     def constraint_margins(self) -> tuple[float, ...]:
-        """Compatibility alias for the formal six point-constraint margins."""
+        """Return the six margins used by PPO's active online gate."""
+        if self.constraint_probabilities:
+            return self.confidence_margins
         return self.normalized_margins
 
     @cached_property
@@ -351,6 +353,11 @@ class SearchEvaluation:
             "constraint_margins": [
                 float(value) for value in self.constraint_margins
             ],
+            "constraint_margin_basis": (
+                "bootstrap_probability_minus_gate"
+                if self.constraint_probabilities
+                else "normalized_point_limit"
+            ),
             "confidence_margins": [
                 float(value) for value in self.confidence_margins
             ],
@@ -1389,7 +1396,7 @@ def _run_bo_rf(
             dtype=float,
         )
         targets = np.asarray(
-            [item.normalized_margins for item in observations],
+            [item.constraint_margins for item in observations],
             dtype=float,
         )
         model = factory(int(config.seed) + iteration)

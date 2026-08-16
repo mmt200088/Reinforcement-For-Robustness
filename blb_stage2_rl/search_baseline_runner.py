@@ -13,7 +13,7 @@ import numpy as np
 from json_utils import read_json_file, stable_json_hash, to_jsonable
 from jsonl_utils import read_jsonl, recover_jsonl_file
 
-from .candidate_store import CandidateStore, action_hash
+from .candidate_store import CandidateStore
 from .layerwise_action import describe_layerwise_action_matrix
 from .search_baselines import (
     CONSTRAINT_NAMES,
@@ -176,10 +176,6 @@ def _atomic_json(path: str, payload: Any) -> None:
 
 
 
-def _action_seed_key(action_matrix: ActionMatrix) -> int:
-    return int(action_hash(action_matrix)[:16], 16)
-
-
 def _invalid_metrics(limits: ConstraintLimits, runtime_metrics: Any) -> SearchMetrics:
     if runtime_metrics is not None:
         return _metrics_from_runtime(runtime_metrics)
@@ -229,15 +225,16 @@ class LayerwiseRuntimeEvaluator:
         clear = getattr(base_env, "clear_installed_blb", None)
         if callable(clear):
             clear()
-        action_seed_key = _action_seed_key(action_matrix)
-        action_base_seed = int(self.base_seed) ^ int(action_seed_key)
         probe_seed = derive_layerwise_episode_probe_seed(
-            action_base_seed,
-            0,
+            int(self.base_seed),
+            evaluation_index,
             trial_count=self.expected_trials,
         )
         try:
-            state = self.env.reset(seed=action_base_seed & 0x7FFFFFFFFFFFFFFF)
+            state = self.env.reset(
+                seed=(int(self.base_seed) + evaluation_index)
+                & 0x7FFFFFFFFFFFFFFF
+            )
             del state
             base_env.probe_noise_seed = probe_seed
             terminal_reward = 0.0
@@ -299,7 +296,7 @@ class LayerwiseRuntimeEvaluator:
                     "runtime_terminal_info": to_jsonable(
                         runtime_info, stringify_unknown=True,
                     ),
-                    "action_seed_key": int(action_seed_key),
+                    "online_stream_index": evaluation_index,
                     "probe_seed": int(probe_seed),
                     "installed_action": {
                         "layers": describe_layerwise_action_matrix(action_matrix),
@@ -427,7 +424,7 @@ class LayerwiseRuntimeEvaluator:
                 "model_uses_replan_config": True,
                 "materializable": True,
                 "final_config_fingerprint": final_config_fingerprint,
-                "action_seed_key": int(action_seed_key),
+                "online_stream_index": evaluation_index,
                 "probe_seed": int(probe_seed),
                 "trial_seeds": [int(value) for value in trial_seeds],
                 "trial_results": {

@@ -258,7 +258,7 @@ class ConstraintAndRankingTests(unittest.TestCase):
             with self.subTest(override=override):
                 self.assertFalse(_evaluation(((0, 0),), **override).feasible)
 
-    def test_point_failure_cannot_be_overridden_by_probability_confidence(self):
+    def test_online_probability_gate_matches_ppo_when_point_limit_disagrees(self):
         evaluation = _evaluation(
             ((1, 2),),
             loss=1.20,
@@ -266,11 +266,27 @@ class ConstraintAndRankingTests(unittest.TestCase):
             gate_probability=0.50,
         )
 
-        self.assertFalse(evaluation.feasible)
-        self.assertEqual(evaluation.failed_constraint_count, 1)
-        self.assertGreater(evaluation.normalized_violation, 0.0)
-        self.assertTrue(all(value > 0.0 for value in evaluation.confidence_margins))
-        self.assertEqual(evaluation.constraint_margins, evaluation.normalized_margins)
+        self.assertTrue(evaluation.feasible)
+        self.assertEqual(evaluation.failed_constraint_count, 0)
+        self.assertEqual(evaluation.normalized_violation, 0.0)
+        self.assertTrue(any(value < 0.0 for value in evaluation.normalized_margins))
+        self.assertEqual(evaluation.constraint_margins, evaluation.confidence_margins)
+        self.assertEqual(
+            evaluation.as_dict()["constraint_margin_basis"],
+            "bootstrap_probability_minus_gate",
+        )
+
+        probability_failure = _evaluation(
+            ((0, 0),),
+            probabilities=(0.49, 0.99, 0.99, 0.99, 0.99, 0.99),
+            gate_probability=0.50,
+        )
+        self.assertTrue(all(
+            value > 0.0 for value in probability_failure.normalized_margins
+        ))
+        self.assertFalse(probability_failure.feasible)
+        self.assertEqual(probability_failure.failed_constraint_count, 1)
+        self.assertGreater(probability_failure.normalized_violation, 0.0)
 
     def test_infeasible_rank_is_valid_then_fail_count_total_worst_resource(self):
         invalid = _probability_evaluation(
