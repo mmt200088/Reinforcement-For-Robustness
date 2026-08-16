@@ -36,6 +36,8 @@ cat <<'EOF'
   --budget N                 训练兼容路径/compare 的随机对照数量；独立 Paean final eval 需同时传 --random
   --eval-repeat N            训练兼容路径的重复次数；compare 等价于 --stage2-compare-repeats；被动 final_eval 由 preset 控制
   --batch-size N
+  --stage2-inference-batch-size N
+                             Stage-2 专用推理批大小；正式 comparator 固定为历史 RL 的 64
 
 高层动作：
   --mode stage1-only         【PPO run rl 必选其一】只运行 Stage-1 搜索，写 Parting Chapter/stage1/{combo}/
@@ -397,6 +399,7 @@ reject_formal_comparator_overrides(){
       --algorithm|--algorithm=*|--search-algorithm|--search-algorithm=*|\
       --mode|--mode=*|\
       --batch-size|--batch-size=*|\
+      --stage2-inference-batch-size|--stage2-inference-batch-size=*|\
       --random-seed|--random-seed=*|\
       --blb-v3-seed|--blb-v3-seed=*|\
       --blb-v3-search-rf-n-estimators|--blb-v3-search-rf-n-estimators=*|\
@@ -407,6 +410,21 @@ reject_formal_comparator_overrides(){
       --stage2-stability-multiplier|--stage2-stability-multiplier=*|\
       --stage2-communication-importance-ratio|--stage2-communication-importance-ratio=*|\
       --stage2-k-trials|--stage2-k-trials=*|\
+      --stage2-calibrate-baseline-samples|--stage2-calibrate-baseline-samples=*|\
+      --blb-v3-calibrate-baseline-samples|--blb-v3-calibrate-baseline-samples=*|\
+      --blb-v3-online-k-trials|--blb-v3-online-k-trials=*|\
+      --blb-v3-constraint-bootstrap-samples|--blb-v3-constraint-bootstrap-samples=*|\
+      --blb-v3-online-constraint-probability|--blb-v3-online-constraint-probability=*|\
+      --blb-v3-promotion-constraint-probability|--blb-v3-promotion-constraint-probability=*|\
+      --blb-v3-final-constraint-probability|--blb-v3-final-constraint-probability=*|\
+      --blb-v3-protected-k1-enabled|--blb-v3-protected-k1-enabled=*|\
+      --blb-v3-static-invalid-level-mask-enabled|--blb-v3-static-invalid-level-mask-enabled=*|\
+      --blb-v3-sequential-rl|--blb-v3-sequential-rl=*|\
+      --blb-v3-no-sequential-rl|\
+      --blb-v3-substage-mode|--blb-v3-substage-mode=*|\
+      --blb-v3-fusion-count-action|--blb-v3-fusion-count-action=*|\
+      --blb-v3-decision-granularity|--blb-v3-decision-granularity=*|\
+      --blb-v3-reward-design|--blb-v3-reward-design=*|\
       --blb-v3-truncation-backend|--blb-v3-truncation-backend=*|\
       --blb-v3-truncation-ring-bits|--blb-v3-truncation-ring-bits=*|\
       --blb-v3-truncation-source-fractional-bits|--blb-v3-truncation-source-fractional-bits=*|\
@@ -450,16 +468,16 @@ translate_subcommand_args(){
         rl|ppo) SUBCOMMAND_ARGS=(--search-algorithm rl "${args[@]:2}") ;;
         bo|bo-rf|bo_rf|bayesian)
           reject_formal_comparator_overrides "${args[@]:2}"
-          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend bo_rf --blb-v3-search-evaluation-budget 50000 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --stage2-inference-batch-size "$STAGE2_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 1.2 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --stage2-calibrate-baseline-samples 8 --blb-v3-online-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-constraint-bootstrap-samples 4096 --blb-v3-online-constraint-probability 0.50 --blb-v3-promotion-constraint-probability 0.80 --blb-v3-final-constraint-probability 0.95 --blb-v3-protected-k1-enabled false --blb-v3-static-invalid-level-mask-enabled false --blb-v3-sequential-rl true --blb-v3-substage-mode false --blb-v3-fusion-count-action true --blb-v3-decision-granularity layer --blb-v3-reward-design robust_constrained --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend bo_rf --blb-v3-search-evaluation-budget 50000 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
           ;;
         ga|genetic) SUBCOMMAND_ARGS=(--search-algorithm ga "${args[@]:2}") ;;
         coinn|coinn-ga|coinn_ga)
           reject_formal_comparator_overrides "${args[@]:2}"
-          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend coinn_ga --blb-v3-search-evaluation-budget 45664 --blb-v3-search-patience-generations 5 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --stage2-inference-batch-size "$STAGE2_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 1.2 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --stage2-calibrate-baseline-samples 8 --blb-v3-online-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-constraint-bootstrap-samples 4096 --blb-v3-online-constraint-probability 0.50 --blb-v3-promotion-constraint-probability 0.80 --blb-v3-final-constraint-probability 0.95 --blb-v3-protected-k1-enabled false --blb-v3-static-invalid-level-mask-enabled false --blb-v3-sequential-rl true --blb-v3-substage-mode false --blb-v3-fusion-count-action true --blb-v3-decision-granularity layer --blb-v3-reward-design robust_constrained --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend coinn_ga --blb-v3-search-evaluation-budget 45664 --blb-v3-search-patience-generations 5 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
           ;;
         greedy|greedy-search|greedy_search)
           reject_formal_comparator_overrides "${args[@]:2}"
-          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend greedy --blb-v3-search-evaluation-budget 2176782336 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --stage2-inference-batch-size "$STAGE2_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 1.2 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --stage2-calibrate-baseline-samples 8 --blb-v3-online-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-constraint-bootstrap-samples 4096 --blb-v3-online-constraint-probability 0.50 --blb-v3-promotion-constraint-probability 0.80 --blb-v3-final-constraint-probability 0.95 --blb-v3-protected-k1-enabled false --blb-v3-static-invalid-level-mask-enabled false --blb-v3-sequential-rl true --blb-v3-substage-mode false --blb-v3-fusion-count-action true --blb-v3-decision-granularity layer --blb-v3-reward-design robust_constrained --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend greedy --blb-v3-search-evaluation-budget 2176782336 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
           ;;
         *) err "run 子命令只支持 rl / ga / bo_rf / greedy / coinn_ga，当前为：$sub" ;;
       esac
@@ -520,6 +538,8 @@ MODEL_TYPE="bert-base"; S_MODEL_TYPE="false"
 BATCH_SIZE="16"; S_BATCH_SIZE="false"
 STAGE1_RL_DEFAULT_BATCH_SIZE="128"
 STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE="16"
+STAGE2_RL_ALIGNMENT_BATCH_SIZE="64"
+STAGE2_INFERENCE_BATCH_SIZE=""; S_STAGE2_INFERENCE_BATCH_SIZE="false"
 STAGE1_EPISODES="51000"; S_STAGE1_EPISODES="false"
 STAGE2_EPISODES="0"; S_STAGE2_EPISODES="false"
 STAGE1_ENTROPY_STOP_THRESHOLD=""; S_STAGE1_ENTROPY_STOP_THRESHOLD="false"
@@ -765,6 +785,7 @@ while [ "$#" -gt 0 ]; do
     --logfile) needv "$@"; LOGFILE="$2"; S_LOGFILE="true"; shift 2 ;;
     --model-type) needv "$@"; MODEL_TYPE="$2"; S_MODEL_TYPE="true"; shift 2 ;;
     --batch-size) needv "$@"; BATCH_SIZE="$2"; S_BATCH_SIZE="true"; shift 2 ;;
+    --stage2-inference-batch-size) needv "$@"; STAGE2_INFERENCE_BATCH_SIZE="$2"; S_STAGE2_INFERENCE_BATCH_SIZE="true"; shift 2 ;;
     --mode) needv "$@"; RUN_MODE="$2"; S_RUN_MODE="true"; shift 2 ;;
     --episodes)
       needv "$@"
@@ -1149,6 +1170,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
       [ "$BLB_V3_FINAL_SELECTION_TOP_N" = "5" ] || err "正式两阶段 comparator 必须严格复核 top 5 候选。"
     fi
     [ "$BATCH_SIZE" = "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" ] || err "正式 MRPC comparator 必须使用历史 Stage-1 RL 对齐 batch size ${STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE}。"
+    [ "$STAGE2_INFERENCE_BATCH_SIZE" = "$STAGE2_RL_ALIGNMENT_BATCH_SIZE" ] || err "正式 MRPC comparator 的 Stage-2 必须使用历史 Stage-2 RL 对齐 batch size ${STAGE2_RL_ALIGNMENT_BATCH_SIZE}。"
     DECOUPLED_LAYOUT="false"
   fi
 fi
@@ -1195,6 +1217,8 @@ if [ "$S_STAGE2_GENERATIONS" = "false" ]; then
 fi
 
 is_pos_int "$BATCH_SIZE" || err "--batch-size 必须是正整数，当前为：$BATCH_SIZE"
+[ -z "$STAGE2_INFERENCE_BATCH_SIZE" ] || is_pos_int "$STAGE2_INFERENCE_BATCH_SIZE" || err "--stage2-inference-batch-size 必须是正整数，当前为：$STAGE2_INFERENCE_BATCH_SIZE"
+STAGE2_EFFECTIVE_INFERENCE_BATCH_SIZE="${STAGE2_INFERENCE_BATCH_SIZE:-$BATCH_SIZE}"
 case "$ELASTIC_GPU_MODE" in
   auto|off) ;;
   *) err "--elastic-gpu-mode 只支持 auto 或 off，当前为：$ELASTIC_GPU_MODE" ;;
@@ -1930,6 +1954,8 @@ METAEOF
   "blb_v3_policy_network_variant": "$BLB_V3_POLICY_NETWORK_VARIANT",
   "stage2_k_trials": $STAGE2_K_TRIALS,
   "stage2_probe_size": $STAGE2_PROBE_SIZE,
+  "stage1_inference_batch_size": $BATCH_SIZE,
+  "stage2_inference_batch_size": $STAGE2_EFFECTIVE_INFERENCE_BATCH_SIZE,
   "created_at": "$(date -Iseconds)",
   "last_updated_at": "$(date -Iseconds)",
   "run_count": 1,
@@ -2024,6 +2050,7 @@ else
     [ "$SKIP_STAGE1_SEARCH" = "true" ] && RL_STAGE1_EPISODES_SPECIFIED="false"
     [ "$SKIP_NOISE_SEARCH" = "true" ] && RL_STAGE2_EPISODES_SPECIFIED="false"
     CMD=(python rl_tune.py --base_model "$BASE_MODEL" --data_path "$DATA_PATH" --output_dir "$RUN_ROOT" --batch_size "$BATCH_SIZE" --micro_batch_size "$BATCH_SIZE" --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules "[\"q_proj\", \"k_proj\", \"v_proj\", \"up_proj\", \"down_proj\"]" --stage1_rl_episodes "$STAGE1_EPISODES" --stage2_rl_episodes "$STAGE2_EPISODES" --stage1_rl_episodes_specified "$RL_STAGE1_EPISODES_SPECIFIED" --stage2_rl_episodes_specified "$RL_STAGE2_EPISODES_SPECIFIED" --ppo_update_interval "$PPO_UPDATE_INTERVAL_VAL" --use_ist --final_eval_config_source "$FINAL_EVAL_SOURCE" --final_eval_config_path "$FINAL_EVAL_CONFIG" --manual_stage1_gelu "$MANUAL_STAGE1_GELU" --manual_stage1_softmax "$MANUAL_STAGE1_SOFTMAX" --manual_stage2_noise "$MANUAL_STAGE2_NOISE" --stage2_fixed_config_source "$STAGE2_FIXED_CONFIG_SOURCE" --stage2_fixed_config_path "$STAGE2_FIXED_CONFIG" --stage2_manual_gelu "$STAGE2_MANUAL_GELU" --stage2_manual_softmax "$STAGE2_MANUAL_SOFTMAX" --final_eval_random_seed "$RANDOM_SEED" --final_eval_permutation_trials "$PERM_TRIALS" --final_eval_cost_equivalent_trials "$COST_TRIALS" --final_eval_budget_equivalent_trials "$BUDGET_TRIALS" --final_eval_stage1_budget_trials "$STAGE1_BUDGET_TRIALS" --final_eval_stage2_budget_trials "$STAGE2_BUDGET_TRIALS" --final_eval_repeat_n "$FINAL_EVAL_REPEAT" --final_eval_preset "$FINAL_EVAL_PRESET" --skip_noise_rl "$SKIP_NOISE_SEARCH" --skip_stage1_rl "$SKIP_STAGE1_SEARCH" --skip_final_eval "$SKIP_FINAL_EVAL" --final_eval_only "$FINAL_EVAL_ONLY" --resume_run_dir "$RESUME_FROM" --stage1_rl_lr "$STAGE1_LR" --stage2_rl_lr "$STAGE2_LR" --stage1_accuracy_tolerance "$STAGE1_ACCURACY_TOLERANCE" --stage2_limit_tolerance "$STAGE2_LIMIT_TOLERANCE" --stage2_stability_tolerance "$STAGE2_STABILITY_TOLERANCE" --stage2_stability_multiplier "$STAGE2_STABILITY_MULTIPLIER" --stage2_communication_importance_ratio "$STAGE2_COMMUNICATION_IMPORTANCE_RATIO" --stage2_k_trials "$STAGE2_K_TRIALS" --stage2_probe_size "$STAGE2_PROBE_SIZE" --stage2_rl_variant "$STAGE2_RL_VARIANT" --blb_v3_inproc_rescale_optimizer_root "$BLB_V3_INPROC_RESCALE_OPTIMIZER_ROOT" --blb_v3_rollout_size "$BLB_V3_ROLLOUT_SIZE")
+    [ -z "$STAGE2_INFERENCE_BATCH_SIZE" ] || CMD+=(--stage2_inference_batch_size "$STAGE2_INFERENCE_BATCH_SIZE")
     # 解耦布局开关 + stage2-only 的 stage1 record 选择（仅 rl）。
     CMD+=(--decoupled_layout "$DECOUPLED_LAYOUT" --stage1_run_id "$STAGE1_RUN_ID")
     CMD+=(--comparator_smoke "$COMPARATOR_SMOKE")
@@ -2170,6 +2197,7 @@ show "数据集" "$DATASET" "$S_DATASET"
 show "模型类型" "$(modelzh "$MODEL_TYPE")" "$S_MODEL_TYPE"
 show "日志文件" "$LOGFILE_BASENAME" "$S_LOGFILE"
 show "批大小" "$BATCH_SIZE" "$S_BATCH_SIZE"
+[ -z "$STAGE2_INFERENCE_BATCH_SIZE" ] || show "Stage-2 推理批大小" "$STAGE2_INFERENCE_BATCH_SIZE" "$S_STAGE2_INFERENCE_BATCH_SIZE"
 show "模式目录" "$RUN_GROUP_DIR" "true"
 show "运行目录" "$RUN_ROOT" "true"
 if [ "$SEARCH_ALGORITHM" = "rl" ] || [ "$SEARCH_ALGORITHM" = "ga" ] || [ "$SEARCH_ALGORITHM" = "greedy" ]; then

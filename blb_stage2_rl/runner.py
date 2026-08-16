@@ -140,6 +140,18 @@ def resolve_blb_persistence_dir(evaluator) -> str:
     return out
 
 
+def _effective_stage2_inference_batch_size(ev, train_cfg) -> int:
+    value = getattr(train_cfg, "stage2_inference_batch_size", None)
+    if value in (None, ""):
+        value = getattr(ev, "stage2_inference_batch_size", None)
+    if value in (None, ""):
+        value = getattr(ev, "batch_size", 1)
+    value = int(value)
+    if value <= 0:
+        raise ValueError("stage2_inference_batch_size must be positive")
+    return value
+
+
 def _effective_probe_batch_count(ev, train_cfg) -> int:
     """Return enough mini-batches to cover stage2_probe_size unless overridden."""
     explicit = getattr(ev, "blb_v3_probe_batch_count", None)
@@ -151,7 +163,7 @@ def _effective_probe_batch_count(ev, train_cfg) -> int:
         except Exception:
             pass
     probe_size = max(1, int(getattr(ev, "stage2_probe_size", 256)))
-    batch_size = max(1, int(getattr(ev, "batch_size", 1)))
+    batch_size = _effective_stage2_inference_batch_size(ev, train_cfg)
     return max(1, int(math.ceil(float(probe_size) / float(batch_size))))
 
 
@@ -633,6 +645,14 @@ class BLBStage2TrainConfig:
         if self.search_evaluation_budget < 0:
             raise ValueError("search_evaluation_budget must be nonnegative")
         self.search_full_validation = bool(self.search_full_validation)
+        if self.stage2_inference_batch_size not in (None, ""):
+            self.stage2_inference_batch_size = int(
+                self.stage2_inference_batch_size
+            )
+            if self.stage2_inference_batch_size <= 0:
+                raise ValueError(
+                    "stage2_inference_batch_size must be positive"
+                )
         self.validate_decision_granularity()
         self.validate_reward_design()
         self.validate_policy_network_variant()
@@ -711,6 +731,7 @@ class BLBStage2TrainConfig:
     # concentrated on promising actions rather than every PPO episode.
     num_trials_per_step: int = 3
     probe_batch_count: int = 4
+    stage2_inference_batch_size: Optional[int] = None
     # Keep the historical deterministic simulator as the default. The
     # ring-aware stochastic backend is enabled only by an explicit flag.
     truncation_backend: str = "binary"
@@ -914,6 +935,7 @@ class BLBStage2RLRunner:
 
         # ---------- 0) 解析配置 ----------
         train_cfg = self._build_train_config_from_evaluator(ev)
+        ev.activate_stage2_inference_batch_size()
         # 2026-05-15：per-block sequential RL is the default Stage-2 path.
         # Dispatch to the sequential runner before the heavy single-shot setup
         # so the two paths stay genuinely independent. The single-shot loop
@@ -2846,6 +2868,11 @@ class BLBStage2RLRunner:
             cfg.num_trials_per_step = int(getattr(ev, "stage2_k_trials", cfg.num_trials_per_step))
         except Exception:
             pass
+        stage2_inference_batch_size = getattr(
+            ev, "stage2_inference_batch_size", None,
+        )
+        if stage2_inference_batch_size not in (None, ""):
+            cfg.stage2_inference_batch_size = int(stage2_inference_batch_size)
         cfg.truncation_backend = str(
             getattr(ev, "blb_v3_truncation_backend", cfg.truncation_backend)
             or cfg.truncation_backend
@@ -2859,6 +2886,9 @@ class BLBStage2RLRunner:
                 "blb_v3_truncation_source_fractional_bits",
                 cfg.truncation_source_fractional_bits,
             )
+        )
+        cfg.stage2_inference_batch_size = (
+            _effective_stage2_inference_batch_size(ev, cfg)
         )
         # 4b) reward_devices: --blb-v3-reward-devices "0,1" arrives as a string
         # on the evaluator. Parse here so train_cfg holds a List[int]; empty /
@@ -3337,11 +3367,14 @@ class BLBStage2RLRunner:
                 return []
             probe_subset = ds
 
+        stage2_batch_size = _effective_stage2_inference_batch_size(
+            ev, train_cfg,
+        )
         # 构造 dataloader
         from torch.utils.data import DataLoader
         loader = DataLoader(
             probe_subset,
-            batch_size=int(ev.batch_size),
+            batch_size=stage2_batch_size,
             shuffle=False,
             drop_last=False,
             collate_fn=ev.data_collator,
@@ -3350,7 +3383,7 @@ class BLBStage2RLRunner:
         max_count = (
             _effective_probe_batch_count(ev, train_cfg)
             if probe_size_override is None
-            else int(math.ceil(float(probe_size) / max(1, int(ev.batch_size))))
+            else int(math.ceil(float(probe_size) / stage2_batch_size))
         )
         out: List[ProbeBatch] = []
         for batch in loader:
@@ -3359,7 +3392,11 @@ class BLBStage2RLRunner:
                 break
         return out
 
-    def _build_validation_full_batches(self, ev) -> List[ProbeBatch]:
+    def _build_validation_full_batches(
+            self,
+            ev,
+            train_cfg: BLBStage2TrainConfig,
+            ) -> List[ProbeBatch]:
         """Materialize every example from the authoritative validation split."""
         dataset_splits = getattr(ev, "dataset_splits", None)
         if not isinstance(dataset_splits, Mapping):
@@ -3378,7 +3415,7 @@ class BLBStage2RLRunner:
 
         loader = DataLoader(
             validation_full,
-            batch_size=int(ev.batch_size),
+            batch_size=_effective_stage2_inference_batch_size(ev, train_cfg),
             shuffle=False,
             drop_last=False,
             collate_fn=ev.data_collator,

@@ -81,6 +81,20 @@ class SearchBackendWiringTests(unittest.TestCase):
             "two-stage comparator requires full Stage-2 strict ",
             evaluator_source,
         )
+        self.assertIn(
+            "two-stage comparators require the Stage-2 RL layerwise ",
+            evaluator_source,
+        )
+        self.assertIn(
+            "two-stage comparators require the Stage-2 RL baseline, ",
+            evaluator_source,
+        )
+        self.assertIn(
+            "two-stage comparator requires the historical Stage-2 RL ",
+            evaluator_source,
+        )
+        self.assertIn("float(self.stage2_stability_tolerance)", evaluator_source)
+        self.assertIn("int(self.stage2_probe_size)", evaluator_source)
 
     def test_outer_two_stage_result_is_plain_and_atomic(self):
         source = (ROOT / "layer_importance_evaluator.py").read_text(

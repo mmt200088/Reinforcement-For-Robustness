@@ -368,6 +368,25 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                     argv[argv.index("--stage2_inference_batch_size") + 1],
                     "64",
                 )
+                expected = {
+                    "--stage2_stability_tolerance": "1.2",
+                    "--stage2_stability_multiplier": "2.0",
+                    "--blb_v3_calibrate_baseline_samples": "8",
+                    "--blb_v3_online_k_trials": "3",
+                    "--blb_v3_constraint_bootstrap_samples": "4096",
+                    "--blb_v3_online_constraint_probability": "0.50",
+                    "--blb_v3_promotion_constraint_probability": "0.80",
+                    "--blb_v3_final_constraint_probability": "0.95",
+                    "--blb_v3_protected_k1_enabled": "false",
+                    "--blb_v3_static_invalid_level_mask_enabled": "false",
+                    "--blb_v3_sequential_rl": "true",
+                    "--blb_v3_substage_mode": "false",
+                    "--blb_v3_fusion_count_action": "true",
+                    "--blb_v3_decision_granularity": "layer",
+                    "--blb_v3_reward_design": "robust_constrained",
+                }
+                for flag, value in expected.items():
+                    self.assertEqual(argv[argv.index(flag) + 1], value)
 
     def test_comparator_aliases_pin_final_eval_and_stage2_seeds(self):
         for alias in ("bo_rf", "greedy", "coinn_ga"):
@@ -562,6 +581,23 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             ("greedy", ("--batch-size=8",)),
             ("coinn_ga", ("--stage2-inference-batch-size", "16")),
             ("bo_rf", ("--stage2-inference-batch-size=16",)),
+            ("bo_rf", ("--blb-v3-decision-granularity", "block")),
+            ("greedy", ("--blb-v3-reward-design=stage1_aligned",)),
+            ("coinn_ga", ("--blb-v3-fusion-count-action", "false")),
+            ("bo_rf", ("--blb-v3-sequential-rl=false",)),
+            ("greedy", ("--blb-v3-no-sequential-rl",)),
+            ("coinn_ga", ("--blb-v3-substage-mode", "true")),
+            ("bo_rf", ("--stage2-calibrate-baseline-samples", "7")),
+            ("greedy", ("--blb-v3-online-k-trials=4",)),
+            ("coinn_ga", ("--blb-v3-constraint-bootstrap-samples", "8")),
+            ("bo_rf", ("--blb-v3-online-constraint-probability=0.4",)),
+            ("greedy", ("--blb-v3-promotion-constraint-probability", "0.7")),
+            ("coinn_ga", ("--blb-v3-final-constraint-probability=0.9",)),
+            ("bo_rf", ("--blb-v3-protected-k1-enabled", "true")),
+            (
+                "greedy",
+                ("--blb-v3-static-invalid-level-mask-enabled=true",),
+            ),
             (
                 "greedy",
                 ("--mrpc-reproducibility-fixture-path", "other.json"),

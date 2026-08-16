@@ -116,6 +116,12 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   artifacts pre-dating this contract remain historical evidence but are not
   metric-aligned comparison results. Do not change this batch without also
   rerunning the RL reference under the new batch contract.
+- Stage-2 formal comparator batch contract, added 2026-08-16: the same
+  two-stage comparator process keeps Stage-1 at batch `16`, then rebuilds all
+  evaluator loaders and clears deterministic Stage-1 caches before Stage-2 at
+  batch `64`. This matches the authoritative BERT-base MRPC Stage-2 RL launch
+  and is part of comparator invocation, candidate identity, and resume state.
+  Do not reuse Stage-1 batch-16 metrics or caches as Stage-2 evidence.
 - Runtime-optimization completion audit, updated 2026-07-14: source `8308bbd`
   was verified in the clean five-RTX-5090 checkout. The six-stage audit found
   all 30 expected flow files and every required artifact-evidence class. The

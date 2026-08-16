@@ -85,6 +85,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             evaluator = SimpleNamespace(
                 model_type="bert-base",
                 total_layers=2,
+                batch_size=16,
                 stage1_comparator_selection_binding=binding,
             )
             runner = SimpleNamespace(evaluator=evaluator)
@@ -108,7 +109,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 )
 
         load_completed.assert_called_once_with(os.path.dirname(result_path))
-        self.assertEqual(invocation["schema_version"], "stage2_search_invocation_v2")
+        self.assertEqual(invocation["schema_version"], "stage2_search_invocation_v3")
         self.assertEqual(invocation["search_backend"], "bo_rf")
         self.assertEqual(invocation["seed"], 1729)
         self.assertEqual(invocation["num_layers"], 2)
@@ -119,6 +120,22 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertEqual(
             invocation["scientific_parameters"]["stage2_inference_batch_size"],
             64,
+        )
+        self.assertEqual(
+            invocation["scientific_parameters"]["stage1_inference_batch_size"],
+            16,
+        )
+        self.assertEqual(
+            invocation["scientific_parameters"]["stage2_probe_size"],
+            256,
+        )
+        self.assertEqual(
+            invocation["scientific_parameters"]["stage2_stability_tolerance"],
+            1.2,
+        )
+        self.assertEqual(
+            invocation["scientific_parameters"]["truncation_backend"],
+            "binary",
         )
         for removed in (
             "invocation_hash",
@@ -291,7 +308,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             expected_binding,
         )
         self.assertEqual(comparator_context["stage2_inference_batch_size"], 64)
-        self.assertEqual(ppo_context["stage2_inference_batch_size"], 64)
+        self.assertNotIn("stage2_inference_batch_size", ppo_context)
         self.assertNotIn("stage1_selection_binding", ppo_context)
         for removed in (
             "stage1_selection_provenance",
@@ -653,7 +670,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             Mapping=dict,
             os=os,
             _build_search_invocation_contract=lambda **_kwargs: {
-                "schema_version": "stage2_search_invocation_v2",
+                "schema_version": "stage2_search_invocation_v3",
                 "search_backend": "bo_rf",
             },
         )
@@ -661,7 +678,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             output_dir = os.path.join(tmpdir, "search_bo_rf")
             os.makedirs(output_dir)
             invocation = {
-                "schema_version": "stage2_search_invocation_v2",
+                "schema_version": "stage2_search_invocation_v3",
                 "search_backend": "bo_rf",
             }
             resume_contract = {

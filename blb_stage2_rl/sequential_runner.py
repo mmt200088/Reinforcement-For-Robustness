@@ -3544,7 +3544,9 @@ def _build_authoritative_validation_env(
         log: Callable[[str], None],
         ) -> Tuple[Any, int]:
     """Clone the probe shell while preserving the canonical primary bridge."""
-    validation_full_batches = runner._build_validation_full_batches(ev)
+    validation_full_batches = runner._build_validation_full_batches(
+        ev, train_cfg,
+    )
     validation_full = ev.dataset_splits.get("validation_full")
     example_count = len(validation_full)
 
@@ -3855,6 +3857,16 @@ def _build_layerwise_candidate_identity_context(
                 "strict candidate identity does not match Stage-1 binding"
             )
     num_layers = len(stage1_degrees["gelu"])
+    stage2_inference_batch_size = int(
+        getattr(train_cfg, "stage2_inference_batch_size", None)
+        or getattr(evaluator, "stage2_inference_batch_size", None)
+        or getattr(evaluator, "batch_size", 1)
+    )
+    comparator_batch_identity = (
+        {"stage2_inference_batch_size": stage2_inference_batch_size}
+        if stage1_binding_payload is not None else {}
+    )
+
     def reference_payload(reference: Any) -> Dict[str, Any]:
         return {
             "precision_tolerance": float(reference.precision_tolerance),
@@ -3872,6 +3884,7 @@ def _build_layerwise_candidate_identity_context(
         }
 
     threshold_policy = {
+        **comparator_batch_identity,
         "precision_tolerance": float(robust_reference.precision_tolerance),
         "stability_multiplier": float(robust_reference.stability_multiplier),
         "bootstrap_seed": int(robust_reference.bootstrap_seed),
@@ -3939,6 +3952,7 @@ def _build_layerwise_candidate_identity_context(
         LAYERWISE_COST_MODEL_REVISION,
         {
             "algorithm_contract_hash": str(algorithm_contract_hash),
+            **comparator_batch_identity,
             **(
                 {"stage1_selection_binding": stage1_binding_payload}
                 if stage1_binding_payload is not None else {}
@@ -4208,9 +4222,13 @@ def _run_layerwise_training_branch(
         communication_ratio = float(
             layerwise_env.communication_importance_ratio
         )
+        stage2_inference_batch_size = int(
+            getattr(train_cfg, "stage2_inference_batch_size")
+        )
         search_contract = {
-            "schema_version": "stage2_search_baseline_contract_v1",
+            "schema_version": "stage2_search_baseline_contract_v2",
             "search_backend": search_backend,
+            "stage2_inference_batch_size": stage2_inference_batch_size,
             "action_space_version": layerwise_action_space_version(
                 layerwise_horizon
             ),
@@ -4291,6 +4309,7 @@ def _run_layerwise_training_branch(
             "fixed_label": str(fixed_label),
             "fixed_source": str(fixed_source),
             "stage2_invocation": invocation_contract,
+            "stage2_inference_batch_size": stage2_inference_batch_size,
             "stage1_backend": search_backend,
             "stage1_bound_into_stage2": bool(
                 str(fixed_source) == f"stage1_{search_backend}_result"
@@ -4299,8 +4318,19 @@ def _run_layerwise_training_branch(
             "online_fidelity": {
                 "split": "validation_full_stratified_probe",
                 "example_count": int(online_probe_example_count),
+                "batch_size": stage2_inference_batch_size,
                 "trials_per_action": int(
                     base_env.env_cfg.num_trials_per_step
+                ),
+            },
+            "authoritative_fidelity": {
+                "split": "validation_full",
+                "example_count": int(
+                    authoritative_validation_example_count
+                ),
+                "batch_size": stage2_inference_batch_size,
+                "validation_banks": (
+                    authoritative_validation_banks.contract_payload()
                 ),
             },
             "constraint_limits": {
@@ -4485,6 +4515,7 @@ def _run_layerwise_training_branch(
                     "smoke_only_no_validation_full_gate"
                 ),
                 "strict_feasible": False,
+                "stage2_inference_batch_size": stage2_inference_batch_size,
                 "selected_action_identity": selected_action_identity,
                 "search_backend": search_backend,
                 "stage1_consumed_binding": stage1_selection_binding,
@@ -4568,6 +4599,7 @@ def _run_layerwise_training_branch(
             "status": completion_status,
             "scientific_status": scientific_status,
             "strict_feasible": strict_feasible,
+            "stage2_inference_batch_size": stage2_inference_batch_size,
             "selected_action_identity": selected_action_identity,
             "search_backend": search_backend,
             "stage1_consumed_binding": stage1_selection_binding,
@@ -6594,10 +6626,41 @@ def _build_search_invocation_contract(
             ("final_constraint_probability", 0.95),
             ("stage2_stability_multiplier", 2.0),
             ("communication_importance_ratio", 1.0),
+            (
+                "stage1_inference_batch_size",
+                getattr(evaluator, "batch_size", 1),
+            ),
+            (
+                "stage2_inference_batch_size",
+                getattr(evaluator, "batch_size", 1),
+            ),
+            (
+                "stage2_probe_size",
+                getattr(evaluator, "stage2_probe_size", 256),
+            ),
+            (
+                "stage1_accuracy_tolerance",
+                getattr(evaluator, "error_threshold", 0.001),
+            ),
+            (
+                "stage2_limit_tolerance",
+                getattr(evaluator, "stage2_limit_tolerance", 0.001),
+            ),
+            (
+                "stage2_stability_tolerance",
+                getattr(evaluator, "stage2_stability_tolerance", 1.2),
+            ),
+            ("calibrate_baseline_samples", 8),
+            ("truncation_backend", "binary"),
+            ("truncation_ring_bits", 43),
+            ("truncation_source_fractional_bits", 24),
+            ("decision_granularity", "layer"),
+            ("reward_design", "robust_constrained"),
+            ("fusion_count_action", True),
         )
     }
     return to_jsonable({
-        "schema_version": "stage2_search_invocation_v2",
+        "schema_version": "stage2_search_invocation_v3",
         "search_backend": backend,
         "profile": str(getattr(train_cfg, "profile", "")),
         "model_type": str(getattr(evaluator, "model_type", "") or ""),

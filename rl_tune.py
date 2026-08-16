@@ -659,6 +659,7 @@ def train(
         stage2_communication_importance_ratio: float = 1.0,
         stage2_k_trials: int = None,
         stage2_probe_size: int = None,
+        stage2_inference_batch_size: int = None,
         # Stage-2 RL variant (新版 BLB v3 / 旧版 v2 二选一；默认新版)
         stage2_rl_variant: str = "blb_v3",
         blb_v3_rollout_size: int = None,
@@ -948,6 +949,12 @@ def train(
     )
     batch_size = parse_positive_int(batch_size, "batch_size")
     micro_batch_size = parse_positive_int(micro_batch_size, "micro_batch_size")
+    if stage2_inference_batch_size in (None, ""):
+        stage2_inference_batch_size = None
+    else:
+        stage2_inference_batch_size = parse_positive_int(
+            stage2_inference_batch_size, "stage2_inference_batch_size",
+        )
     stage1_rl_episodes = parse_stage1_episode_limit(
         stage1_rl_episodes, "stage1_rl_episodes"
     )
@@ -1527,6 +1534,7 @@ def train(
             ),
             stage2_k_trials=stage2_k_trials,
             stage2_probe_size=stage2_probe_size,
+            stage2_inference_batch_size=stage2_inference_batch_size,
             stage2_rl_variant=stage2_rl_variant,
             blb_v3_rescale_invoker_kind=blb_v3_rescale_invoker_kind,
             blb_v3_inproc_rescale_optimizer_root=(

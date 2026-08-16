@@ -63,7 +63,10 @@ from function_handler import (
     SOFTMAX_VALUE_NOISE_DEFAULT_SCALING_FACTOR,
 )
 from final_evaluation_module import UnifiedFinalEvaluationModule
-from mrpc_reproducibility import validate_mrpc_evaluation_setup
+from mrpc_reproducibility import (
+    MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
+    validate_mrpc_evaluation_setup,
+)
 from noise_rl_module_v2 import (
     NOISE_RL_PROGRESS_BOX_PPO_INTERVAL,
     _fmt_elapsed,
@@ -2531,6 +2534,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                  stage2_communication_importance_ratio=1.0,
                  stage2_k_trials=None,
                  stage2_probe_size=None,
+                 stage2_inference_batch_size=None,
                  stage2_rl_variant='blb_v3',
                  blb_v3_rollout_size=None,
                   blb_v3_eval_interval=None,
@@ -2639,6 +2643,14 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.data_collator = data_collator
         self.batch_size = max(1, int(batch_size))
+        self._active_inference_batch_size = self.batch_size
+        self.stage2_inference_batch_size = (
+            None
+            if stage2_inference_batch_size in (None, "")
+            else self._coerce_positive_int(
+                stage2_inference_batch_size, "stage2_inference_batch_size",
+            )
+        )
         self.mrpc_reproducibility = mrpc_reproducibility
         if self.mrpc_reproducibility is not None:
             if str(data_path).strip().lower() != "mrpc":
@@ -3552,6 +3564,19 @@ class LayerImportanceEvaluator(TrainerCallback):
                 raise ValueError(
                     "two-stage comparators require Stage-2 seed 42"
                 )
+            effective_stage2_batch_size = (
+                self.batch_size
+                if self.stage2_inference_batch_size is None
+                else int(self.stage2_inference_batch_size)
+            )
+            if (
+                    effective_stage2_batch_size
+                    != MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE
+            ):
+                raise ValueError(
+                    "two-stage comparators require Stage-2 inference batch size "
+                    f"{MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE}"
+                )
             validate_comparator_scientific_parameters(
                 communication_importance_ratio=(
                     self.stage2_communication_importance_ratio
@@ -3562,6 +3587,40 @@ class LayerImportanceEvaluator(TrainerCallback):
                     blb_v3_truncation_source_fractional_bits
                 ),
             )
+            layerwise_contract = (
+                bool(self.blb_v3_sequential_rl),
+                bool(self.blb_v3_substage_mode),
+                bool(self.blb_v3_fusion_count_action),
+                str(self.blb_v3_decision_granularity),
+                str(self.blb_v3_reward_design),
+                bool(self.blb_v3_static_invalid_level_mask_enabled or False),
+            )
+            if layerwise_contract != (
+                    True, False, True, "layer", "robust_constrained", False,
+            ):
+                raise ValueError(
+                    "two-stage comparators require the Stage-2 RL layerwise "
+                    "robust action and materialization contract"
+                )
+            effective_calibration_samples = (
+                8
+                if self.blb_v3_calibrate_baseline_samples is None
+                else int(self.blb_v3_calibrate_baseline_samples)
+            )
+            evidence_contract = (
+                effective_calibration_samples,
+                int(self.blb_v3_online_k_trials),
+                int(self.blb_v3_constraint_bootstrap_samples),
+                float(self.blb_v3_online_constraint_probability),
+                float(self.blb_v3_promotion_constraint_probability),
+                float(self.blb_v3_final_constraint_probability),
+                bool(self.blb_v3_protected_k1_enabled),
+            )
+            if evidence_contract != (8, 3, 4096, 0.50, 0.80, 0.95, False):
+                raise ValueError(
+                    "two-stage comparators require the Stage-2 RL baseline, "
+                    "online, bootstrap, and confidence evidence contract"
+                )
             if self.comparator_smoke:
                 if int(self.blb_v3_search_evaluation_budget) != 1:
                     raise ValueError(
@@ -3672,16 +3731,22 @@ class LayerImportanceEvaluator(TrainerCallback):
             constraint_contract = (
                 float(self.error_threshold),
                 float(self.stage2_limit_tolerance),
+                float(self.stage2_stability_tolerance),
                 float(self.stage2_stability_multiplier),
+                int(self.stage2_probe_size),
             )
             if not (
                     math.isclose(constraint_contract[0], 0.001)
                     and math.isclose(constraint_contract[1], 0.001)
-                    and math.isclose(constraint_contract[2], 2.0)
+                    and math.isclose(constraint_contract[2], 1.2)
+                    and math.isclose(constraint_contract[3], 2.0)
+                    and constraint_contract[4] == 256
             ):
                 raise ValueError(
-                    "two-stage comparator requires precision tolerance "
-                    "0.001 in both stages and Stage-2 stability multiplier 2.0"
+                    "two-stage comparator requires the historical Stage-2 RL "
+                    "constraint contract (precision tolerance 0.001 in both "
+                    "stages, raw stability tolerance 1.2, effective stability "
+                    "multiplier 2.0, and a 256-example F1 probe)"
                 )
         if (
                 not self.skip_noise_rl
@@ -4140,17 +4205,60 @@ class LayerImportanceEvaluator(TrainerCallback):
             return TRAIN_ANCHOR_SIZE_SMALL
         return TRAIN_ANCHOR_SIZE_DEFAULT
 
-    def _make_dataloader(self, dataset):
+    def _make_dataloader(self, dataset, *, batch_size=None):
         if dataset is None:
             return None
+        effective_batch_size = (
+            self._active_inference_batch_size
+            if batch_size is None else max(1, int(batch_size))
+        )
         # pin_memory=True: 加速 CPU→GPU 传输, 不改变数值
         return DataLoader(
             dataset,
-            batch_size=self.batch_size,
+            batch_size=effective_batch_size,
             shuffle=False,
             collate_fn=self.data_collator,
             pin_memory=torch.cuda.is_available(),
         )
+
+    def activate_stage2_inference_batch_size(self):
+        """Switch every evaluator loader to the Stage-2 scientific batch."""
+        target = (
+            self.batch_size
+            if self.stage2_inference_batch_size is None
+            else int(self.stage2_inference_batch_size)
+        )
+        if target <= 0:
+            raise ValueError("stage2_inference_batch_size must be positive")
+        if int(self._active_inference_batch_size) == target:
+            return target
+
+        self._active_inference_batch_size = target
+        rebuilt = {}
+        for split_name, dataset in self.dataset_splits.items():
+            loader = self._make_dataloader(dataset, batch_size=target)
+            rebuilt[split_name] = (
+                tuple(loader) if split_name == "validation_full" else loader
+            )
+        rebuilt_mm = {}
+        for split_name, dataset in self.dataset_splits_mm.items():
+            loader = self._make_dataloader(dataset, batch_size=target)
+            rebuilt_mm[split_name] = (
+                tuple(loader) if split_name == "validation_full" else loader
+            )
+        self.dataloaders = rebuilt
+        self.dataloaders_mm = rebuilt_mm
+        self.dataloader_train = self.dataloaders.get("train")
+        self.dataloader_test = self.dataloaders.get("validation_full")
+        self.dataloader_test_mm = self.dataloaders_mm.get("validation_full")
+
+        # Stage-1 loss is batch-partition-sensitive and its cache key predates
+        # the Stage-2 batch split. Never carry those values across the boundary.
+        from stage1_rl.eval_cache import Stage1EvalCache
+
+        self._eval_cache = Stage1EvalCache()
+        self._stage1_worker_eval_cache = Stage1EvalCache()
+        return target
 
     def _register_dataset_split(self, split_name, dataset, dataset_mm=None):
         if dataset is None:
@@ -6217,6 +6325,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             ),
             "stage2_k_trials": int(self.stage2_k_trials),
             "stage2_probe_size": int(self.stage2_probe_size),
+            "stage1_inference_batch_size": int(self.batch_size),
+            "stage2_inference_batch_size": int(
+                getattr(self, "_active_inference_batch_size", self.batch_size)
+            ),
             "dataset": str(getattr(self, "data_path", "")),
             "search_algorithm": str(getattr(self, "search_algorithm", "")),
         }
