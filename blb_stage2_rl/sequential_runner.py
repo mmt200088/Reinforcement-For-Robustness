@@ -6959,10 +6959,28 @@ def _build_completed_search_resume_result(
     num_layers = int(invocation_contract.get("num_layers", 0))
     artifact_paths = dict(inner_run.get("artifact_paths") or {})
     strict_validation = inner_run.get("strict_validation")
+    scientific_parameters = invocation_contract.get("scientific_parameters")
+    if not isinstance(scientific_parameters, Mapping):
+        raise RuntimeError(
+            "Stage-2 completed inner search has no scientific parameters"
+        )
+    try:
+        stage2_inference_batch_size = int(
+            scientific_parameters["stage2_inference_batch_size"]
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Stage-2 completed inner search has no valid inference batch size"
+        ) from exc
+    if stage2_inference_batch_size <= 0:
+        raise RuntimeError(
+            "Stage-2 completed inner search has no valid inference batch size"
+        )
     common = {
         "fixed_gelu": np.asarray(fixed_gelu, dtype=int).copy(),
         "fixed_softmax": np.asarray(fixed_softmax, dtype=int).copy(),
         "strict_feasible": strict_feasible,
+        "stage2_inference_batch_size": stage2_inference_batch_size,
         "selected_action_identity": selected_action_identity,
         "search_backend": search_backend,
         "stage1_consumed_binding": stage1_binding,
