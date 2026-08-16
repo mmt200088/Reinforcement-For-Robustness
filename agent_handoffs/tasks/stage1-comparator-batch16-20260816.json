@@ -1,0 +1,55 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "7db45b9ac283a65020eff97e6b5742f871dff291",
+  "base_tree": "3760050af4dc31818b5e7e3d17e99c600671171b",
+  "branch": "codex/task-stage1-comparator-batch16-20260816",
+  "branch_role": "task",
+  "changed_scopes": [
+    "AGENTS.md",
+    "llama_7B_LayerImportance.sh",
+    "mrpc_reproducibility.py",
+    "tests/test_mrpc_reproducibility.py",
+    "tests/test_stage2_persistent_launcher.py"
+  ],
+  "completed_at": "2026-08-16T19:12:55+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "/hy-tmp/batch16_alignment_gate_92c22a36/",
+    "/hy-tmp/batch16_alignment_gate_5eb11628/"
+  ],
+  "source_commit": "5eb11628a1c40ad85daeacb4de86c43a631be246",
+  "source_tree": "d261074a8501b92fc6d821605c5801a84b2236f8",
+  "started_at": "2026-08-16T17:00:00+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "stage1-comparator-batch16-20260816",
+  "verification": [
+    {
+      "command": "python -m unittest -v tests.test_mrpc_reproducibility.MRPCReproducibilityRuntimeTest.test_comparator_batch_matches_historical_stage1_rl",
+      "evidence": "single-RTX-4090 server RED at 92c22a36: failed with 64 != 16; GREEN at source commit passed in the complete unit gate",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m unittest -v tests.test_mrpc_reproducibility tests.test_stage2_persistent_launcher",
+      "evidence": "single-RTX-4090 server: 38 tests passed from exact source commit 5eb11628a1c40ad85daeacb4de86c43a631be246",
+      "outcome": "passed"
+    },
+    {
+      "command": "llama_7B_LayerImportance.sh run greedy --comparator-stage1-only --comparator-smoke",
+      "evidence": "single-RTX-4090 real-BERT Stage-1 smoke completed with checkpoint, history, observations and result; effective batch_size and micro_batch_size were both 16",
+      "outcome": "passed"
+    },
+    {
+      "command": "llama_7B_LayerImportance.sh run {bo_rf,coinn_ga} --comparator-smoke",
+      "evidence": "single-RTX-4090 real-BERT two-stage smokes completed with independent Stage-1 results and same-backend Stage-2 binding; effective batch_size and micro_batch_size were both 16",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m py_compile mrpc_reproducibility.py tests/test_mrpc_reproducibility.py && bash -n llama_7B_LayerImportance.sh && git diff --check",
+      "evidence": "single-RTX-4090 server: passed from exact source commit and tracked-clean tree; evidence hashes are recorded in /hy-tmp/batch16_alignment_gate_5eb11628/SHA256SUMS",
+      "outcome": "passed"
+    }
+  ]
+}
