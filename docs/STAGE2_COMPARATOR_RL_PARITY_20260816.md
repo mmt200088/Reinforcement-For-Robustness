@@ -59,6 +59,9 @@ preset or direct entrypoint cannot bypass the shell guard.
 The PPO identity format remains unchanged for backward-compatible checkpoint
 resume. The new batch identity field is comparator-only because the comparator
 introduces a stage-specific batch distinct from its global Stage-1 batch.
+The Python boundary rejects a distinct Stage-2-only batch for PPO, so callers
+cannot change PPO numerical partitioning without a corresponding historical
+identity contract.
 
 ## Algorithm-only differences
 

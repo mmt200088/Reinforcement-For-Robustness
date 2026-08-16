@@ -3529,6 +3529,15 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "comparator_stage1_only is only valid for bo_rf, greedy, "
                 "or coinn_ga"
             )
+        if (
+                self.blb_v3_search_backend == "ppo"
+                and self.stage2_inference_batch_size is not None
+                and int(self.stage2_inference_batch_size) != int(self.batch_size)
+        ):
+            raise ValueError(
+                "stage2_inference_batch_size may differ from the global batch only "
+                "for two-stage comparators; PPO checkpoint identity remains unchanged"
+            )
         if self.blb_v3_search_backend != "ppo":
             if self.stage2_rl_variant != "blb_v3":
                 raise ValueError(

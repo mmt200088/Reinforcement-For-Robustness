@@ -354,6 +354,10 @@ class SearchBackendWiringTests(unittest.TestCase):
             evaluator,
         )
         self.assertIn(
+            "stage2_inference_batch_size may differ from the global batch only ",
+            evaluator,
+        )
+        self.assertIn(
             "def activate_stage2_inference_batch_size(self)", evaluator,
         )
 
