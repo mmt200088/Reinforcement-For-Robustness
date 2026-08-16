@@ -434,6 +434,20 @@ def _runtime_modules():
     probe_runner.diagnostics_payload = lambda _diag: {}
     probe_runner.format_diagnostics_line = lambda _diag: ""
 
+    def normalize_probe_trial_result(raw_result):
+        if len(raw_result) != 3:
+            raise ValueError(
+                "probe trial result must contain loss, metric1, and metric2"
+            )
+        loss, metric1, metric2 = raw_result
+        return (
+            float("nan") if loss is None else float(loss),
+            float(metric1),
+            float(metric2),
+        )
+
+    probe_runner._normalize_probe_trial_result = normalize_probe_trial_result
+
     torch_stub = types.ModuleType("torch")
     torch_stub.Tensor = object
     torch_stub.device = object

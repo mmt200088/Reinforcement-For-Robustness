@@ -128,6 +128,20 @@ def _strict_payload(result):
                 "metadata": {
                     **online.metadata,
                     "strict_trial_count": 45,
+                    "strict_final_assessment": {
+                        name: 0.99
+                        for name in (
+                            "loss_precision_probability",
+                            "metric1_precision_probability",
+                            "metric2_precision_probability",
+                            "loss_stability_probability",
+                            "metric1_stability_probability",
+                            "metric2_stability_probability",
+                        )
+                    },
+                    "strict_candidate_key": (
+                        f"{int(online.metadata['pending_full_vector'][0]):064x}"
+                    ),
                     "strict_violations": violations,
                 },
             }
@@ -145,7 +159,7 @@ def _strict_payload(result):
                 "violations": violations,
             }
         )
-    selected_evaluation = max(
+    selected_evaluation = min(
         strict_evaluations,
         key=search_baseline_runner._strict_selected_rank,
     )
