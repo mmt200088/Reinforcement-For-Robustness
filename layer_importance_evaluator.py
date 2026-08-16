@@ -3603,9 +3603,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 str(self.blb_v3_decision_granularity),
                 str(self.blb_v3_reward_design),
                 bool(self.blb_v3_static_invalid_level_mask_enabled or False),
+                int(self.blb_v3_terminal_eval_batch_size),
+                int(self.stage2_workers_per_device),
             )
             if layerwise_contract != (
                     True, False, True, "layer", "robust_constrained", False,
+                    4, 1,
             ):
                 raise ValueError(
                     "two-stage comparators require the Stage-2 RL layerwise "
@@ -7457,19 +7460,32 @@ class LayerImportanceEvaluator(TrainerCallback):
             stage1_result_path = os.path.join(
                 stage1_output_dir, "result.json",
             )
+            from json_utils import stable_json_hash
+
+            with open(stage1_result_path, "rb") as result_handle:
+                stage1_result_sha256 = hashlib.sha256(
+                    result_handle.read()
+                ).hexdigest()
             stage1_manifest = read_json_file(
                 os.path.join(stage1_output_dir, "manifest.json")
             )
             if not isinstance(stage1_manifest, Mapping):
                 raise RuntimeError("Stage-1 manifest must be a JSON object")
-            stage1_selection_binding = {
+            stage1_selection_payload = {
                 "backend": backend,
                 "seed": int(stage1_comparator_result.config.seed),
                 "action": list(selected_stage1.action),
                 "gelu_degrees": list(selected_stage1.gelu_degrees),
                 "softmax_degrees": list(selected_stage1.softmax_degrees),
                 "num_layers": int(self.total_layers),
+            }
+            stage1_selection_binding = {
+                **stage1_selection_payload,
                 "result_path": stage1_result_path,
+                "result_sha256": stage1_result_sha256,
+                "selection_hash": stable_json_hash(
+                    stage1_selection_payload
+                ),
             }
             self.stage1_comparator_selection_binding = dict(
                 stage1_selection_binding

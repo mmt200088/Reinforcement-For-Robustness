@@ -3844,7 +3844,25 @@ def _build_layerwise_candidate_identity_context(
             "result_path": os.path.abspath(os.fspath(
                 stage1_selection_binding.get("result_path") or ""
             )),
+            "result_sha256": str(
+                stage1_selection_binding.get("result_sha256") or ""
+            ),
+            "selection_hash": str(
+                stage1_selection_binding.get("selection_hash") or ""
+            ),
         }
+        hash_fields = (
+            stage1_binding_payload["result_sha256"],
+            stage1_binding_payload["selection_hash"],
+        )
+        if any(
+                len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value)
+                for value in hash_fields
+        ):
+            raise RuntimeError(
+                "strict candidate identity requires valid Stage-1 content hashes"
+            )
         if (
                 stage1_binding_payload["gelu_degrees"]
                 != stage1_degrees["gelu"]
@@ -4225,9 +4243,27 @@ def _run_layerwise_training_branch(
         stage2_inference_batch_size = int(
             getattr(train_cfg, "stage2_inference_batch_size")
         )
+        backend_contract = {
+            "bo_rf": {
+                "proposal": "categorical_rf_pof_times_deterministic_ei_v1",
+                "duplicate_policy": "unique_action_cache_v1",
+            },
+            "greedy": {
+                "proposal": "exhaustive_1opt_then_2opt_return_to_1opt_v1",
+                "duplicate_policy": "unique_action_cache_v1",
+            },
+            "coinn_ga": {
+                "proposal": "fitness_weighted_adjacent_mutation_no_crossover_v1",
+                "duplicate_policy": "unique_action_cache_v1",
+                "collision_fallback": (
+                    "deterministic_complete_adjacent_neighborhood_v1"
+                ),
+            },
+        }[search_backend]
         search_contract = {
-            "schema_version": "stage2_search_baseline_contract_v2",
+            "schema_version": "stage2_search_baseline_contract_v3",
             "search_backend": search_backend,
+            "backend_contract": backend_contract,
             "stage2_inference_batch_size": stage2_inference_batch_size,
             "action_space_version": layerwise_action_space_version(
                 layerwise_horizon
@@ -4248,12 +4284,20 @@ def _run_layerwise_training_branch(
             "online_gate": (
                 "six_bootstrap_probabilities_at_online_threshold"
             ),
+            "online_gate_margin_basis": (
+                "constraint_probability_minus_online_threshold_v1"
+            ),
+            "online_seed_contract": "ppo_global_evaluation_index_v1",
+            "candidate_repeat_policy": "unique_action_cache_per_optimizer_v1",
             "strict_gate": (
                 "joint_six_point_plus_compute_and_communication_"
                 "counterfactual_six_point_v1"
             ),
             "bootstrap_probability_role_at_f4": (
                 "diagnostic_tiebreak_only"
+            ),
+            "strict_selection_tiebreak": (
+                "full_materialized_vector_then_f4_candidate_key_v1"
             ),
             "validation_banks": (
                 authoritative_validation_banks.contract_payload()
@@ -6517,7 +6561,15 @@ def _build_search_invocation_contract(
         fixed_label: Any,
         fixed_source: Any,
         ) -> dict[str, Any]:
-    from json_utils import to_jsonable
+    import hashlib as _hashlib
+
+    from json_utils import stable_json_hash, to_jsonable
+    from mrpc_reproducibility import (
+        MRPC_DATASET_REPO,
+        MRPC_MODEL_ID,
+        MRPC_MODEL_REVISION,
+        MRPC_TOKENIZER_REVISION,
+    )
     from stage1_rl.search_runner import load_completed_search_result
 
     from .search_baselines import normalize_search_backend
@@ -6570,7 +6622,7 @@ def _build_search_invocation_contract(
     completed_softmax = [
         int(value) for value in completed_stage1.best.softmax_degrees
     ]
-    normalized_binding = {
+    selection_payload = {
         "backend": str(binding.get("backend") or ""),
         "seed": int(binding.get("seed", -1)),
         "action": [int(value) for value in binding.get("action") or []],
@@ -6581,8 +6633,19 @@ def _build_search_invocation_contract(
             int(value) for value in binding.get("softmax_degrees") or []
         ],
         "num_layers": int(binding.get("num_layers", 0)),
-        "result_path": stage1_result_path,
     }
+    normalized_binding = {
+        **selection_payload,
+        "result_path": stage1_result_path,
+        "result_sha256": str(binding.get("result_sha256") or ""),
+        "selection_hash": str(binding.get("selection_hash") or ""),
+    }
+    result_hasher = _hashlib.sha256()
+    with open(stage1_result_path, "rb") as result_handle:
+        for chunk in iter(lambda: result_handle.read(1024 * 1024), b""):
+            result_hasher.update(chunk)
+    actual_result_sha256 = result_hasher.hexdigest()
+    actual_selection_hash = stable_json_hash(selection_payload)
     if (
             completed_stage1.algorithm != backend
             or int(getattr(completed_stage1.config, "seed", -1)) != seed
@@ -6597,10 +6660,42 @@ def _build_search_invocation_contract(
             or normalized_binding["gelu_degrees"] != completed_gelu
             or normalized_binding["softmax_degrees"] != completed_softmax
             or normalized_binding["num_layers"] != num_layers
+            or normalized_binding["result_sha256"] != actual_result_sha256
+            or normalized_binding["selection_hash"] != actual_selection_hash
     ):
         raise RuntimeError(
             "Stage-2 comparator binding does not match the completed Stage-1 result"
         )
+
+    reproducibility = getattr(evaluator, "mrpc_reproducibility", None)
+    fixture = getattr(reproducibility, "fixture", None)
+    if fixture is None or not callable(getattr(fixture, "as_payload", None)):
+        raise RuntimeError(
+            "Stage-2 comparator invocation has no MRPC reproducibility identity"
+        )
+    fixture_payload = fixture.as_payload()
+    if not isinstance(fixture_payload, Mapping):
+        raise RuntimeError("MRPC reproducibility fixture payload must be an object")
+    mrpc_identity = {
+        "dataset_repo": MRPC_DATASET_REPO,
+        "dataset_revision": str(fixture_payload.get("dataset_revision") or ""),
+        "model_id": MRPC_MODEL_ID,
+        "model_revision": MRPC_MODEL_REVISION,
+        "tokenizer_revision": MRPC_TOKENIZER_REVISION,
+        "fixture_schema_version": str(
+            fixture_payload.get("schema_version") or ""
+        ),
+        "fixture_sha256": stable_json_hash(fixture_payload),
+        "canonical_rows_sha256": stable_json_hash(
+            fixture_payload.get("canonical_rows") or []
+        ),
+        "full_validation_ids_sha256": stable_json_hash(
+            fixture_payload.get("full_validation_ids") or []
+        ),
+        "probe_ids_sha256": stable_json_hash(
+            fixture_payload.get("probe_ids") or []
+        ),
+    }
 
     scientific_parameters = {
         name: getattr(train_cfg, name, default)
@@ -6650,17 +6745,60 @@ def _build_search_invocation_contract(
                 "stage2_stability_tolerance",
                 getattr(evaluator, "stage2_stability_tolerance", 1.2),
             ),
-            ("calibrate_baseline_samples", 8),
-            ("truncation_backend", "binary"),
-            ("truncation_ring_bits", 43),
-            ("truncation_source_fractional_bits", 24),
-            ("decision_granularity", "layer"),
-            ("reward_design", "robust_constrained"),
-            ("fusion_count_action", True),
+            (
+                "calibrate_baseline_samples",
+                getattr(train_cfg, "calibrate_baseline_samples", 8),
+            ),
+            (
+                "truncation_backend",
+                getattr(train_cfg, "truncation_backend", "binary"),
+            ),
+            (
+                "truncation_ring_bits",
+                getattr(train_cfg, "truncation_ring_bits", 43),
+            ),
+            (
+                "truncation_source_fractional_bits",
+                getattr(train_cfg, "truncation_source_fractional_bits", 24),
+            ),
+            (
+                "terminal_eval_batch_size",
+                getattr(train_cfg, "terminal_eval_batch_size", 4),
+            ),
+            (
+                "protected_k1_enabled",
+                getattr(train_cfg, "protected_k1_enabled", False),
+            ),
+            (
+                "static_invalid_level_mask_enabled",
+                getattr(train_cfg, "static_invalid_level_mask_enabled", False),
+            ),
+            (
+                "empirical_invalid_level_mask_enabled",
+                getattr(train_cfg, "empirical_invalid_level_mask_enabled", False),
+            ),
+            ("sequential_rl", getattr(train_cfg, "sequential_rl", True)),
+            ("substage_mode", getattr(train_cfg, "substage_mode", False)),
+            (
+                "decision_granularity",
+                getattr(train_cfg, "decision_granularity", "layer"),
+            ),
+            (
+                "reward_design",
+                getattr(train_cfg, "reward_design", "robust_constrained"),
+            ),
+            (
+                "fusion_count_action",
+                getattr(train_cfg, "fusion_count_action", True),
+            ),
+            (
+                "stage2_workers_per_device",
+                getattr(train_cfg, "stage2_workers_per_device", 1),
+            ),
         )
     }
     return to_jsonable({
-        "schema_version": "stage2_search_invocation_v3",
+        "schema_version": "stage2_search_invocation_v4",
         "search_backend": backend,
         "profile": str(getattr(train_cfg, "profile", "")),
         "model_type": str(getattr(evaluator, "model_type", "") or ""),
@@ -6672,6 +6810,11 @@ def _build_search_invocation_contract(
         "seed": seed,
         "stage1_selection_binding": normalized_binding,
         "stage1_result_path": stage1_result_path,
+        "mrpc_reproducibility_identity": mrpc_identity,
+        "rng_contract": {
+            "online_stream": "ppo_global_evaluation_index_v1",
+            "probe_seed": "derive_layerwise_episode_probe_seed_v1",
+        },
         "scientific_parameters": scientific_parameters,
     }, stringify_unknown=True)
 

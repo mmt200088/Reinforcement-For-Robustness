@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -12,6 +13,8 @@ import unittest
 from unittest import mock
 
 import numpy as np
+
+from json_utils import stable_json_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,20 +49,65 @@ def _completed_stage1_result():
     )
 
 
+def _selection_binding(result_path, *, gelu_degrees=(4, 2)):
+    selection = {
+        "backend": "bo_rf",
+        "seed": 1729,
+        "action": [0, 1],
+        "gelu_degrees": list(gelu_degrees),
+        "softmax_degrees": [6, 6],
+        "num_layers": 2,
+    }
+    return {
+        **selection,
+        "result_path": result_path,
+        "result_sha256": hashlib.sha256(
+            Path(result_path).read_bytes()
+        ).hexdigest(),
+        "selection_hash": stable_json_hash(selection),
+    }
+
+
+def _mrpc_reproducibility():
+    payload = {
+        "schema_version": "mrpc_reproducibility_v1",
+        "dataset_revision": "fixture-revision",
+        "canonical_rows": [{"idx": 0, "label": 1}],
+        "full_validation_ids": [0],
+        "probe_ids": [0],
+    }
+    return SimpleNamespace(
+        fixture=SimpleNamespace(as_payload=lambda: payload),
+    )
+
+
 class OrdinaryTwoStageBindingTest(unittest.TestCase):
     def test_stage1_producer_puts_result_path_in_plain_binding(self):
         source = (ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
-        binding = next(
-            node.value
+        assignments = {
+            target.id: node.value
             for node in ast.walk(tree)
             if isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "stage1_selection_binding" for target in node.targets)
-        )
+            for target in node.targets
+            if isinstance(target, ast.Name)
+            and target.id in {
+                "stage1_selection_payload", "stage1_selection_binding",
+            }
+        }
+        selection = assignments["stage1_selection_payload"]
+        binding = assignments["stage1_selection_binding"]
+        self.assertIsInstance(selection, ast.Dict)
         self.assertIsInstance(binding, ast.Dict)
+        selection_keys = {
+            key.value for key in selection.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
         keys = {key.value for key in binding.keys if isinstance(key, ast.Constant) and isinstance(key.value, str)}
         self.assertIn("result_path", keys)
-        self.assertIn("seed", keys)
+        self.assertIn("seed", selection_keys)
+        self.assertIn("result_sha256", keys)
+        self.assertIn("selection_hash", keys)
 
     def test_invocation_loads_completed_stage1_result_and_emits_plain_binding(self):
         build = _load_function(
@@ -73,20 +121,13 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             result_path = os.path.join(tmpdir, "result.json")
             Path(result_path).write_text("{}\n", encoding="utf-8")
-            binding = {
-                "backend": "bo_rf",
-                "seed": 1729,
-                "action": [0, 1],
-                "gelu_degrees": [4, 2],
-                "softmax_degrees": [6, 6],
-                "num_layers": 2,
-                "result_path": result_path,
-            }
+            binding = _selection_binding(result_path)
             evaluator = SimpleNamespace(
                 model_type="bert-base",
                 total_layers=2,
                 batch_size=16,
                 stage1_comparator_selection_binding=binding,
+                mrpc_reproducibility=_mrpc_reproducibility(),
             )
             runner = SimpleNamespace(evaluator=evaluator)
             train_cfg = SimpleNamespace(
@@ -109,7 +150,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 )
 
         load_completed.assert_called_once_with(os.path.dirname(result_path))
-        self.assertEqual(invocation["schema_version"], "stage2_search_invocation_v3")
+        self.assertEqual(invocation["schema_version"], "stage2_search_invocation_v4")
         self.assertEqual(invocation["search_backend"], "bo_rf")
         self.assertEqual(invocation["seed"], 1729)
         self.assertEqual(invocation["num_layers"], 2)
@@ -137,6 +178,18 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             invocation["scientific_parameters"]["truncation_backend"],
             "binary",
         )
+        self.assertEqual(
+            invocation["scientific_parameters"]["terminal_eval_batch_size"],
+            4,
+        )
+        self.assertEqual(
+            invocation["rng_contract"]["online_stream"],
+            "ppo_global_evaluation_index_v1",
+        )
+        self.assertEqual(
+            invocation["mrpc_reproducibility_identity"]["dataset_revision"],
+            "fixture-revision",
+        )
         for removed in (
             "invocation_hash",
             "stage1_result_sha256",
@@ -160,17 +213,14 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             result_path = os.path.join(tmpdir, "result.json")
             Path(result_path).write_text("{}\n", encoding="utf-8")
+            binding = _selection_binding(
+                result_path, gelu_degrees=(4, 1),
+            )
             evaluator = SimpleNamespace(
                 model_type="bert-base",
                 total_layers=2,
-                stage1_comparator_selection_binding={
-                    "backend": "bo_rf",
-                    "action": [0, 1],
-                    "gelu_degrees": [4, 1],
-                    "softmax_degrees": [6, 6],
-                    "num_layers": 2,
-                    "result_path": result_path,
-                },
+                stage1_comparator_selection_binding=binding,
+                mrpc_reproducibility=_mrpc_reproducibility(),
             )
             with mock.patch(
                 "stage1_rl.search_runner.load_completed_search_result",
@@ -192,6 +242,47 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                         fixed_label="BO-RF Stage-1",
                         fixed_source="stage1_bo_rf_result",
                     )
+
+    def test_invocation_rejects_stage1_result_byte_drift(self):
+        build = _load_function(
+            "blb_stage2_rl/sequential_runner.py",
+            "_build_search_invocation_contract",
+            Any=object,
+            Mapping=dict,
+            np=np,
+            os=os,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_path = os.path.join(tmpdir, "result.json")
+            Path(result_path).write_text("{}\n", encoding="utf-8")
+            binding = _selection_binding(result_path)
+            Path(result_path).write_text('{"changed": true}\n', encoding="utf-8")
+            evaluator = SimpleNamespace(
+                model_type="bert-base",
+                total_layers=2,
+                batch_size=16,
+                stage1_comparator_selection_binding=binding,
+                mrpc_reproducibility=_mrpc_reproducibility(),
+            )
+            with mock.patch(
+                "stage1_rl.search_runner.load_completed_search_result",
+                return_value=_completed_stage1_result(),
+            ), self.assertRaisesRegex(
+                RuntimeError, "does not match the completed Stage-1 result",
+            ):
+                build(
+                    runner=SimpleNamespace(evaluator=evaluator),
+                    train_cfg=SimpleNamespace(
+                        search_backend="bo_rf",
+                        profile="mrpc",
+                        seed=1729,
+                        stage2_inference_batch_size=64,
+                    ),
+                    fixed_gelu=np.asarray([4, 2], dtype=int),
+                    fixed_softmax=np.asarray([6, 6], dtype=int),
+                    fixed_label="BO-RF Stage-1",
+                    fixed_source="stage1_bo_rf_result",
+                )
 
     def test_active_stage2_comparator_branch_consumes_plain_binding_only(self):
         source = (ROOT / "blb_stage2_rl/sequential_runner.py").read_text(encoding="utf-8")
@@ -270,6 +361,8 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             "softmax_degrees": [6, 6],
             "num_layers": 2,
             "result_path": "stage1/result.json",
+            "result_sha256": "a" * 64,
+            "selection_hash": "b" * 64,
         }
         common = {
             "train_cfg": SimpleNamespace(
@@ -314,10 +407,78 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             "stage1_selection_provenance",
             "formal_run_identity",
             "formal_stage1_contract_hash",
-            "result_sha256",
-            "selection_hash",
         ):
             self.assertNotIn(removed, comparator_context)
+
+    def test_candidate_identity_rejects_missing_stage1_content_hashes(self):
+        build = _load_function(
+            "blb_stage2_rl/sequential_runner.py",
+            "_build_layerwise_candidate_identity_context",
+            Mapping=dict,
+            np=np,
+            os=os,
+            resolve_stage2_model_type=(lambda model_type, *, num_layers: model_type),
+        )
+        reference = SimpleNamespace(
+            precision_tolerance=0.001,
+            stability_multiplier=2.0,
+            bootstrap_seed=42,
+            bootstrap_samples=100,
+            loss_limit=1.0,
+            metric1_limit=0.8,
+            metric2_limit=0.8,
+            loss_std_limit=0.1,
+            metric1_std_limit=0.1,
+            metric2_std_limit=0.1,
+        )
+        common = {
+            "train_cfg": SimpleNamespace(
+                inproc_rescale_optimizer_root="Rescale_optimizer",
+                profile="mrpc",
+                stage2_inference_batch_size=64,
+            ),
+            "evaluator": SimpleNamespace(model_type="bert-base", batch_size=16),
+            "fusion_map": {"block4": []},
+            "max_sfs": {"block4": []},
+            "fixed_gelu": np.asarray([4, 2], dtype=int),
+            "fixed_softmax": np.asarray([6, 6], dtype=int),
+            "robust_reference": reference,
+            "authoritative_robust_reference": reference,
+            "validation_banks": SimpleNamespace(
+                contract_payload=lambda: {"bank_a_trials": 15}
+            ),
+            "probe_example_count": 256,
+            "authoritative_example_count": 408,
+            "schedule": [],
+            "static_skeletons_baseline": {"profile": "mrpc"},
+            "algorithm_contract": {
+                "communication_importance_ratio": 1.0,
+                "compute_axis_denominator": 12,
+                "communication_axis_denominator": 12,
+                "resource_credit_mode": "separable_weighted_per_slot_v1",
+                "strict_resource_order": [
+                    "weighted_score", "balance_tiebreak",
+                ],
+            },
+            "algorithm_contract_hash": "algorithm-v9",
+        }
+        binding = {
+            "backend": "bo_rf",
+            "seed": 42,
+            "action": [0, 1],
+            "gelu_degrees": [4, 2],
+            "softmax_degrees": [6, 6],
+            "num_layers": 2,
+            "result_path": "stage1/result.json",
+            "result_sha256": "",
+            "selection_hash": "b" * 64,
+        }
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "content hashes",
+        ):
+            build(**common, stage1_selection_binding=binding)
 
     def test_completed_resume_returns_before_model_or_materialization_setup(self):
         run = _load_function(
@@ -670,7 +831,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             Mapping=dict,
             os=os,
             _build_search_invocation_contract=lambda **_kwargs: {
-                "schema_version": "stage2_search_invocation_v3",
+                "schema_version": "stage2_search_invocation_v4",
                 "search_backend": "bo_rf",
             },
         )
@@ -678,7 +839,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             output_dir = os.path.join(tmpdir, "search_bo_rf")
             os.makedirs(output_dir)
             invocation = {
-                "schema_version": "stage2_search_invocation_v3",
+                "schema_version": "stage2_search_invocation_v4",
                 "search_backend": "bo_rf",
             }
             resume_contract = {

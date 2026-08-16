@@ -413,6 +413,7 @@ reject_formal_comparator_overrides(){
       --stage2-calibrate-baseline-samples|--stage2-calibrate-baseline-samples=*|\
       --blb-v3-calibrate-baseline-samples|--blb-v3-calibrate-baseline-samples=*|\
       --blb-v3-online-k-trials|--blb-v3-online-k-trials=*|\
+      --blb-v3-terminal-eval-batch-size|--blb-v3-terminal-eval-batch-size=*|\
       --blb-v3-constraint-bootstrap-samples|--blb-v3-constraint-bootstrap-samples=*|\
       --blb-v3-online-constraint-probability|--blb-v3-online-constraint-probability=*|\
       --blb-v3-promotion-constraint-probability|--blb-v3-promotion-constraint-probability=*|\
@@ -444,6 +445,7 @@ reject_formal_comparator_overrides(){
       --mrpc-reproducibility-fixture-path|--mrpc-reproducibility-fixture-path=*|\
       --stage2-fixed-config-source|--stage2-fixed-config-source=*|\
       --stage2-rl-variant|--stage2-rl-variant=*|\
+      --stage2-workers-per-device|--stage2-workers-per-device=*|\
       --stage2-probe-size|--stage2-probe-size=*)
         err "comparator 子命令不允许覆盖固定的算法、预算或验证参数：$arg"
         ;;
@@ -469,15 +471,18 @@ translate_subcommand_args(){
         bo|bo-rf|bo_rf|bayesian)
           reject_formal_comparator_overrides "${args[@]:2}"
           SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --stage2-inference-batch-size "$STAGE2_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 1.2 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --stage2-calibrate-baseline-samples 8 --blb-v3-online-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-constraint-bootstrap-samples 4096 --blb-v3-online-constraint-probability 0.50 --blb-v3-promotion-constraint-probability 0.80 --blb-v3-final-constraint-probability 0.95 --blb-v3-protected-k1-enabled false --blb-v3-static-invalid-level-mask-enabled false --blb-v3-sequential-rl true --blb-v3-substage-mode false --blb-v3-fusion-count-action true --blb-v3-decision-granularity layer --blb-v3-reward-design robust_constrained --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend bo_rf --blb-v3-search-evaluation-budget 50000 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS+=(--blb-v3-terminal-eval-batch-size 4 --stage2-workers-per-device 1)
           ;;
         ga|genetic) SUBCOMMAND_ARGS=(--search-algorithm ga "${args[@]:2}") ;;
         coinn|coinn-ga|coinn_ga)
           reject_formal_comparator_overrides "${args[@]:2}"
           SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --stage2-inference-batch-size "$STAGE2_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 1.2 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --stage2-calibrate-baseline-samples 8 --blb-v3-online-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-constraint-bootstrap-samples 4096 --blb-v3-online-constraint-probability 0.50 --blb-v3-promotion-constraint-probability 0.80 --blb-v3-final-constraint-probability 0.95 --blb-v3-protected-k1-enabled false --blb-v3-static-invalid-level-mask-enabled false --blb-v3-sequential-rl true --blb-v3-substage-mode false --blb-v3-fusion-count-action true --blb-v3-decision-granularity layer --blb-v3-reward-design robust_constrained --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend coinn_ga --blb-v3-search-evaluation-budget 45664 --blb-v3-search-patience-generations 5 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS+=(--blb-v3-terminal-eval-batch-size 4 --stage2-workers-per-device 1)
           ;;
         greedy|greedy-search|greedy_search)
           reject_formal_comparator_overrides "${args[@]:2}"
           SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --stage2-inference-batch-size "$STAGE2_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 1.2 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --stage2-calibrate-baseline-samples 8 --blb-v3-online-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-constraint-bootstrap-samples 4096 --blb-v3-online-constraint-probability 0.50 --blb-v3-promotion-constraint-probability 0.80 --blb-v3-final-constraint-probability 0.95 --blb-v3-protected-k1-enabled false --blb-v3-static-invalid-level-mask-enabled false --blb-v3-sequential-rl true --blb-v3-substage-mode false --blb-v3-fusion-count-action true --blb-v3-decision-granularity layer --blb-v3-reward-design robust_constrained --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend greedy --blb-v3-search-evaluation-budget 2176782336 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS+=(--blb-v3-terminal-eval-batch-size 4 --stage2-workers-per-device 1)
           ;;
         *) err "run 子命令只支持 rl / ga / bo_rf / greedy / coinn_ga，当前为：$sub" ;;
       esac

@@ -93,6 +93,8 @@ class Stage1SearchProducerWiringTests(unittest.TestCase):
         )
         self.assertIn('"selection_binding": stage1_selection_binding', self.block)
         self.assertIn('"feasible": bool(selected_stage1.feasible)', self.block)
+        self.assertIn('"result_sha256": stage1_result_sha256', self.block)
+        self.assertIn('"selection_hash": stable_json_hash(', self.block)
 
     def test_stage1_provenance_module_is_removed(self):
         self.assertFalse((ROOT / "stage1_rl" / "provenance.py").exists())
@@ -106,8 +108,6 @@ class Stage1SearchProducerWiringTests(unittest.TestCase):
             "stage1_completed_authority",
             "formal_run_identity",
             "formal_stage1_contract",
-            "result_sha256",
-            "selection_hash",
             "selection_provenance",
             "authenticated sealed completion",
         ):

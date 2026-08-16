@@ -403,6 +403,17 @@ class SearchBackendWiringTests(unittest.TestCase):
             evaluator,
         )
 
+        runner = (ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text(
+            encoding="utf-8"
+        )
+        for contract_field in (
+            '"schema_version": "stage2_search_baseline_contract_v3"',
+            '"online_seed_contract": "ppo_global_evaluation_index_v1"',
+            '"candidate_repeat_policy": "unique_action_cache_per_optimizer_v1"',
+            '"full_materialized_vector_then_f4_candidate_key_v1"',
+        ):
+            self.assertIn(contract_field, runner)
+
     def test_evaluator_and_train_config_preserve_ppo_default(self):
         evaluator_tree = ast.parse(
             (ROOT / "layer_importance_evaluator.py").read_text(encoding="utf-8")
@@ -465,6 +476,8 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("--stage1-accuracy-tolerance 0.001", launcher)
         self.assertIn("--stage2-limit-tolerance 0.001", launcher)
         self.assertIn("--stage2-stability-multiplier 2.0", launcher)
+        self.assertIn("--blb-v3-terminal-eval-batch-size 4", launcher)
+        self.assertIn("--stage2-workers-per-device 1", launcher)
         self.assertIn("--blb-v3-final-selection-top-n 5", launcher)
         self.assertIn("--blb-v3-search-mutation-max-coordinates 4", launcher)
         self.assertIn("--blb-v3-search-patience-generations 5", launcher)
