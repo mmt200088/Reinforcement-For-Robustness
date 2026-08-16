@@ -1190,6 +1190,82 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             },
         )
 
+    def test_fixed_action_parity_gate_compares_complete_runtime_surface(self):
+        from blb_stage2_rl.same_action_parity import (
+            run_same_action_parity_gate,
+        )
+        from blb_stage2_rl.seed_utils import (
+            derive_layerwise_online_evaluation_seeds,
+        )
+
+        action = ((1, 2), (0, 1))
+        base_seed = 17
+        stream_index = 7
+        expected_reset_seed, expected_probe_seed = (
+            derive_layerwise_online_evaluation_seeds(
+                base_seed,
+                stream_index,
+                trial_count=3,
+            )
+        )
+        evidence = run_same_action_parity_gate(
+            layerwise_env=_LayerwiseEnv(),
+            robust_reference=_Reference(),
+            action_matrix=action,
+            base_seed=base_seed,
+            stream_index=stream_index,
+            expected_trials=3,
+            device="cpu",
+        )
+
+        self.assertTrue(evidence["passed"])
+        self.assertEqual(
+            evidence["schema_version"],
+            "stage2_same_action_parity_v1",
+        )
+        self.assertEqual(
+            evidence["ppo_projection"],
+            evidence["comparator_projection"],
+        )
+        self.assertEqual(
+            evidence["ppo_projection"]["action_matrix"],
+            [[1, 2], [0, 1]],
+        )
+        self.assertEqual(
+            evidence["ppo_projection"]["reset_seed"],
+            expected_reset_seed,
+        )
+        self.assertEqual(
+            evidence["ppo_projection"]["probe_seed"],
+            expected_probe_seed,
+        )
+        self.assertEqual(
+            evidence["ppo_projection"]["constraint_probabilities"],
+            {
+                "loss_precision_probability": 0.91,
+                "metric1_precision_probability": 0.92,
+                "metric2_precision_probability": 0.93,
+                "loss_stability_probability": 0.81,
+                "metric1_stability_probability": 0.82,
+                "metric2_stability_probability": 0.83,
+            },
+        )
+        self.assertEqual(len(evidence["projection_sha256"]), 64)
+
+    def test_fixed_action_parity_gate_rejects_any_semantic_drift(self):
+        from blb_stage2_rl.same_action_parity import (
+            assert_same_action_projection_equal,
+        )
+
+        with self.assertRaisesRegex(
+                RuntimeError,
+                "same-action parity failed",
+                ):
+            assert_same_action_projection_equal(
+                {"metrics": {"loss_mean": 0.1}},
+                {"metrics": {"loss_mean": 0.2}},
+            )
+
     def test_optimizer_invalid_candidate_returns_invalid_and_search_continues(self):
         env = _InvalidCandidateLayerwiseEnv()
         callback_rows = []
