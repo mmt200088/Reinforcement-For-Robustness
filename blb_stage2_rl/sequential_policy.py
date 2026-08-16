@@ -1541,6 +1541,15 @@ class SequentialRolloutBuffer:
     def clear(self) -> None:
         self._buf.clear()
 
+    def truncate(self, length: int) -> None:
+        """Discard transitions appended at or after ``length``."""
+        target = int(length)
+        if target < 0 or target > len(self._buf):
+            raise IndexError(
+                f"rollout truncation length {target} out of range for {len(self._buf)}"
+            )
+        del self._buf[target:]
+
     def compute_gae(
             self,
             *,

@@ -13,7 +13,7 @@ import numpy as np
 from json_utils import read_json_file, stable_json_hash, to_jsonable
 from jsonl_utils import read_jsonl, recover_jsonl_file
 
-from .candidate_store import CandidateStore
+from .candidate_store import CandidateStore, candidate_key
 from .layerwise_action import describe_layerwise_action_matrix
 from .search_baselines import (
     CONSTRAINT_NAMES,
@@ -1267,6 +1267,7 @@ def canonical_strict_validation(
         _deserialize_boosted_overrides,
         _strict_evidence_final_config_fingerprint,
         certify_candidate_with_bank_c,
+        evidence_identity_context,
         promote_candidate_if_eligible,
     )
 
@@ -1439,6 +1440,21 @@ def canonical_strict_validation(
         if not _is_sha256(strict_candidate_key):
             raise RuntimeError(
                 "canonical strict validation has no F4 candidate key"
+            )
+        strict_action_indices = tuple(
+            int(value)
+            for value in (_field(strict_evidence, "action_indices") or ())
+        )
+        expected_candidate_key = candidate_key(
+            full_vector,
+            evidence_identity_context(identity_context, "F4"),
+        )
+        if (
+                strict_action_indices != full_vector
+                or strict_candidate_key != expected_candidate_key
+        ):
+            raise RuntimeError(
+                "canonical strict validation F4 candidate identity mismatch"
             )
 
         strict_final_config_fingerprint = (

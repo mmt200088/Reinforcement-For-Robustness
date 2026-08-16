@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from blb_stage2_rl.candidate_store import action_hash
+from blb_stage2_rl.candidate_store import action_hash, candidate_key
 from blb_stage2_rl.fusion_count_map import FusionCountMap
 from blb_stage2_rl.layerwise_action import (
     layerwise_schedule,
@@ -547,8 +547,12 @@ def _strict_artifact(
                 "strict_final_assessment": {
                     name: 0.99
                     for name in (
-                        "loss", "metric1", "metric2", "loss_std",
-                        "metric1_std", "metric2_std",
+                        "loss_precision_probability",
+                        "metric1_precision_probability",
+                        "metric2_precision_probability",
+                        "loss_stability_probability",
+                        "metric1_stability_probability",
+                        "metric2_stability_probability",
                     )
                 },
                 "strict_axis_counterfactuals": (
@@ -634,6 +638,30 @@ def _promotion_result(
         axis_counterfactuals=axis_counterfactuals,
         evidence=evidence,
     )
+
+
+def _bind_strict_result(result, call_kwargs):
+    full_vector = call_kwargs.get("action_indices")
+    if full_vector is None:
+        full_vector = call_kwargs["candidate"]["full_vector"]
+    full_vector = tuple(int(value) for value in full_vector)
+    identity_context = {
+        **dict(call_kwargs["identity_context"]),
+        "fidelity": "F4",
+    }
+    evidence = result.evidence
+    evidence_payload = dict(vars(evidence))
+    evidence_payload.update({
+        "candidate_key": candidate_key(full_vector, identity_context),
+        "action_indices": full_vector,
+    })
+    result_payload = dict(vars(result))
+    result_payload["evidence"] = SimpleNamespace(**evidence_payload)
+    return SimpleNamespace(**result_payload)
+
+
+def _strict_result_side_effect(result):
+    return lambda **kwargs: _bind_strict_result(result, kwargs)
 
 
 def _strict_materialization_fingerprints():
@@ -1869,11 +1897,11 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
-                return_value=promotion,
+                side_effect=_strict_result_side_effect(promotion),
         ) as promote_mock, patch(
                 "blb_stage2_rl.layerwise_runner."
                 "certify_candidate_with_bank_c",
-                return_value=certification,
+                side_effect=_strict_result_side_effect(certification),
         ) as certify_mock:
             strict = canonical_strict_validation(
                 result=result,
@@ -1939,10 +1967,10 @@ class RuntimeEvaluatorTests(unittest.TestCase):
 
         with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner.promote_candidate_if_eligible",
-                return_value=promotion,
+                side_effect=_strict_result_side_effect(promotion),
         ), patch(
                 "blb_stage2_rl.layerwise_runner.certify_candidate_with_bank_c",
-                return_value=certification,
+                side_effect=_strict_result_side_effect(certification),
         ), self.assertRaisesRegex(RuntimeError, "axis"):
             canonical_strict_validation(
                 result=result,
@@ -1989,11 +2017,11 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
-                return_value=promotion,
+                side_effect=_strict_result_side_effect(promotion),
         ) as promote_mock, patch(
                 "blb_stage2_rl.layerwise_runner."
                 "certify_candidate_with_bank_c",
-                return_value=certification,
+                side_effect=_strict_result_side_effect(certification),
         ) as certify_mock:
             strict = canonical_strict_validation(
                 result=result,
@@ -2032,18 +2060,21 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             metric1 = (
                 0.88 if action == online_infeasible.action_matrix else 0.80
             )
-            return _promotion_result(
-                status="bank_a_point_failed",
-                trial_count=15,
-                fresh_trial_count=15,
-                metrics={
-                    "loss_mean": 1.0,
-                    "metric1_mean": metric1,
-                    "metric2_mean": 0.85,
-                    "loss_std": 0.01,
-                    "metric1_std": 0.01,
-                    "metric2_std": 0.01,
-                },
+            return _bind_strict_result(
+                _promotion_result(
+                    status="bank_a_point_failed",
+                    trial_count=15,
+                    fresh_trial_count=15,
+                    metrics={
+                        "loss_mean": 1.0,
+                        "metric1_mean": metric1,
+                        "metric2_mean": 0.85,
+                        "loss_std": 0.01,
+                        "metric1_std": 0.01,
+                        "metric2_std": 0.01,
+                    },
+                ),
+                kwargs,
             )
 
         with _patch_strict_materialization_preparation(), patch(
@@ -2237,15 +2268,18 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 communication = axis_payload(
                     metric1_mean=0.80, point_pass=False,
                 )
-            return _promotion_result(
-                status="axis_counterfactual_point_failed",
-                trial_count=30,
-                fresh_trial_count=30,
-                metrics=joint_metrics,
-                axis_counterfactuals={
-                    "compute": compute,
-                    "communication": communication,
-                },
+            return _bind_strict_result(
+                _promotion_result(
+                    status="axis_counterfactual_point_failed",
+                    trial_count=30,
+                    fresh_trial_count=30,
+                    metrics=joint_metrics,
+                    axis_counterfactuals={
+                        "compute": compute,
+                        "communication": communication,
+                    },
+                ),
+                kwargs,
             )
 
         with _patch_strict_materialization_preparation(), patch(
@@ -2323,8 +2357,44 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
-                return_value=promotion,
+                side_effect=_strict_result_side_effect(promotion),
         ), self.assertRaisesRegex(RuntimeError, "infrastructure evaluation failed"):
+            canonical_strict_validation(
+                result=_search_result(*_five_eligible_evaluations()),
+                layerwise_env=object(),
+                promotion_base_env=object(),
+                candidate_store=_candidate_store_stub(),
+                identity_context={"profile": "mrpc"},
+                validation_banks=_validation_banks(),
+                top_n=5,
+                communication_importance_ratio=1.0,
+                promotion_probability=0.8,
+                final_probability=0.95,
+            )
+
+    def test_strict_candidate_identity_mismatch_fails_closed(self):
+        promotion = _promotion_result(
+            status="bank_a_point_failed",
+            trial_count=15,
+            metrics={
+                "loss_mean": 1.0,
+                "metric1_mean": 0.88,
+                "metric2_mean": 0.85,
+                "loss_std": 0.01,
+                "metric1_std": 0.01,
+                "metric2_std": 0.01,
+            },
+            evidence=SimpleNamespace(
+                candidate_key="0" * 64,
+                action_indices=(999,),
+                groups=[{"final_config_fingerprint": "f" * 64}],
+            ),
+        )
+        with _patch_strict_materialization_preparation(), patch(
+                "blb_stage2_rl.layerwise_runner."
+                "promote_candidate_if_eligible",
+                return_value=promotion,
+        ), self.assertRaisesRegex(RuntimeError, "identity mismatch"):
             canonical_strict_validation(
                 result=_search_result(*_five_eligible_evaluations()),
                 layerwise_env=object(),
@@ -2361,7 +2431,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         with _patch_strict_materialization_preparation(), patch(
                 "blb_stage2_rl.layerwise_runner."
                 "promote_candidate_if_eligible",
-                return_value=promotion,
+                side_effect=_strict_result_side_effect(promotion),
         ) as promote_mock:
             strict = canonical_strict_validation(
                 result=result,

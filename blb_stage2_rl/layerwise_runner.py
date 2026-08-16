@@ -348,6 +348,13 @@ def bind_layerwise_candidate_identity(
                 "stage1_selection_binding must be a non-empty mapping"
             )
         context["stage1_selection_binding"] = dict(stage1_binding)
+    if "stage2_inference_batch_size" in contract:
+        stage2_inference_batch_size = int(
+            contract["stage2_inference_batch_size"]
+        )
+        if stage2_inference_batch_size <= 0:
+            raise ValueError("stage2_inference_batch_size must be positive")
+        context["stage2_inference_batch_size"] = stage2_inference_batch_size
     context["k_levels"] = list(levels)
     context["cost_model_revision"] = str(cost_model_revision)
     context["resource_objective_contract"] = {
@@ -3673,7 +3680,9 @@ def _certify_strict_best_candidates(
         )
         candidate["promotion_trials"] = result.evidence.trials
         candidate["final_revalidation_status"] = "passed"
-        candidate["validation_evidence"] = f"ABC_{result.trial_count}"
+        candidate["validation_evidence"] = (
+            f"ABC_{result.evidence.trial_count}"
+        )
         candidate["axis_counterfactuals"] = copy.deepcopy(
             getattr(result, "axis_counterfactuals", None)
         )
@@ -3751,6 +3760,7 @@ class _LayerwiseEpisodeDraft:
     episode_reward: float
     step_infos: list[Mapping[str, Any]]
     transition_indices: list[int]
+    entropy_start_index: int
     boosted_overrides: Mapping[Any, Any]
     prepared_terminal_probe: Optional[Mapping[str, Any]] = None
 
@@ -3786,6 +3796,7 @@ def _collect_layerwise_episode(
         )
     step_infos: list[Mapping[str, Any]] = []
     transition_indices: list[int] = []
+    entropy_start_index = len(entropy_samples)
     terminal_info: Optional[Mapping[str, Any]] = None
     episode_reward = 0.0
     for step_idx in range(horizon):
@@ -3887,6 +3898,7 @@ def _collect_layerwise_episode(
         episode_reward=float(episode_reward),
         step_infos=step_infos,
         transition_indices=transition_indices,
+        entropy_start_index=entropy_start_index,
         boosted_overrides=boosted_overrides,
         prepared_terminal_probe=prepared,
     )
@@ -4506,6 +4518,13 @@ def train_layerwise(
                 bool(runtime_info.get("apply_failed", False))
                 or bool(runtime_info.get("eval_failed", False))
         ):
+            truncate = getattr(rollout_buffer, "truncate", None)
+            if not callable(truncate):
+                raise RuntimeError(
+                    "rollout buffer does not support transactional truncation"
+                )
+            truncate(transition_indices[0])
+            del entropy_samples[draft.entropy_start_index:]
             raise RuntimeError(
                 "layerwise terminal infrastructure evaluation failed; "
                 "the episode must not enter PPO rollout state"

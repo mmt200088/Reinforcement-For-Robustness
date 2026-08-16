@@ -3378,6 +3378,9 @@ class _FakeBuffer:
     def clear(self):
         self.cleared = True
 
+    def truncate(self, length):
+        del self.transitions[int(length):]
+
 
 class _FakePolicy:
     def __init__(self):
