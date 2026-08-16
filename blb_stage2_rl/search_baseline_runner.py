@@ -696,29 +696,28 @@ def _promotion_payload(value: Any) -> dict[str, Any]:
     }
 
 
-def _strict_selected_rank(evaluation: SearchEvaluation) -> tuple[float, ...]:
-    assessment = dict(
-        evaluation.metadata.get("strict_final_assessment") or {}
+def _strict_selected_rank(evaluation: SearchEvaluation) -> tuple[Any, ...]:
+    """Return the same ascending strict-selection key used by PPO."""
+    from .layerwise_runner import strict_selection_key
+
+    metadata = dict(evaluation.metadata)
+    full_vector = tuple(
+        int(value) for value in metadata.get("pending_full_vector", ())
     )
-    confidence = tuple(sorted(
-        float(assessment.get(name, 0.0))
-        for name in CONSTRAINT_PROBABILITY_NAMES
-    ))
-    point_margins = tuple(sorted(evaluation.normalized_margins))
-    resource = evaluation.resource
-    lexicographic = tuple(
-        -float(value)
-        for value in LayerwiseSearchSpace(
-            len(evaluation.action_matrix)
-        ).flatten(evaluation.action_matrix)
-    )
-    return (
-        float(resource.ppo_resource_score),
-        float(resource.robust_floor),
-        *confidence,
-        *point_margins,
-        *lexicographic,
-    )
+    candidate_key_value = metadata.get("strict_candidate_key")
+    if not full_vector or not _is_sha256(candidate_key_value):
+        raise RuntimeError(
+            "strict comparator ranking requires the canonical F4 candidate identity"
+        )
+    return strict_selection_key(candidate_key_value, {
+        "assessment": dict(metadata.get("strict_final_assessment") or {}),
+        "constraint_safety_margins": evaluation.normalized_margins,
+        "action_matrix": evaluation.action_matrix,
+        "full_vector": full_vector,
+        "communication_importance_ratio": (
+            evaluation.communication_importance_ratio
+        ),
+    })
 
 
 def _strict_metrics(value: Any) -> SearchMetrics | None:
@@ -1075,7 +1074,7 @@ def _validate_strict_validation_payload(
     if verdict:
         if not strict_passes:
             raise RuntimeError("strict feasible verdict has no feasible candidate")
-        expected_selected = max(strict_passes, key=_strict_selected_rank)
+        expected_selected = min(strict_passes, key=_strict_selected_rank)
     else:
         if strict_passes:
             raise RuntimeError("least-violating verdict contains a feasible candidate")
@@ -1436,6 +1435,11 @@ def canonical_strict_validation(
         if strict_metrics is None or strict_trial_count <= 0:
             record["skip_reason"] = "no_strict_pooled_metrics"
             continue
+        strict_candidate_key = _field(strict_evidence, "candidate_key")
+        if not _is_sha256(strict_candidate_key):
+            raise RuntimeError(
+                "canonical strict validation has no F4 candidate key"
+            )
 
         strict_final_config_fingerprint = (
             _strict_evidence_final_config_fingerprint(
@@ -1516,6 +1520,7 @@ def canonical_strict_validation(
                 "strict_axis_counterfactuals": strict_axis_counterfactuals,
                 "strict_axis_metrics_source": strict_axis_metrics_source,
                 "strict_candidate_store": os.fspath(candidate_store.path),
+                "strict_candidate_key": str(strict_candidate_key),
             },
         )
         strict_point_feasible = bool(
@@ -1568,7 +1573,7 @@ def canonical_strict_validation(
         if strict_point_feasible
     ]
     if strict_passes:
-        selected = max(strict_passes, key=_strict_selected_rank)
+        selected = min(strict_passes, key=_strict_selected_rank)
         selection_status = "strict_feasible"
         strict_feasible = True
     elif strict_evaluations:

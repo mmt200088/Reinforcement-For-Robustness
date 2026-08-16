@@ -1743,6 +1743,25 @@ def _make_ga_child(
             )
         if child not in forbidden:
             return child, False
+    maximum = min(space.num_layers, max(1, int(mutation_max_layers)))
+    parents = sorted(population, key=candidate_rank_key, reverse=True)
+    for parent in parents:
+        parent_genes = space.genes(parent.action_matrix)
+        for changed_count in range(1, maximum + 1):
+            for coordinates in itertools.combinations(
+                    range(space.num_layers), changed_count,
+            ):
+                alternatives = tuple(
+                    _mesh_adjacent_gene_values(parent_genes[index])
+                    for index in coordinates
+                )
+                for replacements in itertools.product(*alternatives):
+                    genes = list(parent_genes)
+                    for index, replacement in zip(coordinates, replacements):
+                        genes[index] = int(replacement)
+                    child = space.from_genes(genes)
+                    if child not in forbidden:
+                        return child, False
     return None, False
 
 
@@ -1869,7 +1888,7 @@ def _run_coinn_ga(
                 mutation_max_layers=int(config.mutation_max_coordinates),
             )
             if child is None:
-                termination = "candidate_space_exhausted"
+                termination = "mutation_neighborhood_exhausted"
                 generation_failed = True
                 break
             forbidden.add(child)
@@ -1878,7 +1897,10 @@ def _run_coinn_ga(
                 offspring.append(observed)
 
         if generation_failed or len(offspring) != offspring_target:
-            if termination != "candidate_space_exhausted":
+            if termination not in {
+                    "candidate_space_exhausted",
+                    "mutation_neighborhood_exhausted",
+            }:
                 termination = _cache_stop_reason(cache)
             history.append(_best_history_row(
                 cache,

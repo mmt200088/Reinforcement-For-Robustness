@@ -5411,6 +5411,42 @@ class LayerwiseRolloutTests(unittest.TestCase):
             [-5.0] * 12,
         )
 
+    def test_infrastructure_terminal_failure_never_enters_ppo_rollout(self):
+        from blb_stage2_rl.candidate_store import CandidateStore
+        from blb_stage2_rl.layerwise_runner import train_layerwise
+
+        env = _FakeLayerwiseEnv(evidence_mode="missing", invalid=True)
+        original_step = env.step
+
+        def failed_step(action):
+            state, reward, done, info = original_step(action)
+            if done:
+                env.runtime_terminal_info["eval_failed"] = True
+            return state, reward, done, info
+
+        env.step = failed_step
+        buffer = _FakeBuffer()
+        with tempfile.TemporaryDirectory() as td, self.assertRaisesRegex(
+                RuntimeError, "infrastructure evaluation failed",
+        ):
+            train_layerwise(
+                env=env,
+                policy=_FakePolicy(),
+                train_cfg=self._train_cfg(),
+                candidate_store=CandidateStore(Path(td) / "candidates.jsonl"),
+                identity_context={"action_space_version": "layerwise-v1"},
+                optimizer=object(),
+                rollout_buffer=buffer,
+                ppo_update_fn=lambda *_args, **_kwargs: {},
+                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.7),
+                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
+                    np.asarray(spec.slot_mask, dtype=bool),
+                    np.asarray(spec.slot_dims, dtype=np.int64),
+                ),
+            )
+
+        self.assertEqual(buffer.transitions, [])
+
     def test_layerwise_loop_contains_no_retired_blockwise_scaffolds(self):
         from blb_stage2_rl.layerwise_runner import train_layerwise
 
@@ -5477,12 +5513,12 @@ class LayerwiseRolloutTests(unittest.TestCase):
             config.planned_total_episodes = 60_000
             config.convergence_resume_state = {
                 "best_robust_feasible_objective": [
+                    expected_resource.ppo_resource_score,
                     expected_resource.robust_floor,
-                    expected_resource.secondary_progress,
                 ],
                 "current_robust_feasible_objective": [
+                    expected_resource.ppo_resource_score,
                     expected_resource.robust_floor,
-                    expected_resource.secondary_progress,
                 ],
                 "stall_update_windows": 101,
                 "selected_action_identity": expected_identity,

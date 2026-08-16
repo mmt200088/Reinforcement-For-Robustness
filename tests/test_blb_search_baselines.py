@@ -935,6 +935,52 @@ class GeneticSearchTests(unittest.TestCase):
         self.assertEqual(mutate.call_args_list[0].args[1], first.action_matrix)
         self.assertEqual(mutate.call_args_list[1].args[1], first.action_matrix)
 
+    def test_duplicate_repair_exhausts_random_attempts_then_finds_adjacent_child(self):
+        space = LayerwiseSearchSpace(3)
+        parent = _evaluation(space.from_genes((0, 0, 0)))
+        collided = space.from_genes((1, 0, 0))
+
+        with (
+            mock.patch.object(
+                search_baselines_module,
+                "_tournament_parent",
+                return_value=parent,
+            ),
+            mock.patch.object(
+                search_baselines_module,
+                "_replacement_mutation",
+                return_value=collided,
+            ) as mutate,
+        ):
+            child, immigrant = _make_ga_child(
+                space,
+                (parent,),
+                np.random.default_rng(17),
+                {collided},
+                mutation_max_layers=2,
+            )
+
+        self.assertIsNotNone(child)
+        self.assertNotEqual(child, collided)
+        self.assertFalse(immigrant)
+        self.assertEqual(mutate.call_count, 128)
+        changed = [
+            index
+            for index, (before, after) in enumerate(
+                zip(parent.action_matrix, child)
+            )
+            if before != after
+        ]
+        self.assertLessEqual(len(changed), 2)
+        for index in changed:
+            self.assertLessEqual(
+                max(
+                    abs(parent.action_matrix[index][0] - child[index][0]),
+                    abs(parent.action_matrix[index][1] - child[index][1]),
+                ),
+                1,
+            )
+
     def test_elites_keep_incumbent_and_prefer_hamming_distance_two(self):
         space = LayerwiseSearchSpace(3)
         incumbent = _evaluation(space.from_genes((5, 5, 5)))

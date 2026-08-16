@@ -562,6 +562,9 @@ def _strict_artifact(
                         "joint", "compute_only", "communication_only",
                     )
                 },
+                "strict_candidate_key": action_hash(
+                    materializations["joint"].full_vector
+                ),
                 "strict_violations": violations,
             },
         ).as_dict()
@@ -582,7 +585,11 @@ def _strict_artifact(
         "strict_feasible" if strict_feasible else "strict_least_violating"
     )
     rank_key = _strict_selected_rank if strict_feasible else _strict_fallback_rank
-    selected_evaluation = max(strict_evaluations, key=rank_key)
+    selected_evaluation = (
+        min(strict_evaluations, key=rank_key)
+        if strict_feasible
+        else max(strict_evaluations, key=rank_key)
+    )
     selected_violations = selected_evaluation.metadata["strict_violations"]
     selected = {
         **selected_evaluation.as_dict(),
@@ -736,6 +743,39 @@ def _validation_banks(
 
 
 class RuntimeEvaluatorTests(unittest.TestCase):
+    def test_strict_rank_uses_ppo_full_vector_tiebreak_not_compact_action(self):
+        def strict_evaluation(action_matrix, full_vector):
+            payload = _search_evaluation(action_matrix).as_dict()
+            metadata = dict(payload["metadata"])
+            metadata.update({
+                "pending_full_vector": list(full_vector),
+                "strict_candidate_key": action_hash(full_vector),
+                "strict_final_assessment": {
+                    name: 0.99 for name in (
+                        "loss_precision_probability",
+                        "metric1_precision_probability",
+                        "metric2_precision_probability",
+                        "loss_stability_probability",
+                        "metric1_stability_probability",
+                        "metric2_stability_probability",
+                    )
+                },
+            })
+            payload["metadata"] = metadata
+            return SearchEvaluation.from_dict(payload)
+
+        compact_first = strict_evaluation(
+            ((0, 1), (1, 0)), (9, 0, 0, 0),
+        )
+        full_vector_first = strict_evaluation(
+            ((1, 0), (0, 1)), (1, 9, 9, 9),
+        )
+
+        selected = min(
+            (compact_first, full_vector_first), key=_strict_selected_rank,
+        )
+        self.assertEqual(selected.action_matrix, full_vector_first.action_matrix)
+
     def test_duplicate_persisted_observation_row_fails_closed(self):
         evaluation = _search_evaluation(((0, 0), (0, 0)))
         with tempfile.TemporaryDirectory() as tmpdir:

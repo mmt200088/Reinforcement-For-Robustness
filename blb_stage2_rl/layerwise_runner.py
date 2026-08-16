@@ -2085,7 +2085,8 @@ def _restore_three_bank_candidates(
                 "passed" if final_certified else "not_run"
             ),
             "validation_evidence": (
-                "ABC_75" if final_certified else "AB_50"
+                f"ABC_{evidence.trial_count}"
+                if final_certified else f"AB_{evidence.trial_count}"
             ),
             "axis_counterfactuals": copy.deepcopy(
                 metadata.get("axis_counterfactuals")
@@ -3672,7 +3673,7 @@ def _certify_strict_best_candidates(
         )
         candidate["promotion_trials"] = result.evidence.trials
         candidate["final_revalidation_status"] = "passed"
-        candidate["validation_evidence"] = "ABC_75"
+        candidate["validation_evidence"] = f"ABC_{result.trial_count}"
         candidate["axis_counterfactuals"] = copy.deepcopy(
             getattr(result, "axis_counterfactuals", None)
         )
@@ -4145,8 +4146,8 @@ def train_layerwise(
     restored_frontier_objective = (
         None if restored_strict_best is None
         else (
+            float(restored_strict_best["ppo_resource_score"]),
             float(restored_strict_best["robust_floor"]),
-            float(restored_strict_best["secondary_progress"]),
         )
     )
     restored_selected_identity = (
@@ -4501,6 +4502,14 @@ def train_layerwise(
         breakdown = runtime_info.get("reward_breakdown")
         priority = int(_field(breakdown, "priority", runtime_info.get("priority", 0)))
         invalid_terminal = bool(runtime_info.get("invalid", False))
+        if (
+                bool(runtime_info.get("apply_failed", False))
+                or bool(runtime_info.get("eval_failed", False))
+        ):
+            raise RuntimeError(
+                "layerwise terminal infrastructure evaluation failed; "
+                "the episode must not enter PPO rollout state"
+            )
         k1_only_reject = bool(
             runtime_info.get("protected_k1_k1_only_reject", False)
         )
