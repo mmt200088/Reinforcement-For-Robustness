@@ -30,7 +30,7 @@ from .search_baselines import (
     normalize_search_backend,
     run_search,
 )
-from .seed_utils import derive_layerwise_episode_probe_seed
+from .seed_utils import derive_layerwise_online_evaluation_seeds
 
 
 def _field(value: Any, name: str, default: Any = None) -> Any:
@@ -225,16 +225,13 @@ class LayerwiseRuntimeEvaluator:
         clear = getattr(base_env, "clear_installed_blb", None)
         if callable(clear):
             clear()
-        probe_seed = derive_layerwise_episode_probe_seed(
+        reset_seed, probe_seed = derive_layerwise_online_evaluation_seeds(
             int(self.base_seed),
             evaluation_index,
             trial_count=self.expected_trials,
         )
         try:
-            state = self.env.reset(
-                seed=(int(self.base_seed) + evaluation_index)
-                & 0x7FFFFFFFFFFFFFFF
-            )
+            state = self.env.reset(seed=reset_seed)
             del state
             base_env.probe_noise_seed = probe_seed
             terminal_reward = 0.0

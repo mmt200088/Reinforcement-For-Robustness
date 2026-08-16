@@ -167,6 +167,22 @@ def derive_layerwise_episode_probe_seed(
     )
 
 
+def derive_layerwise_online_evaluation_seeds(
+        base_seed: int,
+        global_episode_idx: int,
+        *,
+        trial_count: int = 5,
+        ) -> tuple[int, int]:
+    """Return the shared reset/probe seed plan for one online evaluation."""
+    probe_seed = derive_layerwise_episode_probe_seed(
+        base_seed,
+        global_episode_idx,
+        trial_count=trial_count,
+    )
+    reset_seed = int(base_seed) + int(global_episode_idx)
+    return reset_seed, probe_seed
+
+
 def derive_layerwise_promotion_probe_seed(
         base_seed: int,
         attempt_idx: int,

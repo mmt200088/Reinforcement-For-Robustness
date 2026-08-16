@@ -3780,20 +3780,19 @@ def _collect_layerwise_episode(
             [Any, int, int], tuple[np.ndarray, np.ndarray]
         ],
         ) -> _LayerwiseEpisodeDraft:
-    state = env.reset(
-        seed=(
-            None if base_seed is None
-            else int(base_seed) + int(absolute_episode)
-        )
-    )
-    if base_seed is not None and hasattr(env, "base"):
-        from .seed_utils import derive_layerwise_episode_probe_seed
+    reset_seed = None
+    probe_seed = None
+    if base_seed is not None:
+        from .seed_utils import derive_layerwise_online_evaluation_seeds
 
-        env.base.probe_noise_seed = derive_layerwise_episode_probe_seed(
+        reset_seed, probe_seed = derive_layerwise_online_evaluation_seeds(
             int(base_seed),
             int(absolute_episode),
             trial_count=int(expected_online_trials),
         )
+    state = env.reset(seed=reset_seed)
+    if probe_seed is not None and hasattr(env, "base"):
+        env.base.probe_noise_seed = probe_seed
     step_infos: list[Mapping[str, Any]] = []
     transition_indices: list[int] = []
     entropy_start_index = len(entropy_samples)
