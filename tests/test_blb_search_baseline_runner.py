@@ -1276,6 +1276,74 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 {"metrics": {"loss_mean": 0.2}},
             )
 
+    def test_fixed_action_strict_gate_uses_five_real_unique_candidates(self):
+        from blb_stage2_rl.same_action_parity import (
+            run_same_action_parity_gate,
+        )
+
+        class ParityEnv(_LayerwiseEnv):
+            max_step_dim = 2
+
+            @staticmethod
+            def current_spec():
+                return SimpleNamespace(
+                    fusion_num_options=2,
+                    k_num_levels=3,
+                )
+
+        target = ((0, 0), (0, 0))
+
+        def strict_validator(result):
+            self.assertEqual(len(result.observations), 5)
+            self.assertEqual(
+                len({item.action_matrix for item in result.observations}),
+                5,
+            )
+            target_evaluation = next(
+                item for item in result.observations
+                if item.action_matrix == target
+            )
+            target_payload = target_evaluation.as_dict()
+            target_payload["metadata"] = {
+                **target_payload["metadata"],
+                "strict_trial_count": 45,
+                "strict_violations": {
+                    "families": {
+                        family: {"banks_run": ["A", "B", "C"]}
+                        for family in (
+                            "joint",
+                            "compute_only",
+                            "communication_only",
+                        )
+                    },
+                },
+            }
+            return {
+                "strict_evaluated_candidate_count": 5,
+                "selected": target_payload,
+                "records": [{
+                    "online_candidate": target_evaluation.as_dict(),
+                    "strict_evaluated": True,
+                    "strict_evaluation": target_payload,
+                }],
+            }
+
+        evidence = run_same_action_parity_gate(
+            layerwise_env=ParityEnv(),
+            robust_reference=_Reference(),
+            action_matrix=target,
+            base_seed=17,
+            expected_trials=3,
+            strict_validator=strict_validator,
+        )
+
+        self.assertEqual(evidence["strict_candidate_count"], 5)
+        self.assertEqual(evidence["strict_target_trial_count"], 45)
+        self.assertEqual(
+            evidence["strict_target_banks_run"],
+            ["A", "B", "C"],
+        )
+
     def test_optimizer_invalid_candidate_returns_invalid_and_search_continues(self):
         env = _InvalidCandidateLayerwiseEnv()
         callback_rows = []
