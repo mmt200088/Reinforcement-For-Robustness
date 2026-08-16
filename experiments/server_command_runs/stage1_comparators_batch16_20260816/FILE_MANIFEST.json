@@ -1,5 +1,5 @@
 {
-  "file_count_excluding_manifest_and_sha256sums": 75,
+  "file_count_excluding_manifest_and_sha256sums": 76,
   "files": [
     {
       "path": "README.md",
@@ -367,6 +367,11 @@
       "size": 8
     },
     {
+      "path": "stage1_comparator_batch16_vs_rl_report_20260816.html",
+      "sha256": "b550aaeef6fd9441fb908378f223da6cb5e911e6aa1a3cac10d6f2704d4037e5",
+      "size": 20555
+    },
+    {
       "path": "status.json",
       "sha256": "deb1070296c82c11735385cc5774434693e93dfd64b5ee87103800d6b6f8500d",
       "size": 602
@@ -377,6 +382,5 @@
       "size": 959
     }
   ],
-  "generated_at": "2026-08-16T13:06:24.458953+00:00",
-  "schema_version": "comparator_stage1_batch16_file_manifest_v1"
+  "generated_at": "2026-08-16T13:38:53.038083+00:00"
 }

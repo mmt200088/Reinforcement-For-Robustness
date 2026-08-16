@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stage-1 三种搜索算法与 RL 结果对比</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5e6975;
+      --line: #d9dee5;
+      --soft: #f4f6f8;
+      --paper: #ffffff;
+      --navy: #1f4b6e;
+      --green: #18794e;
+      --green-soft: #eaf6ef;
+      --amber: #9a6700;
+      --amber-soft: #fff7db;
+      --red: #b42318;
+      --red-soft: #fff0ed;
+      --blue-soft: #eaf2f8;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      letter-spacing: 0;
+    }
+
+    header {
+      color: #fff;
+      background: #17324a;
+      border-bottom: 5px solid #2c7a67;
+    }
+
+    .header-inner,
+    main,
+    footer {
+      width: min(1180px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    .header-inner { padding: 30px 0 28px; }
+
+    .eyebrow {
+      margin-bottom: 8px;
+      color: #b8d9d0;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(27px, 4vw, 42px);
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    header p {
+      max-width: 860px;
+      margin: 12px 0 0;
+      color: #d8e3ea;
+      font-size: 16px;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      overflow-x: auto;
+      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.97);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .nav-inner {
+      width: min(1180px, calc(100% - 36px));
+      margin: 0 auto;
+      display: flex;
+      gap: 20px;
+    }
+
+    nav a {
+      display: inline-block;
+      padding: 11px 0 10px;
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+    }
+
+    nav a:hover { border-bottom-color: var(--green); }
+
+    main { padding: 30px 0 48px; }
+
+    section {
+      padding: 28px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    section:first-child { padding-top: 0; }
+    section:last-child { border-bottom: 0; }
+
+    h2 {
+      margin: 0 0 14px;
+      color: #20394e;
+      font-size: 23px;
+      line-height: 1.3;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    p { margin: 8px 0; }
+
+    code {
+      overflow-wrap: anywhere;
+      color: #243746;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9em;
+    }
+
+    .lead {
+      max-width: 960px;
+      color: #384653;
+      font-size: 16px;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 20px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .kpi {
+      min-width: 0;
+      padding: 17px 18px;
+      background: #fff;
+      border-right: 1px solid var(--line);
+    }
+
+    .kpi:last-child { border-right: 0; }
+    .kpi span { display: block; color: var(--muted); font-size: 12px; }
+    .kpi strong { display: block; margin-top: 3px; font-size: 22px; line-height: 1.25; }
+    .kpi small { display: block; margin-top: 4px; color: var(--muted); }
+
+    .notice {
+      margin: 16px 0;
+      padding: 13px 15px;
+      border-left: 4px solid var(--navy);
+      background: var(--blue-soft);
+    }
+
+    .notice.warn {
+      border-left-color: var(--amber);
+      background: var(--amber-soft);
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    table {
+      width: 100%;
+      min-width: 840px;
+      border-collapse: collapse;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th,
+    td {
+      padding: 11px 13px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th {
+      color: #30404d;
+      background: var(--soft);
+      font-size: 12px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: #fafbfc; }
+
+    .num { text-align: right; white-space: nowrap; }
+    .best { color: var(--green); font-weight: 750; }
+    .slower { color: var(--red); font-weight: 700; }
+    .muted { color: var(--muted); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.5;
+      white-space: nowrap;
+    }
+
+    .badge.equal { color: var(--green); background: var(--green-soft); }
+    .badge.lower { color: var(--red); background: var(--red-soft); }
+    .badge.info { color: var(--navy); background: var(--blue-soft); }
+
+    .metric-band {
+      display: grid;
+      grid-template-columns: 170px repeat(4, minmax(0, 1fr));
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .metric-band > div {
+      min-width: 0;
+      padding: 12px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .metric-band > div:nth-child(5n) { border-right: 0; }
+    .metric-band > div:nth-last-child(-n + 5) { border-bottom: 0; }
+    .metric-head { color: var(--muted); background: var(--soft); font-size: 12px; font-weight: 700; }
+    .metric-name { font-weight: 700; background: #fbfcfd; }
+    .metric-value { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: 180px repeat(12, minmax(42px, 1fr));
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .config-grid > div {
+      min-width: 0;
+      padding: 9px 7px;
+      text-align: center;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .config-grid > div:nth-child(13n) { border-right: 0; }
+    .config-grid > div:nth-last-child(-n + 13) { border-bottom: 0; }
+    .config-grid .row-label { text-align: left; font-weight: 700; background: #fbfcfd; }
+    .config-grid .col-head { color: var(--muted); background: var(--soft); font-size: 12px; font-weight: 700; }
+    .degree-1 { color: #0f6b48; background: #edf8f2; font-weight: 750; }
+    .degree-2 { color: #7a4b00; background: #fff7e0; font-weight: 750; }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 16px;
+    }
+
+    .plain-panel {
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .plain-panel h3 { margin-top: 0; }
+    .plain-panel ul { margin: 8px 0 0; padding-left: 20px; }
+
+    .provenance {
+      display: grid;
+      grid-template-columns: 210px 1fr;
+      border-top: 1px solid var(--line);
+    }
+
+    .provenance dt,
+    .provenance dd {
+      margin: 0;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .provenance dt { color: var(--muted); font-weight: 700; }
+
+    footer {
+      padding: 22px 0 34px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 860px) {
+      .kpi-grid { grid-template-columns: 1fr 1fr; }
+      .kpi:nth-child(2) { border-right: 0; }
+      .kpi:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+      .two-col { grid-template-columns: 1fr; }
+      .metric-band { grid-template-columns: 130px repeat(4, minmax(130px, 1fr)); overflow-x: auto; }
+      .provenance { grid-template-columns: 1fr; }
+      .provenance dt { padding-bottom: 0; border-bottom: 0; }
+    }
+
+    @media (max-width: 520px) {
+      .header-inner,
+      main,
+      footer,
+      .nav-inner { width: min(100% - 24px, 1180px); }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .kpi { border-right: 0; border-bottom: 1px solid var(--line); }
+      .kpi:nth-child(-n + 3) { border-bottom: 1px solid var(--line); }
+      .kpi:last-child { border-bottom: 0; }
+    }
+
+    @media print {
+      nav { display: none; }
+      body { font-size: 12px; }
+      .header-inner, main, footer { width: 100%; }
+      section { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="eyebrow">Reinforcement-For-Robustness / Stage-1 / MRPC</div>
+      <h1>三种搜索算法与 RL 结果对比</h1>
+      <p>Greedy、BO-RF、COINN-GA 均采用重新对齐后的 batch size 16 正式结果；RL 数值来自 2026-08-10 六模型最终报告中的 BERT-base MRPC Stage-1 条目。</p>
+    </div>
+  </header>
+
+  <nav aria-label="报告目录">
+    <div class="nav-inner">
+      <a href="#scope">口径</a>
+      <a href="#results">结果</a>
+      <a href="#delta">相对 RL</a>
+      <a href="#config">配置</a>
+      <a href="#search">搜索成本</a>
+      <a href="#evidence">证据</a>
+    </div>
+  </nav>
+
+  <main>
+    <section id="scope">
+      <h2>统一比较口径</h2>
+      <p class="lead">四种算法比较的是同一个模型、同一个数据集划分和同一个 Stage-1 近似配置空间。三种 comparator 的重新运行已经把 batch size 与历史 RL 对齐为 16，因此本报告不再混用此前 batch size 64 的作废结果。</p>
+      <div class="kpi-grid">
+        <div class="kpi"><span>模型</span><strong>BERT-base</strong><small>textattack/bert-base-uncased-MRPC</small></div>
+        <div class="kpi"><span>数据</span><strong>408</strong><small>GLUE MRPC validation_full</small></div>
+        <div class="kpi"><span>Batch size</span><strong>16</strong><small>Comparator batch / micro-batch</small></div>
+        <div class="kpi"><span>精度容差</span><strong>0.001</strong><small>Stage-1 accuracy tolerance</small></div>
+      </div>
+      <div class="notice warn"><b>精度边界：</b>RL 报告只公开了 loss 9 位小数、accuracy/F1 4 位百分数。下文对 RL 的差值按这些报告数值计算；“持平”表示在报告显示精度内持平，不代表底层浮点值逐位相同。</div>
+    </section>
+
+    <section id="results">
+      <h2>最终搜索结果</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>算法</th>
+              <th class="num">Loss ↓</th>
+              <th class="num">Accuracy ↑</th>
+              <th class="num">Weighted F1 ↑</th>
+              <th class="num">Cost ↓</th>
+              <th>可行</th>
+              <th>GELU 配置摘要</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>RL</b></td>
+              <td class="num best">0.343962103</td>
+              <td class="num best">87.9902%</td>
+              <td class="num best">87.8389%</td>
+              <td class="num">51.0</td>
+              <td><span class="badge equal">是</span></td>
+              <td>10 层 degree 1，2 层 degree 2</td>
+            </tr>
+            <tr>
+              <td><b>Greedy</b></td>
+              <td class="num">0.344611801207</td>
+              <td class="num best">87.990196%</td>
+              <td class="num best">87.838859%</td>
+              <td class="num">51.0</td>
+              <td><span class="badge equal">是</span></td>
+              <td>与 RL 逐层配置相同</td>
+            </tr>
+            <tr>
+              <td><b>BO-RF</b></td>
+              <td class="num">0.345092545622</td>
+              <td class="num">87.745098%</td>
+              <td class="num">87.635627%</td>
+              <td class="num">51.0</td>
+              <td><span class="badge equal">是</span></td>
+              <td>第 2、9、10 层与 RL 不同</td>
+            </tr>
+            <tr>
+              <td><b>COINN-GA</b></td>
+              <td class="num">0.344611801207</td>
+              <td class="num best">87.990196%</td>
+              <td class="num best">87.838859%</td>
+              <td class="num">51.0</td>
+              <td><span class="badge equal">是</span></td>
+              <td>与 RL 逐层配置相同</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="metric-band" aria-label="四算法核心指标">
+        <div class="metric-head">指标</div><div class="metric-head">RL</div><div class="metric-head">Greedy</div><div class="metric-head">BO-RF</div><div class="metric-head">COINN-GA</div>
+        <div class="metric-name">Loss ↓</div><div class="metric-value best">0.343962103</div><div class="metric-value">0.344611801</div><div class="metric-value">0.345092546</div><div class="metric-value">0.344611801</div>
+        <div class="metric-name">Accuracy ↑</div><div class="metric-value best">87.9902%</div><div class="metric-value best">87.9902%</div><div class="metric-value">87.7451%</div><div class="metric-value best">87.9902%</div>
+        <div class="metric-name">Weighted F1 ↑</div><div class="metric-value best">87.8389%</div><div class="metric-value best">87.8389%</div><div class="metric-value">87.6356%</div><div class="metric-value best">87.8389%</div>
+      </div>
+    </section>
+
+    <section id="delta">
+      <h2>相对 RL 的差值</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>算法</th>
+              <th class="num">Loss 差值</th>
+              <th class="num">Accuracy 差值</th>
+              <th class="num">Weighted F1 差值</th>
+              <th>结论</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Greedy</td>
+              <td class="num slower">+0.000649698</td>
+              <td class="num">约 0.0000 pp</td>
+              <td class="num">约 0.0000 pp</td>
+              <td><span class="badge info">同配置</span> 分类指标在 RL 报告精度内持平，loss 略高</td>
+            </tr>
+            <tr>
+              <td>BO-RF</td>
+              <td class="num slower">+0.001130443</td>
+              <td class="num slower">-0.245102 pp</td>
+              <td class="num slower">-0.203273 pp</td>
+              <td><span class="badge lower">略低</span> 408 条样本中少预测正确 1 条</td>
+            </tr>
+            <tr>
+              <td>COINN-GA</td>
+              <td class="num slower">+0.000649698</td>
+              <td class="num">约 0.0000 pp</td>
+              <td class="num">约 0.0000 pp</td>
+              <td><span class="badge info">同配置</span> 与 Greedy 结果相同</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">Loss 差值为 comparator − RL，越接近 0 越好；Accuracy/F1 差值为 comparator − RL，单位为百分点（pp）。</p>
+    </section>
+
+    <section id="config">
+      <h2>逐层 GELU 配置</h2>
+      <p>四种方法的 Softmax degree 均为 12 层全 6。RL、Greedy 和 COINN-GA 的 GELU 配置逐层相同；BO-RF 在第 2、9、10 层不同。</p>
+      <div class="config-grid" role="table" aria-label="逐层 GELU degree 对比">
+        <div class="col-head">算法 / 层</div>
+        <div class="col-head">1</div><div class="col-head">2</div><div class="col-head">3</div><div class="col-head">4</div><div class="col-head">5</div><div class="col-head">6</div><div class="col-head">7</div><div class="col-head">8</div><div class="col-head">9</div><div class="col-head">10</div><div class="col-head">11</div><div class="col-head">12</div>
+        <div class="row-label">RL</div>
+        <div class="degree-1">1</div><div class="degree-2">2</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-2">2</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div>
+        <div class="row-label">Greedy</div>
+        <div class="degree-1">1</div><div class="degree-2">2</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-2">2</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div>
+        <div class="row-label">BO-RF</div>
+        <div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-2">2</div><div class="degree-2">2</div><div class="degree-1">1</div><div class="degree-1">1</div>
+        <div class="row-label">COINN-GA</div>
+        <div class="degree-1">1</div><div class="degree-2">2</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-2">2</div><div class="degree-1">1</div><div class="degree-1">1</div><div class="degree-1">1</div>
+      </div>
+      <div class="notice"><b>配置结论：</b>Greedy 和 COINN-GA 都重新找到了历史 RL 的最终 Stage-1 配置；BO-RF 找到的是另一个成本相同且满足精度容差的可行配置。</div>
+    </section>
+
+    <section id="search">
+      <h2>Comparator 搜索成本</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>算法</th>
+              <th class="num">评估次数</th>
+              <th class="num">独立评估</th>
+              <th class="num">搜索墙钟</th>
+              <th>停止原因</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Greedy</td><td class="num best">958</td><td class="num">958</td><td class="num best">6 分 12 秒</td><td><code>verified_local_optimum</code></td></tr>
+            <tr><td>BO-RF</td><td class="num">1,072</td><td class="num">1,072</td><td class="num">12 分 09 秒</td><td><code>no_improvement_convergence</code></td></tr>
+            <tr><td>COINN-GA</td><td class="num">11,464</td><td class="num">11,464</td><td class="num">74 分 46 秒</td><td><code>completed_generations</code>，完整 200 代</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="two-col">
+        <div class="plain-panel">
+          <h3>硬件利用</h3>
+          <ul>
+            <li>NVIDIA GeForce RTX 4090 单卡</li>
+            <li>GPU 利用率均值 92.82%，中位数 100%</li>
+            <li>GPU 利用率 P95 100%</li>
+            <li>最大显存 1,592 MiB，平均功耗 325.17 W</li>
+          </ul>
+        </div>
+        <div class="plain-panel">
+          <h3>不可直接比较项</h3>
+          <ul>
+            <li>历史 RL 报告没有与最终配置严格匹配的完整 PPO trajectory</li>
+            <li>因此不能从该报告恢复 RL 的精确评估次数或同口径搜索墙钟</li>
+            <li>本报告只比较最终配置、验证集指标与成本，不做 RL 速度排名</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <h2>证据与可复现性</h2>
+      <dl class="provenance">
+        <dt>Comparator source commit</dt><dd><code>9d833d90760b1bf85fca4c8650e8149f61119ad2</code></dd>
+        <dt>Comparator source tree</dt><dd><code>918fb6e4f5e6ea6fa659a30045331f99dc48800e</code></dd>
+        <dt>Comparator schema</dt><dd><code>comparator_stage1_batch16_run_summary_v1</code></dd>
+        <dt>Comparator 原始汇总</dt><dd><code>RUN_SUMMARY.json</code></dd>
+        <dt>RL 报告</dt><dd><code>stage1_six_model_final_full_report_with_curves_20260810.html</code></dd>
+        <dt>RL 报告 SHA-256</dt><dd><code>1f5e3c9bc9cc4486d527c8c12442df5397760a52084d94e85eba3e23e9124575</code></dd>
+        <dt>RL 配置键</dt><dd><code>mrpc_stage1_best_20260624</code></dd>
+        <dt>生成时间</dt><dd><code>2026-08-16T21:35:38+08:00</code></dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer>
+    本报告是结果归档的一部分。三种 comparator 的 observations、history、checkpoint、manifest、summary、launcher/model 日志、GPU samples 和验证摘要均保留在同一结果目录，并由 SHA256SUMS 校验。
+  </footer>
+</body>
+</html>
