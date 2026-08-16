@@ -12,9 +12,35 @@ separates three different claims:
 3. historical facts that are not recoverable from archived evidence and must
    not be presented as proven.
 
-The local static audit and parity corrections are complete. Server tests and a
-real-BERT same-action dynamic parity gate are still required before canonical
-promotion or a formal comparator launch.
+The local static audit and parity corrections are complete. On 2026-08-17, the
+exact aggregate commit passed the focused and full server test gates, Python
+compilation, launcher syntax, and tracked-clean checks. A real-BERT same-action
+dynamic parity gate is still required before canonical promotion or a formal
+comparator launch; it is currently blocked by the server NVIDIA driver/library
+mismatch described below.
+
+## Current server verification
+
+The tested code-bearing server checkout was synchronized through Git to commit
+`68a0c8db278ac4b67d0ae4dfbf9fb51832171cae`, tree
+`0ceb19ff7c6d668bb6cacfa3f56c4c9f364e1d05`, and remained tracked-clean.
+
+- Focused Stage-2 parity gate: 382 passed, 240 subtests passed.
+- Full project pytest gate: 2359 passed, 16 skipped, 613 subtests passed.
+- Python `compileall`, `bash -n llama_7B_LayerImportance.sh`, and
+  `git diff --check`: passed.
+- Server evidence:
+  `/hy-tmp/rfr_stage2_comparator_parity_gate_20260817/focused_stage2_v3.xml`
+  and
+  `/hy-tmp/rfr_stage2_comparator_parity_gate_20260817/full_pytest_v4.xml`.
+
+The 16 full-suite skips include the CUDA-specific gates. The server kernel has
+NVIDIA module `580.173.02`, while `libnvidia-ml.so.1` and `libcuda.so.1` resolve
+to `580.159.03`. Consequently, `nvidia-smi` reports a driver/library version
+mismatch and PyTorch reports CUDA error 803 with zero visible devices. No
+matching `580.173.02` user-space library is installed, so this cannot be fixed
+with a non-persistent library-path override. The audit did not install drivers,
+change system libraries, or reboot the server.
 
 ## Authoritative references
 
@@ -276,7 +302,6 @@ The earlier review contained several unsupported or incorrect statements:
 Before launch, the server must still prove all of the following from the exact
 aggregate commit and tree:
 
-- focused and full project test gates pass;
 - real BERT accepts only the pinned 12-layer MRPC model and fixture;
 - a fixed action produces identical PPO/comparator full vectors, replan
   fingerprints, installed Block1-Block5 configurations, trial seeds, raw trial
