@@ -787,6 +787,80 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 final_eval_error=None,
             )
 
+    def test_optional_paean_failure_preserves_strict_stage2_result(self):
+        build = _load_function(
+            "layer_importance_evaluator.py",
+            "_build_ordinary_two_stage_result",
+            Any=object,
+            Mapping=dict,
+            os=os,
+        )
+        binding = {
+            "backend": "bo_rf",
+            "seed": 1729,
+            "action": [0, 1],
+            "gelu_degrees": [4, 2],
+            "softmax_degrees": [6, 6],
+            "num_layers": 2,
+            "result_path": "/runs/stage1/result.json",
+        }
+        stage2 = {
+            "status": "completed",
+            "strict_feasible": True,
+            "search_backend": "bo_rf",
+            "stage1_consumed_binding": binding,
+            "blb_v3_best_action_vec": [0, 1, 2, 3],
+            "blb_v3_best_action_group": {
+                "policy_actions": [[0, 0], [1, 2]],
+            },
+            "final_config_fingerprint": "strict-f4-fingerprint",
+            "selection_diagnostics": {
+                "strict_validation": {
+                    "selection_status": "strict_feasible",
+                },
+            },
+        }
+
+        completed = build(
+            backend="bo_rf",
+            stage1_best_config={"selection_binding": binding},
+            stage2_result=stage2,
+            final_eval_result={"summary_path": "/runs/paean/result.json"},
+            final_eval_status="completed",
+            final_eval_ineligible_reason=None,
+            final_eval_error=None,
+        )
+        failed_optional = build(
+            backend="bo_rf",
+            stage1_best_config={"selection_binding": binding},
+            stage2_result=stage2,
+            final_eval_result=None,
+            final_eval_status="failed_optional",
+            final_eval_ineligible_reason=None,
+            final_eval_error="RuntimeError('mock Paean failure')",
+        )
+
+        self.assertEqual(
+            stable_json_hash(failed_optional["stage2"]),
+            stable_json_hash(completed["stage2"]),
+        )
+        self.assertEqual(
+            failed_optional["status"], "complete_strict_feasible",
+        )
+        self.assertTrue(failed_optional["strict_feasible"])
+        self.assertEqual(
+            failed_optional["stage2"]["final_config_fingerprint"],
+            "strict-f4-fingerprint",
+        )
+        self.assertEqual(
+            failed_optional["final_eval"]["status"], "failed_optional",
+        )
+        self.assertFalse(failed_optional["final_eval"]["executed"])
+        self.assertEqual(
+            failed_optional["final_eval"]["error"],
+            "RuntimeError('mock Paean failure')",
+        )
+
     def test_outer_two_stage_result_accepts_relative_and_absolute_result_path(self):
         build = _load_function(
             "layer_importance_evaluator.py",
