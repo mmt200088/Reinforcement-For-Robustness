@@ -348,7 +348,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                     "s1t0.001_s2t0.001_s2st2.0",
                 )
 
-    def test_comparator_aliases_fix_historical_rl_aligned_batch_without_preset(self):
+    def test_comparator_aliases_fix_stage_specific_historical_rl_batches_without_preset(self):
         for alias in ("bo_rf", "greedy", "coinn_ga"):
             with self.subTest(alias=alias):
                 argv = self._capture_comparator_persistent_path(
@@ -363,6 +363,10 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 self.assertEqual(
                     argv[argv.index("--micro_batch_size") + 1],
                     "16",
+                )
+                self.assertEqual(
+                    argv[argv.index("--stage2_inference_batch_size") + 1],
+                    "64",
                 )
 
     def test_comparator_aliases_pin_final_eval_and_stage2_seeds(self):
@@ -556,6 +560,8 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
             ("bo_rf", ("--blb-v3-search-rf-min-samples-leaf=99",)),
             ("bo_rf", ("--batch-size", "8")),
             ("greedy", ("--batch-size=8",)),
+            ("coinn_ga", ("--stage2-inference-batch-size", "16")),
+            ("bo_rf", ("--stage2-inference-batch-size=16",)),
             (
                 "greedy",
                 ("--mrpc-reproducibility-fixture-path", "other.json"),

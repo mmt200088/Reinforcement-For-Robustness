@@ -20,6 +20,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("blb_v3_search_evaluation_budget", arguments)
         self.assertIn("blb_v3_search_full_validation", arguments)
         self.assertIn("comparator_smoke", arguments)
+        self.assertIn("stage2_inference_batch_size", arguments)
         evaluator_call = next(
             node for node in ast.walk(train)
             if isinstance(node, ast.Call)
@@ -33,6 +34,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("blb_v3_search_evaluation_budget", keywords)
         self.assertIn("blb_v3_search_full_validation", keywords)
         self.assertIn("comparator_smoke", keywords)
+        self.assertIn("stage2_inference_batch_size", keywords)
 
     def test_comparator_smoke_is_parsed_and_validated_at_evaluator_boundary(self):
         entrypoint = (ROOT / "rl_tune.py").read_text(encoding="utf-8")
@@ -325,6 +327,18 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertNotIn("validate_formal_mrpc_batch_size", evaluator)
         self.assertNotIn("validate_formal_mrpc_run_identity", evaluator)
         self.assertNotIn("hash_formal_mrpc_tokenized_view", evaluator)
+
+    def test_evaluator_pins_comparator_stage2_to_historical_rl_batch(self):
+        evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE", evaluator,
+        )
+        self.assertIn(
+            "two-stage comparators require Stage-2 inference batch size",
+            evaluator,
+        )
 
     def test_evaluator_revalidates_stage2_scientific_parameters(self):
         evaluator = (ROOT / "layer_importance_evaluator.py").read_text(

@@ -92,6 +92,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
                 search_backend="bo_rf",
                 profile="mrpc",
                 seed=1729,
+                stage2_inference_batch_size=64,
             )
             with mock.patch(
                 "stage1_rl.search_runner.load_completed_search_result",
@@ -115,6 +116,10 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         self.assertEqual(invocation["fixed_softmax"], [6, 6])
         self.assertEqual(invocation["stage1_result_path"], result_path)
         self.assertEqual(invocation["stage1_selection_binding"], binding)
+        self.assertEqual(
+            invocation["scientific_parameters"]["stage2_inference_batch_size"],
+            64,
+        )
         for removed in (
             "invocation_hash",
             "stage1_result_sha256",
@@ -253,8 +258,9 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             "train_cfg": SimpleNamespace(
                 inproc_rescale_optimizer_root="Rescale_optimizer",
                 profile="mrpc",
+                stage2_inference_batch_size=64,
             ),
-            "evaluator": SimpleNamespace(model_type="bert-base"),
+            "evaluator": SimpleNamespace(model_type="bert-base", batch_size=16),
             "fusion_map": {"block4": []},
             "max_sfs": {"block4": []},
             "fixed_gelu": np.asarray([4, 2], dtype=int),
@@ -284,6 +290,8 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             comparator_context["stage1_selection_binding"],
             expected_binding,
         )
+        self.assertEqual(comparator_context["stage2_inference_batch_size"], 64)
+        self.assertEqual(ppo_context["stage2_inference_batch_size"], 64)
         self.assertNotIn("stage1_selection_binding", ppo_context)
         for removed in (
             "stage1_selection_provenance",

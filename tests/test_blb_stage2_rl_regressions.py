@@ -2163,7 +2163,25 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
 
 
 class BLBProbeSizingRegressionTests(unittest.TestCase):
-    def test_probe_batch_count_covers_requested_probe_size(self):
+    @staticmethod
+    def _collate(rows):
+        return {
+            key: torch.stack([row[key] for row in rows])
+            for key in rows[0]
+        }
+
+    @staticmethod
+    def _rows(count):
+        return [
+            {
+                "input_ids": torch.tensor([index, index + 1]),
+                "attention_mask": torch.ones(2, dtype=torch.long),
+                "labels": torch.tensor(index),
+            }
+            for index in range(count)
+        ]
+
+    def test_probe_batch_count_uses_stage2_batch_without_mutating_stage1_batch(self):
         from blb_stage2_rl.runner import _effective_probe_batch_count
 
         class Ev:
@@ -2172,8 +2190,11 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
 
         class Cfg:
             probe_batch_count = 4
+            stage2_inference_batch_size = 64
 
-        self.assertEqual(_effective_probe_batch_count(Ev(), Cfg()), 16)
+        evaluator = Ev()
+        self.assertEqual(_effective_probe_batch_count(evaluator, Cfg()), 4)
+        self.assertEqual(evaluator.batch_size, 16)
 
     def test_explicit_probe_batch_count_override_still_works(self):
         from blb_stage2_rl.runner import _effective_probe_batch_count
@@ -2185,8 +2206,54 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
 
         class Cfg:
             probe_batch_count = 4
+            stage2_inference_batch_size = 64
 
         self.assertEqual(_effective_probe_batch_count(Ev(), Cfg()), 3)
+
+    def test_stage2_probe_and_full_validation_use_rl_aligned_batches_and_order(self):
+        from blb_stage2_rl.runner import BLBStage2RLRunner
+
+        probe_rows = self._rows(256)
+        validation_rows = self._rows(408)
+
+        class Ev:
+            batch_size = 16
+            stage2_probe_size = 256
+            device = "cpu"
+            data_collator = staticmethod(BLBProbeSizingRegressionTests._collate)
+            dataset_splits = {"validation_full": validation_rows}
+            mrpc_reproducibility = object()
+
+            @staticmethod
+            def get_reward_reference_split_name():
+                return "validation_full"
+
+            @staticmethod
+            def _get_stability_probe(_split_name, _probe_size, *, probe_seed):
+                self.assertEqual(probe_seed, 42)
+                return probe_rows, None
+
+        evaluator = Ev()
+        cfg = SimpleNamespace(seed=42, stage2_inference_batch_size=64)
+        runner = BLBStage2RLRunner(evaluator)
+
+        probe_batches = runner._build_probe_batches(evaluator, cfg)
+        full_batches = runner._build_validation_full_batches(evaluator, cfg)
+
+        self.assertEqual([batch.labels.numel() for batch in probe_batches], [64] * 4)
+        self.assertEqual(
+            [batch.labels.numel() for batch in full_batches],
+            [64, 64, 64, 64, 64, 64, 24],
+        )
+        self.assertEqual(
+            torch.cat([batch.labels for batch in probe_batches]).tolist(),
+            list(range(256)),
+        )
+        self.assertEqual(
+            torch.cat([batch.labels for batch in full_batches]).tolist(),
+            list(range(408)),
+        )
+        self.assertEqual(evaluator.batch_size, 16)
 
 
 class BLBPersistencePathRegressionTests(unittest.TestCase):
