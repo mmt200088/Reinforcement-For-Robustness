@@ -1,0 +1,562 @@
+{
+  "diagnostic_failures_not_promoted": [
+    {
+      "name": "aborted PPO baseline-only diagnostic",
+      "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/aborted_ppo_diagnostic",
+      "reason": "baseline_only masks did not constrain the sequential layerwise action; run was force-stopped after no completed episode and is not scientific evidence"
+    },
+    {
+      "log_receipt": {
+        "bytes": 19261,
+        "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/same_action_strict_230276eb.log",
+        "sha256": "8943eb834b9b32b546b5b305cc9a7e65c9b33387ff18225ba7c0dfdf6d58d50f"
+      },
+      "name": "all-zero strict target",
+      "reason": "production strict fail-fast stopped before complete A/B/C; replaced by a known strict-feasible target without weakening validation"
+    }
+  ],
+  "dynamic_implementation_source": {
+    "commit": "230276eb210813bb77605eb9a074b41d8a7f2296",
+    "tree": "94cf9ef7614af87c1d0373ff379a0c5b21156907"
+  },
+  "frozen_ppo_checkpoint": {
+    "algorithm_contract_hash": "81f8ec5981cac6eaa26116aa09049d979e38159431ff4b7142403ba34cb947a2",
+    "artifact_branch_commit": "8c2a526dbf793c95c388b5f8544a793e83c733dc",
+    "artifact_path": "rl_training_data_points/stage2/archives/bert-base-mrpc-60k-20260805/small_files/run/stage2_noise/progress/blb_stage2_rl_checkpoint_live.pt",
+    "byte_count": 8582648,
+    "episode": 60000,
+    "passed": true,
+    "payload_type": "dict",
+    "ppo_update_count": 501,
+    "receipt": {
+      "bytes": 812,
+      "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/frozen_checkpoint_read_3d2439d0.json",
+      "sha256": "fc9efc317a610d93a8e28f900e8a76c808f8aeeb24b72572038f68bb1a65521a"
+    },
+    "schema_version": "stage2_frozen_checkpoint_read_v1",
+    "sha256_after_load": "b1452e7f075ee76c8fe6b0fff23a389ec37992300c980c5136f890fbc6006473",
+    "sha256_before_load": "b1452e7f075ee76c8fe6b0fff23a389ec37992300c980c5136f890fbc6006473",
+    "source_commit": "3d2439d0ccfd2cc793c9df51a5109dc509ceeb91",
+    "source_tree": "d05c9cef3b3e6939a0620183e7e99d98d75d345a"
+  },
+  "generated_at": "2026-08-16T20:33:44.222078+00:00",
+  "latest_test_source": {
+    "commit": "3d2439d0ccfd2cc793c9df51a5109dc509ceeb91",
+    "tree": "d05c9cef3b3e6939a0620183e7e99d98d75d345a"
+  },
+  "optional_paean_failure": {
+    "final_config_fingerprint": "strict-f4-fingerprint",
+    "final_eval": {
+      "error": "RuntimeError('mock Paean failure')",
+      "executed": false,
+      "ineligible_reason": null,
+      "result": null,
+      "result_path": null,
+      "status": "failed_optional"
+    },
+    "outer_status": "complete_strict_feasible",
+    "passed": true,
+    "receipt": {
+      "bytes": 774,
+      "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/optional_paean_failure_3d2439d0.json",
+      "sha256": "b0b47cd37be55bb875ace261ec2613c7ac7eecbeb8e9f83eb0e3c6b8f7c3f464"
+    },
+    "schema_version": "stage2_optional_paean_failure_gate_v1",
+    "source_commit": "3d2439d0ccfd2cc793c9df51a5109dc509ceeb91",
+    "source_tree": "d05c9cef3b3e6939a0620183e7e99d98d75d345a",
+    "strict_feasible": true,
+    "strict_stage2_sha256_after_optional_failure": "4eae0d4f6a5b6513e017b0e3149120f11bb89622f73e5be113b6a3f78abb75b7",
+    "strict_stage2_sha256_before_optional_failure": "4eae0d4f6a5b6513e017b0e3149120f11bb89622f73e5be113b6a3f78abb75b7"
+  },
+  "passed": true,
+  "same_action_online": {
+    "bytes": 233365,
+    "passed": true,
+    "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/same_action_online_be690e8c.json",
+    "projection_sha256": "40f07ce04cdfadca44f1384145f916d6b7137596d47748f95b54919c54d7b97c",
+    "sha256": "9be548278b495e52f735a71da096e8a3483fdcd24a9fc55e16175e4671308b96"
+  },
+  "same_action_strict": {
+    "candidate_actions_unique": true,
+    "candidate_count": 5,
+    "passed": true,
+    "projection_sha256": "a05c8508111eed30296ca53bd1434d7bf320532826e76b915aeada31f3afee44",
+    "receipt": {
+      "bytes": 7718215,
+      "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/same_action_strict_feasible_230276eb.json",
+      "sha256": "5b60b322d2067f2cc08875f4ef061fa8d7ca440d0cd7629dd021e05bd94b389a"
+    },
+    "selected_action": [
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ]
+    ],
+    "selection_status": "strict_feasible",
+    "strict_feasible": true,
+    "strict_validation_sha256": "4e99f738815bb16c75a51ae29878057b8c357ad2f286679514ea0e2ca07066d6",
+    "target_action": [
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ]
+    ],
+    "target_banks_run": [
+      "A",
+      "B",
+      "C"
+    ],
+    "target_family_banks": {
+      "communication_only": [
+        "A",
+        "B",
+        "C"
+      ],
+      "compute_only": [
+        "A",
+        "B",
+        "C"
+      ],
+      "joint": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    "target_trial_count": 45
+  },
+  "schema_version": "stage2_comparator_rl_parity_server_evidence_v1",
+  "server": {
+    "cuda": "12.8",
+    "driver_userspace_hotfix": "580.173.02",
+    "gpu_canary_passed": true,
+    "gpu_inventory": [
+      "0, NVIDIA GeForce RTX 4090, 24564 MiB, 580.173.02"
+    ],
+    "host": "100.64.229.185",
+    "torch": "2.9.1+cu128"
+  },
+  "server_tests": [
+    {
+      "command": "pytest -q tests/test_blb_search_baseline_runner.py tests/test_blb_two_stage_binding_ordinary.py tests/test_blb_search_backend_wiring.py",
+      "outcome": "passed",
+      "summary": "83 passed, 22 subtests passed"
+    },
+    {
+      "command": "pytest -q tests/test_stage1_search_baselines.py tests/test_blb_search_baselines.py tests/test_blb_search_baseline_runner.py tests/test_blb_search_backend_wiring.py tests/test_stage2_persistent_launcher.py tests/test_blb_layerwise_runner.py::LayerwisePromotionTests",
+      "outcome": "passed",
+      "summary": "245 passed, 240 subtests passed"
+    },
+    {
+      "command": "CUDA_VISIBLE_DEVICES= pytest -q",
+      "outcome": "passed",
+      "summary": "2365 passed, 16 skipped, 613 subtests passed"
+    },
+    {
+      "command": "single-GPU CUDA focused fusion/probe/truncation suite",
+      "outcome": "passed",
+      "summary": "40 passed"
+    },
+    {
+      "command": "optional Paean failure and comparator final-eval eligibility focused tests",
+      "outcome": "passed",
+      "summary": "2 passed"
+    },
+    {
+      "command": "static and syntax gates",
+      "outcome": "passed",
+      "summary": "compileall, bash -n, git diff --check"
+    }
+  ],
+  "task_id": "stage2-comparator-rl-parity-20260816",
+  "three_backend_real_bert_smoke": {
+    "backend_results": {
+      "bo_rf": {
+        "fresh_resume_artifacts_byte_identical": true,
+        "fresh_resume_compared_artifact_count": 11,
+        "online_best_receipt": {
+          "bytes": 475794,
+          "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_bo_rf_b1ba52fa/stage2_noise/progress/search_bo_rf/online_best.json",
+          "sha256": "285cfec3613c30d6c768e3337721c565abc9d38e73e755aa4d0bd06c03bc2c89"
+        },
+        "online_projection": {
+          "action_matrix": [
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ]
+          ],
+          "constraint_probabilities": {
+            "loss_precision_probability": 0.98876953125,
+            "loss_stability_probability": 0.86083984375,
+            "metric1_precision_probability": 0.8447265625,
+            "metric1_stability_probability": 0.978759765625,
+            "metric2_precision_probability": 0.8466796875,
+            "metric2_stability_probability": 0.9833984375
+          },
+          "final_config_fingerprint": "3fee5eb589849a18942c22cbbfa78f50217ebc301dd3aca00a11d06e006f6ede",
+          "forward_ran": true,
+          "gate_probability": 0.5,
+          "materializable": true,
+          "metrics": {
+            "loss_mean": 0.3591618898014228,
+            "loss_std": 0.0042873256052310925,
+            "metric1_mean": 0.875,
+            "metric1_std": 0.0067658234670659265,
+            "metric2_mean": 0.8724264462096795,
+            "metric2_std": 0.007236138340329348
+          },
+          "probe_seed": 2305843500843365199,
+          "reward": 1.0005338526210728,
+          "trial_seeds": [
+            2305843500843365199,
+            2305843502755220222,
+            2305843504393715757
+          ]
+        },
+        "online_projection_sha256": "52ef0398faa1354a10338891a52dbfe2bedf2e718f09514f69c29ec577fe1d25",
+        "resume_result_receipt": {
+          "bytes": 1659430,
+          "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_bo_rf_b1ba52fa/stage2_noise/progress/search_bo_rf/resume_result.json",
+          "sha256": "ceea78fc3ca7ef773515b0cd8d53d5967315c8b3e683f450851d364e35082495"
+        },
+        "run_root": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_bo_rf_b1ba52fa",
+        "stage2_inference_batch_size": 64,
+        "status": "smoke_only_complete"
+      },
+      "coinn_ga": {
+        "fresh_resume_artifacts_byte_identical": true,
+        "fresh_resume_compared_artifact_count": 11,
+        "online_best_receipt": {
+          "bytes": 475796,
+          "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_coinn_ga_b1ba52fa/stage2_noise/progress/search_coinn_ga/online_best.json",
+          "sha256": "c06b7331e4a95124d33bc1fd616651e653e96f758cf23d040c40e97904646835"
+        },
+        "online_projection": {
+          "action_matrix": [
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ]
+          ],
+          "constraint_probabilities": {
+            "loss_precision_probability": 0.98876953125,
+            "loss_stability_probability": 0.86083984375,
+            "metric1_precision_probability": 0.8447265625,
+            "metric1_stability_probability": 0.978759765625,
+            "metric2_precision_probability": 0.8466796875,
+            "metric2_stability_probability": 0.9833984375
+          },
+          "final_config_fingerprint": "3fee5eb589849a18942c22cbbfa78f50217ebc301dd3aca00a11d06e006f6ede",
+          "forward_ran": true,
+          "gate_probability": 0.5,
+          "materializable": true,
+          "metrics": {
+            "loss_mean": 0.3591618898014228,
+            "loss_std": 0.0042873256052310925,
+            "metric1_mean": 0.875,
+            "metric1_std": 0.0067658234670659265,
+            "metric2_mean": 0.8724264462096795,
+            "metric2_std": 0.007236138340329348
+          },
+          "probe_seed": 2305843500843365199,
+          "reward": 1.0005338526210728,
+          "trial_seeds": [
+            2305843500843365199,
+            2305843502755220222,
+            2305843504393715757
+          ]
+        },
+        "online_projection_sha256": "52ef0398faa1354a10338891a52dbfe2bedf2e718f09514f69c29ec577fe1d25",
+        "resume_result_receipt": {
+          "bytes": 1660668,
+          "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_coinn_ga_b1ba52fa/stage2_noise/progress/search_coinn_ga/resume_result.json",
+          "sha256": "0ea798ec8aa9af3ccd7ea40f03e7eb2059ec86c8fad0107c5f1459bf989ec515"
+        },
+        "run_root": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_coinn_ga_b1ba52fa",
+        "stage2_inference_batch_size": 64,
+        "status": "smoke_only_complete"
+      },
+      "greedy": {
+        "fresh_resume_artifacts_byte_identical": true,
+        "fresh_resume_compared_artifact_count": 11,
+        "online_best_receipt": {
+          "bytes": 475795,
+          "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_greedy_b1ba52fa/stage2_noise/progress/search_greedy/online_best.json",
+          "sha256": "e78f26f2266137b8f63120355fc236b7258d7488848e46a7e2b8588fcc1ff48c"
+        },
+        "online_projection": {
+          "action_matrix": [
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              0
+            ]
+          ],
+          "constraint_probabilities": {
+            "loss_precision_probability": 0.98876953125,
+            "loss_stability_probability": 0.86083984375,
+            "metric1_precision_probability": 0.8447265625,
+            "metric1_stability_probability": 0.978759765625,
+            "metric2_precision_probability": 0.8466796875,
+            "metric2_stability_probability": 0.9833984375
+          },
+          "final_config_fingerprint": "3fee5eb589849a18942c22cbbfa78f50217ebc301dd3aca00a11d06e006f6ede",
+          "forward_ran": true,
+          "gate_probability": 0.5,
+          "materializable": true,
+          "metrics": {
+            "loss_mean": 0.3591618898014228,
+            "loss_std": 0.0042873256052310925,
+            "metric1_mean": 0.875,
+            "metric1_std": 0.0067658234670659265,
+            "metric2_mean": 0.8724264462096795,
+            "metric2_std": 0.007236138340329348
+          },
+          "probe_seed": 2305843500843365199,
+          "reward": 1.0005338526210728,
+          "trial_seeds": [
+            2305843500843365199,
+            2305843502755220222,
+            2305843504393715757
+          ]
+        },
+        "online_projection_sha256": "52ef0398faa1354a10338891a52dbfe2bedf2e718f09514f69c29ec577fe1d25",
+        "resume_result_receipt": {
+          "bytes": 1660576,
+          "path": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_greedy_b1ba52fa/stage2_noise/progress/search_greedy/resume_result.json",
+          "sha256": "cbc1e181d88c08c6ca2ee4808a368abf801f27400307324cb81af379a807948d"
+        },
+        "run_root": "/hy-tmp/stage2_comparator_rl_parity_dynamic_bd28b027/persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0__parity_greedy_b1ba52fa",
+        "stage2_inference_batch_size": 64,
+        "status": "smoke_only_complete"
+      }
+    },
+    "common_projection_sha256": "52ef0398faa1354a10338891a52dbfe2bedf2e718f09514f69c29ec577fe1d25",
+    "dataset": "glue/mrpc validation_full",
+    "model": "textattack/bert-base-uncased-MRPC",
+    "num_layers": 12,
+    "passed": true,
+    "stage1_batch_size": 16,
+    "stage2_batch_size": 64
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "final_config_fingerprint": "strict-f4-fingerprint",
+  "final_eval": {
+    "error": "RuntimeError('mock Paean failure')",
+    "executed": false,
+    "ineligible_reason": null,
+    "result": null,
+    "result_path": null,
+    "status": "failed_optional"
+  },
+  "outer_status": "complete_strict_feasible",
+  "passed": true,
+  "schema_version": "stage2_optional_paean_failure_gate_v1",
+  "source_commit": "3d2439d0ccfd2cc793c9df51a5109dc509ceeb91",
+  "source_tree": "d05c9cef3b3e6939a0620183e7e99d98d75d345a",
+  "strict_feasible": true,
+  "strict_stage2_sha256_after_optional_failure": "4eae0d4f6a5b6513e017b0e3149120f11bb89622f73e5be113b6a3f78abb75b7",
+  "strict_stage2_sha256_before_optional_failure": "4eae0d4f6a5b6513e017b0e3149120f11bb89622f73e5be113b6a3f78abb75b7"
+}

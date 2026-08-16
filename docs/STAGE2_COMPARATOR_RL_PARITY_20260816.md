@@ -311,20 +311,48 @@ The earlier review contained several unsupported or incorrect statements:
    old PPO archive predates this fixture and does not by itself prove the exact
    historical dataset revision.
 
-## Remaining proof obligations
+## Server verification completed
 
-Before launch, the server must still prove all of the following from the exact
-aggregate commit and tree:
+The single-RTX-4090 server completed the dynamic gates on 2026-08-17. Compact
+and compressed raw evidence is archived under
+`docs/evidence/stage2_comparator_rl_parity_20260817/`.
 
-- real BERT accepts only the pinned 12-layer MRPC model and fixture;
-- a fixed action produces identical PPO/comparator full vectors, replan
-  fingerprints, installed Block1-Block5 configurations, trial seeds, raw trial
-  metrics, six online probabilities, and strict A/B/C evidence;
-- fresh and resumed comparator runs preserve ordered observations and strict
-  evidence without duplicate model evaluations;
-- optional Paean failure leaves the authoritative strict-F4 result unchanged;
-- PPO checkpoints and previously frozen PPO results remain readable and
-  unchanged.
+- Real BERT fresh/resume smoke completed for `bo_rf`, `greedy`, and `coinn_ga`
+  with the pinned 12-layer MRPC model and fixture, Stage-1 batch 16, and
+  Stage-2 batch 64. Each completed resume restored the Stage-2 batch field and
+  the compared artifacts were byte-identical to the completed fresh run.
+- All three backends produced the same real-model online projection for the
+  same action: loss mean/std `0.3591618898014228` /
+  `0.0042873256052310925`, metric-1 mean/std `0.875` /
+  `0.0067658234670659265`, and metric-2 mean/std
+  `0.8724264462096795` / `0.007236138340329348`. Their materialized
+  configuration fingerprint was
+  `3fee5eb589849a18942c22cbbfa78f50217ebc301dd3aca00a11d06e006f6ede`.
+- The real same-action gate compared PPO collection and comparator evaluation
+  field by field. The online action, reset/probe/trial seeds, raw trials, six
+  metrics, six bootstrap probabilities, reward, full vector, boosted
+  overrides, installed configuration, model-forward evidence, replan evidence,
+  and final fingerprint were exactly equal.
+- The strict gate used five unique, valid, materializable, model-forwarded
+  candidates. The target action completed 45 authoritative trials and banks
+  A/B/C for `joint`, `compute_only`, and `communication_only`; strict selection
+  returned `strict_feasible`. The complete strict payload SHA-256 is
+  `5b60b322d2067f2cc08875f4ef061fa8d7ca440d0cd7629dd021e05bd94b389a`.
+- A mocked optional Paean failure produced `failed_optional` while the Stage-2
+  strict projection hash remained byte-for-byte identical and the outer result
+  remained `complete_strict_feasible`.
+- The authoritative 60,000-episode PPO checkpoint from the result branch loaded
+  on CPU as a dictionary with 501 PPO updates. Its SHA-256 before and after
+  loading remained
+  `b1452e7f075ee76c8fe6b0fff23a389ec37992300c980c5136f890fbc6006473`.
+- Server regression gates passed: 245 focused tests plus 240 subtests; the full
+  CPU suite passed 2,365 tests plus 613 subtests with 16 documented skips; the
+  one-GPU CUDA fusion/probe/truncation suite passed 40 tests. Python compile,
+  shell syntax, and `git diff --check` also passed.
 
-Until those server gates pass, this audit is a code-level alignment result, not
-a completed scientific parity claim.
+Two diagnostic attempts are explicitly excluded from scientific evidence. A
+PPO `baseline_only` run was stopped because that mask does not constrain the
+sequential layerwise policy. The first strict parity run used an all-zero
+target that correctly hit production fail-fast before completing A/B/C; the
+passing rerun used a known strict-feasible target and did not weaken the
+validator.
