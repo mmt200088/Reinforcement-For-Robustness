@@ -1,0 +1,12 @@
+timestamp	algorithm	event	value	extra
+2026-08-16T19:27:51+08:00	greedy	launching
+2026-08-16T19:27:51+08:00	greedy	started	1092715	/hy-tmp/comparator_stage1_batch16_20260816/persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0
+2026-08-16T19:34:03+08:00	queue	exit	1
+2026-08-16T19:36:07+08:00	greedy	revalidated	958	/hy-tmp/comparator_stage1_batch16_20260816/persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0
+2026-08-16T19:36:11+08:00	bo_rf	launching
+2026-08-16T19:36:12+08:00	bo_rf	started	1094816	/hy-tmp/comparator_stage1_batch16_20260816/persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0
+2026-08-16T19:48:21+08:00	bo_rf	validated	1072	729
+2026-08-16T19:48:25+08:00	coinn_ga	launching
+2026-08-16T19:48:26+08:00	coinn_ga	started	1120629	/hy-tmp/comparator_stage1_batch16_20260816/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0
+2026-08-16T21:03:12+08:00	coinn_ga	validated	11464	4486
+2026-08-16T21:03:12+08:00	queue	exit	0

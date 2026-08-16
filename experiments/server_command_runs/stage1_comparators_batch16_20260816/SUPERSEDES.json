@@ -1,0 +1,15 @@
+{
+  "authoritative_run_root": "/hy-tmp/comparator_stage1_batch16_20260816",
+  "reason": "Historical Stage-1 RL alignment requires batch_size=16; prior comparator formal runs used batch_size=64.",
+  "schema_version": "comparator_result_supersession_v1",
+  "superseded_result_branches_retained_as_immutable_history": {
+    "codex/result-stage1-bo-rf-10k-20260815": "ed6e60195267348996b5de0c1e9daf741c008498",
+    "codex/result-stage1-ga-200-20260814": "4edf8f62a24d3f0a10960b001b9b678843a3dd71",
+    "codex/result-stage1-greedy-20260812": "afd9efd46c3a9b4d75e74650b3ac7c96b512adfa"
+  },
+  "superseded_server_roots_deleted": [
+    "/hy-tmp/comparator_stage1_queue_20260812_v3",
+    "/hy-tmp/comparator_stage1_bo_rf_10k_20260815",
+    "/hy-tmp/comparator_stage1_ga_200_20260814"
+  ]
+}

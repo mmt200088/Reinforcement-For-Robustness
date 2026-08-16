@@ -1,0 +1,440 @@
+{
+  "backend": "bo_rf",
+  "best": {
+    "action": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      1,
+      1,
+      2,
+      2
+    ],
+    "constraint_margins": [
+      0.007881139486215903,
+      0.0010010010010010025,
+      0.003215167201329256
+    ],
+    "constraints": {
+      "baseline_loss": 0.34748638650545705,
+      "baseline_metrics": [
+        0.8774509803921569,
+        0.87442208717397
+      ],
+      "loss_max": 0.34783387289196244,
+      "metric_mins": [
+        0.8765735294117647,
+        0.873547665086796
+      ],
+      "metric_names": [
+        "accuracy",
+        "weighted_f1"
+      ]
+    },
+    "cost": 51.0,
+    "failed_constraint_count": 0,
+    "feasible": true,
+    "gelu_degrees": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      2,
+      2,
+      1,
+      1
+    ],
+    "loss": 0.3450925456216702,
+    "metadata": {
+      "baseline_loss": 0.34748638650545705,
+      "baseline_metrics": [
+        0.8774509803921569,
+        0.87442208717397
+      ],
+      "cost_components": [
+        15.0,
+        36.0
+      ],
+      "evaluation_index": 71,
+      "fixed_softmax_degree": 6,
+      "inference_time_ms": 12.672745264493502,
+      "loss_limit": 0.34783387289196244,
+      "metric_limits": [
+        0.8765735294117647,
+        0.873547665086796
+      ],
+      "search_cumulative_wall_seconds": 33.39663678780198,
+      "split": "validation_full",
+      "use_train": false,
+      "wall_seconds": 0.33187004644423723
+    },
+    "metric_values": {
+      "accuracy": 0.8774509803921569,
+      "weighted_f1": 0.8763562668883809
+    },
+    "metrics": [
+      0.8774509803921569,
+      0.8763562668883809
+    ],
+    "normalized_margins": [
+      0.007881139486215903,
+      0.0010010010010010025,
+      0.003215167201329256
+    ],
+    "raw_margins": [
+      0.0027413272702922487,
+      0.0008774509803921582,
+      0.00280860180158482
+    ],
+    "softmax_degrees": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "total_violation": 0.0,
+    "valid": true,
+    "worst_violation": 0.0
+  },
+  "config": {
+    "acquisition_exploration": 0.05,
+    "bo_candidate_pool_size": 2048,
+    "bo_initial_design_size": 64,
+    "bo_no_improvement_patience": 1000,
+    "evaluation_cap": 10000,
+    "ga_crossover_probability": 0.0,
+    "ga_duplicate_attempts": 64,
+    "ga_elite_count": 7,
+    "ga_immigrant_fraction": 0.0,
+    "ga_mean_distance_threshold": 2.0,
+    "ga_mutation_max_layers": 4,
+    "ga_no_improvement_patience": 5,
+    "ga_population_size": 64,
+    "ga_require_full_generations": false,
+    "ga_stop_on_no_improvement": true,
+    "ga_tournament_size": 3,
+    "ga_unique_ratio_threshold": 0.6,
+    "ga_update_generations": 800,
+    "greedy_max_starts": 3,
+    "maximin_candidate_pool_size": 1024,
+    "rf_min_samples_leaf": 2,
+    "rf_n_estimators": 128,
+    "seed": 42
+  },
+  "contract": {
+    "constraints": {
+      "baseline_loss": 0.34748638650545705,
+      "baseline_metrics": [
+        0.8774509803921569,
+        0.87442208717397
+      ],
+      "loss_max": 0.34783387289196244,
+      "metric_mins": [
+        0.8765735294117647,
+        0.873547665086796
+      ],
+      "metric_names": [
+        "accuracy",
+        "weighted_f1"
+      ]
+    },
+    "fixed_softmax_degree": 6,
+    "gelu_degree_categories": [
+      4,
+      2,
+      1
+    ],
+    "num_layers": 12,
+    "split": "validation_full",
+    "use_train": false
+  },
+  "latest": {
+    "action": [
+      0,
+      0,
+      2,
+      0,
+      1,
+      2,
+      0,
+      0,
+      0,
+      1,
+      2,
+      0
+    ],
+    "constraint_margins": [
+      0.012716131904508649,
+      0.006593185364135066,
+      0.008876849467944054
+    ],
+    "constraints": {
+      "baseline_loss": 0.34748638650545705,
+      "baseline_metrics": [
+        0.8774509803921569,
+        0.87442208717397
+      ],
+      "loss_max": 0.34783387289196244,
+      "metric_mins": [
+        0.8765735294117647,
+        0.873547665086796
+      ],
+      "metric_names": [
+        "accuracy",
+        "weighted_f1"
+      ]
+    },
+    "cost": 65.0,
+    "failed_constraint_count": 0,
+    "feasible": true,
+    "gelu_degrees": [
+      4,
+      4,
+      1,
+      4,
+      2,
+      1,
+      4,
+      4,
+      4,
+      2,
+      1,
+      4
+    ],
+    "loss": 0.34341077148341215,
+    "metadata": {
+      "baseline_loss": 0.34748638650545705,
+      "baseline_metrics": [
+        0.8774509803921569,
+        0.87442208717397
+      ],
+      "cost_components": [
+        29.0,
+        36.0
+      ],
+      "evaluation_index": 1071,
+      "fixed_softmax_degree": 6,
+      "inference_time_ms": 16.595941323500412,
+      "loss_limit": 0.34783387289196244,
+      "metric_limits": [
+        0.8765735294117647,
+        0.873547665086796
+      ],
+      "search_cumulative_wall_seconds": 705.6228567077778,
+      "split": "validation_full",
+      "use_train": false,
+      "wall_seconds": 0.43387171626091003
+    },
+    "metric_values": {
+      "accuracy": 0.8823529411764706,
+      "weighted_f1": 0.8813020162128455
+    },
+    "metrics": [
+      0.8823529411764706,
+      0.8813020162128455
+    ],
+    "normalized_margins": [
+      0.012716131904508649,
+      0.006593185364135066,
+      0.008876849467944054
+    ],
+    "raw_margins": [
+      0.0044231014085502895,
+      0.005779411764705866,
+      0.007754351126049497
+    ],
+    "softmax_degrees": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "total_violation": 0.0,
+    "valid": true,
+    "worst_violation": 0.0
+  },
+  "observation_count": 1072,
+  "observation_store": {
+    "append_fsync": true,
+    "committed_size": 1538678,
+    "format": "jsonl",
+    "observation_count": 1072,
+    "path": "observations.jsonl"
+  },
+  "optimizer_state_restored": false,
+  "result": {
+    "algorithm": "bo_rf",
+    "best": {
+      "action": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        1,
+        1,
+        2,
+        2
+      ],
+      "constraint_margins": [
+        0.007881139486215903,
+        0.0010010010010010025,
+        0.003215167201329256
+      ],
+      "constraints": {
+        "baseline_loss": 0.34748638650545705,
+        "baseline_metrics": [
+          0.8774509803921569,
+          0.87442208717397
+        ],
+        "loss_max": 0.34783387289196244,
+        "metric_mins": [
+          0.8765735294117647,
+          0.873547665086796
+        ],
+        "metric_names": [
+          "accuracy",
+          "weighted_f1"
+        ]
+      },
+      "cost": 51.0,
+      "failed_constraint_count": 0,
+      "feasible": true,
+      "gelu_degrees": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        1,
+        1
+      ],
+      "loss": 0.3450925456216702,
+      "metadata": {
+        "baseline_loss": 0.34748638650545705,
+        "baseline_metrics": [
+          0.8774509803921569,
+          0.87442208717397
+        ],
+        "cost_components": [
+          15.0,
+          36.0
+        ],
+        "evaluation_index": 71,
+        "fixed_softmax_degree": 6,
+        "inference_time_ms": 12.672745264493502,
+        "loss_limit": 0.34783387289196244,
+        "metric_limits": [
+          0.8765735294117647,
+          0.873547665086796
+        ],
+        "search_cumulative_wall_seconds": 33.39663678780198,
+        "split": "validation_full",
+        "use_train": false,
+        "wall_seconds": 0.33187004644423723
+      },
+      "metric_values": {
+        "accuracy": 0.8774509803921569,
+        "weighted_f1": 0.8763562668883809
+      },
+      "metrics": [
+        0.8774509803921569,
+        0.8763562668883809
+      ],
+      "normalized_margins": [
+        0.007881139486215903,
+        0.0010010010010010025,
+        0.003215167201329256
+      ],
+      "raw_margins": [
+        0.0027413272702922487,
+        0.0008774509803921582,
+        0.00280860180158482
+      ],
+      "softmax_degrees": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "total_violation": 0.0,
+      "valid": true,
+      "worst_violation": 0.0
+    },
+    "config": {
+      "acquisition_exploration": 0.05,
+      "bo_candidate_pool_size": 2048,
+      "bo_initial_design_size": 64,
+      "bo_no_improvement_patience": 1000,
+      "evaluation_cap": 10000,
+      "ga_crossover_probability": 0.0,
+      "ga_duplicate_attempts": 64,
+      "ga_elite_count": 7,
+      "ga_immigrant_fraction": 0.0,
+      "ga_mean_distance_threshold": 2.0,
+      "ga_mutation_max_layers": 4,
+      "ga_no_improvement_patience": 5,
+      "ga_population_size": 64,
+      "ga_require_full_generations": false,
+      "ga_stop_on_no_improvement": true,
+      "ga_tournament_size": 3,
+      "ga_unique_ratio_threshold": 0.6,
+      "ga_update_generations": 800,
+      "greedy_max_starts": 3,
+      "maximin_candidate_pool_size": 1024,
+      "rf_min_samples_leaf": 2,
+      "rf_n_estimators": 128,
+      "seed": 42
+    },
+    "evaluation_count": 1072,
+    "schema_version": "stage1_gelu_search_compact_result_v3",
+    "termination_reason": "no_improvement_convergence",
+    "unique_evaluation_count": 1072
+  },
+  "resume_semantics": "deterministic ordered observation replay reconstructs surrogate, population, RNG, and local-search state; no serialized optimizer state is restored",
+  "schema_version": "stage1_gelu_search_checkpoint_v2",
+  "search_wall_seconds": 706.7363177849911,
+  "status": "complete",
+  "updated_at": "2026-08-16T19:48:14"
+}

@@ -1,0 +1,27 @@
+=== PPO强化学习优化日志已启动（PPO RL Optimization Log Started） ===
+[信息] Stage-1 PPO学习率（LR）从 stage1_rl_lr=0.0001 解析为 -> 0.0001 (direct) | Stage-2 PPO学习率（LR）从 stage2_rl_lr=5e-05 解析为 -> 5e-05 (direct)
+[信息] 第一阶段RL回合数（Stage-1 RL episodes）: 51000 | 第二阶段RL回合数（Stage-2 RL episodes）: 0
+[信息] 统一运行输出目录（Unified run output dir）: /hy-tmp/comparator_stage1_batch16_20260816/persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0
+
+============================================================
+开始配置评估（STARTING CONFIGURATION EVALUATION）
+最终评估配置来源（FINAL_EVAL_CONFIG_SOURCE）=search
+============================================================
+
+--- 阶段1（Phase 1）: 建立基线（验证集全集 validation_full）（Establishing Baseline on validation_full） ---
+  [stage1-eval] TF32 fast matmul enabled（与 Stage-2 reward probe 同一设置）
+基线指标（Baseline Metrics）（validation_full）：
+  损失（Loss）: 0.347486, Accuracy: 0.877451, F1: 0.874422
+  基线配置（Baseline config）: 原始明文 GELU/Softmax（未安装多项式替换）
+  成本参考（Cost reference）: GELU=4 / Softmax=6, 仿真成本（Sim Cost）=72.00 (GELU成本G=36.00, Softmax成本S=36.00)
+约束条件（Constraints）（基于验证集全集 validation_full）：
+  损失（Loss）<=0.3478, Accuracy>=0.8766, F1>=0.8735
+
+--- 阶段2（Phase 2）: bo_rf Stage-1 search (validation_full) ---
+  [优雅停止] 可发送一次 SIGINT，或创建 /hy-tmp/comparator_stage1_batch16_20260816/persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/STOP_RL；当前候选完成并落盘后退出。
+
+============================================================
+最终评估报告（FINAL EVALUATION REPORT）（验证集）
+============================================================
+
+配置评估完成（Configuration evaluation finished）。

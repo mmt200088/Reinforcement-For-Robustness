@@ -1,0 +1,21 @@
+{
+  "batch_size": 16,
+  "current_algorithm": null,
+  "detail": "all three formal Stage-1 searches completed and validated",
+  "final_eval_enabled": false,
+  "micro_batch_size": 16,
+  "observed_evaluations": null,
+  "order": [
+    "greedy",
+    "bo_rf",
+    "coinn_ga"
+  ],
+  "process_pid": null,
+  "run_dir": null,
+  "schema_version": "comparator_stage1_batch16_queue_v1",
+  "source_commit": "9d833d90760b1bf85fca4c8650e8149f61119ad2",
+  "source_tree": "918fb6e4f5e6ea6fa659a30045331f99dc48800e",
+  "stage2_enabled": false,
+  "status": "completed",
+  "updated_at": "2026-08-16T13:03:12.165974+00:00"
+}

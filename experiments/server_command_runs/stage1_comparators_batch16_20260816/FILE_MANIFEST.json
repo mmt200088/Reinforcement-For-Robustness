@@ -1,0 +1,382 @@
+{
+  "file_count_excluding_manifest_and_sha256sums": 75,
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "f37e640f92b5786d74be73f495d387325ee4df32c7378de01e454c4b96a1091f",
+      "size": 834
+    },
+    {
+      "path": "RUN_SUMMARY.json",
+      "sha256": "6ce57f0d088dfc1d5d7f5c38a1382d68aab36eba186154f35005b82ab5276552",
+      "size": 4992
+    },
+    {
+      "path": "SUPERSEDES.json",
+      "sha256": "a2517041592e67cbfbad59da50d6c1c600a62003c9942f58a1ef5c52a96aac07",
+      "size": 781
+    },
+    {
+      "path": "archive_builder.py",
+      "sha256": "b7bc728cb0746530fae0fe1ac2ede88cd25c293f9cb90daba5d343fea343fd14",
+      "size": 4642
+    },
+    {
+      "path": "gpu_samples.csv",
+      "sha256": "35093d4c906a488c663e5934742d5a7969d2b8faf33fc9a9049ad01803522d69",
+      "size": 26341
+    },
+    {
+      "path": "logs/bo_rf_launcher.log",
+      "sha256": "a773cecaa126bdfa8cb6a06e9c2994cf36d1acfcd8789d3ea1261c96f3de2c03",
+      "size": 7631
+    },
+    {
+      "path": "logs/bo_rf_validation.log",
+      "sha256": "94d913ee36da4f25fcca88f645594c8020d88480b9ece1061d7786be729560ef",
+      "size": 864
+    },
+    {
+      "path": "logs/coinn_ga_launcher.log",
+      "sha256": "08e075cfc93e3655deb6064709bebb848d0da702e771a69461e2f27d5bf2982b",
+      "size": 7658
+    },
+    {
+      "path": "logs/coinn_ga_validation.log",
+      "sha256": "a1e6eec98c7c25dd8b85bc5821499fd9b15e9049557df582fbc6473cbe8c7217",
+      "size": 864
+    },
+    {
+      "path": "logs/greedy_launcher.log",
+      "sha256": "34ee96ec59bf485eb487ea8713f47ee0310c782403a5867ff093db602acbd05c",
+      "size": 7645
+    },
+    {
+      "path": "logs/greedy_validation.log",
+      "sha256": "fce4af1b7292728cef6d407f5de10aef09818b17b4110d7fbcfe1ed43143cfb6",
+      "size": 859
+    },
+    {
+      "path": "logs/queue.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/.s1t0.001_s2t0.001_s2st2.0.stage2_rl.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/LATEST_PID",
+      "sha256": "2039552dccf865ac2cf1d83847f34fade2a6cc7c5686833921108e902714f4bd",
+      "size": 8
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/LATEST_RUN_DIR",
+      "sha256": "56453bf2df90718a0bbcab9ca932a5b1fe86150218a7844fea3158bb907cac3a",
+      "size": 101
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/best_policy/constraint_metadata.json",
+      "sha256": "ae807a2433da52f530f05e4f0b63523b68d7eca4baaa6c90422cee79db9703e2",
+      "size": 261
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/blb_stage2_rl.log",
+      "sha256": "133aab1a36dbf16f44413b1fde4f203d83466efd4f4f5ed2a6b63230be749f76",
+      "size": 146946
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/elastic_gpu_health_events.jsonl",
+      "sha256": "ff6a3fe962c209b9a17d97bb35290ed9f388a4997c7c0e9e131c75de898a48a1",
+      "size": 393
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/metadata.json",
+      "sha256": "b072e738936b2faea06625e0ae73355bf9237197eebc1b324e4bc5e9517f5d97",
+      "size": 994
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/rl.pid",
+      "sha256": "2039552dccf865ac2cf1d83847f34fade2a6cc7c5686833921108e902714f4bd",
+      "size": 8
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/run.pid",
+      "sha256": "2039552dccf865ac2cf1d83847f34fade2a6cc7c5686833921108e902714f4bd",
+      "size": 8
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1/pruning_search_log.txt",
+      "sha256": "ca5278bfa3aa5aa7bd81bc676dffcfd685d9a61bced60890f9d1b9c622abc604",
+      "size": 2014
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/COMPLETED",
+      "sha256": "c53e9111a25e1bc7a3e3d99467432279ee5267848114b84deb069d59b0f8429d",
+      "size": 27
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/checkpoint.json",
+      "sha256": "981c736ad78bb5c6687648aea0428a9274fe73c8ad3fd350a68f41931e706a37",
+      "size": 9592
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/history.json",
+      "sha256": "3d9445edf0fd6c5907e5e2ccb7301c5a6e652fad9edf32765bac9fe1c1c622a1",
+      "size": 1011517
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/manifest.json",
+      "sha256": "44c450cd7c916a55520d4930d4c08d90be05d7c6a0ac000c46d4a7ab667ad883",
+      "size": 2252
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/observations.jsonl",
+      "sha256": "fd2a72c9415189fc2f27145617311e7eba58e94c3ecfb0e59441d61d2a412e2c",
+      "size": 1538678
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/result.json",
+      "sha256": "599dda3ac5d18c21008a7d3cdaec0dcaf4ee0ec7919da2351980670d960f14d9",
+      "size": 3527
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/summary.json",
+      "sha256": "599dda3ac5d18c21008a7d3cdaec0dcaf4ee0ec7919da2351980670d960f14d9",
+      "size": 3527
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_validation_summary.json",
+      "sha256": "8be465b31f2f9392a2b974b5781b3af9daf195d566d7c54cf5afa79a22b5ed0d",
+      "size": 1092
+    },
+    {
+      "path": "persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/pruning_search_log.txt",
+      "sha256": "2dcac40222b1df0ae8bf20f9bac9c9324fd7d92f8c5bc57ab2e6650ad26aa79b",
+      "size": 924
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/.s1t0.001_s2t0.001_s2st2.0.stage2_rl.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/LATEST_PID",
+      "sha256": "33a76f9fc692c9719fda84810516fa0f9e035d32b9629aa7d0dfa06865f17d3c",
+      "size": 8
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/LATEST_RUN_DIR",
+      "sha256": "ff0b5dac9a1dbca9beb43652f3ad900b1de42197193fab8105c97bf32385e1a1",
+      "size": 104
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/best_policy/constraint_metadata.json",
+      "sha256": "ae807a2433da52f530f05e4f0b63523b68d7eca4baaa6c90422cee79db9703e2",
+      "size": 261
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/blb_stage2_rl.log",
+      "sha256": "cb37d04b447afe48d8b5b6cbe7d788417a81096698cedd3f325cb6b19d2a01c7",
+      "size": 1482321
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/elastic_gpu_health_events.jsonl",
+      "sha256": "a95d373f02e17f9d7735e125df6c444e3e8eb2f7ef535ce0d9d19e891dc8c87b",
+      "size": 393
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/metadata.json",
+      "sha256": "fa1d3cc9762c25b163ab9a64378ac4b8246504296c6e1ca5065072f4e9a3dadc",
+      "size": 1004
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/rl.pid",
+      "sha256": "33a76f9fc692c9719fda84810516fa0f9e035d32b9629aa7d0dfa06865f17d3c",
+      "size": 8
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/run.pid",
+      "sha256": "33a76f9fc692c9719fda84810516fa0f9e035d32b9629aa7d0dfa06865f17d3c",
+      "size": 8
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1/pruning_search_log.txt",
+      "sha256": "5b05d0605d49901b224953145865b5044c7b972140a9d80a33ad49f87540d5f3",
+      "size": 2026
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/COMPLETED",
+      "sha256": "c53e9111a25e1bc7a3e3d99467432279ee5267848114b84deb069d59b0f8429d",
+      "size": 27
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/checkpoint.json",
+      "sha256": "cf4e5405d70abedf6fd6489b1ce6a2855b4581b97b846699f0004aea064e36bd",
+      "size": 9601
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/history.json",
+      "sha256": "9948bea5374b6423b1787a7729b5dd7f2b113d7238a0cd16be5893a6655d5722",
+      "size": 436150
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/manifest.json",
+      "sha256": "261828d0e4ceb597060e55deb294e286992b7463d9ac3ac812cf2ef59870dde5",
+      "size": 2253
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/observations.jsonl",
+      "sha256": "e2b525db13d9333fba3ba75bc31da996fba355b4f6764b1a651313edad57231f",
+      "size": 16581962
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/result.json",
+      "sha256": "db03230bb774ce8620877581551dc831ecb491876f8e8315300514b5852844e3",
+      "size": 3531
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/summary.json",
+      "sha256": "db03230bb774ce8620877581551dc831ecb491876f8e8315300514b5852844e3",
+      "size": 3531
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_validation_summary.json",
+      "sha256": "14530428c1fc85b8030b8744c630187093504380cc530c3154b8d6e982d886e6",
+      "size": 1092
+    },
+    {
+      "path": "persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/pruning_search_log.txt",
+      "sha256": "89e76e7d61256e5bd0229306373f9f329c7956ff73b51616c0d6637642528c85",
+      "size": 927
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/.s1t0.001_s2t0.001_s2st2.0.stage2_rl.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/LATEST_PID",
+      "sha256": "5b69c775fcf9f1803538934e28769712a51d941b92407dd7834cb6ed8b95e81b",
+      "size": 8
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/LATEST_RUN_DIR",
+      "sha256": "068ff669f92ae035dab832b7e83404ffc248f44b7f4ad5390c41a530bf949638",
+      "size": 102
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/best_policy/constraint_metadata.json",
+      "sha256": "ae807a2433da52f530f05e4f0b63523b68d7eca4baaa6c90422cee79db9703e2",
+      "size": 261
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/blb_stage2_rl.log",
+      "sha256": "af16056c1118e5ce793c06285a990476ca99369b55dbf1cfade1278c1dd47c39",
+      "size": 80416
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/elastic_gpu_health_events.jsonl",
+      "sha256": "9de08065db4a4e5ce04de235254d0997e687d6473e912852c81f2b6c5a5beee5",
+      "size": 393
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/metadata.json",
+      "sha256": "de5f6400065e1f907181c7d5eddd455b16844f49fa771fa50b0f991a2911ad4a",
+      "size": 996
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/rl.pid",
+      "sha256": "5b69c775fcf9f1803538934e28769712a51d941b92407dd7834cb6ed8b95e81b",
+      "size": 8
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/run.pid",
+      "sha256": "5b69c775fcf9f1803538934e28769712a51d941b92407dd7834cb6ed8b95e81b",
+      "size": 8
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1/pruning_search_log.txt",
+      "sha256": "faa034ba07aa523f9bdc0e822c184d6761865ab09d9a38cbf44a5798fc789679",
+      "size": 2018
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy/COMPLETED",
+      "sha256": "c53e9111a25e1bc7a3e3d99467432279ee5267848114b84deb069d59b0f8429d",
+      "size": 27
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy/checkpoint.json",
+      "sha256": "654c53cc05f8245a8d82a8af59b446cbf9ae63cb1ad57cdd149ae8dc1d6c8961",
+      "size": 9628
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy/history.json",
+      "sha256": "889327be0415b4d73ab140c362de0f9a42fe3a98291c54cdc28302a3360521c6",
+      "size": 23880
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy/manifest.json",
+      "sha256": "24fba7ead7a3a957ef2ed17f05c7ef2a6654619dbcdde4f2ec47e771acef51e0",
+      "size": 2246
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy/observations.jsonl",
+      "sha256": "8b750bdfb369fed999e70ff23c2de5c696ae3684b1d4e5b445b68c2fa0597a20",
+      "size": 1388318
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy/result.json",
+      "sha256": "b5ad4a8e451942b9f0cc54fe6fb62433cf822581432d04d15ea8943d4ac31183",
+      "size": 3523
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy/summary.json",
+      "sha256": "b5ad4a8e451942b9f0cc54fe6fb62433cf822581432d04d15ea8943d4ac31183",
+      "size": 3523
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_validation_summary.json",
+      "sha256": "39edcad2104218796e1e13d14cecb0dc362fdfec2cb2b030dfd7953c32187168",
+      "size": 1087
+    },
+    {
+      "path": "persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/pruning_search_log.txt",
+      "sha256": "6385c1b643a3069ba89c2cb9af4b84e15322b05dfaeea0bc950520053f5510fd",
+      "size": 925
+    },
+    {
+      "path": "queue.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "path": "queue.pid",
+      "sha256": "e9f4dbb0ffe1920351309682ed846232cf3dd853a7e111e63944165b9e9e56de",
+      "size": 8
+    },
+    {
+      "path": "queue.sh",
+      "sha256": "c6015b571446d5320cd11eb144a33bbda74f13a363dcbce303435030886d4c5a",
+      "size": 12205
+    },
+    {
+      "path": "queue_launcher.pid",
+      "sha256": "e9f4dbb0ffe1920351309682ed846232cf3dd853a7e111e63944165b9e9e56de",
+      "size": 8
+    },
+    {
+      "path": "status.json",
+      "sha256": "deb1070296c82c11735385cc5774434693e93dfd64b5ee87103800d6b6f8500d",
+      "size": 602
+    },
+    {
+      "path": "timeline.tsv",
+      "sha256": "7b05f91c4dc10f3529ca9f1a431216baf7645e8aa28d8edfd3795fca87129aaa",
+      "size": 959
+    }
+  ],
+  "generated_at": "2026-08-16T13:06:24.458953+00:00",
+  "schema_version": "comparator_stage1_batch16_file_manifest_v1"
+}
