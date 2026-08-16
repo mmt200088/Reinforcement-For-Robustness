@@ -1043,6 +1043,153 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             result.metadata["probe_seed"] for result in observed
         }), 3)
 
+    def test_same_action_matches_ppo_episode_metrics_at_same_stream_index(self):
+        from blb_stage2_rl.layerwise_runner import _collect_layerwise_episode
+        from blb_stage2_rl.seed_utils import (
+            derive_layerwise_online_evaluation_seeds,
+        )
+
+        class SeedSensitiveEnv(_LayerwiseEnv):
+            max_step_dim = 2
+
+            @staticmethod
+            def current_spec():
+                return None
+
+            def step(self, row):
+                state, reward, done, info = super().step(row)
+                if done:
+                    probe_seed = int(self.base.probe_noise_seed)
+                    offset = float(probe_seed % 997) * 1.0e-7
+                    loss_trials = tuple(
+                        0.99 + offset + delta
+                        for delta in (0.0, 0.01, 0.005)
+                    )
+                    metric1_trials = tuple(
+                        0.89 + offset + delta
+                        for delta in (0.0, 0.01, 0.005)
+                    )
+                    metric2_trials = tuple(
+                        0.84 + offset + delta
+                        for delta in (0.0, 0.01, 0.005)
+                    )
+                    self.runtime_terminal_info["metrics"] = EpisodeMetrics(
+                        loss_mean=float(np.mean(loss_trials)),
+                        metric1_mean=float(np.mean(metric1_trials)),
+                        metric2_mean=float(np.mean(metric2_trials)),
+                        loss_std=float(np.std(loss_trials, ddof=1)),
+                        metric1_std=float(np.std(metric1_trials, ddof=1)),
+                        metric2_std=float(np.std(metric2_trials, ddof=1)),
+                        loss_trials=loss_trials,
+                        metric1_trials=metric1_trials,
+                        metric2_trials=metric2_trials,
+                        trial_seeds=tuple(
+                            derive_probe_trial_seed(probe_seed, trial_index)
+                            for trial_index in range(3)
+                        ),
+                    )
+                return state, reward, done, info
+
+        class FixedPolicy:
+            def __init__(self, rows):
+                self.rows = iter(rows)
+
+            def sample_action(self, *_args, **_kwargs):
+                row = np.asarray(next(self.rows), dtype=np.int64)
+                return (
+                    row[None, :],
+                    np.asarray([0.0], dtype=np.float32),
+                    np.asarray([0.0], dtype=np.float32),
+                    np.zeros((1, row.size), dtype=np.float32),
+                )
+
+        class Buffer:
+            def __init__(self):
+                self.rows = []
+
+            def add(self, **payload):
+                self.rows.append(payload)
+                return len(self.rows) - 1
+
+        action = ((1, 2), (0, 1))
+        base_seed = 17
+        stream_index = 7
+        expected_reset_seed, expected_probe_seed = (
+            derive_layerwise_online_evaluation_seeds(
+                base_seed,
+                stream_index,
+                trial_count=3,
+            )
+        )
+
+        ppo_env = SeedSensitiveEnv()
+        draft = _collect_layerwise_episode(
+            env=ppo_env,
+            policy=FixedPolicy(action),
+            rollout_buffer=Buffer(),
+            entropy_samples=[],
+            absolute_episode=stream_index,
+            base_seed=base_seed,
+            expected_online_trials=3,
+            horizon=len(action),
+            device="cpu",
+            step_adapter_fn=lambda *_args: (
+                np.ones(2, dtype=bool),
+                np.full(2, 3, dtype=np.int64),
+            ),
+        )
+
+        comparator_env = SeedSensitiveEnv()
+        evaluator = LayerwiseRuntimeEvaluator(
+            env=comparator_env,
+            reference=_Reference(),
+            base_seed=base_seed,
+            expected_trials=3,
+        )
+        evaluator.evaluation_count = stream_index
+        comparator = evaluator(action)
+
+        ppo_metrics = draft.runtime_info["metrics"]
+        self.assertEqual(ppo_env.reset_seed, expected_reset_seed)
+        self.assertEqual(comparator_env.reset_seed, expected_reset_seed)
+        self.assertEqual(ppo_env.base.probe_noise_seed, expected_probe_seed)
+        self.assertEqual(
+            comparator_env.base.probe_noise_seed,
+            expected_probe_seed,
+        )
+        self.assertEqual(ppo_env.rows, comparator_env.rows)
+        self.assertEqual(
+            comparator.metadata["pending_full_vector"],
+            list(ppo_env.pending_full_vector),
+        )
+        self.assertEqual(
+            comparator.metadata["final_config_fingerprint"],
+            draft.runtime_info["final_config_fingerprint"],
+        )
+        self.assertEqual(
+            comparator.metadata["trial_seeds"],
+            list(ppo_metrics.trial_seeds),
+        )
+        self.assertEqual(
+            comparator.metadata["trial_results"],
+            {
+                "loss": list(ppo_metrics.loss_trials),
+                "metric1": list(ppo_metrics.metric1_trials),
+                "metric2": list(ppo_metrics.metric2_trials),
+            },
+        )
+        self.assertEqual(
+            comparator.metrics.as_dict(),
+            {
+                "loss_mean": ppo_metrics.loss_mean,
+                "metric1_mean": ppo_metrics.metric1_mean,
+                "metric2_mean": ppo_metrics.metric2_mean,
+                "loss_std": ppo_metrics.loss_std,
+                "metric1_std": ppo_metrics.metric1_std,
+                "metric2_std": ppo_metrics.metric2_std,
+            },
+        )
+
     def test_optimizer_invalid_candidate_returns_invalid_and_search_continues(self):
         env = _InvalidCandidateLayerwiseEnv()
         callback_rows = []
