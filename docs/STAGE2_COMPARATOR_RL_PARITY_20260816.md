@@ -22,17 +22,20 @@ mismatch described below.
 ## Current server verification
 
 The tested code-bearing server checkout was synchronized through Git to commit
-`68a0c8db278ac4b67d0ae4dfbf9fb51832171cae`, tree
-`0ceb19ff7c6d668bb6cacfa3f56c4c9f364e1d05`, and remained tracked-clean.
+`d6d1fa1fa51ac6a82d82c1302150d026f9d7bdbd`, tree
+`9ffb3931966302abc4f4bb213f29e7ad206278bb`, and remained tracked-clean.
 
 - Focused Stage-2 parity gate: 382 passed, 240 subtests passed.
-- Full project pytest gate: 2359 passed, 16 skipped, 613 subtests passed.
+- Same-action PPO/comparator seed and metric gate: 248 passed, 47 subtests
+  passed, including the direct same-action path comparison.
+- Full project pytest gate: 2360 passed, 16 skipped, 613 subtests passed.
 - Python `compileall`, `bash -n llama_7B_LayerImportance.sh`, and
   `git diff --check`: passed.
 - Server evidence:
   `/hy-tmp/rfr_stage2_comparator_parity_gate_20260817/focused_stage2_v3.xml`
+  `/hy-tmp/rfr_stage2_comparator_parity_gate_20260817/same_action_seed_focused_d6d1fa1f.xml`,
   and
-  `/hy-tmp/rfr_stage2_comparator_parity_gate_20260817/full_pytest_v4.xml`.
+  `/hy-tmp/rfr_stage2_comparator_parity_gate_20260817/full_pytest_d6d1fa1f.xml`.
 
 The 16 full-suite skips include the CUDA-specific gates. The server kernel has
 NVIDIA module `580.173.02`, while `libnvidia-ml.so.1` and `libcuda.so.1` resolve
@@ -164,11 +167,22 @@ Candidate repetition is intentionally not identical:
 | Seed index | PPO episode index | Global index of actual unique model evaluations |
 | Strict evidence | Fixed F4 banks cached by candidate identity | The same fixed F4 banks cached by candidate identity |
 
-The comparator seed formula now matches the PPO global-index formula for every
-actual model evaluation. Proposal order still differs by algorithm, and cache
-deduplication means the two optimizer families do not consume an identical
-online trial sequence. Claiming identical online trial order would be false.
-Strict A/B/C trial order is identical because the bank seeds are fixed.
+PPO and all three comparators now call one shared seed-plan function for the
+episode reset seed and K=3 probe seed. A direct regression gate executes the
+same action through the PPO episode collector and comparator runtime evaluator
+at the same global stream index, then requires exact equality for the compact
+action, materialized full vector, final fingerprint, trial seeds, each raw
+loss/accuracy/F1 trial, and all six aggregate metric values.
+
+Proposal order still differs by algorithm, and comparator cache deduplication
+means the optimizer families do not consume an identical online trial
+sequence. Therefore, the same action encountered at different online stream
+indices intentionally receives different noise trials and need not have equal
+online K=3 values. Cross-algorithm result comparison must use the fixed strict
+F4 A/B/C banks. Their seed order is optimizer-independent, so the same complete
+Stage-1 plus Stage-2 configuration must produce exactly equal strict trial
+values and aggregate metrics; any mismatch invalidates the run rather than
+being accepted as an optimizer difference.
 
 Online comparator ranking uses the same six bootstrap probabilities and the
 same resource objective. Feasible candidates rank ahead of infeasible ones.
