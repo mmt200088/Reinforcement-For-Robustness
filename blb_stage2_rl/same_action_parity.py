@@ -318,12 +318,25 @@ def assert_same_action_projection_equal(
     )
 
 
-def _strict_neighbor_actions(action: ActionMatrix) -> list[ActionMatrix]:
+def _strict_neighbor_actions(
+        action: ActionMatrix,
+        layerwise_env: Any,
+        ) -> list[ActionMatrix]:
+    schedule = getattr(layerwise_env, "schedule", None)
+    if not isinstance(schedule, Sequence) or len(schedule) != len(action):
+        raise RuntimeError(
+            "same-action strict gate requires the production layer schedule"
+        )
     candidates: list[ActionMatrix] = []
     seen = {action}
-    for layer_index, row in enumerate(action):
-        for slot_index in range(2):
-            for alternate in (0, 1, 2):
+    for layer_index, (row, spec) in enumerate(zip(action, schedule)):
+        slot_dims = tuple(int(value) for value in spec.slot_dims)
+        if len(slot_dims) != len(row):
+            raise RuntimeError(
+                "same-action strict schedule/action slot count mismatch"
+            )
+        for slot_index, slot_dim in enumerate(slot_dims):
+            for alternate in range(slot_dim):
                 if alternate == row[slot_index]:
                     continue
                 owned = [list(item) for item in action]
@@ -509,7 +522,10 @@ def run_same_action_parity_gate(
     if strict_validator is not None:
         strict_candidates = [comparator]
         strict_rejections: list[dict[str, Any]] = []
-        for neighbor_action in _strict_neighbor_actions(action):
+        for neighbor_action in _strict_neighbor_actions(
+                action,
+                layerwise_env,
+                ):
             if len(strict_candidates) >= 5:
                 break
             candidate = evaluator(neighbor_action)

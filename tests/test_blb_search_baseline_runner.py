@@ -1201,6 +1201,13 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         class ParityEnv(_LayerwiseEnv):
             max_step_dim = 2
 
+            @property
+            def schedule(self):
+                return [
+                    SimpleNamespace(slot_dims=(2, 3))
+                    for _ in range(self.horizon)
+                ]
+
             @staticmethod
             def current_spec():
                 return SimpleNamespace(
@@ -1283,6 +1290,13 @@ class RuntimeEvaluatorTests(unittest.TestCase):
 
         class ParityEnv(_LayerwiseEnv):
             max_step_dim = 2
+
+            @property
+            def schedule(self):
+                return [
+                    SimpleNamespace(slot_dims=(2, 3))
+                    for _ in range(self.horizon)
+                ]
 
             @staticmethod
             def current_spec():
