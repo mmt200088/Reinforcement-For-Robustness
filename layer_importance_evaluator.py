@@ -2651,6 +2651,12 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage2_inference_batch_size, "stage2_inference_batch_size",
             )
         )
+        try:
+            self.stage2_workers_per_device = max(
+                1, int(stage2_workers_per_device)
+            )
+        except Exception:
+            self.stage2_workers_per_device = 1
         self.mrpc_reproducibility = mrpc_reproducibility
         if self.mrpc_reproducibility is not None:
             if str(data_path).strip().lower() != "mrpc":
@@ -3813,10 +3819,6 @@ class LayerImportanceEvaluator(TrainerCallback):
             raise ValueError(
                 "stochastic_ring source fractional bits must be smaller than ring bits"
             )
-        try:
-            self.stage2_workers_per_device = max(1, int(stage2_workers_per_device))
-        except Exception:
-            self.stage2_workers_per_device = 1
         self.blb_v3_substage_block_order = str(blb_v3_substage_block_order or "1,2,4,5")
         self.blb_v3_substage_frozen_blocks = str(blb_v3_substage_frozen_blocks or "3")
         try:
