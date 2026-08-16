@@ -108,6 +108,14 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   formal Stage-1 comparator preset; Greedy, COINN-GA, generic and Stage-2
   search defaults remain unchanged. Graceful-stop and ordered-observation
   resume semantics are unchanged.
+- Stage-1 formal comparator batch contract, added 2026-08-16: `bo_rf`,
+  `greedy`, and `coinn_ga` must use batch size `16` for MRPC Stage-1 search.
+  This matches the launcher default consumed by the authoritative strict-0
+  BERT-base MRPC PPO run at source `41a0b326`; retain its historical per-batch
+  loss aggregation semantics for direct comparison. Batch-64 comparator
+  artifacts pre-dating this contract remain historical evidence but are not
+  metric-aligned comparison results. Do not change this batch without also
+  rerunning the RL reference under the new batch contract.
 - Runtime-optimization completion audit, updated 2026-07-14: source `8308bbd`
   was verified in the clean five-RTX-5090 checkout. The six-stage audit found
   all 30 expected flow files and every required artifact-evidence class. The

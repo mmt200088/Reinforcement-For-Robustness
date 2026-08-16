@@ -348,7 +348,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                     "s1t0.001_s2t0.001_s2st2.0",
                 )
 
-    def test_comparator_aliases_fix_canonical_batch_without_preset(self):
+    def test_comparator_aliases_fix_historical_rl_aligned_batch_without_preset(self):
         for alias in ("bo_rf", "greedy", "coinn_ga"):
             with self.subTest(alias=alias):
                 argv = self._capture_comparator_persistent_path(
@@ -358,11 +358,11 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                 )
                 self.assertEqual(
                     argv[argv.index("--batch_size") + 1],
-                    "64",
+                    "16",
                 )
                 self.assertEqual(
                     argv[argv.index("--micro_batch_size") + 1],
-                    "64",
+                    "16",
                 )
 
     def test_comparator_aliases_pin_final_eval_and_stage2_seeds(self):

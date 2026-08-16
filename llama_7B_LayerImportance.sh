@@ -450,16 +450,16 @@ translate_subcommand_args(){
         rl|ppo) SUBCOMMAND_ARGS=(--search-algorithm rl "${args[@]:2}") ;;
         bo|bo-rf|bo_rf|bayesian)
           reject_formal_comparator_overrides "${args[@]:2}"
-          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size 64 --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend bo_rf --blb-v3-search-evaluation-budget 50000 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend bo_rf --blb-v3-search-evaluation-budget 50000 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
           ;;
         ga|genetic) SUBCOMMAND_ARGS=(--search-algorithm ga "${args[@]:2}") ;;
         coinn|coinn-ga|coinn_ga)
           reject_formal_comparator_overrides "${args[@]:2}"
-          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size 64 --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend coinn_ga --blb-v3-search-evaluation-budget 45664 --blb-v3-search-patience-generations 5 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend coinn_ga --blb-v3-search-evaluation-budget 45664 --blb-v3-search-patience-generations 5 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
           ;;
         greedy|greedy-search|greedy_search)
           reject_formal_comparator_overrides "${args[@]:2}"
-          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size 64 --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend greedy --blb-v3-search-evaluation-budget 2176782336 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
+          SUBCOMMAND_ARGS=(--search-algorithm rl --mode train --batch-size "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" --random-seed 42 --blb-v3-seed 42 --stage1-accuracy-tolerance 0.001 --stage2-limit-tolerance 0.001 --stage2-stability-tolerance 2.0 --stage2-stability-multiplier 2.0 --stage2-k-trials 3 --blb-v3-baseline-groups 5 --blb-v3-baseline-trials-per-group 3 --blb-v3-promotion-validation-trials 15 --blb-v3-final-selection-validation-trials 15 --blb-v3-search-full-validation true --blb-v3-search-backend greedy --blb-v3-search-evaluation-budget 2176782336 --blb-v3-final-selection-top-n 5 --blb-v3-search-mutation-max-coordinates 4 --stage2-fixed-config-source stage1_result "${args[@]:2}")
           ;;
         *) err "run 子命令只支持 rl / ga / bo_rf / greedy / coinn_ga，当前为：$sub" ;;
       esac
@@ -519,6 +519,7 @@ LOGFILE="output.log"; S_LOGFILE="false"
 MODEL_TYPE="bert-base"; S_MODEL_TYPE="false"
 BATCH_SIZE="16"; S_BATCH_SIZE="false"
 STAGE1_RL_DEFAULT_BATCH_SIZE="128"
+STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE="16"
 STAGE1_EPISODES="51000"; S_STAGE1_EPISODES="false"
 STAGE2_EPISODES="0"; S_STAGE2_EPISODES="false"
 STAGE1_ENTROPY_STOP_THRESHOLD=""; S_STAGE1_ENTROPY_STOP_THRESHOLD="false"
@@ -1147,7 +1148,7 @@ if [ "$SEARCH_ALGORITHM" = "rl" ]; then
       [ "$BLB_V3_SEARCH_FULL_VALIDATION" = "true" ] || err "正式两阶段 comparator 必须启用 --blb-v3-search-full-validation true。"
       [ "$BLB_V3_FINAL_SELECTION_TOP_N" = "5" ] || err "正式两阶段 comparator 必须严格复核 top 5 候选。"
     fi
-    [ "$BATCH_SIZE" = "64" ] || err "正式 MRPC comparator 必须使用 canonical batch size 64。"
+    [ "$BATCH_SIZE" = "$STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE" ] || err "正式 MRPC comparator 必须使用历史 Stage-1 RL 对齐 batch size ${STAGE1_COMPARATOR_RL_ALIGNMENT_BATCH_SIZE}。"
     DECOUPLED_LAYOUT="false"
   fi
 fi
