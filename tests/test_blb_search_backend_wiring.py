@@ -96,6 +96,16 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("float(self.stage2_stability_tolerance)", evaluator_source)
         self.assertIn("int(self.stage2_probe_size)", evaluator_source)
 
+    def test_stage2_worker_count_is_initialized_before_comparator_contract(self):
+        evaluator_source = (
+            ROOT / "layer_importance_evaluator.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertLess(
+            evaluator_source.index("self.stage2_workers_per_device ="),
+            evaluator_source.index("int(self.stage2_workers_per_device)"),
+        )
+
     def test_outer_two_stage_result_is_plain_and_atomic(self):
         source = (ROOT / "layer_importance_evaluator.py").read_text(
             encoding="utf-8"
