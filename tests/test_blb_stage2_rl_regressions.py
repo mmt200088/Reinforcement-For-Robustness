@@ -2255,6 +2255,43 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
         )
         self.assertEqual(evaluator.batch_size, 16)
 
+    def test_stage2_activation_rebuilds_evaluator_loaders_and_drops_stage1_cache(self):
+        from layer_importance_evaluator import LayerImportanceEvaluator
+        from stage1_rl.eval_cache import Stage1EvalCache
+
+        evaluator = object.__new__(LayerImportanceEvaluator)
+        evaluator.batch_size = 16
+        evaluator._active_inference_batch_size = 16
+        evaluator.stage2_inference_batch_size = 64
+        evaluator.data_collator = self._collate
+        evaluator.dataset_splits = {
+            "train": self._rows(128),
+            "validation_full": self._rows(408),
+        }
+        evaluator.dataset_splits_mm = {}
+        evaluator.dataloaders = {}
+        evaluator.dataloaders_mm = {}
+        evaluator._eval_cache = Stage1EvalCache()
+        evaluator._stage1_worker_eval_cache = Stage1EvalCache()
+        evaluator._eval_cache.put(("stage1",), (1.0, 2.0, 3.0, 4.0))
+        evaluator._stage1_worker_eval_cache.put(
+            ("stage1-worker",), (1.0, 2.0, 3.0, 4.0),
+        )
+
+        evaluator.activate_stage2_inference_batch_size()
+
+        self.assertEqual(evaluator.batch_size, 16)
+        self.assertEqual(evaluator._active_inference_batch_size, 64)
+        self.assertEqual(len(evaluator.dataloaders["train"]), 2)
+        self.assertEqual(len(evaluator.dataloaders["validation_full"]), 7)
+        self.assertIs(evaluator.dataloader_train, evaluator.dataloaders["train"])
+        self.assertIs(
+            evaluator.dataloader_test,
+            evaluator.dataloaders["validation_full"],
+        )
+        self.assertEqual(len(evaluator._eval_cache), 0)
+        self.assertEqual(len(evaluator._stage1_worker_eval_cache), 0)
+
 
 class BLBPersistencePathRegressionTests(unittest.TestCase):
     def test_blb_progress_stays_under_stage2_noise_progress(self):

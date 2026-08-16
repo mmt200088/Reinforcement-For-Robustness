@@ -339,6 +339,19 @@ class SearchBackendWiringTests(unittest.TestCase):
             "two-stage comparators require Stage-2 inference batch size",
             evaluator,
         )
+        self.assertIn(
+            "def activate_stage2_inference_batch_size(self)", evaluator,
+        )
+
+        runner = (ROOT / "blb_stage2_rl" / "runner.py").read_text(
+            encoding="utf-8"
+        )
+        activation = "ev.activate_stage2_inference_batch_size()"
+        self.assertIn(activation, runner)
+        self.assertLess(
+            runner.index(activation),
+            runner.index("run_sequential_via_runner("),
+        )
 
     def test_evaluator_revalidates_stage2_scientific_parameters(self):
         evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
