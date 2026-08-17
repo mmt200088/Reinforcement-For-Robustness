@@ -1,0 +1,22 @@
+{
+  "aggregate_eligible": false,
+  "base_commit": "b8584e4f7bbda2fb00010fb1570be3fec0fbcdf2",
+  "base_tree": "c3e4ec2c9b61bde00d5b2ddc204192d8939414e0",
+  "branch": "codex/task-stage2-ga200-resume-20260817",
+  "branch_role": "task",
+  "changed_scopes": [],
+  "completed_at": null,
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "/hy-tmp/stage2_comparator_html_authority_20260817/formal_persistent_v2/coinn_ga/"
+  ],
+  "source_commit": "b8584e4f7bbda2fb00010fb1570be3fec0fbcdf2",
+  "source_tree": "c3e4ec2c9b61bde00d5b2ddc204192d8939414e0",
+  "started_at": "2026-08-17T18:34:50+08:00",
+  "status": "in_progress",
+  "supersedes": [],
+  "task_id": "stage2-ga200-resume-20260817",
+  "verification": []
+}
