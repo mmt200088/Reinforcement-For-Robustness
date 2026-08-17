@@ -3675,8 +3675,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             ):
                 raise ValueError(
                     "COINN-GA comparator requires Stage-2 population 64, "
-                    "patience 5 as a diagnostic counter, a 200-generation "
-                    "full-run contract with no incumbent-stagnation early "
+                    "patience 5 as a diagnostic counter, the "
+                    "200-generation full-run contract with no "
+                    "incumbent-stagnation early "
                     "stop, and the 11,464-inference full-run contract"
                 )
             if self.blb_v3_search_backend == "bo_rf" and (
