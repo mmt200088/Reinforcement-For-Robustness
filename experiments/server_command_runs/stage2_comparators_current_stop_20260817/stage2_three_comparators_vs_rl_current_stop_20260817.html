@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stage-2 三种对比算法与 RL 结果对比</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18212a;
+      --muted: #5e6873;
+      --line: #d9dee5;
+      --soft: #f5f7f9;
+      --paper: #ffffff;
+      --navy: #204d68;
+      --teal: #177361;
+      --teal-soft: #e9f5f1;
+      --amber: #956200;
+      --amber-soft: #fff7dc;
+      --red: #a9372a;
+      --red-soft: #fff0ed;
+      --blue-soft: #edf4f8;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      letter-spacing: 0;
+    }
+
+    header {
+      color: #fff;
+      background: #17364a;
+      border-bottom: 5px solid #2d7b69;
+    }
+
+    .header-inner,
+    main,
+    footer {
+      width: min(1220px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    .header-inner { padding: 30px 0 28px; }
+    .eyebrow { color: #b9ddd4; font-size: 12px; font-weight: 750; }
+
+    h1 {
+      margin: 7px 0 0;
+      font-size: clamp(27px, 4vw, 42px);
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    header p {
+      max-width: 900px;
+      margin: 12px 0 0;
+      color: #d9e6ec;
+      font-size: 16px;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      overflow-x: auto;
+      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.97);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .nav-inner {
+      width: min(1220px, calc(100% - 36px));
+      margin: 0 auto;
+      display: flex;
+      gap: 21px;
+    }
+
+    nav a {
+      display: inline-block;
+      padding: 11px 0 10px;
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 750;
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+    }
+
+    nav a:hover { border-bottom-color: var(--teal); }
+    main { padding: 30px 0 48px; }
+
+    section {
+      padding: 28px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    section:first-child { padding-top: 0; }
+    section:last-child { border-bottom: 0; }
+
+    h2 {
+      margin: 0 0 14px;
+      color: #213c4d;
+      font-size: 23px;
+      line-height: 1.3;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    p { margin: 8px 0; }
+    ul { margin: 8px 0; padding-left: 22px; }
+    li + li { margin-top: 5px; }
+
+    code {
+      overflow-wrap: anywhere;
+      color: #263a49;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9em;
+    }
+
+    .lead { max-width: 980px; color: #394753; font-size: 16px; }
+
+    .notice {
+      margin: 16px 0;
+      padding: 13px 15px;
+      border-left: 4px solid var(--navy);
+      background: var(--blue-soft);
+    }
+
+    .notice.warn { border-left-color: var(--amber); background: var(--amber-soft); }
+    .notice.fail { border-left-color: var(--red); background: var(--red-soft); }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 20px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .kpi {
+      min-width: 0;
+      padding: 17px 18px;
+      border-right: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .kpi:last-child { border-right: 0; }
+    .kpi span { display: block; color: var(--muted); font-size: 12px; }
+    .kpi strong { display: block; margin-top: 3px; font-size: 21px; line-height: 1.28; }
+    .kpi small { display: block; margin-top: 5px; color: var(--muted); }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    table {
+      width: 100%;
+      min-width: 860px;
+      border-collapse: collapse;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th {
+      color: #30424f;
+      background: var(--soft);
+      font-size: 12px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: #fbfcfd; }
+    .num { text-align: right; white-space: nowrap; }
+    .best { color: var(--teal); font-weight: 750; }
+    .worse { color: var(--red); font-weight: 700; }
+    .muted { color: var(--muted); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.5;
+      white-space: nowrap;
+    }
+
+    .badge.pass { color: var(--teal); background: var(--teal-soft); }
+    .badge.partial { color: var(--amber); background: var(--amber-soft); }
+    .badge.fail { color: var(--red); background: var(--red-soft); }
+    .badge.info { color: var(--navy); background: var(--blue-soft); }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 16px;
+    }
+
+    .config-panel {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .config-head { padding: 14px 16px; background: var(--soft); border-bottom: 1px solid var(--line); }
+    .config-head h3 { margin: 0; font-size: 16px; }
+    .config-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    .config-panel .table-wrap { border: 0; border-radius: 0; }
+    .config-panel table { min-width: 520px; }
+    .config-panel th, .config-panel td { padding: 8px 10px; }
+
+    .mono-block {
+      margin: 10px 0 0;
+      padding: 11px 12px;
+      overflow-x: auto;
+      color: #263a49;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .method-band {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      margin-top: 13px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .method-band > div { padding: 11px 13px; border-bottom: 1px solid var(--line); }
+    .method-band > div:nth-last-child(-n + 2) { border-bottom: 0; }
+    .method-band .label { color: #374853; background: var(--soft); font-weight: 750; }
+
+    footer { padding: 20px 0 34px; color: var(--muted); font-size: 12px; }
+
+    @media (max-width: 900px) {
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .kpi:nth-child(2) { border-right: 0; }
+      .kpi:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+      .config-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 620px) {
+      .header-inner, main, footer, .nav-inner { width: min(100% - 24px, 1220px); }
+      .header-inner { padding: 24px 0 22px; }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .kpi { border-right: 0; border-bottom: 1px solid var(--line); }
+      .kpi:last-child { border-bottom: 0; }
+      .method-band { grid-template-columns: 1fr; }
+      .method-band > div { border-bottom: 1px solid var(--line) !important; }
+      .method-band > div:last-child { border-bottom: 0 !important; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="eyebrow">BERT-base · GLUE MRPC · 12 Layers · 2026-08-17</div>
+      <h1>Stage-2 三种对比算法与 RL 结果对比</h1>
+      <p>汇总 BO-RF 的严格 least-violating 结果，以及 Greedy、COINN-GA 在用户停止时的已观测最优配置，并与指定的 RL 严格 F4 结果比较。</p>
+    </div>
+  </header>
+
+  <nav>
+    <div class="nav-inner">
+      <a href="#conclusion">结论</a>
+      <a href="#overview">总览</a>
+      <a href="#comparison">与 RL 对比</a>
+      <a href="#stage1">Stage-1 绑定</a>
+      <a href="#configs">Stage-2 配置</a>
+      <a href="#methods">算法状态</a>
+      <a href="#evidence">证据与归档</a>
+    </div>
+  </nav>
+
+  <main>
+    <section id="conclusion">
+      <h2>结论</h2>
+      <p class="lead"><strong>RL 是本次比较中唯一通过 408 条验证样本、45 次 trial 严格 F4 复验的可行结果。</strong> BO-RF 已完成严格 top-5 的 Bank-A 验证，但其最终选择仍违反 3 个均值约束；Greedy 和 GA 均按用户要求以停止点结果为准，未完成自身搜索终止条件，也未进入本轮严格验证。</p>
+
+      <div class="kpi-grid">
+        <div class="kpi">
+          <span>RL</span>
+          <strong>严格 F4 可行</strong>
+          <small>60,000 episodes · 408×45</small>
+        </div>
+        <div class="kpi">
+          <span>BO-RF</span>
+          <strong>严格但不可行</strong>
+          <small>176 次在线评估 · top-5×15</small>
+        </div>
+        <div class="kpi">
+          <span>Greedy</span>
+          <strong>停止点最优</strong>
+          <small>20,217 次在线评估 · 未严格验证</small>
+        </div>
+        <div class="kpi">
+          <span>COINN-GA</span>
+          <strong>59 代 + 36 候选</strong>
+          <small>3,463 次在线评估 · 未严格验证</small>
+        </div>
+      </div>
+
+      <div class="notice warn"><strong>证据等级不可混用：</strong> Greedy、GA 的指标来自 256 个样本、3 次在线 trial，只能说明搜索停止点的在线表现，不能与 RL 的 408 个样本、45 次严格 F4 指标直接下科学结论。BO 使用 408 个样本，但只完成严格 Bank-A 的 15 次 trial，也未达到 RL 的完整 F4 证据等级。</div>
+    </section>
+
+    <section id="overview">
+      <h2>结果总览</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>方法</th>
+              <th>报告结果性质</th>
+              <th class="num">Loss ↓</th>
+              <th class="num">Accuracy ↑</th>
+              <th class="num">Weighted F1 ↑</th>
+              <th class="num">Fusion</th>
+              <th class="num">H/M/L</th>
+              <th class="num">资源分数 ↑</th>
+              <th>严格结论</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>RL</strong></td>
+              <td>权威报告严格 F4</td>
+              <td class="num best">0.337590 ± 0.003750</td>
+              <td class="num best">0.877887 ± 0.004993</td>
+              <td class="num best">0.876907 ± 0.005038</td>
+              <td class="num">6</td>
+              <td class="num">2 / 3 / 7</td>
+              <td class="num">0.604167</td>
+              <td><span class="badge pass">F4 可行</span></td>
+            </tr>
+            <tr>
+              <td><strong>BO-RF</strong></td>
+              <td>严格 Bank-A least-violating</td>
+              <td class="num worse">0.345258 ± 0.004642</td>
+              <td class="num worse">0.868954 ± 0.005548</td>
+              <td class="num worse">0.868501 ± 0.005573</td>
+              <td class="num">10</td>
+              <td class="num">1 / 2 / 9</td>
+              <td class="num best">0.833333</td>
+              <td><span class="badge fail">3 个均值约束失败</span></td>
+            </tr>
+            <tr>
+              <td><strong>Greedy</strong></td>
+              <td>用户指定停止点在线最优</td>
+              <td class="num">0.350987 ± 0.007271</td>
+              <td class="num">0.869792 ± 0.002255</td>
+              <td class="num">0.868551 ± 0.002003</td>
+              <td class="num">12</td>
+              <td class="num">0 / 1 / 11</td>
+              <td class="num best">0.979167</td>
+              <td><span class="badge partial">未严格验证</span></td>
+            </tr>
+            <tr>
+              <td><strong>COINN-GA</strong></td>
+              <td>用户指定停止点在线最优</td>
+              <td class="num">0.358344 ± 0.005588</td>
+              <td class="num">0.871094 ± 0.007813</td>
+              <td class="num">0.869921 ± 0.008372</td>
+              <td class="num">12</td>
+              <td class="num">0 / 3 / 9</td>
+              <td class="num best">0.937500</td>
+              <td><span class="badge partial">未严格验证</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">资源分数为计算节省与通信节省的均值；配置层面的资源分数可直接比较，但不同验证等级下的模型指标不可当作同等证据。</p>
+    </section>
+
+    <section id="comparison">
+      <h2>与 RL 的对比</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>方法</th>
+              <th>Loss 差值（方法 − RL）</th>
+              <th>Accuracy 差值</th>
+              <th>Weighted F1 差值</th>
+              <th>资源分数差值</th>
+              <th>解释</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>BO-RF</strong></td>
+              <td class="worse">+0.007668</td>
+              <td class="worse">−0.008933（−0.8933 个百分点）</td>
+              <td class="worse">−0.008406（−0.8406 个百分点）</td>
+              <td class="best">+0.229167</td>
+              <td>同为 408 样本严格路径，但 BO 仅 Bank-A 15 trials，且已确认不可行。</td>
+            </tr>
+            <tr>
+              <td><strong>Greedy</strong></td>
+              <td>+0.013397</td>
+              <td>−0.008095（−0.8095 个百分点）</td>
+              <td>−0.008356（−0.8356 个百分点）</td>
+              <td class="best">+0.375000</td>
+              <td>前三项仅为 256×3 在线数值的描述性差值，不是严格 A/B。</td>
+            </tr>
+            <tr>
+              <td><strong>COINN-GA</strong></td>
+              <td>+0.020754</td>
+              <td>−0.006793（−0.6793 个百分点）</td>
+              <td>−0.006986（−0.6986 个百分点）</td>
+              <td class="best">+0.333333</td>
+              <td>前三项仅为 256×3 在线数值的描述性差值，不是严格 A/B。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="notice fail"><strong>科学结论：</strong> 三个对比算法都没有产生可替代 RL 的严格可行结果。BO 的资源配置更激进，但其精度均值约束失败；Greedy 和 GA 的资源配置更激进，却尚无严格验证证据。</div>
+    </section>
+
+    <section id="stage1">
+      <h2>Stage-1 前置配置绑定</h2>
+      <p>每个对比算法使用自己的最新 Stage-1 结果进入 Stage-2；RL 使用权威报告中 BERT-base MRPC 的 Stage-1 配置。Softmax 均为 12 层全 6。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>方法</th><th>GELU 12 层向量</th><th>Softmax 12 层向量</th><th>关系</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>RL</strong></td><td><code>[1,2,1,1,1,1,1,1,2,1,1,1]</code></td><td><code>[6,6,6,6,6,6,6,6,6,6,6,6]</code></td><td>权威参考</td></tr>
+            <tr><td><strong>BO-RF</strong></td><td><code>[1,1,1,1,1,1,1,1,2,2,1,1]</code></td><td><code>[6,6,6,6,6,6,6,6,6,6,6,6]</code></td><td>BO 自己的 Stage-1 最优</td></tr>
+            <tr><td><strong>Greedy</strong></td><td><code>[1,2,1,1,1,1,1,1,2,1,1,1]</code></td><td><code>[6,6,6,6,6,6,6,6,6,6,6,6]</code></td><td>与 RL 向量相同</td></tr>
+            <tr><td><strong>COINN-GA</strong></td><td><code>[1,2,1,1,1,1,1,1,2,1,1,1]</code></td><td><code>[6,6,6,6,6,6,6,6,6,6,6,6]</code></td><td>与 RL 向量相同</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="configs">
+      <h2>Stage-2 最优配置</h2>
+      <p><strong>动作格式：</strong> <code>[fusion, precision]</code>。Fusion 的 1 表示启用；精度索引 0/1/2 分别对应 High/Medium/Low。K 五元组依次对应五个底层 block。</p>
+      <div class="notice"><strong>统一精度映射：</strong> High = <code>[11,10,10,12,11]</code>，Medium = <code>[9,8,8,10,9]</code>，Low = <code>[7,6,6,8,7]</code>。所有方法使用与权威 RL 相同的 fusion mapping 和 K preset tree。</div>
+
+      <div class="config-grid">
+        <article class="config-panel">
+          <div class="config-head">
+            <h3>RL · 严格 F4 可行</h3>
+            <p>Fusion 6 · H/M/L 2/3/7 · removed K bits 302 · resource 0.604167</p>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>层</th><th>Fusion</th><th>精度</th><th>K 五元组</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>0</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>2</td><td>0</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>3</td><td>1</td><td>High</td><td><code>[11,10,10,12,11]</code></td></tr>
+              <tr><td>4</td><td>0</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>5</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>6</td><td>1</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>7</td><td>0</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>8</td><td>0</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>9</td><td>0</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>10</td><td>1</td><td>High</td><td><code>[11,10,10,12,11]</code></td></tr>
+              <tr><td>11</td><td>1</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>12</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+            </tbody>
+          </table></div>
+          <div class="mono-block">[[0,2],[0,2],[1,0],[0,2],[1,2],[1,1],[0,2],[0,2],[0,1],[1,0],[1,1],[1,2]]</div>
+        </article>
+
+        <article class="config-panel">
+          <div class="config-head">
+            <h3>BO-RF · 严格 least-violating</h3>
+            <p>Fusion 10 · H/M/L 1/2/9 · removed K bits 332 · resource 0.833333</p>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>层</th><th>Fusion</th><th>精度</th><th>K 五元组</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>0</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>2</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>3</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>4</td><td>1</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>5</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>6</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>7</td><td>0</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>8</td><td>1</td><td>High</td><td><code>[11,10,10,12,11]</code></td></tr>
+              <tr><td>9</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>10</td><td>1</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>11</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>12</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+            </tbody>
+          </table></div>
+          <div class="mono-block">[[0,2],[1,2],[1,2],[1,1],[1,2],[1,2],[0,2],[1,0],[1,2],[1,1],[1,2],[1,2]]</div>
+        </article>
+
+        <article class="config-panel">
+          <div class="config-head">
+            <h3>Greedy · 用户指定停止点最优</h3>
+            <p>Fusion 12 · H/M/L 0/1/11 · removed K bits 362 · resource 0.979167</p>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>层</th><th>Fusion</th><th>精度</th><th>K 五元组</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>2</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>3</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>4</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>5</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>6</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>7</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>8</td><td>1</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>9</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>10</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>11</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>12</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+            </tbody>
+          </table></div>
+          <div class="mono-block">[[1,2],[1,2],[1,2],[1,2],[1,2],[1,2],[1,2],[1,1],[1,2],[1,2],[1,2],[1,2]]</div>
+        </article>
+
+        <article class="config-panel">
+          <div class="config-head">
+            <h3>COINN-GA · 用户指定停止点最优</h3>
+            <p>Fusion 12 · H/M/L 0/3/9 · removed K bits 342 · resource 0.937500</p>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>层</th><th>Fusion</th><th>精度</th><th>K 五元组</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>1</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>2</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>3</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>4</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>5</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>6</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>7</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>8</td><td>1</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>9</td><td>1</td><td>Medium</td><td><code>[9,8,8,10,9]</code></td></tr>
+              <tr><td>10</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>11</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+              <tr><td>12</td><td>1</td><td>Low</td><td><code>[7,6,6,8,7]</code></td></tr>
+            </tbody>
+          </table></div>
+          <div class="mono-block">[[1,1],[1,2],[1,2],[1,2],[1,2],[1,2],[1,2],[1,1],[1,1],[1,2],[1,2],[1,2]]</div>
+        </article>
+      </div>
+    </section>
+
+    <section id="methods">
+      <h2>算法状态与约束解释</h2>
+
+      <h3>BO-RF</h3>
+      <div class="method-band">
+        <div class="label">搜索状态</div><div>176 次唯一在线评估后因 <code>bo_no_improvement</code> 停止；严格 top-5 全部完成 Bank-A，每个候选 15 trials。</div>
+        <div class="label">最终选择</div><div><code>strict_least_violating</code>，normalized violation = 0.009395，worst violation = 0.004614。</div>
+        <div class="label">失败约束</div><div>Loss 均值 0.345258 &gt; 0.344815；Accuracy 均值 0.868954 &lt; 0.872982；F1 均值 0.868501 &lt; 0.871546。三个稳定性标准差约束均通过。</div>
+        <div class="label">结论</div><div><span class="badge fail">严格不可行</span> 不能作为 RL 的可行替代。</div>
+      </div>
+
+      <h3>Greedy</h3>
+      <div class="method-band">
+        <div class="label">搜索状态</div><div>用户中断后保留 20,217 条完整唯一观察；全部完成模型推理，其中 3,381 条通过在线门。</div>
+        <div class="label">最终选择</div><div>按项目正式 <code>candidate_rank_key</code> 对全部观察重排，停止点最优为第 1,756 条观察，fingerprint <code>63b4cb3c6cf34ff980d4fe4c42a6c8a2d4b43f7b0234bfc951a6c70d34ae095a</code>。</div>
+        <div class="label">未完成部分</div><div>未完成 exhaustive 1-opt / 2-opt 全邻域验证，未证明局部最优，未运行严格 top-5 或 F4。</div>
+        <div class="label">结论</div><div><span class="badge partial">用户指定停止点结果</span> 可作为当前保留配置，但不是算法收敛结果。</div>
+      </div>
+
+      <h3>COINN-GA</h3>
+      <div class="method-band">
+        <div class="label">停止事实</div><div>请求“50 代停止”到达时训练已越过第 50 代；一次 SIGINT 经 supervisor 转发，进程退出码 130，GPU 已释放且未自动重启。</div>
+        <div class="label">持久进度</div><div>59 个完整更新代；第 60 代已完成 36/57 个 offspring；共 3,463 条完整唯一观察，其中 780 条通过在线门。</div>
+        <div class="label">最终选择</div><div>按正式排序重排全部观察，停止点最优为第 3,015 条观察，fingerprint <code>3a4cb77ca36c63508ad1b7aafeb737ed78e1777c71ac0291de2b2927a7991d63</code>。</div>
+        <div class="label">结论</div><div><span class="badge partial">用户指定停止点结果</span> 未达到配置的 200 代目标，也未运行续跑后的严格验证。</div>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <h2>证据、来源与归档</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>项目</th><th>值</th></tr></thead>
+          <tbody>
+            <tr><td>RL 权威 HTML SHA-256</td><td><code>0b0676ee40102562a4d1f313c16222196ba2b1dcbb03225b9ee431142a299734</code></td></tr>
+            <tr><td>实验源码 commit / tree</td><td><code>b8584e4f7bbda2fb00010fb1570be3fec0fbcdf2</code><br><code>c3e4ec2c9b61bde00d5b2ddc204192d8939414e0</code></td></tr>
+            <tr><td>BO 观察日志</td><td>176 条；SHA-256 <code>94b603e30d8fb329819964db5e9d42a0f5592f9e6c973308ebfcd66cf831f006</code></td></tr>
+            <tr><td>Greedy 观察日志</td><td>20,217 条；SHA-256 <code>7c85d398609254af12d3f1052f20f1832b1eb2fb837589d7cc0545ccf0254914</code></td></tr>
+            <tr><td>GA 观察日志</td><td>3,463 条；SHA-256 <code>5df7553e0de6f392325e98b14bf22901fa7dbb28327debfd01c28aa6f45ddf64</code></td></tr>
+            <tr><td>重复动作检查</td><td>BO / Greedy / GA 均为 0；所有记录均完成模型推理。</td></tr>
+            <tr><td>原始数据规模</td><td>BO 78,108,546 B；Greedy 4,822,997,172 B；GA 874,172,308 B。</td></tr>
+            <tr><td>归档完整性</td><td>每个 zstd tar 已流式解压，并逐成员与原始文件 manifest 的 SHA-256 对照通过。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>完整原始训练数据和中间结果位于同目录 <code>archives/</code>，逐文件清单位于 <code>manifests/</code>，机器可读比较位于 <code>analysis/comparison_summary.json</code>。GA 早期 18 代严格文件被明确归入 <code>readable/coinn_ga/superseded_pre_ga200_extension/</code>，不会冒充本次停止点结果。</p>
+    </section>
+  </main>
+
+  <footer>
+    数据截止：2026-08-17。报告仅整理现有证据，不重新运行或补造 Greedy / GA 的严格结果。
+  </footer>
+</body>
+</html>
