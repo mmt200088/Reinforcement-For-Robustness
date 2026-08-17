@@ -1886,6 +1886,55 @@ class RuntimeEvaluatorTests(unittest.TestCase):
             maximum_evaluations=100,
         )
 
+    def test_ga_full_run_completion_requires_exact_generation_cap(self):
+        validator = getattr(
+            search_runner_module,
+            "_validate_ga_completion_proof",
+            None,
+        )
+        self.assertIsNotNone(validator)
+        result = run_search(
+            "coinn_ga",
+            LayerwiseSearchSpace(4),
+            lambda action: _search_evaluation(action),
+            SearchConfig(
+                evaluation_budget=12 + 3 * 10,
+                seed=17,
+                ga_population_size=12,
+                ga_elite_count=2,
+                ga_generations=3,
+                patience_generations=1,
+                ga_stop_on_no_improvement=False,
+                ga_require_full_generations=True,
+            ),
+        )
+
+        validator(
+            result,
+            patience_generations=1,
+            generation_cap=3,
+            maximum_evaluations=42,
+            stop_on_no_improvement=False,
+            require_full_generations=True,
+        )
+
+        forged = SearchResult(
+            algorithm=result.algorithm,
+            best=result.best,
+            observations=result.observations,
+            history=result.history,
+            termination_reason="ga_no_incumbent_improvement",
+        )
+        with self.assertRaisesRegex(RuntimeError, "full-generation"):
+            validator(
+                forged,
+                patience_generations=1,
+                generation_cap=3,
+                maximum_evaluations=42,
+                stop_on_no_improvement=False,
+                require_full_generations=True,
+            )
+
     def test_ga_rejects_stagnation_before_five_generations(self):
         validator = getattr(
             search_runner_module,
@@ -1956,14 +2005,14 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                 },
         ):
             with self.assertRaisesRegex(
-                    RuntimeError, "five-generation",
+                    RuntimeError, "full-generation",
             ):
                 run_layerwise_search_baseline(
                     backend="coinn_ga",
                     layerwise_env=_LayerwiseEnv(),
                     robust_reference=_Reference(),
                     output_dir=tmpdir,
-                    evaluation_budget=45_664,
+                    evaluation_budget=11_464,
                     seed=42,
                     initial_design_size=64,
                     candidate_pool_size=2_048,

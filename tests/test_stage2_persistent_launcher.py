@@ -462,7 +462,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         expected_budgets = {
             "bo_rf": "50000",
             "greedy": "2176782336",
-            "coinn_ga": "45664",
+            "coinn_ga": "11464",
         }
         for alias, expected_budget in expected_budgets.items():
             with self.subTest(alias=alias):
@@ -487,7 +487,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         expected_budgets = {
             "bo_rf": "10000",
             "greedy": "2176782336",
-            "coinn_ga": "45664",
+            "coinn_ga": "11464",
         }
         for alias, expected_budget in expected_budgets.items():
             with self.subTest(alias=alias):

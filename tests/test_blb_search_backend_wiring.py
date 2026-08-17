@@ -517,8 +517,8 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
         self.assertIn("200-generation ", evaluator)
         self.assertIn("11,464-inference full-run contract", evaluator)
-        self.assertIn("800-generation safety cap", evaluator)
-        self.assertIn("45,664-inference safety cap", evaluator)
+        self.assertIn("200-generation full-run contract", evaluator)
+        self.assertIn("11,464-inference full-run contract", evaluator)
         self.assertIn("Stage1SearchGracefulStop", evaluator)
         self.assertIn("NOISE_STAGE_STOP_FLAG_FILENAME", evaluator)
         self.assertIn("install_graceful_stop_handler", evaluator)
@@ -532,6 +532,10 @@ class SearchBackendWiringTests(unittest.TestCase):
         self.assertIn("run_layerwise_search_baseline", runner)
         self.assertIn("search_backend != \"ppo\"", runner)
         self.assertIn("search_full_validation", runner)
+        self.assertIn(
+            "_stage2_ga_full_run_invocation_extension_matches", runner,
+        )
+        self.assertIn("resume_result.pre_ga200_extension.json", runner)
         self.assertIn(
             'if search_run["strict_validation"] is None',
             runner,

@@ -1080,6 +1080,101 @@ class GeneticSearchTests(unittest.TestCase):
             [1, 2, 3, 4, 5],
         )
 
+    def test_ga_full_generation_mode_ignores_stagnation_and_reaches_cap(self):
+        space = LayerwiseSearchSpace(4)
+        config = SearchConfig(
+            evaluation_budget=12 + 3 * 10,
+            seed=17,
+            ga_population_size=12,
+            ga_elite_count=2,
+            ga_generations=3,
+            patience_generations=1,
+            ga_stop_on_no_improvement=False,
+            ga_require_full_generations=True,
+        )
+
+        result = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _evaluation(action),
+            config,
+        )
+        updates = [
+            row for row in result.history
+            if row["phase"] == "ga_update_generation"
+        ]
+
+        self.assertEqual(result.termination_reason, "generation_limit")
+        self.assertEqual(len(updates), 3)
+        self.assertEqual(result.evaluation_count, 42)
+        self.assertEqual(
+            [row["no_improvement_generations"] for row in updates],
+            [1, 2, 3],
+        )
+
+    def test_ga_full_generation_resume_extends_legacy_stagnation_exactly(self):
+        space = LayerwiseSearchSpace(4)
+        full_config = SearchConfig(
+            evaluation_budget=12 + 3 * 10,
+            seed=17,
+            ga_population_size=12,
+            ga_elite_count=2,
+            ga_generations=3,
+            patience_generations=1,
+            ga_stop_on_no_improvement=False,
+            ga_require_full_generations=True,
+        )
+        uninterrupted = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _evaluation(action),
+            full_config,
+        )
+        legacy = run_search(
+            "coinn_ga",
+            space,
+            lambda action: _evaluation(action),
+            SearchConfig(
+                evaluation_budget=100,
+                seed=17,
+                ga_population_size=12,
+                ga_elite_count=2,
+                ga_generations=10,
+                patience_generations=1,
+            ),
+        )
+        live_actions = []
+        resumed = run_search(
+            "coinn_ga",
+            space,
+            lambda action: (
+                live_actions.append(action) or _evaluation(action)
+            ),
+            full_config,
+            preload=legacy.observations,
+        )
+
+        self.assertEqual(legacy.termination_reason, "ga_no_incumbent_improvement")
+        self.assertEqual(len(live_actions), 20)
+        self.assertEqual(resumed.history, uninterrupted.history)
+        self.assertEqual(
+            tuple(item.as_dict() for item in resumed.observations),
+            tuple(item.as_dict() for item in uninterrupted.observations),
+        )
+
+    def test_ga_full_generation_mode_rejects_stagnation_stop(self):
+        with self.assertRaisesRegex(
+                ValueError, "ga_require_full_generations",
+        ):
+            SearchConfig(
+                evaluation_budget=42,
+                ga_population_size=12,
+                ga_elite_count=2,
+                ga_generations=3,
+                ga_stop_on_no_improvement=True,
+                ga_require_full_generations=True,
+            )
+
     def test_ga_partial_generation_resume_replays_population_and_rng_exactly(self):
         space = LayerwiseSearchSpace(3)
         config = SearchConfig(
