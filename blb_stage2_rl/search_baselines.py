@@ -666,6 +666,8 @@ class SearchConfig:
     ga_population_size: int = 64
     ga_elite_count: int = 7
     ga_generations: int = 800
+    ga_stop_on_no_improvement: bool = True
+    ga_require_full_generations: bool = False
     observation_attempt_limit: Optional[int] = None
 
     def __post_init__(self) -> None:
@@ -682,6 +684,17 @@ class SearchConfig:
             raise ValueError("mutation_max_coordinates must be at most 4")
         if int(self.ga_elite_count) >= int(self.ga_population_size):
             raise ValueError("ga_elite_count must be smaller than ga_population_size")
+        for name in (
+                "ga_stop_on_no_improvement",
+                "ga_require_full_generations",
+        ):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f"{name} must be boolean")
+        if self.ga_require_full_generations and self.ga_stop_on_no_improvement:
+            raise ValueError(
+                "ga_require_full_generations is incompatible with "
+                "ga_stop_on_no_improvement"
+            )
         if (
                 self.observation_attempt_limit is not None
                 and int(self.observation_attempt_limit) <= 0
@@ -1964,7 +1977,11 @@ def _run_coinn_ga(
             post_update_unique_ratio=float(post_unique_ratio),
             post_update_mean_pairwise_distance=float(post_mean_distance),
         ))
-        if no_improvement_generations >= int(config.patience_generations):
+        if (
+                config.ga_stop_on_no_improvement
+                and no_improvement_generations
+                >= int(config.patience_generations)
+        ):
             termination = "ga_no_incumbent_improvement"
             break
 
@@ -1973,6 +1990,14 @@ def _run_coinn_ga(
             and completed_generations >= int(config.ga_generations)
     ):
         termination = "generation_limit"
+    if config.ga_require_full_generations and (
+            termination != "generation_limit"
+            or completed_generations != int(config.ga_generations)
+    ):
+        raise RuntimeError(
+            "COINN-GA full-generation contract ended before every configured "
+            "generation completed"
+        )
     cache.assert_replay_consumed()
     return SearchResult(
         algorithm="coinn_ga",

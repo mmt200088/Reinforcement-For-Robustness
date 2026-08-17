@@ -3662,7 +3662,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                         10_000 if self.comparator_stage1_only else 50_000
                     ),
                     "greedy": 6 ** 12,
-                    "coinn_ga": 45_664,
+                    "coinn_ga": 11_464,
                 }[self.blb_v3_search_backend]
                 if int(self.blb_v3_search_evaluation_budget) != backend_budget:
                     raise ValueError(
@@ -3675,8 +3675,9 @@ class LayerImportanceEvaluator(TrainerCallback):
             ):
                 raise ValueError(
                     "COINN-GA comparator requires Stage-2 population 64, "
-                    "a five-generation incumbent-stagnation stop, an "
-                    "800-generation safety cap, and a 45,664-inference safety cap"
+                    "patience 5 as a diagnostic counter, a 200-generation "
+                    "full-run contract with no incumbent-stagnation early "
+                    "stop, and the 11,464-inference full-run contract"
                 )
             if self.blb_v3_search_backend == "bo_rf" and (
                     int(self.blb_v3_search_initial_design_size) != 64

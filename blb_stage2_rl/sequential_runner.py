@@ -4204,6 +4204,8 @@ def _run_layerwise_training_branch(
                 f"got {str(fixed_source)!r}"
             )
         from .search_baseline_runner import (
+            STAGE2_FORMAL_GA_EVALUATIONS,
+            STAGE2_FORMAL_GA_GENERATIONS,
             canonical_strict_validation,
             run_layerwise_search_baseline,
         )
@@ -4260,6 +4262,48 @@ def _run_layerwise_training_branch(
                 ),
             },
         }[search_backend]
+        search_config = {
+            "evaluation_budget": int(
+                train_cfg.search_evaluation_budget
+            ),
+            "initial_design_size": int(
+                train_cfg.search_initial_design_size
+            ),
+            "candidate_pool_size": int(
+                train_cfg.search_candidate_pool_size
+            ),
+            "population_size": int(
+                train_cfg.search_population_size
+            ),
+            "patience_generations": int(
+                train_cfg.search_patience_generations
+            ),
+            "mutation_max_coordinates": int(
+                train_cfg.search_mutation_max_coordinates
+            ),
+            "rf_n_estimators": int(
+                train_cfg.search_rf_n_estimators
+            ),
+            "rf_min_samples_leaf": int(
+                train_cfg.search_rf_min_samples_leaf
+            ),
+        }
+        if search_backend == "coinn_ga" and bool(
+                getattr(train_cfg, "search_full_validation", True)
+        ):
+            if (
+                    search_config["evaluation_budget"]
+                    != STAGE2_FORMAL_GA_EVALUATIONS
+            ):
+                raise RuntimeError(
+                    "formal Stage-2 GA invocation lacks its exact full-run budget"
+                )
+            search_config.update({
+                "ga_generations": STAGE2_FORMAL_GA_GENERATIONS,
+                "ga_stop_on_no_improvement": False,
+                "ga_require_full_generations": True,
+            })
+
         search_contract = {
             "schema_version": "stage2_search_baseline_contract_v3",
             "search_backend": search_backend,
@@ -4311,32 +4355,7 @@ def _run_layerwise_training_branch(
             "final_constraint_probability": float(
                 getattr(train_cfg, "final_constraint_probability", 0.95)
             ),
-            "search_config": {
-                "evaluation_budget": int(
-                    train_cfg.search_evaluation_budget
-                ),
-                "initial_design_size": int(
-                    train_cfg.search_initial_design_size
-                ),
-                "candidate_pool_size": int(
-                    train_cfg.search_candidate_pool_size
-                ),
-                "population_size": int(
-                    train_cfg.search_population_size
-                ),
-                "patience_generations": int(
-                    train_cfg.search_patience_generations
-                ),
-                "mutation_max_coordinates": int(
-                    train_cfg.search_mutation_max_coordinates
-                ),
-                "rf_n_estimators": int(
-                    train_cfg.search_rf_n_estimators
-                ),
-                "rf_min_samples_leaf": int(
-                    train_cfg.search_rf_min_samples_leaf
-                ),
-            },
+            "search_config": search_config,
         }
         search_contract_hash = sha256_json(search_contract)
 
@@ -7494,11 +7513,15 @@ def _preflight_completed_search_resume(
         fixed_source: Any,
         blb_progress_dir: str,
         ) -> dict[str, Any] | None:
-    from json_utils import read_json_file
+    from json_utils import read_json_file, stable_json_hash
 
     from .search_baseline_runner import (
+        STAGE2_FORMAL_GA_EVALUATIONS,
+        _STAGE2_LEGACY_GA_EVALUATIONS,
         _atomic_json,
         _load_plain_completed_search_run,
+        _stage2_ga_full_run_invocation_extension_matches,
+        _validate_ga_completion_proof,
     )
     from .search_baselines import normalize_search_backend
 
@@ -7522,11 +7545,11 @@ def _preflight_completed_search_resume(
     )
     invocation_path = os.path.join(search_output_dir, "invocation.json")
     resume_result_path = os.path.join(search_output_dir, "resume_result.json")
+    persisted_invocation = None
     if os.path.isfile(invocation_path):
-        if read_json_file(invocation_path) != invocation:
-            raise RuntimeError(
-                "Stage-2 comparator invocation does not match existing artifacts"
-            )
+        persisted_invocation = read_json_file(invocation_path)
+        if not isinstance(persisted_invocation, Mapping):
+            raise RuntimeError("Stage-2 comparator invocation is invalid")
     else:
         existing_names = {
             name for name in os.listdir(search_output_dir)
@@ -7537,9 +7560,14 @@ def _preflight_completed_search_resume(
                 "Stage-2 search artifacts exist without invocation.json"
             )
         _atomic_json(invocation_path, invocation)
+        persisted_invocation = invocation
 
     manifest_path = os.path.join(search_output_dir, "manifest.json")
     if not os.path.isfile(manifest_path):
+        if persisted_invocation != invocation:
+            raise RuntimeError(
+                "Stage-2 comparator invocation does not match existing artifacts"
+            )
         if os.path.isfile(resume_result_path):
             raise RuntimeError(
                 "Stage-2 resume result exists without an inner manifest"
@@ -7554,6 +7582,33 @@ def _preflight_completed_search_resume(
         "complete_least_violating",
         "smoke_only_complete",
     }
+    resume_contract = manifest.get("resume_contract")
+    requested_manifest = (
+        resume_contract.get("requested_manifest")
+        if isinstance(resume_contract, Mapping) else None
+    )
+    completed_invocation = (
+        requested_manifest.get("stage2_invocation")
+        if isinstance(requested_manifest, Mapping) else None
+    )
+    extending_legacy_ga = bool(
+        status in {
+            "complete_strict_feasible",
+            "complete_least_violating",
+        }
+        and backend == "coinn_ga"
+        and _stage2_ga_full_run_invocation_extension_matches(
+            completed_invocation, invocation,
+        )
+    )
+    if persisted_invocation != invocation:
+        if (
+                not extending_legacy_ga
+                or persisted_invocation != completed_invocation
+        ):
+            raise RuntimeError(
+                "Stage-2 comparator invocation does not match existing artifacts"
+            )
     if status not in completed_statuses:
         if os.path.isfile(resume_result_path):
             raise RuntimeError(
@@ -7561,11 +7616,109 @@ def _preflight_completed_search_resume(
             )
         return None
 
-    resume_contract = manifest.get("resume_contract")
-    requested_manifest = (
-        resume_contract.get("requested_manifest")
-        if isinstance(resume_contract, Mapping) else None
-    )
+    if extending_legacy_ga:
+        inner_run = _load_plain_completed_search_run(
+            output_dir=search_output_dir,
+            manifest=manifest,
+            communication_importance_ratio=float(
+                manifest.get("communication_importance_ratio", 1.0)
+            ),
+        )
+        legacy_result = inner_run["result"]
+        legacy_search_config = (
+            resume_contract.get("search_config")
+            if isinstance(resume_contract, Mapping) else None
+        )
+        if not isinstance(legacy_search_config, Mapping):
+            raise RuntimeError(
+                "completed Stage-2 GA has no legacy search contract"
+            )
+        _validate_ga_completion_proof(
+            legacy_result,
+            patience_generations=int(
+                legacy_search_config.get("patience_generations", -1)
+            ),
+            generation_cap=int(
+                legacy_search_config.get("ga_generations", -1)
+            ),
+            maximum_evaluations=int(
+                legacy_search_config.get("ga_maximum_evaluations", -1)
+            ),
+            stop_on_no_improvement=bool(
+                legacy_search_config.get(
+                    "ga_stop_on_no_improvement", True,
+                )
+            ),
+            require_full_generations=bool(
+                legacy_search_config.get(
+                    "ga_require_full_generations", False,
+                )
+            ),
+        )
+        if (
+                legacy_result.termination_reason
+                != "ga_no_incumbent_improvement"
+                or int(resume_contract.get("evaluation_budget", -1))
+                != _STAGE2_LEGACY_GA_EVALUATIONS
+                or legacy_result.evaluation_count
+                >= STAGE2_FORMAL_GA_EVALUATIONS
+        ):
+            raise RuntimeError(
+                "completed Stage-2 GA is not eligible for full-run extension"
+            )
+
+        archived_resume_path = os.path.join(
+            search_output_dir,
+            "resume_result.pre_ga200_extension.json",
+        )
+        if os.path.isfile(resume_result_path):
+            if os.path.exists(archived_resume_path):
+                raise RuntimeError(
+                    "Stage-2 GA extension has conflicting resume-result archives"
+                )
+            os.replace(resume_result_path, archived_resume_path)
+            directory_fd = os.open(search_output_dir, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        _atomic_json(invocation_path, invocation)
+        extension_receipt = {
+            "schema_version": "stage2_ga_full_run_extension_preflight_v1",
+            "legacy_invocation_hash": stable_json_hash(
+                completed_invocation
+            ),
+            "requested_invocation_hash": stable_json_hash(invocation),
+            "legacy_resume_contract_hash": stable_json_hash(
+                resume_contract
+            ),
+            "legacy_status": status,
+            "legacy_evaluation_count": int(
+                legacy_result.evaluation_count
+            ),
+            "target_evaluation_count": STAGE2_FORMAL_GA_EVALUATIONS,
+            "resume_result_archived": os.path.isfile(
+                archived_resume_path
+            ),
+            "validated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        receipt_path = os.path.join(
+            search_output_dir, "ga200_extension_preflight.json",
+        )
+        if os.path.isfile(receipt_path):
+            previous_receipt = read_json_file(receipt_path)
+            comparable_previous = dict(previous_receipt)
+            comparable_current = dict(extension_receipt)
+            comparable_previous.pop("validated_at", None)
+            comparable_current.pop("validated_at", None)
+            if comparable_previous != comparable_current:
+                raise RuntimeError(
+                    "Stage-2 GA extension preflight receipt is inconsistent"
+                )
+        else:
+            _atomic_json(receipt_path, extension_receipt)
+        return None
+
     if (
             not isinstance(requested_manifest, Mapping)
             or requested_manifest.get("stage2_invocation") != invocation

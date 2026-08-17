@@ -99,8 +99,17 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   marker requests a stop only after the current candidate has been evaluated,
   appended and fsynced. Resume the same persistent root without `--fresh`;
   ordered observation replay must reconstruct the same RNG/population path and
-  must not repeat completed model evaluations. This Stage-1 override does not
-  change the generic or Stage-2 GA 800-generation defaults.
+  must not repeat completed model evaluations. This does not change generic GA
+  defaults.
+- Stage-2 formal COINN-GA run contract, updated 2026-08-17: the MRPC
+  comparator must also execute exactly 200 update generations with P64/E7 and
+  exactly `64 + 200 * (64 - 7) = 11,464` inference-reaching candidates.
+  Incumbent-stagnation is recorded for diagnostics but cannot stop the formal
+  run. A completed legacy patience-stopped run may be extended only when every
+  scientific field except this termination/budget contract matches. Resume
+  must replay its ordered observation journal without model re-inference,
+  preserve the GA RNG/population trajectory, and rerun strict top-5 validation
+  after generation 200; the earlier strict selection is superseded evidence.
 - Stage-1 formal BO-RF run contract, updated 2026-08-14: the MRPC
   `--comparator-stage1-only` BO-RF run has a hard maximum of 10,000 unique
   model evaluations and may stop earlier only after 1,000 consecutive

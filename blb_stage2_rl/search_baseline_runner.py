@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import heapq
 import json
 import os
@@ -31,6 +32,234 @@ from .search_baselines import (
     run_search,
 )
 from .seed_utils import derive_layerwise_online_evaluation_seeds
+
+
+STAGE2_FORMAL_GA_GENERATIONS = 200
+STAGE2_FORMAL_GA_POPULATION_SIZE = 64
+STAGE2_FORMAL_GA_ELITE_COUNT = 7
+STAGE2_FORMAL_GA_EVALUATIONS = (
+    STAGE2_FORMAL_GA_POPULATION_SIZE
+    + STAGE2_FORMAL_GA_GENERATIONS
+    * (STAGE2_FORMAL_GA_POPULATION_SIZE - STAGE2_FORMAL_GA_ELITE_COUNT)
+)
+_STAGE2_LEGACY_GA_GENERATIONS = 800
+_STAGE2_LEGACY_GA_EVALUATIONS = (
+    STAGE2_FORMAL_GA_POPULATION_SIZE
+    + _STAGE2_LEGACY_GA_GENERATIONS
+    * (STAGE2_FORMAL_GA_POPULATION_SIZE - STAGE2_FORMAL_GA_ELITE_COUNT)
+)
+
+
+def _stage2_ga_full_run_invocation_extension_matches(
+        legacy_invocation: Mapping[str, Any],
+        requested_invocation: Mapping[str, Any],
+        ) -> bool:
+    """Accept only the formal Stage-2 GA budget-contract migration."""
+    if not isinstance(legacy_invocation, Mapping) or not isinstance(
+            requested_invocation, Mapping
+    ):
+        return False
+    legacy = copy.deepcopy(to_jsonable(
+        dict(legacy_invocation), stringify_unknown=True,
+    ))
+    requested = copy.deepcopy(to_jsonable(
+        dict(requested_invocation), stringify_unknown=True,
+    ))
+    if (
+            legacy.get("search_backend") != "coinn_ga"
+            or requested.get("search_backend") != "coinn_ga"
+    ):
+        return False
+    legacy_parameters = legacy.get("scientific_parameters")
+    requested_parameters = requested.get("scientific_parameters")
+    if not isinstance(legacy_parameters, Mapping) or not isinstance(
+            requested_parameters, Mapping
+    ):
+        return False
+    legacy_parameters = dict(legacy_parameters)
+    requested_parameters = dict(requested_parameters)
+    if (
+            type(legacy_parameters.get("search_evaluation_budget")) is not int
+            or legacy_parameters["search_evaluation_budget"]
+            != _STAGE2_LEGACY_GA_EVALUATIONS
+            or type(requested_parameters.get("search_evaluation_budget"))
+            is not int
+            or requested_parameters["search_evaluation_budget"]
+            != STAGE2_FORMAL_GA_EVALUATIONS
+    ):
+        return False
+    legacy_parameters["search_evaluation_budget"] = None
+    requested_parameters["search_evaluation_budget"] = None
+    legacy["scientific_parameters"] = legacy_parameters
+    requested["scientific_parameters"] = requested_parameters
+    return legacy == requested
+
+
+def _stage2_ga_full_run_algorithm_extension_matches(
+        legacy_algorithm: Mapping[str, Any],
+        requested_algorithm: Mapping[str, Any],
+        ) -> bool:
+    if not isinstance(legacy_algorithm, Mapping) or not isinstance(
+            requested_algorithm, Mapping
+    ):
+        return False
+    legacy = copy.deepcopy(to_jsonable(
+        dict(legacy_algorithm), stringify_unknown=True,
+    ))
+    requested = copy.deepcopy(to_jsonable(
+        dict(requested_algorithm), stringify_unknown=True,
+    ))
+    if (
+            legacy.get("search_backend") != "coinn_ga"
+            or requested.get("search_backend") != "coinn_ga"
+    ):
+        return False
+    legacy_config = legacy.get("search_config")
+    requested_config = requested.get("search_config")
+    if not isinstance(legacy_config, Mapping) or not isinstance(
+            requested_config, Mapping
+    ):
+        return False
+    legacy_config = dict(legacy_config)
+    requested_config = dict(requested_config)
+    if (
+            type(legacy_config.get("evaluation_budget")) is not int
+            or legacy_config["evaluation_budget"]
+            != _STAGE2_LEGACY_GA_EVALUATIONS
+            or type(requested_config.get("evaluation_budget")) is not int
+            or requested_config["evaluation_budget"]
+            != STAGE2_FORMAL_GA_EVALUATIONS
+    ):
+        return False
+    legacy_ga_defaults = {
+        "ga_generations": _STAGE2_LEGACY_GA_GENERATIONS,
+        "ga_stop_on_no_improvement": True,
+        "ga_require_full_generations": False,
+    }
+    requested_ga_contract = {
+        "ga_generations": STAGE2_FORMAL_GA_GENERATIONS,
+        "ga_stop_on_no_improvement": False,
+        "ga_require_full_generations": True,
+    }
+    for name, expected in legacy_ga_defaults.items():
+        if name in legacy_config and legacy_config[name] != expected:
+            return False
+    for name, expected in requested_ga_contract.items():
+        if requested_config.get(name) != expected:
+            return False
+    for name in {
+            "evaluation_budget",
+            *legacy_ga_defaults,
+    }:
+        legacy_config.pop(name, None)
+        requested_config.pop(name, None)
+    legacy["search_config"] = legacy_config
+    requested["search_config"] = requested_config
+    return legacy == requested
+
+
+def _stage2_ga_full_run_extension_contract_matches(
+        legacy_contract: Mapping[str, Any],
+        requested_contract: Mapping[str, Any],
+        ) -> bool:
+    """Fail closed unless a completed legacy GA can be replay-extended."""
+    if not isinstance(legacy_contract, Mapping) or not isinstance(
+            requested_contract, Mapping
+    ):
+        return False
+    legacy = copy.deepcopy(to_jsonable(
+        dict(legacy_contract), stringify_unknown=True,
+    ))
+    requested = copy.deepcopy(to_jsonable(
+        dict(requested_contract), stringify_unknown=True,
+    ))
+    if (
+            legacy.get("search_backend") != "coinn_ga"
+            or requested.get("search_backend") != "coinn_ga"
+            or type(legacy.get("evaluation_budget")) is not int
+            or legacy["evaluation_budget"] != _STAGE2_LEGACY_GA_EVALUATIONS
+            or type(requested.get("evaluation_budget")) is not int
+            or requested["evaluation_budget"] != STAGE2_FORMAL_GA_EVALUATIONS
+    ):
+        return False
+
+    legacy_search_config = legacy.get("search_config")
+    requested_search_config = requested.get("search_config")
+    if not isinstance(legacy_search_config, Mapping) or not isinstance(
+            requested_search_config, Mapping
+    ):
+        return False
+    legacy_search_config = dict(legacy_search_config)
+    requested_search_config = dict(requested_search_config)
+    legacy_ga_contract = {
+        "ga_generations": _STAGE2_LEGACY_GA_GENERATIONS,
+        "ga_maximum_evaluations": _STAGE2_LEGACY_GA_EVALUATIONS,
+        "ga_stop_on_no_improvement": True,
+        "ga_require_full_generations": False,
+    }
+    requested_ga_contract = {
+        "ga_generations": STAGE2_FORMAL_GA_GENERATIONS,
+        "ga_maximum_evaluations": STAGE2_FORMAL_GA_EVALUATIONS,
+        "ga_stop_on_no_improvement": False,
+        "ga_require_full_generations": True,
+    }
+    for name, expected in legacy_ga_contract.items():
+        if name in legacy_search_config and legacy_search_config[name] != expected:
+            return False
+    for name, expected in requested_ga_contract.items():
+        if requested_search_config.get(name) != expected:
+            return False
+    for name in legacy_ga_contract:
+        legacy_search_config.pop(name, None)
+        requested_search_config.pop(name, None)
+    legacy["evaluation_budget"] = None
+    requested["evaluation_budget"] = None
+    legacy["search_config"] = legacy_search_config
+    requested["search_config"] = requested_search_config
+
+    legacy_manifest = legacy.get("requested_manifest")
+    requested_manifest = requested.get("requested_manifest")
+    if not isinstance(legacy_manifest, Mapping) or not isinstance(
+            requested_manifest, Mapping
+    ):
+        return False
+    legacy_manifest = dict(legacy_manifest)
+    requested_manifest = dict(requested_manifest)
+    if not _stage2_ga_full_run_invocation_extension_matches(
+            legacy_manifest.get("stage2_invocation"),
+            requested_manifest.get("stage2_invocation"),
+    ):
+        return False
+    legacy_algorithm = legacy_manifest.get("algorithm_contract")
+    requested_algorithm = requested_manifest.get("algorithm_contract")
+    if not _stage2_ga_full_run_algorithm_extension_matches(
+            legacy_algorithm, requested_algorithm,
+    ):
+        return False
+    if (
+            legacy_manifest.get("algorithm_contract_hash")
+            != stable_json_hash(legacy_algorithm)
+            or requested_manifest.get("algorithm_contract_hash")
+            != stable_json_hash(requested_algorithm)
+            or not _is_sha256(
+                legacy_manifest.get("strict_identity_context_hash")
+            )
+            or not _is_sha256(
+                requested_manifest.get("strict_identity_context_hash")
+            )
+    ):
+        return False
+    for name in (
+            "stage2_invocation",
+            "algorithm_contract",
+            "algorithm_contract_hash",
+            "strict_identity_context_hash",
+    ):
+        legacy_manifest[name] = None
+        requested_manifest[name] = None
+    legacy["requested_manifest"] = legacy_manifest
+    requested["requested_manifest"] = requested_manifest
+    return legacy == requested
 
 
 def _field(value: Any, name: str, default: Any = None) -> Any:
@@ -1640,21 +1869,37 @@ def _validate_ga_completion_proof(
         patience_generations: int,
         generation_cap: int,
         maximum_evaluations: int,
+        stop_on_no_improvement: bool = True,
+        require_full_generations: bool = False,
         ) -> None:
     """Validate COINN-GA completion from persisted search evidence."""
 
     patience = int(patience_generations)
     generation_limit = int(generation_cap)
     evaluation_limit = int(maximum_evaluations)
-    if patience != 5 or generation_limit <= 0 or evaluation_limit <= 0:
+    if (
+            patience <= 0
+            or generation_limit <= 0
+            or evaluation_limit <= 0
+            or type(stop_on_no_improvement) is not bool
+            or type(require_full_generations) is not bool
+            or (require_full_generations and stop_on_no_improvement)
+    ):
         raise RuntimeError(
             "COINN-GA completion proof has inconsistent safety caps"
         )
-    if result.termination_reason not in {
-            "ga_no_incumbent_improvement", "generation_limit",
-    }:
+    if require_full_generations and result.termination_reason != "generation_limit":
         raise RuntimeError(
-            "COINN-GA lacks native five-generation stagnation or "
+            "COINN-GA full-generation completion proof requires the exact cap"
+        )
+    if (
+            not require_full_generations
+            and result.termination_reason not in {
+                "ga_no_incumbent_improvement", "generation_limit",
+            }
+    ):
+        raise RuntimeError(
+            "COINN-GA lacks native incumbent stagnation or "
             "generation-cap completion proof"
         )
     if result.evaluation_count > evaluation_limit:
@@ -1811,9 +2056,19 @@ def _validate_ga_completion_proof(
             "COINN-GA completion proof leaves observations unassigned"
         )
     completed_generations = expected_generation - 1
-    if result.termination_reason == "ga_no_incumbent_improvement":
+    if require_full_generations:
         if (
-                completed_generations >= generation_limit
+                completed_generations != generation_limit
+                or result.evaluation_count
+                != population_size + generation_limit * offspring_count
+        ):
+            raise RuntimeError(
+                "COINN-GA full-generation completion proof is incomplete"
+            )
+    elif result.termination_reason == "ga_no_incumbent_improvement":
+        if (
+                not stop_on_no_improvement
+                or completed_generations >= generation_limit
                 or no_improvement_generations != patience
         ):
             raise RuntimeError(
@@ -1998,12 +2253,21 @@ def run_layerwise_search_baseline(
     strict_validation_path = os.path.join(
         output_dir, "strict_validation.json",
     )
+    strict_run = strict_validator is not None
     ga_elite_count = min(7, max(1, int(population_size) - 1))
+    formal_ga_full_run = bool(
+        strict_run and normalized_backend == "coinn_ga"
+    )
+    ga_generations = (
+        STAGE2_FORMAL_GA_GENERATIONS
+        if formal_ga_full_run else _STAGE2_LEGACY_GA_GENERATIONS
+    )
     ga_maximum_evaluations = int(
         int(population_size)
-        + 800 * (int(population_size) - int(ga_elite_count))
+        + ga_generations * (int(population_size) - int(ga_elite_count))
     )
-    strict_run = strict_validator is not None
+    ga_stop_on_no_improvement = not formal_ga_full_run
+    ga_require_full_generations = formal_ga_full_run
     if strict_run and int(seed) != 42:
         raise ValueError("Stage-2 comparators with strict validation require seed 42")
     if (
@@ -2014,13 +2278,14 @@ def run_layerwise_search_baseline(
                 or int(ga_elite_count) != 7
                 or int(mutation_max_coordinates) != 4
                 or int(patience_generations) != 5
-                or budget != 45_664
+                or budget != STAGE2_FORMAL_GA_EVALUATIONS
             )
     ):
         raise ValueError(
-            "strict Stage-2 COINN-GA requires P64/E7, patience 5, the "
-            "800-generation safety cap, a four-layer mutation cap, and the "
-            "45,664-evaluation safety cap"
+            "strict Stage-2 COINN-GA requires P64/E7, patience 5 as a "
+            "diagnostic counter, the 200-generation full-run contract, a "
+            "four-layer mutation cap, and the 11,464-inference full-run "
+            "contract"
         )
     if (
             strict_run
@@ -2053,8 +2318,10 @@ def run_layerwise_search_baseline(
         "population_size": int(population_size),
         "ga_population_size": int(population_size),
         "ga_elite_count": int(ga_elite_count),
-        "ga_generations": 800,
+        "ga_generations": int(ga_generations),
         "ga_maximum_evaluations": ga_maximum_evaluations,
+        "ga_stop_on_no_improvement": bool(ga_stop_on_no_improvement),
+        "ga_require_full_generations": bool(ga_require_full_generations),
         "patience_generations": int(patience_generations),
         "mutation_max_coordinates": int(mutation_max_coordinates),
         "rf_n_estimators": int(rf_n_estimators),
@@ -2080,6 +2347,7 @@ def run_layerwise_search_baseline(
 
     preload: tuple[SearchEvaluation, ...] = ()
     persisted_search_result: SearchResult | None = None
+    extension_from_completed_run: dict[str, Any] | None = None
     existing_manifest = (
         read_json_file(manifest_path)
         if os.path.exists(manifest_path)
@@ -2100,17 +2368,33 @@ def run_layerwise_search_baseline(
                 "search baseline output already exists and resume is disabled: "
                 f"{output_dir}"
             )
-        if existing_manifest.get("resume_contract") != resume_contract:
-            raise RuntimeError(
-                "search baseline resume contract does not match the existing run"
-            )
         existing_status = str(existing_manifest.get("status") or "")
         completed_statuses = {
             "complete_strict_feasible",
             "complete_least_violating",
             "smoke_only_complete",
         }
-        if existing_status in completed_statuses:
+        resume_contract_matches = (
+            existing_manifest.get("resume_contract") == resume_contract
+        )
+        extending_completed_ga = bool(
+            not resume_contract_matches
+            and strict_run
+            and normalized_backend == "coinn_ga"
+            and existing_status in {
+                "complete_strict_feasible",
+                "complete_least_violating",
+            }
+            and _stage2_ga_full_run_extension_contract_matches(
+                existing_manifest.get("resume_contract"),
+                resume_contract,
+            )
+        )
+        if not resume_contract_matches and not extending_completed_ga:
+            raise RuntimeError(
+                "search baseline resume contract does not match the existing run"
+            )
+        if existing_status in completed_statuses and not extending_completed_ga:
             return _load_plain_completed_search_run(
                 output_dir=output_dir,
                 manifest=existing_manifest,
@@ -2118,7 +2402,59 @@ def run_layerwise_search_baseline(
                     communication_importance_ratio
                 ),
             )
-        if existing_status == "search_complete_pending_strict":
+        if extending_completed_ga:
+            legacy_run = _load_plain_completed_search_run(
+                output_dir=output_dir,
+                manifest=existing_manifest,
+                communication_importance_ratio=float(
+                    communication_importance_ratio
+                ),
+            )
+            legacy_result = legacy_run["result"]
+            _validate_ga_completion_proof(
+                legacy_result,
+                patience_generations=int(patience_generations),
+                generation_cap=_STAGE2_LEGACY_GA_GENERATIONS,
+                maximum_evaluations=_STAGE2_LEGACY_GA_EVALUATIONS,
+                stop_on_no_improvement=True,
+                require_full_generations=False,
+            )
+            if legacy_result.termination_reason != "ga_no_incumbent_improvement":
+                raise RuntimeError(
+                    "completed Stage-2 GA extension requires the legacy "
+                    "incumbent-stagnation endpoint"
+                )
+            if legacy_result.evaluation_count >= budget:
+                raise RuntimeError(
+                    "completed Stage-2 GA cannot be extended beyond its target"
+                )
+            preload = load_search_preload(observation_path)
+            if len(preload) != legacy_result.observation_count:
+                raise RuntimeError(
+                    "completed Stage-2 GA preload does not match persisted evidence"
+                )
+            extension_from_completed_run = {
+                "previous_status": existing_status,
+                "previous_evaluation_count": int(
+                    legacy_result.evaluation_count
+                ),
+                "previous_observation_count": int(
+                    legacy_result.observation_count
+                ),
+                "termination_reason": str(
+                    legacy_result.termination_reason
+                ),
+                "legacy_generation_cap": _STAGE2_LEGACY_GA_GENERATIONS,
+                "legacy_evaluation_cap": _STAGE2_LEGACY_GA_EVALUATIONS,
+                "target_generation_count": STAGE2_FORMAL_GA_GENERATIONS,
+                "target_evaluation_count": STAGE2_FORMAL_GA_EVALUATIONS,
+                "replay_semantics": (
+                    "ordered observations reconstruct RNG and population; "
+                    "completed model evaluations are not repeated"
+                ),
+                "strict_selection_superseded": True,
+            }
+        elif existing_status == "search_complete_pending_strict":
             persisted_search_result = _load_persisted_search_result(output_dir)
             _validate_persisted_online_result(
                 output_dir=output_dir,
@@ -2234,6 +2570,10 @@ def run_layerwise_search_baseline(
         run_manifest["strict_candidate_store_checkpoint_size"] = int(
             strict_candidate_store_checkpoint_size
         )
+    if extension_from_completed_run is not None:
+        run_manifest["extension_from_completed_run"] = dict(
+            extension_from_completed_run
+        )
     _atomic_json(manifest_path, run_manifest)
 
     config = SearchConfig(
@@ -2244,7 +2584,9 @@ def run_layerwise_search_baseline(
         population_size=int(population_size),
         ga_population_size=int(population_size),
         ga_elite_count=int(ga_elite_count),
-        ga_generations=800,
+        ga_generations=int(ga_generations),
+        ga_stop_on_no_improvement=bool(ga_stop_on_no_improvement),
+        ga_require_full_generations=bool(ga_require_full_generations),
         patience_generations=int(patience_generations),
         mutation_max_coordinates=int(mutation_max_coordinates),
         rf_n_estimators=int(rf_n_estimators),
@@ -2297,8 +2639,14 @@ def run_layerwise_search_baseline(
                 _validate_ga_completion_proof(
                     result,
                     patience_generations=int(patience_generations),
-                    generation_cap=800,
+                    generation_cap=int(ga_generations),
                     maximum_evaluations=ga_maximum_evaluations,
+                    stop_on_no_improvement=bool(
+                        ga_stop_on_no_improvement
+                    ),
+                    require_full_generations=bool(
+                        ga_require_full_generations
+                    ),
                 )
             except RuntimeError as exc:
                 contract_error = str(exc)
