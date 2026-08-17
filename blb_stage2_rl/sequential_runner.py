@@ -7682,6 +7682,25 @@ def _preflight_completed_search_resume(
                 os.fsync(directory_fd)
             finally:
                 os.close(directory_fd)
+        pending_context_path = os.path.join(
+            search_output_dir, "pending_strict_resume_context.json",
+        )
+        archived_pending_context_path = os.path.join(
+            search_output_dir,
+            "pending_strict_resume_context.pre_ga200_extension.json",
+        )
+        if os.path.isfile(pending_context_path):
+            if os.path.exists(archived_pending_context_path):
+                raise RuntimeError(
+                    "Stage-2 GA extension has conflicting pending-strict "
+                    "context archives"
+                )
+            os.replace(pending_context_path, archived_pending_context_path)
+            directory_fd = os.open(search_output_dir, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         _atomic_json(invocation_path, invocation)
         extension_receipt = {
             "schema_version": "stage2_ga_full_run_extension_preflight_v1",
