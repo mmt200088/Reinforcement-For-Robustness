@@ -1,0 +1,11 @@
+{
+  "legacy_evaluation_count": 1090,
+  "legacy_invocation_hash": "d5db3cb6fe7f4ebbff9cfdb0c39ae2e7971bc4f023af5811e720ca765c99aaa1",
+  "legacy_resume_contract_hash": "8b90d74cc9cc647e71947b4f40537d3c73bc7453e878ba914b6085dcdb4e773c",
+  "legacy_status": "complete_least_violating",
+  "requested_invocation_hash": "47d87ede1f7b5c3e0af6868d2d893f5ef3be9e3e50a493f886445015fa7cf471",
+  "resume_result_archived": true,
+  "schema_version": "stage2_ga_full_run_extension_preflight_v1",
+  "target_evaluation_count": 11464,
+  "validated_at": "2026-08-17T19:40:19"
+}

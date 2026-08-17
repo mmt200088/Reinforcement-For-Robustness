@@ -1,0 +1,49 @@
+{
+  "compression": "zstd level 10 multithreaded",
+  "methods": {
+    "bo_rf": {
+      "archive_parts": [
+        {
+          "path": "archives/bo_rf.tar.zst.part-000",
+          "sha256": "88c1fc83dd593489a5fb38d0876552988331e9ae8834eaf99f1286dd46aa4209",
+          "size_bytes": 745735
+        }
+      ],
+      "compressed_total_bytes": 745735,
+      "raw_file_count": 32,
+      "raw_file_manifest": "manifests/bo_rf_raw_files.json",
+      "raw_total_bytes": 78108546,
+      "streaming_full_content_hash_verification": "passed"
+    },
+    "coinn_ga": {
+      "archive_parts": [
+        {
+          "path": "archives/coinn_ga.tar.zst.part-000",
+          "sha256": "670c6c24c8ac78108f332b331eddaa6fceee2c7be0a40cbe1153836ad78d628b",
+          "size_bytes": 8940873
+        }
+      ],
+      "compressed_total_bytes": 8940873,
+      "raw_file_count": 37,
+      "raw_file_manifest": "manifests/coinn_ga_raw_files.json",
+      "raw_total_bytes": 874172308,
+      "streaming_full_content_hash_verification": "passed"
+    },
+    "greedy": {
+      "archive_parts": [
+        {
+          "path": "archives/greedy.tar.zst.part-000",
+          "sha256": "68d7f9721bb0c72b9d439c7d47cdf9ccf9731b73933e4a46699077f3746c86ad",
+          "size_bytes": 37974834
+        }
+      ],
+      "compressed_total_bytes": 37974834,
+      "raw_file_count": 24,
+      "raw_file_manifest": "manifests/greedy_raw_files.json",
+      "raw_total_bytes": 4822997172,
+      "streaming_full_content_hash_verification": "passed"
+    }
+  },
+  "schema_version": "stage2_comparator_current_stop_archive_v1",
+  "split_size_bytes": 83886080
+}

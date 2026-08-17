@@ -1,0 +1,20 @@
+[Time]
+2026-08-17 21:41:31
+
+[Program]
+rl_tune.py
+
+[Status]
+interrupted
+
+[Message]
+Received KeyboardInterrupt/SIGINT. The run stopped before completion.
+
+[Run Output Dir]
+/hy-tmp/stage2_comparator_html_authority_20260817/formal_persistent_v2/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0
+
+[Signal]
+SIGINT
+
+[Command]
+rl_tune.py --base_model textattack/bert-base-uncased-MRPC --data_path mrpc --output_dir /hy-tmp/stage2_comparator_html_authority_20260817/formal_persistent_v2/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0 --batch_size 16 --micro_batch_size 16 --num_epochs 1 --learning_rate 2e-4 --cutoff_len 256 --val_set_size 120 --eval_step 80 --adapter_name lora --target_modules '["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"]' --stage1_rl_episodes 51000 --stage2_rl_episodes 0 --stage1_rl_episodes_specified false --stage2_rl_episodes_specified false --ppo_update_interval 120 --use_ist --final_eval_config_source search --final_eval_config_path glue_final_configs_best_ppo.json --manual_stage1_gelu '' --manual_stage1_softmax '' --manual_stage2_noise '' --stage2_fixed_config_source stage1_result --stage2_fixed_config_path '' --stage2_manual_gelu '' --stage2_manual_softmax '' --final_eval_random_seed 42 --final_eval_permutation_trials 10 --final_eval_cost_equivalent_trials 10 --final_eval_budget_equivalent_trials 10 --final_eval_stage1_budget_trials 10 --final_eval_stage2_budget_trials 10 --final_eval_repeat_n 50 --final_eval_preset default --skip_noise_rl false --skip_stage1_rl false --skip_final_eval true --final_eval_only false --resume_run_dir /hy-tmp/stage2_comparator_html_authority_20260817/formal_persistent_v2/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0 --stage1_rl_lr 1e-4 --stage2_rl_lr 1e-4 --stage1_accuracy_tolerance 0.001 --stage2_limit_tolerance 0.001 --stage2_stability_tolerance 1.2 --stage2_stability_multiplier 2.0 --stage2_communication_importance_ratio 1.0 --stage2_k_trials 3 --stage2_probe_size 256 --stage2_rl_variant blb_v3 --blb_v3_inproc_rescale_optimizer_root Rescale_optimizer --blb_v3_rollout_size 120 --stage2_inference_batch_size 64 --decoupled_layout false --stage1_run_id '' --comparator_smoke false --comparator_stage1_only false --blb_v3_seed 42 --blb_v3_policy_network_variant shared_gtrxl_small_v1 --blb_v3_search_backend coinn_ga --blb_v3_search_evaluation_budget 11464 --blb_v3_search_initial_design_size 64 --blb_v3_search_candidate_pool_size 2048 --blb_v3_search_population_size 64 --blb_v3_search_patience_generations 5 --blb_v3_search_mutation_max_coordinates 4 --blb_v3_search_rf_n_estimators 128 --blb_v3_search_rf_min_samples_leaf 2 --blb_v3_search_full_validation true --mrpc_reproducibility_fixture_path /hy-tmp/rfr_aggregate_stage2_comparator_parity_20260817/fixtures/reproducibility/mrpc_validation_v1.json --blb_v3_calibrate_baseline_samples 8 --blb_v3_static_invalid_level_mask_enabled false --blb_v3_online_k_trials 3 --blb_v3_terminal_eval_batch_size 4 --blb_v3_protected_k1_enabled false --blb_v3_promotion_validation_trials 15 --blb_v3_final_selection_top_n 5 --blb_v3_final_selection_validation_trials 15 --blb_v3_baseline_groups 5 --blb_v3_baseline_trials_per_group 3 --blb_v3_constraint_bootstrap_samples 4096 --blb_v3_online_constraint_probability 0.50 --blb_v3_promotion_constraint_probability 0.80 --blb_v3_final_constraint_probability 0.95 --blb_v3_min_convergence_episodes 90000 --blb_v3_convergence_patience_updates 100 --blb_v3_sequential_rl true --rl_algo ppo --blb_v3_substage_mode false --blb_v3_fusion_count_action true --blb_v3_decision_granularity layer --blb_v3_reward_design robust_constrained --blb_v3_truncation_backend binary --blb_v3_truncation_ring_bits 43 --blb_v3_truncation_source_fractional_bits 24 --stage2_workers_per_device 1

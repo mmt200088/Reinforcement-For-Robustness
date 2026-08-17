@@ -1,0 +1,332 @@
+{
+  "authoritative_report": {
+    "filename": "stage2_six_model_final_full_report_updated_20260807.html",
+    "section": "BERT-base MRPC",
+    "sha256": "0b0676ee40102562a4d1f313c16222196ba2b1dcbb03225b9ee431142a299734"
+  },
+  "authoritative_rl": {
+    "evidence_commit": "8c2a526dbf793c95c388b5f8544a793e83c733dc",
+    "fixed_gelu": [
+      1,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      2,
+      1,
+      1,
+      1
+    ],
+    "fixed_softmax": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "fusion_map_tree": "390968c9c4b499d38c102df7805d3c869a64c84b",
+    "max_sfs_tree": "7eb88e05680f38ed9ceed2edc76f947fa1ce344a",
+    "precision_preset_version": "stage2_precision_presets_hml_v1",
+    "precision_presets": [
+      {
+        "communication_utility": 0.0,
+        "k_by_block": [
+          11,
+          10,
+          10,
+          12,
+          11
+        ],
+        "name": "high"
+      },
+      {
+        "communication_utility": 0.5,
+        "k_by_block": [
+          9,
+          8,
+          8,
+          10,
+          9
+        ],
+        "name": "medium"
+      },
+      {
+        "communication_utility": 1.0,
+        "k_by_block": [
+          7,
+          6,
+          6,
+          8,
+          7
+        ],
+        "name": "low"
+      }
+    ],
+    "source_commit": "5c222da6186b8a60244b46029bbc8dac79befb34",
+    "validation_banks": {
+      "banks": {
+        "A": {
+          "probe_seeds": [
+            9223369374594418853,
+            9223369376165613078,
+            9223369373444064327,
+            9223369367499062704,
+            9223369369139590113
+          ],
+          "trial_count": 15,
+          "trial_seeds": [
+            9223369374594418853,
+            9223369377110143252,
+            9223369378681338823,
+            9223369376165613078,
+            9223369374455707559,
+            9223369381474450804,
+            9223369373444064327,
+            9223369371801271798,
+            9223369369079723813,
+            9223369367499062704,
+            9223369369146835969,
+            9223369370794643154,
+            9223369369139590113,
+            9223369366492400208,
+            9223369373499408515
+          ],
+          "trials_per_probe": 3
+        },
+        "B": {
+          "probe_seeds": [
+            9223366720425372765,
+            9223366722063803790,
+            9223366719342124031,
+            9223366712331899176,
+            9223366713905190553
+          ],
+          "trial_count": 15,
+          "trial_seeds": [
+            9223366720425372765,
+            9223366722674382316,
+            9223366724256259903,
+            9223366722063803790,
+            9223366720019946559,
+            9223366726961026796,
+            9223366719342124031,
+            9223366717365510734,
+            9223366714717300893,
+            9223366712331899176,
+            9223366714711074969,
+            9223366717367542346,
+            9223366713905190553,
+            9223366712056639272,
+            9223366717992199675
+          ],
+          "trials_per_probe": 3
+        },
+        "C": {
+          "probe_seeds": [
+            9223364066322514933,
+            9223364067895867686,
+            9223364065181531799,
+            9223364058162918592,
+            9223364059736205873
+          ],
+          "trial_count": 15,
+          "trial_seeds": [
+            9223364066322514933,
+            9223364068238621252,
+            9223364069878100119,
+            9223364067895867686,
+            9223364065584185495,
+            9223364072532478532,
+            9223364065181531799,
+            9223364062929749798,
+            9223364060283768309,
+            9223364058162918592,
+            9223364060275314033,
+            9223364062921426850,
+            9223364059736205873,
+            9223364057620878208,
+            9223364063562602835
+          ],
+          "trials_per_probe": 3
+        }
+      },
+      "bootstrap_probability_role": "diagnostic_tiebreak_only",
+      "final_trial_count": 45,
+      "hard_gate": "joint_six_point_plus_compute_and_communication_counterfactual_six_point_v1",
+      "promotion_trial_count": 30,
+      "schema_version": "layerwise_validation_banks_v1"
+    }
+  },
+  "current_runtime": {
+    "fusion_map_file_sha256": {
+      "_summary.json": "11aace7231c54c9cc4f213202b330c9d64672d97a292c1b6444843f6592bafe5",
+      "block1_mrpc.json": "c6db740ebfa3c8c143b526a6cc815608264bfca4352320e62c912b321653e74f",
+      "block2_mrpc.json": "da23c48a11ad61c7276aed0503dd0887f4b213f1588aa49f9055a71a58dd6753",
+      "block4.json": "45aa299d011e4ea7c7bb0b0b24710b2f313220e87c14011149008a759beca157",
+      "block5_n0.json": "8b2e12545e04dbdce9532697d423a95d6400773b3384cbf5e257f5864a1c81d5",
+      "block5_n1.json": "512f1044b2e0fcf86be6089bda1685c23d02a107d2a2ef77b856585eaf25c372",
+      "block5_n2.json": "e2b07f0cdf682a725e346441b03dcdbf258c1c9c209a93040a00f3ac35e493c7",
+      "block5_n4.json": "55eaa27543c68e7214cb44ab7b8b749c9a7dbb46ce3479754e562029794e4f6c"
+    },
+    "fusion_map_tree": "390968c9c4b499d38c102df7805d3c869a64c84b",
+    "max_sfs_mrpc_sha256": "cdc63b3c2d63b68c8bcd0214210229c89a3b4da3b9e18aba172b711c83813a76",
+    "max_sfs_tree": "7eb88e05680f38ed9ceed2edc76f947fa1ce344a"
+  },
+  "latest_stage1": {
+    "bo_rf": {
+      "artifact_root": "/hy-tmp/rfr_result_stage1_comparators_batch16_20260816/experiments/server_command_runs/stage1_comparators_batch16_20260816/persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf",
+      "evaluation_count": 1072,
+      "gelu": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        1,
+        1
+      ],
+      "result_sha256": "599dda3ac5d18c21008a7d3cdaec0dcaf4ee0ec7919da2351980670d960f14d9",
+      "search_wall_seconds": 706.7363177849911,
+      "softmax": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "termination_reason": "no_improvement_convergence"
+    },
+    "coinn_ga": {
+      "artifact_root": "/hy-tmp/rfr_result_stage1_comparators_batch16_20260816/experiments/server_command_runs/stage1_comparators_batch16_20260816/persistent/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga",
+      "evaluation_count": 11464,
+      "gelu": [
+        1,
+        2,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        1,
+        1,
+        1
+      ],
+      "result_sha256": "db03230bb774ce8620877581551dc831ecb491876f8e8315300514b5852844e3",
+      "search_wall_seconds": 4460.664575166069,
+      "softmax": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "termination_reason": "completed_generations"
+    },
+    "greedy": {
+      "artifact_root": "/hy-tmp/rfr_result_stage1_comparators_batch16_20260816/experiments/server_command_runs/stage1_comparators_batch16_20260816/persistent/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy",
+      "evaluation_count": 958,
+      "gelu": [
+        1,
+        2,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        1,
+        1,
+        1
+      ],
+      "result_sha256": "b5ad4a8e451942b9f0cc54fe6fb62433cf822581432d04d15ea8943d4ac31183",
+      "search_wall_seconds": 354.7452161889523,
+      "softmax": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "termination_reason": "verified_local_optimum"
+    }
+  },
+  "latest_stage1_result_commit": "1df23db3e066d46497e8b69cc52744405c22cecc",
+  "passed": true,
+  "schema_version": "stage2_comparator_html_authority_preflight_v1",
+  "shared_formal_contract": {
+    "baseline_groups": 5,
+    "baseline_trials_per_group": 3,
+    "constraint_bootstrap_samples": 4096,
+    "dataset": "glue/mrpc",
+    "layers": 12,
+    "model": "textattack/bert-base-uncased-MRPC",
+    "online_probe_examples": 256,
+    "online_trials": 3,
+    "precision_tolerance": 0.001,
+    "probability_diagnostics": {
+      "final": 0.95,
+      "online": 0.5,
+      "promotion": 0.8
+    },
+    "stability_multiplier": 2.0,
+    "stage1_batch_size": 16,
+    "stage2_batch_size": 64,
+    "strict_bank_trials": {
+      "A": 15,
+      "B": 15,
+      "C": 15,
+      "final": 45,
+      "promotion": 30
+    },
+    "strict_examples": 408,
+    "strict_top_n": 5,
+    "truncation": {
+      "backend": "binary",
+      "ring_bits": 43,
+      "source_fractional_bits": 24
+    }
+  },
+  "source": {
+    "commit": "b8584e4f7bbda2fb00010fb1570be3fec0fbcdf2",
+    "tree": "c3e4ec2c9b61bde00d5b2ddc204192d8939414e0"
+  }
+}

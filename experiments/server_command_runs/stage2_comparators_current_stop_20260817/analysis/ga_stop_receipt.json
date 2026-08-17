@@ -1,0 +1,15 @@
+{
+  "child_pid": 1779061,
+  "complete_update_generations": 59,
+  "completed_partial_offspring": 36,
+  "gpu_released": true,
+  "note": "The user requested stop at generation 50 after the run had already passed that point. One SIGINT was forwarded by the elastic supervisor; complete JSONL rows were retained and no restart occurred.",
+  "observation_count": 3463,
+  "observation_sha256": "5df7553e0de6f392325e98b14bf22901fa7dbb28327debfd01c28aa6f45ddf64",
+  "partial_generation": 60,
+  "processes_stopped": true,
+  "requested_at": "2026-08-17T21:41:31+08:00",
+  "schema_version": "stage2_ga_operator_stop_receipt_v1",
+  "supervisor_exit_code": 130,
+  "supervisor_pid": 1779012
+}
