@@ -1,0 +1,20 @@
+{
+  "methods": {
+    "bo_rf": {
+      "file_count": 32,
+      "manifest_path": "manifests/bo_rf_raw_files.json",
+      "total_bytes": 78108546
+    },
+    "coinn_ga": {
+      "file_count": 32,
+      "manifest_path": "manifests/coinn_ga_raw_files.json",
+      "total_bytes": 309620341
+    },
+    "greedy": {
+      "file_count": 24,
+      "manifest_path": "manifests/greedy_raw_files.json",
+      "total_bytes": 4822997172
+    }
+  },
+  "schema_version": "stage2_comparator_raw_file_manifests_v1"
+}

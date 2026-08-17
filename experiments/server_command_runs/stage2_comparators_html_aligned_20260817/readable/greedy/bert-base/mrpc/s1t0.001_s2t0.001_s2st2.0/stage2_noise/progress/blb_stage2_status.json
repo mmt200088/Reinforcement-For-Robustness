@@ -1,0 +1,36 @@
+{
+  "schema": "blb_stage2_status_v1",
+  "started_at": "2026-08-17T05:42:47.472149",
+  "run_basename": "s1t0.001_s2t0.001_s2st2.0",
+  "profile": "mrpc",
+  "total_episodes": 0,
+  "completed_episodes": 0,
+  "ppo_update_count": 0,
+  "phase": "Stage-2 greedy search",
+  "elapsed_sec": 52.752,
+  "last_update": "2026-08-17T05:43:40.224476",
+  "recent_returns": [],
+  "best": {
+    "reward": null,
+    "episode": null,
+    "action_vec": null,
+    "breakdown": null
+  },
+  "baseline": null,
+  "ppo_last_metrics": null,
+  "episode": 0,
+  "best_reward": null,
+  "best_episode": null,
+  "last_reward": null,
+  "last_priority": null,
+  "last_invalid": null,
+  "last_breakdown": null,
+  "updated_at": "2026-08-17T05:43:40.224476",
+  "extra": {
+    "fixed_label": "Stage-1 greedy selected config",
+    "fixed_source": "stage1_greedy_result",
+    "rl_mode": "layerwise_robust",
+    "rescale_optimizer": "in_process_real",
+    "rescale_optimizer_root": "Rescale_optimizer"
+  }
+}

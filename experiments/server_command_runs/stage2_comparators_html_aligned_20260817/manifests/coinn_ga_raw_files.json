@@ -1,0 +1,169 @@
+{
+  "archive_source_root": "/hy-tmp/stage2_comparator_html_authority_20260817/formal_persistent_v2/coinn_ga",
+  "file_count": 32,
+  "files": [
+    {
+      "path": "bert-base/mrpc/.s1t0.001_s2t0.001_s2st2.0.stage2_rl.lock",
+      "sha256": "d4b96f486ddfcc38c2878fd2c59bfc745e7d1ff9d0d4664ad80143e4f79a5e9c",
+      "size_bytes": 201
+    },
+    {
+      "path": "bert-base/mrpc/LATEST_PID",
+      "sha256": "76fce3989a296b8751f977533c32c324a42754ebeb576f6818608febeffca17e",
+      "size_bytes": 8
+    },
+    {
+      "path": "bert-base/mrpc/LATEST_RUN_DIR",
+      "sha256": "a9d2bebc3ac79f227cbfd60f675d1e96025ad34e9c171569b4ea0633e4f0e60b",
+      "size_bytes": 121
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/best_policy/constraint_metadata.json",
+      "sha256": "5cb69bf6d6aa85e5ee042d942904db63455e336a0b38fcfdf0913c81a88114e8",
+      "size_bytes": 335
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/elastic_gpu_health_events.jsonl",
+      "sha256": "f93f0d77320a1d704cc7241660f128230f1323a15f91894e952c550c5796bfb5",
+      "size_bytes": 393
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/logs/output.log",
+      "sha256": "69db12b35ab8e359808e9dabd6fffed3f1a765dc50b9ddebcf31a4df2471f775",
+      "size_bytes": 15578
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/metadata.json",
+      "sha256": "4ad0f04463520d8cbb294eb937a3d463de01ff829c59f2bea15647de10a161c2",
+      "size_bytes": 1202
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/rl.pid",
+      "sha256": "76fce3989a296b8751f977533c32c324a42754ebeb576f6818608febeffca17e",
+      "size_bytes": 8
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/run.pid",
+      "sha256": "76fce3989a296b8751f977533c32c324a42754ebeb576f6818608febeffca17e",
+      "size_bytes": 8
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1/pruning_search_log.txt",
+      "sha256": "d19b21f7f804bca30e76f527d94e15a8e5f1ed1d6543a5852e7f785f4ac61c1b",
+      "size_bytes": 2283
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/COMPLETED",
+      "sha256": "c53e9111a25e1bc7a3e3d99467432279ee5267848114b84deb069d59b0f8429d",
+      "size_bytes": 27
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/checkpoint.json",
+      "sha256": "cf4e5405d70abedf6fd6489b1ce6a2855b4581b97b846699f0004aea064e36bd",
+      "size_bytes": 9601
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/history.json",
+      "sha256": "9948bea5374b6423b1787a7729b5dd7f2b113d7238a0cd16be5893a6655d5722",
+      "size_bytes": 436150
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/manifest.json",
+      "sha256": "261828d0e4ceb597060e55deb294e286992b7463d9ac3ac812cf2ef59870dde5",
+      "size_bytes": 2253
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/observations.jsonl",
+      "sha256": "e2b525db13d9333fba3ba75bc31da996fba355b4f6764b1a651313edad57231f",
+      "size_bytes": 16581962
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/result.json",
+      "sha256": "db03230bb774ce8620877581551dc831ecb491876f8e8315300514b5852844e3",
+      "size_bytes": 3531
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/summary.json",
+      "sha256": "db03230bb774ce8620877581551dc831ecb491876f8e8315300514b5852844e3",
+      "size_bytes": 3531
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/blb_stage2_live_summary.md",
+      "sha256": "61fa4aaa3b7e730a19ebd563dc608a63f9bd6551daaa4ed1a64da535a681416e",
+      "size_bytes": 866
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/blb_stage2_status.json",
+      "sha256": "7d54259bba952aadb63f4d61f8e29b2efbd73469d1edc6cfe93a45228ee52a1c",
+      "size_bytes": 525636
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/final_selected_configuration.json",
+      "sha256": "b5ed85f941c524a53a52eb2fcebc83a930ae039cae53cd3dfd8be55a99c0130b",
+      "size_bytes": 458689
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/history.json",
+      "sha256": "6edb7d7d71c9d505176a2b9272f18888feb4e7174b3cd20f809b64441b6cbbc1",
+      "size_bytes": 148533
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/invocation.json",
+      "sha256": "b90141e1ac6929325ff678727486935be806a39c743d0fa6392adcbb24d1ef90",
+      "size_bytes": 4026
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/manifest.json",
+      "sha256": "2ad4681bd5ffbe58b26274d73c74cf27ba4825590c086c3d875551e0976ac5aa",
+      "size_bytes": 33399
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/observations.jsonl",
+      "sha256": "f2372f982d7612937a3029ed3b560c2b34279b1ad5ecdeb43f78f91e9f795f47",
+      "size_bytes": 258867343
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/online_best.json",
+      "sha256": "73051f063486eac70506d376c771947eab98b7ddee6e8b301fb02d9603b9f475",
+      "size_bytes": 449640
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/pending_strict_resume_context.json",
+      "sha256": "b2a1d1561b27d7ac735eb1490dc5e94642fb185bb9cb38fb305f48b50154e877",
+      "size_bytes": 100130
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/resume_result.json",
+      "sha256": "cd1270b9dd1611967ab4776b39b83642117b0adadee91ca1a8c3f2a40bb41b4b",
+      "size_bytes": 16204269
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/strict_candidate_store.jsonl",
+      "sha256": "0769d93aad5097873dcb8557d9749e9281fef1e9f2c5ea5dae7340f65f311afe",
+      "size_bytes": 519124
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/strict_validation.json",
+      "sha256": "40645080bfb21cf61e66f5c457818e819d1fcafe5a997434c27b24ba9cf2b436",
+      "size_bytes": 6442949
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/progress/search_coinn_ga/summary.json",
+      "sha256": "3acd8e7de56b149cbb924dbb820cb3e31f48da9759b409c7b6266355fff8e824",
+      "size_bytes": 651369
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage2_noise/pruning_search_log.txt",
+      "sha256": "31c436d712e03c1d4f09c2b3d1404e5fdf0ecd6157f735c36440448d68dfa036",
+      "size_bytes": 4816
+    },
+    {
+      "path": "bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/two_stage_result.json",
+      "sha256": "f2fccca96681a9a55d7ba7754f8373c7b579278ce40f2ac80b49b8335a257d17",
+      "size_bytes": 8152360
+    }
+  ],
+  "method": "coinn_ga",
+  "schema_version": "stage2_comparator_raw_file_manifest_v1",
+  "total_bytes": 309620341
+}

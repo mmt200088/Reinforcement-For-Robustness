@@ -1,0 +1,441 @@
+{
+  "alignment_checks": {
+    "all_three_exact_own_stage1_binding": true,
+    "all_three_mrpc_reproducibility_identity_equal": true,
+    "all_three_shared_scientific_parameters_equal": true,
+    "completed_methods_strict_top5_all_evaluated": true,
+    "current_fusion_map_tree_equals_authoritative_rl": true,
+    "current_max_sfs_tree_equals_authoritative_rl": true,
+    "failed_strict_candidates_not_reported_formal_feasible": true
+  },
+  "authoritative_report": {
+    "filename": "stage2_six_model_final_full_report_updated_20260807.html",
+    "section": "BERT-base MRPC",
+    "sha256": "0b0676ee40102562a4d1f313c16222196ba2b1dcbb03225b9ee431142a299734"
+  },
+  "authoritative_rl": {
+    "evidence_commit": "8c2a526dbf793c95c388b5f8544a793e83c733dc",
+    "fusion_map_tree": "390968c9c4b499d38c102df7805d3c869a64c84b",
+    "max_sfs_tree": "7eb88e05680f38ed9ceed2edc76f947fa1ce344a",
+    "precision_presets": [
+      {
+        "communication_utility": 0.0,
+        "k_by_block": [
+          11,
+          10,
+          10,
+          12,
+          11
+        ],
+        "name": "high"
+      },
+      {
+        "communication_utility": 0.5,
+        "k_by_block": [
+          9,
+          8,
+          8,
+          10,
+          9
+        ],
+        "name": "medium"
+      },
+      {
+        "communication_utility": 1.0,
+        "k_by_block": [
+          7,
+          6,
+          6,
+          8,
+          7
+        ],
+        "name": "low"
+      }
+    ],
+    "source_commit": "5c222da6186b8a60244b46029bbc8dac79befb34"
+  },
+  "created_at": "2026-08-17T18:09:57.525037+08:00",
+  "focused_gate_log_sha256": "767023407ded3b9348a6b5224e3cc44c88f23a33efaa5558d6644076ba8fdb10",
+  "host": "f1ac06029e4a",
+  "methods": {
+    "bo_rf": {
+      "evaluation_count": 176,
+      "final_selected_configuration_sha256": "ccc558c390db1c3f37e214aa8350ed31adffe1d17368aa344aec4c4721fcb55a",
+      "invocation_sha256": "7a3bdfbb2ceacbf00e079c383ef2b1f82271bba13094da540c454b5cd915f728",
+      "manifest_sha256": "e7603ae339cbc0175bd253e621f0e44d9dd1204650bf8367456c4173e7bff31b",
+      "manifest_status": "complete_least_violating",
+      "model_forward_trial_count": 603,
+      "observation_count": 176,
+      "observations_jsonl_bytes": 41808078,
+      "observations_jsonl_lines": 176,
+      "online_search_wall_seconds": 384.61844048369676,
+      "resume_result_sha256": "6e939159254ea79faa105e82dd57561e51273dc286cb65a5d67c27a9e0b4ab9d",
+      "scientific_completion": "complete_least_violating",
+      "selected_action_matrix": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "selected_failed_constraint_count": 3,
+      "selected_normalized_violation": 0.009394667044056438,
+      "selected_reward": 1.8339571214572385,
+      "selected_worst_normalized_violation": 0.004614187860261217,
+      "selection_status": "strict_least_violating",
+      "stage1_binding": {
+        "action": [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          1,
+          1,
+          2,
+          2
+        ],
+        "backend": "bo_rf",
+        "gelu_degrees": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          2,
+          2,
+          1,
+          1
+        ],
+        "num_layers": 12,
+        "result_path": "/hy-tmp/stage2_comparator_html_authority_20260817/formal_persistent_v2/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/bo_rf/result.json",
+        "result_sha256": "599dda3ac5d18c21008a7d3cdaec0dcaf4ee0ec7919da2351980670d960f14d9",
+        "seed": 42,
+        "selection_hash": "7ac0a57b77ba16bbded050d2decbc92e64f00f976c10bfd5172951001c8df6b2",
+        "softmax_degrees": [
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6
+        ]
+      },
+      "strict_attempt_wall_seconds_total": 69.86676045600325,
+      "strict_evaluated_candidate_count": 5,
+      "strict_fresh_trial_count": 75,
+      "strict_trial_count": 75,
+      "strict_validation_sha256": "09faf931d158e85963ab6cf12c0930c5f87f05edbd80621868c6a156140ffba9",
+      "termination_reason": "bo_no_improvement",
+      "total_wall_seconds": 454.4852009397
+    },
+    "coinn_ga": {
+      "completed_generation_count": 18,
+      "evaluation_count": 1090,
+      "final_no_improvement_generations": 5,
+      "final_selected_configuration_sha256": "b5ed85f941c524a53a52eb2fcebc83a930ae039cae53cd3dfd8be55a99c0130b",
+      "invocation_sha256": "b90141e1ac6929325ff678727486935be806a39c743d0fa6392adcbb24d1ef90",
+      "manifest_sha256": "2ad4681bd5ffbe58b26274d73c74cf27ba4825590c086c3d875551e0976ac5aa",
+      "manifest_status": "complete_least_violating",
+      "model_forward_trial_count": 3345,
+      "observation_count": 1090,
+      "observations_jsonl_bytes": 258867343,
+      "observations_jsonl_lines": 1090,
+      "online_search_wall_seconds": 2001.6997625967488,
+      "resume_result_sha256": "cd1270b9dd1611967ab4776b39b83642117b0adadee91ca1a8c3f2a40bb41b4b",
+      "scientific_completion": "complete_least_violating",
+      "selected_action_matrix": [
+        [
+          1,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "selected_failed_constraint_count": 1,
+      "selected_normalized_violation": 0.00011826959273803039,
+      "selected_reward": 1.7920322521213339,
+      "selected_worst_normalized_violation": 0.00011826959273803039,
+      "selection_status": "strict_least_violating",
+      "stage1_binding": {
+        "action": [
+          2,
+          1,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          1,
+          2,
+          2,
+          2
+        ],
+        "backend": "coinn_ga",
+        "gelu_degrees": [
+          1,
+          2,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          2,
+          1,
+          1,
+          1
+        ],
+        "num_layers": 12,
+        "result_path": "/hy-tmp/stage2_comparator_html_authority_20260817/formal_persistent_v2/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/coinn_ga/result.json",
+        "result_sha256": "db03230bb774ce8620877581551dc831ecb491876f8e8315300514b5852844e3",
+        "seed": 42,
+        "selection_hash": "86768d10ac63eccc293e065e7a6eb4443311df7851da4cebc974268b3cdf7d98",
+        "softmax_degrees": [
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6
+        ]
+      },
+      "strict_attempt_wall_seconds_total": 69.99853238696232,
+      "strict_evaluated_candidate_count": 5,
+      "strict_fresh_trial_count": 75,
+      "strict_trial_count": 75,
+      "strict_validation_sha256": "40645080bfb21cf61e66f5c457818e819d1fcafe5a997434c27b24ba9cf2b436",
+      "termination_reason": "ga_no_incumbent_improvement",
+      "total_wall_seconds": 2071.698294983711
+    },
+    "greedy": {
+      "error_summary_sha256": "513f085b6aaf900b362ab3c86ea2a967206b1b6ecddbecae62f76791992a01c2",
+      "evaluation_count": null,
+      "interruption_signal": "SIGINT",
+      "invocation_sha256": "d384e1e51126ed1ef319c8a123205e667e8023b1381c12310ceb1e9859ca9d42",
+      "manifest_sha256": "067003bd714749146ef08824b207562ce731b5ce9929ede808243b94b6d13b2b",
+      "manifest_status": "running",
+      "model_forward_trial_count": null,
+      "observation_count": null,
+      "observations_jsonl_bytes": 4821400656,
+      "observations_jsonl_lines": 20217,
+      "online_search_wall_seconds": 0.0,
+      "scientific_completion": "interrupted_by_user_not_a_final_result",
+      "selection_status": null,
+      "stage1_binding": {
+        "action": [
+          2,
+          1,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          1,
+          2,
+          2,
+          2
+        ],
+        "backend": "greedy",
+        "gelu_degrees": [
+          1,
+          2,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          2,
+          1,
+          1,
+          1
+        ],
+        "num_layers": 12,
+        "result_path": "/hy-tmp/stage2_comparator_html_authority_20260817/formal_persistent_v2/greedy/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0/stage1_comparator/greedy/result.json",
+        "result_sha256": "b5ad4a8e451942b9f0cc54fe6fb62433cf822581432d04d15ea8943d4ac31183",
+        "seed": 42,
+        "selection_hash": "6aa64f7d5ca384e0e5b0ec9d2606fb513c5d67fa636ce4f1f6a35ad6153fd0fa",
+        "softmax_degrees": [
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6,
+          6
+        ]
+      },
+      "strict_attempt_wall_seconds_total": 0.0,
+      "strict_evaluated_candidate_count": null,
+      "strict_fresh_trial_count": null,
+      "strict_trial_count": null,
+      "strict_validation_started": false,
+      "termination_reason": null,
+      "total_wall_seconds": null
+    }
+  },
+  "overall_conclusion": "bo_rf and coinn_ga completed as strict least-violating; greedy was user-interrupted and is not a final scientific result",
+  "preflight_sha256": "a41123b5647e2a7ac3b0ecf569297bc0f351180f270b2009c24e455706ff8322",
+  "runtime": {
+    "active_training_processes": [],
+    "gpu": {
+      "index": 0,
+      "memory_total_mib": 24564,
+      "memory_used_mib": 9,
+      "name": "NVIDIA GeForce RTX 4090",
+      "utilization_percent": 0
+    },
+    "gpu_idle_verified": true,
+    "process_check": "ps executable filter without shell pipeline"
+  },
+  "schema_version": "stage2_comparator_html_authority_final_receipt_v1",
+  "shared_contract": {
+    "baseline_groups": 5,
+    "baseline_trials_per_group": 3,
+    "constraint_bootstrap_samples": 4096,
+    "dataset": "glue/mrpc",
+    "layers": 12,
+    "model": "textattack/bert-base-uncased-MRPC",
+    "online_probe_examples": 256,
+    "online_trials": 3,
+    "precision_tolerance": 0.001,
+    "probability_diagnostics": {
+      "final": 0.95,
+      "online": 0.5,
+      "promotion": 0.8
+    },
+    "stability_multiplier": 2.0,
+    "stage1_batch_size": 16,
+    "stage2_batch_size": 64,
+    "strict_bank_trials": {
+      "A": 15,
+      "B": 15,
+      "C": 15,
+      "final": 45,
+      "promotion": 30
+    },
+    "strict_examples": 408,
+    "strict_top_n": 5,
+    "truncation": {
+      "backend": "binary",
+      "ring_bits": 43,
+      "source_fractional_bits": 24
+    }
+  },
+  "source": {
+    "commit": "b8584e4f7bbda2fb00010fb1570be3fec0fbcdf2",
+    "tracked_clean": true,
+    "tree": "c3e4ec2c9b61bde00d5b2ddc204192d8939414e0"
+  }
+}

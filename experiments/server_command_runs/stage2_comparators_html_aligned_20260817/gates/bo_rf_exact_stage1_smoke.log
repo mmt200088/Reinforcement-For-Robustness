@@ -1,0 +1,4 @@
+检测到 Stage-2 RL 持久化目录：/hy-tmp/stage2_comparator_html_authority_20260817/smoke_persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0
+自动进入续训练模式（如需从头训练请加 --fresh）。
+CONSTRAINT_MISMATCH: stage2_stability_multiplier: 已持久化缺失 当前=2.0
+错误：检测到当前约束或 policy network 与已持久化工作目录的 metadata 不一致（见上方 CONSTRAINT_MISMATCH）。不同实验臂不会静默续训练，请加 --fresh 重开该 stage，或改回原配置。工作目录：/hy-tmp/stage2_comparator_html_authority_20260817/smoke_persistent/bo_rf/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0

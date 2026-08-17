@@ -1,0 +1,8131 @@
+[
+  {
+    "best_action_matrix": [
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.6458333333333333,
+    "best_robust_floor": 0.625,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "design_inferences": 64,
+    "design_size": 64,
+    "evaluations": 64,
+    "iteration": 0,
+    "observations": 64,
+    "phase": "structured_initial_design"
+  },
+  {
+    "acquisition": 0.07421875000000003,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.6458333333333333,
+    "best_robust_floor": 0.625,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 65,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 1,
+    "no_improvement_iterations": 1,
+    "observations": 65,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.96875,
+    "predicted_feasibility": 0.4453125,
+    "predicted_total_violation": 0.17961314216492671,
+    "predicted_worst_violation": 0.11032158836485849
+  },
+  {
+    "acquisition": 0.0527343750000001,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.7291666666666667,
+    "best_robust_floor": 0.7083333333333334,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 66,
+    "improved": true,
+    "inference_performed": true,
+    "iteration": 2,
+    "no_improvement_iterations": 0,
+    "observations": 66,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.7421875,
+    "predicted_feasibility": 0.6328125,
+    "predicted_total_violation": 0.12677958654978919,
+    "predicted_worst_violation": 0.06889914103916712
+  },
+  {
+    "acquisition": 0.044270833333333294,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.7291666666666667,
+    "best_robust_floor": 0.7083333333333334,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 67,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 3,
+    "no_improvement_iterations": 1,
+    "observations": 67,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.8046875,
+    "predicted_feasibility": 0.53125,
+    "predicted_total_violation": 0.09246877034505206,
+    "predicted_worst_violation": 0.06054220653715586
+  },
+  {
+    "acquisition": 0.03759765625,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.7291666666666667,
+    "best_robust_floor": 0.7083333333333334,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 68,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 4,
+    "no_improvement_iterations": 2,
+    "observations": 68,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.7734375,
+    "predicted_feasibility": 0.6015625,
+    "predicted_total_violation": 0.14918937683105465,
+    "predicted_worst_violation": 0.0887717247009277
+  },
+  {
+    "acquisition": 0.041015625,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.7916666666666667,
+    "best_robust_floor": 0.75,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 69,
+    "improved": true,
+    "inference_performed": true,
+    "iteration": 5,
+    "no_improvement_iterations": 0,
+    "observations": 69,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.6796875,
+    "predicted_feasibility": 0.65625,
+    "predicted_total_violation": 0.11478724479675294,
+    "predicted_worst_violation": 0.06649730546133858
+  },
+  {
+    "acquisition": 0.0325520833333333,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.8333333333333334,
+    "best_robust_floor": 0.8333333333333334,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 70,
+    "improved": true,
+    "inference_performed": true,
+    "iteration": 6,
+    "no_improvement_iterations": 0,
+    "observations": 70,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.3671875,
+    "predicted_feasibility": 0.78125,
+    "predicted_total_violation": 0.052419439951578786,
+    "predicted_worst_violation": 0.03239609400431315
+  },
+  {
+    "acquisition": 0.012695312500000023,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.8541666666666667,
+    "best_robust_floor": 0.8333333333333334,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 71,
+    "improved": true,
+    "inference_performed": true,
+    "iteration": 7,
+    "no_improvement_iterations": 0,
+    "observations": 71,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.703125,
+    "predicted_feasibility": 0.609375,
+    "predicted_total_violation": 0.2069508847736177,
+    "predicted_worst_violation": 0.11946146147591727
+  },
+  {
+    "acquisition": 0.02669270833333324,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.8541666666666667,
+    "best_robust_floor": 0.8333333333333334,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 72,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 8,
+    "no_improvement_iterations": 1,
+    "observations": 72,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.609375,
+    "predicted_feasibility": 0.640625,
+    "predicted_total_violation": 0.13487596284775508,
+    "predicted_worst_violation": 0.08207495326087587
+  },
+  {
+    "acquisition": 0.02539062499999998,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.8958333333333334,
+    "best_robust_floor": 0.8333333333333334,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 73,
+    "improved": true,
+    "inference_performed": true,
+    "iteration": 9,
+    "no_improvement_iterations": 0,
+    "observations": 73,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.578125,
+    "predicted_feasibility": 0.609375,
+    "predicted_total_violation": 0.10317420959472658,
+    "predicted_worst_violation": 0.06665341059366861
+  },
+  {
+    "acquisition": 0.01595052083333332,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.8958333333333334,
+    "best_robust_floor": 0.8333333333333334,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 74,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 10,
+    "no_improvement_iterations": 1,
+    "observations": 74,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 1.109375,
+    "predicted_feasibility": 0.3828125,
+    "predicted_total_violation": 0.19310176031930099,
+    "predicted_worst_violation": 0.11815182595025928
+  },
+  {
+    "acquisition": 0.01074218749999999,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9375,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 75,
+    "improved": true,
+    "inference_performed": true,
+    "iteration": 11,
+    "no_improvement_iterations": 0,
+    "observations": 75,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 1.171875,
+    "predicted_feasibility": 0.2578125,
+    "predicted_total_violation": 0.1427636555262974,
+    "predicted_worst_violation": 0.1009043375651042
+  },
+  {
+    "acquisition": 0.009277343749999967,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 76,
+    "improved": true,
+    "inference_performed": true,
+    "iteration": 12,
+    "no_improvement_iterations": 0,
+    "observations": 76,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.8984375,
+    "predicted_feasibility": 0.4453125,
+    "predicted_total_violation": 0.1742166927882603,
+    "predicted_worst_violation": 0.10963275546119328
+  },
+  {
+    "acquisition": 0.0060221354166667095,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 77,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 13,
+    "no_improvement_iterations": 1,
+    "observations": 77,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 1.6328125,
+    "predicted_feasibility": 0.2890625,
+    "predicted_total_violation": 0.2702536514827183,
+    "predicted_worst_violation": 0.14191250801086427
+  },
+  {
+    "acquisition": 0.007812500000000056,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 78,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 14,
+    "no_improvement_iterations": 2,
+    "observations": 78,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 1.265625,
+    "predicted_feasibility": 0.375,
+    "predicted_total_violation": 0.1937144801730201,
+    "predicted_worst_violation": 0.11746449470520016
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 79,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 15,
+    "no_improvement_iterations": 3,
+    "observations": 79,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0703125,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.008795288630894252,
+    "predicted_worst_violation": 0.005916077750069755
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 80,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 16,
+    "no_improvement_iterations": 4,
+    "observations": 80,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 81,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 17,
+    "no_improvement_iterations": 5,
+    "observations": 81,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0390625,
+    "predicted_feasibility": 0.96875,
+    "predicted_total_violation": 0.001533826192220052,
+    "predicted_worst_violation": 0.0015204747517903645
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 82,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 18,
+    "no_improvement_iterations": 6,
+    "observations": 82,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.015625,
+    "predicted_feasibility": 0.9921875,
+    "predicted_total_violation": 0.0001361846923828125,
+    "predicted_worst_violation": 0.0001155853271484375
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 83,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 19,
+    "no_improvement_iterations": 7,
+    "observations": 83,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.015625,
+    "predicted_feasibility": 0.984375,
+    "predicted_total_violation": 0.0013228098551432293,
+    "predicted_worst_violation": 0.0013228098551432293
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 84,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 20,
+    "no_improvement_iterations": 8,
+    "observations": 84,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0078125,
+    "predicted_feasibility": 0.9921875,
+    "predicted_total_violation": 0.0013341903686523438,
+    "predicted_worst_violation": 0.0013341903686523438
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 85,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 21,
+    "no_improvement_iterations": 9,
+    "observations": 85,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 86,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 22,
+    "no_improvement_iterations": 10,
+    "observations": 86,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 87,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 23,
+    "no_improvement_iterations": 11,
+    "observations": 87,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 88,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 24,
+    "no_improvement_iterations": 12,
+    "observations": 88,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 89,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 25,
+    "no_improvement_iterations": 13,
+    "observations": 89,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 90,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 26,
+    "no_improvement_iterations": 14,
+    "observations": 90,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 91,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 27,
+    "no_improvement_iterations": 15,
+    "observations": 91,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 92,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 28,
+    "no_improvement_iterations": 16,
+    "observations": 92,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 93,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 29,
+    "no_improvement_iterations": 17,
+    "observations": 93,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 94,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 30,
+    "no_improvement_iterations": 18,
+    "observations": 94,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 95,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 31,
+    "no_improvement_iterations": 19,
+    "observations": 95,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0078125,
+    "predicted_feasibility": 0.9921875,
+    "predicted_total_violation": 0.0001506805419921875,
+    "predicted_worst_violation": 0.0001506805419921875
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 96,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 32,
+    "no_improvement_iterations": 20,
+    "observations": 96,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.03125,
+    "predicted_feasibility": 0.9765625,
+    "predicted_total_violation": 0.0014817237854003907,
+    "predicted_worst_violation": 0.0012747764587402344
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 97,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 33,
+    "no_improvement_iterations": 21,
+    "observations": 97,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.046875,
+    "predicted_feasibility": 0.9609375,
+    "predicted_total_violation": 0.005708392461140951,
+    "predicted_worst_violation": 0.003987963994344076
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 98,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 34,
+    "no_improvement_iterations": 22,
+    "observations": 98,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.046875,
+    "predicted_feasibility": 0.96875,
+    "predicted_total_violation": 0.006255149841308594,
+    "predicted_worst_violation": 0.0036401748657226562
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 99,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 35,
+    "no_improvement_iterations": 23,
+    "observations": 99,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.09375,
+    "predicted_feasibility": 0.9375,
+    "predicted_total_violation": 0.013254261016845703,
+    "predicted_worst_violation": 0.0074546496073404946
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 100,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 36,
+    "no_improvement_iterations": 24,
+    "observations": 100,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0703125,
+    "predicted_feasibility": 0.9765625,
+    "predicted_total_violation": 0.010258175077892485,
+    "predicted_worst_violation": 0.00516510009765625
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 101,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 37,
+    "no_improvement_iterations": 25,
+    "observations": 101,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.046875,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.0027940750122070314,
+    "predicted_worst_violation": 0.0027940750122070314
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 102,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 38,
+    "no_improvement_iterations": 26,
+    "observations": 102,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.078125,
+    "predicted_feasibility": 0.9375,
+    "predicted_total_violation": 0.006389649709065756,
+    "predicted_worst_violation": 0.005636755625406901
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 103,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 39,
+    "no_improvement_iterations": 27,
+    "observations": 103,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0859375,
+    "predicted_feasibility": 0.921875,
+    "predicted_total_violation": 0.006680107116699219,
+    "predicted_worst_violation": 0.00650177001953125
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 104,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 40,
+    "no_improvement_iterations": 28,
+    "observations": 104,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.203125,
+    "predicted_feasibility": 0.890625,
+    "predicted_total_violation": 0.009523137410481771,
+    "predicted_worst_violation": 0.006520970662434896
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 105,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 41,
+    "no_improvement_iterations": 29,
+    "observations": 105,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0703125,
+    "predicted_feasibility": 0.9296875,
+    "predicted_total_violation": 0.0026482264200846355,
+    "predicted_worst_violation": 0.0026482264200846355
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 106,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 42,
+    "no_improvement_iterations": 30,
+    "observations": 106,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0703125,
+    "predicted_feasibility": 0.96875,
+    "predicted_total_violation": 0.0037450790405273438,
+    "predicted_worst_violation": 0.0024001863267686632
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 107,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 43,
+    "no_improvement_iterations": 31,
+    "observations": 107,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0546875,
+    "predicted_feasibility": 0.96875,
+    "predicted_total_violation": 0.0034344355265299477,
+    "predicted_worst_violation": 0.002134259541829427
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 108,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 44,
+    "no_improvement_iterations": 32,
+    "observations": 108,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1171875,
+    "predicted_feasibility": 0.8828125,
+    "predicted_total_violation": 0.007981141408284504,
+    "predicted_worst_violation": 0.007981141408284504
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 109,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 45,
+    "no_improvement_iterations": 33,
+    "observations": 109,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.25,
+    "predicted_feasibility": 0.9140625,
+    "predicted_total_violation": 0.03845256850832984,
+    "predicted_worst_violation": 0.01503897167387463
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 110,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 46,
+    "no_improvement_iterations": 34,
+    "observations": 110,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1015625,
+    "predicted_feasibility": 0.8984375,
+    "predicted_total_violation": 0.00596014658610026,
+    "predicted_worst_violation": 0.00596014658610026
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 111,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 47,
+    "no_improvement_iterations": 35,
+    "observations": 111,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0078125,
+    "predicted_feasibility": 0.9921875,
+    "predicted_total_violation": 0.00040953499930245537,
+    "predicted_worst_violation": 0.00040953499930245537
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 112,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 48,
+    "no_improvement_iterations": 36,
+    "observations": 112,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0234375,
+    "predicted_feasibility": 0.9765625,
+    "predicted_total_violation": 0.000667254130045573,
+    "predicted_worst_violation": 0.000667254130045573
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 113,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 49,
+    "no_improvement_iterations": 37,
+    "observations": 113,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.015625,
+    "predicted_feasibility": 0.984375,
+    "predicted_total_violation": 0.0011283556620279949,
+    "predicted_worst_violation": 0.0011283556620279949
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 114,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 50,
+    "no_improvement_iterations": 38,
+    "observations": 114,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.03125,
+    "predicted_feasibility": 0.984375,
+    "predicted_total_violation": 0.0009393692016601562,
+    "predicted_worst_violation": 0.0007429122924804688
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 115,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 51,
+    "no_improvement_iterations": 39,
+    "observations": 115,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0,
+    "predicted_feasibility": 1.0,
+    "predicted_total_violation": 0.0,
+    "predicted_worst_violation": 0.0
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 116,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 52,
+    "no_improvement_iterations": 40,
+    "observations": 116,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.09375,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.0048414866129557295,
+    "predicted_worst_violation": 0.0023361841837565107
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 117,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 53,
+    "no_improvement_iterations": 41,
+    "observations": 117,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.03125,
+    "predicted_feasibility": 0.9765625,
+    "predicted_total_violation": 0.0015117645263671875,
+    "predicted_worst_violation": 0.0012968699137369793
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 118,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 54,
+    "no_improvement_iterations": 42,
+    "observations": 118,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0703125,
+    "predicted_feasibility": 0.96875,
+    "predicted_total_violation": 0.020444869995117188,
+    "predicted_worst_violation": 0.00995477040608724
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 119,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 55,
+    "no_improvement_iterations": 43,
+    "observations": 119,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0703125,
+    "predicted_feasibility": 0.96875,
+    "predicted_total_violation": 0.008708635965983072,
+    "predicted_worst_violation": 0.0039215087890625
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 120,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 56,
+    "no_improvement_iterations": 44,
+    "observations": 120,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.03125,
+    "predicted_feasibility": 0.984375,
+    "predicted_total_violation": 0.005010922749837239,
+    "predicted_worst_violation": 0.002899010976155599
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 121,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 57,
+    "no_improvement_iterations": 45,
+    "observations": 121,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0234375,
+    "predicted_feasibility": 0.984375,
+    "predicted_total_violation": 0.004394213358561198,
+    "predicted_worst_violation": 0.0027958552042643228
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 122,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 58,
+    "no_improvement_iterations": 46,
+    "observations": 122,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0625,
+    "predicted_feasibility": 0.9765625,
+    "predicted_total_violation": 0.0052337434556749135,
+    "predicted_worst_violation": 0.002799500359429253
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 123,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 59,
+    "no_improvement_iterations": 47,
+    "observations": 123,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0546875,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.0032860755920410155,
+    "predicted_worst_violation": 0.003142388661702474
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 124,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 60,
+    "no_improvement_iterations": 48,
+    "observations": 124,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0234375,
+    "predicted_feasibility": 0.9765625,
+    "predicted_total_violation": 0.0011846542358398438,
+    "predicted_worst_violation": 0.0011846542358398438
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 125,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 61,
+    "no_improvement_iterations": 49,
+    "observations": 125,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.015625,
+    "predicted_feasibility": 0.984375,
+    "predicted_total_violation": 0.0012288093566894531,
+    "predicted_worst_violation": 0.0012288093566894531
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 126,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 62,
+    "no_improvement_iterations": 50,
+    "observations": 126,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.015625,
+    "predicted_feasibility": 0.984375,
+    "predicted_total_violation": 0.00058135986328125,
+    "predicted_worst_violation": 0.00058135986328125
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 127,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 63,
+    "no_improvement_iterations": 51,
+    "observations": 127,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0234375,
+    "predicted_feasibility": 0.9765625,
+    "predicted_total_violation": 0.002101453145345052,
+    "predicted_worst_violation": 0.002101453145345052
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 128,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 64,
+    "no_improvement_iterations": 52,
+    "observations": 128,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.03125,
+    "predicted_feasibility": 0.984375,
+    "predicted_total_violation": 0.0008815765380859376,
+    "predicted_worst_violation": 0.0005532582600911458
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 129,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 65,
+    "no_improvement_iterations": 53,
+    "observations": 129,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0546875,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.002794006892613002,
+    "predicted_worst_violation": 0.0026662145342145646
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 130,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 66,
+    "no_improvement_iterations": 54,
+    "observations": 130,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0859375,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.014523696899414063,
+    "predicted_worst_violation": 0.009243075052897136
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 131,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 67,
+    "no_improvement_iterations": 55,
+    "observations": 131,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0546875,
+    "predicted_feasibility": 0.9453125,
+    "predicted_total_violation": 0.0034303665161132812,
+    "predicted_worst_violation": 0.0034303665161132812
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 132,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 68,
+    "no_improvement_iterations": 56,
+    "observations": 132,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.046875,
+    "predicted_feasibility": 0.9609375,
+    "predicted_total_violation": 0.004887898763020833,
+    "predicted_worst_violation": 0.003438313802083333
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 133,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 69,
+    "no_improvement_iterations": 57,
+    "observations": 133,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.046875,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.0026800973074776785,
+    "predicted_worst_violation": 0.0026800973074776785
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 134,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 70,
+    "no_improvement_iterations": 58,
+    "observations": 134,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0078125,
+    "predicted_feasibility": 0.9921875,
+    "predicted_total_violation": 0.0008716583251953125,
+    "predicted_worst_violation": 0.0008716583251953125
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 135,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 71,
+    "no_improvement_iterations": 59,
+    "observations": 135,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.09375,
+    "predicted_feasibility": 0.9296875,
+    "predicted_total_violation": 0.012280941009521486,
+    "predicted_worst_violation": 0.008515199025472006
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 136,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 72,
+    "no_improvement_iterations": 60,
+    "observations": 136,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.15625,
+    "predicted_feasibility": 0.90625,
+    "predicted_total_violation": 0.010610103607177736,
+    "predicted_worst_violation": 0.0070840517679850255
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 137,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 73,
+    "no_improvement_iterations": 61,
+    "observations": 137,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0546875,
+    "predicted_feasibility": 0.9609375,
+    "predicted_total_violation": 0.0015219052632649739,
+    "predicted_worst_violation": 0.001287110646565755
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 138,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 74,
+    "no_improvement_iterations": 62,
+    "observations": 138,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0859375,
+    "predicted_feasibility": 0.9140625,
+    "predicted_total_violation": 0.0064318339029947914,
+    "predicted_worst_violation": 0.0064318339029947914
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 139,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 75,
+    "no_improvement_iterations": 63,
+    "observations": 139,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.078125,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.010063489278157553,
+    "predicted_worst_violation": 0.005690256754557292
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 140,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 76,
+    "no_improvement_iterations": 64,
+    "observations": 140,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.125,
+    "predicted_feasibility": 0.90625,
+    "predicted_total_violation": 0.0108669916788737,
+    "predicted_worst_violation": 0.008163642883300782
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 141,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 77,
+    "no_improvement_iterations": 65,
+    "observations": 141,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.09375,
+    "predicted_feasibility": 0.9375,
+    "predicted_total_violation": 0.011220010121663411,
+    "predicted_worst_violation": 0.007686487833658853
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 142,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 78,
+    "no_improvement_iterations": 66,
+    "observations": 142,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1328125,
+    "predicted_feasibility": 0.8984375,
+    "predicted_total_violation": 0.008580684661865234,
+    "predicted_worst_violation": 0.007562255859375001
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 143,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 79,
+    "no_improvement_iterations": 67,
+    "observations": 143,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.078125,
+    "predicted_feasibility": 0.9453125,
+    "predicted_total_violation": 0.006619993845621745,
+    "predicted_worst_violation": 0.0040759086608886715
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 144,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 80,
+    "no_improvement_iterations": 68,
+    "observations": 144,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.109375,
+    "predicted_feasibility": 0.9296875,
+    "predicted_total_violation": 0.00704027811686198,
+    "predicted_worst_violation": 0.005329545338948568
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 145,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 81,
+    "no_improvement_iterations": 69,
+    "observations": 145,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.2109375,
+    "predicted_feasibility": 0.890625,
+    "predicted_total_violation": 0.015276722680954707,
+    "predicted_worst_violation": 0.00995967047555106
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 146,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 82,
+    "no_improvement_iterations": 70,
+    "observations": 146,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.078125,
+    "predicted_feasibility": 0.921875,
+    "predicted_total_violation": 0.005423852375575474,
+    "predicted_worst_violation": 0.005423852375575474
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 147,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 83,
+    "no_improvement_iterations": 71,
+    "observations": 147,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1171875,
+    "predicted_feasibility": 0.921875,
+    "predicted_total_violation": 0.013368479410807292,
+    "predicted_worst_violation": 0.00836025873819987
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 148,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 84,
+    "no_improvement_iterations": 72,
+    "observations": 148,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1640625,
+    "predicted_feasibility": 0.890625,
+    "predicted_total_violation": 0.013665567125592915,
+    "predicted_worst_violation": 0.009608545757475355
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 149,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 85,
+    "no_improvement_iterations": 73,
+    "observations": 149,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.140625,
+    "predicted_feasibility": 0.90625,
+    "predicted_total_violation": 0.010151863098144531,
+    "predicted_worst_violation": 0.00626379648844401
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 150,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 86,
+    "no_improvement_iterations": 74,
+    "observations": 150,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.09375,
+    "predicted_feasibility": 0.9140625,
+    "predicted_total_violation": 0.004970550537109375,
+    "predicted_worst_violation": 0.0049610137939453125
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 151,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 87,
+    "no_improvement_iterations": 75,
+    "observations": 151,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.109375,
+    "predicted_feasibility": 0.921875,
+    "predicted_total_violation": 0.005973679678780692,
+    "predicted_worst_violation": 0.0046345937819707965
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 152,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 88,
+    "no_improvement_iterations": 76,
+    "observations": 152,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1875,
+    "predicted_feasibility": 0.8984375,
+    "predicted_total_violation": 0.013635857899983724,
+    "predicted_worst_violation": 0.00832643508911133
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 153,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 89,
+    "no_improvement_iterations": 77,
+    "observations": 153,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.140625,
+    "predicted_feasibility": 0.8984375,
+    "predicted_total_violation": 0.009232107798258464,
+    "predicted_worst_violation": 0.006922785441080729
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 154,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 90,
+    "no_improvement_iterations": 78,
+    "observations": 154,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1171875,
+    "predicted_feasibility": 0.921875,
+    "predicted_total_violation": 0.01546396679348416,
+    "predicted_worst_violation": 0.010457049475775824
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 155,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 91,
+    "no_improvement_iterations": 79,
+    "observations": 155,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.109375,
+    "predicted_feasibility": 0.8984375,
+    "predicted_total_violation": 0.007701651255289714,
+    "predicted_worst_violation": 0.007260417938232423
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 156,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 92,
+    "no_improvement_iterations": 80,
+    "observations": 156,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0859375,
+    "predicted_feasibility": 0.9296875,
+    "predicted_total_violation": 0.009558096386137463,
+    "predicted_worst_violation": 0.006844575064522879
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 157,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 93,
+    "no_improvement_iterations": 81,
+    "observations": 157,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1328125,
+    "predicted_feasibility": 0.890625,
+    "predicted_total_violation": 0.011631541781955296,
+    "predicted_worst_violation": 0.009975115458170572
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 158,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 94,
+    "no_improvement_iterations": 82,
+    "observations": 158,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0625,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.004877281188964844,
+    "predicted_worst_violation": 0.003929328918457031
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 159,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 95,
+    "no_improvement_iterations": 83,
+    "observations": 159,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0546875,
+    "predicted_feasibility": 0.96875,
+    "predicted_total_violation": 0.0045882542928059895,
+    "predicted_worst_violation": 0.002468236287434896
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 160,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 96,
+    "no_improvement_iterations": 84,
+    "observations": 160,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.125,
+    "predicted_feasibility": 0.90625,
+    "predicted_total_violation": 0.011005056472051711,
+    "predicted_worst_violation": 0.00903031485421317
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 161,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 97,
+    "no_improvement_iterations": 85,
+    "observations": 161,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.09375,
+    "predicted_feasibility": 0.921875,
+    "predicted_total_violation": 0.009654617309570311,
+    "predicted_worst_violation": 0.0072757720947265615
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 162,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 98,
+    "no_improvement_iterations": 86,
+    "observations": 162,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.125,
+    "predicted_feasibility": 0.921875,
+    "predicted_total_violation": 0.015351554325648716,
+    "predicted_worst_violation": 0.009492370060511998
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 163,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 99,
+    "no_improvement_iterations": 87,
+    "observations": 163,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.15625,
+    "predicted_feasibility": 0.875,
+    "predicted_total_violation": 0.010667652553982205,
+    "predicted_worst_violation": 0.00880035824245877
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 164,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 100,
+    "no_improvement_iterations": 88,
+    "observations": 164,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.171875,
+    "predicted_feasibility": 0.8984375,
+    "predicted_total_violation": 0.014872650873093378,
+    "predicted_worst_violation": 0.010017939976283485
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 165,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 101,
+    "no_improvement_iterations": 89,
+    "observations": 165,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.109375,
+    "predicted_feasibility": 0.9140625,
+    "predicted_total_violation": 0.007206948598225911,
+    "predicted_worst_violation": 0.0067168394724528
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 166,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 102,
+    "no_improvement_iterations": 90,
+    "observations": 166,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1875,
+    "predicted_feasibility": 0.8671875,
+    "predicted_total_violation": 0.014571180797758557,
+    "predicted_worst_violation": 0.01141792479015532
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 167,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 103,
+    "no_improvement_iterations": 91,
+    "observations": 167,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.109375,
+    "predicted_feasibility": 0.890625,
+    "predicted_total_violation": 0.007653683707827613,
+    "predicted_worst_violation": 0.007653683707827613
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 168,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 104,
+    "no_improvement_iterations": 92,
+    "observations": 168,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1484375,
+    "predicted_feasibility": 0.8984375,
+    "predicted_total_violation": 0.022115961710611975,
+    "predicted_worst_violation": 0.013750298817952478
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 169,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 105,
+    "no_improvement_iterations": 93,
+    "observations": 169,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.140625,
+    "predicted_feasibility": 0.8828125,
+    "predicted_total_violation": 0.009595187505086263,
+    "predicted_worst_violation": 0.008579206466674805
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 170,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 106,
+    "no_improvement_iterations": 94,
+    "observations": 170,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.265625,
+    "predicted_feasibility": 0.8359375,
+    "predicted_total_violation": 0.03541205421326652,
+    "predicted_worst_violation": 0.02053101403372628
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 171,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 107,
+    "no_improvement_iterations": 95,
+    "observations": 171,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.1953125,
+    "predicted_feasibility": 0.8359375,
+    "predicted_total_violation": 0.02404610315958659,
+    "predicted_worst_violation": 0.020617898305257162
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 172,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 108,
+    "no_improvement_iterations": 96,
+    "observations": 172,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0703125,
+    "predicted_feasibility": 0.9296875,
+    "predicted_total_violation": 0.005797545115152995,
+    "predicted_worst_violation": 0.005797545115152995
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 173,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 109,
+    "no_improvement_iterations": 97,
+    "observations": 173,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0703125,
+    "predicted_feasibility": 0.9453125,
+    "predicted_total_violation": 0.00976254145304362,
+    "predicted_worst_violation": 0.006120649973551433
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 174,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 110,
+    "no_improvement_iterations": 98,
+    "observations": 174,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0859375,
+    "predicted_feasibility": 0.9140625,
+    "predicted_total_violation": 0.007555039723714192,
+    "predicted_worst_violation": 0.007555039723714192
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 175,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 111,
+    "no_improvement_iterations": 99,
+    "observations": 175,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0546875,
+    "predicted_feasibility": 0.953125,
+    "predicted_total_violation": 0.006158701578776042,
+    "predicted_worst_violation": 0.004981231689453125
+  },
+  {
+    "acquisition": 0.0,
+    "acquisition_mode": "probability_of_feasibility_times_expected_improvement",
+    "best_action_matrix": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2
+      ]
+    ],
+    "best_failed_constraints": 0,
+    "best_feasible": true,
+    "best_resource_score": 0.9583333333333333,
+    "best_robust_floor": 0.9166666666666666,
+    "best_valid": true,
+    "best_violation": 0.0,
+    "best_worst_violation": 0.0,
+    "evaluations": 176,
+    "improved": false,
+    "inference_performed": true,
+    "iteration": 112,
+    "no_improvement_iterations": 100,
+    "observations": 176,
+    "phase": "feasibility_aware_acquisition",
+    "predicted_failed_constraints": 0.0546875,
+    "predicted_feasibility": 0.9453125,
+    "predicted_total_violation": 0.003704706827799479,
+    "predicted_worst_violation": 0.003704706827799479
+  }
+]
