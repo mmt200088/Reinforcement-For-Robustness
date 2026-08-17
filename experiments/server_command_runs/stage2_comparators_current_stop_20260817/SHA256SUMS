@@ -6,6 +6,7 @@ f7370d00036351530e48e722de13a4452355753b7be73870a683ee61e299bf4d  ./analysis/coi
 7b3875d5d6515ea4aa0915ddbcfa1d16224e8d3d379eb14059c4f0f6f263cad2  ./analysis/comparison_summary.json
 914a548993f2fd45e99903de369324d2d4b96a0fe8e8316e456da0ff3a39217d  ./analysis/ga_stop_receipt.json
 0450c48b9cea85a5db003e28691d77b0f5370978dc9426ad6b0e4cb6dea2655b  ./analysis/greedy_online_top5.json
+1c817c062e8c1beb050bdde14c297905eb8df28da482bd56e7978120313eafd4  ./analysis/result_gap_excluding_search_rounds.md
 88c1fc83dd593489a5fb38d0876552988331e9ae8834eaf99f1286dd46aa4209  ./archives/bo_rf.tar.zst.part-000
 670c6c24c8ac78108f332b331eddaa6fceee2c7be0a40cbe1153836ad78d628b  ./archives/coinn_ga.tar.zst.part-000
 68d7f9721bb0c72b9d439c7d47cdf9ccf9731b73933e4a46699077f3746c86ad  ./archives/greedy.tar.zst.part-000
