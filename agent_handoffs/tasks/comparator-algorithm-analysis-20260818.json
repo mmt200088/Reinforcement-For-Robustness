@@ -1,0 +1,35 @@
+{
+  "aggregate_eligible": true,
+  "base_commit": "4ca39159f03d6ccf5c1fc9cdf25027e3f97e784b",
+  "base_tree": "0844404b4d16c4108c4507a9f48ee53cafddabbc",
+  "branch": "codex/task-comparator-algorithm-analysis-20260818",
+  "branch_role": "task",
+  "changed_scopes": [
+    "docs/ga_greedy_bo_rf_vs_rl_analysis_zh.md"
+  ],
+  "completed_at": "2026-08-19T01:16:03+08:00",
+  "deployment_eligible": false,
+  "record_type": "task_handoff",
+  "schema_version": 1,
+  "server_evidence": [
+    "/hy-tmp/rfr_verify_stage2_bo_patience2000"
+  ],
+  "source_commit": "ffdcf902799fda897500029dc8429e010f07d884",
+  "source_tree": "f48f28976f1c0172d8672444fa22a06e474293a0",
+  "started_at": "2026-08-18T00:36:38+08:00",
+  "status": "completed",
+  "supersedes": [],
+  "task_id": "comparator-algorithm-analysis-20260818",
+  "verification": [
+    {
+      "command": "git diff --check 4ca39159f03d6ccf5c1fc9cdf25027e3f97e784b ffdcf902799fda897500029dc8429e010f07d884",
+      "evidence": "single-RTX-4090 server at exact source ffdcf902: passed",
+      "outcome": "passed"
+    },
+    {
+      "command": "python3 UTF-8, required-section, BO patience, and Markdown-fence validation",
+      "evidence": "single-RTX-4090 server: passed for 432 lines; Greedy, COINN-GA, BO-RF and RL sections present, Stage-2 BO patience is 2,000, and code fences are balanced",
+      "outcome": "passed"
+    }
+  ]
+}
