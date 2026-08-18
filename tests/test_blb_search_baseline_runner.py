@@ -1785,7 +1785,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                     initial_design_size=64,
                     candidate_pool_size=2_048,
                     population_size=64,
-                    patience_generations=100,
+                    patience_generations=2_000,
                     mutation_max_coordinates=4,
                     rf_n_estimators=128,
                     rf_min_samples_leaf=2,
@@ -1799,14 +1799,14 @@ class RuntimeEvaluatorTests(unittest.TestCase):
         canonical = {
             "initial_design_size": 64,
             "candidate_pool_size": 2_048,
-            "patience_generations": 100,
+            "patience_generations": 2_000,
             "rf_n_estimators": 128,
             "rf_min_samples_leaf": 2,
         }
         for field, value in (
             ("initial_design_size", 63),
             ("candidate_pool_size", 2_047),
-            ("patience_generations", 99),
+            ("patience_generations", 1_999),
             ("rf_n_estimators", 127),
             ("rf_min_samples_leaf", 3),
         ):
@@ -1848,7 +1848,7 @@ class RuntimeEvaluatorTests(unittest.TestCase):
                     initial_design_size=64,
                     candidate_pool_size=2_048,
                     population_size=64,
-                    patience_generations=100,
+                    patience_generations=2_000,
                     mutation_max_coordinates=4,
                     rf_n_estimators=128,
                     rf_min_samples_leaf=2,
