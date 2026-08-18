@@ -512,7 +512,7 @@ class SearchBackendWiringTests(unittest.TestCase):
             evaluator,
         )
         self.assertIn(
-            '1_000 if self.comparator_stage1_only else 100',
+            '1_000 if self.comparator_stage1_only else 2_000',
             evaluator,
         )
         self.assertIn("200-generation ", evaluator)

@@ -412,7 +412,7 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
                         for flag, expected in (
                             ("--blb_v3_search_initial_design_size", "64"),
                             ("--blb_v3_search_candidate_pool_size", "2048"),
-                            ("--blb_v3_search_patience_generations", "100"),
+                            ("--blb_v3_search_patience_generations", "2000"),
                             ("--blb_v3_search_rf_n_estimators", "128"),
                             ("--blb_v3_search_rf_min_samples_leaf", "2"),
                         ):
