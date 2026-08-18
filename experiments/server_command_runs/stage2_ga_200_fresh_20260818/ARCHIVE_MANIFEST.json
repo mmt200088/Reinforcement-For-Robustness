@@ -1,0 +1,19 @@
+{
+  "schema_version": "stage2_ga_200_fresh_archive_v1",
+  "compression": "zstd level 10 multithreaded",
+  "split_size_bytes": 83886080,
+  "raw_file_manifest": "manifests/raw_files.json",
+  "raw_file_count": 29,
+  "raw_total_bytes": 2785069075,
+  "archive_parts": [
+    {
+      "path": "archives/run.tar.zst.part-000",
+      "size_bytes": 26321291,
+      "sha256": "fcb1569375f3d497afd29624918bee345c11f8a74e39250a30782a1cb9339e60"
+    }
+  ],
+  "compressed_total_bytes": 26321291,
+  "streaming_full_content_hash_verification": "passed",
+  "verified_file_count": 29,
+  "verified_raw_total_bytes": 2785069075
+}

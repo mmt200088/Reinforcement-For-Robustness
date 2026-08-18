@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stage-2 COINN-GA 200代正式结果</title>
+<style>
+:root { color-scheme:light; --ink:#18202a; --muted:#5f6b78; --line:#d9dee5; --bg:#f5f7f9; --panel:#fff; --red:#a72626; --red-bg:#fff0f0; --green:#187046; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; letter-spacing:0; }
+header { background:#17212b; color:#fff; padding:40px 24px 34px; }
+header .inner, main { max-width:1120px; margin:0 auto; }
+h1 { margin:0 0 10px; font-size:32px; line-height:1.25; letter-spacing:0; }
+.lede { margin:0; color:#d8e0e8; max-width:850px; }
+.status { display:inline-block; margin-top:18px; padding:5px 10px; border:1px solid #ffb8b8; color:#ffe2e2; background:#5c2020; font-weight:700; }
+main { padding:26px 24px 56px; }
+section { background:var(--panel); border:1px solid var(--line); margin:0 0 18px; padding:22px; }
+h2 { margin:0 0 14px; font-size:21px; letter-spacing:0; }
+h3 { margin:20px 0 10px; font-size:17px; letter-spacing:0; }
+.notice { border-left:5px solid var(--red); background:var(--red-bg); }
+.notice strong { color:var(--red); }
+.meta { color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
+.grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.grid section { margin:0; }
+table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+th, td { padding:9px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+th { background:#eef2f5; font-size:13px; }
+tr:last-child td { border-bottom:0; }
+.pass { color:var(--green); font-weight:700; }
+.fail { color:var(--red); font-weight:700; }
+code { background:#edf1f4; padding:2px 5px; overflow-wrap:anywhere; }
+pre { margin:10px 0 0; padding:14px; background:#111820; color:#e8eef4; overflow:auto; line-height:1.5; }
+.small { color:var(--muted); font-size:13px; }
+@media (max-width:760px) { .grid { grid-template-columns:1fr; } h1 { font-size:25px; } section { padding:16px; overflow:auto; } }
+</style>
+</head>
+<body>
+<header><div class="inner">
+<h1>Stage-2 COINN-GA 200代正式结果</h1>
+<p class="lede">BERT-base · GLUE MRPC · 单卡正式搜索 · P64/E7 · 无提前停止</p>
+<div class="status">搜索完成 · 严格验证未找到可行候选</div>
+</div></header>
+<main>
+<section class="notice">
+<h2>结论</h2>
+<p>GA 已严格跑满 200 个更新代，并完成 11,464 次进入模型推理的唯一候选评估。eligible top-5 全部进入 15-trial Bank-A 严格验证，但五个候选均未同时满足 Accuracy 与 Weighted-F1 均值约束。因此正式状态为 <code>complete_least_violating</code>，下表展示的是严格评估后的最小违反候选，<strong>不能称为 strict-feasible 最优配置</strong>。由于不满足严格门禁，Paean final evaluation 被标记为 <code>skipped_ineligible</code>。</p>
+</section>
+
+<section>
+<h2>完成性与来源</h2>
+<table><thead><tr>
+<th>阶段</th>
+<th>更新代/范围</th>
+<th>真实评估</th>
+<th>终止原因</th>
+<th>结果</th>
+</tr></thead><tbody>
+<tr>
+<td>Stage-1</td>
+<td>200</td>
+<td>11,464</td>
+<td>completed_generations</td>
+<td>可行</td>
+</tr>
+<tr>
+<td>Stage-2</td>
+<td>200</td>
+<td>11,464</td>
+<td>generation_limit</td>
+<td>严格不可行</td>
+</tr>
+<tr>
+<td>严格验证</td>
+<td>top-5</td>
+<td>5</td>
+<td>strict_least_violating</td>
+<td>5 个均未通过 Bank A point gate</td>
+</tr>
+</tbody></table>
+<p class="meta">Source commit: <code>4ca39159f03d6ccf5c1fc9cdf25027e3f97e784b</code><br>Source tree: <code>0844404b4d16c4108c4507a9f48ee53cafddabbc</code><br>Run root: <code>/hy-tmp/stage2_ga_fresh200_20260817_233430/coinn_ga/bert-base/mrpc/s1t0.001_s2t0.001_s2st2.0</code></p>
+</section>
+
+<div class="grid">
+<section><h2>Stage-1 最优结果</h2><table><thead><tr>
+<th>项目</th>
+<th>数值</th>
+</tr></thead><tbody>
+<tr>
+<td>GELU degrees</td>
+<td>[1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1]</td>
+</tr>
+<tr>
+<td>Softmax degrees</td>
+<td>[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]</td>
+</tr>
+<tr>
+<td>Loss</td>
+<td>0.344611801</td>
+</tr>
+<tr>
+<td>Accuracy</td>
+<td>87.99020%</td>
+</tr>
+<tr>
+<td>Weighted-F1</td>
+<td>87.83886%</td>
+</tr>
+<tr>
+<td>Cost</td>
+<td>51.00</td>
+</tr>
+<tr>
+<td>状态</td>
+<td>满足 Stage-1 约束</td>
+</tr>
+</tbody></table></section>
+<section><h2>运行时间</h2><table><thead><tr>
+<th>阶段</th>
+<th>墙钟时间</th>
+</tr></thead><tbody>
+<tr>
+<td>Stage-1 search</td>
+<td>1h14m14s</td>
+</tr>
+<tr>
+<td>Stage-2 online search</td>
+<td>5h50m58s</td>
+</tr>
+<tr>
+<td>Stage-2 strict validation</td>
+<td>1m10s</td>
+</tr>
+<tr>
+<td>Stage-2 total</td>
+<td>5h52m09s</td>
+</tr>
+<tr>
+<td>两阶段记录总墙钟</td>
+<td>7h06m24s</td>
+</tr>
+</tbody></table></section>
+</div>
+
+<section>
+<h2>Stage-2 最小违反候选</h2>
+<div class="grid">
+<div><h3>资源结果</h3><table><thead><tr>
+<th>项目</th>
+<th>数值</th>
+</tr></thead><tbody>
+<tr>
+<td>Block4 fusion</td>
+<td>12 / 12</td>
+</tr>
+<tr>
+<td>Compute saving</td>
+<td>100.00%</td>
+</tr>
+<tr>
+<td>Communication saving</td>
+<td>91.67%</td>
+</tr>
+<tr>
+<td>Weighted resource score</td>
+<td>95.83%</td>
+</tr>
+<tr>
+<td>Removed K bits</td>
+<td>352</td>
+</tr>
+<tr>
+<td>严格失败约束</td>
+<td>Accuracy mean、Weighted-F1 mean</td>
+</tr>
+</tbody></table></div>
+<div><h3>严格约束</h3><table><thead><tr>
+<th>约束</th>
+<th>观测值</th>
+<th>方向</th>
+<th>阈值</th>
+<th>安全余量</th>
+<th>状态</th>
+</tr></thead><tbody>
+<tr>
+<td>Loss mean</td>
+<td>0.340554902</td>
+<td><=</td>
+<td>0.344825111</td>
+<td>0.004270209</td>
+<td><span class="pass">通过</span></td>
+</tr>
+<tr>
+<td>Accuracy mean</td>
+<td>0.872058824</td>
+<td>&gt;=</td>
+<td>0.875920588</td>
+<td>-0.003861765</td>
+<td><span class="fail">未通过</span></td>
+</tr>
+<tr>
+<td>Weighted-F1 mean</td>
+<td>0.871225162</td>
+<td>&gt;=</td>
+<td>0.874144700</td>
+<td>-0.002919538</td>
+<td><span class="fail">未通过</span></td>
+</tr>
+<tr>
+<td>Loss std</td>
+<td>0.005617481</td>
+<td><=</td>
+<td>0.005707226</td>
+<td>0.000089746</td>
+<td><span class="pass">通过</span></td>
+</tr>
+<tr>
+<td>Accuracy std</td>
+<td>0.005005901</td>
+<td><=</td>
+<td>0.007047013</td>
+<td>0.002041112</td>
+<td><span class="pass">通过</span></td>
+</tr>
+<tr>
+<td>Weighted-F1 std</td>
+<td>0.004950097</td>
+<td><=</td>
+<td>0.007388338</td>
+<td>0.002438241</td>
+<td><span class="pass">通过</span></td>
+</tr>
+</tbody></table></div>
+</div>
+<p class="small">Accuracy 低于阈值 0.003861765，Weighted-F1 低于阈值 0.002919538；loss 与三项稳定性约束均通过。</p>
+</section>
+
+<section>
+<h2>逐层配置</h2>
+<table><thead><tr>
+<th>层</th>
+<th>Block4 fusion</th>
+<th>Precision preset</th>
+<th>K1</th>
+<th>K2</th>
+<th>K3</th>
+<th>K4</th>
+<th>K5</th>
+</tr></thead><tbody>
+<tr>
+<td>1</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>2</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>3</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>4</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>5</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>6</td>
+<td>1</td>
+<td>medium</td>
+<td>9</td>
+<td>8</td>
+<td>8</td>
+<td>10</td>
+<td>9</td>
+</tr>
+<tr>
+<td>7</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>8</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>9</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>10</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+<tr>
+<td>11</td>
+<td>1</td>
+<td>medium</td>
+<td>9</td>
+<td>8</td>
+<td>8</td>
+<td>10</td>
+<td>9</td>
+</tr>
+<tr>
+<td>12</td>
+<td>1</td>
+<td>low</td>
+<td>7</td>
+<td>6</td>
+<td>6</td>
+<td>8</td>
+<td>7</td>
+</tr>
+</tbody></table>
+<p class="small">全部 12 层启用 1 个 Block4 fusion；第 6、11 层使用 Medium，其余层使用 Low。</p>
+</section>
+
+<section>
+<h2>严格 top-5</h2>
+<table><thead><tr>
+<th>在线排名</th>
+<th>最终选中</th>
+<th>Medium 层</th>
+<th>资源分数</th>
+<th>Loss</th>
+<th>Accuracy</th>
+<th>Weighted-F1</th>
+<th>失败约束数</th>
+<th>总违反量</th>
+<th>严格可行</th>
+</tr></thead><tbody>
+<tr>
+<td>1</td>
+<td></td>
+<td>10</td>
+<td>97.917%</td>
+<td>0.341241</td>
+<td>86.9771%</td>
+<td>86.9184%</td>
+<td>2</td>
+<td>0.012696</td>
+<td><span class="fail">否</span></td>
+</tr>
+<tr>
+<td>2</td>
+<td></td>
+<td>11,12</td>
+<td>95.833%</td>
+<td>0.340203</td>
+<td>87.0752%</td>
+<td>86.9724%</td>
+<td>2</td>
+<td>0.010958</td>
+<td><span class="fail">否</span></td>
+</tr>
+<tr>
+<td>3</td>
+<td></td>
+<td>4,11</td>
+<td>95.833%</td>
+<td>0.340062</td>
+<td>87.1569%</td>
+<td>87.0640%</td>
+<td>2</td>
+<td>0.008978</td>
+<td><span class="fail">否</span></td>
+</tr>
+<tr>
+<td>4</td>
+<td>是</td>
+<td>6,11</td>
+<td>95.833%</td>
+<td>0.340555</td>
+<td>87.2059%</td>
+<td>87.1225%</td>
+<td>2</td>
+<td>0.007749</td>
+<td><span class="fail">否</span></td>
+</tr>
+<tr>
+<td>5</td>
+<td></td>
+<td>1,7</td>
+<td>95.833%</td>
+<td>0.342187</td>
+<td>86.9771%</td>
+<td>86.9003%</td>
+<td>2</td>
+<td>0.012903</td>
+<td><span class="fail">否</span></td>
+</tr>
+</tbody></table>
+<p class="small">最终选择不是在线资源分数最高者，而是严格评估后违反量最小者。五个候选均在 Bank-A point gate 失败，因此未进入 Bank B/C certification。</p>
+</section>
+
+<section>
+<h2>完整数据备份</h2>
+<table><thead><tr>
+<th>项目</th>
+<th>数值</th>
+</tr></thead><tbody>
+<tr>
+<td>原始文件数</td>
+<td>29</td>
+</tr>
+<tr>
+<td>原始总字节</td>
+<td>2,785,069,075</td>
+</tr>
+<tr>
+<td>压缩归档字节</td>
+<td>26,321,291</td>
+</tr>
+<tr>
+<td>归档分片数</td>
+<td>1</td>
+</tr>
+<tr>
+<td>流式逐文件恢复校验</td>
+<td>29 / 29 通过</td>
+</tr>
+</tbody></table>
+<p>可浏览的关键 JSON、JSONL、日志和结果位于 <code>readable/</code>；Stage-2 的 2.73 GB <code>observations.jsonl</code> 及其余全部原始文件位于无损归档中。</p>
+<pre>cat archives/run.tar.zst.part-* | zstd -dc | tar -xf -
+sha256sum -c SHA256SUMS</pre>
+<p class="small">归档已实际执行流式解压，并将每个 tar 成员的大小和 SHA-256 与 <code>manifests/raw_files.json</code> 逐项比较，29/29 通过。</p>
+</section>
+</main>
+</body>
+</html>

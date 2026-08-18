@@ -1,0 +1,12 @@
+{
+  "schema_version": "stage2_ga_200_fresh_source_parity_v1",
+  "checked_at": "2026-08-18T16:47:43.224962+00:00",
+  "canonical_branch": "jk_standard_rl",
+  "local_commit": "4ca39159f03d6ccf5c1fc9cdf25027e3f97e784b",
+  "remote_commit": "4ca39159f03d6ccf5c1fc9cdf25027e3f97e784b",
+  "server_commit": "4ca39159f03d6ccf5c1fc9cdf25027e3f97e784b",
+  "local_tree": "0844404b4d16c4108c4507a9f48ee53cafddabbc",
+  "server_tree": "0844404b4d16c4108c4507a9f48ee53cafddabbc",
+  "tracked_clean": true,
+  "parity": true
+}
