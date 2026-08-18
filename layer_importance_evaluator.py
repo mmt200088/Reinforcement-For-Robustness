@@ -3685,7 +3685,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                     or int(self.blb_v3_search_candidate_pool_size) != 2_048
                     or int(self.blb_v3_search_patience_generations)
                     != (
-                        1_000 if self.comparator_stage1_only else 100
+                        1_000 if self.comparator_stage1_only else 2_000
                     )
             ):
                 raise ValueError(

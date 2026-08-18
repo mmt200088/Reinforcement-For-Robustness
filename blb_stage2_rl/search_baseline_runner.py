@@ -2294,14 +2294,14 @@ def run_layerwise_search_baseline(
                 budget != 50_000
                 or int(initial_design_size) != 64
                 or int(candidate_pool_size) != 2_048
-                or int(patience_generations) != 100
+                or int(patience_generations) != 2_000
                 or int(rf_n_estimators) != 128
                 or int(rf_min_samples_leaf) != 2
             )
     ):
         raise ValueError(
             "strict Stage-2 Bayesian RF requires evaluation cap 50,000, "
-            "initial design 64, candidate pool 2,048, patience 100, "
+            "initial design 64, candidate pool 2,048, patience 2,000, "
             "128 trees, and minimum leaf size 2"
         )
     if strict_run and normalized_backend == "greedy":

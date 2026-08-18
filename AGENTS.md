@@ -117,6 +117,12 @@ For future work in this repository, follow the local `karpathy-guidelines` and
   formal Stage-1 comparator preset; Greedy, COINN-GA, generic and Stage-2
   search defaults remain unchanged. Graceful-stop and ordered-observation
   resume semantics are unchanged.
+- Stage-2 formal BO-RF run contract, updated 2026-08-19: the MRPC comparator
+  retains its 50,000 inference-reaching candidate cap but may stop earlier
+  only after 2,000 consecutive inference-reaching candidates without global
+  incumbent improvement. The formal `run bo_rf` launcher pins this value, and
+  strict runner validation rejects other Stage-2 patience values. Stage-1
+  remains at 1,000 and generic search defaults are unchanged.
 - Stage-1 formal comparator batch contract, added 2026-08-16: `bo_rf`,
   `greedy`, and `coinn_ga` must use batch size `16` for MRPC Stage-1 search.
   This matches the launcher default consumed by the authoritative strict-0
