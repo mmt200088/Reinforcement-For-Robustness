@@ -1,0 +1,19 @@
+{
+  "schema_version": "stage2_bo_rf_patience2000_archive_v1",
+  "compression": "zstd level 10 multithreaded",
+  "split_size_bytes": 83886080,
+  "raw_file_manifest": "manifests/raw_files.json",
+  "raw_file_count": 29,
+  "raw_total_bytes": 536151200,
+  "archive_parts": [
+    {
+      "path": "archives/run.tar.zst.part-000",
+      "size_bytes": 5125305,
+      "sha256": "9f8a05e6f07d4a8207ca6f6fa3b4037d0f42651c26b9fb23f4cda2ac8861fe15"
+    }
+  ],
+  "compressed_total_bytes": 5125305,
+  "streaming_full_content_hash_verification": "passed",
+  "verified_file_count": 29,
+  "verified_raw_total_bytes": 536151200
+}

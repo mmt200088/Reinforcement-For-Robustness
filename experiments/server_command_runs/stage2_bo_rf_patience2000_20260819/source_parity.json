@@ -1,0 +1,12 @@
+{
+  "schema_version": "stage2_bo_rf_patience2000_source_parity_v1",
+  "checked_at": "2026-08-19T09:49:58.338293+00:00",
+  "canonical_branch": "jk_standard_rl",
+  "local_commit": "480e154053b1303e140077a05c46295cab95ef0a",
+  "remote_commit": "480e154053b1303e140077a05c46295cab95ef0a",
+  "server_commit": "480e154053b1303e140077a05c46295cab95ef0a",
+  "local_tree": "556ee67f7af1be94cdea349d18145fb032230bad",
+  "server_tree": "556ee67f7af1be94cdea349d18145fb032230bad",
+  "tracked_clean": true,
+  "parity": true
+}
