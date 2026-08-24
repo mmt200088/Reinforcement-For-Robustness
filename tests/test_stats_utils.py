@@ -51,11 +51,9 @@ class StatsUtilsTest(unittest.TestCase):
 class StatsUtilsStaticGuardTest(unittest.TestCase):
     def test_known_report_scripts_use_shared_stats_helpers(self):
         expected_imports = {
-            "scripts/stage2_first10k_monitor.py": "from stats_utils import mean_or_none, median_sorted",
             "scripts/stage2_reward_probe_scaling_report.py": "from stats_utils import median_sorted",
             "scripts/stage1_parallel_report.py": "from stats_utils import safe_div_or_none",
             "scripts/stage1_approx_reuse_benchmark.py": "from stats_utils import mean_or_default",
-            "scripts/blb_fusion_ab_compare.py": "from stats_utils import fraction_true, mean_from_total, mean_or_default, ratio_or_default",
             "scripts/blb_f0_scan_feasible_domain.py": "from stats_utils import mean_or_none, ratio_or_default",
         }
         forbidden = {

@@ -19,7 +19,10 @@ from .layerwise_action import (
     layerwise_schedule,
 )
 from .precision_presets import validate_communication_importance_ratio
-from .sequential_env import BlockRuntimeResult, evaluate_block_from_full_vector
+from .block_materialization import (
+    BlockRuntimeResult,
+    evaluate_block_from_full_vector,
+)
 
 
 _SNAPSHOT_OMIT = object()

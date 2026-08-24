@@ -2508,44 +2508,11 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_eval_interval=None,
                   blb_v3_save_interval=None,
                   blb_v3_calibrate_baseline_samples=None,
-                  blb_v3_rescale_invoker_kind='in_process',
                   blb_v3_inproc_rescale_optimizer_root=None,
-                  blb_v3_warmstart_anchor_episodes=None,
-                  blb_v3_warmstart_neighbor_ramp_episodes=None,
-                  blb_v3_warmstart_neighbor_max_mutations=None,
-                  blb_v3_warmstart_neighbor_max_radius=None,
-                  blb_v3_warmstart_neighbor_sampling=None,
-                  blb_v3_guarded_radius2_enabled=None,
-                  blb_v3_guarded_radius2_min_episode=None,
-                  blb_v3_guarded_radius2_stall_window=None,
-                  blb_v3_guarded_radius2_max_mutations=None,
-                  blb_v3_guarded_radius2_episode_fraction=None,
-                  blb_v3_guarded_radius2_cooldown_episodes=None,
-                  blb_v3_static_invalid_level_mask_enabled=None,
-                  blb_v3_warmstart_baseline_bias=None,
-                  blb_v3_warmstart_bias_gain=None,
-                  blb_v3_ent_coef=None,
-                  blb_v3_ent_coef_anchor=None,
-                  blb_v3_ent_coef_ramp_episodes=None,
-                  blb_v3_action_mask_enabled=False,
-                  blb_v3_action_mask_mode='none',
-                  blb_v3_action_mask_file='',
-                  blb_v3_action_mask_baseline_logit_bonus=0.0,
-                  blb_v3_action_mask_source='',
-                  blb_v3_sequential_rl=True,
-                  blb_v3_sequential_invalid_penalty=1.0,
-                  blb_v3_sequential_cost_shaping_coeff=0.0,
-                  blb_v3_sequential_fusion_shaping_coeff=0.0,
-                  blb_v3_sequential_early_terminate_on_invalid=False,
                   blb_v3_seed=None,
                   blb_v3_reward_devices="",
-                  stage2_rl_devices="",
-                  blb_v3_fast_reward_mode_enabled=False,
                   blb_v3_online_k_trials=3,
                   blb_v3_terminal_eval_batch_size=4,
-                  blb_v3_protected_k1_enabled=False,
-                  blb_v3_protected_k1_guard_sigma=4.0,
-                  blb_v3_protected_k1_audit_fraction=0.02,
                   blb_v3_promotion_validation_trials=15,
                   blb_v3_final_selection_top_n=20,
                   blb_v3_final_selection_validation_trials=15,
@@ -2558,15 +2525,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_final_constraint_probability=0.95,
                   blb_v3_min_convergence_episodes=90000,
                   blb_v3_convergence_patience_updates=100,
-                  blb_v3_substage_mode=False,
-                  blb_v3_substage_block_order="1,2,4,5",
-                  blb_v3_substage_frozen_blocks="3",
-                  blb_v3_substage_episodes_each=15000,
-                  blb_v3_substage_promotion_top_k=5,
-                  blb_v3_substage_promotion_trials=8,
-                  blb_v3_fusion_count_action=True,
-                  blb_v3_decision_granularity="layer",
-                  blb_v3_reward_design="robust_constrained",
                   blb_v3_search_backend="ppo",
                   blb_v3_search_evaluation_budget=0,
                   blb_v3_search_initial_design_size=64,
@@ -2579,17 +2537,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_search_full_validation=True,
                   comparator_smoke=False,
                   comparator_stage1_only=False,
-                  blb_v3_fusion_neighbor_curriculum=False,
-                  blb_v3_fusion_probe_interval=0,
-                  blb_v3_fusion_exploration_epsilon=0.0,
-                  blb_v3_truncation_backend='binary',
-                  blb_v3_truncation_ring_bits=43,
-                  blb_v3_truncation_source_fractional_bits=24,
-                  stage2_workers_per_device=1,
-                  blb_v3_osr_results_path="",
-                  blb_v3_osr_scan_only=False,
-                  blb_v3_osr_num_combo_samples=300,
-                  blb_v3_osr_allow_fingerprint_mismatch=False,
                   glue_data_protocol=None,
                   mrpc_reproducibility=None,
                   final_eval_require_rescale_optimizer=False):
@@ -2617,12 +2564,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 stage2_inference_batch_size, "stage2_inference_batch_size",
             )
         )
-        try:
-            self.stage2_workers_per_device = max(
-                1, int(stage2_workers_per_device)
-            )
-        except Exception:
-            self.stage2_workers_per_device = 1
         self.glue_data_protocol = glue_data_protocol
         self.dataset_protocol = (
             self.glue_data_protocol.as_payload()
@@ -3184,222 +3125,89 @@ class LayerImportanceEvaluator(TrainerCallback):
         self.curriculum_phase = 1  # 1=探索, 2=收紧, 3=精调
         self.constraint_slack = CURRICULUM_INITIAL_SLACK  # 当前约束放宽系数
 
-        # ---------- Stage-2 RL variant 路由（新版 BLB v3 / 旧版 v2 二选一） ----------
-        # BLB v3 training always uses the real in-process Rescale_optimizer path.
-        self.blb_v3_rescale_invoker_kind = str(
-            blb_v3_rescale_invoker_kind or "in_process"
-        ).lower().replace("-", "_")
         self.blb_v3_inproc_rescale_optimizer_root = (
-            str(blb_v3_inproc_rescale_optimizer_root)
-            if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None
+            None
+            if blb_v3_inproc_rescale_optimizer_root in (None, "")
+            else str(blb_v3_inproc_rescale_optimizer_root)
         )
         self.blb_v3_rollout_size = (
-            int(blb_v3_rollout_size) if blb_v3_rollout_size not in (None, "") else None
+            None if blb_v3_rollout_size in (None, "") else int(blb_v3_rollout_size)
         )
         self.blb_v3_eval_interval = (
-            int(blb_v3_eval_interval) if blb_v3_eval_interval not in (None, "") else None
+            None if blb_v3_eval_interval in (None, "") else int(blb_v3_eval_interval)
         )
         self.blb_v3_save_interval = (
-            int(blb_v3_save_interval) if blb_v3_save_interval not in (None, "") else None
+            None if blb_v3_save_interval in (None, "") else int(blb_v3_save_interval)
         )
         self.blb_v3_calibrate_baseline_samples = (
-            int(blb_v3_calibrate_baseline_samples)
-            if blb_v3_calibrate_baseline_samples not in (None, "") else None
+            None
+            if blb_v3_calibrate_baseline_samples in (None, "")
+            else int(blb_v3_calibrate_baseline_samples)
         )
-        self.blb_v3_warmstart_anchor_episodes = (
-            int(blb_v3_warmstart_anchor_episodes)
-            if blb_v3_warmstart_anchor_episodes not in (None, "") else None
+        self.blb_v3_seed = (
+            None if blb_v3_seed in (None, "") else int(blb_v3_seed)
         )
-        self.blb_v3_warmstart_neighbor_ramp_episodes = (
-            int(blb_v3_warmstart_neighbor_ramp_episodes)
-            if blb_v3_warmstart_neighbor_ramp_episodes not in (None, "") else None
-        )
-        self.blb_v3_warmstart_neighbor_max_mutations = (
-            int(blb_v3_warmstart_neighbor_max_mutations)
-            if blb_v3_warmstart_neighbor_max_mutations not in (None, "") else None
-        )
-        self.blb_v3_warmstart_neighbor_max_radius = (
-            int(blb_v3_warmstart_neighbor_max_radius)
-            if blb_v3_warmstart_neighbor_max_radius not in (None, "") else None
-        )
-        self.blb_v3_warmstart_neighbor_sampling = (
-            None if blb_v3_warmstart_neighbor_sampling in (None, "") else
-            self._coerce_bool_flag(
-                blb_v3_warmstart_neighbor_sampling,
-                'blb_v3_warmstart_neighbor_sampling',
-            )
-        )
-        self.blb_v3_guarded_radius2_enabled = (
-            None if blb_v3_guarded_radius2_enabled in (None, "") else
-            self._coerce_bool_flag(
-                blb_v3_guarded_radius2_enabled,
-                'blb_v3_guarded_radius2_enabled',
-            )
-        )
-        self.blb_v3_guarded_radius2_min_episode = (
-            int(blb_v3_guarded_radius2_min_episode)
-            if blb_v3_guarded_radius2_min_episode not in (None, "") else None
-        )
-        self.blb_v3_guarded_radius2_stall_window = (
-            int(blb_v3_guarded_radius2_stall_window)
-            if blb_v3_guarded_radius2_stall_window not in (None, "") else None
-        )
-        self.blb_v3_guarded_radius2_max_mutations = (
-            int(blb_v3_guarded_radius2_max_mutations)
-            if blb_v3_guarded_radius2_max_mutations not in (None, "") else None
-        )
-        self.blb_v3_guarded_radius2_episode_fraction = (
-            float(blb_v3_guarded_radius2_episode_fraction)
-            if blb_v3_guarded_radius2_episode_fraction not in (None, "") else None
-        )
-        self.blb_v3_guarded_radius2_cooldown_episodes = (
-            int(blb_v3_guarded_radius2_cooldown_episodes)
-            if blb_v3_guarded_radius2_cooldown_episodes not in (None, "") else None
-        )
-        self.blb_v3_static_invalid_level_mask_enabled = (
-            None if blb_v3_static_invalid_level_mask_enabled in (None, "") else
-            self._coerce_bool_flag(
-                blb_v3_static_invalid_level_mask_enabled,
-                'blb_v3_static_invalid_level_mask_enabled',
-            )
-        )
-        self.blb_v3_warmstart_baseline_bias = (
-            None if blb_v3_warmstart_baseline_bias in (None, "") else
-            self._coerce_bool_flag(
-                blb_v3_warmstart_baseline_bias,
-                'blb_v3_warmstart_baseline_bias',
-            )
-        )
-        self.blb_v3_warmstart_bias_gain = (
-            float(blb_v3_warmstart_bias_gain)
-            if blb_v3_warmstart_bias_gain not in (None, "") else None
-        )
-        self.blb_v3_ent_coef = (
-            float(blb_v3_ent_coef) if blb_v3_ent_coef not in (None, "") else None
-        )
-        self.blb_v3_ent_coef_anchor = (
-            float(blb_v3_ent_coef_anchor)
-            if blb_v3_ent_coef_anchor not in (None, "") else None
-        )
-        self.blb_v3_ent_coef_ramp_episodes = (
-            int(blb_v3_ent_coef_ramp_episodes)
-            if blb_v3_ent_coef_ramp_episodes not in (None, "") else None
-        )
-        self.blb_v3_action_mask_enabled = self._coerce_bool_flag(
-            blb_v3_action_mask_enabled,
-            'blb_v3_action_mask_enabled',
-        )
-        self.blb_v3_action_mask_mode = (
-            str(blb_v3_action_mask_mode).strip()
-            if blb_v3_action_mask_mode not in (None, "") else "none"
-        )
-        self.blb_v3_action_mask_file = (
-            str(blb_v3_action_mask_file).strip()
-            if blb_v3_action_mask_file not in (None, "") else ""
-        )
-        self.blb_v3_action_mask_source = (
-            str(blb_v3_action_mask_source).strip()
-            if blb_v3_action_mask_source not in (None, "") else ""
-        )
-        try:
-            self.blb_v3_action_mask_baseline_logit_bonus = float(
-                blb_v3_action_mask_baseline_logit_bonus or 0.0
-            )
-        except Exception:
-            self.blb_v3_action_mask_baseline_logit_bonus = 0.0
-        if self.blb_v3_action_mask_mode.lower() not in ("", "none", "off", "disabled"):
-            self.blb_v3_action_mask_enabled = True
-
-        # Per-block sequential RL (default path since 2026-05-15)
-        self.blb_v3_sequential_rl = self._coerce_bool_flag(
-            blb_v3_sequential_rl,
-            'blb_v3_sequential_rl',
-        ) if blb_v3_sequential_rl not in (None, "") else True
-        try:
-            self.blb_v3_sequential_invalid_penalty = float(blb_v3_sequential_invalid_penalty)
-        except Exception:
-            self.blb_v3_sequential_invalid_penalty = 1.0
-        try:
-            self.blb_v3_sequential_cost_shaping_coeff = float(blb_v3_sequential_cost_shaping_coeff)
-        except Exception:
-            self.blb_v3_sequential_cost_shaping_coeff = 0.0
-        try:
-            self.blb_v3_sequential_fusion_shaping_coeff = float(blb_v3_sequential_fusion_shaping_coeff)
-        except Exception:
-            self.blb_v3_sequential_fusion_shaping_coeff = 0.0
-        self.blb_v3_sequential_early_terminate_on_invalid = self._coerce_bool_flag(
-            blb_v3_sequential_early_terminate_on_invalid,
-            'blb_v3_sequential_early_terminate_on_invalid',
-        )
-        # Multi-seed: forwarded by tools/run_multi_seed.sh. None means use
-        # the BLBStage2TrainConfig default (seed=42).
-        if blb_v3_seed in (None, ""):
-            self.blb_v3_seed = None
-        else:
-            try:
-                self.blb_v3_seed = int(blb_v3_seed)
-            except Exception:
-                self.blb_v3_seed = None
-        # 2026-05-19: two-GPU reward-probe parallelism.
-        # Empty / single device → BLBStage2Env keeps the single-GPU codepath.
-        # ``"0,1"`` → BLBStage2RLRunner constructs a ProbeRunner that splits
-        # K trials across the listed devices.
         self.blb_v3_reward_devices = (
             "" if blb_v3_reward_devices is None else str(blb_v3_reward_devices)
         )
-        # 2026-05-24: Stage-1 RL multi-GPU rollout parallelism.
-        # Empty / single device → existing single-GPU per-episode loop.
-        # ``"0,1,2,3"`` → Stage1ParallelRunner runs 4 workers, each collecting
-        # ``PPO_UPDATE_INTERVAL / num_workers`` complete episodes per PPO
-        # update window. See ``stage1_rl/parallel_runner.py``.
         self.stage1_rl_devices = (
             "" if stage1_rl_devices is None else str(stage1_rl_devices)
         )
-        # 2026-06-10: Stage-2 RL episode-parallel rollout (fusion mode only).
-        # Empty → legacy serial loop / --blb-v3-reward-devices K-split.
-        # ``"0,1,2,3,4"`` → Stage2ParallelRunner workers each run complete
-        # episodes (rollout + replan + serial K-trial probe) on their own
-        # model replica with global-episode seeding (1-GPU == N-GPU results).
-        # See ``blb_stage2_rl/parallel_runner.py``.
-        self.stage2_rl_devices = (
-            "" if stage2_rl_devices is None else str(stage2_rl_devices)
+        self.blb_v3_online_k_trials = max(1, int(blb_v3_online_k_trials))
+        self.blb_v3_terminal_eval_batch_size = max(
+            1, int(blb_v3_terminal_eval_batch_size)
         )
-        self.blb_v3_fast_reward_mode_enabled = self._coerce_bool_flag(
-            blb_v3_fast_reward_mode_enabled,
-            "blb_v3_fast_reward_mode_enabled",
+        self.blb_v3_promotion_validation_trials = max(
+            1, int(blb_v3_promotion_validation_trials)
         )
-        try:
-            self.blb_v3_online_k_trials = max(1, int(blb_v3_online_k_trials))
-        except Exception:
-            self.blb_v3_online_k_trials = 3
-        try:
-            self.blb_v3_terminal_eval_batch_size = max(1, int(blb_v3_terminal_eval_batch_size))
-        except Exception:
-            self.blb_v3_terminal_eval_batch_size = 4
-        self.blb_v3_protected_k1_enabled = self._coerce_bool_flag(
-            blb_v3_protected_k1_enabled,
-            "blb_v3_protected_k1_enabled",
+        self.blb_v3_final_selection_top_n = max(
+            1, int(blb_v3_final_selection_top_n)
         )
-        self.blb_v3_protected_k1_guard_sigma = float(
-            blb_v3_protected_k1_guard_sigma
+        self.blb_v3_final_selection_validation_trials = max(
+            1, int(blb_v3_final_selection_validation_trials)
         )
-        self.blb_v3_protected_k1_audit_fraction = float(
-            blb_v3_protected_k1_audit_fraction
+        self.blb_v3_promotion_margin_window = max(
+            0.0, float(blb_v3_promotion_margin_window)
         )
-        try:
-            self.blb_v3_promotion_validation_trials = max(1, int(blb_v3_promotion_validation_trials))
-        except Exception:
-            self.blb_v3_promotion_validation_trials = 15
-        try:
-            self.blb_v3_final_selection_top_n = max(1, int(blb_v3_final_selection_top_n))
-        except Exception:
-            self.blb_v3_final_selection_top_n = 20
-        try:
-            self.blb_v3_final_selection_validation_trials = max(
-                1, int(blb_v3_final_selection_validation_trials)
+        self.blb_v3_baseline_groups = int(blb_v3_baseline_groups)
+        self.blb_v3_baseline_trials_per_group = int(
+            blb_v3_baseline_trials_per_group
+        )
+        self.blb_v3_constraint_bootstrap_samples = int(
+            blb_v3_constraint_bootstrap_samples
+        )
+        if min(
+            self.blb_v3_baseline_groups,
+            self.blb_v3_baseline_trials_per_group,
+            self.blb_v3_constraint_bootstrap_samples,
+        ) <= 0:
+            raise ValueError("robust baseline counts must be positive")
+        for field_name, value in (
+            (
+                "blb_v3_online_constraint_probability",
+                blb_v3_online_constraint_probability,
+            ),
+            (
+                "blb_v3_promotion_constraint_probability",
+                blb_v3_promotion_constraint_probability,
+            ),
+            (
+                "blb_v3_final_constraint_probability",
+                blb_v3_final_constraint_probability,
+            ),
+        ):
+            probability = float(value)
+            if not 0.0 < probability <= 1.0:
+                raise ValueError(f"{field_name} must be in (0, 1]")
+            setattr(self, field_name, probability)
+        if not (
+            self.blb_v3_online_constraint_probability
+            <= self.blb_v3_promotion_constraint_probability
+            <= self.blb_v3_final_constraint_probability
+        ):
+            raise ValueError(
+                "constraint probabilities must satisfy online <= promotion <= final"
             )
-        except Exception:
-            self.blb_v3_final_selection_validation_trials = 15
         self.blb_v3_min_convergence_episodes = int(
             blb_v3_min_convergence_episodes
         )
@@ -3407,62 +3215,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             blb_v3_convergence_patience_updates
         )
         if self.blb_v3_min_convergence_episodes < 90_000:
-            raise ValueError(
-                "blb_v3_min_convergence_episodes must be at least 90000"
-            )
+            raise ValueError("minimum convergence episode must be at least 90000")
         if self.blb_v3_convergence_patience_updates < 100:
-            raise ValueError(
-                "blb_v3_convergence_patience_updates must be at least 100"
-            )
-        try:
-            self.blb_v3_promotion_margin_window = max(0.0, float(blb_v3_promotion_margin_window))
-        except Exception:
-            self.blb_v3_promotion_margin_window = 0.25
-        self.blb_v3_baseline_groups = int(blb_v3_baseline_groups)
-        self.blb_v3_baseline_trials_per_group = int(blb_v3_baseline_trials_per_group)
-        self.blb_v3_constraint_bootstrap_samples = int(blb_v3_constraint_bootstrap_samples)
-        if min(
-                self.blb_v3_baseline_groups,
-                self.blb_v3_baseline_trials_per_group,
-                self.blb_v3_constraint_bootstrap_samples,
-        ) <= 0:
-            raise ValueError("robust baseline counts and bootstrap samples must be positive")
-        for field_name, raw_value in (
-                ("blb_v3_online_constraint_probability", blb_v3_online_constraint_probability),
-                ("blb_v3_promotion_constraint_probability", blb_v3_promotion_constraint_probability),
-                ("blb_v3_final_constraint_probability", blb_v3_final_constraint_probability),
-        ):
-            probability = float(raw_value)
-            if not 0.0 < probability <= 1.0:
-                raise ValueError(f"{field_name} must be in (0, 1]")
-            setattr(self, field_name, probability)
-        if not (
-                self.blb_v3_online_constraint_probability
-                <= self.blb_v3_promotion_constraint_probability
-                <= self.blb_v3_final_constraint_probability
-        ):
-            raise ValueError(
-                "constraint probabilities must satisfy online <= promotion <= final"
-            )
-        # 4-sub-stage Stage-2 RL (opt-in 2026-05-27). Read by runner.py
-        # into BLBStage2TrainConfig.substage_* fields.
-        self.blb_v3_substage_mode = self._coerce_bool_flag(
-            blb_v3_substage_mode, 'blb_v3_substage_mode',
-        )
-        self.blb_v3_fusion_count_action = self._coerce_bool_flag(
-            blb_v3_fusion_count_action, 'blb_v3_fusion_count_action',
-        )
-        from blb_stage2_rl.layerwise_runner import (
-            normalize_decision_granularity,
-            normalize_reward_design,
-            validate_stage2_episode_limit_mode,
-        )
-        self.blb_v3_decision_granularity = normalize_decision_granularity(
-            blb_v3_decision_granularity
-        )
-        self.blb_v3_reward_design = normalize_reward_design(
-            blb_v3_reward_design
-        )
+            raise ValueError("convergence patience must be at least 100 updates")
+
         from blb_stage2_rl.search_baselines import (
             normalize_search_backend,
             validate_comparator_scientific_parameters,
@@ -3496,233 +3252,108 @@ class LayerImportanceEvaluator(TrainerCallback):
             blb_v3_search_rf_min_samples_leaf
         )
         self.blb_v3_search_full_validation = self._coerce_bool_flag(
-            blb_v3_search_full_validation,
-            "blb_v3_search_full_validation",
+            blb_v3_search_full_validation, "blb_v3_search_full_validation"
         )
         self.comparator_smoke = self._coerce_bool_flag(
-            comparator_smoke, "comparator_smoke",
+            comparator_smoke, "comparator_smoke"
         )
         self.comparator_stage1_only = self._coerce_bool_flag(
-            comparator_stage1_only, "comparator_stage1_only",
+            comparator_stage1_only, "comparator_stage1_only"
         )
-        if self.comparator_smoke and self.blb_v3_search_backend == "ppo":
-            raise ValueError(
-                "comparator_smoke is only valid for bo_rf, greedy, or coinn_ga"
-            )
-        if self.comparator_stage1_only and self.blb_v3_search_backend == "ppo":
-            raise ValueError(
-                "comparator_stage1_only is only valid for bo_rf, greedy, "
-                "or coinn_ga"
-            )
-        if (
-                self.blb_v3_search_backend == "ppo"
-                and self.stage2_inference_batch_size is not None
-                and int(self.stage2_inference_batch_size) != int(self.batch_size)
-        ):
-            raise ValueError(
-                "stage2_inference_batch_size may differ from the global batch only "
-                "for two-stage comparators; PPO checkpoint identity remains unchanged"
-            )
-        if self.blb_v3_search_backend != "ppo":
+        if self.blb_v3_search_backend == "ppo":
+            if self.comparator_smoke or self.comparator_stage1_only:
+                raise ValueError("comparator flags require a comparator backend")
+        else:
             if self.mrpc_reproducibility is None:
-                raise ValueError(
-                    "two-stage comparators require the MRPC reproducibility fixture"
-                )
-            model_id = str(getattr(
-                getattr(self.model, "config", None),
-                "_name_or_path",
-                "",
-            ))
+                raise ValueError("comparators require the MRPC reproducibility fixture")
+            model_id = str(getattr(getattr(self.model, "config", None), "_name_or_path", ""))
             if (
-                    int(self.total_layers) != 12
-                    or "mrpc" not in str(self.data_path).lower()
-                    or model_id.lower()
-                    != "textattack/bert-base-uncased-mrpc"
+                int(self.total_layers) != 12
+                or str(self.data_path).lower() != "mrpc"
+                or model_id.lower() != "textattack/bert-base-uncased-mrpc"
             ):
                 raise ValueError(
-                    "two-stage comparators require exactly "
-                    "textattack/bert-base-uncased-MRPC on 12-layer GLUE MRPC"
+                    "formal comparators require textattack BERT-base MRPC"
                 )
-            if int(self.final_eval_random_seed) != 42:
-                raise ValueError(
-                    "two-stage comparators require Stage-1 seed 42"
-                )
-            effective_stage2_seed = (
-                42 if self.blb_v3_seed is None else int(self.blb_v3_seed)
-            )
-            if effective_stage2_seed != 42:
-                raise ValueError(
-                    "two-stage comparators require Stage-2 seed 42"
-                )
-            effective_stage2_batch_size = (
-                self.batch_size
-                if self.stage2_inference_batch_size is None
-                else int(self.stage2_inference_batch_size)
-            )
-            if (
-                    effective_stage2_batch_size
-                    != MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE
-            ):
-                raise ValueError(
-                    "two-stage comparators require Stage-2 inference batch size "
-                    f"{MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE}"
-                )
+            if int(self.final_eval_random_seed) != 42 or int(self.blb_v3_seed or 42) != 42:
+                raise ValueError("formal comparators require seed 42")
+            if int(self.stage2_inference_batch_size or self.batch_size) != 64:
+                raise ValueError("formal comparators require Stage-2 batch size 64")
             validate_comparator_scientific_parameters(
                 communication_importance_ratio=(
                     self.stage2_communication_importance_ratio
                 ),
-                truncation_backend=blb_v3_truncation_backend,
-                truncation_ring_bits=blb_v3_truncation_ring_bits,
-                truncation_source_fractional_bits=(
-                    blb_v3_truncation_source_fractional_bits
-                ),
+                truncation_backend="binary",
+                truncation_ring_bits=43,
+                truncation_source_fractional_bits=24,
             )
-            layerwise_contract = (
-                bool(self.blb_v3_sequential_rl),
-                bool(self.blb_v3_substage_mode),
-                bool(self.blb_v3_fusion_count_action),
-                str(self.blb_v3_decision_granularity),
-                str(self.blb_v3_reward_design),
-                bool(self.blb_v3_static_invalid_level_mask_enabled or False),
-                int(self.blb_v3_terminal_eval_batch_size),
-                int(self.stage2_workers_per_device),
-            )
-            if layerwise_contract != (
-                    True, False, True, "layer", "robust_constrained", False,
-                    4, 1,
-            ):
-                raise ValueError(
-                    "two-stage comparators require the Stage-2 RL layerwise "
-                    "robust action and materialization contract"
-                )
-            effective_calibration_samples = (
-                8
-                if self.blb_v3_calibrate_baseline_samples is None
-                else int(self.blb_v3_calibrate_baseline_samples)
+            calibration_samples = int(
+                self.blb_v3_calibrate_baseline_samples or 8
             )
             evidence_contract = (
-                effective_calibration_samples,
-                int(self.blb_v3_online_k_trials),
-                int(self.blb_v3_constraint_bootstrap_samples),
-                float(self.blb_v3_online_constraint_probability),
-                float(self.blb_v3_promotion_constraint_probability),
-                float(self.blb_v3_final_constraint_probability),
-                bool(self.blb_v3_protected_k1_enabled),
+                calibration_samples,
+                self.blb_v3_online_k_trials,
+                self.blb_v3_constraint_bootstrap_samples,
+                self.blb_v3_online_constraint_probability,
+                self.blb_v3_promotion_constraint_probability,
+                self.blb_v3_final_constraint_probability,
             )
-            if evidence_contract != (8, 3, 4096, 0.50, 0.80, 0.95, False):
-                raise ValueError(
-                    "two-stage comparators require the Stage-2 RL baseline, "
-                    "online, bootstrap, and confidence evidence contract"
-                )
+            if evidence_contract != (8, 3, 4096, 0.50, 0.80, 0.95):
+                raise ValueError("formal comparator evidence contract mismatch")
             if self.comparator_smoke:
-                if int(self.blb_v3_search_evaluation_budget) != 1:
-                    raise ValueError(
-                        "comparator smoke requires Stage-2 evaluation budget 1"
-                    )
-                if self.blb_v3_search_full_validation:
-                    raise ValueError(
-                        "comparator smoke disables Stage-2 strict validation"
-                    )
-                if int(self.stage2_k_trials) != 3:
-                    raise ValueError(
-                        "comparator smoke requires Stage-2 online trial count 3"
-                    )
-                if not self.skip_final_eval:
-                    raise ValueError(
-                        "comparator smoke requires final evaluation to be skipped"
-                    )
+                if (
+                    self.blb_v3_search_evaluation_budget != 1
+                    or self.blb_v3_search_full_validation
+                    or int(self.stage2_k_trials) != 3
+                    or not self.skip_final_eval
+                ):
+                    raise ValueError("comparator smoke contract mismatch")
             else:
-                backend_budget = {
-                    "bo_rf": (
-                        10_000 if self.comparator_stage1_only else 50_000
-                    ),
-                    "greedy": 6 ** 12,
+                expected_budget = {
+                    "bo_rf": 10_000 if self.comparator_stage1_only else 50_000,
+                    "greedy": 6**12,
                     "coinn_ga": 11_464,
                 }[self.blb_v3_search_backend]
-                if int(self.blb_v3_search_evaluation_budget) != backend_budget:
-                    raise ValueError(
-                        f"{self.blb_v3_search_backend} comparator requires "
-                        f"evaluation budget/safety cap {backend_budget}"
-                    )
+                if self.blb_v3_search_evaluation_budget != expected_budget:
+                    raise ValueError("formal comparator evaluation budget mismatch")
             if self.blb_v3_search_backend == "coinn_ga" and (
-                    int(self.blb_v3_search_population_size) != 64
-                    or int(self.blb_v3_search_patience_generations) != 5
+                self.blb_v3_search_population_size != 64
+                or self.blb_v3_search_patience_generations != 5
             ):
-                raise ValueError(
-                    "COINN-GA comparator requires Stage-2 population 64, "
-                    "patience 5 as a diagnostic counter, the "
-                    "200-generation full-run contract with no "
-                    "incumbent-stagnation early "
-                    "stop, and the 11,464-inference full-run contract"
-                )
+                raise ValueError("formal COINN-GA contract mismatch")
             if self.blb_v3_search_backend == "bo_rf" and (
-                    int(self.blb_v3_search_initial_design_size) != 64
-                    or int(self.blb_v3_search_candidate_pool_size) != 2_048
-                    or int(self.blb_v3_search_patience_generations)
-                    != (
-                        1_000 if self.comparator_stage1_only else 2_000
-                    )
+                self.blb_v3_search_initial_design_size != 64
+                or self.blb_v3_search_candidate_pool_size != 2_048
+                or self.blb_v3_search_patience_generations
+                != (1_000 if self.comparator_stage1_only else 2_000)
+                or self.blb_v3_search_rf_n_estimators != 128
+                or self.blb_v3_search_rf_min_samples_leaf != 2
             ):
-                raise ValueError(
-                    "BO-RF comparator requires initial design 64, "
-                    "candidate pool 2,048, and the mode-specific "
-                    "no-improvement patience"
-                )
-            if self.blb_v3_search_backend == "bo_rf" and (
-                    int(self.blb_v3_search_rf_n_estimators) != 128
-                    or int(self.blb_v3_search_rf_min_samples_leaf) != 2
-            ):
-                raise ValueError(
-                    "BO-RF comparator requires 128 estimators and leaf size 2"
-                )
+                raise ValueError("formal BO-RF contract mismatch")
             if self.comparator_stage1_only:
-                if (
-                        self.skip_stage1_rl
-                        or not self.skip_noise_rl
-                        or not self.skip_final_eval
-                ):
-                    raise ValueError(
-                        "comparator Stage-1-only mode must run Stage-1 and "
-                        "skip Stage-2/final evaluation"
-                    )
+                if self.skip_stage1_rl or not self.skip_noise_rl or not self.skip_final_eval:
+                    raise ValueError("Stage-1-only comparator routing mismatch")
             elif self.skip_stage1_rl or self.skip_noise_rl:
-                raise ValueError(
-                    "two-stage comparator must run both Stage-1 and Stage-2"
-                )
+                raise ValueError("two-stage comparator must run both searches")
             if (
-                    not self.comparator_smoke
-                    and not self.blb_v3_search_full_validation
+                not self.comparator_smoke
+                and (
+                    not self.blb_v3_search_full_validation
+                    or self.blb_v3_final_selection_top_n != 5
+                )
             ):
-                raise ValueError(
-                    "two-stage comparator requires full Stage-2 strict "
-                    "validation"
-                )
-            if (
-                    not self.comparator_smoke
-                    and int(self.blb_v3_final_selection_top_n) != 5
-            ):
-                raise ValueError(
-                    "two-stage comparator must strictly validate top 5"
-                )
-            if int(self.blb_v3_search_mutation_max_coordinates) != 4:
-                raise ValueError(
-                    "formal comparator keeps the fixed four-layer mutation cap"
-                )
+                raise ValueError("formal comparator strict top-5 contract mismatch")
+            if self.blb_v3_search_mutation_max_coordinates != 4:
+                raise ValueError("formal comparator mutation cap mismatch")
             trial_contract = (
-                int(self.blb_v3_baseline_groups),
-                int(self.blb_v3_baseline_trials_per_group),
+                self.blb_v3_baseline_groups,
+                self.blb_v3_baseline_trials_per_group,
                 int(self.stage2_k_trials),
-                int(self.blb_v3_promotion_validation_trials),
-                int(self.blb_v3_final_selection_validation_trials),
+                self.blb_v3_promotion_validation_trials,
+                self.blb_v3_final_selection_validation_trials,
             )
-            if (
-                    not self.comparator_smoke
-                    and trial_contract != (5, 3, 3, 15, 15)
-            ):
-                raise ValueError(
-                    "two-stage comparator requires the v12 trial "
-                    "contract (baseline=5x3, online=3, strict banks=15 each)"
-                )
+            if not self.comparator_smoke and trial_contract != (5, 3, 3, 15, 15):
+                raise ValueError("formal comparator trial contract mismatch")
             constraint_contract = (
                 float(self.error_threshold),
                 float(self.stage2_limit_tolerance),
@@ -3731,99 +3362,14 @@ class LayerImportanceEvaluator(TrainerCallback):
                 int(self.stage2_probe_size),
             )
             if not (
-                    math.isclose(constraint_contract[0], 0.001)
-                    and math.isclose(constraint_contract[1], 0.001)
-                    and math.isclose(constraint_contract[2], 1.2)
-                    and math.isclose(constraint_contract[3], 2.0)
-                    and constraint_contract[4] == 256
+                math.isclose(constraint_contract[0], 0.001)
+                and math.isclose(constraint_contract[1], 0.001)
+                and math.isclose(constraint_contract[2], 1.2)
+                and math.isclose(constraint_contract[3], 2.0)
+                and constraint_contract[4] == 256
             ):
-                raise ValueError(
-                    "two-stage comparator requires the historical Stage-2 RL "
-                    "constraint contract (precision tolerance 0.001 in both "
-                    "stages, raw stability tolerance 1.2, effective stability "
-                    "multiplier 2.0, and a 256-example F1 probe)"
-                )
-        if (
-                not self.skip_noise_rl
-                and self.search_algorithm != "ga"
-                and self.blb_v3_search_backend == "ppo"
-        ):
-            validate_stage2_episode_limit_mode(
-                self.stage2_rl_episodes,
-                fusion_count_action=self.blb_v3_fusion_count_action,
-                decision_granularity=self.blb_v3_decision_granularity,
-                reward_design=self.blb_v3_reward_design,
-                sequential_rl=self.blb_v3_sequential_rl,
-                substage_mode=self.blb_v3_substage_mode,
-                stage2_rl_variant="blb_v3",
-            )
-        self.blb_v3_fusion_neighbor_curriculum = self._coerce_bool_flag(
-            blb_v3_fusion_neighbor_curriculum, 'blb_v3_fusion_neighbor_curriculum',
-        )
-        try:
-            self.blb_v3_fusion_probe_interval = int(blb_v3_fusion_probe_interval)
-        except Exception:
-            self.blb_v3_fusion_probe_interval = 0
-        try:
-            self.blb_v3_fusion_exploration_epsilon = float(blb_v3_fusion_exploration_epsilon)
-        except Exception:
-            self.blb_v3_fusion_exploration_epsilon = 0.0
-        self.blb_v3_truncation_backend = str(
-            blb_v3_truncation_backend or "binary"
-        ).strip().lower()
-        if self.blb_v3_truncation_backend not in {
-            "binary", "decimal", "stochastic_ring",
-        }:
-            raise ValueError(
-                "blb_v3_truncation_backend must be one of "
-                "binary, decimal, stochastic_ring"
-            )
-        self.blb_v3_truncation_ring_bits = int(blb_v3_truncation_ring_bits)
-        if not 2 <= self.blb_v3_truncation_ring_bits <= 62:
-            raise ValueError("blb_v3_truncation_ring_bits must be in [2, 62]")
-        self.blb_v3_truncation_source_fractional_bits = int(
-            blb_v3_truncation_source_fractional_bits
-        )
-        if self.blb_v3_truncation_source_fractional_bits < 0:
-            raise ValueError(
-                "blb_v3_truncation_source_fractional_bits must be non-negative"
-            )
-        if (
-                self.blb_v3_truncation_backend == "stochastic_ring"
-                and self.blb_v3_truncation_source_fractional_bits
-                >= self.blb_v3_truncation_ring_bits
-        ):
-            raise ValueError(
-                "stochastic_ring source fractional bits must be smaller than ring bits"
-            )
-        self.blb_v3_substage_block_order = str(blb_v3_substage_block_order or "1,2,4,5")
-        self.blb_v3_substage_frozen_blocks = str(blb_v3_substage_frozen_blocks or "3")
-        try:
-            self.blb_v3_substage_episodes_each = max(1, int(blb_v3_substage_episodes_each))
-        except Exception:
-            self.blb_v3_substage_episodes_each = 15000
-        try:
-            self.blb_v3_substage_promotion_top_k = max(1, int(blb_v3_substage_promotion_top_k))
-        except Exception:
-            self.blb_v3_substage_promotion_top_k = 5
-        try:
-            self.blb_v3_substage_promotion_trials = max(1, int(blb_v3_substage_promotion_trials))
-        except Exception:
-            self.blb_v3_substage_promotion_trials = 8
-        # COINN-style OSR pre-prune (opt-in 2026-05-27). Forwarded to
-        # blb_stage2_rl/runner.py → BLBStage2TrainConfig.osr_*.
-        self.blb_v3_osr_results_path = str(blb_v3_osr_results_path or "")
-        self.blb_v3_osr_scan_only = self._coerce_bool_flag(
-            blb_v3_osr_scan_only, 'blb_v3_osr_scan_only',
-        )
-        try:
-            self.blb_v3_osr_num_combo_samples = max(0, int(blb_v3_osr_num_combo_samples))
-        except Exception:
-            self.blb_v3_osr_num_combo_samples = 300
-        self.blb_v3_osr_allow_fingerprint_mismatch = self._coerce_bool_flag(
-            blb_v3_osr_allow_fingerprint_mismatch,
-            'blb_v3_osr_allow_fingerprint_mismatch',
-        )
+                raise ValueError("formal comparator constraint contract mismatch")
+
 
     @staticmethod
     def _coerce_bool_flag(raw_value, flag_name):

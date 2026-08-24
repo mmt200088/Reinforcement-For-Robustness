@@ -898,209 +898,7 @@ class BLBActionFinalEvalRegressionTests(unittest.TestCase):
         )
 
 
-class BLBPolicyWarmstartRegressionTests(unittest.TestCase):
-    def test_kind_drop_action_changes_only_target_kind_slots(self):
-        from blb_stage2_rl.action_space import (
-            action_dims_for_config,
-            describe_action_vector,
-            load_max_sfs,
-            make_all_max_action_vector,
-        )
-        from blb_stage2_rl.runner import _build_kind_drop_action
-
-        baseline = make_all_max_action_vector(num_layers=2)
-        desc = describe_action_vector(
-            baseline,
-            max_sfs=load_max_sfs("mrpc"),
-            num_layers=2,
-            gelu_degree=[1, 4],
-            attn_degree=[2, 5],
-            profile="mrpc",
-        )
-        records = list(desc["records"])
-        action, touched = _build_kind_drop_action(
-            baseline,
-            records,
-            action_dims_for_config(2),
-            kinds=("M", "S"),
-            radius=1,
-        )
-
-        self.assertGreater(len(touched), 0)
-        self.assertFalse(np.array_equal(action, baseline))
-        for idx, (actual, expected) in enumerate(zip(action.tolist(), baseline.tolist())):
-            if idx in touched:
-                self.assertIn(records[idx]["kind"], ("M", "S"))
-                self.assertLess(actual, expected)
-            else:
-                self.assertEqual(actual, expected)
-
-    def test_warmstart_action_mode_expires_by_absolute_episode(self):
-        from blb_stage2_rl.runner import _warmstart_action_mode
-
-        kwargs = {
-            "anchor_episodes": 30,
-            "cost_probe_count": 4,
-            "neighbor_sampling": True,
-            "has_mutable_neighbors": True,
-            "neighbor_ramp_episodes": 1200,
-        }
-
-        self.assertEqual(
-            _warmstart_action_mode(episode_index=0, **kwargs),
-            ("anchor", -1),
-        )
-        self.assertEqual(
-            _warmstart_action_mode(episode_index=30, **kwargs),
-            ("cost_probe", 0),
-        )
-        self.assertEqual(
-            _warmstart_action_mode(episode_index=34, **kwargs),
-            ("neighbor", -1),
-        )
-        self.assertEqual(
-            _warmstart_action_mode(episode_index=1199, **kwargs),
-            ("neighbor", -1),
-        )
-        self.assertEqual(
-            _warmstart_action_mode(episode_index=1200, **kwargs),
-            ("policy", -1),
-        )
-        self.assertEqual(
-            _warmstart_action_mode(episode_index=50000, **kwargs),
-            ("policy", -1),
-        )
-
-    def test_preferred_action_bias_drives_deterministic_sample_to_baseline(self):
-        from blb_stage2_rl.action_space import layer_dims, make_all_max_action_vector
-        from blb_stage2_rl.policy import BLBStage2Policy
-
-        preferred = make_all_max_action_vector(num_layers=2)
-        policy = BLBStage2Policy(
-            state_dim=7,
-            num_layers=2,
-            per_layer_dims=layer_dims(),
-            first_input_levels=5,
-            d_hidden=16,
-            d_layer_emb=4,
-        )
-
-        policy.apply_preferred_action_bias(preferred, gain=50.0)
-        state = torch.zeros(1, 7)
-        action, _log_prob, _value = policy.sample_action(state, deterministic=True)
-
-        expected = preferred.copy()
-        # The deprecated first_input tail is a fixed compatibility placeholder,
-        # not a sampled policy head.
-        expected[-1] = 0
-        self.assertEqual(action.squeeze(0).tolist(), expected.tolist())
-
-
 class BLBTraceWriterRegressionTests(unittest.TestCase):
-    def test_stage2_noise_log_formatters_use_readable_chinese(self):
-        from blb_stage2_rl.runner import (
-            _format_blb_best_log,
-            _format_blb_episode_error_log,
-            _format_blb_rollout_summary_log,
-            _format_blb_train_iter_log,
-            _format_warmstart_cost_probe_log,
-        )
-
-        error_text = (
-            "Rescale_optimizer invalid blocks: "
-            "block5_n1_L7: new chain has prime(s) > q_max=60 at stage(s) [1]; "
-            "fusion cannot reduce. Reject.; "
-            "block3_exp_n2_L0: replan FAILED: a prime < q_min=30 could not be fused "
-            "after 0 successful fusion(s)."
-        )
-        formatted_error = _format_blb_episode_error_log(485, error_text)
-
-        self.assertIn("【BLB 单回合错误】", formatted_error)
-        self.assertIn("回合（episode）：485", formatted_error)
-        self.assertIn("失败位置", formatted_error)
-        self.assertIn("block5_n1_L7", formatted_error)
-        self.assertIn("block3_exp_n2_L0", formatted_error)
-        self.assertIn("新模数链", formatted_error)
-        self.assertIn("重新规划（replan）失败", formatted_error)
-        self.assertNotIn("[BLB episode error]", formatted_error)
-        self.assertNotIn("new chain has prime(s)", formatted_error)
-
-        formatted_rollout = _format_blb_rollout_summary_log(
-            update_count=5,
-            episode=600,
-            total_episodes=80000,
-            reward_mean=-36.691,
-            reward_max=-3.400,
-            reward_min=-100.188,
-            invalid_count=11,
-            priority_counts={1: 1, 2: 77, 3: 31},
-            anchor_count=0,
-            cost_probe_count=0,
-            neighborhood_count=120,
-            policy_loss=0.0128,
-            value_loss=1711.9232,
-            entropy=1071.4326,
-            clip_fraction=0.25,
-            entropy_by_kind={"F": 1.44, "W": 1.48, "M": 0.92},
-        )
-
-        self.assertIn("【BLB Rollout 汇总】", formatted_rollout)
-        self.assertIn("训练进度（episode）：600 / 80000", formatted_rollout)
-        self.assertIn("奖励（reward，均值 / 最大 / 最小）：-36.691 / -3.400 / -100.188", formatted_rollout)
-        self.assertIn("优先级计数（P0/P1/P2/P3）", formatted_rollout)
-        self.assertIn("P0 无效=11", formatted_rollout)
-        self.assertIn("动作来源（A/C/N）", formatted_rollout)
-        self.assertIn("槽位熵（H_kind）", formatted_rollout)
-        self.assertIn("F=1.44", formatted_rollout)
-
-        formatted_probes = _format_warmstart_cost_probe_log(
-            [("drop_kind_M", object(), [1, 2]), ("drop_kind_MS", object(), [3])]
-        )
-        self.assertIn("预热（warmstart）成本探针", formatted_probes)
-        self.assertIn("drop_kind_M：影响槽位 2 个", formatted_probes)
-
-        formatted_best = _format_blb_best_log(
-            episode=31,
-            best_reward=2.7333,
-            previous_reward_label="0.0000",
-            priority=3,
-            diff_text="L0.B2.M.gamma 2->1; L0.B2.M.q_mask1 2->1",
-        )
-        self.assertIn("【BLB 新最佳】", formatted_best)
-        self.assertIn("回合（episode）：31", formatted_best)
-        self.assertIn("当前奖励（reward）：2.7333", formatted_best)
-        self.assertIn("上一最佳奖励：0.0000", formatted_best)
-        self.assertIn("变化位置", formatted_best)
-        self.assertIn("L0.B2.M.gamma", formatted_best)
-        self.assertNotIn("[BLB best]", formatted_best)
-
-        formatted_iter = _format_blb_train_iter_log(
-            episode=120,
-            total_episodes=80000,
-            return_mean=-25.817,
-            return_max=2.733,
-            best_reward=2.733,
-            policy_loss=0.2411,
-            value_loss=1298.1715,
-            entropy=1071.0776,
-            clip_fraction=0.8708,
-        )
-        self.assertIn("【BLB 训练迭代】", formatted_iter)
-        self.assertIn("近期回报（return，均值 / 最大）", formatted_iter)
-        self.assertIn("best_reward=2.733", formatted_iter)
-
-        evaluator_source = (Path(__file__).resolve().parents[1] / "layer_importance_evaluator.py").read_text(
-            encoding="utf-8",
-        )
-        runner_source = (Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "runner.py").read_text(
-            encoding="utf-8",
-        )
-        self.assertIn("二阶段噪声 RL 日志开始（Stage-2 noise RL log started）", evaluator_source)
-        self.assertIn("一阶段 PPO 学习率（Stage-1 PPO LR）", evaluator_source)
-        self.assertNotIn("?????? RL", evaluator_source)
-        self.assertIn("BLB 单候选安装日志", runner_source)
-        self.assertNotIn("per-candidate install logs suppressed", runner_source)
-
     def test_status_board_publishes_live_top_level_fields(self):
         from blb_stage2_rl.persistence import BLBStatusBoard
 
@@ -1533,111 +1331,6 @@ class BLBRewardRegressionTests(unittest.TestCase):
         self.assertEqual(material_instability.tier_bonus, 0.0)
         self.assertLess(material_instability.reward, jitter.reward)
 
-    def test_runner_best_selection_uses_hard_constraints_before_reward(self):
-        from blb_stage2_rl.runner import is_better_blb_candidate
-
-        invalid_high_reward = {
-            "invalid": True,
-            "acc_violation": 0.0,
-            "stab_violation": 0.0,
-        }
-        valid_accuracy_failure = {
-            "invalid": False,
-            "acc_violation": 0.2,
-            "stab_violation": 0.0,
-        }
-        valid_safe_lower_reward = {
-            "invalid": False,
-            "acc_violation": 0.0,
-            "stab_violation": 0.0,
-        }
-        valid_safe_higher_reward = {
-            "invalid": False,
-            "acc_violation": 0.0,
-            "stab_violation": 0.0,
-        }
-
-        self.assertFalse(
-            is_better_blb_candidate(
-                candidate_reward=-100.0,
-                candidate_breakdown=valid_accuracy_failure,
-                best_reward=-30.0,
-                best_breakdown=invalid_high_reward,
-            )
-        )
-        self.assertTrue(
-            is_better_blb_candidate(
-                candidate_reward=1.0,
-                candidate_breakdown=valid_safe_higher_reward,
-                best_reward=0.5,
-                best_breakdown=valid_safe_lower_reward,
-            )
-        )
-        self.assertTrue(
-            is_better_blb_candidate(
-                candidate_reward=-30.0,
-                candidate_breakdown=invalid_high_reward,
-                best_reward=-100.0,
-                best_breakdown=valid_accuracy_failure,
-            )
-        )
-
-    def test_baseline_preflight_stability_threshold_uses_noisy_baseline(self):
-        from blb_stage2_rl.runner import _baseline_preflight_stability_threshold
-
-        widened = _baseline_preflight_stability_threshold(
-            current_threshold=0.001,
-            observed_loss_std=0.0018,
-            tolerance=0.005,
-        )
-
-        self.assertGreater(widened, 0.0018)
-        self.assertAlmostEqual(
-            _baseline_preflight_stability_threshold(
-                current_threshold=0.003,
-                observed_loss_std=0.0018,
-                tolerance=0.005,
-            ),
-            0.003,
-        )
-
-    def test_neighbor_indices_use_real_k_order_not_action_index_order(self):
-        from blb_stage2_rl.action_space import K_LEVELS
-        from blb_stage2_rl.runner import _allowed_neighbor_indices
-
-        baseline_idx = int(K_LEVELS.index(max(K_LEVELS)))
-        allowed = _allowed_neighbor_indices(
-            kind="K",
-            baseline_idx=baseline_idx,
-            dim=len(K_LEVELS),
-            radius=1,
-        )
-
-        self.assertEqual([K_LEVELS[i] for i in allowed], [13, 12])
-
-    def test_neighborhood_curriculum_expands_slowly(self):
-        from blb_stage2_rl.runner import _neighborhood_curriculum
-
-        self.assertEqual(
-            _neighborhood_curriculum(
-                episode_offset=0,
-                ramp_episodes=100,
-                max_mutations=8,
-                max_radius=2,
-            ),
-            (1, 1),
-        )
-        self.assertEqual(
-            _neighborhood_curriculum(
-                episode_offset=100,
-                ramp_episodes=100,
-                max_mutations=8,
-                max_radius=2,
-            ),
-            (8, 2),
-        )
-
-
 class BLBOptimizerBaselineRegressionTests(unittest.TestCase):
     def test_bridge_baseline_evaluation_bypasses_cfg_derived_payload(self):
         from rescale_optimizer_bridge import RescaleOptimizerBridge
@@ -1990,8 +1683,8 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
         report = build_phase0_entrypoint_report(repo_root)
 
         self.assertIn("llama_7B_LayerImportance.sh", report)
-        self.assertIn("run rl --preset mrpc-blb-stage2-rl", report)
-        self.assertIn("blb_stage2_rl/runner.py", report)
+        self.assertIn("run rl --preset bert-base-mrpc-stage2-rl", report)
+        self.assertIn("blb_stage2_rl/training.py", report)
         self.assertIn("Rescale_optimizer", report)
 
     def test_candidate_store_hash_fidelity_and_rank_key_are_stable(self):
@@ -2182,7 +1875,7 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
         ]
 
     def test_stage2_uses_all_train_probe_rows_in_fixed_order(self):
-        from blb_stage2_rl.runner import BLBStage2RLRunner
+        from blb_stage2_rl.training import BLBStage2RLRunner
 
         probe_rows = self._rows(256)
 
@@ -2246,7 +1939,7 @@ class BLBProbeSizingRegressionTests(unittest.TestCase):
 
 class BLBPersistencePathRegressionTests(unittest.TestCase):
     def test_blb_progress_stays_under_stage2_noise_progress(self):
-        from blb_stage2_rl.runner import resolve_blb_persistence_dir
+        from blb_stage2_rl.training import resolve_blb_persistence_dir
 
         class DummyEvaluator:
             pass

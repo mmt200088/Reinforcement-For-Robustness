@@ -54,15 +54,10 @@ class DeviceUtilsTest(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         expected = {
             "scripts/gpu_utilization_report.py": "from device_utils import normalize_logical_device_token, parse_logical_device_spec",
-            "scripts/stage2_first10k_monitor.py": "from device_utils import parse_logical_device_spec",
         }
         for rel, needle in expected.items():
             text = (repo / rel).read_text(encoding="utf-8")
             self.assertIn(needle, text)
-        self.assertNotIn(
-            "str(spec).replace(\";\", \",\").split(\",\")",
-            (repo / "scripts/stage2_first10k_monitor.py").read_text(encoding="utf-8"),
-        )
 
 
 if __name__ == "__main__":

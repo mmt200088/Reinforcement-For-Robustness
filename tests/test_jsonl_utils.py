@@ -282,10 +282,8 @@ class JsonlUtilsTest(unittest.TestCase):
 class JsonlUtilsStaticGuardTest(unittest.TestCase):
     def test_known_report_scripts_use_shared_jsonl_reader(self):
         expected = {
-            "scripts/stage2_first10k_monitor.py": "from jsonl_utils import read_jsonl",
             "scripts/stage2_reward_probe_scaling_report.py": "from jsonl_utils import iter_jsonl",
             "scripts/gpu_utilization_report.py": "from jsonl_utils import iter_jsonl",
-            "scripts/blb_fusion_ab_compare.py": "from jsonl_utils import iter_jsonl",
             "scripts/blb_regen_stage2_outputs.py": "from jsonl_utils import iter_jsonl",
             "blb_stage2_rl/candidate_store.py": "from jsonl_utils import iter_jsonl",
             "scripts/verify_stage2_persistent_outputs.py": (

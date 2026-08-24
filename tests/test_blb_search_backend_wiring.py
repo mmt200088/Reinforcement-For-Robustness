@@ -69,42 +69,11 @@ class SearchBackendWiringTests(unittest.TestCase):
             '        )',
             evaluator_source,
         )
-        for contract in (
-            "comparator smoke requires Stage-2 evaluation budget 1",
-            "comparator smoke disables Stage-2 strict validation",
-            "comparator smoke requires Stage-2 online trial count 3",
-            "comparator smoke requires final evaluation to be skipped",
-        ):
-            with self.subTest(contract=contract):
-                self.assertIn(contract, evaluator_source)
-        self.assertIn(
-            "two-stage comparator requires full Stage-2 strict ",
-            evaluator_source,
-        )
-        self.assertIn(
-            "two-stage comparators require the Stage-2 RL layerwise ",
-            evaluator_source,
-        )
-        self.assertIn(
-            "two-stage comparators require the Stage-2 RL baseline, ",
-            evaluator_source,
-        )
-        self.assertIn(
-            "two-stage comparator requires the historical Stage-2 RL ",
-            evaluator_source,
-        )
+        self.assertIn("comparator smoke contract mismatch", evaluator_source)
+        self.assertIn("formal comparator evidence contract mismatch", evaluator_source)
+        self.assertIn("formal comparator strict top-5 contract mismatch", evaluator_source)
         self.assertIn("float(self.stage2_stability_tolerance)", evaluator_source)
         self.assertIn("int(self.stage2_probe_size)", evaluator_source)
-
-    def test_stage2_worker_count_is_initialized_before_comparator_contract(self):
-        evaluator_source = (
-            ROOT / "layer_importance_evaluator.py"
-        ).read_text(encoding="utf-8")
-
-        self.assertLess(
-            evaluator_source.index("self.stage2_workers_per_device ="),
-            evaluator_source.index("int(self.stage2_workers_per_device)"),
-        )
 
     def test_outer_two_stage_result_is_plain_and_atomic(self):
         source = (ROOT / "layer_importance_evaluator.py").read_text(
@@ -371,10 +340,10 @@ class SearchBackendWiringTests(unittest.TestCase):
             "def activate_stage2_inference_batch_size(self)", evaluator,
         )
 
-        runner = (ROOT / "blb_stage2_rl" / "runner.py").read_text(
+        runner = (ROOT / "blb_stage2_rl" / "training.py").read_text(
             encoding="utf-8"
         )
-        activation = "ev.activate_stage2_inference_batch_size()"
+        activation = "self.evaluator.activate_stage2_inference_batch_size()"
         self.assertIn(activation, runner)
         self.assertLess(
             runner.index(activation),
@@ -404,14 +373,7 @@ class SearchBackendWiringTests(unittest.TestCase):
             },
         )
         self.assertIn("if self.mrpc_reproducibility is None:", evaluator)
-        self.assertIn(
-            "two-stage comparators require the MRPC reproducibility fixture",
-            evaluator,
-        )
-        self.assertIn(
-            'self.stage2_rl_variant != "blb_v3"',
-            evaluator,
-        )
+        self.assertIn("comparators require the MRPC reproducibility fixture", evaluator)
 
         runner = (ROOT / "blb_stage2_rl" / "sequential_runner.py").read_text(
             encoding="utf-8"
@@ -447,7 +409,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         )
 
         runner_tree = ast.parse(
-            (ROOT / "blb_stage2_rl" / "runner.py").read_text(encoding="utf-8")
+            (ROOT / "blb_stage2_rl" / "training.py").read_text(encoding="utf-8")
         )
         config_class = next(
             node for node in runner_tree.body
@@ -470,28 +432,19 @@ class SearchBackendWiringTests(unittest.TestCase):
         launcher = (ROOT / "llama_7B_LayerImportance.sh").read_text(
             encoding="utf-8"
         )
-        self.assertIn("--blb-v3-search-backend", launcher)
-        self.assertIn("--blb-v3-search-evaluation-budget", launcher)
-        self.assertIn("--blb-v3-search-rf-n-estimators", launcher)
-        self.assertIn(
-            "--blb-v3-search-mutation-max-coordinates", launcher,
-        )
-        self.assertIn("ppo|bo_rf|greedy|coinn_ga", launcher)
         self.assertIn("--blb_v3_search_backend", launcher)
         self.assertIn("run bo_rf", launcher)
+        self.assertIn("run greedy", launcher)
         self.assertIn("run coinn_ga", launcher)
-        self.assertIn(
-            'ga|genetic) SUBCOMMAND_ARGS=(--search-algorithm ga', launcher,
-        )
-        self.assertIn("--stage1-accuracy-tolerance 0.001", launcher)
-        self.assertIn("--stage2-limit-tolerance 0.001", launcher)
-        self.assertIn("--stage2-stability-multiplier 2.0", launcher)
-        self.assertIn("--blb-v3-terminal-eval-batch-size 4", launcher)
-        self.assertIn("--stage2-workers-per-device 1", launcher)
-        self.assertIn("--blb-v3-final-selection-top-n 5", launcher)
-        self.assertIn("--blb-v3-search-mutation-max-coordinates 4", launcher)
-        self.assertIn("--blb-v3-search-patience-generations 5", launcher)
-        self.assertIn("_PERSISTENT_ALGORITHM=\"$BLB_V3_SEARCH_BACKEND\"", launcher)
+        self.assertIn('SEARCH_BACKEND="bo_rf"', launcher)
+        self.assertIn('SEARCH_BACKEND="greedy"', launcher)
+        self.assertIn('SEARCH_BACKEND="coinn_ga"', launcher)
+        self.assertIn('STAGE1_ACCURACY_TOLERANCE="0.001"', launcher)
+        self.assertIn('STAGE2_LIMIT_TOLERANCE="0.001"', launcher)
+        self.assertIn('STAGE2_STABILITY_MULTIPLIER="2.0"', launcher)
+        self.assertIn('FINAL_SELECTION_TOP_N="5"', launcher)
+        self.assertIn('SEARCH_MUTATION_MAX_COORDINATES="4"', launcher)
+        self.assertIn('SEARCH_PATIENCE="5"', launcher)
         self.assertIn("--blb_v3_search_rf_n_estimators", launcher)
         self.assertIn(
             "--blb_v3_search_mutation_max_coordinates", launcher,
@@ -500,13 +453,7 @@ class SearchBackendWiringTests(unittest.TestCase):
         evaluator = (ROOT / "layer_importance_evaluator.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            'self.blb_v3_search_backend == "coinn_ga" and (', evaluator,
-        )
-        self.assertIn(
-            "or int(self.blb_v3_search_patience_generations) != 5",
-            evaluator,
-        )
+        self.assertIn('self.blb_v3_search_backend == "coinn_ga" and (', evaluator)
         self.assertIn(
             '10_000 if self.comparator_stage1_only else 50_000',
             evaluator,
@@ -515,10 +462,7 @@ class SearchBackendWiringTests(unittest.TestCase):
             '1_000 if self.comparator_stage1_only else 2_000',
             evaluator,
         )
-        self.assertIn("200-generation ", evaluator)
-        self.assertIn("11,464-inference full-run contract", evaluator)
-        self.assertIn("200-generation full-run contract", evaluator)
-        self.assertIn("11,464-inference full-run contract", evaluator)
+        self.assertIn("formal COINN-GA contract mismatch", evaluator)
         self.assertIn("Stage1SearchGracefulStop", evaluator)
         self.assertIn("NOISE_STAGE_STOP_FLAG_FILENAME", evaluator)
         self.assertIn("install_graceful_stop_handler", evaluator)
@@ -568,19 +512,8 @@ class SearchBackendWiringTests(unittest.TestCase):
             "smoke-only Stage-2 search cannot be handed to final evaluation",
             evaluator,
         )
-        self.assertIn(
-            "two-stage comparators require Stage-1 seed 42",
-            evaluator,
-        )
-        self.assertIn(
-            "two-stage comparators require Stage-2 seed 42",
-            evaluator,
-        )
-        self.assertIn(
-            "BO-RF comparator requires 128 estimators and leaf size 2",
-            evaluator,
-        )
-        self.assertNotIn("formal BO-RF comparator", evaluator)
+        self.assertIn("formal comparators require seed 42", evaluator)
+        self.assertIn("formal BO-RF contract mismatch", evaluator)
 
 
 if __name__ == "__main__":

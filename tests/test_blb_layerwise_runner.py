@@ -102,96 +102,6 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         frontier = strict_resource_pareto_frontier(candidates)
         self.assertEqual(list(frontier), ["a", "c"])
 
-    def test_protected_k1_preserves_every_potential_resource_frontier_point(self):
-        from blb_stage2_rl.layerwise_runner import (
-            _can_expand_resource_frontier,
-        )
-
-        common = {"cost": 0.5, "probabilities": [0.9] * 6}
-        accepted = {
-            "compute-heavy": self._candidate(
-                **common,
-                compute_saving=0.8,
-                communication_saving=0.3,
-                full_vector=[0],
-            ),
-            "balanced": self._candidate(
-                **common,
-                compute_saving=0.5,
-                communication_saving=0.5,
-                full_vector=[1],
-            ),
-        }
-        self.assertFalse(_can_expand_resource_frontier(
-            {"compute_saving": 0.4, "communication_saving": 0.4},
-            accepted,
-        ))
-        self.assertTrue(_can_expand_resource_frontier(
-            {"compute_saving": 0.4, "communication_saving": 0.6},
-            accepted,
-        ))
-        self.assertTrue(_can_expand_resource_frontier(
-            {"compute_saving": 0.5, "communication_saving": 0.5},
-            accepted,
-        ))
-
-    def test_protected_k1_direct_k5_bypass_is_explicitly_annotated(self):
-        from blb_stage2_rl.layerwise_runner import (
-            _annotate_protected_k1_exact_results,
-        )
-
-        info = {
-            "statistical_trials": {
-                "loss": [0.3] * 5,
-                "metric1": [0.9] * 5,
-                "metric2": [0.8] * 5,
-            },
-            "probe_diagnostics": {},
-        }
-        _annotate_protected_k1_exact_results(
-            [(object(), 0.0, True, info)],
-            guard_sigma=4.0,
-            reason="protected_by_resource_frontier",
-        )
-        self.assertTrue(info["protected_k1_enabled"])
-        self.assertFalse(info["protected_k1_screened"])
-        self.assertEqual(info["protected_k1_trials_executed"], 5)
-        self.assertTrue(info["protected_k1_stability_measured"])
-        self.assertEqual(
-            info["protected_k1_reason"],
-            "protected_by_resource_frontier",
-        )
-        self.assertEqual(
-            info["probe_diagnostics"]["protected_k1_trials_executed"],
-            5,
-        )
-
-    def test_protected_k1_fail_open_and_counters_restore_from_checkpoint(self):
-        from blb_stage2_rl.layerwise_runner import (
-            _restore_protected_k1_runtime_state,
-        )
-
-        counters, fail_open_episode = _restore_protected_k1_runtime_state({
-            "protected_k1": {
-                "enabled_episodes": 120,
-                "screened_episodes": 3,
-                "k1_only_rejects": 2,
-                "audited_episodes": 1,
-                "audit_precision_false_negatives": 1,
-                "audit_p3_false_negatives": 1,
-                "trials_executed": 588,
-                "trials_saved_vs_k5": 8,
-                "fail_open_episode": 119,
-            },
-        })
-        self.assertEqual(counters["enabled_episodes"], 120)
-        self.assertEqual(counters["trials_saved_vs_k5"], 8)
-        self.assertEqual(fail_open_episode, 119)
-        with self.assertRaises(ValueError):
-            _restore_protected_k1_runtime_state({
-                "protected_k1": {"trials_saved_vs_k5": -1},
-            })
-
     def test_identical_online_evidence_retargets_existing_assessment(self):
         from blb_stage2_rl.layerwise_runner import (
             _assess_pooled_online_trials,
@@ -1057,7 +967,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         )
 
     def test_probe_loader_uses_exact_registered_train_probe_without_resampling(self):
-        source_path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "runner.py"
+        source_path = Path(__file__).resolve().parents[1] / "blb_stage2_rl" / "training.py"
         tree = ast.parse(source_path.read_text(encoding="utf-8"))
         method = next(
             node
@@ -1280,7 +1190,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
         runner_path = (
             Path(__file__).resolve().parents[1]
             / "blb_stage2_rl"
-            / "runner.py"
+            / "training.py"
         )
         sequential_path = (
             Path(__file__).resolve().parents[1]
@@ -1292,7 +1202,7 @@ class LayerwiseRunnerPureRulesTests(unittest.TestCase):
 
         self.assertIn("probe_size_override: Optional[int] = None", runner_source)
         self.assertIn(
-            "probe_size_override=(256 if decision_path == \"layerwise\" else None)",
+            "probe_size_override=256",
             sequential_source,
         )
         self.assertIn("if online_probe_example_count != 256:", sequential_source)
@@ -3177,186 +3087,6 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
         self.assertNotIn("list(iter_jsonl(", branch_source)
         self.assertNotIn("if episode_records:\n        fusion_counts", branch_source)
 
-    def test_public_config_builder_drives_real_dispatch_rules(self):
-        from blb_stage2_rl.layerwise_runner import (
-            apply_public_stage2_decision_config,
-            resolve_decision_path,
-        )
-
-        layer_cfg = types.SimpleNamespace(
-            decision_granularity="block",
-            reward_design="stage1_aligned",
-        )
-        apply_public_stage2_decision_config(
-            types.SimpleNamespace(
-                blb_v3_decision_granularity="layer",
-                blb_v3_reward_design="robust_constrained",
-            ),
-            layer_cfg,
-        )
-        self.assertEqual(layer_cfg.decision_granularity, "layer")
-        self.assertEqual(layer_cfg.reward_design, "robust_constrained")
-        self.assertEqual(
-            resolve_decision_path(
-                fusion_count_action=True,
-                decision_granularity=layer_cfg.decision_granularity,
-                reward_design=layer_cfg.reward_design,
-            ),
-            "layerwise",
-        )
-
-        block_cfg = types.SimpleNamespace(
-            decision_granularity="block",
-            reward_design="stage1_aligned",
-        )
-        apply_public_stage2_decision_config(
-            types.SimpleNamespace(
-                blb_v3_decision_granularity="block",
-                blb_v3_reward_design="continuous",
-            ),
-            block_cfg,
-        )
-        self.assertEqual(
-            resolve_decision_path(
-                fusion_count_action=True,
-                decision_granularity=block_cfg.decision_granularity,
-                reward_design=block_cfg.reward_design,
-            ),
-            "block",
-        )
-
-        for field, value in (
-            ("blb_v3_decision_granularity", "token"),
-            ("blb_v3_reward_design", "legacy_unknown"),
-        ):
-            with self.subTest(field=field, value=value):
-                with self.assertRaises(ValueError):
-                    apply_public_stage2_decision_config(
-                        types.SimpleNamespace(**{field: value}),
-                        types.SimpleNamespace(
-                            decision_granularity="block",
-                            reward_design="stage1_aligned",
-                        ),
-                    )
-
-    def test_dispatch_selects_layerwise_only_for_fusion_plus_layer(self):
-        from blb_stage2_rl.layerwise_runner import resolve_decision_path
-
-        self.assertEqual(
-            resolve_decision_path(
-                fusion_count_action=True,
-                decision_granularity="layer",
-                reward_design="robust_constrained",
-            ),
-            "layerwise",
-        )
-        self.assertEqual(
-            resolve_decision_path(
-                fusion_count_action=True,
-                decision_granularity="block",
-                reward_design="stage1_aligned",
-            ),
-            "block",
-        )
-        with self.assertRaisesRegex(ValueError, "robust_constrained.*layer"):
-            resolve_decision_path(
-                fusion_count_action=True,
-                decision_granularity="block",
-                reward_design="robust_constrained",
-            )
-        with self.assertRaisesRegex(ValueError, "fusion-count"):
-            resolve_decision_path(
-                fusion_count_action=False,
-                decision_granularity="layer",
-                reward_design="robust_constrained",
-            )
-        with self.assertRaisesRegex(ValueError, "layer.*robust_constrained"):
-            resolve_decision_path(
-                fusion_count_action=True,
-                decision_granularity="layer",
-                reward_design="stage1_aligned",
-            )
-        with self.assertRaisesRegex(ValueError, "layer.*block"):
-            resolve_decision_path(
-                fusion_count_action=True,
-                decision_granularity="token",
-                reward_design="stage1_aligned",
-            )
-
-    def test_zero_episode_limit_is_reserved_for_layerwise_robust_training(self):
-        from blb_stage2_rl.layerwise_runner import validate_stage2_episode_limit_mode
-
-        self.assertEqual(
-            validate_stage2_episode_limit_mode(
-                0,
-                fusion_count_action=True,
-                decision_granularity="layer",
-                reward_design="robust_constrained",
-                sequential_rl=True,
-                substage_mode=False,
-                stage2_rl_variant="blb_v3",
-            ),
-            0,
-        )
-        self.assertEqual(
-            validate_stage2_episode_limit_mode(
-                600,
-                fusion_count_action=True,
-                decision_granularity="block",
-                reward_design="stage1_aligned",
-                sequential_rl=True,
-                substage_mode=False,
-                stage2_rl_variant="blb_v3",
-            ),
-            600,
-        )
-        with self.assertRaisesRegex(ValueError, "only.*layerwise robust"):
-            validate_stage2_episode_limit_mode(
-                0,
-                fusion_count_action=True,
-                decision_granularity="block",
-                reward_design="stage1_aligned",
-                sequential_rl=True,
-                substage_mode=False,
-                stage2_rl_variant="blb_v3",
-            )
-        for unsupported in (
-            {"sequential_rl": False},
-            {"substage_mode": True},
-            {"stage2_rl_variant": "legacy_v2"},
-        ):
-            values = {
-                "fusion_count_action": True,
-                "decision_granularity": "layer",
-                "reward_design": "robust_constrained",
-                "sequential_rl": True,
-                "substage_mode": False,
-                "stage2_rl_variant": "blb_v3",
-                **unsupported,
-            }
-            with self.subTest(unsupported=unsupported), self.assertRaisesRegex(
-                    ValueError, "only.*layerwise robust",
-            ):
-                validate_stage2_episode_limit_mode(0, **values)
-        with self.assertRaisesRegex(ValueError, "nonnegative"):
-            validate_stage2_episode_limit_mode(
-                -1,
-                fusion_count_action=True,
-                decision_granularity="layer",
-                reward_design="robust_constrained",
-                sequential_rl=True,
-                substage_mode=False,
-                stage2_rl_variant="blb_v3",
-            )
-        runner_source = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
-        self.assertIn("validate_stage2_episode_limit_mode(", runner_source)
-        evaluator_source = Path("layer_importance_evaluator.py").read_text(
-            encoding="utf-8",
-        )
-        self.assertIn("validate_stage2_episode_limit_mode(", evaluator_source)
-        self.assertIn('noise_stage_result.get("status", "completed")', evaluator_source)
-        self.assertIn('"blb_v3_total_episodes"', evaluator_source)
-
     def test_initial_probabilities_use_decoded_k_values_and_disable_epsilon(self):
         from blb_stage2_rl.layerwise_action import K_LEVELS
         from blb_stage2_rl.layerwise_runner import initialize_layerwise_policy
@@ -3962,112 +3692,6 @@ class LayerwiseRolloutTests(unittest.TestCase):
                     "terminal_batch_size": 4,
                 },
             ],
-        )
-
-    def test_protected_k1_reject_never_enters_candidate_store(self):
-        from blb_stage2_rl.candidate_store import CandidateStore
-        from blb_stage2_rl.layerwise_runner import train_layerwise
-
-        env = _DeferredFakeLayerwiseEnv(probabilities=0.1)
-        env.base.probe_runner.run_action_trial_groups_at_indices = (
-            lambda *_args, **_kwargs: None
-        )
-        protected_calls = []
-
-        def evaluate_protected(prepared, **kwargs):
-            protected_calls.append(dict(kwargs))
-            outputs = []
-            for item in prepared:
-                info = dict(item["runtime_info"])
-                info.update({
-                    "reward_breakdown": types.SimpleNamespace(priority=1),
-                    "statistical_trials": {
-                        name: values[:1]
-                        for name, values in info["statistical_trials"].items()
-                    },
-                    "protected_k1_enabled": True,
-                    "protected_k1_screened": True,
-                    "protected_k1_audited": False,
-                    "protected_k1_k1_only_reject": True,
-                    "protected_k1_audit_precision_false_negative": False,
-                    "protected_k1_audit_p3_false_negative": False,
-                    "protected_k1_reason": "extreme_precision_failure",
-                    "protected_k1_guard_sigma": 4.0,
-                    "protected_k1_worst_precision_z": 5.0,
-                    "protected_k1_trials_executed": 1,
-                    "forward_ran": True,
-                })
-                outputs.append((
-                    np.zeros(4, dtype=np.float32),
-                    -3.0,
-                    True,
-                    info,
-                ))
-            return outputs
-
-        env.base.evaluate_prepared_terminal_batch_protected_k1 = (
-            evaluate_protected
-        )
-        env.base.evaluate_prepared_terminal_batch = evaluate_protected
-        config = self._train_cfg(total_episodes=1, update_every=1)
-        config.protected_k1_enabled = True
-        config.protected_k1_guard_sigma = 4.0
-        config.protected_k1_audit_fraction = 0.02
-        buffer = _FakeBuffer()
-
-        with (
-                tempfile.TemporaryDirectory() as td,
-                mock.patch(
-                    "blb_stage2_rl.layerwise_runner."
-                    "_can_expand_resource_frontier",
-                    return_value=False,
-                ),
-        ):
-            path = Path(td) / "candidates.jsonl"
-            summary = train_layerwise(
-                env=env,
-                policy=_FakePolicy(),
-                train_cfg=config,
-                candidate_store=CandidateStore(path),
-                identity_context={"action_space_version": "layerwise-v1"},
-                optimizer=object(),
-                rollout_buffer=buffer,
-                ppo_update_fn=(
-                    lambda *_args, **_kwargs: {
-                        "entropy": 0.0,
-                        "n_samples": len(buffer),
-                    }
-                ),
-                assess_candidate_fn=lambda *_args, **_kwargs: _assessment(0.1),
-                step_adapter_fn=lambda spec, _max_dim, _max_levels: (
-                    np.asarray(spec.slot_mask, dtype=bool),
-                    np.asarray(spec.slot_dims, dtype=np.int64),
-                ),
-            )
-            candidate_rows = (
-                path.read_text(encoding="utf-8").splitlines()
-                if path.exists() else []
-            )
-
-        record = summary["episode_records"][0]
-        self.assertEqual(candidate_rows, [])
-        self.assertEqual(record.fresh_trial_count, 1)
-        self.assertEqual(record.pooled_trial_count, 0)
-        self.assertEqual(record.promotion_status, "protected_k1_screened")
-        self.assertEqual(record.reward_evidence, "protected_k1_precision_only")
-        self.assertEqual(record.ranking_evidence, "not_eligible_protected_k1")
-        self.assertTrue(record.protected_k1_k1_only_reject)
-        self.assertEqual(summary["protected_k1"]["trials_saved_vs_k5"], 4)
-        self.assertEqual(
-            protected_calls[0],
-            {
-                "absolute_episodes": [0],
-                "force_k5_mask": [False],
-                "guard_sigma": 4.0,
-                "audit_fraction": 0.02,
-                "audit_seed": 42,
-                "validation_required": False,
-            },
         )
 
     def test_layerwise_branch_propagates_runtime_terminal_batch_size(self):

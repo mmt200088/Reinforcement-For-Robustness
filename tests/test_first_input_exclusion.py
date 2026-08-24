@@ -35,21 +35,6 @@ class FirstInputExclusionTests(unittest.TestCase):
         self.assertIn("first_input", branch)
         self.assertIn("deprecated", branch)
 
-    def test_legacy_policy_keeps_first_input_head_but_never_samples_it(self):
-        source = (REPO_ROOT / "blb_stage2_rl" / "policy.py").read_text(encoding="utf-8")
-
-        self.assertIn("first_input_head", source)
-        self.assertIn("_fixed_first_input_action", source)
-        self.assertNotIn("fi_dist.sample()", source)
-        self.assertNotIn("fi_dist.log_prob", source)
-        self.assertNotIn("first_input_logits = self.first_input_head(h)", source)
-        self.assertNotIn("self.first_input_head.bias[first_idx]", source)
-
-    def test_runner_neighborhood_sampling_does_not_read_first_input_logits(self):
-        source = (REPO_ROOT / "blb_stage2_rl" / "runner.py").read_text(encoding="utf-8")
-
-        self.assertNotIn("slot_logits.append(pf.first_input_logits)", source)
-
     def test_final_eval_reports_do_not_emit_first_input_config(self):
         source = (REPO_ROOT / "Paean" / "blb_action_eval.py").read_text(encoding="utf-8")
 

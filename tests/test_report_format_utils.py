@@ -47,19 +47,12 @@ class ReportFormatStaticGuardTest(unittest.TestCase):
     def test_shared_report_helpers_are_used_by_known_report_scripts(self):
         expected_imports = {
             "scripts/run_fusion_count_action_eval.py": "from report_format_utils import html_table, metric_float",
-            "scripts/run_fusion_count_action_eval_rlpath.py": (
-                "from report_format_utils import format_float, html_table, metric_float"
-            ),
             "reports/generate_blb_mapping_html_reports.py": "from report_format_utils import html_table",
             "scripts/report_fusion_count_map.py": "from report_format_utils import html_table",
-            "scripts/blb_fusion_ab_compare.py": "from report_format_utils import html_table",
             "scripts/render_fusion_count_slots_eval_report.py": "from report_format_utils import html_table",
             "scripts/blb_verify_noise_install.py": "from report_format_utils import html_table",
             "scripts/stage2_reward_probe_scaling_report.py": (
                 "from report_format_utils import format_float, html_table"
-            ),
-            "blb_stage2_rl/sequential_runner.py": (
-                "from report_format_utils import progress_bar as _seq_progress_bar"
             ),
         }
         for rel_path, import_line in expected_imports.items():

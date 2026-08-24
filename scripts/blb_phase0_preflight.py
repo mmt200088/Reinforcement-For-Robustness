@@ -25,8 +25,6 @@ REPORT_PHASE_DIRS = (
 )
 ENTRYPOINT_PATTERNS = (
     "BLBStage2RLRunner",
-    "stage2_rl_variant",
-    "blb_v3",
     "RescaleOptimizer",
     "InProcessInvoker",
     "action_vector_to_cfgs",
@@ -69,24 +67,23 @@ def build_phase0_entrypoint_report(repo_root: Path) -> str:
 def iter_phase0_entrypoint_report_lines(repo_root: Path) -> Iterable[str]:
     root = Path(repo_root).resolve()
     launcher = root / "llama_7B_LayerImportance.sh"
-    runner = root / "blb_stage2_rl" / "runner.py"
+    runner = root / "blb_stage2_rl" / "training.py"
     action_space = root / "blb_stage2_rl" / "action_space.py"
     rescale = root / "Rescale_optimizer"
-    preset = root / "presets" / "mrpc-blb-stage2-rl.conf"
+    preset = root / "presets" / "bert-base-mrpc-stage2-rl.conf"
     yield "# BLB Phase 0 Entrypoints"
     yield ""
-    yield "1. Main training entrypoint: `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl --fresh`."
-    yield "2. Resume entrypoint: `bash llama_7B_LayerImportance.sh run rl --preset mrpc-blb-stage2-rl`."
-    yield "3. Stage-2 variant switch: `--stage2-rl-variant blb_v3` in `presets/mrpc-blb-stage2-rl.conf`."
-    yield "4. Runner implementation: `blb_stage2_rl/runner.py` (`BLBStage2RLRunner`)."
-    yield "5. Action registry/decode implementation: `blb_stage2_rl/action_space.py`."
-    yield "6. Rescale optimizer path: `Rescale_optimizer`; BLB Stage-2 uses the in-process optimizer path."
+    yield "1. Main training entrypoint: `bash llama_7B_LayerImportance.sh run rl --preset bert-base-mrpc-stage2-rl --fresh`."
+    yield "2. Resume entrypoint: `bash llama_7B_LayerImportance.sh run rl --preset bert-base-mrpc-stage2-rl`."
+    yield "3. Runner implementation: `blb_stage2_rl/training.py` (`BLBStage2RLRunner`)."
+    yield "4. Action registry/decode implementation: `blb_stage2_rl/action_space.py`."
+    yield "5. Rescale optimizer path: `Rescale_optimizer`; Stage-2 uses the in-process optimizer path."
     yield ""
     yield "| artifact | exists |"
     yield "|---|---:|"
     yield f"| llama_7B_LayerImportance.sh | {str(launcher.exists()).lower()} |"
-    yield f"| presets/mrpc-blb-stage2-rl.conf | {str(preset.exists()).lower()} |"
-    yield f"| blb_stage2_rl/runner.py | {str(runner.exists()).lower()} |"
+    yield f"| presets/bert-base-mrpc-stage2-rl.conf | {str(preset.exists()).lower()} |"
+    yield f"| blb_stage2_rl/training.py | {str(runner.exists()).lower()} |"
     yield f"| blb_stage2_rl/action_space.py | {str(action_space.exists()).lower()} |"
     yield f"| Rescale_optimizer | {str(rescale.exists()).lower()} |"
     yield ""

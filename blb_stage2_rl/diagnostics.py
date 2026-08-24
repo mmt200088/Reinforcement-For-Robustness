@@ -192,46 +192,6 @@ class EpisodeStats:
     terminal_probe_clear_wall_seconds: float = 0.0
     terminal_probe_install_skipped: bool = False
     terminal_probe_clear_skipped: bool = False
-    protected_k1_enabled: bool = False
-    protected_k1_screened: bool = False
-    protected_k1_audited: bool = False
-    protected_k1_k1_only_reject: bool = False
-    protected_k1_audit_precision_false_negative: bool = False
-    protected_k1_audit_p3_false_negative: bool = False
-    protected_k1_reason: str = ""
-    protected_k1_guard_sigma: float = 0.0
-    protected_k1_worst_precision_z: Optional[float] = None
-    protected_k1_trials_executed: int = 0
-    safe_neighbor_active: bool = False
-    safe_neighbor_mutation_count: int = 0
-    safe_neighbor_radius: int = 0
-    exploration_mode: str = ""
-    guarded_radius2_active: bool = False
-    guarded_radius2_recent_frontier_expansions: int = 0
-    guarded_radius2_recent_duplicate_rate: float = 0.0
-    guarded_radius2_recent_dominated_rate: float = 0.0
-    guarded_radius2_cooldown_remaining: int = 0
-    guarded_radius2_safe_offset_count: int = 0
-    guarded_radius2_episode_count: int = 0
-    guarded_radius2_failure_count: int = 0
-    guarded_radius2_frontier_expansion_count: int = 0
-    samples_rejected_by_mask: int = 0
-    samples_rejected_by_optimizer: int = 0
-    steps_fallen_back_to_baseline: int = 0
-    forbidden_mask_total: int = 0
-    static_invalid_level_disabled: int = 0
-    static_invalid_level_applied: int = 0
-    static_invalid_level_scan_evaluated: int = 0
-    static_invalid_level_scan_invalid: int = 0
-    empirical_invalid_level_disabled: int = 0
-    empirical_invalid_level_applied: int = 0
-    rejection_optimizer_wall_seconds: float = 0.0
-    baseline_prior_scale: float = 0.0
-    base_action_source: str = ""
-    proposal_direction: str = ""
-    empirical_offset_success_rate: float = 0.0
-    empirical_offset_failure_rate: float = 0.0
-    frontier_seed_episode: int = -1
     raw_trials: Dict[str, Any] = field(default_factory=dict)
     constraint_probabilities: Dict[str, float] = field(default_factory=dict)
     fresh_trials: Dict[str, Any] = field(default_factory=dict)
@@ -1153,47 +1113,6 @@ class RLDiagnosticsRecorder:
                 "terminal_pareto_event_kind": str(episode_stats.terminal_pareto_event_kind),
                 "terminal_pareto_action_hash": str(episode_stats.terminal_pareto_action_hash),
                 "terminal_pareto_frontier_removed": int(episode_stats.terminal_pareto_frontier_removed),
-                "safe_neighbor_active": bool(episode_stats.safe_neighbor_active),
-                "safe_neighbor_mutation_count": int(episode_stats.safe_neighbor_mutation_count),
-                "safe_neighbor_radius": int(episode_stats.safe_neighbor_radius),
-                "exploration_mode": str(episode_stats.exploration_mode),
-                "guarded_radius2_active": bool(episode_stats.guarded_radius2_active),
-                "guarded_radius2_recent_frontier_expansions": int(
-                    episode_stats.guarded_radius2_recent_frontier_expansions
-                ),
-                "guarded_radius2_recent_duplicate_rate": float(
-                    episode_stats.guarded_radius2_recent_duplicate_rate
-                ),
-                "guarded_radius2_recent_dominated_rate": float(
-                    episode_stats.guarded_radius2_recent_dominated_rate
-                ),
-                "guarded_radius2_cooldown_remaining": int(
-                    episode_stats.guarded_radius2_cooldown_remaining
-                ),
-                "guarded_radius2_safe_offset_count": int(
-                    episode_stats.guarded_radius2_safe_offset_count
-                ),
-                "guarded_radius2_episode_count": int(episode_stats.guarded_radius2_episode_count),
-                "guarded_radius2_failure_count": int(episode_stats.guarded_radius2_failure_count),
-                "guarded_radius2_frontier_expansion_count": int(
-                    episode_stats.guarded_radius2_frontier_expansion_count
-                ),
-                "static_invalid_level_disabled": int(
-                    episode_stats.static_invalid_level_disabled
-                ),
-                "static_invalid_level_applied": int(
-                    episode_stats.static_invalid_level_applied
-                ),
-                "baseline_prior_scale": float(episode_stats.baseline_prior_scale),
-                "base_action_source": str(episode_stats.base_action_source),
-                "proposal_direction": str(episode_stats.proposal_direction),
-                "empirical_offset_success_rate": float(
-                    episode_stats.empirical_offset_success_rate
-                ),
-                "empirical_offset_failure_rate": float(
-                    episode_stats.empirical_offset_failure_rate
-                ),
-                "frontier_seed_episode": int(episode_stats.frontier_seed_episode),
                 "action_vec": np.asarray(full_action_vec, dtype=int).tolist(),
             }
             if not payload["terminal_pareto_action_hash"]:
@@ -1531,20 +1450,6 @@ class RLDiagnosticsRecorder:
             "terminal_pareto_event_kind",
             "total_bits",
             "total_reward",
-            "safe_neighbor_mutation_count",
-            "safe_neighbor_radius",
-            "exploration_mode",
-            "guarded_radius2_active",
-            "guarded_radius2_recent_frontier_expansions",
-            "guarded_radius2_recent_duplicate_rate",
-            "guarded_radius2_recent_dominated_rate",
-            "guarded_radius2_cooldown_remaining",
-            "baseline_prior_scale",
-            "base_action_source",
-            "proposal_direction",
-            "empirical_offset_success_rate",
-            "empirical_offset_failure_rate",
-            "frontier_seed_episode",
         ]
         lines = [
             "<!doctype html>",

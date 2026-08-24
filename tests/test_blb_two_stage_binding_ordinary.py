@@ -528,7 +528,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         )
         layerwise_runner = ModuleType("blb_stage2_rl.layerwise_runner")
         layerwise_runner.LayerwiseRunLock = _FakeRunLock
-        runner_module = ModuleType("blb_stage2_rl.runner")
+        runner_module = ModuleType("blb_stage2_rl.training")
         runner_module.resolve_blb_persistence_dir = lambda _evaluator: "/unused"
         evaluator = SimpleNamespace()
         runner = SimpleNamespace(evaluator=evaluator)
@@ -537,7 +537,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             sys.modules,
             {
                 "blb_stage2_rl.layerwise_runner": layerwise_runner,
-                "blb_stage2_rl.runner": runner_module,
+                "blb_stage2_rl.training": runner_module,
             },
         ):
             resumed = run(
@@ -670,7 +670,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
         fusion_module.build_fusion_fixed_config = lambda *_args, **_kwargs: None
         action_module = ModuleType("blb_stage2_rl.layerwise_action")
         action_module.describe_layerwise_action_matrix = lambda value: list(value)
-        runner_module = ModuleType("blb_stage2_rl.runner")
+        runner_module = ModuleType("blb_stage2_rl.training")
         runner_module._build_legacy_compatible_best_noise_config = lambda _value: {}
 
         with mock.patch.dict(
@@ -678,7 +678,7 @@ class OrdinaryTwoStageBindingTest(unittest.TestCase):
             {
                 "blb_stage2_rl.fusion_fixed_action": fusion_module,
                 "blb_stage2_rl.layerwise_action": action_module,
-                "blb_stage2_rl.runner": runner_module,
+                "blb_stage2_rl.training": runner_module,
             },
         ):
             resumed = build(

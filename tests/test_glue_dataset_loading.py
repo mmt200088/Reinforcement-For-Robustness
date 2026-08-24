@@ -439,7 +439,7 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
             method(evaluator, "validation_full", 1, probe_seed=42)
 
     def test_stage2_probe_reads_registered_train_probe_without_resampling(self):
-        source = Path("blb_stage2_rl/runner.py").read_text(encoding="utf-8")
+        source = Path("blb_stage2_rl/training.py").read_text(encoding="utf-8")
         method_start = source.index("    def _build_probe_batches(")
         method_end = source.index(
             "    def _build_rescale_bridge(", method_start

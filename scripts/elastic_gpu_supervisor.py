@@ -47,8 +47,6 @@ _AUTO_DEVICE_FLAGS = frozenset(
         "--blb_v3_reward_devices",
         "--stage1-rl-devices",
         "--stage1_rl_devices",
-        "--stage2-rl-devices",
-        "--stage2_rl_devices",
     }
 )
 _RESUME_FLAGS = frozenset({"--resume-run-dir", "--resume_run_dir"})

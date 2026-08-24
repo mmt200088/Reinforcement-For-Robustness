@@ -120,27 +120,17 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parents[1]
         launcher = (repo / "llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
         evaluator = (repo / "layer_importance_evaluator.py").read_text(encoding="utf-8")
-        runner = (repo / "blb_stage2_rl" / "runner.py").read_text(encoding="utf-8")
+        training = (repo / "blb_stage2_rl" / "training.py").read_text(encoding="utf-8")
         sequential = (repo / "blb_stage2_rl" / "sequential_runner.py").read_text(
             encoding="utf-8"
         )
-        substage = (repo / "blb_stage2_rl" / "substage_runner.py").read_text(
-            encoding="utf-8"
-        )
 
-        self.assertIn("--blb_v3_truncation_backend", launcher)
-        self.assertIn("--blb_v3_truncation_ring_bits 43", launcher)
-        self.assertIn("--blb_v3_truncation_source_fractional_bits 24", launcher)
-        self.assertIn("blb_v3_truncation_backend='binary'", evaluator)
-        self.assertIn("self.blb_v3_truncation_backend", evaluator)
-        self.assertIn('truncation_backend: str = "binary"', runner)
-        for text in (runner, sequential, substage):
-            self.assertIn("truncation_backend=train_cfg.truncation_backend", text)
-            self.assertIn("truncation_ring_bits=train_cfg.truncation_ring_bits", text)
-            self.assertIn(
-                "truncation_source_fractional_bits=(\n",
-                text,
-            )
+        self.assertNotIn("--blb_v3_truncation_backend", launcher)
+        self.assertNotIn("blb_v3_truncation_backend", evaluator)
+        self.assertIn('truncation_backend: str = "binary"', training)
+        self.assertIn("truncation_backend=train_cfg.truncation_backend", sequential)
+        self.assertIn("truncation_ring_bits=train_cfg.truncation_ring_bits", sequential)
+        self.assertIn("truncation_source_fractional_bits=(\n", sequential)
 
         glue = (repo / "generate_glue_submission.py").read_text(encoding="utf-8")
         self.assertIn('--blb_truncation_backend', glue)
@@ -151,7 +141,7 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
         repo = pathlib.Path(__file__).resolve().parents[1]
         checked = [
             repo / "blb_stage2_rl" / "env.py",
-            repo / "blb_stage2_rl" / "sequential_env.py",
+            repo / "blb_stage2_rl" / "block_materialization.py",
             repo / "Paean" / "blb_action_eval.py",
         ]
         forbidden = [

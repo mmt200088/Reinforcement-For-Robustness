@@ -668,64 +668,12 @@ def train(
         blb_v3_eval_interval: int = None,
         blb_v3_save_interval: int = None,
         blb_v3_calibrate_baseline_samples: int = None,
-        blb_v3_rescale_invoker_kind: str = "in_process",
         blb_v3_inproc_rescale_optimizer_root: str = "",
-        blb_v3_warmstart_anchor_episodes: int = None,
-        blb_v3_warmstart_neighbor_ramp_episodes: int = None,
-        blb_v3_warmstart_neighbor_max_mutations: int = None,
-        blb_v3_warmstart_neighbor_max_radius: int = None,
-        blb_v3_warmstart_neighbor_sampling: bool = None,
-        blb_v3_guarded_radius2_enabled: bool = None,
-        blb_v3_guarded_radius2_min_episode: int = None,
-        blb_v3_guarded_radius2_stall_window: int = None,
-        blb_v3_guarded_radius2_max_mutations: int = None,
-        blb_v3_guarded_radius2_episode_fraction: float = None,
-        blb_v3_guarded_radius2_cooldown_episodes: int = None,
-        blb_v3_static_invalid_level_mask_enabled: bool = None,
-        blb_v3_warmstart_baseline_bias: bool = None,
-        blb_v3_warmstart_bias_gain: float = None,
-        blb_v3_ent_coef: float = None,
-        blb_v3_ent_coef_anchor: float = None,
-        blb_v3_ent_coef_ramp_episodes: int = None,
-        blb_v3_action_mask_enabled: bool = False,
-        blb_v3_action_mask_mode: str = "none",
-        blb_v3_action_mask_file: str = "",
-        blb_v3_action_mask_baseline_logit_bonus: float = 0.0,
-        blb_v3_action_mask_source: str = "",
-        # Per-block sequential RL (DEFAULT path since 2026-05-15)
-        blb_v3_sequential_rl: bool = True,
-        blb_v3_sequential_invalid_penalty: float = 1.0,
-        blb_v3_sequential_cost_shaping_coeff: float = 0.0,
-        blb_v3_sequential_fusion_shaping_coeff: float = 0.0,
-        blb_v3_sequential_early_terminate_on_invalid: bool = False,
-        # Multi-seed support (2026-05-16): when None, BLBStage2TrainConfig
-        # keeps its default seed=42; when set, overrides so tools/run_multi_seed.sh
-        # can sweep N seeds for statistical significance.
         blb_v3_seed: int = None,
-        # 2026-05-19: two-GPU reward-probe parallelism. Comma list e.g. "0,1"
-        # → BLBStage2Env builds a ProbeRunner that fans K trials across these
-        # devices. Empty / single device → single-GPU codepath unchanged.
         blb_v3_reward_devices: str = "",
-        # 2026-05-24: Stage-1 RL data-parallel rollout. Comma-separated GPU
-        # ids (e.g. "0,1,2,3") → LayerImportanceEvaluator builds a
-        # Stage1ParallelRunner that splits the PPO_UPDATE_INTERVAL window
-        # across these devices (each worker collects N / num_workers
-        # complete episodes per window). Empty / single device → existing
-        # single-GPU per-episode loop unchanged.
         stage1_rl_devices: str = "",
-        # 2026-06-10: Stage-2 RL episode-parallel rollout (fusion mode only).
-        # Comma-separated GPU ids (e.g. "0,1,2,3,4") → N workers each run
-        # complete episodes (policy rollout + per-step replan + serial
-        # K-trial reward probe) on their own model replica, with global-
-        # episode seeding so results are identical for any GPU count.
-        # Mutually exclusive with blb_v3_reward_devices. Empty → legacy loop.
-        stage2_rl_devices: str = "",
-        blb_v3_fast_reward_mode_enabled: bool = False,
         blb_v3_online_k_trials: int = 3,
         blb_v3_terminal_eval_batch_size: int = 4,
-        blb_v3_protected_k1_enabled: bool = False,
-        blb_v3_protected_k1_guard_sigma: float = 4.0,
-        blb_v3_protected_k1_audit_fraction: float = 0.02,
         blb_v3_promotion_validation_trials: int = 15,
         blb_v3_final_selection_top_n: int = 20,
         blb_v3_final_selection_validation_trials: int = 15,
@@ -738,14 +686,6 @@ def train(
         blb_v3_final_constraint_probability: float = 0.95,
         blb_v3_min_convergence_episodes: int = 90_000,
         blb_v3_convergence_patience_updates: int = 100,
-        # 2026-05-27: 4-sub-stage Stage-2 RL (opt-in). When True, trains one
-        # block per sub-stage in --blb_v3_substage_block_order; blocks listed
-        # in --blb_v3_substage_frozen_blocks stay at static_skeletons baseline
-        # (block 3 by design). See blb_stage2_rl/substage_runner.py.
-        blb_v3_substage_mode: bool = False,
-        blb_v3_fusion_count_action: bool = True,
-        blb_v3_decision_granularity: str = "layer",
-        blb_v3_reward_design: str = "robust_constrained",
         blb_v3_search_backend: str = "ppo",
         blb_v3_search_evaluation_budget: int = 0,
         blb_v3_search_initial_design_size: int = 64,
@@ -758,27 +698,6 @@ def train(
         blb_v3_search_full_validation: bool = True,
         comparator_smoke: bool = False,
         comparator_stage1_only: bool = False,
-        blb_v3_fusion_neighbor_curriculum: bool = False,
-        blb_v3_fusion_probe_interval: int = 0,
-        blb_v3_fusion_exploration_epsilon: float = 0.0,
-        blb_v3_truncation_backend: str = "binary",
-        blb_v3_truncation_ring_bits: int = 43,
-        blb_v3_truncation_source_fractional_bits: int = 24,
-        stage2_workers_per_device: int = 1,
-        blb_v3_substage_block_order: str = "1,2,4,5",
-        blb_v3_substage_frozen_blocks: str = "3",
-        blb_v3_substage_episodes_each: int = 15000,
-        blb_v3_substage_promotion_top_k: int = 5,
-        blb_v3_substage_promotion_trials: int = 8,
-        # 2026-05-27: COINN-style OSR pre-prune (opt-in). When osr_results_path
-        # is set, the runner either loads existing OSR results from that path
-        # or runs a fresh scan saving to that path; the resulting mask is
-        # applied alongside the existing 3 masks. osr_scan_only=True exits
-        # after the scan (use for the OSR-only preset).
-        blb_v3_osr_results_path: str = "",
-        blb_v3_osr_scan_only: bool = False,
-        blb_v3_osr_num_combo_samples: int = 300,
-        blb_v3_osr_allow_fingerprint_mismatch: bool = False,
         final_eval_require_rescale_optimizer: bool = False,
         # llm hyperparams
         train_on_inputs: bool = True,  # if False, masks out inputs in loss
@@ -808,44 +727,6 @@ def train(
     final_eval_glue_submission_enabled = parse_bool_flag(
         final_eval_glue_submission_enabled, "final_eval_glue_submission_enabled"
     )
-    blb_v3_action_mask_enabled = parse_bool_flag(
-        blb_v3_action_mask_enabled, "blb_v3_action_mask_enabled"
-    )
-    blb_v3_sequential_rl = parse_bool_flag(
-        blb_v3_sequential_rl, "blb_v3_sequential_rl"
-    )
-    blb_v3_sequential_early_terminate_on_invalid = parse_bool_flag(
-        blb_v3_sequential_early_terminate_on_invalid,
-        "blb_v3_sequential_early_terminate_on_invalid",
-    )
-    blb_v3_fast_reward_mode_enabled = parse_bool_flag(
-        blb_v3_fast_reward_mode_enabled,
-        "blb_v3_fast_reward_mode_enabled",
-    )
-    blb_v3_substage_mode = parse_bool_flag(
-        blb_v3_substage_mode, "blb_v3_substage_mode"
-    )
-    blb_v3_fusion_count_action = parse_bool_flag(
-        blb_v3_fusion_count_action, "blb_v3_fusion_count_action"
-    )
-    blb_v3_decision_granularity = str(
-        blb_v3_decision_granularity or "layer"
-    ).strip().lower()
-    if blb_v3_decision_granularity not in ("layer", "block"):
-        raise ValueError(
-            "blb_v3_decision_granularity must be 'layer' or 'block', got "
-            f"{blb_v3_decision_granularity!r}"
-        )
-    blb_v3_reward_design = str(
-        blb_v3_reward_design or "robust_constrained"
-    ).strip().lower().replace("-", "_")
-    if blb_v3_reward_design not in (
-            "robust_constrained", "stage1_aligned", "continuous", "tiered",
-    ):
-        raise ValueError(
-            "blb_v3_reward_design must be robust_constrained, stage1_aligned, "
-            f"continuous, or tiered; got {blb_v3_reward_design!r}"
-        )
     from blb_stage2_rl.search_baselines import normalize_search_backend
 
     blb_v3_search_backend = normalize_search_backend(
@@ -905,16 +786,6 @@ def train(
         raise ValueError(
             "blb_v3_convergence_patience_updates must be at least 100"
         )
-    blb_v3_fusion_neighbor_curriculum = parse_bool_flag(
-        blb_v3_fusion_neighbor_curriculum, "blb_v3_fusion_neighbor_curriculum"
-    )
-    blb_v3_osr_scan_only = parse_bool_flag(
-        blb_v3_osr_scan_only, "blb_v3_osr_scan_only"
-    )
-    blb_v3_osr_allow_fingerprint_mismatch = parse_bool_flag(
-        blb_v3_osr_allow_fingerprint_mismatch,
-        "blb_v3_osr_allow_fingerprint_mismatch",
-    )
     # --final_eval_only 语义：只跑 final eval，不跑任何 RL 搜索阶段。
     # 等价于自动设置 skip_stage1_rl=True & skip_noise_rl=True & skip_final_eval=False，
     # 同时尝试从 resume_run_dir / output_dir 下读取之前搜索得到的最优配置作为 final-eval 输入。
@@ -1053,30 +924,7 @@ def train(
         f"wandb_log_model: {wandb_log_model}\n"
         f"resume_from_checkpoint: {resume_from_checkpoint}\n"
         f"resume_run_dir: {resume_run_dir}\n"
-        f"blb_v3_rescale_invoker_kind: {blb_v3_rescale_invoker_kind}\n"
         f"blb_v3_inproc_rescale_optimizer_root: {blb_v3_inproc_rescale_optimizer_root}\n"
-        f"blb_v3_warmstart_anchor_episodes: {blb_v3_warmstart_anchor_episodes}\n"
-        f"blb_v3_warmstart_neighbor_ramp_episodes: {blb_v3_warmstart_neighbor_ramp_episodes}\n"
-        f"blb_v3_warmstart_neighbor_max_mutations: {blb_v3_warmstart_neighbor_max_mutations}\n"
-        f"blb_v3_warmstart_neighbor_max_radius: {blb_v3_warmstart_neighbor_max_radius}\n"
-        f"blb_v3_warmstart_neighbor_sampling: {blb_v3_warmstart_neighbor_sampling}\n"
-        f"blb_v3_guarded_radius2_enabled: {blb_v3_guarded_radius2_enabled}\n"
-        f"blb_v3_guarded_radius2_min_episode: {blb_v3_guarded_radius2_min_episode}\n"
-        f"blb_v3_guarded_radius2_stall_window: {blb_v3_guarded_radius2_stall_window}\n"
-        f"blb_v3_guarded_radius2_max_mutations: {blb_v3_guarded_radius2_max_mutations}\n"
-        f"blb_v3_guarded_radius2_episode_fraction: {blb_v3_guarded_radius2_episode_fraction}\n"
-        f"blb_v3_guarded_radius2_cooldown_episodes: {blb_v3_guarded_radius2_cooldown_episodes}\n"
-        f"blb_v3_static_invalid_level_mask_enabled: {blb_v3_static_invalid_level_mask_enabled}\n"
-        f"blb_v3_warmstart_baseline_bias: {blb_v3_warmstart_baseline_bias}\n"
-        f"blb_v3_warmstart_bias_gain: {blb_v3_warmstart_bias_gain}\n"
-        f"blb_v3_ent_coef: {blb_v3_ent_coef}\n"
-        f"blb_v3_ent_coef_anchor: {blb_v3_ent_coef_anchor}\n"
-        f"blb_v3_ent_coef_ramp_episodes: {blb_v3_ent_coef_ramp_episodes}\n"
-        f"blb_v3_action_mask_enabled: {blb_v3_action_mask_enabled}\n"
-        f"blb_v3_action_mask_mode: {blb_v3_action_mask_mode}\n"
-        f"blb_v3_action_mask_file: {blb_v3_action_mask_file}\n"
-        f"blb_v3_action_mask_baseline_logit_bonus: {blb_v3_action_mask_baseline_logit_bonus}\n"
-        f"blb_v3_action_mask_source: {blb_v3_action_mask_source}\n"
     )
     run_output_dir = str(output_dir or "").strip()
     trainer_output_dir = (
@@ -1358,7 +1206,6 @@ def train(
             stage2_k_trials=stage2_k_trials,
             stage2_probe_size=stage2_probe_size,
             stage2_inference_batch_size=stage2_inference_batch_size,
-            blb_v3_rescale_invoker_kind=blb_v3_rescale_invoker_kind,
             blb_v3_inproc_rescale_optimizer_root=(
                 blb_v3_inproc_rescale_optimizer_root
                 if blb_v3_inproc_rescale_optimizer_root not in (None, "") else None
@@ -1367,45 +1214,11 @@ def train(
             blb_v3_eval_interval=blb_v3_eval_interval,
             blb_v3_save_interval=blb_v3_save_interval,
             blb_v3_calibrate_baseline_samples=blb_v3_calibrate_baseline_samples,
-            blb_v3_warmstart_anchor_episodes=blb_v3_warmstart_anchor_episodes,
-            blb_v3_warmstart_neighbor_ramp_episodes=blb_v3_warmstart_neighbor_ramp_episodes,
-            blb_v3_warmstart_neighbor_max_mutations=blb_v3_warmstart_neighbor_max_mutations,
-            blb_v3_warmstart_neighbor_max_radius=blb_v3_warmstart_neighbor_max_radius,
-            blb_v3_warmstart_neighbor_sampling=blb_v3_warmstart_neighbor_sampling,
-            blb_v3_guarded_radius2_enabled=blb_v3_guarded_radius2_enabled,
-            blb_v3_guarded_radius2_min_episode=blb_v3_guarded_radius2_min_episode,
-            blb_v3_guarded_radius2_stall_window=blb_v3_guarded_radius2_stall_window,
-            blb_v3_guarded_radius2_max_mutations=blb_v3_guarded_radius2_max_mutations,
-            blb_v3_guarded_radius2_episode_fraction=blb_v3_guarded_radius2_episode_fraction,
-            blb_v3_guarded_radius2_cooldown_episodes=blb_v3_guarded_radius2_cooldown_episodes,
-            blb_v3_static_invalid_level_mask_enabled=blb_v3_static_invalid_level_mask_enabled,
-            blb_v3_warmstart_baseline_bias=blb_v3_warmstart_baseline_bias,
-            blb_v3_warmstart_bias_gain=blb_v3_warmstart_bias_gain,
-            blb_v3_ent_coef=blb_v3_ent_coef,
-            blb_v3_ent_coef_anchor=blb_v3_ent_coef_anchor,
-            blb_v3_ent_coef_ramp_episodes=blb_v3_ent_coef_ramp_episodes,
-            blb_v3_action_mask_enabled=blb_v3_action_mask_enabled,
-            blb_v3_action_mask_mode=blb_v3_action_mask_mode,
-            blb_v3_action_mask_file=blb_v3_action_mask_file,
-            blb_v3_action_mask_baseline_logit_bonus=blb_v3_action_mask_baseline_logit_bonus,
-            blb_v3_action_mask_source=blb_v3_action_mask_source,
-            blb_v3_sequential_rl=blb_v3_sequential_rl,
-            blb_v3_sequential_invalid_penalty=blb_v3_sequential_invalid_penalty,
-            blb_v3_sequential_cost_shaping_coeff=blb_v3_sequential_cost_shaping_coeff,
-            blb_v3_sequential_fusion_shaping_coeff=blb_v3_sequential_fusion_shaping_coeff,
-            blb_v3_sequential_early_terminate_on_invalid=blb_v3_sequential_early_terminate_on_invalid,
             blb_v3_seed=blb_v3_seed,
             blb_v3_reward_devices=blb_v3_reward_devices,
             stage1_rl_devices=stage1_rl_devices,
-            stage2_rl_devices=stage2_rl_devices,
-            blb_v3_fast_reward_mode_enabled=blb_v3_fast_reward_mode_enabled,
             blb_v3_online_k_trials=blb_v3_online_k_trials,
             blb_v3_terminal_eval_batch_size=blb_v3_terminal_eval_batch_size,
-            blb_v3_protected_k1_enabled=blb_v3_protected_k1_enabled,
-            blb_v3_protected_k1_guard_sigma=blb_v3_protected_k1_guard_sigma,
-            blb_v3_protected_k1_audit_fraction=(
-                blb_v3_protected_k1_audit_fraction
-            ),
             blb_v3_promotion_validation_trials=blb_v3_promotion_validation_trials,
             blb_v3_final_selection_top_n=blb_v3_final_selection_top_n,
             blb_v3_final_selection_validation_trials=blb_v3_final_selection_validation_trials,
@@ -1420,10 +1233,6 @@ def train(
             blb_v3_convergence_patience_updates=(
                 blb_v3_convergence_patience_updates
             ),
-            blb_v3_substage_mode=blb_v3_substage_mode,
-            blb_v3_fusion_count_action=blb_v3_fusion_count_action,
-            blb_v3_decision_granularity=blb_v3_decision_granularity,
-            blb_v3_reward_design=blb_v3_reward_design,
             blb_v3_search_backend=blb_v3_search_backend,
             blb_v3_search_evaluation_budget=(
                 blb_v3_search_evaluation_budget
@@ -1450,24 +1259,6 @@ def train(
             ),
             comparator_smoke=comparator_smoke,
             comparator_stage1_only=comparator_stage1_only,
-            blb_v3_fusion_neighbor_curriculum=blb_v3_fusion_neighbor_curriculum,
-            blb_v3_fusion_probe_interval=blb_v3_fusion_probe_interval,
-            blb_v3_fusion_exploration_epsilon=blb_v3_fusion_exploration_epsilon,
-            blb_v3_truncation_backend=blb_v3_truncation_backend,
-            blb_v3_truncation_ring_bits=blb_v3_truncation_ring_bits,
-            blb_v3_truncation_source_fractional_bits=(
-                blb_v3_truncation_source_fractional_bits
-            ),
-            stage2_workers_per_device=stage2_workers_per_device,
-            blb_v3_substage_block_order=blb_v3_substage_block_order,
-            blb_v3_substage_frozen_blocks=blb_v3_substage_frozen_blocks,
-            blb_v3_substage_episodes_each=blb_v3_substage_episodes_each,
-            blb_v3_substage_promotion_top_k=blb_v3_substage_promotion_top_k,
-            blb_v3_substage_promotion_trials=blb_v3_substage_promotion_trials,
-            blb_v3_osr_results_path=blb_v3_osr_results_path,
-            blb_v3_osr_scan_only=blb_v3_osr_scan_only,
-            blb_v3_osr_num_combo_samples=blb_v3_osr_num_combo_samples,
-            blb_v3_osr_allow_fingerprint_mismatch=blb_v3_osr_allow_fingerprint_mismatch,
         )
         trainer_callbacks.append(importance_evaluator)
     # elif use_rst:

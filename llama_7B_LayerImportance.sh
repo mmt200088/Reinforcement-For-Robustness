@@ -566,12 +566,6 @@ CMD=(
   --blb_v3_final_constraint_probability "$FINAL_CONSTRAINT_PROBABILITY"
   --blb_v3_min_convergence_episodes "$MIN_CONVERGENCE_EPISODES"
   --blb_v3_convergence_patience_updates "$CONVERGENCE_PATIENCE_UPDATES"
-  --blb_v3_sequential_rl true
-  --blb_v3_fusion_count_action true
-  --blb_v3_decision_granularity layer
-  --blb_v3_reward_design robust_constrained
-  --blb_v3_protected_k1_enabled false
-  --blb_v3_static_invalid_level_mask_enabled false
   --blb_v3_search_backend "$SEARCH_BACKEND"
   --blb_v3_search_evaluation_budget "$SEARCH_EVALUATION_BUDGET"
   --blb_v3_search_initial_design_size "$SEARCH_INITIAL_DESIGN_SIZE"
@@ -584,9 +578,6 @@ CMD=(
   --blb_v3_search_full_validation "$SEARCH_FULL_VALIDATION"
   --comparator_smoke "$COMPARATOR_SMOKE"
   --comparator_stage1_only "$COMPARATOR_STAGE1_ONLY"
-  --blb_v3_truncation_backend binary
-  --blb_v3_truncation_ring_bits 43
-  --blb_v3_truncation_source_fractional_bits 24
 )
 
 if [ -n "$REWARD_DEVICES" ]; then

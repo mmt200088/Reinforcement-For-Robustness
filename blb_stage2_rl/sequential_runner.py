@@ -2485,28 +2485,6 @@ def _run_layerwise_training_branch(
                 terminal_probe_clear_skipped=bool(probe_diagnostics.get(
                     "probe_clear_skipped", False
                 )),
-                protected_k1_enabled=bool(record.protected_k1_enabled),
-                protected_k1_screened=bool(record.protected_k1_screened),
-                protected_k1_audited=bool(record.protected_k1_audited),
-                protected_k1_k1_only_reject=bool(
-                    record.protected_k1_k1_only_reject
-                ),
-                protected_k1_audit_precision_false_negative=bool(
-                    record.protected_k1_audit_precision_false_negative
-                ),
-                protected_k1_audit_p3_false_negative=bool(
-                    record.protected_k1_audit_p3_false_negative
-                ),
-                protected_k1_reason=str(record.protected_k1_reason),
-                protected_k1_guard_sigma=float(
-                    record.protected_k1_guard_sigma
-                ),
-                protected_k1_worst_precision_z=(
-                    record.protected_k1_worst_precision_z
-                ),
-                protected_k1_trials_executed=int(
-                    record.protected_k1_trials_executed
-                ),
                 raw_trials=fresh_trials,
                 constraint_probabilities=pooled_probabilities,
                 fresh_trials=fresh_trials,
@@ -3019,7 +2997,6 @@ def _run_layerwise_training_branch(
             "best_axis_counterfactuals"
         ),
         "bank_b_best": bank_b_best or None,
-        "protected_k1": dict(summary.get("protected_k1") or {}),
         "final_evidence": {
             "status": (
                 "strict_revalidation_passed"
@@ -4982,15 +4959,6 @@ def _run_sequential_via_runner_locked(
         nonlocal noisy_baseline_metric2_std
         nonlocal noisy_baseline_loss_mean
         nonlocal preflight_ok
-        if list(getattr(train_cfg, "stage2_rl_devices", []) or []):
-            from .seed_utils import PREFLIGHT_EPISODE, derive_probe_seed
-            base_env.probe_noise_seed = derive_probe_seed(
-                int(getattr(train_cfg, "seed", 42) or 42), PREFLIGHT_EPISODE,
-            )
-            log(
-                f"  {bullet} [stage2-parallel] deterministic preflight probe seed = "
-                f"{base_env.probe_noise_seed}"
-            )
         try:
             base_env.reset(seed=int(train_cfg.seed))
             _, _preflight_reward, _, preflight_info = base_env.step(baseline_action_vec)
