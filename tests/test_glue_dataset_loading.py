@@ -227,7 +227,7 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
             source,
         )
         self.assertIn("mrpc_views.full_validation", source)
-        self.assertIn("mrpc_views.stability_probe", source)
+        self.assertNotIn("mrpc_views.stability_probe", source)
         self.assertIn("MRPCReproducibilityContext(", source)
         self.assertIn(
             "mrpc_reproducibility=mrpc_reproducibility",
@@ -271,6 +271,42 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
             source.index("resolve_glue_protocol_views("),
             source.index("train_probe_data ="),
         )
+
+    def test_train_contains_only_supported_bert_classification_dispatch(self):
+        source = inspect.getsource(_import_rl_tune().train)
+
+        for forbidden in (
+                "AutoModelForCausalLM",
+                "LlamaTokenizer",
+                'data_path.endswith(".json")',
+                'data_path.lower() == \'mnli\'',
+                'data["validation_matched"]',
+                'data["validation_mismatched"]',
+                '_dp == "stsb"',
+                '_dp == "qnli"',
+                '_dp in ("sst2", "cola")',
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_train_rejects_unsupported_model_before_runtime_initialization(self):
+        rl_tune = _import_rl_tune()
+
+        def forbidden_runtime_access(*_args, **_kwargs):
+            raise AssertionError("runtime initialization must not execute")
+
+        evaluator_stub = types.SimpleNamespace(
+            set_ppo_update_interval=forbidden_runtime_access,
+        )
+        with mock.patch.dict(
+                sys.modules,
+                {"layer_importance_evaluator": evaluator_stub},
+                clear=False,
+        ):
+            with self.assertRaisesRegex(ValueError, "unsupported model"):
+                rl_tune.train(
+                    base_model="gpt2",
+                    data_path="mrpc",
+                )
 
     def test_train_rejects_missing_fixture_before_runtime_access(self):
         rl_tune = _import_rl_tune()
