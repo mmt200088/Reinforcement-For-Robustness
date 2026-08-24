@@ -1,0 +1,8 @@
+AGENTS.md
+blb_stage2_rl/layerwise_action.py
+blb_stage2_rl/precision_presets.py
+docs/BLB_stage2_rl_INTERNAL_FLOW.md
+docs/BLB_stage2_rl_spec.md
+docs/superpowers/plans/2026-08-24-mpc-truncation-paper-semantics.md
+docs/superpowers/specs/2026-08-24-mpc-truncation-paper-semantics-design.md
+tests/test_blb_layerwise_precision_presets.py

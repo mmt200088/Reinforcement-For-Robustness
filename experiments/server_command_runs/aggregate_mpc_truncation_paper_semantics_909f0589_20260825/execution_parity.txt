@@ -1,0 +1,3 @@
+cmp_rc=0
+68a50ef270d894f3995bd01437b6febcb0bd2b3c757b42edb03485ad2ceb63e7  /tmp/rfr-mpc-paper-execution-before-480e154.json
+68a50ef270d894f3995bd01437b6febcb0bd2b3c757b42edb03485ad2ceb63e7  /tmp/rfr-mpc-paper-execution-aggregate-909f0589.json

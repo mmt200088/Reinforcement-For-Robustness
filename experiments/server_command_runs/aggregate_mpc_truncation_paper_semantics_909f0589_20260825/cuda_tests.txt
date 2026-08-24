@@ -1,0 +1,25 @@
+test_degree4_cuda_fast_path_matches_eager_and_rng_state_bitwise (tests.test_blb_block3_cuda_fusion.Block3CudaFusionTest) ... /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:182: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 803: system has unsupported display driver / cuda driver combination (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:119.)
+  return torch._C._cuda_getDeviceCount() > 0
+skipped 'CUDA unavailable'
+test_degree6_cuda_fast_path_matches_eager_and_rng_state_bitwise (tests.test_blb_block3_cuda_fusion.Block3CudaFusionTest) ... skipped 'CUDA unavailable'
+test_noise_workspace_reuses_storage_on_the_same_cuda_stream (tests.test_blb_block3_cuda_fusion.Block3CudaFusionTest) ... skipped 'CUDA unavailable'
+test_degree4_computes_both_polynomial_pieces_in_one_kernel (tests.test_blb_block5_cuda_fusion.Block5CudaFusionTest) ... ok
+test_degree4_cuda_fast_path_matches_eager_and_rng_state_bitwise (tests.test_blb_block5_cuda_fusion.Block5CudaFusionTest) ... skipped 'CUDA unavailable'
+test_degree4_fuses_piece_setup_and_selection_into_accumulation (tests.test_blb_block5_cuda_fusion.Block5CudaFusionTest) ... ok
+test_noise_workspace_reuses_storage_on_the_same_cuda_stream (tests.test_blb_block5_cuda_fusion.Block5CudaFusionTest) ... skipped 'CUDA unavailable'
+test_cached_noise_std_preserves_value_and_skips_repeated_lookup (tests.test_blb_inference_noise_fastpath.BLBInferenceNoiseFastPathTest) ... /var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/torch/cuda/__init__.py:827: UserWarning: Can't initialize NVML
+  warnings.warn("Can't initialize NVML")
+/var/tmp/root-home/miniconda3/envs/llm_ist/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+ok
+test_cuda_output_and_next_noise_draw_match_legacy_bitwise (tests.test_blb_inference_noise_fastpath.BLBInferenceNoiseFastPathTest) ... skipped 'CUDA unavailable'
+test_inference_add_reuses_sample_storage_but_training_path_does_not (tests.test_blb_inference_noise_fastpath.BLBInferenceNoiseFastPathTest) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.906s
+
+OK (skipped=6)
