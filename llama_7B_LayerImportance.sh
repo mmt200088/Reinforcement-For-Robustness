@@ -1963,7 +1963,7 @@ for key, current_value in cur.items():
     persisted_value = m.get(key)
     if persisted_value is None:
         mismatches.append(f"{key}: 已持久化缺失 当前={current_value}")
-            continue
+        continue
     try:
         matches = abs(float(persisted_value) - current_value) <= 1e-9
     except (TypeError, ValueError):
