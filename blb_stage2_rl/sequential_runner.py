@@ -6135,11 +6135,11 @@ def _run_layerwise_training_branch(
     status.set_phase(
         f"PPO training ({layerwise_horizon}-step layerwise robust)"
     )
-    from noise_rl_module_v2 import (
-        NOISE_STAGE_STOP_FLAG_FILENAME,
-        consume_stop_flag_file,
+    from .runtime_control import (
+        STOP_FLAG_FILENAME as NOISE_STAGE_STOP_FLAG_FILENAME,
+        consume_stop_flag as consume_stop_flag_file,
+        graceful_stop_requested as is_graceful_stop_requested,
         install_graceful_stop_handler,
-        is_graceful_stop_requested,
         reset_graceful_stop_state,
         uninstall_graceful_stop_handler,
     )

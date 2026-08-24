@@ -68,13 +68,20 @@ from mrpc_reproducibility import (
     MRPC_STAGE2_RL_ALIGNMENT_BATCH_SIZE,
     validate_mrpc_evaluation_setup,
 )
-from noise_rl_module_v2 import (
-    NOISE_RL_PROGRESS_BOX_PPO_INTERVAL,
-    _fmt_elapsed,
-    _fmt_eta_finish,
-    _log_rounded_box,
-    _progress_bar,
+from blb_stage2_rl.runtime_control import (
+    PROGRESS_BOX_PPO_INTERVAL as NOISE_RL_PROGRESS_BOX_PPO_INTERVAL,
+    STOP_FLAG_FILENAME as NOISE_STAGE_STOP_FLAG_FILENAME,
+    consume_stop_flag as consume_stop_flag_file,
+    format_eta_finish as _fmt_eta_finish,
+    graceful_stop_requested as is_graceful_stop_requested,
+    install_graceful_stop_handler,
+    log_box as _log_rounded_box,
+    reset_graceful_stop_state,
+    uninstall_graceful_stop_handler,
+    write_warning_report as _write_warning_report,
 )
+from report_format_utils import format_elapsed as _fmt_elapsed
+from report_format_utils import progress_bar as _progress_bar
 from elastic_gpu import (
     ElasticGPUFailure,
     is_recoverable_gpu_failure,
@@ -5689,7 +5696,7 @@ class LayerImportanceEvaluator(TrainerCallback):
 
     def _get_stage1_resume_checkpoint_path(self):
         """如果设置了 resume_run_dir，返回 Stage-1 checkpoint 路径；否则返回 None。"""
-        from noise_rl_module_v2 import STAGE1_CHECKPOINT_FILENAME
+        from stage1_rl.checkpoint import STAGE1_CHECKPOINT_FILENAME
         if not self.resume_run_dir:
             return None
         path = os.path.join(self.resume_run_dir, "stage1", STAGE1_CHECKPOINT_FILENAME)
@@ -7189,15 +7196,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 load_completed_search_result,
                 run_stage1_search,
             )
-            from noise_rl_module_v2 import (
-                NOISE_STAGE_STOP_FLAG_FILENAME,
-                consume_stop_flag_file,
-                install_graceful_stop_handler,
-                is_graceful_stop_requested,
-                reset_graceful_stop_state,
-                uninstall_graceful_stop_handler,
-            )
-
             backend = self.blb_v3_search_backend
             if int(num_metrics) != 2:
                 raise RuntimeError(
@@ -7730,16 +7728,10 @@ class LayerImportanceEvaluator(TrainerCallback):
             # ============================
             # 断点续训：加载 Stage-1 checkpoint
             # ============================
-            from noise_rl_module_v2 import (
+            from stage1_rl.checkpoint import (
                 save_stage1_rl_checkpoint,
                 load_stage1_rl_checkpoint,
                 STAGE1_CHECKPOINT_FILENAME,
-                NOISE_STAGE_STOP_FLAG_FILENAME,
-                install_graceful_stop_handler,
-                reset_graceful_stop_state,
-                is_graceful_stop_requested,
-                uninstall_graceful_stop_handler,
-                consume_stop_flag_file,
                 recover_stage1_detail_files,
                 stage1_detail_file_sizes,
             )
@@ -8622,7 +8614,6 @@ class LayerImportanceEvaluator(TrainerCallback):
                 step_info_chunk_file[0] = None
 
             if stage1_warnings:
-                from noise_rl_module_v2 import _write_warning_report
                 _write_warning_report(stage1_warning_file, stage1_warnings, stage_label="阶段1（Stage-1 RL）")
                 self.log(f"  ⚠ 共检测到 {len(stage1_warnings)} 次奖励骤降警告，详见: {stage1_warning_file}")
 
