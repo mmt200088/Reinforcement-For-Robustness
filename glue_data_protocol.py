@@ -193,6 +193,13 @@ def validate_dataset(dataset: str) -> str:
     return normalized
 
 
+def dataset_from_profile(profile: str) -> str:
+    normalized = str(profile or "").strip().lower().replace("-", "_")
+    if normalized.endswith("_large"):
+        normalized = normalized[:-len("_large")]
+    return validate_dataset(normalized)
+
+
 def _required_column(dataset: Any, name: str) -> list[Any]:
     try:
         values = list(dataset[name])

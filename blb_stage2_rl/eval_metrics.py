@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-from glue_data_protocol import validate_dataset
+from glue_data_protocol import dataset_from_profile
 
 
 def logits_to_classes(logits: Any) -> np.ndarray:
@@ -24,7 +24,7 @@ def logits_to_classes(logits: Any) -> np.ndarray:
 
 
 def uses_weighted_f1_metric2(metric_profile: str) -> bool:
-    validate_dataset(metric_profile)
+    dataset_from_profile(metric_profile)
     return True
 
 
@@ -96,7 +96,7 @@ def metric_pair_for_dataset(
         *,
         predictions_are_classes: bool = False,
         ) -> Tuple[float, float]:
-    validate_dataset(dataset_key)
+    dataset_from_profile(dataset_key)
     labels_arr = np.asarray(labels).reshape(-1)
     pred_classes = (
         np.asarray(logits_or_predictions).reshape(-1).astype(int)
@@ -177,7 +177,7 @@ def finalize_probe_trial_metrics(
         ) -> Optional[Tuple[float, float, float]]:
     if not losses:
         return None
-    validate_dataset(metric_profile)
+    dataset_from_profile(metric_profile)
     if is_regression:
         raise ValueError("regression metrics are unsupported")
     loss, m1, m2 = weighted_probe_batch_means(losses, m1s, m2s, counts)
