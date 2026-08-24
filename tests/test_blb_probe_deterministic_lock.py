@@ -101,7 +101,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
             **kwargs,
             metric_profile="sst2",
         )
-        self.assertAlmostEqual(sst2_m2, 0.6)
+        self.assertAlmostEqual(sst2_m2, m2)
         self.assertIs(probe_mod.run_installed_probe_trial, run_installed_probe_trial)
 
     def _make_env(self, *, seed: int, lock, scope=None, device=None, use_stream=False):
@@ -138,6 +138,7 @@ class DeterministicProbeLockTests(unittest.TestCase):
             if bool(use_stream) and device.type == "cuda" else None
         )
         probe_env._device = device
+        probe_env.env_cfg = SimpleNamespace(profile="mrpc")
         probe_env.model = FakeNoisyModel()
         probe_env.probe_batches = batches
         probe_env.is_regression = False
