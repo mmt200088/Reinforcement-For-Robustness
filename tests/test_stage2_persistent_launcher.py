@@ -19,6 +19,22 @@ class Stage2PersistentLauncherTest(unittest.TestCase):
         fake_flock.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         fake_flock.chmod(0o755)
 
+    def test_launcher_uses_one_training_entrypoint(self):
+        source = (
+            REPO_ROOT / "llama_7B_LayerImportance.sh"
+        ).read_text(encoding="utf-8")
+        for removed in (
+            "rl_tune_general.py",
+            "rl_tune_genetic.py",
+            "rl_ga_compare_runner.py",
+            "--stage2-rl-variant",
+            "legacy_v2",
+        ):
+            self.assertNotIn(removed, source)
+        for backend in ("bo_rf", "greedy", "coinn_ga"):
+            self.assertIn(f"--blb-v3-search-backend {backend}", source)
+        self.assertIn("python rl_tune.py", source)
+
     def test_layerwise_stage2_defaults_to_elastic_reward_devices(self):
         source = (
             REPO_ROOT / "llama_7B_LayerImportance.sh"
