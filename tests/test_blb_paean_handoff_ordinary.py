@@ -413,10 +413,8 @@ class PaeanOrdinaryFinalEvalHandoffTest(unittest.TestCase):
         self.assertLess(preflight_index, artifact_index)
         self.assertLess(fingerprint_index, artifact_index)
         self.assertLess(fingerprint_index, baseline_index)
-        self.assertIn(
-            "require_in_process=(final_eval_handoff is not None)",
-            run_source,
-        )
+        self.assertIn("self._build_rescale_bridge(", run_source)
+        self.assertNotIn("require_in_process", run_source)
         self.assertIn(
             "prepared_materialized=prepared_selected_materialized",
             run_source,

@@ -117,7 +117,7 @@ class PaeanBLBActionEvalStaticTest(unittest.TestCase):
         self.assertNotIn("def _load_max_sfs(", text)
         self.assertNotIn("cache[key] = load_max_sfs(key)", text)
         self.assertIn("max_sfs=action_context.max_sfs", text)
-        self.assertIn("calibrated_action_context=action_context", text)
+        self.assertIn("action_context.provenance", text)
 
 if __name__ == "__main__":
     unittest.main()
