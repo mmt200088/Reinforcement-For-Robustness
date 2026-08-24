@@ -71,15 +71,10 @@ def test_prepare_rl_datasets_registers_explicit_probe_and_validation_views():
 
     def register(split_name, dataset):
         registered[split_name] = dataset
+        evaluator.dataloaders[split_name] = f"{split_name}-loader"
 
     evaluator = SimpleNamespace(
         _register_dataset_split=register,
-        dataloaders={
-            "train": "train-loader",
-            "train_probe": "probe-loader",
-            "validation_full": "validation-loader",
-        },
-        dataloaders_mm={},
     )
 
     LayerImportanceEvaluator._prepare_rl_datasets(
@@ -95,7 +90,7 @@ def test_prepare_rl_datasets_registers_explicit_probe_and_validation_views():
         "validation_full": validation,
     }
     assert evaluator.dataloader_train == "train-loader"
-    assert evaluator.dataloader_test == "validation-loader"
+    assert evaluator.dataloader_test == "validation_full-loader"
 
 
 def test_search_reward_split_names_are_always_train_probe():
