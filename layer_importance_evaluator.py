@@ -5664,7 +5664,7 @@ class LayerImportanceEvaluator(TrainerCallback):
     def _get_stage2_resume_checkpoint_path(self):
         if not self.resume_run_dir:
             return None
-        from blb_stage2_rl.runner import (
+        from blb_stage2_rl.training import (
             BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
             BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
         )
@@ -5930,7 +5930,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
 
         def _load_blb_stage2_best():
-            from blb_stage2_rl.runner import (
+            from blb_stage2_rl.training import (
                 BLB_STAGE2_FINAL_CHECKPOINT_FILENAME,
                 BLB_STAGE2_LIVE_CHECKPOINT_FILENAME,
             )
@@ -8852,7 +8852,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 elif getattr(self, "decoupled_layout", False):
                     # 解耦（2026-06-01）：训练完成只写基础快照（Stage-1:
                     # _maybe_snapshot_decoupled_stage1_record；Stage-2:
-                    # blb_stage2_rl.runner 的 record 归档）。重型同-cost 51 组 final-eval
+                    # Stage-2 record 归档）。重型同-cost 51 组 final-eval
                     # 改由独立工具触发（Paean/run_final_eval.sh --stage stage1|stage2
                     # --record-dir ...），不在训练末自动跑，以免把 Rescale_optimizer /
                     # GLUE 链耦合进训练收尾。见

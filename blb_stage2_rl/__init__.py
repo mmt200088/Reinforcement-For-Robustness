@@ -14,7 +14,7 @@
     使 ``LayerImportanceEvaluator.run_unified_final_eval`` 等下游消费保持不变。
 
 CLI / Python 调用：
-    from blb_stage2_rl.runner import BLBStage2RLRunner
+    from blb_stage2_rl.training import BLBStage2RLRunner
     runner = BLBStage2RLRunner(evaluator)
     result = runner.run(fixed_gelu, fixed_softmax, fixed_label, fixed_source)
 
@@ -26,7 +26,7 @@ __all__ = ["BLBStage2RLRunner"]
 
 def __getattr__(name):
     if name == "BLBStage2RLRunner":
-        from .runner import BLBStage2RLRunner
+        from .training import BLBStage2RLRunner
 
         return BLBStage2RLRunner
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
