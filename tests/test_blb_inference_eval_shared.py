@@ -293,9 +293,9 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
 
         # Threshold predictions are [0, 1, 1, 0], not argmax over shape (B,1).
         self.assertAlmostEqual(result.metric1, 0.75)
-        self.assertAlmostEqual(result.metric2, 0.75)
+        self.assertAlmostEqual(result.metric2, 0.7666666666666667)
 
-    def test_full_eval_mnli_accuracy_reuses_shared_helper(self):
+    def test_full_eval_rte_metrics_reuse_shared_helpers(self):
         import torch
         import torch.nn.functional as F
 
@@ -318,7 +318,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         original_mean = inference_eval.np.mean
 
         def fail_if_called(_values, *args, **kwargs):
-            raise AssertionError("MNLI accuracy should use shared accuracy helper")
+            raise AssertionError("RTE metrics should use shared helpers")
 
         inference_eval.np.mean = fail_if_called
         try:
@@ -326,7 +326,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
                 LogitEchoModel(),
                 dataloader,
                 device=torch.device("cpu"),
-                metric_profile="mnli",
+                metric_profile="rte",
                 use_train=True,
                 split_name="validation_full",
             )
@@ -336,7 +336,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         self.assertAlmostEqual(result.metric1, 1.0)
         self.assertAlmostEqual(result.metric2, 1.0)
 
-    def test_probe_trial_skips_prediction_array_transfer_for_accuracy_profiles(self):
+    def test_probe_trial_transfers_prediction_arrays_for_weighted_f1(self):
         import torch
         import torch.nn.functional as F
 
@@ -361,11 +361,13 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
             ProbeBatch([[0.0, 3.0], [3.0, 0.0]], [1, 0]),
         ]
         original = inference_eval.tensor_values_to_numpy_arrays
+        transfer_calls = []
 
-        def fail_if_called(_values):
-            raise AssertionError("accuracy-only probe should not transfer prediction arrays")
+        def record_transfer(values):
+            transfer_calls.append(tuple(values))
+            return original(values)
 
-        inference_eval.tensor_values_to_numpy_arrays = fail_if_called
+        inference_eval.tensor_values_to_numpy_arrays = record_transfer
         try:
             loss, metric1, metric2 = inference_eval.run_installed_probe_trial(
                 LogitEchoModel(),
@@ -379,6 +381,7 @@ class SharedInstalledInferenceEvalTest(unittest.TestCase):
         self.assertGreater(loss, 0.0)
         self.assertAlmostEqual(metric1, 1.0)
         self.assertAlmostEqual(metric2, 1.0)
+        self.assertEqual(len(transfer_calls), 2)
 
     def test_tensor_values_to_numpy_arrays_concatenates_same_device_tensors(self):
         import torch
