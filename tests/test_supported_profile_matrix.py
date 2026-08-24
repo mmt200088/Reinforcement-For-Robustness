@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 import subprocess
+import time
 
 import pytest
 
@@ -72,7 +74,21 @@ def test_general_rl_accepts_only_supported_tasks_with_one_model_family():
         ("--model-type", "gpt-2"),
     ),
 )
-def test_launcher_rejects_unsupported_profile_before_python(args):
+def test_launcher_rejects_unsupported_profile_before_python(args, tmp_path):
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    marker = tmp_path / "python-invoked"
+    fake_python = fakebin / "python"
+    fake_python.write_text(
+        f"#!/usr/bin/env bash\ntouch {str(marker)!r}\nexit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    fake_flock = fakebin / "flock"
+    fake_flock.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_flock.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
     result = subprocess.run(
         [
             "bash",
@@ -84,12 +100,15 @@ def test_launcher_rejects_unsupported_profile_before_python(args):
             "stage1-only",
         ],
         cwd=ROOT,
+        env=env,
         text=True,
         capture_output=True,
         check=False,
     )
+    time.sleep(0.2)
 
     assert result.returncode != 0
+    assert not marker.exists()
     assert "不支持" in result.stderr or "unsupported" in result.stderr.lower()
 
 
@@ -127,4 +146,6 @@ def test_general_and_submission_modules_remain_syntax_valid():
         "rl_tune_general.py",
         "generate_glue_submission.py",
     ):
-        ast.parse((ROOT / relative_path).read_text(encoding="utf-8"))
+        ast.parse(
+            (ROOT / relative_path).read_text(encoding="utf-8").lstrip("\ufeff")
+        )
