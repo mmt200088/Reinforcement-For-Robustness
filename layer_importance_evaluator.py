@@ -79,7 +79,11 @@ from elastic_gpu import (
     is_recoverable_gpu_failure,
     raise_if_elastic_gpu_restart_requested,
 )
-from rl_data_points import RLDataPointWriter, make_unique_run_id
+from rl_data_points import (
+    RLDataPointWriter,
+    make_unique_run_id,
+    write_dataset_protocol,
+)
 import os
 import random
 import hashlib
@@ -2659,6 +2663,23 @@ class LayerImportanceEvaluator(TrainerCallback):
         except Exception:
             self.stage2_workers_per_device = 1
         self.glue_data_protocol = glue_data_protocol
+        self.dataset_protocol = (
+            self.glue_data_protocol.as_payload()
+            if self.glue_data_protocol is not None
+            else None
+        )
+        self.dataset_protocol_hash = (
+            self.glue_data_protocol.dataset_protocol_hash
+            if self.glue_data_protocol is not None
+            else None
+        )
+        if (
+                self.glue_data_protocol is not None
+                and self.glue_data_protocol.validation_full is not test_data
+        ):
+            raise ValueError(
+                "validation data does not match the GLUE protocol context"
+            )
         self.mrpc_reproducibility = mrpc_reproducibility
         if self.mrpc_reproducibility is not None:
             if str(data_path).strip().lower() != "mrpc":
@@ -2772,8 +2793,12 @@ class LayerImportanceEvaluator(TrainerCallback):
 
         self._prepare_rl_datasets(
             train_data=train_data,
+            train_probe=(
+                self.glue_data_protocol.train_probe
+                if self.glue_data_protocol is not None
+                else train_data
+            ),
             validation_data=test_data,
-            validation_data_mm=test_data_mm,
         )
         
         try:
@@ -2905,6 +2930,12 @@ class LayerImportanceEvaluator(TrainerCallback):
             flattened=self.decoupled_layout,
         )
         self.run_output_dir = output_layout["run_output_dir"]
+        self.dataset_protocol_path = None
+        if self.dataset_protocol is not None and self.run_output_dir:
+            self.dataset_protocol_path = write_dataset_protocol(
+                self.run_output_dir,
+                self.dataset_protocol,
+            )
         self.log_file = output_layout["log_file"]
         self.noise_log_file = output_layout["noise_log_file"]
         self.active_log_file = self.log_file
@@ -4424,64 +4455,31 @@ class LayerImportanceEvaluator(TrainerCallback):
         cache[key] = (subset, subset_mm)
         return cache[key]
 
-    def _prepare_rl_datasets(self, train_data, validation_data, validation_data_mm=None):
+    def _prepare_rl_datasets(self, train_data, train_probe, validation_data):
         self.dataset_splits = {}
         self.dataset_splits_mm = {}
         self.dataloaders = {}
         self.dataloaders_mm = {}
-        self.current_val_proxy_window = None
-        self.current_val_proxy_subset_id = None
 
         self._register_dataset_split("train", train_data)
-
-        if USE_TRAIN_ANCHOR and train_data is not None:
-            anchor_size = min(len(train_data), self._get_train_anchor_size())
-            train_anchor = self._sample_dataset_by_size(
-                train_data,
-                subset_size=anchor_size,
-                seed=RL_DATASET_SPLIT_SEED + 11,
-            )
-            self._register_dataset_split("train_anchor", train_anchor)
-
-        if validation_data is not None:
-            self._register_dataset_split("validation_full", validation_data, validation_data_mm)
-            print(
-                "[数据集协议（Dataset Protocol）] "
-                f"完整验证集（validation_full）={len(validation_data)}  "
-                f"（统一使用 validation_full，不再拆分 search/holdout/proxy）"
-            )
-            if validation_data_mm is not None:
-                print(
-                    "[数据集协议（Dataset Protocol）] "
-                    f"MNLI不匹配验证集（mnli_mismatched）={len(validation_data_mm)}"
-                )
-        elif USE_VALIDATION_FOR_REWARD:
-            print("[警告] 验证集引导的奖励已启用，但未提供验证数据集。")
+        self._register_dataset_split("train_probe", train_probe)
+        self._register_dataset_split("validation_full", validation_data)
 
         self.dataloader_train = self.dataloaders.get("train")
         self.dataloader_test = self.dataloaders.get("validation_full")
-        self.dataloader_test_mm = self.dataloaders_mm.get("validation_full")
+        self.dataloader_test_mm = None
 
     def refresh_validation_proxy(self, window_index, stage_label="RL", quiet=False):
         """[已简化] 不再从 val_search_full 抽 proxy，直接返回 validation_full。"""
-        self.current_val_proxy_window = int(window_index)
-        self.current_val_proxy_subset_id = f"proxy_window_{int(window_index):04d}"
-        if self.has_dataset_split("validation_full"):
-            return "validation_full"
-        raise RuntimeError("Stage-1 requires validation_full for reward evaluation; training-set fallback is disabled.")
+        if self.has_dataset_split("train_probe"):
+            return "train_probe"
+        raise RuntimeError("Stage-1 requires the registered train_probe split.")
 
     def get_reward_reference_split_name(self):
-        if USE_VALIDATION_FOR_REWARD:
-            if self.has_dataset_split("validation_full"):
-                return "validation_full"
-        raise RuntimeError("Stage-1 requires validation_full as the reward reference split.")
+        return "train_probe"
 
     def get_online_reward_split_name(self):
-        """Stage-1 在线奖励也统一使用 validation_full（不再切 proxy）。"""
-        if USE_VALIDATION_FOR_REWARD:
-            if self.has_dataset_split("validation_full"):
-                return "validation_full"
-        raise RuntimeError("Stage-1 requires validation_full for online reward.")
+        return "train_probe"
 
     def _resolve_eval_split(self, use_train=True, split=None):
         if split is not None:
@@ -7743,6 +7741,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                 "stage1_step_info_file": self.stage1_step_info_file,
                 "total_layers": int(self.total_layers),
                 "search_algorithm": self.search_algorithm,
+                "dataset_protocol_hash": self.dataset_protocol_hash,
                 "rl_algo": self.rl_algo,
                 "stage1_episodes_requested": (
                     None

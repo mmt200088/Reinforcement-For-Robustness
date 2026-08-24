@@ -93,6 +93,53 @@ class GlueDataProtocolContext:
     validation_full: Any
     identity: TrainProbeIdentity
 
+    def __post_init__(self) -> None:
+        validate_supported_profile(self.model_family, self.dataset)
+        if self.identity.dataset != self.dataset:
+            raise GlueDataProtocolError(
+                "protocol context dataset does not match probe identity"
+            )
+        if len(self.train_probe) != TRAIN_PROBE_SIZE:
+            raise GlueDataProtocolError(
+                "protocol context train probe must contain 256 rows"
+            )
+        if self.validation_full is None or len(self.validation_full) == 0:
+            raise GlueDataProtocolError(
+                "protocol context requires the full validation split"
+            )
+
+    def _identity_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": PROTOCOL_SCHEMA,
+            "model_family": self.model_family,
+            "dataset": self.dataset,
+            "dataset_repo": GLUE_DATASET_REPO,
+            "dataset_revision": GLUE_DATASET_REVISION,
+            "source_split": TRAIN_PROBE_SOURCE_SPLIT,
+            "search_split": TRAIN_PROBE_SPLIT,
+            "final_eval_split": FINAL_EVAL_SPLIT,
+            "source_size": int(self.identity.source_size),
+            "probe_size": TRAIN_PROBE_SIZE,
+            "probe_seed": TRAIN_PROBE_SEED,
+            "positions": list(self.identity.positions),
+            "raw_ids": list(self.identity.raw_ids),
+            "label_histogram": {
+                str(label): int(count)
+                for label, count in self.identity.label_histogram
+            },
+            "ordered_identity_hash": self.identity.ordered_identity_hash,
+            "validation_size": len(self.validation_full),
+        }
+
+    @property
+    def dataset_protocol_hash(self) -> str:
+        return stable_json_hash(self._identity_payload())
+
+    def as_payload(self) -> dict[str, Any]:
+        payload = self._identity_payload()
+        payload["dataset_protocol_hash"] = self.dataset_protocol_hash
+        return payload
+
 
 def supported_profiles() -> tuple[tuple[str, str], ...]:
     return tuple(
