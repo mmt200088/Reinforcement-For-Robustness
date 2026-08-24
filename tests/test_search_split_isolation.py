@@ -104,3 +104,20 @@ def test_search_reward_split_names_are_always_train_probe():
         LayerImportanceEvaluator.get_online_reward_split_name(evaluator)
         == "train_probe"
     )
+
+
+def test_stage1_search_source_has_no_validation_guided_branch():
+    source = Path("layer_importance_evaluator.py").read_text(encoding="utf-8")
+    stage1_flow = source[source.index("    def on_evaluate("):]
+
+    assert "if USE_VALIDATION_FOR_REWARD" not in stage1_flow
+    assert "if not USE_VALIDATION_FOR_REWARD" not in stage1_flow
+    assert 'reward_reference_split != "train_probe"' in stage1_flow
+    assert '"split": "train_probe"' in stage1_flow
+    assert stage1_flow.count(
+        '"dataset_protocol_hash": self.dataset_protocol_hash'
+    ) >= 3
+    assert "eval_split_name=online_reward_split" in stage1_flow
+    assert stage1_flow.count(
+        "dataset_protocol_hash=self.dataset_protocol_hash"
+    ) == 3
