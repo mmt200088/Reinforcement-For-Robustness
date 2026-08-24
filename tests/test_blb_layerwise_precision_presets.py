@@ -75,6 +75,28 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
                         "block4": 12,
                         "block5": 11,
                     },
+                    "cleartext_simulation_k_by_block": {
+                        "block1": 11,
+                        "block2": 10,
+                        "block3": 10,
+                        "block4": 12,
+                        "block5": 11,
+                    },
+                    "ciphertext_truncation_k_by_block": {
+                        "block1": 13,
+                        "block2": 13,
+                        "block3": 13,
+                        "block4": 13,
+                        "block5": 13,
+                    },
+                    "reserve_bits_by_block": {
+                        "block1": 2,
+                        "block2": 3,
+                        "block3": 3,
+                        "block4": 1,
+                        "block5": 2,
+                    },
+                    "ciphertext_ring_bits": 40,
                 },
                 {
                     "layer_idx": 1,
@@ -88,6 +110,28 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
                         "block4": 10,
                         "block5": 9,
                     },
+                    "cleartext_simulation_k_by_block": {
+                        "block1": 9,
+                        "block2": 8,
+                        "block3": 8,
+                        "block4": 10,
+                        "block5": 9,
+                    },
+                    "ciphertext_truncation_k_by_block": {
+                        "block1": 12,
+                        "block2": 12,
+                        "block3": 12,
+                        "block4": 12,
+                        "block5": 12,
+                    },
+                    "reserve_bits_by_block": {
+                        "block1": 3,
+                        "block2": 4,
+                        "block3": 4,
+                        "block4": 2,
+                        "block5": 3,
+                    },
+                    "ciphertext_ring_bits": 39,
                 },
                 {
                     "layer_idx": 2,
@@ -101,6 +145,28 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
                         "block4": 8,
                         "block5": 7,
                     },
+                    "cleartext_simulation_k_by_block": {
+                        "block1": 7,
+                        "block2": 6,
+                        "block3": 6,
+                        "block4": 8,
+                        "block5": 7,
+                    },
+                    "ciphertext_truncation_k_by_block": {
+                        "block1": 11,
+                        "block2": 11,
+                        "block3": 11,
+                        "block4": 12,
+                        "block5": 11,
+                    },
+                    "reserve_bits_by_block": {
+                        "block1": 4,
+                        "block2": 5,
+                        "block3": 5,
+                        "block4": 4,
+                        "block5": 4,
+                    },
+                    "ciphertext_ring_bits": 38,
                 },
             ],
         )
@@ -342,6 +408,21 @@ class LayerwisePrecisionPresetContractTest(unittest.TestCase):
         self.assertEqual(
             compute_variable_cost_from_action_matrix([[1, 2]]).ppo_resource_score,
             1.0,
+        )
+
+    def test_reward_facing_costs_remain_pre_change_goldens(self):
+        observed = [
+            compute_variable_cost_from_action_matrix([[0, preset_index]])
+            for preset_index in range(3)
+        ]
+
+        self.assertEqual(
+            [result.removed_k_bits for result in observed],
+            [11, 21, 31],
+        )
+        self.assertEqual(
+            [result.ppo_resource_score for result in observed],
+            [0.0, 0.25, 0.5],
         )
 
     def test_network_ratio_controls_score_and_precision_budget(self):
