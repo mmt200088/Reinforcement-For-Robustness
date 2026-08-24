@@ -1,0 +1,34 @@
+{
+  "dataset_revision": "bcdcba79d07bc864c1c254ccfcedcce55bcc9a8c",
+  "fixture_sha256": "82dd5bd7bc82fa7aa1b8582011cab29ec3046ae889d63aa071e814e2ce8a2d26",
+  "probe_seed": 42,
+  "probe_size": 256,
+  "schema_version": "glue_train_probe_fixture_result_v1",
+  "source_commit": "b32708e8",
+  "tasks": {
+    "mrpc": {
+      "label_histogram": {
+        "0": 83,
+        "1": 173
+      },
+      "ordered_identity_hash": "42d9bd0510111e97b172b03e7c71633ec6090dd4cb150e661e0fb15c00a26af1",
+      "source_size": 3668
+    },
+    "rte": {
+      "label_histogram": {
+        "0": 128,
+        "1": 128
+      },
+      "ordered_identity_hash": "d776252686fc371060b1686755062468aeafaadb482da4fd5df1cee734135187",
+      "source_size": 2490
+    },
+    "sst2": {
+      "label_histogram": {
+        "0": 113,
+        "1": 143
+      },
+      "ordered_identity_hash": "2914269a07b62a8673e57e0b30086b317302da88b67eb5be28bf8e4488dcd62f",
+      "source_size": 67349
+    }
+  }
+}
