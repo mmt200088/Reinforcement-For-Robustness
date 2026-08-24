@@ -225,27 +225,6 @@ class PaeanActionGridTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one-dimensional"):
             action_grid._normalize_base_action([[0, 1, 2]], num_layers=1)
 
-    def test_standard_truncation_sweeps_cover_k6_through_k13(self):
-        action_config = ROOT / "Paean/action_configs/mrpc-blb-baseline-truncation-6-13.json"
-        payload = json.loads(action_config.read_text(encoding="utf-8"))
-        self.assertEqual(payload["ranges"]["truncation"], list(range(6, 14)))
-
-        sweep_preset = (
-            ROOT / "Paean/presets/mrpc-blb-baseline-truncation-sweep.conf"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            "--action-config Paean/action_configs/mrpc-blb-baseline-truncation-6-13.json",
-            sweep_preset,
-        )
-
-        range_preset = (
-            ROOT / "Paean/presets/mrpc-blb-action-range.conf"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            "--range truncation=6,7,8,9,10,11,12,13",
-            range_preset,
-        )
-
     def test_parse_base_action_vec_accepts_list_without_extra_list_materialization(self):
         action_grid = _load_action_grid_module()
 

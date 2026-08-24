@@ -65,13 +65,10 @@ class FusionSinglePathGuardTest(unittest.TestCase):
         )
 
     def test_final_strict_revalidation_replays_boosted_fusion_config(self):
-        source = (REPO / "blb_stage2_rl" / "sequential_runner.py").read_text(encoding="utf-8")
+        source = (REPO / "blb_stage2_rl" / "layerwise_runner.py").read_text(encoding="utf-8")
         self.assertTrue(
-            "build_boosted_overrides_from_group" in source,
-            "final strict revalidation must reconstruct boosted overrides",
-        )
-        self.assertTrue(
-            "boosted_overrides=_candidate_boosted_overrides" in source,
+            'boosted_overrides=strict_best_snapshot["boosted_overrides"]'
+            in source,
             "final strict revalidation must pass boosted overrides into terminal prepare",
         )
 

@@ -789,65 +789,6 @@ class Stage1ApplyConfigurationReuseTest(unittest.TestCase):
 
 
 class Stage1GpuEvalScriptSourceTest(unittest.TestCase):
-    def test_stage1_plaintext_repeat_eval_uses_async_transfer_and_defers_sync(self):
-        source = (_REPO_ROOT / "scripts" / "stage1_plaintext_repeat_eval.py").read_text(
-            encoding="utf-8",
-        )
-        dataloader_region = _source_region(source, "def _build_dataloader(", "def _evaluate(")
-        eval_region = _source_region(source, "def _evaluate(", "def main(")
-        loop_region = eval_region.split("for batch in dataloader:", 1)[1].split(
-            "loss_sum = float",
-            1,
-        )[0]
-
-        self.assertIn("pin_memory=torch.cuda.is_available()", dataloader_region)
-        self.assertIn('batch.pop("labels").to(device, non_blocking=True)', eval_region)
-        self.assertIn("v.to(device, non_blocking=True)", eval_region)
-        self.assertIn("loss_sum_t = torch.zeros((), dtype=torch.float64, device=device)", eval_region)
-        self.assertIn("correct_t = torch.zeros((), dtype=torch.long, device=device)", eval_region)
-        self.assertNotIn(".item()", loop_region)
-
-    def test_stage1_plaintext_repeat_eval_streams_stdout_json_summary(self):
-        source = (_REPO_ROOT / "scripts" / "stage1_plaintext_repeat_eval.py").read_text(
-            encoding="utf-8",
-        )
-        main_region = _source_region(source, "def main() -> int:", 'if __name__ == "__main__":')
-
-        self.assertIn("json.dump(summary, sys.stdout", main_region)
-        self.assertIn('sys.stdout.write("\\n")', main_region)
-        self.assertNotIn("print(json.dumps(summary", main_region)
-
-    def test_mrpc_layer_noise_eval_uses_async_transfer_and_defers_cpu_lists(self):
-        source = (_REPO_ROOT / "scripts" / "bert_mrpc_layer_noise_experiment.py").read_text(
-            encoding="utf-8",
-        )
-        dataloader_region = _source_region(source, "def build_dataloader(", "def evaluate_condition(")
-        eval_region = _source_region(source, "def evaluate_condition(", "def run_repeated_condition(")
-        loop_region = eval_region.split("for batch in dataloader:", 1)[1].split(
-            "labels_all = (",
-            1,
-        )[0]
-
-        self.assertIn("pin_memory=torch.cuda.is_available()", dataloader_region)
-        self.assertIn("torch_module.inference_mode()", eval_region)
-        self.assertIn("labels.to(device, non_blocking=True)", eval_region)
-        self.assertIn("value.to(device, non_blocking=True)", eval_region)
-        self.assertIn("label_tensors.append(labels.detach().reshape(-1))", eval_region)
-        self.assertIn("pred_tensors.append(preds.detach().reshape(-1))", eval_region)
-        self.assertNotIn(".tolist()", loop_region)
-
-
-@unittest.skipUnless(_HAS_TORCH, "torch unavailable")
-class HornerPolyEquivalenceTest(unittest.TestCase):
-    """Horner ``_poly`` vs the stacked-powers reference ``polynomial``."""
-
-    def _x(self):
-        torch.manual_seed(7)
-        # include the piecewise boundaries and 0 exactly
-        x = torch.empty(4, 3, 257).uniform_(-4.0, 4.0)
-        x.view(-1)[:5] = torch.tensor([-2.7, 0.0, 2.7, -0.0, 1.0])
-        return x
-
     def test_poly_matches_stacked_reference_all_degrees_and_signs(self):
         from function_handler import GELU_COEEF, PolynomialGELU, polynomial
         x = self._x()

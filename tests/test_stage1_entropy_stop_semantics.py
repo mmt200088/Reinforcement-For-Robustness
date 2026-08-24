@@ -48,11 +48,8 @@ class Stage1EntropyStopSemanticsTest(unittest.TestCase):
         self.assertIn("stage1_rl_unbounded_until_entropy", evaluator_source)
         self.assertIn("itertools.count(stage1_resume_start_episode)", evaluator_source)
         self.assertIn("Stage-1 RL 进度 · 回合 {episode + 1} / entropy<", evaluator_source)
-        self.assertIn("_stage1_unbounded_entropy_stop", launcher_source)
-        self.assertIn(
-            "--stage1-search-episodes <= 0 requires --stage1-entropy-stop-threshold",
-            launcher_source,
-        )
+        self.assertIn('STAGE1_EPISODES="0"', launcher_source)
+        self.assertIn('STAGE1_ENTROPY_STOP_THRESHOLD="0.1"', launcher_source)
 
     def test_stage1_evaluation_protocol_is_plaintext_only(self):
         source = _source(LAYER_EVALUATOR)

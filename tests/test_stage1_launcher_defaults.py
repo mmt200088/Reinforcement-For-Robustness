@@ -14,8 +14,7 @@ class Stage1LauncherDefaultTest(unittest.TestCase):
         self.assertIn("--elastic-gpu-mode", source)
         self.assertIn("scripts/elastic_gpu_supervisor.py", source)
         self.assertIn(
-            '[ "$RUN_MODE" = "stage1-only" ] && '
-            '[ "$S_STAGE1_RL_DEVICES" = "false" ]',
+            '[ "$MODE" = "stage1-only" ] && [ -z "$STAGE1_RL_DEVICES" ]',
             source,
         )
         self.assertIn('STAGE1_RL_DEVICES="auto"', source)
@@ -23,12 +22,9 @@ class Stage1LauncherDefaultTest(unittest.TestCase):
     def test_stage1_only_rl_uses_high_throughput_batch_default_when_unspecified(self):
         source = LAUNCHER.read_text(encoding="utf-8")
 
-        self.assertIn('STAGE1_RL_DEFAULT_BATCH_SIZE="128"', source)
-        self.assertIn(
-            '[ "$SEARCH_ALGORITHM" = "rl" ] && [ "$RUN_MODE" = "stage1-only" ] && [ "$S_BATCH_SIZE" = "false" ]',
-            source,
-        )
-        self.assertIn('BATCH_SIZE="$STAGE1_RL_DEFAULT_BATCH_SIZE"', source)
+        self.assertIn('BATCH_SIZE="128"', source)
+        for preset in (ROOT / "presets").glob("*-stage1-rl.conf"):
+            self.assertIn("--batch-size 512", preset.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

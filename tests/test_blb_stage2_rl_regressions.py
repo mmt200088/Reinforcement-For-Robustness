@@ -1759,6 +1759,26 @@ class BLBPlaybookArtifactRegressionTests(unittest.TestCase):
         self.assertIn("expected_slots_per_layer", slot_check)
         self.assertIn("status", slot_check)
 
+
+class BLBProbeSizingRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _collate(rows):
+        return {
+            key: torch.stack([row[key] for row in rows])
+            for key in rows[0]
+        }
+
+    @staticmethod
+    def _rows(count):
+        return [
+            {
+                "input_ids": torch.tensor([index, index + 1]),
+                "attention_mask": torch.ones(2, dtype=torch.long),
+                "labels": torch.tensor(index),
+            }
+            for index in range(count)
+        ]
+
     def test_stage2_uses_all_train_probe_rows_in_fixed_order(self):
         from blb_stage2_rl.training import BLBStage2RLRunner
 

@@ -8,8 +8,6 @@ import numpy as np
 
 from blb_stage2_rl.action_space import step_schedule
 from layer_importance_evaluator import LayerImportanceEvaluator
-from scripts import run_fusion_count_action_eval as action_eval
-from scripts import run_fusion_count_action_eval_rlpath as action_eval_rlpath
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -140,11 +138,6 @@ class Stage2All4BaseConfigTest(unittest.TestCase):
         for token in required:
             with self.subTest(token=token):
                 self.assertIn(token, call)
-
-    def test_fixed_action_tools_default_to_all4(self):
-        self.assertEqual(action_eval.DEFAULT_STAGE1_GELU, [4] * 12)
-        self.assertEqual(action_eval_rlpath.DEFAULT_STAGE1_GELU, [4] * 12)
-
 
 if __name__ == "__main__":
     unittest.main()

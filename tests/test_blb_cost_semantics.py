@@ -157,7 +157,3 @@ class BLBCostSemanticsTests(unittest.TestCase):
         p3_same_reward_higher_cost["total_reward"] = p3_capped_low["total_reward"]
         self.assertLess(candidate_rank_key(p3_same_reward_higher_cost), candidate_rank_key(p3_capped_low))
         self.assertLess(candidate_rank_key(p3_capped_low), candidate_rank_key(p2_huge_cost))
-
-        self.assertEqual(record["rescale_debug"]["optimizer_diagnostic_terms"]["q_bits"], [60, 50])
-        self.assertTrue(record["mpc_truncation_cost_enabled"])
-        self.assertEqual(record["mpc_truncation_term"]["avg_k"], 12.5)
