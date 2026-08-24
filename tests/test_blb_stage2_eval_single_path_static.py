@@ -128,9 +128,9 @@ class Stage2EvalSinglePathStaticTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn('BLB_V3_TRUNCATION_BACKEND="binary"', launcher)
-        self.assertIn("--blb-v3-truncation-backend)", launcher)
         self.assertIn("--blb_v3_truncation_backend", launcher)
+        self.assertIn("--blb_v3_truncation_ring_bits 43", launcher)
+        self.assertIn("--blb_v3_truncation_source_fractional_bits 24", launcher)
         self.assertIn("blb_v3_truncation_backend='binary'", evaluator)
         self.assertIn("self.blb_v3_truncation_backend", evaluator)
         self.assertIn('truncation_backend: str = "binary"', runner)

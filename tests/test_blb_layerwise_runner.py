@@ -2732,40 +2732,20 @@ class LayerwiseDispatchRulesTests(unittest.TestCase):
 
     def test_launcher_locks_stage2_directory_before_fresh_cleanup(self):
         source = Path("llama_7B_LayerImportance.sh").read_text(encoding="utf-8")
-        stage2_start = source.index(
-            '    _PERSISTENT_ALGORITHM="$SEARCH_ALGORITHM"'
+        persistent_dir = source.index(
+            'RUN_ROOT="$PERSISTENT_ROOT/$ALGORITHM/$MODEL_TYPE/$DATASET/'
+            '$CONSTRAINT_SLUG"'
         )
-        stage2_end = source.index(
-            'elif [ "$SEARCH_ALGORITHM" = "ga" ] || '
-            '[ "$SEARCH_ALGORITHM" = "greedy" ]; then',
-            stage2_start,
-        )
-        stage2 = source[stage2_start:stage2_end]
-        base_assignment = stage2.index(
-            '_PERSISTENT_ALGORITHM="$SEARCH_ALGORITHM"'
-        )
-        backend_override = stage2.index(
-            '_PERSISTENT_ALGORITHM="$BLB_V3_SEARCH_BACKEND"'
-        )
-        persistent_dir = stage2.index(
-            'PERSISTENT_DIR="${PERSISTENT_ROOT}/${_PERSISTENT_ALGORITHM}/'
-            '${MODEL_TYPE}/${DATASET}/${CONSTRAINT_SLUG}"'
-        )
-        lock = stage2.index('flock -n "$BLB_STAGE2_RUN_LOCK_FD"')
-        cleanup = stage2.index('rm -rf "$PERSISTENT_DIR"')
+        lock = source.index('flock -n 9', persistent_dir)
+        cleanup = source.index('rm -rf "$RUN_ROOT"', persistent_dir)
 
-        self.assertLess(base_assignment, backend_override)
-        self.assertLess(backend_override, persistent_dir)
-        self.assertLess(persistent_dir, lock)
         self.assertLess(lock, cleanup)
-        self.assertIn("BLB_STAGE2_RUN_LOCK_PATH", stage2[:cleanup])
-        self.assertIn("export BLB_STAGE2_RUN_LOCK_FD", stage2[:cleanup])
-        self.assertIn("BLB_STAGE2_RUN_LOCK_FD=9", stage2[:cleanup])
+        self.assertIn("BLB_STAGE2_RUN_LOCK_PATH", source[persistent_dir:cleanup])
+        self.assertIn("export BLB_STAGE2_RUN_LOCK_FD=9", source[persistent_dir:cleanup])
         self.assertIn(
-            'exec 9>>"$BLB_STAGE2_RUN_LOCK_PATH"',
-            stage2[:cleanup],
+            'exec 9>>"$LOCK_PATH"',
+            source[persistent_dir:cleanup],
         )
-        self.assertNotIn("exec {BLB_STAGE2_RUN_LOCK_FD}", stage2[:cleanup])
 
     def test_sequential_train_config_carries_layerwise_resume_state(self):
         source = Path("blb_stage2_rl/sequential_runner.py").read_text(

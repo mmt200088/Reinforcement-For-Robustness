@@ -458,6 +458,16 @@ else
   RUN_ROOT="$PERSISTENT_ROOT/$ALGORITHM/$MODEL_TYPE/$DATASET/$CONSTRAINT_SLUG"
 fi
 
+if [ "$MODE" != "stage1-only" ]; then
+  command -v flock >/dev/null 2>&1 || fail "flock is required for Stage-2 persistent locking"
+  mkdir -p "$(dirname "$RUN_ROOT")"
+  LOCK_PATH="$(dirname "$RUN_ROOT")/.$(basename "$RUN_ROOT").stage2.lock"
+  exec 9>>"$LOCK_PATH"
+  flock -n 9 || fail "persistent directory is already active: $RUN_ROOT"
+  printf 'pid=%s\n' "$$" 1>&9
+  export BLB_STAGE2_RUN_LOCK_FD=9 BLB_STAGE2_RUN_LOCK_PATH="$LOCK_PATH"
+fi
+
 if [ "$FRESH" = "true" ] && [ -d "$RUN_ROOT" ]; then
   rm -rf "$RUN_ROOT"
 fi
@@ -468,15 +478,6 @@ if [ -z "$RESUME_FROM" ] && [ -f "$RUN_ROOT/metadata.json" ]; then
   RESUME_FROM="$RUN_ROOT"
 fi
 mkdir -p "$RUN_ROOT/logs"
-
-if [ "$MODE" != "stage1-only" ]; then
-  command -v flock >/dev/null 2>&1 || fail "flock is required for Stage-2 persistent locking"
-  LOCK_PATH="$(dirname "$RUN_ROOT")/.$(basename "$RUN_ROOT").stage2.lock"
-  exec 9>>"$LOCK_PATH"
-  flock -n 9 || fail "persistent directory is already active: $RUN_ROOT"
-  printf 'pid=%s\n' "$$" 1>&9
-  export BLB_STAGE2_RUN_LOCK_FD=9 BLB_STAGE2_RUN_LOCK_PATH="$LOCK_PATH"
-fi
 
 if [ ! -f "$RUN_ROOT/metadata.json" ]; then
   python3 - "$RUN_ROOT/metadata.json" "$ALGORITHM" "$MODEL_TYPE" "$DATASET" "$STAGE1_ACCURACY_TOLERANCE" "$STAGE2_LIMIT_TOLERANCE" "$STABILITY_KEY" "$STABILITY_VALUE" "$BATCH_SIZE" "$STAGE2_INFERENCE_BATCH_SIZE" <<'PY'
