@@ -11,6 +11,7 @@ from unittest import mock
 
 from glue_data_protocol import (
     GLUE_DATASET_REVISION,
+    GlueDataProtocolError,
     SUPPORTED_DATASETS,
 )
 from mrpc_reproducibility import (
@@ -589,7 +590,7 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
         self.assertIn("route=local_saved_to_disk", log_text)
         self.assertIn(f"path={local_mrpc}", log_text)
 
-    def test_unpinned_mrpc_local_dataset_does_not_require_idx(self):
+    def test_supported_local_dataset_requires_stable_idx(self):
         rl_tune = _import_rl_tune()
 
         class FakeDatasetDict(dict):
@@ -599,21 +600,11 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
                 "test": ["sentence1", "sentence2", "label"],
             }
 
-        with tempfile.TemporaryDirectory() as td:
-            local_mrpc = os.path.join(td, "mrpc")
-            os.makedirs(local_mrpc)
-            with mock.patch.dict(
-                    os.environ, {"GLUE_LOCAL_DATASET_DIR": td}, clear=False,
-            ):
-                loaded = rl_tune.load_glue_dataset_equivalent(
-                    "mrpc",
-                    load_dataset_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-                        RuntimeError("network unavailable")
-                    ),
-                    load_from_disk_fn=lambda _path: FakeDatasetDict({"train": "ok"}),
-                )
-
-        self.assertEqual(loaded, {"train": "ok"})
+        with self.assertRaisesRegex(ValueError, "idx"):
+            rl_tune._validate_glue_dataset_equivalence(
+                FakeDatasetDict({"train": "ok"}),
+                "mrpc",
+            )
 
     def test_uses_hf_local_files_cache_before_remote_parquet_fallback(self):
         rl_tune = _import_rl_tune()
@@ -797,11 +788,10 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "equivalent parquet"):
             load_glue_dataset_equivalent("mrpc", load_dataset_fn=fake_load_dataset)
 
-    def test_unknown_glue_task_preserves_original_loader_error(self):
+    def test_unknown_glue_task_fails_before_loader_access(self):
         load_glue_dataset_equivalent = _import_rl_tune().load_glue_dataset_equivalent
+        loader = mock.Mock(side_effect=AssertionError("loader must not run"))
 
-        def fake_load_dataset(path, *args, **kwargs):
-            raise RuntimeError("primary loader failure")
-
-        with self.assertRaisesRegex(RuntimeError, "primary loader failure"):
-            load_glue_dataset_equivalent("unknown_task", load_dataset_fn=fake_load_dataset)
+        with self.assertRaisesRegex(GlueDataProtocolError, "unsupported dataset"):
+            load_glue_dataset_equivalent("unknown_task", load_dataset_fn=loader)
+        loader.assert_not_called()
