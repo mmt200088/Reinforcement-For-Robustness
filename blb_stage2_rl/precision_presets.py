@@ -15,27 +15,79 @@ except ImportError:  # pragma: no cover - legacy top-level import compatibility
 @dataclass(frozen=True)
 class PrecisionPreset:
     name: str
-    k_by_block: Tuple[int, int, int, int, int]
+    ciphertext_k_by_block: Tuple[int, int, int, int, int]
+    simulation_k_by_block: Tuple[int, int, int, int, int]
+    ciphertext_ring_bits: int
     communication_utility: float
 
     def __post_init__(self) -> None:
-        if len(self.k_by_block) != 5:
-            raise ValueError(f"{self.name}: precision preset must contain five K values")
-        unsupported = [value for value in self.k_by_block if int(value) not in K_LEVELS]
-        if unsupported:
-            raise ValueError(f"{self.name}: unsupported K values {unsupported}")
+        for field_name, values in (
+                ("ciphertext", self.ciphertext_k_by_block),
+                ("simulation", self.simulation_k_by_block),
+        ):
+            if len(values) != 5:
+                raise ValueError(
+                    f"{self.name}: {field_name} precision preset must contain five K values"
+                )
+            unsupported = [value for value in values if int(value) not in K_LEVELS]
+            if unsupported:
+                raise ValueError(
+                    f"{self.name}: unsupported {field_name} K values {unsupported}"
+                )
+        if any(value < 0 for value in self.reserve_bits_by_block):
+            raise ValueError(
+                f"{self.name}: simulation K cannot exceed ciphertext K"
+            )
+        if int(self.ciphertext_ring_bits) <= 0:
+            raise ValueError(
+                f"{self.name}: ciphertext ring bits must be positive"
+            )
         utility = float(self.communication_utility)
         if not math.isfinite(utility) or not 0.0 <= utility <= 1.0:
             raise ValueError(f"{self.name}: communication utility must be in [0, 1]")
 
+    @property
+    def reserve_bits_by_block(self) -> Tuple[int, int, int, int, int]:
+        return tuple(
+            int(ciphertext_k) - int(simulation_k)
+            for ciphertext_k, simulation_k in zip(
+                self.ciphertext_k_by_block,
+                self.simulation_k_by_block,
+            )
+        )
+
+    @property
+    def k_by_block(self) -> Tuple[int, int, int, int, int]:
+        """Compatibility alias for the unchanged executable simulation K."""
+        return self.simulation_k_by_block
+
 
 PRECISION_PRESETS = (
-    PrecisionPreset("high", (11, 10, 10, 12, 11), 0.0),
-    PrecisionPreset("medium", (9, 8, 8, 10, 9), 0.5),
-    PrecisionPreset("low", (7, 6, 6, 8, 7), 1.0),
+    PrecisionPreset(
+        "high",
+        (13, 13, 13, 13, 13),
+        (11, 10, 10, 12, 11),
+        40,
+        0.0,
+    ),
+    PrecisionPreset(
+        "medium",
+        (12, 12, 12, 12, 12),
+        (9, 8, 8, 10, 9),
+        39,
+        0.5,
+    ),
+    PrecisionPreset(
+        "low",
+        (11, 11, 11, 12, 11),
+        (7, 6, 6, 8, 7),
+        38,
+        1.0,
+    ),
 )
 PRECISION_PRESET_NAMES = tuple(preset.name for preset in PRECISION_PRESETS)
 PRECISION_PRESET_VERSION = "stage2_precision_presets_hml_v1"
+PRECISION_PRESET_METADATA_VERSION = "stage2_precision_presets_paper_semantics_v1"
 
 
 def precision_preset(index: int) -> PrecisionPreset:
@@ -81,6 +133,7 @@ def allocated_precision_tolerances(
 
 __all__ = [
     "PRECISION_PRESETS",
+    "PRECISION_PRESET_METADATA_VERSION",
     "PRECISION_PRESET_NAMES",
     "PRECISION_PRESET_VERSION",
     "PrecisionPreset",
