@@ -168,3 +168,24 @@ def test_train_probe_fixture_rejects_tampering(tmp_path, mutation, message):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(GlueDataProtocolError, match=message):
         load_train_probe_fixture(path)
+
+
+def test_fixture_builder_loads_all_tasks_at_pinned_revision(tmp_path):
+    from scripts.build_glue_train_probe_fixture import build_fixture
+
+    calls = []
+
+    def fake_loader(repo, task, revision):
+        calls.append((repo, task, revision))
+        offset = SUPPORTED_DATASETS.index(task) * 10_000
+        return {"train": fake_binary_dataset(offset=offset)}
+
+    output = tmp_path / "fixture.json"
+    fixture = build_fixture(output, load_dataset_fn=fake_loader)
+
+    assert fixture.task_names == SUPPORTED_DATASETS
+    assert calls == [
+        ("nyu-mll/glue", task, GLUE_DATASET_REVISION)
+        for task in SUPPORTED_DATASETS
+    ]
+    assert load_train_probe_fixture(output) == fixture
