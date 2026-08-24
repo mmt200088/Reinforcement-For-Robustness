@@ -8,44 +8,19 @@ from typing import Dict, List, Tuple
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from transformers import AutoModel, AutoModelForCausalLM, AutoModelForImageClassification, AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification
 
 # =========================
-# 1) 需要统计的模型（按架构：BERT / GPT-2 / ViT / OPT）
+# 1) Supported BERT/GLUE profiles
 # =========================
 MODEL_IDS = {
-
-    # ViT (image classification)
-    "ViT-Base": "google/vit-base-patch16-224",
-    "ViT-Large": "google/vit-large-patch16-224",
-
-    # GPT-2
-    "GPT2": "openai-community/gpt2",
-    "GPT2-Medium": "openai-community/gpt2-medium",
-    "GPT2-Large": "openai-community/gpt2-large",
-    "GPT2-XL": "openai-community/gpt2-xl",
-
-    # OPT (causal LM)
-    "OPT-1.3B": "facebook/opt-1.3b",
-
-    # BERT-Base (GLUE)
-    "BERT-Base-QNLI": "textattack/bert-base-uncased-QNLI",
-    "BERT-Base-RTE":  "textattack/bert-base-uncased-RTE",
     "BERT-Base-MRPC": "textattack/bert-base-uncased-MRPC",
-    # BERT-Large
-    "BERT-Large": "google-bert/bert-large-uncased",
-    "BERT-Large-CoLA": "yoshitomo-matsubara/bert-large-uncased-cola",
-    "BERT-Large-SST2": "assemblyai/bert-large-uncased-sst2",
+    "BERT-Base-RTE": "textattack/bert-base-uncased-RTE",
+    "BERT-Base-SST2": "textattack/bert-base-uncased-SST-2",
+    "BERT-Large-MRPC": "yoshitomo-matsubara/bert-large-uncased-mrpc",
+    "BERT-Large-RTE": "yoshitomo-matsubara/bert-large-uncased-rte",
+    "BERT-Large-SST2": "yoshitomo-matsubara/bert-large-uncased-sst2",
 }
-
-# Encoder-only models (no classification head); load with AutoModel
-ENCODER_ONLY_IDS = {"google-bert/bert-large-uncased"}
-
-# Image models (ViT etc.); load with AutoModelForImageClassification
-IMAGE_MODEL_IDS = {"google/vit-base-patch16-224", "google/vit-large-patch16-224"}
-
-# Causal LM (OPT etc.); load with AutoModelForCausalLM
-CAUSAL_LM_IDS = {"facebook/opt-1.3b"}
 
 OUT_DIR = "weight_hist_out"
 PLOTS_DIR = os.path.join(OUT_DIR, "plots")
@@ -61,7 +36,7 @@ MIN_EDGE = 1e-8
 CHUNK_ELEMS = 5_000_000
 
 # =========================
-# 2) 类别规则 + 层号解析（按架构：BERT / GPT-2）
+# 2) BERT category and layer parsing
 # =========================
 # BERT (base & large): bert.encoder.layer.<i>.*
 BERT_CATEGORY_PATTERNS = [
@@ -78,63 +53,6 @@ BERT_CATEGORY_PATTERNS = [
 ]
 BERT_LAYER_RE = re.compile(r"bert\.encoder\.layer\.(\d+)\.")
 
-# GPT-2: transformer.h.<i>.*
-GPT2_CATEGORY_PATTERNS = [
-    (r"\.attn\.c_attn\.", "Attn/QKV"),
-    (r"\.attn\.c_proj\.", "Attn/O"),
-    (r"\.mlp\.c_fc\.", "FFN/Intermediate"),
-    (r"\.mlp\.c_proj\.", "FFN/Output"),
-    (r"\.ln_1\.", "LayerNorm/ln_1"),
-    (r"\.ln_2\.", "LayerNorm/ln_2"),
-    (r"^transformer\.wte\.", "Embeddings/wte"),
-    (r"^transformer\.wpe\.", "Embeddings/wpe"),
-    (r"^transformer\.ln_f\.", "LayerNorm/ln_f"),
-    (r"^score\.", "Classifier"),
-    (r"\.lm_head\.", "Classifier"),
-]
-GPT2_LAYER_RE = re.compile(r"transformer\.h\.(\d+)\.")
-
-# ViT: vit.encoder.layer.<i>.* (same encoder layout as BERT but with vit prefix)
-VIT_CATEGORY_PATTERNS = [
-    (r"\.attention\.attention\.query\.", "Attn/Q"),
-    (r"\.attention\.attention\.key\.", "Attn/K"),
-    (r"\.attention\.attention\.value\.", "Attn/V"),
-    (r"\.attention\.output\.dense\.", "Attn/O"),
-    (r"\.intermediate\.dense\.", "FFN/Intermediate"),
-    (r"\.output\.dense\.", "FFN/OutputDense"),
-    (r"\.layernorm_before\.", "LayerNorm/before"),
-    (r"\.layernorm_after\.", "LayerNorm/after"),
-    (r"^vit\.embeddings\.", "Embeddings"),
-    (r"^vit\.layernorm\.", "LayerNorm/final"),
-    (r"^classifier\.", "Classifier"),
-]
-VIT_LAYER_RE = re.compile(r"vit\.encoder\.layer\.(\d+)\.")
-
-# OPT: model.decoder.layers.<i>.* (decoder-only, q_proj/k_proj/v_proj/out_proj, fc1/fc2)
-OPT_CATEGORY_PATTERNS = [
-    (r"\.self_attn\.q_proj\.", "Attn/Q"),
-    (r"\.self_attn\.k_proj\.", "Attn/K"),
-    (r"\.self_attn\.v_proj\.", "Attn/V"),
-    (r"\.self_attn\.out_proj\.", "Attn/O"),
-    (r"\.fc1\.", "FFN/Intermediate"),
-    (r"\.fc2\.", "FFN/Output"),
-    (r"\.self_attn_layer_norm\.", "LayerNorm/self_attn"),
-    (r"decoder\.layers\.\d+\.final_layer_norm\.", "LayerNorm/final"),
-    (r"^model\.decoder\.embed_tokens\.", "Embeddings"),
-    (r"^model\.decoder\.embed_positions\.", "Embeddings/positions"),
-    (r"^model\.decoder\.final_layer_norm\.", "LayerNorm/decoder_final"),
-    (r"^model\.decoder\.project_in\.", "Embeddings/project_in"),
-    (r"^model\.decoder\.project_out\.", "Embeddings/project_out"),
-    (r"\.lm_head\.", "Classifier"),
-]
-OPT_LAYER_RE = re.compile(r"model\.decoder\.layers\.(\d+)\.")
-
-ARCH_CONFIG = {
-    "bert": (BERT_LAYER_RE, BERT_CATEGORY_PATTERNS),
-    "gpt2": (GPT2_LAYER_RE, GPT2_CATEGORY_PATTERNS),
-    "vit": (VIT_LAYER_RE, VIT_CATEGORY_PATTERNS),
-    "opt": (OPT_LAYER_RE, OPT_CATEGORY_PATTERNS),
-}
 
 def parse_layer(name: str, layer_re: re.Pattern) -> str:
     m = layer_re.search(name)
@@ -148,23 +66,6 @@ def categorize(name: str, category_patterns: List[Tuple[str, str]]) -> str:
         if re.search(pat, name):
             return f"{cat}/{suffix}"
     return f"Other/{suffix}"
-
-def get_arch_config(model) -> Tuple[re.Pattern, List[Tuple[str, str]]]:
-    """从 model.config 或参数名推断架构，返回 (layer_re, category_patterns)。"""
-    model_type = getattr(model.config, "model_type", None)
-    if model_type and model_type in ARCH_CONFIG:
-        return ARCH_CONFIG[model_type]
-    for pname, _ in model.named_parameters():
-        if "bert.encoder.layer." in pname:
-            return ARCH_CONFIG["bert"]
-        if "transformer.h." in pname:
-            return ARCH_CONFIG["gpt2"]
-        if "vit.encoder.layer." in pname:
-            return ARCH_CONFIG["vit"]
-        if "model.decoder.layers." in pname:
-            return ARCH_CONFIG["opt"]
-        break
-    return ARCH_CONFIG["bert"]
 
 # =========================
 # 3) 统计结构
@@ -374,17 +275,12 @@ def main():
 
     for model_name, model_id in MODEL_IDS.items():
         print(f"\n=== Loading {model_name}: {model_id} ===")
-        if model_id in ENCODER_ONLY_IDS:
-            model = AutoModel.from_pretrained(model_id).to(DEVICE)
-        elif model_id in IMAGE_MODEL_IDS:
-            model = AutoModelForImageClassification.from_pretrained(model_id).to(DEVICE)
-        elif model_id in CAUSAL_LM_IDS:
-            model = AutoModelForCausalLM.from_pretrained(model_id).to(DEVICE)
-        else:
-            model = AutoModelForSequenceClassification.from_pretrained(model_id).to(DEVICE)
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_id
+        ).to(DEVICE)
         model.eval()
 
-        layer_re, category_patterns = get_arch_config(model)
+        layer_re, category_patterns = BERT_LAYER_RE, BERT_CATEGORY_PATTERNS
         print(f"[{model_name}] arch config: layer_re={layer_re.pattern[:40]}...")
 
         # -------- pass 1: 扫一遍拿 global maxabs，顺便精确 min/max/maxabs（按 ALL|cat 和 Lk|cat）--------

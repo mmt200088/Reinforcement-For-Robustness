@@ -10,15 +10,13 @@ from __future__ import annotations
 import contextlib
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
 
 from .eval_metrics import (
-    accuracy_from_labels,
     finalize_probe_trial_metrics,
-    logits_to_classes,
     metric_pair_for_dataset,
     probe_batch_sample_count,
     sample_weighted_mean,
@@ -187,7 +185,6 @@ def run_installed_model_on_dataloader(
         metric_profile: str,
         use_train: bool = False,
         split_name: Optional[str] = None,
-        mnli_metric2_fn: Optional[Callable[[], float]] = None,
         loss_average: str = "sample",
         ) -> InstalledModelEvalResult:
     """Run a full installed-model eval loop on an existing dataloader.
@@ -245,17 +242,9 @@ def run_installed_model_on_dataloader(
     n_batches = max(1, len(dataloader))
     avg_time = (time.time() - t0) * 1000.0 / n_batches
 
-    ds = str(metric_profile or "").lower()
-    if ds == "mnli":
-        pred_classes = logits_to_classes(all_logits)
-        metric1 = accuracy_from_labels(all_labels, pred_classes)
-        metric2 = (
-            float(mnli_metric2_fn())
-            if (not use_train and mnli_metric2_fn is not None)
-            else metric1
-        )
-    else:
-        metric1, metric2 = metric_pair_for_dataset(ds, all_labels, all_logits)
+    metric1, metric2 = metric_pair_for_dataset(
+        metric_profile, all_labels, all_logits
+    )
     return InstalledModelEvalResult(
         loss=float(avg_loss),
         metric1=float(metric1),
