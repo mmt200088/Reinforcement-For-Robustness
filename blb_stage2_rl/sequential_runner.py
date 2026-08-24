@@ -3788,6 +3788,10 @@ def _build_layerwise_candidate_identity_context(
         ) -> Dict[str, Any]:
     """Bind layerwise evidence to the ordinary scientific run context."""
     from .candidate_store import build_candidate_identity_context, sha256_json
+    from glue_data_protocol import (
+        PROTOCOL_SCHEMA as DATASET_PROTOCOL_SCHEMA,
+        TRAIN_PROBE_SPLIT as SEARCH_EVIDENCE_SPLIT,
+    )
     from .layerwise_action import (
         K_LEVELS,
         LAYERWISE_COST_MODEL_REVISION,

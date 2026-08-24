@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from glue_data_protocol import (
     GLUE_DATASET_REVISION,
     PROTOCOL_SCHEMA,

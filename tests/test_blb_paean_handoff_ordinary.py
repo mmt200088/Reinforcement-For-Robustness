@@ -70,6 +70,7 @@ def _load_evaluator_method(name, **runtime_globals):
 
 
 def _load_paean_method(name, **runtime_globals):
+    runtime_globals.setdefault("FINAL_EVAL_SPLIT", "validation_full")
     return _load_class_method(
         _PAEAN_PATH,
         "BLBActionFinalEvaluationModule",
