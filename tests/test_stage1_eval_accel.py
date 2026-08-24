@@ -61,6 +61,25 @@ def _method_region(source: str, method_name: str) -> str:
     return source[start:next_method]
 
 
+class DatasetProtocolPersistenceSourceTest(unittest.TestCase):
+    def test_evaluator_persists_protocol_before_search_and_manifest_references_hash(self):
+        source = (_REPO_ROOT / "layer_importance_evaluator.py").read_text(
+            encoding="utf-8"
+        )
+        init_region = _source_region(
+            source,
+            "class LayerImportanceEvaluator(TrainerCallback):",
+            "    def _coerce_positive_int(",
+        )
+
+        self.assertIn("self.dataset_protocol_hash =", init_region)
+        self.assertIn("write_dataset_protocol(", init_region)
+        self.assertIn(
+            '"dataset_protocol_hash": self.dataset_protocol_hash',
+            source,
+        )
+
+
 class FunctionHandlerForwardAllocationSourceTest(unittest.TestCase):
     def test_ones_mask_encode_samples_noise_without_full_shape_ones_prefill(self):
         source = (_REPO_ROOT / "function_handler.py").read_text(encoding="utf-8")

@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+from glue_data_protocol import (
+    GLUE_DATASET_REVISION,
+    PROTOCOL_SCHEMA,
+    TRAIN_PROBE_SIZE,
+    GlueDataProtocolContext,
+    TrainProbeIdentity,
+)
+from json_utils import read_json_file
+from layer_importance_evaluator import LayerImportanceEvaluator
+from rl_data_points import write_dataset_protocol
+
+
+def _identity(dataset="mrpc"):
+    labels = tuple(index % 2 for index in range(TRAIN_PROBE_SIZE))
+    return TrainProbeIdentity(
+        dataset=dataset,
+        source_size=512,
+        positions=tuple(range(TRAIN_PROBE_SIZE)),
+        raw_ids=tuple(range(1000, 1000 + TRAIN_PROBE_SIZE)),
+        labels=labels,
+        label_histogram=((0, 128), (1, 128)),
+        ordered_identity_hash="a" * 64,
+    )
+
+
+def _context():
+    return GlueDataProtocolContext(
+        model_family="bert-base",
+        dataset="mrpc",
+        train_probe=[object() for _ in range(TRAIN_PROBE_SIZE)],
+        validation_full=[object() for _ in range(408)],
+        identity=_identity(),
+    )
+
+
+def test_protocol_payload_records_search_and_final_split_identity():
+    context = _context()
+
+    payload = context.as_payload()
+
+    assert payload["schema_version"] == PROTOCOL_SCHEMA
+    assert payload["dataset_revision"] == GLUE_DATASET_REVISION
+    assert payload["source_split"] == "train"
+    assert payload["search_split"] == "train_probe"
+    assert payload["final_eval_split"] == "validation_full"
+    assert payload["probe_size"] == TRAIN_PROBE_SIZE
+    assert payload["ordered_identity_hash"] == "a" * 64
+    assert payload["dataset_protocol_hash"] == context.dataset_protocol_hash
+
+
+def test_dataset_protocol_file_round_trips_atomically(tmp_path):
+    context = _context()
+
+    path = write_dataset_protocol(tmp_path, context.as_payload())
+
+    assert path == Path(tmp_path) / "dataset_protocol.json"
+    assert read_json_file(path) == context.as_payload()
+    assert not path.with_name("dataset_protocol.json.tmp").exists()
+
+
+def test_prepare_rl_datasets_registers_explicit_probe_and_validation_views():
+    registered = {}
+    train = object()
+    probe = object()
+    validation = object()
+
+    def register(split_name, dataset):
+        registered[split_name] = dataset
+
+    evaluator = SimpleNamespace(
+        _register_dataset_split=register,
+        dataloaders={
+            "train": "train-loader",
+            "train_probe": "probe-loader",
+            "validation_full": "validation-loader",
+        },
+        dataloaders_mm={},
+    )
+
+    LayerImportanceEvaluator._prepare_rl_datasets(
+        evaluator,
+        train_data=train,
+        train_probe=probe,
+        validation_data=validation,
+    )
+
+    assert registered == {
+        "train": train,
+        "train_probe": probe,
+        "validation_full": validation,
+    }
+    assert evaluator.dataloader_train == "train-loader"
+    assert evaluator.dataloader_test == "validation-loader"
+
+
+def test_search_reward_split_names_are_always_train_probe():
+    evaluator = SimpleNamespace()
+
+    assert (
+        LayerImportanceEvaluator.get_reward_reference_split_name(evaluator)
+        == "train_probe"
+    )
+    assert (
+        LayerImportanceEvaluator.get_online_reward_split_name(evaluator)
+        == "train_probe"
+    )
