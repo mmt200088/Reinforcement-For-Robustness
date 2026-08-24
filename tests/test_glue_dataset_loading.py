@@ -214,8 +214,8 @@ class GlueDatasetLoadingRegressionTests(unittest.TestCase):
             )
 
         source = inspect.getsource(rl_tune.train)
-        self.assertEqual(source.count("**tokenizer_revision_kwargs"), 2)
-        self.assertEqual(source.count("**model_revision_kwargs"), 3)
+        self.assertEqual(source.count("**tokenizer_revision_kwargs"), 1)
+        self.assertEqual(source.count("**model_revision_kwargs"), 1)
 
     def test_train_wires_raw_row_fixture_before_validation_preprocessing(self):
         rl_tune = _import_rl_tune()

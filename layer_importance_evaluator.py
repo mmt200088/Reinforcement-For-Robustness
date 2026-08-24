@@ -2625,6 +2625,7 @@ class LayerImportanceEvaluator(TrainerCallback):
                   blb_v3_osr_allow_fingerprint_mismatch=False,
                   rl_algo="ppo",
                   grpo_kl_beta=0.0,
+                  glue_data_protocol=None,
                   mrpc_reproducibility=None,
                   final_eval_require_rescale_optimizer=False):
         """
@@ -2657,6 +2658,7 @@ class LayerImportanceEvaluator(TrainerCallback):
             )
         except Exception:
             self.stage2_workers_per_device = 1
+        self.glue_data_protocol = glue_data_protocol
         self.mrpc_reproducibility = mrpc_reproducibility
         if self.mrpc_reproducibility is not None:
             if str(data_path).strip().lower() != "mrpc":

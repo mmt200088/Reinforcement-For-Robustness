@@ -85,6 +85,15 @@ class GlueProtocolViews:
     identity: TrainProbeIdentity
 
 
+@dataclass(frozen=True)
+class GlueDataProtocolContext:
+    model_family: str
+    dataset: str
+    train_probe: Any
+    validation_full: Any
+    identity: TrainProbeIdentity
+
+
 def supported_profiles() -> tuple[tuple[str, str], ...]:
     return tuple(
         (model_family, dataset)
@@ -103,6 +112,15 @@ def validate_supported_profile(model_family: str, dataset: str) -> None:
             f"unsupported profile: {profile[0] or '<empty>'}/"
             f"{profile[1] or '<empty>'}"
         )
+
+
+def resolve_model_family(model_id: str) -> str:
+    normalized = str(model_id or "").strip().lower()
+    if "bert-large" in normalized:
+        return "bert-large"
+    if "bert-base" in normalized:
+        return "bert-base"
+    raise ValueError(f"unsupported model: {normalized or '<empty>'}")
 
 
 def validate_dataset(dataset: str) -> str:
